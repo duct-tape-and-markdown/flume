@@ -9,21 +9,28 @@
  *   flume status                Print baton state + pending count.
  *   flume wake <phase>          Touch .flume/awake/<phase>.
  *   flume sleep <phase>         Remove .flume/awake/<phase>.
+ *   flume render <phase> [opts] Render the prompt that would be sent for one
+ *                               tick of <phase>, without invoking the agent.
+ *                               --entry <tag>   for fanout phases: pick the
+ *                                               entry with this tag from
+ *                                               .flume/plan/pending.json.
  *
  * The chain config is loaded from `./.flume/chain.ts` (resolved with tsx).
  * That file must default-export a `Chain` and may export `agent` to override
  * the default `claudeCode()`.
  */
 
-import { resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { Baton } from "../src/Baton.ts";
-import { Dispatcher } from "../src/Dispatcher.ts";
-import { claudeCode } from "../src/Agent.ts";
-import type { Agent } from "../src/Agent.ts";
-import type { Chain } from "../src/Phase.ts";
+import { Baton } from "./Baton.ts";
+import { Dispatcher } from "./Dispatcher.ts";
+import { claudeCode } from "./Agent.ts";
+import type { Agent } from "./Agent.ts";
+import type { Chain, TickContext } from "./Phase.ts";
+import { renderPrompt } from "./Prompt.ts";
+import { parsePending } from "./PendingSchema.ts";
 
 interface ChainModule {
   default: Chain;
@@ -98,6 +105,63 @@ async function main(): Promise<number> {
     const maxIdx = rest.indexOf("--max");
     const max = maxIdx >= 0 ? Number(rest[maxIdx + 1]) : 50;
     await dispatcher.loop(max);
+    return 0;
+  }
+
+  if (cmd === "render") {
+    const phaseName = rest[0];
+    if (!phaseName) {
+      console.error("usage: flume render <phase> [--entry <tag>]");
+      return 2;
+    }
+    const phase = chain.phases.find((p) => p.name === phaseName);
+    if (!phase) {
+      console.error(`unknown phase: ${phaseName}`);
+      return 2;
+    }
+
+    const entryIdx = rest.indexOf("--entry");
+    const entryTag = entryIdx >= 0 ? rest[entryIdx + 1] : undefined;
+
+    const pendingPath = join(repoRoot, ".flume", "plan", "pending.json");
+    const pending = existsSync(pendingPath)
+      ? (() => {
+          const r = parsePending(readFileSync(pendingPath, "utf8"));
+          if (!r.ok) {
+            console.error(`pending.json invalid (${r.errors.length} errors):`);
+            for (const e of r.errors) {
+              console.error(`  [${e.index}] ${e.path}: ${e.message}`);
+            }
+            return [];
+          }
+          return r.entries;
+        })()
+      : [];
+
+    const ctx: TickContext = { cwd: repoRoot, pending };
+    if (phase.concurrency === "fanout") {
+      const target = entryTag
+        ? pending.find((e) => e.tag === entryTag)
+        : pending.find((e) => e.gate.kind === "open");
+      if (!target) {
+        console.error(
+          entryTag
+            ? `no entry with tag ${entryTag} in pending.json`
+            : `no open entries in pending.json; pass --entry <tag> to render a gated one`,
+        );
+        return 2;
+      }
+      ctx.assignedEntry = target;
+    }
+
+    const args = phase.promptArgs?.(ctx) ?? {};
+    const prompt = await renderPrompt({
+      phase,
+      promptFile: join(repoRoot, ".flume", phase.promptPath),
+      cwd: repoRoot,
+      args,
+    });
+    process.stdout.write(prompt);
     return 0;
   }
 
