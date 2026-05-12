@@ -28,10 +28,22 @@ const PerCitation = z.object({
   section: z.string().min(1),
 });
 
-/** Gate state — open, blocked on another tag, or requires an env capability. */
+/**
+ * Gate state. All non-"open" variants are non-pickable; the variant carries
+ * *why* so the plan-phase can reason about lifecycle when it refreshes.
+ *
+ * - open:               ready to ship.
+ * - blockedBy:          upstream pending entry must ship first.
+ * - parked:             human action required (workshop, design call) before
+ *                       the entry can be refined enough to ship.
+ * - deferred:           carried indefinitely; no consumer surface yet.
+ * - requiresDockerHost: env gate; dispatcher opts in at runtime (v1).
+ */
 const Gate = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("open") }),
   z.object({ kind: z.literal("blockedBy"), tag: z.string().min(1) }),
+  z.object({ kind: z.literal("parked"), reason: z.string().min(1) }),
+  z.object({ kind: z.literal("deferred"), reason: z.string().min(1) }),
   z.object({ kind: z.literal("requiresDockerHost") }),
 ]);
 
@@ -43,14 +55,20 @@ const TestAssertion = z.object({
 // ---------- entry ----------
 
 /**
- * Tag format: ALL-CAPS-WITH-DASHES, optional (slice) suffix.
+ * Tag format: ALL-CAPS body, dot- or dash-separated segments, optional
+ * (slice) suffix.
  *   SURFACE-CTA-MIG
  *   ROSTER-TRIAGE-MIG(a)
+ *   OBS4.2
+ *   PT4.7(c)
+ *   PT4.5c
  *   MAINTAIN-tsc-a31893e
  *
- * MAINTAIN-* entries permit lowercase suffix after the second dash.
+ * Dots support version-like cascade numbering (OBS4.2, PT4.7); dashes
+ * support the canonical MIG / MAINTAIN / decision-name format. Lowercase
+ * segments are allowed after the first dash for things like `tsc-a31893e`.
  */
-const TAG_PATTERN = /^[A-Z][A-Z0-9]*(?:-[A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/;
+const TAG_PATTERN = /^[A-Z][A-Z0-9]*(?:[-.][A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/;
 
 export const PendingEntry = z.object({
   /** Stable identifier; appears in commit messages. */
@@ -158,9 +176,11 @@ export function renderSchemaForPrompt(): string {
     "path": "specs/.../foo.md",                         // the spec or rule that justifies this work
     "section": "Section heading text"                   // exact section, no leading '## '
   },
-  "gate": { "kind": "open" }
-        | { "kind": "blockedBy", "tag": "OTHER-TAG" }
-        | { "kind": "requiresDockerHost" },
+  "gate": { "kind": "open" }                                  // ready to ship
+        | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
+        | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
+        | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
+        | { "kind": "requiresDockerHost" },                     // env gate (v1)
   "files": {
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
@@ -192,6 +212,9 @@ export function isPickableNow(
       return true;
     case "blockedBy":
       return shippedTags.has(entry.gate.tag);
+    case "parked":
+    case "deferred":
+      return false;
     case "requiresDockerHost":
       // The dispatcher decides at runtime; default false so it's opt-in.
       return false;

@@ -490,6 +490,8 @@ function isPickable(
       const depTag = entry.gate.tag;
       return !pending.some((e) => e.tag === depTag);
     }
+    case "parked":
+    case "deferred":
     case "requiresDockerHost":
       return false;
   }
