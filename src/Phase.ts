@@ -107,6 +107,25 @@ export interface Phase {
    * baton flags are absent).
    */
   handoff: (result: TickResult) => string[];
+
+  /**
+   * Optional hook invoked after a fanout worktree is created, before the
+   * agent runs. The chain config uses this to materialize gitignored files
+   * the gates need — typically `node_modules` and `.env` — by symlinking
+   * them from the main repo. Singleton phases run in the main repo and do
+   * not invoke this.
+   */
+  setupWorktree?: (ctx: WorktreeSetupContext) => Promise<void>;
+}
+
+/** Context handed to Phase.setupWorktree after a fanout worktree is created. */
+export interface WorktreeSetupContext {
+  /** Path to the fresh worktree the tick will run in. */
+  worktreePath: string;
+  /** Path to the main repo root the worktree was created from. */
+  repoRoot: string;
+  /** Tag of the pending entry assigned to this worktree. */
+  entryTag: string;
 }
 
 /**

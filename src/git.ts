@@ -96,6 +96,20 @@ export async function commitAll(opts: {
   return revParse(opts.cwd);
 }
 
+/** Stage a specific set of paths and commit. Scoped alternative to commitAll. */
+export async function commitPaths(opts: {
+  cwd: string;
+  message: string;
+  paths: string[];
+}): Promise<string> {
+  if (opts.paths.length === 0) {
+    throw new Error("commitPaths requires at least one path");
+  }
+  await run(opts.cwd, ["add", "--", ...opts.paths]);
+  await run(opts.cwd, ["commit", "-m", opts.message]);
+  return revParse(opts.cwd);
+}
+
 /** True iff the working tree has uncommitted changes (staged or unstaged). */
 export async function isDirty(cwd: string): Promise<boolean> {
   const { stdout } = await run(cwd, ["status", "--porcelain"]);

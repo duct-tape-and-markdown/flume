@@ -185,7 +185,6 @@ export class Dispatcher {
 
   private async runFanout(phase: Phase): Promise<TickResult> {
     const repoRoot = this.opts.repoRoot;
-    const trunk = this.trunkBranch!;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
 
@@ -214,6 +213,19 @@ export class Dispatcher {
     const worktrees = await Promise.all(
       batch.map((entry) => this.createWorktree(entry, preHead)),
     );
+
+    // Optional per-phase setup (e.g. symlink node_modules / .env so gates run).
+    if (phase.setupWorktree) {
+      await Promise.all(
+        batch.map((entry, i) =>
+          phase.setupWorktree!({
+            worktreePath: worktrees[i]!.path,
+            repoRoot,
+            entryTag: entry.tag,
+          }),
+        ),
+      );
+    }
 
     // Run agent in each worktree concurrently.
     const perEntry = await Promise.all(
@@ -444,9 +456,12 @@ export class Dispatcher {
       JSON.stringify(after, null, 2) + "\n",
       "utf8",
     );
-    return git.commitAll({
+    // Scoped to pending.json — `git add -A` would sweep up untracked worktree
+    // metadata and unrelated user changes into the harness's chore commit.
+    return git.commitPaths({
       cwd: this.opts.repoRoot,
       message: `chore(flume): ship ${shippedTags.join(", ")}`,
+      paths: [this.pendingPath],
     });
   }
 }
