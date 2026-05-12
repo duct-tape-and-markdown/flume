@@ -1,0 +1,8 @@
+#!/bin/sh
+# Thin launcher; the real CLI is src/cli.ts. We use a shell wrapper because
+# Node's `--experimental-strip-types` only engages on .ts file extensions,
+# so the entrypoint itself must be .ts. We pass the flag here so consumers
+# don't have to set NODE_OPTIONS.
+
+exec node --experimental-strip-types --no-warnings \
+  "$(dirname "$0")/../src/cli.ts" "$@"
