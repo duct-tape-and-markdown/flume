@@ -1,8 +1,8 @@
 #!/bin/sh
-# Thin launcher; the real CLI is src/cli.ts. We use a shell wrapper because
-# Node's `--experimental-strip-types` only engages on .ts file extensions,
-# so the entrypoint itself must be .ts. We pass the flag here so consumers
-# don't have to set NODE_OPTIONS.
-
-exec node --experimental-strip-types --no-warnings \
-  "$(dirname "$0")/../src/cli.ts" "$@"
+# Thin launcher. We invoke tsx (a runtime dep) rather than
+# `node --experimental-strip-types` because the latter refuses to process
+# .ts files under any consumer project's node_modules/ (Node throws
+# ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING). tsx works in both layouts:
+# standalone flume checkout and flume-as-installed-dependency.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/../node_modules/.bin/tsx" "$DIR/../src/cli.ts" "$@"
