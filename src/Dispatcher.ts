@@ -244,6 +244,11 @@ export class Dispatcher {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
         );
+        // Abort the in-progress cherry-pick so the working tree is clean for
+        // subsequent ticks. Without this, partially-applied changes block
+        // the next plan tick (which can't run `pnpm install` etc. against a
+        // dirty trunk) and require manual `git restore` intervention.
+        await git.cherryPickAbort(repoRoot);
       }
     }
 

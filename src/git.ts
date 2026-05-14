@@ -83,6 +83,19 @@ export async function cherryPick(repoRoot: string, sha: string): Promise<void> {
   await run(repoRoot, ["cherry-pick", sha]);
 }
 
+/**
+ * Abort an in-progress cherry-pick, restoring the working tree to its
+ * pre-cherry-pick state. Idempotent: errors when no cherry-pick is in
+ * progress are swallowed.
+ */
+export async function cherryPickAbort(repoRoot: string): Promise<void> {
+  try {
+    await run(repoRoot, ["cherry-pick", "--abort"]);
+  } catch {
+    // No cherry-pick in progress, or already aborted — nothing to clean up.
+  }
+}
+
 export async function commitAll(opts: {
   cwd: string;
   message: string;
