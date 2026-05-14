@@ -8,6 +8,9 @@
  */
 
 import { spawn } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { join } from "node:path";
 
 export interface AgentInvocation {
   /** Working directory for the agent process. */
@@ -105,4 +108,55 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       });
     },
   };
+}
+
+// ---------- session capture decorator ----------
+
+export interface SessionCaptureOpts {
+  /** Directory to write session output files into. Created if missing. */
+  dir: string;
+  /** Function generating the filename for a given invocation. */
+  filename?: (inv: AgentInvocation) => string;
+}
+
+/**
+ * Wraps an Agent to tee stdout chunks to a file as they arrive. Useful
+ * for capturing per-tick session transcripts, especially in combination
+ * with `claude -p --output-format stream-json` for machine-readable
+ * NDJSON output.
+ *
+ * The file is created when the invocation starts and closed when it
+ * resolves (success or failure). Stderr is not captured to file; the
+ * underlying agent's `onStderr` still fires normally.
+ */
+export function withSessionCapture(
+  agent: Agent,
+  opts: SessionCaptureOpts,
+): Agent {
+  return {
+    name: `${agent.name}+capture`,
+    async invoke(inv) {
+      await mkdir(opts.dir, { recursive: true });
+      const name = opts.filename?.(inv) ?? defaultCaptureFilename();
+      const stream = createWriteStream(join(opts.dir, name), {
+        encoding: "utf8",
+      });
+      const wrapped: AgentInvocation = {
+        ...inv,
+        onStdout: (chunk) => {
+          stream.write(chunk);
+          inv.onStdout?.(chunk);
+        },
+      };
+      try {
+        return await agent.invoke(wrapped);
+      } finally {
+        await new Promise<void>((r) => stream.end(r));
+      }
+    },
+  };
+}
+
+function defaultCaptureFilename(): string {
+  return `${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
 }
