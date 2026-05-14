@@ -160,3 +160,194 @@ export function withSessionCapture(
 function defaultCaptureFilename(): string {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
 }
+
+// ---------- terminal renderer decorator ----------
+
+export interface TerminalRendererOpts {
+  /** Per-line prefix derived from the invocation. Default: `[<cwd basename>]`. */
+  tag?: (inv: AgentInvocation) => string;
+}
+
+/**
+ * Wraps an Agent that emits `claude -p --output-format stream-json --verbose`
+ * NDJSON on stdout and forwards a condensed, human-readable summary to the
+ * parent's `onStdout` instead of the raw stream. Raw chunks are NOT forwarded
+ * — pair this wrapper with `withSessionCapture` (innermost) when full-fidelity
+ * transcripts are still wanted on disk:
+ *
+ *     withTerminalRenderer(withSessionCapture(claudeCode({...}), {dir}))
+ *
+ * Rendered output: one line per `tool_use`, plus a final `result` line with
+ * turn count, token usage, cost, and duration. Assistant `thinking`/`text`,
+ * `tool_result` payloads, and `system/init` are dropped from the terminal —
+ * still present in the captured NDJSON.
+ *
+ * Lines that don't parse as JSON are passed through as-is so unexpected
+ * stderr-on-stdout or warning text still surfaces.
+ */
+export function withTerminalRenderer(
+  agent: Agent,
+  opts: TerminalRendererOpts = {},
+): Agent {
+  const tagFn =
+    opts.tag ?? ((inv: AgentInvocation) => `[${inv.cwd.split("/").pop() ?? "tick"}]`);
+  return {
+    name: `${agent.name}+render`,
+    async invoke(inv) {
+      const tag = tagFn(inv);
+      let buf = "";
+      const emitLine = (line: string): void => {
+        const rendered = renderStreamJsonLine(line, tag, inv.cwd);
+        if (rendered !== null) inv.onStdout?.(rendered + "\n");
+      };
+      const wrapped: AgentInvocation = {
+        ...inv,
+        onStdout: (chunk: string) => {
+          buf += chunk;
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl);
+            buf = buf.slice(nl + 1);
+            emitLine(line);
+          }
+        },
+      };
+      try {
+        return await agent.invoke(wrapped);
+      } finally {
+        if (buf.length > 0) {
+          emitLine(buf);
+          buf = "";
+        }
+      }
+    },
+  };
+}
+
+/**
+ * Render one NDJSON line to a condensed terminal string, or null to drop it.
+ * Non-JSON input is passed through verbatim (prefixed with the tag) so stray
+ * warnings or non-stream output still surface.
+ */
+function renderStreamJsonLine(
+  line: string,
+  tag: string,
+  cwd: string,
+): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  let evt: unknown;
+  try {
+    evt = JSON.parse(trimmed);
+  } catch {
+    return `${tag} ${trimmed}`;
+  }
+  if (!evt || typeof evt !== "object") return null;
+  const e = evt as Record<string, unknown>;
+  const type = e.type;
+
+  if (type === "assistant") {
+    const msg = e.message as { content?: unknown } | undefined;
+    const content = Array.isArray(msg?.content) ? msg!.content : [];
+    const lines: string[] = [];
+    for (const c of content) {
+      if (c && typeof c === "object" && (c as Record<string, unknown>).type === "tool_use") {
+        lines.push(`${tag} ${formatToolUse(c as ToolUseBlock, cwd)}`);
+      }
+    }
+    return lines.length > 0 ? lines.join("\n") : null;
+  }
+
+  if (type === "result") {
+    return `${tag} ${formatResult(e)}`;
+  }
+
+  return null;
+}
+
+interface ToolUseBlock {
+  type: "tool_use";
+  name: string;
+  input?: Record<string, unknown>;
+}
+
+function formatToolUse(c: ToolUseBlock, cwd: string): string {
+  const name = c.name ?? "?";
+  const inp = c.input ?? {};
+  const arg = summarizeToolArg(name, inp, cwd);
+  return arg ? `${name}(${truncate(arg, 80)})` : name;
+}
+
+function summarizeToolArg(name: string, inp: Record<string, unknown>, cwd: string): string {
+  const str = (k: string): string => (typeof inp[k] === "string" ? (inp[k] as string) : "");
+  switch (name) {
+    case "Bash":
+      return str("command").split("\n")[0]!;
+    case "Read":
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return relativize(str("file_path"), cwd);
+    case "Grep":
+      return str("pattern");
+    case "Glob":
+      return str("pattern");
+    case "WebFetch":
+      return str("url");
+    case "WebSearch":
+      return str("query");
+    case "Task":
+    case "Agent":
+      return str("subagent_type") || str("description");
+    case "TodoWrite": {
+      const todos = inp.todos;
+      return Array.isArray(todos) ? `${todos.length} todos` : "";
+    }
+    default: {
+      const k = Object.keys(inp)[0];
+      if (!k) return "";
+      const v = inp[k];
+      if (typeof v === "string") return `${k}=${v}`;
+      try {
+        return `${k}=${JSON.stringify(v)}`;
+      } catch {
+        return k;
+      }
+    }
+  }
+}
+
+function formatResult(e: Record<string, unknown>): string {
+  const usage = (e.usage as Record<string, unknown> | undefined) ?? {};
+  const turns = e.num_turns ?? "?";
+  const ti = num(usage.input_tokens);
+  const to = num(usage.output_tokens);
+  const cost = typeof e.total_cost_usd === "number" ? `$${e.total_cost_usd.toFixed(3)}` : "";
+  const dur = typeof e.duration_ms === "number" ? `${(e.duration_ms / 1000).toFixed(1)}s` : "";
+  const head = e.is_error || (e.subtype && e.subtype !== "success") ? "ERROR" : "result";
+  const parts = [head, `${turns} turns`, `${formatTokens(ti)} in`, `${formatTokens(to)} out`, cost, dur].filter(
+    (p) => p && p.length > 0,
+  );
+  return parts.join(" · ");
+}
+
+function num(v: unknown): number {
+  return typeof v === "number" ? v : 0;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function relativize(p: string, cwd: string): string {
+  if (!p) return "";
+  if (p.startsWith(cwd + "/")) return p.slice(cwd.length + 1);
+  return p;
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 3) + "..." : s;
+}
