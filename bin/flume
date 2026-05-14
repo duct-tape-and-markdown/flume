@@ -4,5 +4,9 @@
 # .ts files under any consumer project's node_modules/ (Node throws
 # ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING). tsx works in both layouts:
 # standalone flume checkout and flume-as-installed-dependency.
-DIR="$(cd "$(dirname "$0")" && pwd)"
+# `pwd -P` (not `pwd`) is required: when installed via pnpm, node_modules/flume
+# is a symlink into .pnpm/<hash>/node_modules/flume. Without -P we get the
+# symlinked path, and tsx's auto-generated bin (which uses `$basedir/../../...`
+# relative paths) then walks out of the .pnpm tree to a non-existent location.
+DIR="$(cd "$(dirname "$0")" && pwd -P)"
 exec "$DIR/../node_modules/.bin/tsx" "$DIR/../src/cli.ts" "$@"
