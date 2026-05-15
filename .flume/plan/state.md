@@ -1,10 +1,10 @@
 # State
 
-Phase: **v0.1 public-release prep.** Audit tick — 4 entries shipped (EXPORT-WORKTREE-SETUP-CONTEXT, LICENSE, CHANGELOG, README-REVISE). §2 export list now fully covered in `src/index.ts`; LICENSE matches canonical SPDX MIT per §8; CHANGELOG carries the Keep-a-Changelog skeleton with empty Unreleased plus a pre-1.0 note pointing at §2/§9.
+Phase: **v0.1 public-release prep.** Audit + drain. Audited the 4 ships (EXPORT-WORKTREE-SETUP-CONTEXT, LICENSE, CHANGELOG, README-REVISE) — first three clean; README-REVISE shipped a Quickstart import that violates §2 (strict `.` exports) + §8 (examples/ not in files allowlist) + §6 mechanic (5-line inline chain.ts). Filed `README-QUICKSTART-FIX` (open) at queue head.
 
-Audit finding: README Quickstart imports `flume/examples/minimal-chain.ts` — incompatible with §2 strict `.` exports (no subpaths, per §11 resolved decision) and §8 files allowlist (`examples/` excluded from tarball). §6 also mandates an inline 5-line chain.ts in Quickstart. Build's commit body flagged the conflict for follow-on. Filed `README-QUICKSTART-FIX` (open) at queue head.
+Inbox arrived mid-tick with a runner-review finding: `src/Dispatcher.ts` `runFanout` is silent on success paths (cherry-pick, ship commit, cleanup, wave duration). Pre-scoped at ~15-20 LOC, severity low/correctness high/ergonomics, reviewer routed to §3. Filed `DISPATCHER-FANOUT-LOGGING` (open) at queue tail (polish, not ship-blocking). Inbox drained.
 
-Queue head: `README-QUICKSTART-FIX` (open). 9 entries total; `DIST-BUILD-CONFIG` (open, mid-queue) still gates 3 dependents (`PACKAGE-METADATA`, `BIN-FLUME-DIST`, `CI-WORKFLOW`).
+Queue head: `README-QUICKSTART-FIX` (open). 10 entries total; `DIST-BUILD-CONFIG` (open, mid-queue) still gates 3 dependents (`PACKAGE-METADATA`, `BIN-FLUME-DIST`, `CI-WORKFLOW`).
 
 In flight: nothing autonomous. Build picks `README-QUICKSTART-FIX` on next tick.
 
