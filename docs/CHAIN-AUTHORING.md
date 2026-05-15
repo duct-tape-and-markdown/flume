@@ -1,12 +1,11 @@
 # Authoring a Flume chain
 
-The long-form walkthrough for writing your own `.flume/chain.ts`. Assumes
-you have read the README. The running example is
-[`examples/cascade-chain.ts`](../examples/cascade-chain.ts) — the
-workshop → spec → plan → build pipeline this repo dogfoods. Every section
-below quotes a slice; open it in a second pane. For the bare-minimum shape
-(no fanout, no spec separation), read
-[`examples/minimal-chain.ts`](../examples/minimal-chain.ts) first.
+The long-form walkthrough for writing your own `.flume/chain.ts`; assumes
+you've read the README. The running example,
+[`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is the
+spec → plan → build pipeline this repo dogfoods — every section quotes a
+slice, so open it in a second pane. For the bare-minimum shape (no fanout,
+no spec separation), see [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
 ## Where the chain lives
 
@@ -46,7 +45,7 @@ set. The full interface lives in `src/Phase.ts`. The fields that matter:
 | `gates` | Validation steps the harness runs post-commit. See §2. |
 | `promptArgs` | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`. |
 | `handoff` | Returns sibling phases to wake based on the tick's `TickResult`. |
-| `setupWorktree` | Optional fanout hook to materialize gitignored files (`node_modules`, `.env`) in a fresh worktree. |
+| `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. See §3. |
 
 The `plan` phase from `examples/cascade-chain.ts`:
 
@@ -191,47 +190,47 @@ to the trunk. Their `afterCommit` gates run on the trunk.
 
 ### Fanout
 
-Pick `"fanout"` when each tick is responsible for one independent unit of
-work that touches a known file set. Build is canonical: each pending entry
-declares the files it will write, and any two entries with disjoint file
-sets can run in parallel.
+Pick `"fanout"` when each tick owns one independent unit of work over a
+known file set. Build is canonical: each pending entry declares the files
+it writes, and entries with disjoint sets run in parallel.
 
 The dispatcher uses `partitionByFileOverlap` to group pickable entries
-into maximal disjoint batches, picks the first batch, and spawns one
-worktree per entry under `.flume/worktrees/<phase>/<tag>/`. Agent +
-`afterCommit` gates run in parallel; the wave then merges into the trunk
-in commit order and runs `afterMerge` gates.
+into maximal disjoint batches, picks the first, and spawns one worktree
+per entry under `.flume/worktrees/<phase>/<tag>/`. Agent + `afterCommit`
+gates run in parallel; the wave then merges to trunk and runs `afterMerge`.
 
 ```ts
 partitionByFileOverlap(entries, { maxParallel: 4 });
 // => [[entryA, entryC], [entryB]]   // A and C disjoint; B overlaps both
 ```
 
-The partition reads `entry.files.new[].path`, `entry.files.edit[].path`,
-and `entry.files.retire[]` (see `touchedPaths()` in `PendingSchema.ts`).
-If you author pending entries by hand, declare files truthfully.
+The partition reads `entry.files.new[].path`/`.edit[].path`/`.retire[]`
+(see `touchedPaths()` in `PendingSchema.ts`); declare files truthfully
+when hand-authoring entries.
 
-Failure modes the dispatcher handles: `afterCommit` fail in one worktree
-drops that commit (siblings continue); a cherry-pick conflict during merge
-leaves the conflicting entry in pending (successful merges remain); an
-`afterMerge` fail reverts the whole wave on the trunk.
+Failure modes handled: an `afterCommit` fail drops that worktree's commit
+(siblings continue); a merge cherry-pick conflict leaves that entry in
+pending (others merge); `afterMerge` fail reverts the wave.
 
 ### `setupWorktree` for fanout
 
-A fresh worktree contains only tracked files. `node_modules/`, `.env`, and
-other gitignored artifacts the gates depend on must be materialized before
-the agent runs:
+A fresh worktree holds only tracked files; provision the gitignored deps
+the gates need first. **Default:** run `pnpm install --frozen-lockfile` in
+the worktree (`promisify(execFile)("pnpm", ["install", "--frozen-lockfile"], { cwd: worktreePath })`);
+pnpm hardlinks from its global store, so it costs seconds, not a
+re-download. Copy plain files (`.env`) directly.
 
-```ts
-const build: Phase = {
-  // ...
-  async setupWorktree({ worktreePath, repoRoot }) {
-    const { symlink } = await import("node:fs/promises");
-    await symlink(`${repoRoot}/node_modules`, `${worktreePath}/node_modules`, "dir");
-    await symlink(`${repoRoot}/.env`, `${worktreePath}/.env`);
-  },
-};
-```
+**Never symlink `node_modules` in** — pnpm deletes a symlinked
+`node_modules` on install
+([pnpm/pnpm#9973](https://github.com/pnpm/pnpm/issues/9973)), silently
+breaking the worktree the first time a fanout entry installs.
+
+**Experimental opt-in:** `enableGlobalVirtualStore` in `pnpm-workspace.yaml`
+([pnpm git-worktrees](https://pnpm.io/git-worktrees)) shares one virtual
+store across worktrees, skipping the install — an opt-in only, never a
+default. Either way, add a strategy-agnostic `afterCommit` `shellGate`
+that fails loud if a sentinel dependency stops resolving from the worktree
+root (`node -e "require.resolve('vitest')"`).
 
 Singleton phases run in the main repo, so the hook is never invoked for
 them.
