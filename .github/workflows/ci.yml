@@ -80,3 +80,57 @@ jobs:
           # (§4) — fail loudly rather than silently run the wrong binary.
           npx --no-install flume status
           npx --no-install flume render notes >/dev/null
+
+      - name: npm pack file-set guard
+        # The packed tarball must contain exactly the package.json "files"
+        # allowlist (plus package.json, which npm packs unconditionally).
+        # Fails on drift in EITHER direction: a path packed but not covered by
+        # "files" (over-inclusion), or a "files" entry that packs nothing
+        # (under-inclusion). "files" is the single source of truth — there is
+        # no .npmignore (spec/RELEASE-v0.1.md §8 L155; mechanic §4 L107).
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/check-pack.mjs" <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const pack = JSON.parse(readFileSync(process.argv[2], "utf8"));
+          const packed = (pack[0]?.files ?? []).map((f) => f.path).sort();
+
+          const allow = (JSON.parse(readFileSync("package.json", "utf8")).files ?? [])
+            .map((e) => e.replace(/\/+$/, ""));
+
+          // npm always packs package.json regardless of "files"; it is not an
+          // allowlist entry. Every other packed path must be attributable to
+          // exactly one "files" entry (exact file, or directory prefix).
+          const attributable = (p) =>
+            p === "package.json" ||
+            allow.some((r) => p === r || p.startsWith(r + "/"));
+
+          const stray = packed.filter((p) => !attributable(p));
+          const empty = allow.filter(
+            (r) => !packed.some((p) => p === r || p.startsWith(r + "/")),
+          );
+
+          if (stray.length || empty.length) {
+            if (stray.length) {
+              console.error('over-inclusion — packed but not in "files":');
+              for (const p of stray) console.error("  + " + p);
+            }
+            if (empty.length) {
+              console.error('under-inclusion — in "files" but nothing packed:');
+              for (const r of empty) console.error("  - " + r);
+            }
+            console.error(
+              '\npackage.json "files" is the single source of truth; ' +
+                "reconcile the allowlist or the build output.",
+            );
+            process.exit(1);
+          }
+
+          console.log(
+            `npm pack file-set guard: OK (${packed.length} files packed, ` +
+              'all attributable to the "files" allowlist)',
+          );
+          EOF
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack.json"
+          node "$RUNNER_TEMP/check-pack.mjs" "$RUNNER_TEMP/pack.json"
