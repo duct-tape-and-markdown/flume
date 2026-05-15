@@ -1,101 +1,62 @@
 /**
- * Cascade chain — the canonical workshop → specs → plan → code pipeline,
+ * Cascade chain — the canonical workshop → spec → plan → code pipeline,
  * expressed as Flume Phases.
  *
- * This file is the load-bearing example: it demonstrates how the discipline
- * Cascade's current `.flume/prompts/{plan,build,spec}.md` carry in prose
- * decomposes into typed declarations the harness can enforce.
+ * Three phases:
+ *   - spec: derives an aligned spec corpus from a workshop draft (singleton,
+ *     human-woken).
+ *   - plan: re-derives pending.json + state.md from the spec corpus + src
+ *     (singleton).
+ *   - build: ships pending entries to the trunk (fanout).
  *
- * Read this alongside `src/Phase.ts` and `src/PendingSchema.ts`.
+ * This file is the load-bearing example: it demonstrates the shape a chain
+ * takes when it spans the full derivation pipeline. Read it alongside the
+ * JSDoc on `Phase`, `Gate`, and the pending-schema exports.
+ *
+ * Imports come from `../src/index.ts` — the same public surface a consumer
+ * sees as `import { ... } from "flume"`. Path is relative because this file
+ * lives inside the flume repo; in a host repo, swap `../src/index.ts` for
+ * `flume`. See the trailing block.
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import type {
+  Chain,
+  Gate,
+  Phase,
+  TickContext,
+} from "../src/index.ts";
+import {
+  parsePending,
+  renderSchemaForPrompt,
+  shellGate,
+  tscGate,
+  vitestGate,
+  eslintGate,
+} from "../src/index.ts";
 
-import type { Chain, Phase, TickContext } from "../src/Phase.ts";
-import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
-import { parsePending, renderSchemaForPrompt } from "../src/PendingSchema.ts";
-
-const exec = promisify(execFile);
-
-// ---------- ad-hoc gate factories ----------
-//
-// These are illustrative — the production harness will ship batteries-included
-// gates for tsc/vitest/eslint. Inlined here so the example is self-contained
-// and reviewable as one document.
-
-function shellGate(opts: {
-  name: string;
-  when: Gate["when"]; // "afterCommit" | "afterMerge"
-  cmd: string;
-  args: string[];
-  failHint?: string;
-}): Gate {
-  return {
-    name: opts.name,
-    when: opts.when,
-    async run(ctx: GateContext): Promise<GateResult> {
-      try {
-        const { stdout, stderr } = await exec(opts.cmd, opts.args, {
-          cwd: ctx.cwd,
-          maxBuffer: 16 * 1024 * 1024,
-        });
-        return { ok: true, message: `${opts.name} green`, details: stdout || stderr };
-      } catch (err) {
-        const e = err as { stdout?: string; stderr?: string; message: string };
-        return {
-          ok: false,
-          message: opts.failHint ?? `${opts.name} failed`,
-          details: (e.stderr ?? "") + (e.stdout ?? "") || e.message,
-        };
-      }
-    },
-  };
-}
-
-const tscGate = shellGate({
-  name: "tsc",
-  when: "afterCommit",
-  cmd: "pnpm",
-  args: ["tsc", "--noEmit"],
-  failHint: "TypeScript errors prevent commit",
-});
-
-const vitestGate = shellGate({
-  name: "vitest",
-  when: "afterCommit",
-  cmd: "pnpm",
-  args: ["test", "--run"],
-  failHint: "Test failures prevent commit",
-});
-
-const lintGate = shellGate({
-  name: "eslint",
-  when: "afterCommit",
-  cmd: "pnpm",
-  args: ["lint"],
-  failHint: "Lint errors prevent commit",
-});
+// ---------- project-specific gates ----------
 
 /**
- * Plan-output validation. Reads .flume/plan/pending.json and confirms every
+ * Plan-output validation. Reads `.flume/plan/pending.json` and confirms every
  * entry conforms to the schema. If parse fails, the commit is reverted and
- * plan re-runs with the parse errors injected as additional context.
+ * plan re-runs with the parse errors injected as context.
+ *
+ * Why custom: the schema gate is project-shaped, not language-shaped — the
+ * built-in gates (`tscGate`, `vitestGate`, `eslintGate`) cover language
+ * correctness; this one covers the plan ↔ build contract specific to chains
+ * that use the pending-schema surface. Inlined here so the example is
+ * self-contained.
  */
 const pendingParseGate: Gate = {
   name: "pending.json parses",
   when: "afterCommit",
   async run(ctx) {
     const { readFile } = await import("node:fs/promises");
-    const path = `${ctx.cwd}/.flume/plan/pending.json`;
     let raw: string;
     try {
-      raw = await readFile(path, "utf8");
+      raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, "utf8");
     } catch {
-      return {
-        ok: false,
-        message: "pending.json missing after plan commit",
-      };
+      return { ok: false, message: "pending.json missing after plan commit" };
     }
     const result = parsePending(raw);
     if (result.ok) {
@@ -114,12 +75,70 @@ const pendingParseGate: Gate = {
   },
 };
 
+/**
+ * Corpus-health audit run after the spec phase commits. Asserts the aligned
+ * corpus is internally consistent — no orphaned cites, no duplicate entries
+ * — before the new spec state propagates to plan.
+ *
+ * Why custom: spec drift is corpus-shaped and project-defined; no language
+ * tool catches it. We use `shellGate` (the public escape hatch) to delegate
+ * the actual audit to a project-owned script, keeping the gate-as-data
+ * boundary clean.
+ */
+const specAuditGate: Gate = shellGate({
+  name: "spec audit",
+  when: "afterCommit",
+  cmd: "pnpm",
+  args: ["spec:audit"],
+  failHint: "Spec corpus audit failed — commit reverted",
+});
+
 // ---------- phases ----------
 
+/**
+ * Spec phase — derives `specs/active/` from a workshop draft, sweeps drift,
+ * audits corpus health.
+ *
+ * Singleton: the spec corpus is a single shared artifact that doesn't admit
+ * concurrent edits. Human-woken (see `humanOnly` on the chain): the
+ * dispatcher cannot wake spec from another phase's handoff, because spec
+ * input is human-authored workshop content, not machine-derived signal.
+ *
+ * Gates the corpus through `specAuditGate` before yielding to plan; on green
+ * it hands off to plan so pending.json refreshes against the new spec state.
+ */
+const spec: Phase = {
+  name: "spec",
+  description:
+    "Derive specs/active/ from workshop/; sweep drift; audit corpus health.",
+  promptPath: "prompts/spec.md",
+  concurrency: "singleton",
+  writablePaths: [
+    "specs/active/**",
+    "specs/_aligned/**", // pull-back from aligned when workshop targets it
+    "specs/09-spec-flags.md",
+    "workshop/_archive/**", // absorbed sources move here
+  ],
+  gates: [specAuditGate],
+  handoff(result) {
+    return result.committed ? ["plan"] : [];
+  },
+};
+
+/**
+ * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
+ * spec corpus + current src state, every tick from scratch.
+ *
+ * Singleton: pending.json and state.md are shared artifacts; two concurrent
+ * planners would race. Gates the output through `pendingParseGate` so a
+ * malformed pending.json reverts the commit instead of poisoning build.
+ *
+ * Hands off to build when at least one entry is `gate.kind === "open"`
+ * (pickable); otherwise hibernates and waits for human signal.
+ */
 const plan: Phase = {
   name: "plan",
-  description:
-    "Re-derive .flume/plan/pending.json + state.md from disk.",
+  description: "Re-derive .flume/plan/pending.json + state.md from disk.",
   promptPath: "prompts/plan.md",
   concurrency: "singleton",
   writablePaths: [
@@ -139,6 +158,23 @@ const plan: Phase = {
   },
 };
 
+/**
+ * Build phase — ships one or more disjoint pending entries to the trunk.
+ *
+ * Fanout: the dispatcher picks N entries that don't touch the same files and
+ * runs N agent invocations in parallel worktrees. Each tick handles one
+ * `assignedEntry`. Worktree branches merge serially after their afterCommit
+ * gates pass; an afterMerge failure (none here, but the lifecycle supports
+ * it) reverts the wave on the trunk.
+ *
+ * Gates with the language-level built-ins: `tscGate` first (cheap, catches
+ * type errors before `vitestGate` even loads the module), then `vitestGate`,
+ * then `eslintGate`. All afterCommit; failure reverts the worktree commit
+ * and the entry stays pickable for the next tick.
+ *
+ * Always hands off to plan so pending.json reconciles against the new trunk
+ * state, regardless of success, bail, or validation-fail.
+ */
 const build: Phase = {
   name: "build",
   description: "Ship one (or N disjoint) pending entries to the trunk.",
@@ -156,7 +192,7 @@ const build: Phase = {
     // a separate commit post-merge that removes shipped entries. This avoids
     // cherry-pick conflicts when N fanout worktrees each touch the same file.
   ],
-  gates: [tscGate, vitestGate, lintGate],
+  gates: [tscGate, vitestGate, eslintGate],
   promptArgs(ctx: TickContext) {
     if (!ctx.assignedEntry) {
       throw new Error("build phase requires an assignedEntry in TickContext");
@@ -169,33 +205,55 @@ const build: Phase = {
     };
   },
   handoff() {
-    // Build always wakes plan so it reconciles against the new trunk state,
-    // regardless of success, bail, or validation-fail.
     return ["plan"];
-  },
-};
-
-const spec: Phase = {
-  name: "spec",
-  description:
-    "Derive specs/active/ from workshop/; sweep drift; audit corpus health.",
-  promptPath: "prompts/spec.md",
-  concurrency: "singleton",
-  writablePaths: [
-    "specs/active/**",
-    "specs/_aligned/**", // pull-back from aligned when workshop targets it
-    "specs/09-spec-flags.md",
-    "workshop/_archive/**", // absorbed sources move here
-  ],
-  gates: [], // spec doesn't gate on code validation; corpus audit lives inside the prompt
-  handoff(result) {
-    return result.committed ? ["plan"] : [];
   },
 };
 
 // ---------- chain ----------
 
 export const cascadeChain: Chain = {
-  phases: [plan, build, spec],
+  phases: [spec, plan, build],
   humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
 };
+
+/* --------------------------------------------------------------------------
+ * Plugging this into a host repo's `.flume/chain.ts`
+ *
+ * The flume CLI loads `<repo>/.flume/chain.ts` and expects a default export
+ * of `Chain`. To use this file as a starting point in a consumer repo:
+ *
+ *   1. Copy this file to `<your-repo>/.flume/chain.ts`.
+ *
+ *   2. Replace the `../src/index.ts` import paths with `"flume"` — the
+ *      package's single public entry point:
+ *
+ *          import type { Chain, Gate, Phase, TickContext } from "flume";
+ *          import {
+ *            parsePending,
+ *            renderSchemaForPrompt,
+ *            shellGate,
+ *            tscGate,
+ *            vitestGate,
+ *            eslintGate,
+ *          } from "flume";
+ *
+ *   3. Adapt the phases to your project:
+ *      - Trim phases you don't need (e.g. drop `spec` for a two-phase chain).
+ *      - Update `writablePaths` to match your repo layout.
+ *      - Swap in your own custom gates; drop the built-ins you don't use.
+ *      - Point `promptPath` at prompts that live next to chain.ts (e.g.
+ *        `.flume/prompts/build.md`).
+ *
+ *   4. Change the named export `cascadeChain` to a default export:
+ *
+ *          export default cascadeChain;
+ *
+ *      The CLI imports the default export when loading chain.ts.
+ *
+ *   5. Optionally export an `agent` alongside the chain to customize the
+ *      provider seam (`claudeCode` + decorators); the dispatcher picks it up
+ *      automatically. See `flume/.flume/chain.ts` in this repo for the
+ *      pattern.
+ *
+ * Run `pnpm exec flume status` to confirm the harness loaded your chain.
+ * -------------------------------------------------------------------------- */
