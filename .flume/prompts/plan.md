@@ -1,8 +1,24 @@
-# CURRENT STATE
+# DELTA
 
-<pending-json>
+<last-plan>
+!`git log --grep='^plan:' -n 1 --format='%H %s' 2>/dev/null || echo "(no prior plan: commit — bootstrap tick)"`
+</last-plan>
+
+<commit-delta>
+!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then echo "=== commits since $LAST ==="; git log "$LAST..HEAD" --format='%H %s' 2>/dev/null; echo; echo "=== diffs (preview; run git diff directly if you need more) ==="; git log "$LAST..HEAD" -p --stat 2>/dev/null | head -300; else echo "(bootstrap: no commits to audit)"; fi`
+</commit-delta>
+
+<spec-delta>
+!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then DIFF=$(git diff "$LAST..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since last plan)"; else echo "$DIFF" | head -300; fi; else echo "(bootstrap: read spec/RELEASE-v0.1.md in full — it is the delta)"; fi`
+</spec-delta>
+
+<pending-now>
 !`cat .flume/plan/pending.json 2>/dev/null || echo "[]"`
-</pending-json>
+</pending-now>
+
+<inbox>
+!`cat .flume/inbox.md 2>/dev/null || echo "(no inbox)"`
+</inbox>
 
 <state>
 !`cat .flume/plan/state.md 2>/dev/null || echo "(no prior state)"`
@@ -12,71 +28,53 @@
 !`cat .flume/plan/open-questions.md 2>/dev/null || echo "(none)"`
 </open-questions>
 
-<spec-toc>
-!`grep -nE '^## ' spec/RELEASE-v0.1.md 2>/dev/null || echo "(spec/RELEASE-v0.1.md not found)"`
-</spec-toc>
-
-<intent>
-!`cat docs/INTENT.md 2>/dev/null || echo "(docs/INTENT.md not found)"`
-</intent>
-
-<inbox>
-!`cat .flume/inbox.md 2>/dev/null || echo "(no inbox)"`
-</inbox>
-
 <tsc>
-!`pnpm tsc --noEmit 2>&1 | tail -15 || true`
+!`pnpm tsc --noEmit 2>&1 | tail -10 || true`
 </tsc>
-
-<recent-commits>
-!`git log -n 10 --oneline`
-</recent-commits>
 
 # TASK
 
-Re-derive the plan artifacts from current disk reality. The canonical ship target lives in `spec/RELEASE-v0.1.md` — human-curated, do not modify. Pending entries are the implementation work breakdown derived from it. **Plan is also the review activity** — auditing what shipped is part of this phase, not a separate process. **Plan also drains `.flume/inbox.md`** — externally-deposited findings (from humans or future review skills) get routed each tick.
+Plan processes the **delta** between this tick and the last `plan:` commit. The delta is the unit of work. Each dimension of the delta drives one concern; the heaviest dimension implicitly sets the tick's `mode` tag — `audit`, `derive`, or `maintain` (when inbox-drain and unblock-promote are the only meaningful dimensions).
 
-**Default posture: research-leaning.** Codebase search and reading the full cited spec section are first-line tools, not last-resort fallbacks. When a question surfaces — a divergence, an unclear contract, a candidate entry without a clean cite — research the solution landscape before bailing to `open-questions.md`. Most questions have known-good answers in the codebase or ecosystem; the open-questions loop is for genuinely judgment-call decisions and architectural missteps, not for things a 30-second search would resolve. See `.claude/rules/collaboration.md` — *Inform before parking*.
+**Default posture: research-leaning** — see `.claude/rules/collaboration.md` (*Inform before parking*) before logging an open question.
 
-1. **Drain `.flume/inbox.md`.** Walk every entry under the marker. For each, decide one outcome:
-   - **File as a pending entry** in `.flume/plan/pending.json` (with a `per` cite to the relevant spec section).
-   - **Park** in `.flume/plan/open-questions.md` if it needs human input before any code can land.
-   - **Accept as debt** — note the disposition + one-line reason in the commit body (no artifact change).
-   - **Already addressed** — if a pending entry already covers it, or shipped code resolves it, note in commit body.
+## Dimensions
 
-   After routing, **remove the entry from inbox.md**. The inbox is a queue, not a log. Do not leave entries sitting after disposition. If you can't decide, park.
+**Audit (commit-delta).** Trigger: at least one commit in `<commit-delta>`. For each commit, cross-check the diff against the `per.section` it cites. Look for spec drift, missed cases, undertested logic, scope creep beyond `entry.files`, gate-bypass. Findings route to pending entries (with `per` cite), open questions (when human input is needed), or accepted-debt (one-line in commit body). **Do not write to inbox.md** — that's an external-contributor surface.
 
-2. **Review what shipped since the last plan tick.** Read `<recent-commits>` (above) and the diffs of any commits more recent than the last `plan:` commit. Audit them against the spec sections they claim to implement. Look for: spec drift, missed §s, code smells, test coverage gaps, API-surface oversights. **Your findings route directly** — file as pending entries, park as open questions, or accept-as-debt-with-reason in the commit body. **Do not write to inbox.md**; that's an external-contributor surface. The commit body carries the narrative of what this tick observed and routed.
+**Derive (spec-delta or bootstrap).** Trigger: `spec/` changed since the last `plan:` commit, OR there is no prior `plan:` commit. Decompose changed or added spec sections into pending entries. Each entry: `per.section` matches the heading verbatim (no `## ` prefix), `files.{new,edit,retire}` are exact paths verified against build's `writablePaths`, `blockedBy` is set if a prior entry must ship first, `acceptance` is one line that turns green. Decompose into discrete, shippable units. If a single section would require many large entries, that's a signal the section is too broad — file an open question proposing a spec split instead.
 
-3. **Reconcile** every existing pending entry against the spec section named in `per.section` and the files named in `files`. Stale entries get a full rewrite, never a patch. Read `spec/RELEASE-v0.1.md` to refresh.
+**Drain (inbox).** Trigger: `<inbox>` non-empty. Each entry routes to one of: pending entry (with `per` cite), open question (parked), or accepted-debt (one-line in commit body). Remove drained entries; preserve the `inbox.md` header. The inbox is a queue, not a log.
 
-4. **File new observations** as additional entries — drawn from step 2's review findings and from spec reconciliation:
-   - Spec sections current code violates or doesn't yet implement → file with `per` cite.
-   - tsc / vitest failures → `MAINTAIN-*` entries at the top of pending, deduped by signature.
-   - Gated entries whose unblock has shipped → promote to `gate.kind = "open"`.
+**Promote (unblock).** Trigger: any entry in `<pending-now>` with `gate.kind === "blockedBy"` whose `gate.tag` is no longer a tag in `<pending-now>`. Flip such entries to `gate.kind: "open"`. This is mechanical — process all of them.
 
-5. **Re-derive state.md from scratch** (~5 lines: phase, last shipped tag, in-flight work, what's blocked on what). Never carry forward.
+## How much to do this tick
 
-6. **Open questions** belong in `open-questions.md`, never in pending. If a candidate entry can't carry a clean `per` cite into the spec, it's an open question for a human to fold into `spec/RELEASE-v0.1.md`.
+Each dimension is processed *to its quality bar*, not to a count. Audit deeply enough to catch real drift. Derive entries telegraphic enough that build can act mechanically. Route inbox entries you can route cleanly; leave the rest for next tick rather than guess.
 
-7. **Verify entry file paths against build's `writablePaths`** in `.flume/chain.ts` before filing. If an entry's natural target sits outside that allow-list, build will revert or self-block on every attempt — that's a chain.ts amendment question, not a pending entry. File it as an open question proposing the amendment (or a spec change that retargets the file in-scope), with a one-line cite to the writablePaths line.
+If the delta is small enough that you can meet the bar across every dimension, do so. If a dimension is too large to process fully without diluting quality, take the slice that matters most — the commits that touched the most consequential surfaces, the spec sections that gate the most downstream entries, the oldest inbox entries that have been waiting — and set `Plan continues: yes — <which dimension overflowed>` in state.md. The harness re-wakes plan; the next tick takes the next slice. You decide where the cut falls.
+
+## Always-on (every tick)
+
+- **Verify writable paths** for entries you touched this tick. Off-allowlist file paths become open questions proposing chain.ts amendments, not pending entries.
+- **Re-derive state.md from scratch** — phase, this tick's `mode` tag, queue head, in-flight work, open-questions count, trunk status. **Final line is mandatory: `Plan continues: yes — <one-line reason>` OR `Plan continues: no`.** The harness re-wakes plan iff `yes`; absence is treated as `no`.
+
+## Field discipline
+
+`files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it. Telegraphic: short enough that next-tick-you can scan; if you find yourself writing prose, you've shifted register.
 
 # OUTPUT
 
-Commit all changes in one commit prefixed `plan:`. Write:
+Commit all changes in one commit prefixed `plan:`. **Body opens with `mode: <audit|derive|maintain>`** followed by narrative — which dimensions of the delta you processed, what you routed where, what you accepted as debt, where you set the cut if you didn't cover everything. Write:
 
 - `.flume/plan/pending.json` — JSON array conforming to the schema below.
-- `.flume/plan/state.md` — ~5 line markdown.
+- `.flume/plan/state.md` — markdown, ending with `Plan continues: yes|no`.
 - `.flume/plan/open-questions.md` — markdown.
-- `.flume/inbox.md` — drained (remove routed entries; preserve the header).
-
-**Commit body carries the audit narrative.** What you observed in the shipped commits, what you routed where, what you accepted as debt and why. The durable record lives in `git log --format=%B`.
+- `.flume/inbox.md` — drained entries removed; preserve the header.
 
 The harness will reject your commit if `pending.json` doesn't parse, or if you modify anything outside the phase's writable paths.
 
-For `per.path`, use `spec/RELEASE-v0.1.md`. For `per.section`, use the exact section heading text from the spec without the leading `## ` (e.g. `3. Public API surface`, `5. Tests`, `7. CHANGELOG`).
-
-**Field discipline — entry fields are telegraphic.** `files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it. Aim for ≤200 chars on uncapped fields; if you can't fit, either the entry is doing too much or you're repeating the spec.
+For `per.path`, use `spec/RELEASE-v0.1.md`. For `per.section`, use the exact section heading text from the spec without the leading `## ` (e.g. `3. CLI surface`, `5. Tests`, `8. Repository hygiene`).
 
 <schema>
 {{PENDING_SCHEMA}}
