@@ -318,14 +318,13 @@
   },
   {
     "tag": "DIST-BUILD-CONFIG",
-    "summary": "Add tsconfig.build.json + build/prepublishOnly scripts so dist/ can be emitted per §4.",
+    "summary": "Add tsconfig.build.json + build scripts + cli.ts tsImport loader so dist/cli.js can load chain.ts per §4.",
     "per": {
       "path": "spec/RELEASE-v0.1.md",
       "section": "4. Distribution"
     },
     "gate": {
-      "kind": "parked",
-      "reason": "open-questions: CHAIN-LOADER-MECHANISM and CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD must resolve first."
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -338,18 +337,22 @@
         {
           "path": "package.json",
           "description": "Add scripts.build=tsc -p tsconfig.build.json and scripts.prepublishOnly=pnpm build."
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "Replace the chain.ts `await import(...)` with `tsImport()` from tsx/esm/api — see §4 loader contract."
         }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [],
-    "acceptance": "pnpm build emits dist/index.js + dist/index.d.ts; tsconfig.build.json typechecks.",
-    "notes": "tsconfig.build.json is outside build's writablePaths today — see CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD."
+    "acceptance": "pnpm build emits dist/index.js + dist/index.d.ts + dist/cli.js; `node dist/cli.js status` loads .flume/chain.ts without a node loader flag.",
+    "notes": "cli.ts loader is bundled here because dist is only useful once dist/cli.js can resolve chain.ts; bin/flume flip is the separate, downstream BIN-FLUME-DIST entry."
   },
   {
     "tag": "PACKAGE-METADATA",
-    "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist; tsx → devDeps.",
+    "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist.",
     "per": {
       "path": "spec/RELEASE-v0.1.md",
       "section": "4. Distribution"
@@ -363,7 +366,7 @@
       "edit": [
         {
           "path": "package.json",
-          "description": "All §4 'package.json must have' bullets + §2 exports map; move tsx dep."
+          "description": "All §4 'package.json must have' bullets + §2 exports map. tsx stays in dependencies per §4 (loader contract)."
         }
       ],
       "retire": []
@@ -375,7 +378,7 @@
   },
   {
     "tag": "BIN-FLUME-DIST",
-    "summary": "Flip bin/flume from tsx-based shim to dist runtime per §4.",
+    "summary": "Flip bin/flume from tsx-based shim to `exec node $DIR/../dist/cli.js` per §4.",
     "per": {
       "path": "spec/RELEASE-v0.1.md",
       "section": "4. Distribution"
@@ -389,7 +392,7 @@
       "edit": [
         {
           "path": "bin/flume",
-          "description": "exec node $DIR/../dist/cli.js — exact form depends on CHAIN-LOADER-MECHANISM resolution."
+          "description": "Per §4: plain `exec node \"$DIR/../dist/cli.js\"`; cli.ts already carries the tsImport loader."
         }
       ],
       "retire": []
@@ -397,7 +400,7 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "Installed-as-dependency `npx flume status` runs against dist/.",
-    "notes": "Resolution of CHAIN-LOADER-MECHANISM open question may flip whether tsx remains a runtime dep; revisit at unblock."
+    "notes": ""
   },
   {
     "tag": "CI-WORKFLOW",
