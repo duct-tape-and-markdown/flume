@@ -9,7 +9,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.ts";
+import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 
 const exec = promisify(execFile);
 

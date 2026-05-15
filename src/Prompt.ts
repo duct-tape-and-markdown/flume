@@ -19,7 +19,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
-import type { Phase } from "./Phase.ts";
+import type { Phase } from "./Phase.js";
 
 const exec = promisify(execFile);
 

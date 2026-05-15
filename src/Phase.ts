@@ -6,8 +6,8 @@
  * and which sibling phases to wake.
  */
 
-import type { Gate } from "./Gate.ts";
-import type { PendingEntry } from "./PendingSchema.ts";
+import type { Gate } from "./Gate.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 /**
  * Concurrency model for a phase:
