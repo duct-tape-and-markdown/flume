@@ -50,18 +50,20 @@ The shape consumers depend on. `src/index.ts` is the canonical export list. Ever
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   }
 }
 ```
+
+The condition is `default`, not `import`. flume's own chain loader resolves the bare package specifier through `tsImport` (`tsx/esm/api`, per §4 / CHAIN-LOADER-MECHANISM), which takes a require-ish resolution path; an `import`-only map fails that path with `ERR_PACKAGE_PATH_NOT_EXPORTED`, breaking the prescribed consumer pattern (`import { … } from "@scope/flume"` inside `.flume/chain.ts`). `default` is the catch-all condition — still a single `"."` entry, still resolving to the one ESM build — and is the correct shape given flume's loader is part of its own contract. This was caught by the §4 consumer-install smoke; it is not visible to tsc/vitest/attw.
 
 `"main"` and `"types"` are duplicated outside `"exports"` because npm only shows the TS-package icon when `"types"` is set at the top level, per the TypeScript handbook.
 
 Acceptance:
 - A fresh consumer project's `import { Phase } from "flume"` resolves and typechecks.
 - `import { Dispatcher } from "flume/src/Dispatcher.ts"` and `import { Dispatcher } from "flume/dist/Dispatcher.js"` both fail at module resolution.
-- `npx @arethetypeswrong/cli@latest --pack . --profile esm-only` reports no errors (the official lint for declaration-file shape). flume is intentionally ESM-only (`"type": "module"`, Node 22+, exports map with only an `import` condition), so the default-profile `CJSResolvesToESM` finding is the expected/correct shape, not a defect — the `esm-only` profile is the accurate bar.
+- `npx @arethetypeswrong/cli@latest --pack . --profile esm-only` reports no errors (the official lint for declaration-file shape). flume is intentionally ESM-only (`"type": "module"`, Node 22+, the single exports condition resolves to the ESM build), so the default-profile `CJSResolvesToESM` finding is the expected/correct shape, not a defect — the `esm-only` profile is the accurate bar.
 
 ## 3. CLI surface
 
