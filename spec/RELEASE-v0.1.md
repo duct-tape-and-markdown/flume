@@ -135,6 +135,8 @@ Acceptance: `pnpm test` exits 0 with at least one passing test per file above. `
 
 **docs/CHAIN-AUTHORING.md** (new): a walkthrough of building a chain.ts from scratch, leaning on `examples/cascade-chain.ts`. Sections: declaring a Phase, writing a custom Gate, choosing concurrency, the agent seam, the prompt template format. Target length: ≤400 lines.
 
+Acceptance — `setupWorktree` guidance must be pnpm-correct. The `setupWorktree` section must NOT recommend symlinking `node_modules` into a worktree: pnpm deletes a symlinked `node_modules` on install (pnpm/pnpm#9973), so the pattern silently breaks the first time a fanout entry runs `pnpm install`. The documented **default** is `pnpm install --frozen-lockfile` inside the fresh worktree (robust; pnpm hardlinks from its global store so the cost is seconds, not a re-download). `enableGlobalVirtualStore` (`pnpm-workspace.yaml`, https://pnpm.io/git-worktrees) is documented as an **opt-in optimization only**, explicitly flagged experimental — flume does not teach an experimental-by-default pattern. `.flume/chain.ts`'s own `buildSetupWorktree` switches to the default so the dogfood chain exercises what the docs teach. A strategy-agnostic `afterCommit` sanity gate (fails loud if a sentinel dependency stops resolving from the worktree root) is recommended defense-in-depth.
+
 **JSDoc on every public export** (per §2 — ≥3 lines each). Type-only exports inherit the doc of their definition site.
 
 Out of scope: a docs site, prose API reference (the JSDoc is the API reference; tools like `typedoc` can render it post-v0.1 if there's demand).
@@ -182,3 +184,4 @@ For audit. All decisions are now normative in the sections that depend on them; 
 - **`"exports"` map: strict, single `"."` entry.** §2. No subpath patterns, no internal escape hatch. Promotion-by-request via issue if a consumer needs an internal symbol.
 - **Test config: dedicated `vitest.config.ts`.** §5. Ecosystem convention; grep-able; extensible. Already in build's writablePaths.
 - **`flume render` scope: minimal.** §3. Dry-run prompt rendering only; arg-override deferred to v0.2 unless a user asks.
+- **Worktree dependency materialization: `pnpm install` default, global-virtual-store opt-in.** §6. The `node_modules` symlink is unsupported by pnpm (pnpm/pnpm#9973). flume teaches `pnpm install --frozen-lockfile` in `setupWorktree` as the robust default; `enableGlobalVirtualStore` is a documented experimental opt-in. Dogfood `.flume/chain.ts` follows the default. Distinct from the `c8a09ee` `git worktree prune` fix (that was stale `.git/worktrees` metadata; this is contents materialization).
