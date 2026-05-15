@@ -3,3 +3,5 @@ dist/
 *.log
 .DS_Store
 .flume/awake/
+.flume/sessions/
+.flume/worktrees/
