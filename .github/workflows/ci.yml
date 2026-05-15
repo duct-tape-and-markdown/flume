@@ -33,7 +33,11 @@ jobs:
       # the `pnpm build` step above produced it.
 
       - name: attw — declaration-file shape lint
-        run: npx --yes @arethetypeswrong/cli@latest --pack .
+        # flume is intentionally ESM-only ("type":"module", Node 22+, exports
+        # map with only an `import` condition). The esm-only profile suppresses
+        # CJSResolvesToESM, which is the expected/correct shape here, not a
+        # defect — see spec/RELEASE-v0.1.md §2.
+        run: npx --yes @arethetypeswrong/cli@latest --pack . --profile esm-only
 
       - name: Consumer-install smoke
         run: |
@@ -54,8 +58,8 @@ jobs:
           # render` below loads this file through tsx and would throw if the
           # package's exports map didn't resolve in a fresh project.
           cat > .flume/chain.ts <<'EOF'
-          import { shellGate } from "@jwcjwc12/flume";
-          import type { Chain, Phase } from "@jwcjwc12/flume";
+          import { shellGate } from "@dtmd/flume";
+          import type { Chain, Phase } from "@dtmd/flume";
 
           const notes: Phase = {
             name: "notes",
