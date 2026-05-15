@@ -150,16 +150,31 @@ async function loadChain(repoRoot: string): Promise<ChainModule> {
   // dist/cli.js can resolve consumer chain.ts files without a node loader flag
   // (plain `await import()` would fail: node refuses .ts under node_modules,
   // and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
-  const mod = (await tsImport(
+  const ns = (await tsImport(
     pathToFileURL(path).href,
     import.meta.url,
-  )) as Partial<ChainModule>;
-  if (!mod.default) {
-    throw new Error(`${path} must default-export a Chain`);
+  )) as Record<string, unknown>;
+
+  // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
+  // is { default: { __esModule: true, default: <realDefault> } }. A module
+  // with named exports stays true ESM: ns.default is the value directly and
+  // named exports are siblings on ns. Normalize both shapes — the documented
+  // minimal chain (default export only, e.g. examples/minimal-chain.ts) hits
+  // the interop path.
+  const d = ns.default as Record<string, unknown> | undefined;
+  const interop =
+    !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
+  const chain = (interop ? d!.default : d) as Chain | undefined;
+  const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
+    | Agent
+    | undefined;
+
+  if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
+    throw new Error(
+      `${path} must default-export a Chain (an object with a phases[] array)`,
+    );
   }
-  return mod.agent
-    ? { default: mod.default, agent: mod.agent }
-    : { default: mod.default };
+  return agent ? { default: chain, agent } : { default: chain };
 }
 
 async function main(): Promise<number> {
