@@ -90,7 +90,7 @@ Acceptance: each subcommand has a one-paragraph entry in `docs/CLI.md` (new file
 - `package.json` `"scripts"` gains `"build": "tsc -p tsconfig.build.json"` and `"prepublishOnly": "pnpm build"`.
 - `dist/` is gitignored; the npm tarball includes it.
 
-**`bin/flume` simplifies.** Currently invokes `tsx src/cli.ts`. Post-build, it `exec node "$DIR/../dist/cli.js"`. `tsx` moves from `dependencies` to `devDependencies` (still used for the in-repo CLI during dogfood ticks via `pnpm exec flume`).
+**`bin/flume` simplifies.** Currently invokes `tsx src/cli.ts`. Post-build, it `exec node "$DIR/../dist/cli.js"`. **`tsx` remains a runtime dependency** — every consumer's `.flume/chain.ts` is a TypeScript file, and `dist/cli.js` loads it via `tsImport()` from `tsx/esm/api` (plain Node refuses `.ts` from anything under `node_modules`, even with `--experimental-strip-types`). The loader contract lives in `cli.ts`, not the bin shim, so `bin/flume` stays trivial.
 
 **package.json must have**, at v0.1 ship:
 - `"version": "0.1.0"` (flipped from `"0.0.0"`)
