@@ -21,6 +21,7 @@ export type {
   Phase,
   TickContext,
   TickResult,
+  WorktreeSetupContext,
 } from "./Phase.ts";
 
 export type { Gate, GateContext, GatePhase, GateResult } from "./Gate.ts";
