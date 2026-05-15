@@ -1,3 +1,16 @@
 #!/bin/sh
-DIR="$(cd "$(dirname "$0")" && pwd -P)"
+# Resolve through symlinks before computing the package dir. npm and pnpm
+# install this bin as a symlink in node_modules/.bin/ (pnpm adds extra hops
+# through .pnpm/<hash>/), so $0 is the symlink, not the real script. Walking
+# the link chain is required: `pwd -P` only resolves symlinked *directories*
+# in cwd, not the symlinked *file* we were invoked as.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET="$(readlink "$SELF")"
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$(dirname "$SELF")/$TARGET" ;;
+  esac
+done
+DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
 exec node "$DIR/../dist/cli.js" "$@"
