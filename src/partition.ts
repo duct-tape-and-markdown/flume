@@ -10,8 +10,8 @@
  * optimal-by-count but it's stable and respects pending order (priority).
  */
 
-import { touchedPaths } from "./PendingSchema.ts";
-import type { PendingEntry } from "./PendingSchema.ts";
+import { touchedPaths } from "./PendingSchema.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 export interface PartitionOptions {
   /** Maximum parallel ticks the harness will spawn. */

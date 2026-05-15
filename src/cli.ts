@@ -17,13 +17,13 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 
 import { tsImport } from "tsx/esm/api";
 
-import { Baton } from "./Baton.ts";
-import { Dispatcher } from "./Dispatcher.ts";
-import { claudeCode } from "./Agent.ts";
-import type { Agent } from "./Agent.ts";
-import type { Chain, TickContext } from "./Phase.ts";
-import { renderPrompt } from "./Prompt.ts";
-import { parsePending } from "./PendingSchema.ts";
+import { Baton } from "./Baton.js";
+import { Dispatcher } from "./Dispatcher.js";
+import { claudeCode } from "./Agent.js";
+import type { Agent } from "./Agent.js";
+import type { Chain, TickContext } from "./Phase.js";
+import { renderPrompt } from "./Prompt.js";
+import { parsePending } from "./PendingSchema.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

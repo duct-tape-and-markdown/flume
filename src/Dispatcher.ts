@@ -11,13 +11,13 @@ import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 
-import type { Agent } from "./Agent.ts";
-import { Baton } from "./Baton.ts";
-import type { Gate, GateResult } from "./Gate.ts";
-import { writablePathsGate } from "./builtinGates.ts";
-import { partitionByFileOverlap } from "./partition.ts";
-import { parsePending } from "./PendingSchema.ts";
-import type { PendingEntry } from "./PendingSchema.ts";
+import type { Agent } from "./Agent.js";
+import { Baton } from "./Baton.js";
+import type { Gate, GateResult } from "./Gate.js";
+import { writablePathsGate } from "./builtinGates.js";
+import { partitionByFileOverlap } from "./partition.js";
+import { parsePending } from "./PendingSchema.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 /** Local-mutable shape for accumulating gate results before they widen to TickResult.gateResults. */
 type GateResultEntry = { gate: string; ok: boolean; message: string };
@@ -26,9 +26,9 @@ import type {
   Phase,
   TickContext,
   TickResult,
-} from "./Phase.ts";
-import { renderPrompt } from "./Prompt.ts";
-import * as git from "./git.ts";
+} from "./Phase.js";
+import { renderPrompt } from "./Prompt.js";
+import * as git from "./git.js";
 
 // ---------- public surface ----------
 

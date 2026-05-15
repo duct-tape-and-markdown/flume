@@ -3,7 +3,7 @@
  * internal-ish (but not enforced — there's no exports map yet).
  */
 
-export type { Agent, AgentInvocation, AgentResult } from "./Agent.ts";
+export type { Agent, AgentInvocation, AgentResult } from "./Agent.js";
 export {
   claudeCode,
   withSessionCapture,
@@ -11,9 +11,9 @@ export {
   type ClaudeCodeOptions,
   type SessionCaptureOpts,
   type TerminalRendererOpts,
-} from "./Agent.ts";
+} from "./Agent.js";
 
-export { Baton } from "./Baton.ts";
+export { Baton } from "./Baton.js";
 
 export type {
   Chain,
@@ -22,9 +22,9 @@ export type {
   TickContext,
   TickResult,
   WorktreeSetupContext,
-} from "./Phase.ts";
+} from "./Phase.js";
 
-export type { Gate, GateContext, GatePhase, GateResult } from "./Gate.ts";
+export type { Gate, GateContext, GatePhase, GateResult } from "./Gate.js";
 
 export {
   shellGate,
@@ -32,7 +32,7 @@ export {
   vitestGate,
   eslintGate,
   writablePathsGate,
-} from "./builtinGates.ts";
+} from "./builtinGates.js";
 
 export {
   PendingEntry,
@@ -43,11 +43,11 @@ export {
   isPickableNow,
   type ParseError,
   type ParseResult,
-} from "./PendingSchema.ts";
+} from "./PendingSchema.js";
 
-export { partitionByFileOverlap } from "./partition.ts";
+export { partitionByFileOverlap } from "./partition.js";
 
-export { renderPrompt } from "./Prompt.ts";
+export { renderPrompt } from "./Prompt.js";
 
 export {
   Dispatcher,
@@ -55,4 +55,4 @@ export {
   type DispatcherOptions,
   type Logger,
   type TickOutcome,
-} from "./Dispatcher.ts";
+} from "./Dispatcher.js";
