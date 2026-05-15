@@ -237,6 +237,7 @@ export class Dispatcher {
       };
     }
 
+    const waveStart = Date.now();
     const batches = partitionByFileOverlap(pickable, {
       maxParallel: this.maxParallel,
     });
@@ -283,6 +284,9 @@ export class Dispatcher {
         await git.cherryPick(repoRoot, r.commitSha);
         const newSha = await git.revParse(repoRoot);
         shipped.push({ entry: r.entry, sha: newSha });
+        this.log.info(
+          `[flume] cherry-picked ${r.entry.tag} → ${newSha.slice(0, 8)}`,
+        );
       } catch (err) {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
@@ -322,17 +326,20 @@ export class Dispatcher {
     // Update pending.json — remove shipped entries — as one harness commit.
     let chorSha: string | undefined;
     if (waveOk && shipped.length > 0) {
-      chorSha = await this.commitPendingUpdate(
-        pending,
-        shipped.map((s) => s.entry.tag),
+      const shippedTags = shipped.map((s) => s.entry.tag);
+      chorSha = await this.commitPendingUpdate(pending, shippedTags);
+      this.log.info(
+        `[flume] ship commit ${chorSha.slice(0, 8)}: ${shippedTags.join(", ")}`,
       );
     }
 
     // Cleanup worktrees.
+    let cleaned = 0;
     await Promise.all(
       worktrees.map(async (wt) => {
         try {
           await git.removeWorktree(repoRoot, wt.path);
+          cleaned++;
         } catch (err) {
           this.log.warn(
             `[flume] worktree cleanup failed for ${wt.path}: ${(err as Error).message}`,
@@ -340,6 +347,12 @@ export class Dispatcher {
         }
         await git.deleteBranch(repoRoot, wt.branch);
       }),
+    );
+    this.log.info(
+      `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,
+    );
+    this.log.info(
+      `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
     );
 
     const allGateResults = perEntry.flatMap((r) => r.gateResults).concat(mergeGateResults);
