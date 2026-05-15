@@ -1,29 +1,28 @@
 [
   {
-    "tag": "PACKAGE-METADATA",
-    "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist.",
+    "tag": "DIST-DTS-EXTENSIONS",
+    "summary": "dist/*.d.ts imports keep `.ts` extensions; rewrite to `.js` so §2 attw + bare-specifier import resolve.",
     "per": {
       "path": "spec/RELEASE-v0.1.md",
-      "section": "4. Distribution"
+      "section": "2. Public API surface"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "DIST-BUILD-CONFIG"
+      "kind": "open"
     },
     "files": {
       "new": [],
       "edit": [
         {
-          "path": "package.json",
-          "description": "All §4 'package.json must have' bullets + §2 exports map. tsx stays in dependencies per §4 (loader contract)."
+          "path": "tsconfig.build.json",
+          "description": "Primary diagnosis target. If config can't yield clean .d.ts, fall back to rewriting src/ specifiers .ts→.js (bundler resolution still works under dev tsconfig)."
         }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [],
-    "acceptance": "npm pack --dry-run shows only files in §8 allowlist; npx @arethetypeswrong/cli --pack . is clean.",
-    "notes": "Scope name (e.g. @<github-username>/flume) is publish-time per §4; commit lands a placeholder + CHANGELOG note at tag."
+    "acceptance": "No `.ts` import extension in any dist/*.d.ts; `npx @arethetypeswrong/cli@latest --pack .` reports no errors.",
+    "notes": "Flagged in 5c3c7a7 commit body. `rewriteRelativeImportExtensions: true` rewrites .js but not .d.ts under TS 5.9.3 + `verbatimModuleSyntax`. Build picks fix path."
   },
   {
     "tag": "BIN-FLUME-DIST",
@@ -33,8 +32,7 @@
       "section": "4. Distribution"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "DIST-BUILD-CONFIG"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -59,8 +57,7 @@
       "section": "8. Repository hygiene"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "DIST-BUILD-CONFIG"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -75,6 +72,32 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "Workflow green on a follow-up PR before tagging v0.1.",
-    "notes": "pnpm build script ships in DIST-BUILD-CONFIG; ci.yml is wasted until then."
+    "notes": "DIST-BUILD-CONFIG shipped; pnpm build now works."
+  },
+  {
+    "tag": "PACKAGE-METADATA",
+    "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist.",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "4. Distribution"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "DIST-DTS-EXTENSIONS"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "All §4 'package.json must have' bullets + §2 exports map. tsx stays in dependencies per §4 (loader contract)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "npm pack --dry-run shows only files in §8 allowlist; npx @arethetypeswrong/cli --pack . is clean.",
+    "notes": "Scope name (e.g. @<github-username>/flume) is publish-time per §4; commit lands a placeholder + CHANGELOG note at tag. attw acceptance is why this blocks on DIST-DTS-EXTENSIONS."
   }
 ]
