@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "tag": "CI-PUBLISH-ACCEPTANCE",
+    "summary": "Add CI publish-acceptance gates: consumer-install smoke (npm pack → install tarball → `npx flume status` exits 0) + `attw --pack .` clean, per §4/§2 acceptance",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "Add consumer-install smoke step + attw step; broadens §8 ci.yml enumeration to meet §4/§2 acceptance."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "CI green on PR with two new steps: tarball-install smoke (`npx flume status` exit 0 in a fresh consumer project) and `npx @arethetypeswrong/cli@latest --pack .` exit 0.",
+    "notes": "Justified by §4 L106 (consumer-install smoke) + §2 L64/§4 L108 (attw); §8 owns ci.yml. Mechanics: `npm pack` does NOT run prepublishOnly — CI must `pnpm build` before pack/attw or dist/ is absent. Tarball name: `jwcjwc12-flume-0.1.0.tgz`. Smoke consumer chain.ts must import the installed pkg `@jwcjwc12/flume` (NOT `../src/` as examples/minimal-chain.ts does for dogfood); an inline fixture is fine — no committed file needed. attw via npx (not a dep); use `@latest` per §2."
+  }
+]
