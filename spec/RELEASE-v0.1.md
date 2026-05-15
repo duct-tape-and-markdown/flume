@@ -61,7 +61,7 @@ The shape consumers depend on. `src/index.ts` is the canonical export list. Ever
 Acceptance:
 - A fresh consumer project's `import { Phase } from "flume"` resolves and typechecks.
 - `import { Dispatcher } from "flume/src/Dispatcher.ts"` and `import { Dispatcher } from "flume/dist/Dispatcher.js"` both fail at module resolution.
-- `npx @arethetypeswrong/cli@latest --pack .` reports no errors (the official lint for declaration-file shape).
+- `npx @arethetypeswrong/cli@latest --pack . --profile esm-only` reports no errors (the official lint for declaration-file shape). flume is intentionally ESM-only (`"type": "module"`, Node 22+, exports map with only an `import` condition), so the default-profile `CJSResolvesToESM` finding is the expected/correct shape, not a defect — the `esm-only` profile is the accurate bar.
 
 ## 3. CLI surface
 
@@ -104,8 +104,8 @@ Acceptance: each subcommand has a one-paragraph entry in `docs/CLI.md` (new file
 
 Acceptance:
 - A fresh consumer project's `npm install @<scope>/flume` followed by `npx flume status` works (smoke-tested in CI per §8).
-- `npm pack --dry-run` shows only the files listed in `"files"`.
-- `npx @arethetypeswrong/cli --pack .` is clean.
+- `npm pack --dry-run` shows only the files listed in `"files"` — **enforced in CI** (a step asserting the packed file set equals the `"files"` allowlist; resolves the prior parked ambiguity in favor of a regression guard, consistent with §8's "single source of truth" stance).
+- `npx @arethetypeswrong/cli --pack . --profile esm-only` is clean (see §2 — ESM-only is deliberate).
 
 ## 5. Tests
 
@@ -150,7 +150,7 @@ Acceptance: both files typecheck under `tsconfig.json`'s include globs and don't
 
 - `LICENSE` — file at repo root. Use the canonical SPDX MIT text (https://spdx.org/licenses/MIT.html) with the `<year>` and `<copyright holders>` placeholders filled in. Copyright line: `Copyright (c) 2026 John Campbell`.
 - `CHANGELOG.md` — file at repo root. v0.1 entry summarizes what shipped (authored by build during the round, last entry before tag).
-- `.github/workflows/ci.yml` — runs `pnpm install`, `pnpm typecheck`, `pnpm test`, `pnpm build` on push and PR. Node 22. Caches pnpm store. **Acceptance: green on `main` for at least one PR before tagging v0.1.**
+- `.github/workflows/ci.yml` — runs `pnpm install`, `pnpm typecheck`, `pnpm test`, `pnpm build`, then publish-acceptance: `attw --pack . --profile esm-only` (§2), a consumer-install smoke (§4 — `npm pack` → install the tarball into a fresh project → `flume status` / `flume render`), and a `npm pack` file-set guard asserting the packed set equals the `"files"` allowlist (§4 L107). On push and PR. Node 22. Caches pnpm store. **Acceptance: green on `main` for at least one PR before tagging v0.1.**
 - `"files"` allowlist (in `package.json` per §4) — only `dist/`, `bin/`, `README.md`, `LICENSE`, `CHANGELOG.md` ship to npm. `src/`, `tests/`, `examples/`, `docs/`, `.flume/`, `.claude/`, `reference/`, `spec/` are excluded from the published tarball but remain in the git repo. No `.npmignore` (the `"files"` allowlist is the single source of truth).
 - `.gitignore` — already covers `node_modules/`, `.flume/awake/`, `.flume/sessions/`, `.flume/worktrees/`. Add `dist/`.
 
