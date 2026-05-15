@@ -10,9 +10,10 @@ below quotes a slice; open it in a second pane. For the bare-minimum shape
 
 ## Where the chain lives
 
-The harness loads `.flume/chain.ts` relative to your repo root. Export a
-`Chain` value (named export `chain` or default export). Prompts referenced
-by `Phase.promptPath` resolve relative to `.flume/`.
+The harness loads `.flume/chain.ts` relative to your repo root. Default-
+export a `Chain` value — `cli.ts:loadChain` rejects modules without a
+default export. Prompts referenced by `Phase.promptPath` resolve relative
+to `.flume/`.
 
 ```
 .flume/
@@ -378,7 +379,8 @@ as `assignedEntry`.
 ## Putting it together
 
 ```ts
-export const cascadeChain: Chain = { phases: [plan, build, spec], humanOnly: ["spec"] };
+const cascadeChain: Chain = { phases: [plan, build, spec], humanOnly: ["spec"] };
+export default cascadeChain;
 ```
 
 `phases` is the ordered list. `humanOnly` lists phases the dispatcher
