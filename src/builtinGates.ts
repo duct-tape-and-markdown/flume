@@ -13,6 +13,12 @@ import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.ts";
 
 const exec = promisify(execFile);
 
+/**
+ * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
+ * worktree's cwd; non-zero exit = fail. `failHint` is the message surfaced
+ * to the dispatcher on failure (and embedded in the next agent prompt's
+ * gate-failure context).
+ */
 export interface ShellGateOptions {
   name: string;
   when: GatePhase;
@@ -24,7 +30,12 @@ export interface ShellGateOptions {
   failHint?: string;
 }
 
-/** Generic gate that shells out and reports green/fail by exit code. */
+/**
+ * Generic gate that shells out and reports green/fail by exit code.
+ * Captures stdout+stderr up to `maxBuffer` (default 16 MiB) and surfaces
+ * them as `GateResult.details` so the dispatcher can route them to the
+ * logger or back to the agent as context on the next tick.
+ */
 export function shellGate(opts: ShellGateOptions): Gate {
   return {
     name: opts.name,
@@ -52,7 +63,11 @@ export function shellGate(opts: ShellGateOptions): Gate {
   };
 }
 
-/** `pnpm tsc --noEmit` after the agent's commit. */
+/**
+ * `pnpm tsc --noEmit` after the agent's commit. Catches type errors before
+ * the commit ships; on failure the dispatcher drops the commit and the
+ * pending entry stays in queue for the next tick.
+ */
 export const tscGate: Gate = shellGate({
   name: "tsc",
   when: "afterCommit",
@@ -61,7 +76,11 @@ export const tscGate: Gate = shellGate({
   failHint: "TypeScript errors — commit reverted",
 });
 
-/** `pnpm test --run` (vitest non-watch). */
+/**
+ * `pnpm test --run` (vitest non-watch) after the agent's commit. A red
+ * suite reverts the commit; pair with `tscGate` (run first) so type errors
+ * are caught before vitest even attempts to load the changed module.
+ */
 export const vitestGate: Gate = shellGate({
   name: "vitest",
   when: "afterCommit",
@@ -70,7 +89,11 @@ export const vitestGate: Gate = shellGate({
   failHint: "Tests failed — commit reverted",
 });
 
-/** `pnpm lint` (ESLint). */
+/**
+ * `pnpm lint` (ESLint) after the agent's commit. Opt-in: only meaningful
+ * for chains that wire `scripts.lint` in their `package.json`. Failures
+ * revert the commit just like the other afterCommit gates.
+ */
 export const eslintGate: Gate = shellGate({
   name: "eslint",
   when: "afterCommit",

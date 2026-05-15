@@ -12,6 +12,11 @@ import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { join } from "node:path";
 
+/**
+ * One agent run, parameterized by cwd, prompt, and stream/abort hooks. The
+ * dispatcher constructs one per tick (or one per worktree for fanout) and
+ * hands it to `Agent.invoke`.
+ */
 export interface AgentInvocation {
   /** Working directory for the agent process. */
   cwd: string;
@@ -37,6 +42,11 @@ export interface AgentInvocation {
   onStderr?: (chunk: string) => void;
 }
 
+/**
+ * Captured output of a single agent invocation. Returned by `Agent.invoke`
+ * once the process exits; the dispatcher reads `exitCode` to log warnings,
+ * but stdout/stderr are surfaced as a whole for debugging and decorators.
+ */
 export interface AgentResult {
   /** Final exit code from the agent process. */
   exitCode: number;
@@ -46,6 +56,11 @@ export interface AgentResult {
   stderr: string;
 }
 
+/**
+ * Provider seam. One implementation per LLM CLI; v0 ships `claudeCode()`
+ * only. Decorators (`withSessionCapture`, `withTerminalRenderer`) wrap an
+ * Agent and return another Agent, so they compose without dispatcher help.
+ */
 export interface Agent {
   /** Stable identifier; appears in logs. */
   name: string;
@@ -55,6 +70,12 @@ export interface Agent {
 
 // ---------- claudeCode provider ----------
 
+/**
+ * Options for the `claudeCode()` provider. All fields are optional; defaults
+ * match the harness's expected runtime (worktree-scoped, permissions skipped,
+ * text streaming). Set `outputFormat: "stream-json"` to pair with
+ * `withTerminalRenderer`.
+ */
 export interface ClaudeCodeOptions {
   /** Path to the `claude` binary. Default: resolves from PATH. */
   binary?: string;
@@ -148,6 +169,11 @@ function combineSignals(
 
 // ---------- session capture decorator ----------
 
+/**
+ * Options for `withSessionCapture`. `dir` is created on demand; `filename`
+ * defaults to an ISO-timestamped `.txt` if omitted, so concurrent fanout
+ * invocations don't collide on filename.
+ */
 export interface SessionCaptureOpts {
   /** Directory to write session output files into. Created if missing. */
   dir: string;
@@ -199,6 +225,11 @@ function defaultCaptureFilename(): string {
 
 // ---------- terminal renderer decorator ----------
 
+/**
+ * Options for `withTerminalRenderer`. The default `tag` prefixes each
+ * rendered line with `[<basename of cwd>]`, which is what fanout worktrees
+ * want; override for custom prefixes or to disambiguate sibling ticks.
+ */
 export interface TerminalRendererOpts {
   /** Per-line prefix derived from the invocation. Default: `[<cwd basename>]`. */
   tag?: (inv: AgentInvocation) => string;

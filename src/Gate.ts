@@ -7,6 +7,11 @@
  * gates; the harness runs them; the prompt never reminds the agent to.
  */
 
+/**
+ * When in the tick lifecycle a gate runs. `afterCommit` is the common case
+ * (validate the agent's commit on its worktree branch); `afterMerge` runs
+ * on the trunk after a fanout phase's wave lands.
+ */
 export type GatePhase =
   /**
    * Runs after the agent's commit lands on the worktree branch, before the
@@ -21,6 +26,11 @@ export type GatePhase =
    */
   | "afterMerge";
 
+/**
+ * Inputs passed to every gate at run time. The dispatcher constructs this
+ * once per gate invocation; gates should treat it as read-only and confine
+ * side effects to disk operations inside `cwd`.
+ */
 export interface GateContext {
   /** Absolute path of the worktree (or trunk for postMerge gates). */
   cwd: string;
@@ -32,6 +42,11 @@ export interface GateContext {
   log: (line: string) => void;
 }
 
+/**
+ * What a gate reports back. `message` is the one-line verdict shown to the
+ * dispatcher (and forwarded to the agent on failure context); `details`
+ * carries any captured stdout/stderr for richer surfacing.
+ */
 export interface GateResult {
   ok: boolean;
   /** Short summary surfaced to the dispatcher and (on failure) the agent. */
@@ -40,6 +55,11 @@ export interface GateResult {
   details?: string;
 }
 
+/**
+ * The declared shape of one validation step. Gates are data the dispatcher
+ * runs at the declared `when` point in the lifecycle; the prompt never
+ * needs to remind the agent to run them.
+ */
 export interface Gate {
   /** Stable identifier; appears in logs and gate-failure prompt context. */
   name: string;

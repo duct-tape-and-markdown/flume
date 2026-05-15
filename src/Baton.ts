@@ -11,6 +11,12 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/**
+ * Filesystem-flag mechanism for which phases wake next. Presence of
+ * `.flume/awake/<name>` wakes the named phase on the next tick; absence
+ * sleeps it. Idempotent — wake/sleep tolerate repeated calls and missing
+ * flags so concurrent ticks and partial crashes don't corrupt state.
+ */
 export class Baton {
   /** Absolute path of the awake-flag directory, e.g. `<repo>/.flume/awake`. */
   readonly dir: string;

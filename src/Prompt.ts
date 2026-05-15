@@ -26,6 +26,11 @@ const exec = promisify(execFile);
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 
+/**
+ * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
+ * chain's config directory plus `phase.promptPath`; `args` and `cwd` come
+ * from the per-tick `TickContext` and the phase's `promptArgs` builder.
+ */
 export interface RenderOptions {
   phase: Phase;
   /** Resolved path of the prompt file (already joined with chain config dir). */
@@ -36,6 +41,12 @@ export interface RenderOptions {
   args: Record<string, string>;
 }
 
+/**
+ * Resolve a phase's prompt file for one tick: substitute `{{KEY}}`
+ * placeholders from `args`, evaluate `` !`cmd` `` inline-exec blocks in
+ * `cwd`, then prepend the `<harness>` block describing writable paths and
+ * gates. Returns the fully-rendered prompt ready to feed an Agent.
+ */
 export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const raw = await readFile(opts.promptFile, "utf8");
   const withArgs = substitutePlaceholders(raw, opts.args);
