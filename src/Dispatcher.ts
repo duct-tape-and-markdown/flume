@@ -55,6 +55,14 @@ export interface DispatcherOptions {
   maxParallel?: number;
   /** Trunk branch name for cherry-pick. Default current branch at dispatch time. */
   trunkBranch?: string;
+  /**
+   * Wall-clock timeout per agent invocation in milliseconds. When exceeded,
+   * the underlying agent process is aborted; the dispatcher logs a warning
+   * and the tick continues with whatever the agent committed (typically
+   * nothing, so the phase falls through with `committed: false`). Default:
+   * unset — a hung agent will block the tick indefinitely.
+   */
+  tickTimeoutMs?: number;
 }
 
 export interface TickOutcome {
@@ -72,6 +80,7 @@ export class Dispatcher {
   private readonly baton: Baton;
   private readonly log: Logger;
   private readonly maxParallel: number;
+  private readonly tickTimeoutMs: number | undefined;
   private trunkBranch: string | null;
   private readonly pendingPath: string;
 
@@ -80,6 +89,7 @@ export class Dispatcher {
     this.baton = new Baton(opts.repoRoot);
     this.log = opts.log ?? consoleLogger;
     this.maxParallel = opts.maxParallel ?? 4;
+    this.tickTimeoutMs = opts.tickTimeoutMs;
     this.trunkBranch = opts.trunkBranch ?? null;
     this.pendingPath = join(opts.repoRoot, ".flume", "plan", "pending.json");
   }
@@ -368,16 +378,32 @@ export class Dispatcher {
     cwd: string,
     prompt: string,
   ): Promise<void> {
-    const result = await this.opts.agent.invoke({
-      cwd,
-      prompt,
-      onStdout: (chunk) => process.stdout.write(chunk),
-      onStderr: (chunk) => process.stderr.write(chunk),
-    });
-    if (result.exitCode !== 0) {
-      this.log.warn(
-        `[flume] ${phase.name}: agent exited with code ${result.exitCode}`,
-      );
+    try {
+      const result = await this.opts.agent.invoke({
+        cwd,
+        prompt,
+        ...(this.tickTimeoutMs !== undefined
+          ? { timeoutMs: this.tickTimeoutMs }
+          : {}),
+        onStdout: (chunk) => process.stdout.write(chunk),
+        onStderr: (chunk) => process.stderr.write(chunk),
+      });
+      if (result.exitCode !== 0) {
+        this.log.warn(
+          `[flume] ${phase.name}: agent exited with code ${result.exitCode}`,
+        );
+      }
+    } catch (err) {
+      // Swallow abort/timeout/spawn errors so a single bad invocation doesn't
+      // tear down the loop. The post-invocation `git rev-parse` still runs,
+      // so any commit the agent managed to make before aborting is honored;
+      // otherwise the phase falls through with `committed: false`.
+      const e = err as Error & { name?: string; code?: string };
+      const kind =
+        e.name === "AbortError" || e.code === "ABORT_ERR"
+          ? "aborted (timeout or signal)"
+          : `errored: ${e.message}`;
+      this.log.warn(`[flume] ${phase.name}: agent ${kind}`);
     }
   }
 
