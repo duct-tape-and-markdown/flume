@@ -211,6 +211,31 @@
     "notes": ""
   },
   {
+    "tag": "DISPATCHER-FANOUT-LOGGING",
+    "summary": "Add stage-marker logs to runFanout: cherry-pick lines, ship-commit summary, cleanup count, wave duration.",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "3. CLI surface"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Per inbox finding: ~15-20 LOC in `runFanout`. `[flume]` prefix matches existing fanout-pickable line. No per-stage durations, no CLI override (pre-resolved)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "Successful fanout wave logs a cherry-pick line per shipped entry, the ship-commit summary, cleanup count, and total wave time. Failure paths unchanged.",
+    "notes": "§3 is the closest spec home (operator-facing surface). Reviewer pre-scoped: stage markers + wave duration only; no per-stage timings; no log-override knob. Severity: low correctness, high ergonomics."
+  },
+  {
     "tag": "CI-WORKFLOW",
     "summary": "Add .github/workflows/ci.yml: pnpm install/typecheck/test/build on push+PR, Node 22, pnpm cache.",
     "per": {
