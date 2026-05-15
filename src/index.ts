@@ -4,7 +4,14 @@
  */
 
 export type { Agent, AgentInvocation, AgentResult } from "./Agent.ts";
-export { claudeCode } from "./Agent.ts";
+export {
+  claudeCode,
+  withSessionCapture,
+  withTerminalRenderer,
+  type ClaudeCodeOptions,
+  type SessionCaptureOpts,
+  type TerminalRendererOpts,
+} from "./Agent.ts";
 
 export { Baton } from "./Baton.ts";
 

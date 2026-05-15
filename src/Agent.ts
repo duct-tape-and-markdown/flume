@@ -19,9 +19,21 @@ export interface AgentInvocation {
   prompt: string;
   /** Optional abort signal for cancellation. */
   signal?: AbortSignal;
-  /** Stream callback for stdout chunks. The harness logs these. */
+  /**
+   * Optional wall-clock timeout in milliseconds. When set, the provider must
+   * abort the underlying process after this duration. Combined with `signal`
+   * via `AbortSignal.any` if both are present — whichever fires first wins.
+   * Callers that don't set either field accept that a hung agent will block
+   * the invocation indefinitely.
+   */
+  timeoutMs?: number;
+  /**
+   * Stream callback for stdout chunks. Chunks are NOT guaranteed to be
+   * line-bounded — consumers that need lines must buffer and split on `\n`
+   * themselves (see `withTerminalRenderer`).
+   */
   onStdout?: (chunk: string) => void;
-  /** Stream callback for stderr chunks. */
+  /** Stream callback for stderr chunks. Same chunk-boundary caveat as stdout. */
   onStderr?: (chunk: string) => void;
 }
 
@@ -52,7 +64,14 @@ export interface ClaudeCodeOptions {
    * against a directory you don't trust the agent in.
    */
   dangerouslySkipPermissions?: boolean;
-  /** Extra flags appended to the `claude` argv. */
+  /**
+   * Output format. `"text"` (default) produces human-readable streaming
+   * output. `"stream-json"` adds `--output-format stream-json --verbose` to
+   * the argv — required by `withTerminalRenderer` and recommended whenever
+   * a downstream consumer wants structured per-turn events.
+   */
+  outputFormat?: "text" | "stream-json";
+  /** Extra flags appended to the `claude` argv (after the format flags). */
   extraArgs?: string[];
 }
 
@@ -64,22 +83,29 @@ export interface ClaudeCodeOptions {
 export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
   const skipPerms = opts.dangerouslySkipPermissions ?? true;
+  const outputFormat = opts.outputFormat ?? "text";
+  const formatArgs =
+    outputFormat === "stream-json"
+      ? ["--output-format", "stream-json", "--verbose"]
+      : [];
   const extra = opts.extraArgs ?? [];
 
   return {
     name: "claude-code",
-    invoke({ cwd, prompt, signal, onStdout, onStderr }) {
+    invoke({ cwd, prompt, signal, timeoutMs, onStdout, onStderr }) {
       return new Promise((resolve, reject) => {
         const args = [
           "-p",
+          ...formatArgs,
           ...(skipPerms ? ["--dangerously-skip-permissions"] : []),
           ...extra,
         ];
 
+        const effective = combineSignals(signal, timeoutMs);
         const proc = spawn(binary, args, {
           cwd,
           stdio: ["pipe", "pipe", "pipe"],
-          signal,
+          ...(effective ? { signal: effective } : {}),
         });
 
         let stdout = "";
@@ -108,6 +134,16 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       });
     },
   };
+}
+
+function combineSignals(
+  signal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+): AbortSignal | undefined {
+  if (timeoutMs === undefined) return signal;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (signal === undefined) return timeout;
+  return AbortSignal.any([signal, timeout]);
 }
 
 // ---------- session capture decorator ----------
@@ -175,7 +211,14 @@ export interface TerminalRendererOpts {
  * — pair this wrapper with `withSessionCapture` (innermost) when full-fidelity
  * transcripts are still wanted on disk:
  *
- *     withTerminalRenderer(withSessionCapture(claudeCode({...}), {dir}))
+ *     withTerminalRenderer(
+ *       withSessionCapture(claudeCode({ outputFormat: "stream-json" }), { dir })
+ *     )
+ *
+ * The wrapped agent MUST produce stream-json NDJSON — for `claudeCode`, that
+ * means `outputFormat: "stream-json"`. Without it, every line falls through
+ * the JSON.parse catch and is emitted verbatim with the tag prefix, which is
+ * silently wrong rather than an error.
  *
  * Rendered output: one line per `tool_use`, plus a final `result` line with
  * turn count, token usage, cost, and duration. Assistant `thinking`/`text`,
