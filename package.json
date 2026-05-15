@@ -1,5 +1,5 @@
 {
-  "name": "@jwcjwc12/flume",
+  "name": "@dtmd/flume",
   "version": "0.1.0",
   "description": "A disciplined harness for AI-derivation pipelines. Disk-is-truth, stateless ticks, structured handoff, sandbox-optional.",
   "keywords": [
@@ -9,14 +9,14 @@
     "harness",
     "pipeline"
   ],
-  "homepage": "https://github.com/Jwcjwc12/flume#readme",
+  "homepage": "https://github.com/duct-tape-and-markdown/flume#readme",
   "bugs": {
-    "url": "https://github.com/Jwcjwc12/flume/issues"
+    "url": "https://github.com/duct-tape-and-markdown/flume/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Jwcjwc12/flume.git"
+    "url": "git+https://github.com/duct-tape-and-markdown/flume.git"
   },
   "type": "module",
   "private": false,
