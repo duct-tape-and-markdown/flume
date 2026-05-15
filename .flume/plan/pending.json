@@ -25,6 +25,31 @@
     "notes": "README Pointers links to this file; README Quickstart inlines its own snippet per README-QUICKSTART-FIX."
   },
   {
+    "tag": "DOCS-CHAIN-EXPORT-FIX",
+    "summary": "Fix CHAIN-AUTHORING.md drift: chain.ts must default-export (cli.ts loadChain rejects named-only).",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "6. Documentation"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Two spots: line ~14 prose (drop the 'named export `chain`' option) and the §Putting-it-together snippet at line ~381 (`export const cascadeChain` → `export default ...`)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "Doc no longer offers a named-export form; copy-paste of the closing snippet loads under cli.ts:loadChain.",
+    "notes": "Audit miss from DOCS-CHAIN-AUTHORING — cli.ts:140-149 throws 'must default-export a Chain' on the form the doc shows."
+  },
+  {
     "tag": "DIST-BUILD-CONFIG",
     "summary": "Add tsconfig.build.json + build scripts + cli.ts tsImport loader so dist/cli.js can load chain.ts per §4.",
     "per": {
