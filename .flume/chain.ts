@@ -18,7 +18,7 @@
  */
 
 import { readFile, symlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -124,6 +124,25 @@ const plan: Phase = {
     return { PENDING_SCHEMA: renderSchemaForPrompt() };
   },
   handoff(result) {
+    // Plan re-wakes itself when state.md ends with `Plan continues: yes`.
+    // This is the vertical-slice signal: plan does one focused mode per tick
+    // (audit / derive / maintain) and tells the harness whether more plan
+    // work remains. If yes, the harness keeps the baton on plan; if no, hand
+    // off to build (if pickable) or hibernate. The prompt mandates the final
+    // state.md line, so absence here = stable.
+    let planContinues = false;
+    try {
+      const stateText = readFileSync(
+        resolve(CHAIN_DIR, "plan", "state.md"),
+        "utf8",
+      );
+      planContinues = /^Plan continues:\s*yes\b/im.test(stateText);
+    } catch {
+      // state.md missing — treat as stable; build (if pickable) or hibernate.
+    }
+
+    if (planContinues) return ["plan"];
+
     const hasPickable = result.pendingAfter.some(
       (e) => e.gate.kind === "open",
     );
@@ -137,26 +156,61 @@ const build: Phase = {
   promptPath: "prompts/build.md",
   concurrency: "fanout",
   writablePaths: [
+    // Source, tests, bin, examples, docs, ad-hoc scripts
     "src/**",
     "tests/**",
     "bin/**",
     "examples/**",
     "docs/**",
+    "scripts/**",
+
+    // Package metadata
     "package.json",
     "pnpm-lock.yaml",
-    "tsconfig.json",
-    "vitest.config.ts",
+
+    // TS / test / lint / formatter / bundler configs — variants common
+    // (tsconfig.build.json, vitest.config.mjs, eslint.config.ts, etc.)
+    "tsconfig*.json",
+    "vitest.config.*",
+    "*.config.ts",
+    "*.config.js",
+    "*.config.mjs",
+    "*.config.cjs",
+    ".prettierrc",
+    ".prettierrc.*",
+
+    // Dotfiles for editor / runtime / npm
     ".gitignore",
+    ".editorconfig",
+    ".nvmrc",
+    ".node-version",
+    ".npmrc",
     ".env.example",
+
+    // User-facing root docs
     "README.md",
     "LICENSE",
+    "LICENSE.*",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "AUTHORS.md",
+
+    // CI + dev-tooling dirs
     ".github/**",
+    ".changeset/**",
+    ".husky/**",
+    ".devcontainer/**",
+
     // NOTE: build does NOT touch .flume/plan/pending.json. Harness writes
     // the ship commit post-merge to avoid cherry-pick conflicts.
     // NOTE: build does NOT touch spec/**. The spec corpus is human-curated;
     // if a build entry needs spec clarification, the entry should be blocked
     // and an open question surfaced.
+    // NOTE: build does NOT touch .flume/{chain.ts,prompts/**,plan/**} or
+    // .claude/{rules,settings*.json}. Those are harness/human territory;
+    // edits flow through `chore(flume):` commits, not build ticks.
   ],
   gates: [tscGate, vitestGate],
   setupWorktree: buildSetupWorktree,
