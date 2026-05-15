@@ -27,3 +27,52 @@ jobs:
       - run: pnpm test
 
       - run: pnpm build
+
+      # Publish-acceptance: the npm tarball must resolve in a fresh consumer.
+      # `npm pack` does NOT run prepublishOnly, so dist/ must already exist —
+      # the `pnpm build` step above produced it.
+
+      - name: attw — declaration-file shape lint
+        run: npx --yes @arethetypeswrong/cli@latest --pack .
+
+      - name: Consumer-install smoke
+        run: |
+          set -euo pipefail
+          REPO="$PWD"
+          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
+          npm pack
+          CONSUMER="$RUNNER_TEMP/flume-consumer"
+          rm -rf "$CONSUMER"
+          mkdir -p "$CONSUMER/.flume/prompts"
+          cd "$CONSUMER"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$REPO/$TARBALL"
+
+          # Realistic consumer chain.ts: bare-specifier import of the published
+          # package (NOT ../src/ — that's the in-repo dogfood path). The value
+          # import of `shellGate` forces runtime module resolution; `flume
+          # render` below loads this file through tsx and would throw if the
+          # package's exports map didn't resolve in a fresh project.
+          cat > .flume/chain.ts <<'EOF'
+          import { shellGate } from "@jwcjwc12/flume";
+          import type { Chain, Phase } from "@jwcjwc12/flume";
+
+          const notes: Phase = {
+            name: "notes",
+            description: "publish-acceptance smoke",
+            promptPath: "prompts/notes.md",
+            concurrency: "singleton",
+            writablePaths: ["notes/**"],
+            gates: [shellGate({ name: "noop", when: "afterCommit", cmd: "true", args: [] })],
+            handoff: () => [],
+          };
+
+          const chain: Chain = { phases: [notes], humanOnly: [] };
+          export default chain;
+          EOF
+          printf 'Append a dated line to notes/journal.md.\n' > .flume/prompts/notes.md
+
+          # --no-install: the unscoped `flume` is an unrelated registry package
+          # (§4) — fail loudly rather than silently run the wrong binary.
+          npx --no-install flume status
+          npx --no-install flume render notes >/dev/null
