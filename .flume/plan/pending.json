@@ -1,5 +1,30 @@
 [
   {
+    "tag": "EXPORT-WORKTREE-SETUP-CONTEXT",
+    "summary": "Re-export WorktreeSetupContext from src/index.ts per §2 phase-types list.",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "2. Public API surface"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/index.ts",
+          "description": "Add WorktreeSetupContext to the existing `export type { ... } from './Phase.ts'` block."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "`import type { WorktreeSetupContext } from \"flume\"` typechecks (currently the only §2-listed type missing from index.ts).",
+    "notes": "Audit miss from JSDOC-PUBLIC-EXPORTS; the type is defined + JSDoc'd in Phase.ts:122 but never re-exported."
+  },
+  {
     "tag": "LICENSE",
     "summary": "Add MIT LICENSE at repo root with canonical SPDX text.",
     "per": {
