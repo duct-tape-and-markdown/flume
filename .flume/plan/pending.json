@@ -1,5 +1,30 @@
 [
   {
+    "tag": "README-QUICKSTART-FIX",
+    "summary": "Replace Quickstart's `flume/examples/...` import with an inline 5-line chain.ts per §6.",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "6. Documentation"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "Quickstart per §6 (install + 5-line chain.ts + `flume tick`); the subpath import is incompatible with §2 strict `.` exports and §8 files allowlist (examples/ not shipped)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "README Quickstart is self-contained: imports only from `\"flume\"`, no `flume/examples/*` reference. examples/minimal-chain.ts still linked from Pointers.",
+    "notes": "Audit miss from README-REVISE — entry's `notes` greenlit committing the import name; under §2/§8 it can't resolve. Build commit body flagged it for follow-on."
+  },
+  {
     "tag": "DOCS-CLI",
     "summary": "Author docs/CLI.md: one paragraph per subcommand covering exit semantics, side effects, example.",
     "per": {
@@ -97,7 +122,7 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "Typechecks under tsconfig.json includes; ≤80 lines; only imports from src/index.ts surface.",
-    "notes": "Used by README Quickstart."
+    "notes": "README Pointers links to this file; README Quickstart inlines its own snippet per README-QUICKSTART-FIX."
   },
   {
     "tag": "DIST-BUILD-CONFIG",
