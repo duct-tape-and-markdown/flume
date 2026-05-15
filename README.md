@@ -37,17 +37,18 @@ error.
 npm install @<scope>/flume
 ```
 
-Drop a `.flume/chain.ts` into your repo. The minimum viable shape lives in
-[`examples/minimal-chain.ts`](examples/minimal-chain.ts) — a single phase, no
-fanout, ≤80 lines:
+Drop a `.flume/chain.ts` into your repo:
 
 ```ts
 // .flume/chain.ts
-import minimal from "flume/examples/minimal-chain.ts";
-export default minimal;
+import type { Chain, Phase } from "flume";
+const echo: Phase = { name: "echo", description: "Hello-world tick: write a note to disk.", promptPath: "prompts/echo.md", concurrency: "singleton", writablePaths: ["notes/**"], gates: [], handoff: () => [] };
+const chain: Chain = { phases: [echo], humanOnly: [] };
+export default chain;
 ```
 
-Then:
+Author `.flume/prompts/echo.md` — the prompt template (Markdown plus
+`{{KEY}}` placeholders from `promptArgs`). Then:
 
 ```bash
 npx flume tick      # one phase × one agent invocation
@@ -55,7 +56,9 @@ npx flume status    # baton state
 npx flume loop      # tick until hibernation
 ```
 
-For a multi-phase pipeline (workshop → spec → plan → build), copy
+For a readable single-phase starter with each field on its own line, see
+[`examples/minimal-chain.ts`](examples/minimal-chain.ts). For multi-phase
+pipelines (workshop → spec → plan → build), copy
 [`examples/cascade-chain.ts`](examples/cascade-chain.ts) instead.
 
 ## The chain
