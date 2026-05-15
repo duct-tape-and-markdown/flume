@@ -1,20 +1,20 @@
 # State
 
-Phase: **v0.1 public-release prep.** Mode this tick: **audit** — 4 build commits + 1 chore drained pending. Audited each:
+Phase: **v0.1 public-release prep.** Mode this tick: **audit** — 4 build commits drained pending; 1 chore. Audited each:
 
-- `README-QUICKSTART-FIX` (83bb984): inline 5-line chain.ts uses default export, imports only from `"flume"`, links examples/minimal-chain.ts. Clean. (minimal-chain.ts link dangles until EXAMPLE-MINIMAL ships, queue head — acceptable timing.)
-- `DOCS-CLI` (e3c3bbb): all 6 subcommands documented, exit codes match cli.ts. `--entry` doc accurate for the existing flag (see commit body re: §11 wording).
-- `DOCS-CHAIN-AUTHORING` (210ba5a): 5 sections per §6; 399 lines under cap. **One drift caught**: claims chain.ts can use a named `chain` export OR default; cli.ts:140-149 only accepts default. Snippet at line 381 also shows `export const`. Filed `DOCS-CHAIN-EXPORT-FIX` (open).
-- `EXAMPLE-CASCADE-POLISH` (88f2f74): every Phase has JSDoc preamble, both custom gates carry `Why custom`, trailing host-repo plug-in block with default-export step. Clean.
+- `EXAMPLE-MINIMAL` (1bdf7ff): 67 lines, default-exports Chain, imports only `Chain`/`Phase` from `../src/index.ts`. Trailing block walks host-repo plug-in. Clean.
+- `DOCS-CHAIN-EXPORT-FIX` (544736d): both spots fixed — prose now says default-export only; closing snippet uses `export default`. Bonus cross-link added at line 8-9 to minimal-chain.ts (nav improvement, in scope).
+- `DIST-BUILD-CONFIG` (5c3c7a7): `pnpm build` emits `dist/{index.js,index.d.ts,cli.js}`; `node dist/cli.js status` loads chain.ts via `tsImport`. **Downstream drift caught**: every `dist/*.d.ts` re-export keeps `.ts` extensions (`rewriteRelativeImportExtensions: true` rewrites .js but not .d.ts under TS 5.9.3 + `verbatimModuleSyntax`). Build flagged it; fails §2 `arethetypeswrong` + bare-specifier import acceptance. Filed `DIST-DTS-EXTENSIONS` (open).
+- `DISPATCHER-FANOUT-LOGGING` (8a3c959): all four stage markers present (cherry-pick per shipped entry, ship-commit summary, cleanup count, wave duration); `[flume]` prefix preserved; failure paths untouched. Clean.
 
-Inbox empty. No spec changes. Nothing unblocks (DIST-BUILD-CONFIG still in queue).
+Inbox empty. No spec changes. **Promote**: DIST-BUILD-CONFIG shipped → flipped `BIN-FLUME-DIST` and `CI-WORKFLOW` from `blockedBy: DIST-BUILD-CONFIG` to `open`. `PACKAGE-METADATA` re-pointed to `blockedBy: DIST-DTS-EXTENSIONS` (its attw acceptance fails until .d.ts emit is clean).
 
-Queue: `EXAMPLE-MINIMAL` (open) → `DOCS-CHAIN-EXPORT-FIX` (open, new) → `DIST-BUILD-CONFIG` (open) → `PACKAGE-METADATA` / `BIN-FLUME-DIST` / `CI-WORKFLOW` (blockedBy DIST-BUILD-CONFIG) → `DISPATCHER-FANOUT-LOGGING` (open). 7 entries total.
+Queue: `DIST-DTS-EXTENSIONS` (open, new) → `BIN-FLUME-DIST` (open) → `CI-WORKFLOW` (open) → `PACKAGE-METADATA` (blockedBy DIST-DTS-EXTENSIONS). 4 entries total.
 
-In flight: nothing autonomous. Build picks `EXAMPLE-MINIMAL` on next tick.
+In flight: nothing autonomous. Build picks `DIST-DTS-EXTENSIONS` on next tick.
 
 Open questions: 0.
 
-Trunk: `pnpm tsc --noEmit` clean per last green run; `pnpm test` green (7 suites, 68 tests).
+Trunk: `pnpm tsc --noEmit` clean per last green run; `pnpm test` green (7 suites, 68 tests); `pnpm build` succeeds (broken .d.ts is correctness drift, not a build-script failure).
 
 Plan continues: no
