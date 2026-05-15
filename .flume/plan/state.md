@@ -1,13 +1,15 @@
 # State
 
-Phase: **v0.1 public-release prep.** Audit tick — four TEST-* entries shipped clean (TEST-BATON / TEST-PARTITION / TEST-AGENT / TEST-GATE; 53 tests now green across 5 suites). Spec §4 amended (commit `4bb6c88`) resolving CHAIN-LOADER-MECHANISM (option 2: tsx stays in deps, tsImport in cli.ts). Chain widening (commit `cd1ef17`) resolved CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD. Both open questions closed; `DIST-BUILD-CONFIG` promoted `parked → open` and absorbs the cli.ts tsImport edit. `BIN-FLUME-DIST` and `PACKAGE-METADATA` re-scoped to drop tsx-devDeps language.
+Phase: **v0.1 public-release prep.** Audit tick — 4 entries shipped clean (TEST-DISPATCHER, TEST-GIT, JSDOC-PUBLIC-EXPORTS, CLI-HELP-VERSION; 68 tests now green across 7 suites). TEST-DISPATCHER covers all six §5 assertion lines; TEST-GIT meets the §5 "at minimum" smoke bar; CLI-HELP-VERSION wires all three §3 "Must have" items.
 
-Queue head: `TEST-DISPATCHER` (open). 11 sibling open entries behind it; `DIST-BUILD-CONFIG` (open) gates 3 dependents (`PACKAGE-METADATA`, `BIN-FLUME-DIST`, `CI-WORKFLOW`) — all still `blockedBy: DIST-BUILD-CONFIG`.
+Audit gap: `JSDOC-PUBLIC-EXPORTS` filled every existing export's JSDoc but didn't audit the §2 export *list* against `src/index.ts` — `WorktreeSetupContext` is defined + documented in `Phase.ts:122` but never re-exported. Filed `EXPORT-WORKTREE-SETUP-CONTEXT` (open) at queue head.
 
-In flight: nothing autonomous. Build picks `TEST-DISPATCHER` on next tick.
+Queue head: `EXPORT-WORKTREE-SETUP-CONTEXT` (open). 11 entries behind it; `DIST-BUILD-CONFIG` (open, mid-queue) still gates 3 dependents (`PACKAGE-METADATA`, `BIN-FLUME-DIST`, `CI-WORKFLOW`) — all still `blockedBy: DIST-BUILD-CONFIG`.
+
+In flight: nothing autonomous. Build picks `EXPORT-WORKTREE-SETUP-CONTEXT` on next tick.
 
 Open questions: 0.
 
-Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (5 suites, 53 tests).
+Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests).
 
 Plan continues: no
