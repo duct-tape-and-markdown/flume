@@ -32,18 +32,33 @@ import * as git from "./git.ts";
 
 // ---------- public surface ----------
 
+/**
+ * Three-level logging seam. The dispatcher writes harness narration through
+ * these methods; consumers can route them to a structured logger or simply
+ * pass `consoleLogger` (the default).
+ */
 export interface Logger {
   info(line: string): void;
   warn(line: string): void;
   error(line: string): void;
 }
 
+/**
+ * Default `Logger` implementation: `info` → `console.log`, `warn` →
+ * `console.warn`, `error` → `console.error`. Used by the dispatcher when
+ * `DispatcherOptions.log` is omitted.
+ */
 export const consoleLogger: Logger = {
   info: (l) => console.log(l),
   warn: (l) => console.warn(l),
   error: (l) => console.error(l),
 };
 
+/**
+ * Constructor input for `Dispatcher`. `chain`, `repoRoot`, `configDir`, and
+ * `agent` are required; the rest tune concurrency, trunk identification,
+ * logging, and per-tick wall-clock budget.
+ */
 export interface DispatcherOptions {
   chain: Chain;
   repoRoot: string;
@@ -65,6 +80,11 @@ export interface DispatcherOptions {
   tickTimeoutMs?: number;
 }
 
+/**
+ * Per-tick summary returned by `Dispatcher.tick()`. The loop inspects
+ * `hibernated` to decide when to exit; `summary` is the one-liner the
+ * dispatcher surfaces through the logger after each tick.
+ */
 export interface TickOutcome {
   hibernated: boolean;
   phaseName?: string;
@@ -75,6 +95,12 @@ export interface TickOutcome {
   summary: string;
 }
 
+/**
+ * Runtime that wires baton + chain + agent + gates into one tick. Stateless
+ * across ticks (everything it needs comes from disk). `tick()` runs exactly
+ * one phase × one invocation (or N for fanout); `loop()` repeats until
+ * hibernation or `maxTicks`.
+ */
 export class Dispatcher {
   private readonly opts: DispatcherOptions;
   private readonly baton: Baton;

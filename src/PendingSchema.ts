@@ -70,6 +70,12 @@ const TestAssertion = z.object({
  */
 const TAG_PATTERN = /^[A-Z][A-Z0-9]*(?:[-.][A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/;
 
+/**
+ * One unit of build work. Plan re-derives the full pending list every tick
+ * from spec + open-questions + inbox + current src; build ships entries by
+ * tag in order. The shape is enforced by zod at parse time and surfaces both
+ * as a runtime schema and a `z.infer`'d static type.
+ */
 export const PendingEntry = z.object({
   /** Stable identifier; appears in commit messages. */
   tag: z.string().regex(TAG_PATTERN, "tag must match TAG_PATTERN"),
@@ -97,18 +103,33 @@ export const PendingEntry = z.object({
 
 export type PendingEntry = z.infer<typeof PendingEntry>;
 
-/** A plan's full pending list. Order is meaningful — top is next. */
+/**
+ * A plan's full pending list. Order is meaningful — top is next. Empty array
+ * is valid and means nothing pending. Validated as `z.array(PendingEntry)`,
+ * with per-entry defaults applied at parse time.
+ */
 export const PendingList = z.array(PendingEntry);
 export type PendingList = z.infer<typeof PendingList>;
 
 // ---------- parse helpers ----------
 
+/**
+ * Outcome of `parsePending`. On success, `ok` is true, `entries` holds the
+ * parsed list, and `errors` is empty. On failure, `entries` is `[]` and
+ * `errors` carries one `ParseError` per zod issue so the caller can surface
+ * them — typically by injecting them into the next plan prompt.
+ */
 export interface ParseResult {
   ok: boolean;
   entries: PendingList;
   errors: ParseError[];
 }
 
+/**
+ * One validation failure produced by `parsePending`. The harness injects
+ * these into the next plan prompt so the agent can re-derive without
+ * needing to read zod's raw error format.
+ */
 export interface ParseError {
   /** Index into the raw array, or -1 if structure itself was malformed. */
   index: number;
