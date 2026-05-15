@@ -7,8 +7,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -38,8 +37,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -69,8 +67,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -100,8 +97,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -131,8 +127,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -162,8 +157,7 @@
       "section": "5. Tests"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -193,8 +187,7 @@
       "section": "2. Public API surface"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -251,8 +244,7 @@
       "section": "3. CLI surface"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -277,8 +269,7 @@
       "section": "8. Repository hygiene"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -303,8 +294,7 @@
       "section": "8. Repository hygiene"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -329,8 +319,7 @@
       "section": "6. Documentation"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -355,8 +344,7 @@
       "section": "3. CLI surface"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -381,8 +369,7 @@
       "section": "6. Documentation"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [
@@ -407,8 +394,7 @@
       "section": "7. Examples"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -433,8 +419,7 @@
       "section": "7. Examples"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TEST-PENDINGSCHEMA"
+      "kind": "open"
     },
     "files": {
       "new": [

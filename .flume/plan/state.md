@@ -1,11 +1,13 @@
 # State
 
-Phase: **v0.1 public-release prep.** First plan tick derived 20 entries from `spec/RELEASE-v0.1.md`.
+Phase: **v0.1 public-release prep.** Audit tick (2 commits since prior plan SHA) — TEST-PENDINGSCHEMA shipped cleanly per §5; no drift, no scope creep.
 
-Queue head: `TEST-PENDINGSCHEMA` (open) — bootstraps vitest.config.ts so vitestGate stops blocking every commit on no-tests-found. All other entries `blockedBy` it (or downstream of `DIST-BUILD-CONFIG`, which is `parked` on two open questions).
+Queue head: `TEST-BATON` (open). 14 sibling entries also promoted from `blockedBy: TEST-PENDINGSCHEMA` → `open` this tick; DIST-BUILD-CONFIG stays `parked` and its 3 dependents stay `blockedBy: DIST-BUILD-CONFIG`.
 
-In flight: nothing autonomous; build picks TEST-PENDINGSCHEMA on next tick.
+In flight: nothing autonomous; build picks TEST-BATON on next tick (or fans out across the open queue if/when build flips to fanout).
 
-Open questions: 2 — `CHAIN-LOADER-MECHANISM` (how dist'd cli loads .ts chain.ts) and `CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD` (chain.ts amendment for new top-level config file).
+Open questions: 2 — `CHAIN-LOADER-MECHANISM` and `CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD`, both still gating DIST-BUILD-CONFIG.
 
-Tests at trunk: still none. `pnpm tsc --noEmit` clean.
+Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (1 suite, 13 tests — `tests/PendingSchema.test.ts`).
+
+Plan continues: no
