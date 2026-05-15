@@ -15,6 +15,8 @@ import { resolve, join, dirname } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
+import { tsImport } from "tsx/esm/api";
+
 import { Baton } from "./Baton.ts";
 import { Dispatcher } from "./Dispatcher.ts";
 import { claudeCode } from "./Agent.ts";
@@ -144,7 +146,14 @@ async function loadChain(repoRoot: string): Promise<ChainModule> {
       `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
     );
   }
-  const mod = (await import(pathToFileURL(path).href)) as Partial<ChainModule>;
+  // tsImport (tsx/esm/api) compiles the .ts source in-process so the published
+  // dist/cli.js can resolve consumer chain.ts files without a node loader flag
+  // (plain `await import()` would fail: node refuses .ts under node_modules,
+  // and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
+  const mod = (await tsImport(
+    pathToFileURL(path).href,
+    import.meta.url,
+  )) as Partial<ChainModule>;
   if (!mod.default) {
     throw new Error(`${path} must default-export a Chain`);
   }
