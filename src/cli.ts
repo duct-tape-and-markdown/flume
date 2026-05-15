@@ -3,26 +3,17 @@
 /**
  * `flume` — single tick, or loop until hibernation.
  *
- * Usage:
- *   flume tick                  Run one tick of whichever phase is awake.
- *   flume loop [--max N]        Run ticks until hibernation (default cap 50).
- *   flume status                Print baton state + pending count.
- *   flume wake <phase>          Touch .flume/awake/<phase>.
- *   flume sleep <phase>         Remove .flume/awake/<phase>.
- *   flume render <phase> [opts] Render the prompt that would be sent for one
- *                               tick of <phase>, without invoking the agent.
- *                               --entry <tag>   for fanout phases: pick the
- *                                               entry with this tag from
- *                                               .flume/plan/pending.json.
+ * The runtime usage text printed by `flume --help` / `flume <cmd> --help`
+ * is the authoritative reference; see HELP_TEXT below.
  *
  * The chain config is loaded from `./.flume/chain.ts` (resolved with tsx).
  * That file must default-export a `Chain` and may export `agent` to override
  * the default `claudeCode()`.
  */
 
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
 import { Baton } from "./Baton.ts";
 import { Dispatcher } from "./Dispatcher.ts";
@@ -31,6 +22,115 @@ import type { Agent } from "./Agent.ts";
 import type { Chain, TickContext } from "./Phase.ts";
 import { renderPrompt } from "./Prompt.ts";
 import { parsePending } from "./PendingSchema.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
+ * dist/ in the published tarball — both layouts put it at `../package.json`).
+ */
+function readPackageVersion(): string {
+  const pkgPath = resolve(HERE, "..", "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
+  if (typeof pkg.version !== "string") {
+    throw new Error(`package.json at ${pkgPath} has no string "version"`);
+  }
+  return pkg.version;
+}
+
+const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
+type Subcommand = (typeof SUBCOMMANDS)[number];
+
+const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
+
+Usage: flume <command> [options]
+
+Commands:
+  status              Print baton state (awake phases + pending count).
+  tick                Run one tick of whichever phase is awake.
+  loop [--max N]      Run ticks until hibernation (default cap 50).
+  wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
+  sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
+  render <phase>      Print the rendered prompt for <phase> without invoking
+                      the agent.
+
+Options:
+  -h, --help          Print this message.
+  -v, --version       Print the flume version.
+
+Run \`flume <command> --help\` for per-command usage and exit codes.
+`;
+
+const HELP_SUB: Record<Subcommand, string> = {
+  status: `Usage: flume status
+
+Print baton state: awake phases (or "hibernating" if none). Observational —
+no side effects, no agent invocation.
+
+Exit codes:
+  0   Always.
+`,
+  tick: `Usage: flume tick
+
+Run one phase × one tick of whichever phase is awake. Loads .flume/chain.ts,
+picks the next pending entry (for fanout phases) or runs the singleton phase,
+invokes the agent, and applies validation gates.
+
+Exit codes:
+  0   Success, or hibernation (no phase awake).
+  1   Harness error (chain load failure, unexpected exception).
+`,
+  loop: `Usage: flume loop [--max N]
+
+Run ticks until hibernation or --max iterations have elapsed.
+
+Options:
+  --max N    Maximum number of ticks before bailing (default 50).
+
+Exit codes:
+  0   Hibernation reached, or --max ticks completed.
+  1   Harness error.
+`,
+  wake: `Usage: flume wake <phase>
+
+Mark <phase> awake by touching .flume/awake/<phase>. The next tick will
+schedule that phase.
+
+Exit codes:
+  0   Success.
+  2   Missing <phase> argument.
+`,
+  sleep: `Usage: flume sleep <phase>
+
+Mark <phase> hibernating by removing .flume/awake/<phase>.
+
+Exit codes:
+  0   Success (no-op if already hibernating).
+  2   Missing <phase> argument.
+`,
+  render: `Usage: flume render <phase> [--entry <tag>]
+
+Print the rendered prompt for <phase> to stdout without invoking the agent.
+Useful for dry-run inspection of prompt construction.
+
+Options:
+  --entry <tag>   For fanout phases, render the prompt for the pending entry
+                  with this tag. Defaults to the first entry whose gate is
+                  "open".
+
+Exit codes:
+  0   Success.
+  2   Missing or unknown <phase>; or --entry <tag> with no matching entry.
+`,
+};
+
+function isSubcommand(value: string): value is Subcommand {
+  return (SUBCOMMANDS as readonly string[]).includes(value);
+}
+
+function wantsHelp(args: readonly string[]): boolean {
+  return args.includes("--help") || args.includes("-h");
+}
 
 interface ChainModule {
   default: Chain;
@@ -54,8 +154,29 @@ async function loadChain(repoRoot: string): Promise<ChainModule> {
 }
 
 async function main(): Promise<number> {
-  const [, , cmd = "tick", ...rest] = process.argv;
+  const [, , firstArg, ...restArgs] = process.argv;
   const repoRoot = process.cwd();
+
+  // Top-level --help / --version short-circuit before subcommand dispatch
+  // (and before any chain load) so they work in any cwd.
+  if (firstArg === "--help" || firstArg === "-h") {
+    process.stdout.write(HELP_TOP);
+    return 0;
+  }
+  if (firstArg === "--version" || firstArg === "-v") {
+    console.log(readPackageVersion());
+    return 0;
+  }
+
+  const cmd = firstArg ?? "tick";
+  const rest = restArgs;
+
+  // Per-subcommand --help short-circuits before any side effects (chain load,
+  // baton mutation, agent invocation).
+  if (isSubcommand(cmd) && wantsHelp(rest)) {
+    process.stdout.write(HELP_SUB[cmd]);
+    return 0;
+  }
 
   if (cmd === "status") {
     const baton = new Baton(repoRoot);
@@ -166,7 +287,7 @@ async function main(): Promise<number> {
   }
 
   console.error(`unknown command: ${cmd}`);
-  console.error("usage: flume [tick|loop|status|wake|sleep] ...");
+  console.error("Run `flume --help` for usage.");
   return 2;
 }
 
