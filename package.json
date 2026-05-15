@@ -1,9 +1,40 @@
 {
-  "name": "flume",
-  "version": "0.0.0",
+  "name": "@jwcjwc12/flume",
+  "version": "0.1.0",
   "description": "A disciplined harness for AI-derivation pipelines. Disk-is-truth, stateless ticks, structured handoff, sandbox-optional.",
+  "keywords": [
+    "claude",
+    "agents",
+    "ai",
+    "harness",
+    "pipeline"
+  ],
+  "homepage": "https://github.com/Jwcjwc12/flume#readme",
+  "bugs": {
+    "url": "https://github.com/Jwcjwc12/flume/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jwcjwc12/flume.git"
+  },
   "type": "module",
-  "private": true,
+  "private": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "bin": {
     "flume": "./bin/flume"
   },
