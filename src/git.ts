@@ -68,6 +68,20 @@ export async function removeWorktree(
   await run(repoRoot, ["worktree", "remove", "--force", path]);
 }
 
+/**
+ * Prune stale entries from `.git/worktrees/` — i.e. metadata for worktrees
+ * whose working directory has vanished. Idempotent. Run before any
+ * worktree-add to recover from prior crashes or partial fanout failures
+ * that left git's internal metadata desynced from `.flume/worktrees/`.
+ *
+ * Without this, a half-broken `.git/worktrees/<old-slug>/` makes EVERY
+ * subsequent `git worktree add` fail — even for a totally different slug —
+ * because git scans all worktree metadata during validation.
+ */
+export async function pruneWorktrees(repoRoot: string): Promise<void> {
+  await run(repoRoot, ["worktree", "prune"]);
+}
+
 export async function deleteBranch(
   repoRoot: string,
   branch: string,

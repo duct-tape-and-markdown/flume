@@ -219,6 +219,13 @@ export class Dispatcher {
       `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,
     );
 
+    // Recover from prior crashes / partial fanout failures: prune any
+    // .git/worktrees/<slug>/ entries whose working directory has vanished.
+    // Without this, half-broken metadata from one slug blocks `git worktree
+    // add` for ALL subsequent slugs — git scans every worktree's metadata
+    // during validation.
+    await git.pruneWorktrees(repoRoot);
+
     // Spawn worktrees in parallel.
     const worktrees = await Promise.all(
       batch.map((entry) => this.createWorktree(entry, preHead)),
