@@ -9,4 +9,4 @@ Status markers:
 
 <!-- questions below this line -->
 
-_None. Both prior questions were resolved by the human in spec commit `335b026`: §8 L155 now enumerates publish-acceptance (closes the §8-enumeration NEEDS AMENDMENT); §4 L107 is now "**enforced in CI**" (closes the §4 L107 PARKED question — option A). Both fed `derive` this tick (see pending.json `CI-PACK-FILESET-GUARD`)._
+_None. The two entries those resolutions fed (`DOCS-SETUPWORKTREE-PNPM`, `CI-PACK-FILESET-GUARD`) shipped in `6bc60ff` and audited clean this tick. No open decisions: remaining v0.1 work (chain.ts `buildSetupWorktree` switch, scope-name pick, CI-green PR + tag) is execution in the harness/publish lane, not a decision parked for human input — tracked in `state.md`._
