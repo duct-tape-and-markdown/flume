@@ -1,39 +1,31 @@
 [
   {
-    "tag": "TEST-PENDINGSCHEMA",
-    "summary": "Bootstrap test foundation: vitest.config.ts + first PendingSchema test, so vitestGate stops blocking every build commit on no-tests-found.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        { "path": "vitest.config.ts", "description": "Per §11 resolved decision; include tests/**/*.test.ts." },
-        { "path": "tests/PendingSchema.test.ts", "description": "Round-trip per gate.kind, malformed reject, renderSchemaForPrompt snapshot." }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      { "path": "tests/PendingSchema.test.ts", "asserts": "Coverage points listed in §5 line for PendingSchema.test.ts." }
-    ],
-    "acceptance": "pnpm test exits 0 with ≥1 file picked up; vitestGate stops failing on empty suite for downstream entries.",
-    "notes": "Bootstrap: every other build entry is blockedBy this so the chicken-and-egg with vitestGate's no-tests-found exit resolves once."
-  },
-  {
     "tag": "TEST-BATON",
     "summary": "Vitest coverage for Baton wake/sleep/awake roundtrip.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/Baton.test.ts", "description": "Per §5 line for Baton.test.ts." }
+        {
+          "path": "tests/Baton.test.ts",
+          "description": "Per §5 line for Baton.test.ts."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Baton.test.ts", "asserts": "wake/sleep/awake roundtrip; idempotent double-wake; missing dir is safe." }
+      {
+        "path": "tests/Baton.test.ts",
+        "asserts": "wake/sleep/awake roundtrip; idempotent double-wake; missing dir is safe."
+      }
     ],
     "acceptance": "Baton.test.ts passes; vitestGate green.",
     "notes": ""
@@ -41,18 +33,30 @@
   {
     "tag": "TEST-PARTITION",
     "summary": "Vitest coverage for partitionByFileOverlap.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/partition.test.ts", "description": "Per §5 line for partition.test.ts." }
+        {
+          "path": "tests/partition.test.ts",
+          "description": "Per §5 line for partition.test.ts."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/partition.test.ts", "asserts": "Disjoint→one batch; overlap→split stable; maxParallel respected." }
+      {
+        "path": "tests/partition.test.ts",
+        "asserts": "Disjoint→one batch; overlap→split stable; maxParallel respected."
+      }
     ],
     "acceptance": "partition.test.ts passes.",
     "notes": ""
@@ -60,18 +64,30 @@
   {
     "tag": "TEST-AGENT",
     "summary": "Vitest coverage for claudeCode + decorators (session capture, terminal renderer, timeoutMs).",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/Agent.test.ts", "description": "Per §5 line for Agent.test.ts; fake Agent for decorators, spawn-mock for claudeCode." }
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "Per §5 line for Agent.test.ts; fake Agent for decorators, spawn-mock for claudeCode."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Agent.test.ts", "asserts": "outputFormat flags; withSessionCapture writes file; withTerminalRenderer parses NDJSON & drops non-tool events; timeoutMs aborts via AbortSignal.any." }
+      {
+        "path": "tests/Agent.test.ts",
+        "asserts": "outputFormat flags; withSessionCapture writes file; withTerminalRenderer parses NDJSON & drops non-tool events; timeoutMs aborts via AbortSignal.any."
+      }
     ],
     "acceptance": "Agent.test.ts passes.",
     "notes": ""
@@ -79,18 +95,30 @@
   {
     "tag": "TEST-GATE",
     "summary": "Vitest coverage for shellGate + writablePathsGate; afterCommit/afterMerge wiring.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/Gate.test.ts", "description": "Per §5 line for Gate.test.ts." }
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "Per §5 line for Gate.test.ts."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Gate.test.ts", "asserts": "shellGate ok+fail paths; writablePathsGate in/out-of-glob; afterCommit vs afterMerge." }
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "shellGate ok+fail paths; writablePathsGate in/out-of-glob; afterCommit vs afterMerge."
+      }
     ],
     "acceptance": "Gate.test.ts passes.",
     "notes": ""
@@ -98,18 +126,30 @@
   {
     "tag": "TEST-DISPATCHER",
     "summary": "Vitest coverage for Dispatcher singleton + fanout flows on a fake agent.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/Dispatcher.test.ts", "description": "Per §5 line for Dispatcher.test.ts." }
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Per §5 line for Dispatcher.test.ts."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "Singleton: commit detected, gate fail reverts, handoff wakes successor. Fanout: 2 disjoint→ship; cherry-pick conflict→entry stays; afterMerge fail→wave reverts." }
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "Singleton: commit detected, gate fail reverts, handoff wakes successor. Fanout: 2 disjoint→ship; cherry-pick conflict→entry stays; afterMerge fail→wave reverts."
+      }
     ],
     "acceptance": "Dispatcher.test.ts passes.",
     "notes": "Heaviest test file; lean on temp-repo fixtures to keep determinism."
@@ -117,18 +157,30 @@
   {
     "tag": "TEST-GIT",
     "summary": "Smoke vitest coverage for git.ts (revParse, commitPaths) on a temp repo.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "5. Tests" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "5. Tests"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "tests/git.test.ts", "description": "Per §5 line for git.test.ts." }
+        {
+          "path": "tests/git.test.ts",
+          "description": "Per §5 line for git.test.ts."
+        }
       ],
       "edit": [],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/git.test.ts", "asserts": "revParse + commitPaths against a freshly initialised temp repo." }
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "revParse + commitPaths against a freshly initialised temp repo."
+      }
     ],
     "acceptance": "git.test.ts passes.",
     "notes": ""
@@ -136,20 +188,53 @@
   {
     "tag": "JSDOC-PUBLIC-EXPORTS",
     "summary": "Audit every export in src/index.ts; ensure ≥3-line JSDoc on each definition site (types inherit).",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "2. Public API surface" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "2. Public API surface"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Agent.ts", "description": "Fill any export missing a ≥3-line block." },
-        { "path": "src/Baton.ts", "description": "Same." },
-        { "path": "src/Dispatcher.ts", "description": "Same; cover Logger, consoleLogger, DispatcherOptions, TickOutcome, Dispatcher class." },
-        { "path": "src/Gate.ts", "description": "Same." },
-        { "path": "src/PendingSchema.ts", "description": "Same; ParseError/ParseResult included." },
-        { "path": "src/Phase.ts", "description": "Same." },
-        { "path": "src/Prompt.ts", "description": "Same; cover RenderOptions + renderPrompt." },
-        { "path": "src/builtinGates.ts", "description": "Same; cover ShellGateOptions + each gate constant." },
-        { "path": "src/partition.ts", "description": "Same." }
+        {
+          "path": "src/Agent.ts",
+          "description": "Fill any export missing a ≥3-line block."
+        },
+        {
+          "path": "src/Baton.ts",
+          "description": "Same."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Same; cover Logger, consoleLogger, DispatcherOptions, TickOutcome, Dispatcher class."
+        },
+        {
+          "path": "src/Gate.ts",
+          "description": "Same."
+        },
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "Same; ParseError/ParseResult included."
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "Same."
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "Same; cover RenderOptions + renderPrompt."
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "Same; cover ShellGateOptions + each gate constant."
+        },
+        {
+          "path": "src/partition.ts",
+          "description": "Same."
+        }
       ],
       "retire": []
     },
@@ -161,12 +246,21 @@
   {
     "tag": "CLI-HELP-VERSION",
     "summary": "Wire --help (per subcommand + top-level) and --version per §3 'Must have'.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "3. CLI surface" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "3. CLI surface"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "Top-level --help / --version; per-subcommand --help with usage + exit codes." }
+        {
+          "path": "src/cli.ts",
+          "description": "Top-level --help / --version; per-subcommand --help with usage + exit codes."
+        }
       ],
       "retire": []
     },
@@ -178,11 +272,20 @@
   {
     "tag": "LICENSE",
     "summary": "Add MIT LICENSE at repo root with canonical SPDX text.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "LICENSE", "description": "Canonical SPDX MIT, year 2026, holder John Campbell per §8." }
+        {
+          "path": "LICENSE",
+          "description": "Canonical SPDX MIT, year 2026, holder John Campbell per §8."
+        }
       ],
       "edit": [],
       "retire": []
@@ -195,11 +298,20 @@
   {
     "tag": "CHANGELOG",
     "summary": "Seed CHANGELOG.md with Keep-a-Changelog skeleton and an empty Unreleased section; v0.1 entry filled at tag time.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "CHANGELOG.md", "description": "Header + Unreleased section; §8 says v0.1 body is authored last by build before tag." }
+        {
+          "path": "CHANGELOG.md",
+          "description": "Header + Unreleased section; §8 says v0.1 body is authored last by build before tag."
+        }
       ],
       "edit": [],
       "retire": []
@@ -212,12 +324,21 @@
   {
     "tag": "README-REVISE",
     "summary": "Rewrite README to ≤200 lines per §6 sections (What/Posture/Quickstart/Chain/Concurrency/State/Status/Pointers).",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "6. Documentation" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "6. Documentation"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "README.md", "description": "Replace current short stub with §6 section list; Quickstart imports examples/minimal-chain.ts." }
+        {
+          "path": "README.md",
+          "description": "Replace current short stub with §6 section list; Quickstart imports examples/minimal-chain.ts."
+        }
       ],
       "retire": []
     },
@@ -229,11 +350,20 @@
   {
     "tag": "DOCS-CLI",
     "summary": "Author docs/CLI.md: one paragraph per subcommand covering exit semantics, side effects, example.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "3. CLI surface" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "3. CLI surface"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "docs/CLI.md", "description": "Per §3 acceptance; cover status/tick/loop/wake/sleep/render." }
+        {
+          "path": "docs/CLI.md",
+          "description": "Per §3 acceptance; cover status/tick/loop/wake/sleep/render."
+        }
       ],
       "edit": [],
       "retire": []
@@ -246,11 +376,20 @@
   {
     "tag": "DOCS-CHAIN-AUTHORING",
     "summary": "Author docs/CHAIN-AUTHORING.md walkthrough leaning on examples/cascade-chain.ts.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "6. Documentation" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "6. Documentation"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "Per §6 sections (Phase, Gate, concurrency, agent seam, prompt template); ≤400 lines." }
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Per §6 sections (Phase, Gate, concurrency, agent seam, prompt template); ≤400 lines."
+        }
       ],
       "edit": [],
       "retire": []
@@ -263,12 +402,21 @@
   {
     "tag": "EXAMPLE-CASCADE-POLISH",
     "summary": "Polish examples/cascade-chain.ts per §7: JSDoc per Phase, annotate custom gates, trailing host-repo plug-in comment; switch deep imports to ../src/index.ts.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "7. Examples" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "7. Examples"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "Per §7 first bullet; verify imports stay within the public surface." }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "Per §7 first bullet; verify imports stay within the public surface."
+        }
       ],
       "retire": []
     },
@@ -280,11 +428,20 @@
   {
     "tag": "EXAMPLE-MINIMAL",
     "summary": "Add examples/minimal-chain.ts: single-phase, no fanout, ≤80 lines.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "7. Examples" },
-    "gate": { "kind": "blockedBy", "tag": "TEST-PENDINGSCHEMA" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "7. Examples"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TEST-PENDINGSCHEMA"
+    },
     "files": {
       "new": [
-        { "path": "examples/minimal-chain.ts", "description": "Per §7 second bullet; imports only from the public surface." }
+        {
+          "path": "examples/minimal-chain.ts",
+          "description": "Per §7 second bullet; imports only from the public surface."
+        }
       ],
       "edit": [],
       "retire": []
@@ -297,14 +454,26 @@
   {
     "tag": "DIST-BUILD-CONFIG",
     "summary": "Add tsconfig.build.json + build/prepublishOnly scripts so dist/ can be emitted per §4.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "4. Distribution" },
-    "gate": { "kind": "parked", "reason": "open-questions: CHAIN-LOADER-MECHANISM and CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD must resolve first." },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "4. Distribution"
+    },
+    "gate": {
+      "kind": "parked",
+      "reason": "open-questions: CHAIN-LOADER-MECHANISM and CHAIN-WRITABLE-PATHS-TSCONFIG-BUILD must resolve first."
+    },
     "files": {
       "new": [
-        { "path": "tsconfig.build.json", "description": "Per §4: extend tsconfig.json; noEmit:false, outDir:./dist, declaration+map+sourceMap, drop allowImportingTsExtensions." }
+        {
+          "path": "tsconfig.build.json",
+          "description": "Per §4: extend tsconfig.json; noEmit:false, outDir:./dist, declaration+map+sourceMap, drop allowImportingTsExtensions."
+        }
       ],
       "edit": [
-        { "path": "package.json", "description": "Add scripts.build=tsc -p tsconfig.build.json and scripts.prepublishOnly=pnpm build." }
+        {
+          "path": "package.json",
+          "description": "Add scripts.build=tsc -p tsconfig.build.json and scripts.prepublishOnly=pnpm build."
+        }
       ],
       "retire": []
     },
@@ -316,12 +485,21 @@
   {
     "tag": "PACKAGE-METADATA",
     "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist; tsx → devDeps.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "4. Distribution" },
-    "gate": { "kind": "blockedBy", "tag": "DIST-BUILD-CONFIG" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "4. Distribution"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "DIST-BUILD-CONFIG"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "package.json", "description": "All §4 'package.json must have' bullets + §2 exports map; move tsx dep." }
+        {
+          "path": "package.json",
+          "description": "All §4 'package.json must have' bullets + §2 exports map; move tsx dep."
+        }
       ],
       "retire": []
     },
@@ -333,12 +511,21 @@
   {
     "tag": "BIN-FLUME-DIST",
     "summary": "Flip bin/flume from tsx-based shim to dist runtime per §4.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "4. Distribution" },
-    "gate": { "kind": "blockedBy", "tag": "DIST-BUILD-CONFIG" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "4. Distribution"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "DIST-BUILD-CONFIG"
+    },
     "files": {
       "new": [],
       "edit": [
-        { "path": "bin/flume", "description": "exec node $DIR/../dist/cli.js — exact form depends on CHAIN-LOADER-MECHANISM resolution." }
+        {
+          "path": "bin/flume",
+          "description": "exec node $DIR/../dist/cli.js — exact form depends on CHAIN-LOADER-MECHANISM resolution."
+        }
       ],
       "retire": []
     },
@@ -350,11 +537,20 @@
   {
     "tag": "CI-WORKFLOW",
     "summary": "Add .github/workflows/ci.yml: pnpm install/typecheck/test/build on push+PR, Node 22, pnpm cache.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
-    "gate": { "kind": "blockedBy", "tag": "DIST-BUILD-CONFIG" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "DIST-BUILD-CONFIG"
+    },
     "files": {
       "new": [
-        { "path": ".github/workflows/ci.yml", "description": "Per §8 line; Node 22, pnpm cache." }
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "Per §8 line; Node 22, pnpm cache."
+        }
       ],
       "edit": [],
       "retire": []
