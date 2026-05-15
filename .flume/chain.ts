@@ -17,10 +17,14 @@
  * in the same commit.
  */
 
-import { readFile, symlink } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 
 /** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
 const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
@@ -74,24 +78,46 @@ const pendingParseGate: Gate = {
 };
 
 /**
- * Materialize gitignored-but-required files in a fresh build worktree.
+ * Materialize node_modules in a fresh build worktree.
  *
- * `git worktree add` shares .git and tracked working tree but does NOT copy
- * untracked or gitignored files. node_modules is gitignored; tsc and vitest
- * need it. A symlink suffices because the worktree shares pnpm-lock.yaml
- * with the main repo.
+ * `git worktree add` shares .git and the tracked tree but not gitignored
+ * files; node_modules is gitignored and tsc/vitest need it. We do NOT
+ * symlink repoRoot/node_modules: pnpm deletes a symlinked node_modules on
+ * install (pnpm/pnpm#9973). Instead we install fresh — pnpm hardlinks from
+ * its global content-addressable store, so this is seconds, not a refetch.
+ * `enableGlobalVirtualStore` (pnpm-workspace.yaml, https://pnpm.io/git-worktrees)
+ * is the experimental opt-in optimization; the dogfood chain uses the
+ * robust default flume's docs teach (docs/CHAIN-AUTHORING.md, spec §6/§11).
  */
 const buildSetupWorktree = async (
   ctx: WorktreeSetupContext,
 ): Promise<void> => {
-  const linkables = ["node_modules"];
-  for (const name of linkables) {
-    const target = join(ctx.repoRoot, name);
-    const linkPath = join(ctx.worktreePath, name);
-    if (existsSync(target) && !existsSync(linkPath)) {
-      await symlink(target, linkPath);
+  await execFileP("pnpm", ["install", "--frozen-lockfile"], {
+    cwd: ctx.worktreePath,
+  });
+};
+
+/**
+ * Defense-in-depth (spec §6): a worktree with un-materialized deps makes
+ * tscGate/vitestGate fail with confusing "cannot find module" noise. Fail
+ * loud and specific instead. Strategy-agnostic — asserts the outcome (a
+ * sentinel dep resolves from the worktree root), not the mechanism, so it
+ * stays valid if setupWorktree's strategy changes.
+ */
+const worktreeDepsGate: Gate = {
+  name: "worktree deps resolve",
+  when: "afterCommit",
+  async run(ctx) {
+    const sentinel = join(ctx.cwd, "node_modules", "zod", "package.json");
+    if (existsSync(sentinel)) {
+      return { ok: true, message: "worktree node_modules resolves (zod sentinel)" };
     }
-  }
+    return {
+      ok: false,
+      message:
+        "worktree node_modules missing sentinel 'zod' — setupWorktree dependency materialization failed",
+    };
+  },
 };
 
 // ---------- phases ----------
@@ -212,7 +238,7 @@ const build: Phase = {
     // .claude/{rules,settings*.json}. Those are harness/human territory;
     // edits flow through `chore(flume):` commits, not build ticks.
   ],
-  gates: [tscGate, vitestGate],
+  gates: [worktreeDepsGate, tscGate, vitestGate],
   setupWorktree: buildSetupWorktree,
   promptArgs(ctx: TickContext) {
     if (!ctx.assignedEntry) {
