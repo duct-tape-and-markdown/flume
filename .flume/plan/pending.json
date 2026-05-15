@@ -7,8 +7,7 @@
       "section": "4. Distribution"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "DIST-DTS-EXTENSIONS"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -23,6 +22,6 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "npm pack --dry-run shows only files in §8 allowlist; npx @arethetypeswrong/cli --pack . is clean.",
-    "notes": "Scope name (e.g. @<github-username>/flume) is publish-time per §4; commit lands a placeholder + CHANGELOG note at tag. attw acceptance is why this blocks on DIST-DTS-EXTENSIONS."
+    "notes": "Scope name (e.g. @<github-username>/flume) is a publish-time decision per §4; commit lands a placeholder and notes the final choice in CHANGELOG at tag."
   }
 ]
