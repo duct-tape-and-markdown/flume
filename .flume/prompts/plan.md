@@ -61,7 +61,9 @@ If the delta is small enough that you can meet the bar across every dimension, d
 
 ## Field discipline
 
-`files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it. Telegraphic: short enough that next-tick-you can scan; if you find yourself writing prose, you've shifted register.
+`files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it.
+
+Telegraphic: short enough that build can act on the entry without re-reading the spec. **Calibration anchor: ≤200 chars on uncapped fields.** This isn't a hard cap — it's a signal: if you can't fit, the entry is doing too much OR you're repeating spec. Both are revisions, not workarounds. The downstream cost is real: every build tick re-reads the full entry JSON, and bloated fields tax every tick until the entry ships.
 
 # OUTPUT
 

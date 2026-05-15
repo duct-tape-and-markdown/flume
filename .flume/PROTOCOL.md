@@ -18,6 +18,15 @@ The commit body says what kind of work the tick did. Typically a sentence on the
 
 Harness-authored commits use `chore(flume):` (e.g. `chore(flume): ship TAG`).
 
+## Plan continuation marker
+
+Plan ticks process the *delta* between this tick and the last `plan:` commit (commits since, spec diff since, current pending/inbox/state). When the delta overflows what plan can do well in one tick, the agent signals continuation via a line in `state.md`:
+
+- `Plan continues: yes — <one-line reason>` → harness re-wakes plan on the next tick.
+- `Plan continues: no` (or absence) → harness hands to build (if pickable entries exist) or hibernates.
+
+The contract: any line in `state.md` matching `/^Plan continues:\s*yes\b/im` triggers re-wake. Convention is to put it as the final line; the regex doesn't require that. Plan owns `state.md`; this line is **load-bearing** — the harness's plan-handoff in `.flume/chain.ts` reads it synchronously to decide who wakes next.
+
 ## Disk vs git log
 
 When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending.json`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.
