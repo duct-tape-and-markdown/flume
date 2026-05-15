@@ -1,89 +1,5 @@
 [
   {
-    "tag": "EXAMPLE-MINIMAL",
-    "summary": "Add examples/minimal-chain.ts: single-phase, no fanout, ≤80 lines.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "7. Examples"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [
-        {
-          "path": "examples/minimal-chain.ts",
-          "description": "Per §7 second bullet; imports only from the public surface."
-        }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "Typechecks under tsconfig.json includes; ≤80 lines; only imports from src/index.ts surface.",
-    "notes": "README Pointers links to this file; README Quickstart inlines its own snippet per README-QUICKSTART-FIX."
-  },
-  {
-    "tag": "DOCS-CHAIN-EXPORT-FIX",
-    "summary": "Fix CHAIN-AUTHORING.md drift: chain.ts must default-export (cli.ts loadChain rejects named-only).",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "6. Documentation"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "Two spots: line ~14 prose (drop the 'named export `chain`' option) and the §Putting-it-together snippet at line ~381 (`export const cascadeChain` → `export default ...`)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "Doc no longer offers a named-export form; copy-paste of the closing snippet loads under cli.ts:loadChain.",
-    "notes": "Audit miss from DOCS-CHAIN-AUTHORING — cli.ts:140-149 throws 'must default-export a Chain' on the form the doc shows."
-  },
-  {
-    "tag": "DIST-BUILD-CONFIG",
-    "summary": "Add tsconfig.build.json + build scripts + cli.ts tsImport loader so dist/cli.js can load chain.ts per §4.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "4. Distribution"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [
-        {
-          "path": "tsconfig.build.json",
-          "description": "Per §4: extend tsconfig.json; noEmit:false, outDir:./dist, declaration+map+sourceMap, drop allowImportingTsExtensions."
-        }
-      ],
-      "edit": [
-        {
-          "path": "package.json",
-          "description": "Add scripts.build=tsc -p tsconfig.build.json and scripts.prepublishOnly=pnpm build."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "Replace the chain.ts `await import(...)` with `tsImport()` from tsx/esm/api — see §4 loader contract."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "pnpm build emits dist/index.js + dist/index.d.ts + dist/cli.js; `node dist/cli.js status` loads .flume/chain.ts without a node loader flag.",
-    "notes": "cli.ts loader is bundled here because dist is only useful once dist/cli.js can resolve chain.ts; bin/flume flip is the separate, downstream BIN-FLUME-DIST entry."
-  },
-  {
     "tag": "PACKAGE-METADATA",
     "summary": "Flip package.json to publish-ready: version 0.1.0, private:false, license, repository/homepage/bugs, keywords, main/types/exports, files allowlist.",
     "per": {
@@ -134,31 +50,6 @@
     "tests": [],
     "acceptance": "Installed-as-dependency `npx flume status` runs against dist/.",
     "notes": ""
-  },
-  {
-    "tag": "DISPATCHER-FANOUT-LOGGING",
-    "summary": "Add stage-marker logs to runFanout: cherry-pick lines, ship-commit summary, cleanup count, wave duration.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "3. CLI surface"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Per inbox finding: ~15-20 LOC in `runFanout`. `[flume]` prefix matches existing fanout-pickable line. No per-stage durations, no CLI override (pre-resolved)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "Successful fanout wave logs a cherry-pick line per shipped entry, the ship-commit summary, cleanup count, and total wave time. Failure paths unchanged.",
-    "notes": "§3 is the closest spec home (operator-facing surface). Reviewer pre-scoped: stage markers + wave duration only; no per-stage timings; no log-override knob. Severity: low correctness, high ergonomics."
   },
   {
     "tag": "CI-WORKFLOW",
