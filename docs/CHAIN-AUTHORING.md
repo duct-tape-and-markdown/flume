@@ -128,7 +128,7 @@ lands; failure reverts the wave. Singleton phases never run `afterMerge`
 ### Use the built-ins first
 
 ```ts
-import { shellGate, tscGate, vitestGate, eslintGate } from "flume";
+import { shellGate, tscGate, vitestGate, eslintGate } from "@dtmd/flume";
 ```
 
 - `tscGate` — `pnpm tsc --noEmit`.
@@ -241,7 +241,7 @@ them.
 one implementation, `claudeCode()`, plus two decorators.
 
 ```ts
-import { claudeCode, withSessionCapture, withTerminalRenderer } from "flume";
+import { claudeCode, withSessionCapture, withTerminalRenderer } from "@dtmd/flume";
 
 const agent = claudeCode({
   outputFormat: "stream-json",
@@ -294,7 +294,7 @@ The chain doesn't reference the agent — the dispatcher does. The shipped
 invoke `Dispatcher` yourself for non-standard hosts (tests, custom CLIs):
 
 ```ts
-import { Dispatcher, consoleLogger } from "flume";
+import { Dispatcher, consoleLogger } from "@dtmd/flume";
 const dispatcher = new Dispatcher({ chain, agent, log: consoleLogger, repoRoot: process.cwd() });
 await dispatcher.tick();
 ```
