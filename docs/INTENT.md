@@ -42,3 +42,9 @@ From a fresh clone of a Flume-driven repo, replacing `bin/flume-bash` with `npx 
 Built-in from v0 via git worktree fanout for phases declared `concurrency: "fanout"`. Disjoint-by-`Files:` Pending entries fan out into per-entry worktrees, each runs its agent invocation + gates in isolation, then merges into the trunk in commit order with a post-merge gate. No Docker required; worktrees are the isolation primitive.
 
 Docker is a v1 layer for AFK / env reproducibility / capability isolation, behind the same `SandboxProvider` seam.
+
+## Beyond v0.1 — dependency-aware fanout
+
+Fanout intelligence stays partition-level, not orchestration-level. Today entries fan out disjoint-by-`Files:` — pure conflict-avoidance, with no notion of "entry B consumes entry A's output." The Pending schema already carries `blockedBy`/`deferred`; the next step is for the partitioner and dispatcher to *schedule waves by declared dependency*, not just file-disjointness — dependent entries serialize, independent ones still parallelize.
+
+This deliberately borrows the *idea* behind agent-team task graphs, not the mechanism. Agent teams coordinate through persistent sessions, an inter-agent mailbox, and by-user runtime state under `~/.claude/` — the negation of stateless ticks, disk-is-truth, and JSON handoff. Flume takes the dependency-ordering benefit from a smarter *stateless* partition pass over disk-rooted Pending entries; it does not adopt durable teammate sessions or hidden coordination state. A reviewer phase that bounces entries back to Pending via an `afterMerge` gate is the in-posture analog of team review — same effect, expressed as JSON on disk.
