@@ -5,3 +5,6 @@ dist/
 .flume/awake/
 .flume/sessions/
 .flume/worktrees/
+.env
+.env.*
+!.env.example
