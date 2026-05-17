@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   Dispatcher,
-  diskChainLoader,
+  superviseLoop,
   type ChainModule,
   type Logger,
 } from "../src/Dispatcher.ts";
@@ -647,91 +647,15 @@ describe("Dispatcher fanout — empty pickable set", () => {
 // ---------- per-tick chain re-resolution (§2) ----------
 
 describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
-  it("a chain rewritten between ticks governs the next tick", async () => {
-    const baton = new Baton(fx.repo);
-
-    // v1 has only phase "alpha"; v2 renames it to "beta". The baton flag
-    // ("beta") is constant — only the resolved chain decides whether a
-    // matching phase exists, so successor scheduling reflects the rewrite.
-    const v1: Chain = {
-      phases: [makePhase({ name: "alpha", handoff: () => [] })],
-      humanOnly: [],
-    };
-    const v2: Chain = {
-      phases: [makePhase({ name: "beta", handoff: () => [] })],
-      humanOnly: [],
-    };
-
-    let current: Chain = v1;
-    let resolveCount = 0;
-    const chainLoader = (): Promise<ChainModule> => {
-      resolveCount++;
-      return Promise.resolve({ default: current });
-    };
-
-    const dispatcher = new Dispatcher({
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: singleAgent(async (cwd) => {
-        await writeAndCommit(cwd, "src/reresolve.ts", "x\n", "build: r");
-      }),
-      log: silent,
-      chainLoader,
-    });
-
-    // Tick 1 under v1: "beta" is awake but v1 has no such phase → hibernate.
-    baton.wake("beta");
-    const o1 = await dispatcher.tick();
-    expect(o1.hibernated).toBe(true);
-
-    // Rewrite the chain between ticks (v2 renames the phase to "beta").
-    current = v2;
-
-    // Tick 2: same baton flag, but the NEW chain governs → "beta" runs.
-    const o2 = await dispatcher.tick();
-    expect(o2.hibernated).toBe(false);
-    expect(o2.phaseName).toBe("beta");
-    expect(o2.result?.committed).toBe(true);
-    // Resolved once per tick, not once per process.
-    expect(resolveCount).toBe(2);
-  });
-
-  it("diskChainLoader memoizes by content hash — stable chain, zero recompiles", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-chainloader-"));
-    try {
-      const chainPath = join(dir, "chain.ts");
-      const v1 =
-        `export default { phases: [{ name: "a", description: "", ` +
-        `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
-        `gates: [], handoff: () => [] }], humanOnly: [] };\n`;
-      await writeFile(chainPath, v1, "utf8");
-
-      const loader = diskChainLoader(dir);
-      const m1 = await loader();
-      const m2 = await loader();
-      // Same module object across calls → memoized; the compile ran once.
-      // This is the §2 "stable chain → zero recompiles" guarantee.
-      expect(m2).toBe(m1);
-      expect(m1.default.phases[0]!.name).toBe("a");
-
-      // A no-op rewrite (identical bytes) still memoizes — the cache keys on
-      // content hash, not mtime, so a git checkout / no-op write is free.
-      await writeFile(chainPath, v1, "utf8");
-      expect(await loader()).toBe(m1);
-
-      // A real content change busts our memo: the hash differs, so the
-      // loader re-resolves and returns a distinct module wrapper rather
-      // than the memoized one. (Whether tsImport yields fresh *content*
-      // in-process is bounded by tsx's loader cache — see diskChainLoader's
-      // KNOWN BOUND comment and the commit body; the per-tick contract is
-      // covered by the fake-loader test above.)
-      await writeFile(chainPath, v1.replace('name: "a"', 'name: "b"'), "utf8");
-      const m3 = await loader();
-      expect(m3).not.toBe(m1);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  // The cross-tick rewrite guarantee is a *process boundary*, not an
+  // in-process re-eval (Node's ESM registry is non-evictable; see
+  // loadChainModule). A fake/closure loader cannot exercise it and is
+  // explicitly insufficient per §2 — that bullet is covered by the real
+  // integration test in tests/loop-process-boundary.test.ts (two real
+  // `flume tick` subprocesses vs a chain.ts mutated on disk between them).
+  // The unit-level guarantee here is narrower: a `Dispatcher` constructed
+  // with only `configDir` resolves the on-disk chain.ts itself, in-process,
+  // with no subprocess.
 
   it("constructs with only configDir → resolves the on-disk chain.ts", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-ondisk-"));
@@ -833,70 +757,8 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
   );
 });
 
-describe("Dispatcher — engine resolution-failure fallback (§3)", () => {
-  it(
-    "resolution failure with no gate → last-good retained, error logged, loop() does not throw",
-    async () => {
-      const baton = new Baton(fx.repo);
-      baton.wake("plan");
-
-      const chain: Chain = {
-        phases: [
-          makePhase({
-            name: "plan",
-            concurrency: "singleton",
-            handoff: () => ["plan"], // self-rewake so the loop keeps running
-          }),
-        ],
-        humanOnly: [],
-      };
-
-      // First resolution succeeds (establishes last-good); every later
-      // resolution throws — the chain declared no chainLoadGate, so a broken
-      // self-edit reaches per-tick resolution unguarded.
-      let calls = 0;
-      const chainLoader = (): Promise<ChainModule> => {
-        calls++;
-        return calls === 1
-          ? Promise.resolve({ default: chain })
-          : Promise.reject(new Error("simulated broken chain.ts"));
-      };
-
-      const errors: string[] = [];
-      const rec: Logger = {
-        info: () => {},
-        warn: () => {},
-        error: (l) => errors.push(l),
-      };
-
-      let n = 0;
-      const dispatcher = new Dispatcher({
-        repoRoot: fx.repo,
-        configDir: fx.configDir,
-        chainLoader,
-        agent: singleAgent(async (cwd) => {
-          await writeAndCommit(cwd, "src/loop.ts", `tick ${++n}\n`, `build: ${n}`);
-        }),
-        log: rec,
-      });
-
-      const outcomes = await dispatcher.loop(3);
-
-      expect(outcomes).toHaveLength(3);
-      // No tick hibernated — last-good kept the loop alive and producing.
-      expect(outcomes.every((o) => !o.hibernated)).toBe(true);
-      expect(outcomes.every((o) => o.result?.committed === true)).toBe(true);
-      // Resolver invoked every tick (per-tick re-resolution, §2).
-      expect(calls).toBe(3);
-      // The failure surfaced loudly via the error channel, twice.
-      const fails = errors.filter((e) => /chain resolution failed/.test(e));
-      expect(fails.length).toBe(2);
-      expect(fails.every((e) => /last-good/.test(e))).toBe(true);
-    },
-    20_000,
-  );
-
-  it("first resolution fails with no last-good → loop() hibernates without throwing", async () => {
+describe("Dispatcher — ungated chain resolution failure → loud no-work outcome (§3)", () => {
+  it("tick() with a rejecting chainLoader returns a failed no-work outcome, logs loudly, does not throw", async () => {
     new Baton(fx.repo).wake("plan");
 
     const errors: string[] = [];
@@ -909,15 +771,105 @@ describe("Dispatcher — engine resolution-failure fallback (§3)", () => {
     const dispatcher = new Dispatcher({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      chainLoader: () => Promise.reject(new Error("cannot resolve chain")),
+      chainLoader: () =>
+        Promise.reject(new Error("simulated broken chain.ts")),
       agent: singleAgent(async () => {}),
       log: rec,
     });
 
-    const outcomes = await dispatcher.loop(2);
+    // No retain-last-good in-process (moot under process-per-tick): a tick
+    // whose chain won't resolve does no work and returns a `failed` outcome
+    // rather than throwing or hibernating. Recovery is structural — the next
+    // tick is a fresh process reading the (gate-restored, or human-fixed)
+    // chain.ts.
+    const outcome = await dispatcher.tick();
 
-    expect(outcomes).toHaveLength(1);
-    expect(outcomes[0]!.hibernated).toBe(true);
-    expect(errors.some((e) => /no last-good/.test(e))).toBe(true);
+    expect(outcome.failed).toBe(true);
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.phaseName).toBeUndefined();
+    expect(errors.some((e) => /chain resolution failed/.test(e))).toBe(true);
+    expect(errors.some((e) => /simulated broken chain\.ts/.test(e))).toBe(
+      true,
+    );
+  });
+});
+
+describe("superviseLoop — process-per-tick supervisor (§2)", () => {
+  it("spawns exactly one child per iteration and stops at hibernation", async () => {
+    const baton = new Baton(fx.repo);
+    baton.wake("plan");
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      // Simulate the child `flume tick`: after 3 ticks the phase sleeps
+      // itself and hands off to nothing → the on-disk baton empties → the
+      // supervisor reads hibernation (disk-is-truth) and stops.
+      if (calls >= 3) baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 50,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(true);
+  });
+
+  it("stops at --max when the chain never hibernates", async () => {
+    new Baton(fx.repo).wake("plan"); // never slept → never hibernates
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 4,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(4);
+    expect(res.ticks).toBe(4);
+    expect(res.hibernated).toBe(false);
+  });
+
+  it("ungated resolution failure: child exits non-zero → supervisor logs and proceeds, never crashes (§3)", async () => {
+    new Baton(fx.repo).wake("plan"); // a failed tick does no baton work
+
+    const warns: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: (l) => warns.push(l),
+      error: () => {},
+    };
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: 1 });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick,
+      log: rec,
+    });
+
+    // Never throws; proceeds every iteration; bounded only by --max.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(warns.filter((w) => /exited with code 1/.test(w)).length).toBe(3);
   });
 });

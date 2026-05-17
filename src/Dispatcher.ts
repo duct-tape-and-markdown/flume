@@ -8,8 +8,8 @@
  */
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -74,24 +74,24 @@ export interface ChainModule {
  * isn't a Chain (no resolvable default export, or `phases` not an array).
  *
  * This is the single load+validate path the runtime trusts. `diskChainLoader`
- * wraps it with content-hash memoization; `chainLoadGate` (builtinGates)
- * calls it to validate a just-committed `chain.ts` so a broken self-edit
- * fails its gate and is reverted before the next tick's resolution hits it.
+ * wraps it (one load per call, no memo); `chainLoadGate` (builtinGates) calls
+ * it to validate a just-committed `chain.ts` so a broken self-edit fails its
+ * gate and is reverted before the next tick's process resolves it.
  *
  * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
  * dist/cli.js can resolve consumer chain.ts files without a node loader flag
  * (plain `await import()` would fail: node refuses .ts under node_modules,
  * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
  *
- * KNOWN BOUND (tsx ^4.19 / Node 22): tsx's loader caches the *evaluated*
- * module by resolved file path for the life of the process — neither a query
- * string nor a fresh tsImport namespace evicts it. So a chain.ts rewritten
- * mid-`flume loop` is re-read on the next tick (diskChainLoader's hash gate
- * fires) but tsImport returns the prior evaluation; the new chain takes
- * effect on the next `flume loop` *process*, not the immediately following
- * in-process tick. The per-tick re-resolution contract itself (Dispatcher
- * calls chainLoader() every tick; injected loaders see every rewrite) holds —
- * see the fake-loader test. Flagged in the commit body.
+ * In-process this returns a *pinned* evaluation: Node's ESM module registry
+ * is keyed by resolved URL and is non-evictable, so a fixed-path chain.ts is
+ * frozen to its first load for the life of the process (verified on tsx 4.21
+ * / Node 22.21 — no query string, tsImport namespace, or loader
+ * re-registration evicts it). That is *why* per-tick re-resolution is a
+ * process boundary, not in-process re-eval: `flume loop` spawns one
+ * `flume tick` per iteration (§2), each a fresh process that loads chain.ts
+ * exactly once. A rewritten chain.ts governs the next tick because the next
+ * tick is a new process — not because anything re-imports it in-process.
  */
 export async function loadChainModule(path: string): Promise<ChainModule> {
   if (!existsSync(path)) {
@@ -126,35 +126,21 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
 }
 
 /**
- * Build the default per-tick chain resolver: load `<configDir>/chain.ts` (via
- * `loadChainModule`) and memoize by content hash. The compile runs only when
- * chain.ts's bytes differ from the last resolution; a stable chain costs one
- * sha256 of one small file per tick and zero recompiles across a loop.
- * Content hash, not mtime — git checkouts and no-op writes bump mtime
- * spuriously.
+ * Build the default per-tick chain resolver: load `<configDir>/chain.ts` via
+ * `loadChainModule`, once per call. No memoization — each `flume tick` is a
+ * fresh process (§2), so there is exactly one resolution per process and
+ * nothing to memoize across. The prior content-hash cache was an in-process
+ * optimization for a mechanism (in-process reload) that cannot deliver the
+ * re-resolution guarantee; cost is one small `tsImport` per tick, dominated
+ * by orders of magnitude by the agent invocation.
  *
- * Each `Dispatcher` builds its own resolver (own cache). Injecting
- * `DispatcherOptions.chainLoader` replaces this wholesale — the test seam.
+ * Injecting `DispatcherOptions.chainLoader` replaces this wholesale — the
+ * in-process unit-test seam (tests call `tick()` directly, no subprocess).
  */
 export function diskChainLoader(
   configDir: string,
 ): () => Promise<ChainModule> {
-  let cache: { hash: string; module: ChainModule } | undefined;
-  return async () => {
-    const path = resolve(configDir, "chain.ts");
-    if (!existsSync(path)) {
-      throw new Error(
-        `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
-      );
-    }
-    const hash = createHash("sha256")
-      .update(readFileSync(path))
-      .digest("hex");
-    if (cache && cache.hash === hash) return cache.module;
-    const module = await loadChainModule(path);
-    cache = { hash, module };
-    return module;
-  };
+  return () => loadChainModule(resolve(configDir, "chain.ts"));
 }
 
 /**
@@ -162,9 +148,11 @@ export function diskChainLoader(
  * are required; the rest tune chain resolution, concurrency, trunk
  * identification, logging, and per-tick wall-clock budget.
  *
- * No prebuilt `Chain` is accepted — the dispatcher re-resolves
- * `<configDir>/chain.ts` at the start of every tick (content-hash memoized),
- * so a tick that rewrites the chain is governed by the new chain next tick.
+ * No prebuilt `Chain` is accepted — the dispatcher resolves
+ * `<configDir>/chain.ts` once at the start of its tick. Re-resolution across
+ * ticks is a process boundary, not in-process: `flume loop` spawns one
+ * `flume tick` per iteration (§2), so a tick that rewrites the chain is
+ * governed by the new chain on the next tick's fresh process.
  */
 export interface DispatcherOptions {
   repoRoot: string;
@@ -176,9 +164,9 @@ export interface DispatcherOptions {
    */
   agent: Agent;
   /**
-   * Chain resolver, invoked once at the start of every tick. Defaults to
-   * `diskChainLoader(configDir)` (load `<configDir>/chain.ts`, memoized by
-   * content hash). Override for test injection only.
+   * Chain resolver, invoked once per tick. Defaults to
+   * `diskChainLoader(configDir)` (one load of `<configDir>/chain.ts` per
+   * process). Override for in-process test injection only (no subprocess).
    */
   chainLoader?: () => Promise<ChainModule>;
   log?: Logger;
@@ -205,6 +193,15 @@ export interface TickOutcome {
   hibernated: boolean;
   phaseName?: string;
   result?: TickResult;
+  /**
+   * True when the tick could not run at all — chain resolution threw and no
+   * `chainLoadGate` reverted the producing commit (§3). The `flume tick`
+   * process exits non-zero; the `flume loop` supervisor logs it and proceeds
+   * to the next tick (a fresh process re-reads `chain.ts`). Distinct from
+   * `hibernated` (clean stop) and from a no-commit tick (the agent ran but
+   * produced or kept no commit).
+   */
+  failed?: boolean;
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -226,13 +223,6 @@ export class Dispatcher {
   private trunkBranch: string | null;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
-  /**
-   * Last successfully-resolved chain module. The engine resolution-failure
-   * fallback (§3) reverts to this when a tick's `chainLoader()` throws and no
-   * `chainLoadGate` reverted the producing tick — a broken self-edit must not
-   * hard-crash a long-running loop.
-   */
-  private lastChainModule: ChainModule | undefined;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
@@ -249,38 +239,35 @@ export class Dispatcher {
   async tick(): Promise<TickOutcome> {
     const awake = this.baton.awake();
 
-    // Disk is truth every tick: a prior tick that rewrote chain.ts is
-    // governed by the new chain here. The resolver memoizes by content hash,
-    // so a stable chain recompiles zero times across a loop. The chain's
-    // optional `agent` export re-resolves with it.
+    // Disk is truth: this process resolves chain.ts exactly once, here. A
+    // prior tick that rewrote chain.ts is governed by the new chain because
+    // *this is a new process* (the supervisor spawned it) — not via any
+    // in-process reload. The chain's optional `agent` export resolves with it.
     //
-    // Engine resolution-failure fallback (§3): if resolution throws and no
-    // `chainLoadGate` reverted the producing tick (the chain author omitted
-    // it), retain the last successfully-resolved chain for this process,
-    // log loudly, and continue — a broken self-edit must never hard-crash a
-    // long-running loop. With no last-good yet (the very first resolution
-    // fails) there is nothing to run: log and hibernate so `loop()` exits
-    // cleanly instead of throwing.
+    // Engine resolution-failure fallback (§3): there is no in-process
+    // "last-good chain" to retain — recovery is structural, not in-memory. A
+    // chainLoadGate-guarded broken chain.ts is reverted by its producing
+    // tick, so the next tick's fresh process reads the restored file. An
+    // *unguarded* broken chain.ts has nothing to run: log loudly and return a
+    // no-work failed outcome. The `flume tick` process exits non-zero; the
+    // supervisor logs and proceeds (never crashes), and every subsequent tick
+    // fails the same way until a human or a §5-informed retry restores it.
     let chainModule: ChainModule;
     try {
       chainModule = await this.chainLoader();
-      this.lastChainModule = chainModule;
     } catch (err) {
       const msg = (err as Error).message;
-      if (!this.lastChainModule) {
-        this.log.error(
-          `[flume] chain resolution failed with no last-good chain to fall back to: ${msg}; hibernating`,
-        );
-        return {
-          hibernated: true,
-          awakeAfter: this.baton.awake(),
-          summary: `chain resolution failed (no last-good): ${msg}; hibernating`,
-        };
-      }
       this.log.error(
-        `[flume] chain resolution failed: ${msg}; retaining last-good chain for this process and continuing`,
+        `[flume] chain resolution failed: ${msg}. This tick does no work. ` +
+          `A chainLoadGate-guarded chain.ts is reverted by its producing ` +
+          `tick; an unguarded broken chain.ts fails every tick until restored.`,
       );
-      chainModule = this.lastChainModule;
+      return {
+        hibernated: false,
+        failed: true,
+        awakeAfter: this.baton.awake(),
+        summary: `chain resolution failed: ${msg}; no work`,
+      };
     }
     const chain = chainModule.default;
     const agent = chainModule.agent ?? this.opts.agent;
@@ -321,18 +308,6 @@ export class Dispatcher {
       awakeAfter: this.baton.awake(),
       summary: summarize(phase.name, result, allowed),
     };
-  }
-
-  /** Run ticks until hibernation or until maxTicks reached. */
-  async loop(maxTicks = 50): Promise<TickOutcome[]> {
-    const outcomes: TickOutcome[] = [];
-    for (let i = 0; i < maxTicks; i++) {
-      const outcome = await this.tick();
-      outcomes.push(outcome);
-      this.log.info(`[flume] ${outcome.summary}`);
-      if (outcome.hibernated) break;
-    }
-    return outcomes;
   }
 
   // ---------- singleton tick ----------
@@ -740,6 +715,100 @@ export class Dispatcher {
       paths: [this.pendingPath],
     });
   }
+}
+
+// ---------- loop supervisor (§2) ----------
+
+/** Options for {@link superviseLoop}. */
+export interface SuperviseLoopOptions {
+  /** Repo root; the supervisor reads baton state here between child ticks. */
+  repoRoot: string;
+  /** Max child ticks before stopping (the `--max N` cap). Default 50. */
+  maxTicks?: number;
+  log?: Logger;
+  /**
+   * Run one `flume tick` as a fresh child process; resolves with its exit
+   * code when it exits. Defaults to re-execing the running flume entrypoint
+   * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
+   * the built `dist/cli.js` or `tsx src/cli.ts`). Injected by tests — the
+   * stubbed-spawn seam.
+   */
+  runTick?: () => Promise<{ exitCode: number | null }>;
+}
+
+/** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
+export interface SuperviseResult {
+  ticks: number;
+  hibernated: boolean;
+}
+
+/**
+ * `flume loop` supervisor (§2). Spawns exactly one `flume tick` child process
+ * per iteration, carrying no in-memory chain or phase state across them — the
+ * only correct re-resolution mechanism (Node's ESM registry is non-evictable,
+ * so an in-process loop is pinned to chain.ts's first evaluation; see
+ * `loadChainModule`). Between children it reads the on-disk baton
+ * (disk-is-truth): no awake flags ⇒ hibernation ⇒ stop. A child that exits
+ * non-zero (e.g. an ungated broken chain.ts: §3) is logged and the loop
+ * proceeds — the supervisor never crashes. Bounded by `maxTicks` (the
+ * `--max N` cap); observable `--max`/hibernation behavior is unchanged from
+ * the prior in-process loop.
+ */
+export async function superviseLoop(
+  opts: SuperviseLoopOptions,
+): Promise<SuperviseResult> {
+  const log = opts.log ?? consoleLogger;
+  const maxTicks = opts.maxTicks ?? 50;
+  const baton = new Baton(opts.repoRoot);
+  const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
+
+  let ticks = 0;
+  for (let i = 0; i < maxTicks; i++) {
+    const { exitCode } = await runTick();
+    ticks++;
+    if (exitCode !== 0) {
+      log.warn(
+        `[flume] tick process exited with code ${exitCode}; ` +
+          `supervisor continuing (next tick is a fresh process)`,
+      );
+    }
+    // Disk is truth: the child tick slept its phase and woke successors (or
+    // didn't). No awake flags ⇒ hibernation. A failed tick does no baton
+    // work, so an unguarded broken chain.ts keeps a phase awake and fails
+    // loudly every iteration until restored or --max is hit.
+    if (baton.hibernating()) {
+      log.info(`[flume] hibernating after ${ticks} tick(s)`);
+      return { ticks, hibernated: true };
+    }
+  }
+  log.info(`[flume] reached --max ${maxTicks}; stopping`);
+  return { ticks, hibernated: false };
+}
+
+/**
+ * Default {@link SuperviseLoopOptions.runTick}: spawn `flume tick` as a fresh
+ * process mirroring however the supervisor itself was launched. `execArgv`
+ * carries node flags (e.g. `--import tsx` when run from source); `argv[1]` is
+ * the cli entrypoint (`dist/cli.js` built, `src/cli.ts` from source).
+ */
+function defaultTickRunner(
+  repoRoot: string,
+): () => Promise<{ exitCode: number | null }> {
+  return () =>
+    new Promise((resolveExit) => {
+      const child = spawn(
+        process.execPath,
+        [...process.execArgv, process.argv[1]!, "tick"],
+        { cwd: repoRoot, stdio: "inherit" },
+      );
+      child.on("exit", (code) => resolveExit({ exitCode: code }));
+      child.on("error", (err) => {
+        consoleLogger.error(
+          `[flume] failed to spawn 'flume tick': ${(err as Error).message}`,
+        );
+        resolveExit({ exitCode: 1 });
+      });
+    });
 }
 
 // ---------- module-private utilities ----------

@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { Baton } from "./Baton.js";
-import { Dispatcher, diskChainLoader } from "./Dispatcher.js";
+import { Dispatcher, diskChainLoader, superviseLoop } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { TickContext } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
@@ -185,10 +185,11 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Dispatcher re-resolves .flume/chain.ts (content-hash memoized) at the
-  // start of every tick from configDir; a chain.ts that exports `agent`
-  // overrides this default per tick. `render` resolves the chain directly
-  // (it inspects phases without invoking the agent).
+  // Dispatcher resolves .flume/chain.ts from configDir once at tick start
+  // (one load per process — `flume loop` re-resolves by spawning a fresh
+  // `flume tick` per iteration, §2); a chain.ts that exports `agent`
+  // overrides the default agent per tick. `render` resolves the chain
+  // directly (it inspects phases without invoking the agent).
   const configDir = resolve(repoRoot, ".flume");
   const resolveChain = diskChainLoader(configDir);
   const dispatcher = new Dispatcher({
@@ -200,13 +201,18 @@ async function main(): Promise<number> {
   if (cmd === "tick") {
     const outcome = await dispatcher.tick();
     console.log(outcome.summary);
-    return outcome.hibernated ? 0 : 0;
+    // Fail loudly on an unrecoverable resolution failure (§3) so the
+    // supervisor — and any human watching exit codes — sees a no-work tick.
+    return outcome.failed ? 1 : 0;
   }
 
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
     const max = maxIdx >= 0 ? Number(rest[maxIdx + 1]) : 50;
-    await dispatcher.loop(max);
+    // Supervisor: one fresh `flume tick` process per iteration (§2). The
+    // dispatcher constructed above is unused on this path — each child
+    // builds its own and resolves chain.ts in its own process.
+    await superviseLoop({ repoRoot, maxTicks: max });
     return 0;
   }
 
