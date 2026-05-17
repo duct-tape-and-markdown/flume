@@ -1,30 +1,39 @@
 # State
 
-Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — the only substantive delta dimension is the `build:` commit `bd5e6f4` (AFTERMERGE-REVERT-ISOLATION, §7b), shipped by `b58974d`. No spec delta; inbox empty. Promote also fired (mechanical — AFTERMERGE-REVERT-ISOLATION shipped → PLAN-PROSE-DURABILITY unblocked).
+Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — the substantive delta is the `build:` commit `85b0539` (PLAN-PROSE-DURABILITY, §8), shipped by `b569104`. No spec delta; inbox empty. Promote also fired (mechanical — PLAN-PROSE-DURABILITY shipped → WORKTREE-RACE-SERIALIZE unblocked).
 
-## Audit — `bd5e6f4` (build: isolate afterMerge revert to the offending entry §7b) vs §7b
+## Audit — `85b0539` (build: snapshot a gate-reverted singleton commit's files for §8 prose durability) vs §8
 
-Cross-checked the full diff (`src/Dispatcher.ts`, `tests/Dispatcher.test.ts`) against `spec/RELEASE-v0.2.md` §7(b) + §10 + §12. Trunk green: 88 tests pass, `pnpm tsc --noEmit` clean.
+Cross-checked the full diff (`src/Dispatcher.ts`, `tests/Dispatcher.test.ts`) against `spec/RELEASE-v0.2.md` §8 + §9 + §12. Trunk green: `pnpm tsc --noEmit` exit 0, 89 tests pass (8 files), the §7b `maxInFlight===2` canary and the new §8 test included.
 
-**Conformant.** The cherry-pick loop and the afterMerge-gate loop are fused into one per-entry pass: `preCherry = revParse` → `cherryPick` → `mergedSha = revParse` → run `afterMergeGates` against `mergedSha` → on failure `buildPriorAttempt`/`writePriorAttempt` (digest captured *before* reset, SHA still reachable) then `hardResetTo(preCherry)` and the entry stays pending; else `shipped.push`. The whole-wave `hardResetTo(preHead)` blast radius is gone — only the offending entry's commit reverts; N−1 clean siblings already on trunk stay; later siblings are evaluated against the trunk without the reverted commit. `preHead` still live (createWorktree arg) — no dead var. Files == `entry.files` exactly (no scope creep); `schemaDelta: none` correct. The plan-flagged coupled re-derive landed: `waveNoCommit`'s `!waveOk && shipped.length>0 → gate-revert` branch is replaced by `mergeReverted.length>0`, and `committedWave`/`shippedTags` drop the dead `waveOk` gate (the prior tick's Finding-2 cross-tick pointer, acted on). Order-independent attribution: the offending entry is the sole delta between `preCherry` and `mergedSha` regardless of `perEntry` order — the §7b test's file-presence gate verifies this both ways. Wave-level `noCommit` precedence is the same accepted debt as the prior audit (per-entry §5 record is the mandated channel; written for every merge-reverted entry — test-verified via `failPrompts[1]`).
+**Conformant.** Mechanism: before the `git reset --hard`, `snapshotRevertedFiles(cwd, postHead, key)` (Dispatcher.ts:445, inside `runSingleton` 399–480) `git show`s every non-deleted file the reverted commit touched and writes verbatim post-image content under `.flume/prior-attempts/<key>.reverted/<repo-rel-path>`. Recovery is "open the file", no session logs.
 
-**Finding (accepted debt + cross-tick pointer → WORKTREE-RACE-SERIALIZE).** Spec §4 and §7's acceptance both cite "the existing fanout-parallelism assertion" as a shared canary. No such standalone assertion existed pre-`bd5e6f4` (`git show bd5e6f4~1:tests/Dispatcher.test.ts` has zero `maxInFlight`/in-flight/concurrent tracking). The build did the right thing — it *created* the missing coverage by folding a `maxInFlight===2` probe over the agent-fanout `Promise.all` into the rewritten §7b test, which is a *functional* §4 canary (it asserts on the exact `Promise.all` §4 must keep parallel). But it is fragile *by location*: the §4 regression signal now lives inside a complex multi-tick afterMerge-revert test, not a standalone one. Not an OQ (mechanism is build's per §4/§7 acceptance, no human input needed) and not a new entry (no new shippable unit). Routed by refining WORKTREE-RACE-SERIALIZE's `files`/`tests`/`acceptance`/`notes` to point its build tick at the real canary (`§7b test, maxInFlight===2`) so it asserts against that instead of hunting a phantom standalone test or weakening the canary. Stale spec line numbers (§4 :257/:284/:353 are pre-reload) folded into the same notes refresh.
+- **Spec-licensed mechanism choice (borderline, recorded so the disposition is defensible).** The durable snapshot is a *third* mechanism, not literally one of §8's two enumerated ones (scoped revert / §5-carry). §8 explicitly delegates: "the spec mandates the property (no silent prose loss), not the implementation," and its acceptance is "recoverable without session logs: **present on disk** OR in the next plan tick's prior-attempt block." The snapshot satisfies "present on disk" + "no session logs" — conformant. Not an OQ (mechanism is build's by spec; no human input needed); narrative-only disposition in this `plan:` body.
+- **Files == entry.files exactly.** `src/Dispatcher.ts` + `tests/Dispatcher.test.ts`, both `edit`. No scope creep. `.flume/prior-attempts/` is already gitignored (`.gitignore:7`) — no `.gitignore` edit needed; build correctly left it. The snapshot is a *runtime* write to a gitignored, build-non-writable path, never committed (test scopes the agent commit to `.flume/plan`).
+- **Control flow correct.** Snapshot runs while `postHead` is still reachable, *before* `git.dropLastCommit` (446); `cwd === repoRoot` for singleton so `git show` targets the right repo. `priorAttemptPath` (`<key>.json`, §5) and `revertedSnapshotDir` (`<key>.reverted`, §8) share `repoRoot`/`PRIOR_ATTEMPTS_DIR` → equal durability past `git reset --hard` and worktree teardown.
+- **Scoped to runSingleton** as the commit body claims. Fanout's `clearPriorAttempt` (663) also `rm`s the reverted dir — harmless no-op (fanout never creates a snapshot).
+- **No-false-signal invariant preserved.** Clean-ship `clearPriorAttempt` (459) removes the snapshot dir too; `snapshotRevertedFiles` `rm`s a stale snapshot under the same key before re-writing. Test-verified (2nd clean tick → `existsSync(snapDir)` false). Best-effort honored: snapshot in try/catch with empty body — failure never blocks/fails the revert; a failed snapshot leaves the dir absent (no false recovery signal), per §8 "property, not a guarantee under broken git".
+- **Test is gate-agnostic** (fake `pendingParses` stands in for chain-local `pendingParseGate`; dispatcher has no "which file is prose" knowledge) — matches §8's mechanism-agnostic mandate.
 
-## Promote — PLAN-PROSE-DURABILITY → open
+No drift, missed cases, undertested logic, scope creep, or gate bypass. CHANGELOG correctly untouched: §9 `### Fixed` "silent plan-prose loss on revert (§8)" is captured by the consolidated `## [0.2.0]` in the `RELEASE-0.2.0` entry — no per-entry cherry-pick.
 
-Mechanical scan of all `blockedBy`: PLAN-PROSE-DURABILITY→AFTERMERGE-REVERT-ISOLATION (tag absent from queue — shipped by `b58974d`) → **flipped to `{kind:"open"}`**. Remaining links all still resolve: WORKTREE→PLAN-PROSE, BAIL-CONSTRAINT→WORKTREE, CHAIN-AUTHORING→BAIL-CONSTRAINT, RELEASE→CHAIN-AUTHORING. No other flips.
+**`b569104` (chore(flume): ship PLAN-PROSE-DURABILITY).** Removed exactly the PLAN-PROSE-DURABILITY entry (34 deletions, single file, single tag). Clean mechanical ship.
 
-## Queue (5 — one open head, then a linear chain)
+## Promote — WORKTREE-RACE-SERIALIZE → open
 
-`PLAN-PROSE-DURABILITY` (open, §8 — next for build) → WORKTREE-RACE-SERIALIZE (§4) → BAIL-CONSTRAINT-LEGIBILITY (§5 audit follow-up) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9). §2/§3 runtime + the full §5/§6 prior-outcome union + §7b afterMerge isolation all shipped.
+Mechanical scan of all `blockedBy`: WORKTREE-RACE-SERIALIZE→PLAN-PROSE-DURABILITY (tag absent from queue — shipped by `b569104`) → **flipped to `{kind:"open"}`**. Remaining links all still resolve: BAIL-CONSTRAINT→WORKTREE, CHAIN-AUTHORING→BAIL-CONSTRAINT, RELEASE→CHAIN-AUTHORING. No other flips. WORKTREE-RACE-SERIALIZE's `files`/`tests`/`acceptance`/`notes` (the prior-tick phantom-canary refinement) untouched — this delta does not touch §4.
+
+## Queue (4 — one open head, then a linear chain)
+
+`WORKTREE-RACE-SERIALIZE` (open, §4 — next for build) → BAIL-CONSTRAINT-LEGIBILITY (§5 audit follow-up) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9). §2/§3 runtime + the full §5/§6 prior-outcome union + §7b afterMerge isolation + §8 prose durability all shipped.
 
 ## Open questions
 
-- **3.** OQ#1 (§7a dogfood chain.ts gate-move) got a factual status bump — its "must land after §7b ships" precondition is now satisfied (§7b shipped `bd5e6f4`/`b58974d`); remaining blockers (off-allowlist edit + builtin `when` affordance gap) unchanged, still human/`chore(flume):` lane. Not re-litigated (no human input arrived). OQ#2 (unspecced `teardownWorktree`/`WorktreeSetupResult`/`extraEnv` surface — NEEDS AMENDMENT) and OQ#3 (`v0.1.1` tag vs CHANGELOG) untouched by this delta — byte-unchanged.
+- **3.** Unmoved by this delta — no spec change, no human input arrived, no new evidence. OQ#1 (§7a dogfood chain.ts gate-move, human/`chore(flume):` lane), OQ#2 (unspecced `teardownWorktree`/`WorktreeSetupResult`/`extraEnv` surface — NEEDS AMENDMENT), OQ#3 (`v0.1.1` tag vs CHANGELOG) all byte-unchanged. Not re-litigated.
 
 ## Writable-paths / trunk
 
-- This tick wrote `.flume/plan/pending.json` + `.flume/plan/state.md` + `.flume/plan/open-questions.md` (plan writable paths). inbox.md byte-unchanged (empty queue, no human input). No off-allowlist path filed; the audit finding routed entirely into WORKTREE-RACE-SERIALIZE's plan-owned fields.
-- Trunk: HEAD `b58974d` (`chore(flume):` ship). No code change this tick (plan-artifact-only).
+- This tick wrote `.flume/plan/pending.json` (sole change: WORKTREE-RACE-SERIALIZE gate flip) + `.flume/plan/state.md`. `open-questions.md` and `inbox.md` byte-unchanged (no movement / empty queue). No off-allowlist path filed; audit findings routed entirely into this `plan:` body (conformant build → narrative-only disposition).
+- Trunk: HEAD `b569104` (`chore(flume):` ship). No code change this tick (plan-artifact-only). tsc clean, 89 tests pass.
 
 Plan continues: no
