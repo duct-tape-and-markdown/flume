@@ -1,51 +1,5 @@
 [
   {
-    "tag": "GATE-FAILURE-FEEDBACK",
-    "summary": "On gate-revert, persist a bounded prior-attempt block (failing gate name, full details, reverted-diff digest) to disk; next flume tick injects it into the rendered prompt — afterCommit + afterMerge",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "5. Gate-failure feedback to the retrying tick"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "On gate-revert at afterCommit AND afterMerge, persist a bounded prior-attempt record (failing gate name + full details + reverted-diff stat/digest) keyed by entry tag (fanout) / phase (singleton) to a gitignored .flume/ runtime dir; clear it when a later attempt commits clean."
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "renderPrompt injects the persisted prior-attempt block as a dispatcher-owned structural section, mirroring prependHarnessBlock (the `<harness>` block, Prompt.ts:117); absent/empty on first attempt. No chain.ts promptArgs or .flume/prompts/*.md token."
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "Document the dispatcher-injected prior-attempt block beside the existing `<harness>` block section."
-        },
-        {
-          "path": ".gitignore",
-          "description": "Ignore the new prior-attempt runtime dir (mirror .flume/awake/ .flume/sessions/)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "afterCommit + afterMerge gate-fail → next rendered prompt carries gate name, full details, prior-attempt marker; first attempt → slot empty/absent."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "fake gate fails with structured details at afterCommit and (separately) afterMerge → next rendered prompt contains gate name + full details + prior-attempt marker; first attempt → no marker (§5 acceptance; also §3 acceptance bullet 1)"
-      }
-    ],
-    "acceptance": "afterCommit and afterMerge gate-fail each produce a next-tick rendered prompt containing the failing gate name, full details, and a prior-attempt marker; first attempt's slot is empty/absent; pnpm test green",
-    "notes": "Highest-leverage (§5, §1). Cross-process per §2: next tick is a fresh process → block persisted to disk beside baton (.flume/awake/), read at render. Inject like the `<harness>` block (Prompt.ts:117 prependHarnessBlock), NOT a {{token}} — no off-allowlist .flume/prompts or chain.ts edit (the `<harness>` precedent resolves §5's 'documented slot' per Inform-before-parking). Also closes §3 acceptance bullet 1. §6/§7b/§8 build on this block."
-  },
-  {
     "tag": "NO-COMMIT-TAXONOMY",
     "summary": "Classify every no-commit tick as exactly one of gate-revert | voluntary-bail | platform-preempt on TickOutcome and in the §5 prior-attempt block",
     "per": {
