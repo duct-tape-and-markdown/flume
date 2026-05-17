@@ -34,14 +34,14 @@ error.
 ## Quickstart
 
 ```bash
-npm install @<scope>/flume
+npm install @dtmd/flume
 ```
 
 Drop a `.flume/chain.ts` into your repo:
 
 ```ts
 // .flume/chain.ts
-import type { Chain, Phase } from "flume";
+import type { Chain, Phase } from "@dtmd/flume";
 const echo: Phase = { name: "echo", description: "Hello-world tick: write a note to disk.", promptPath: "prompts/echo.md", concurrency: "singleton", writablePaths: ["notes/**"], gates: [], handoff: () => [] };
 const chain: Chain = { phases: [echo], humanOnly: [] };
 export default chain;
