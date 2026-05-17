@@ -1135,6 +1135,124 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   );
 
   it(
+    "voluntary-bail under a stream-json agent: §5 block names the refused constraint legibly, free of NDJSON/cost noise; plain-text path is the test above",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      // The dogfood chain runs the agent under
+      // withTerminalRenderer(withSessionCapture(claudeCode({stream-json}))):
+      // the decorators pass stdout through raw, so AgentResult.stdout is the
+      // stream-json NDJSON transcript. Tailing it raw would forward
+      // escaped-JSON assistant/result events + cost/usage metadata — the §6
+      // noise this entry replaces with the refused constraint.
+      const phase = makePhase({ name: "plan", concurrency: "singleton" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const CONSTRAINT =
+        "BAILED: entry.files names spec/RELEASE-v0.2.md and " +
+        ".claude/rules/spec-plan-build.md, both outside the build phase " +
+        "writablePaths. Not pivoting to a different path. Route as an open " +
+        "question for a human.";
+
+      // A realistic `claude -p --output-format stream-json --verbose`
+      // transcript: system/init, an interim assistant turn, a tool_use +
+      // tool_result pair, the final assistant text, and the terminal result
+      // event carrying cost/usage. JSON.stringify so the test exercises the
+      // genuine escaped-JSON shape, not a hand-written approximation.
+      const ndjson =
+        [
+          { type: "system", subtype: "init", session_id: "s1", model: "claude", tools: ["Read", "Edit"] },
+          {
+            type: "assistant",
+            message: { id: "m1", role: "assistant", content: [{ type: "text", text: "Inspecting the assigned entry's writable paths." }] },
+          },
+          {
+            type: "assistant",
+            message: { content: [{ type: "tool_use", id: "t1", name: "Read", input: { file_path: ".flume/chain.ts" } }] },
+          },
+          {
+            type: "user",
+            message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "writablePaths: src/**, tests/**" }] },
+          },
+          { type: "assistant", message: { content: [{ type: "text", text: CONSTRAINT }] } },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            duration_ms: 81234,
+            duration_api_ms: 79000,
+            num_turns: 6,
+            result: CONSTRAINT,
+            session_id: "s1",
+            total_cost_usd: 0.4213,
+            usage: {
+              input_tokens: 12000,
+              output_tokens: 800,
+              cache_read_input_tokens: 250000,
+              cache_creation_input_tokens: 1800,
+            },
+          },
+        ]
+          .map((o) => JSON.stringify(o))
+          .join("\n") + "\n";
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "bailing-stream-json-singleton",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          // Clean exit, no commit; the constraint is the final message,
+          // delivered only inside the stream-json transcript.
+          return { exitCode: 0, stdout: ndjson, stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("voluntary-bail");
+
+      baton.wake("plan");
+      await dispatcher.tick();
+
+      expect(prompts.length).toBe(2);
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+
+      const retry = prompts[1]!;
+      // The constraint is forwarded as clean prose, in the voluntary-bail
+      // variant only.
+      expect(retry).toContain("<prior-attempt>");
+      expect(retry).toContain(BAIL_INTRO);
+      expect(retry).toContain("Refused constraint");
+      expect(retry).toContain(
+        "spec/RELEASE-v0.2.md and .claude/rules/spec-plan-build.md",
+      );
+      expect(retry).not.toContain(GATE_REVERT_INTRO);
+      expect(retry).not.toContain(PREEMPT_INTRO);
+
+      // …and the raw NDJSON / cost-usage noise the pre-fix tail forwarded is
+      // gone: no event envelopes, no escaped JSON, no cost/usage metadata.
+      expect(retry).not.toContain('"type":"result"');
+      expect(retry).not.toContain('"type":"assistant"');
+      expect(retry).not.toContain('"type":"system"');
+      expect(retry).not.toContain("tool_use");
+      expect(retry).not.toContain("total_cost_usd");
+      expect(retry).not.toContain("cache_read_input_tokens");
+      expect(retry).not.toContain("duration_ms");
+      expect(retry).not.toContain('\\"text\\"');
+    },
+    20_000,
+  );
+
+  it(
     "platform-preempt: TickOutcome.noCommit==='platform-preempt'; retry prompt marks it not-a-defect with the failure class; first attempt empty",
     async () => {
       const baton = new Baton(fx.repo);

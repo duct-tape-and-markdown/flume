@@ -1309,19 +1309,95 @@ function summarize(
 
 /**
  * Build the §6 voluntary-bail record: the agent exited cleanly without
- * committing. The constraint it refused is its final message — the tail of
- * stdout (the build/plan prompts instruct it to name the
- * writablePaths/Rule-0/spec gap there), bounded.
+ * committing. The constraint it refused is its final message, bounded — the
+ * build/plan prompts instruct it to name the writablePaths/Rule-0/spec gap
+ * there. {@link finalAgentMessage} lifts that message out of a stream-json
+ * transcript before bounding, so the refused constraint reaches the retry
+ * legibly rather than as escaped-JSON/cost-metadata noise.
  */
 function buildVoluntaryBail(stdout: string): VoluntaryBailAttempt {
-  const tail = tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
+  const message = finalAgentMessage(stdout);
   return {
     mode: "voluntary-bail",
     constraint:
-      tail.length > 0
-        ? tail
+      message.length > 0
+        ? message
         : "(agent exited cleanly without committing and produced no final message naming a constraint)",
   };
+}
+
+/**
+ * The agent's final message, bounded for the §5 voluntary-bail block.
+ *
+ * The dogfood `.flume/chain.ts` runs the agent under
+ * `withTerminalRenderer(withSessionCapture(claudeCode({ outputFormat:
+ * "stream-json" })))`. Those decorators pass stdout through raw, so
+ * `AgentResult.stdout` is the stream-json NDJSON transcript, not prose —
+ * tailing it raw forwards escaped-JSON assistant/result events plus
+ * cost/usage metadata, the exact §6 noise this block is meant to replace
+ * with the refused constraint. When stdout parses as stream-json, lift the
+ * agent's final message out of the transcript: the terminal `result` event's
+ * `result` text (Claude Code puts the final assistant message there
+ * verbatim), else the last `assistant` turn's concatenated text blocks. A
+ * plain-text agent (`claudeCode({ outputFormat: "text" })`) emits no
+ * stream-json events — its stdout already IS the final message, returned
+ * unchanged. Either way the result is `tailBound` to `MAX_PRIOR_NOCOMMIT`:
+ * a bail names its constraint at the tail of its closing message.
+ */
+function finalAgentMessage(stdout: string): string {
+  let sawStreamJson = false;
+  let resultText: string | undefined;
+  let lastAssistantText: string | undefined;
+
+  for (const raw of stdout.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    let evt: unknown;
+    try {
+      evt = JSON.parse(line);
+    } catch {
+      continue; // a non-JSON line is not a stream-json event
+    }
+    if (!evt || typeof evt !== "object") continue;
+    const e = evt as Record<string, unknown>;
+    if (typeof e.type !== "string") continue;
+    sawStreamJson = true;
+    if (e.type === "result") {
+      if (typeof e.result === "string" && e.result.trim().length > 0) {
+        resultText = e.result.trim();
+      }
+    } else if (e.type === "assistant") {
+      const text = assistantTurnText(e);
+      if (text.length > 0) lastAssistantText = text;
+    }
+  }
+
+  if (!sawStreamJson) {
+    // Plain-text agent: stdout already IS the final message.
+    return tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
+  }
+  return tailBound(resultText ?? lastAssistantText ?? "", MAX_PRIOR_NOCOMMIT);
+}
+
+/**
+ * Concatenated `text` blocks of one stream-json `assistant` event;
+ * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
+ */
+function assistantTurnText(e: Record<string, unknown>): string {
+  const msg = e.message as { content?: unknown } | undefined;
+  const content = Array.isArray(msg?.content) ? msg!.content : [];
+  const parts: string[] = [];
+  for (const c of content) {
+    if (
+      c &&
+      typeof c === "object" &&
+      (c as Record<string, unknown>).type === "text" &&
+      typeof (c as Record<string, unknown>).text === "string"
+    ) {
+      parts.push(((c as Record<string, unknown>).text as string).trim());
+    }
+  }
+  return parts.join("\n\n").trim();
 }
 
 /** Build the §6 platform-preempt record from the non-work failure class. */
