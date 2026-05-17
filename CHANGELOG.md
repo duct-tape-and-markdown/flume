@@ -11,6 +11,30 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-15
+
+Interim npm release, published out-of-band from a branch since reconciled
+into canonical history. **No `v0.1.1` git tag exists** — its content lives
+in canonical history via the README/docs scope fixes below.
+
+### Fixed
+
+- README quickstart and `docs/CHAIN-AUTHORING.md` referenced the
+  placeholder `@<scope>/flume` / unscoped `flume`; corrected to the
+  published `@dtmd/flume`.
+
+## [0.1.2] - 2026-05-16
+
+### Added
+
+- `Phase.teardownWorktree?(ctx)` — best-effort per-worktree resource
+  release (per-tag DB, scratch lease, short-lived credential), invoked
+  between agent exit and worktree removal; failures log and do not block
+  removal.
+- `setupWorktree` may return `{ extraEnv }` (new `WorktreeSetupResult`
+  export); the dispatcher layers it onto the agent invocation env.
+  `void`-returning implementations are unaffected — backward compatible.
+
 ## [0.1.0] - 2026-05-15
 
 First public release. Published to npm as `@dtmd/flume` (the unscoped
