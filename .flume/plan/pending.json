@@ -1,28 +1,5 @@
 [
   {
-    "tag": "CHAIN-AUTHORING-RELOAD-DOCS",
-    "summary": "Scrub the removed content-hash-memo / in-process-reload narrative from docs/CHAIN-AUTHORING.md; restate per-tick re-resolution as the process boundary it now is per §2",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "2. Per-tick chain re-resolution"
-    },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "Lines 14-15 ('memoized by content hash, recompiles zero times across a loop') and the :303-304 Dispatcher-wiring code-comment ('content-hash memoized'): replace both with the §2 reality — re-resolution is a fresh-process boundary (flume loop spawns one flume tick per iteration), one chain load per process, no memo/cache-bust."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "docs/CHAIN-AUTHORING.md makes no content-hash/memoization/zero-recompile claim; the 'Where the chain lives' para and the Dispatcher-wiring comment describe per-tick re-resolution as a fresh-process boundary per §2; pnpm test green",
-    "notes": "Audit of e2959d2 (shipped LOOP-PROCESS-PER-TICK): it removed diskChainLoader's memo but left CHAIN-AUTHORING.md asserting it — build flagged this out-of-scope in the commit body (the doc wasn't in that entry's files; correctly not silently patched). Pure docs/, build-writable; no code/schema/test. `open` since LOOP-PROCESS-PER-TICK shipped — states shipped reality. Head of the same-file chain; GATE-FAILURE-FEEDBACK also edits this doc."
-  },
-  {
     "tag": "GATE-FAILURE-FEEDBACK",
     "summary": "On gate-revert, persist a bounded prior-attempt block (failing gate name, full details, reverted-diff digest) to disk; next flume tick injects it into the rendered prompt — afterCommit + afterMerge",
     "per": {
