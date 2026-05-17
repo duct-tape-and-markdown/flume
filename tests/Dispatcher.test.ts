@@ -966,6 +966,106 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
   );
 });
 
+// §3 acceptance bullet 1's per-§5 clause: a chainLoadGate revert is only
+// *recovery* (not just containment) because the next tick's prompt carries
+// the chain-load failure (§3/§12: chainLoadGate without feedback = a blind
+// chain.ts revert loop). The §3 test above stops at the recorded-failure
+// check (it predates §5); this asserts the composite end-to-end. §5
+// forwarding is gate-uniform — no src/ change, only the asserting test.
+describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to the next tick (§3 bullet 1, per-§5)", () => {
+  it(
+    "broken chain.ts reverted by chainLoadGate → next tick's prompt carries <prior-attempt> naming chain-load + its detail; chain.ts restored to last-good",
+    async () => {
+      // Last-good chain.ts on trunk; the broken rewrite must revert to this.
+      const goodChain =
+        `export default { phases: [{ name: "build", description: "", ` +
+        `promptPath: "prompt.md", concurrency: "singleton", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [] };\n`;
+      await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
+
+      const baton = new Baton(fx.repo);
+      baton.wake("build");
+
+      const phase = makePhase({
+        name: "build",
+        concurrency: "singleton",
+        gates: [chainLoadGate],
+        handoff: () => [],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "recording-chain-rewriter",
+        async invoke(inv) {
+          // Capture the rendered prompt *before* acting — the assertion is
+          // on what the dispatcher handed this tick, not on its output.
+          const n = prompts.length;
+          prompts.push(inv.prompt);
+          if (n === 0) {
+            // Attempt 1: self-edit chain.ts into a syntactically-broken
+            // state → chainLoadGate fails afterCommit → revert + restore.
+            await writeAndCommit(
+              inv.cwd,
+              ".flume/chain.ts",
+              "export default { phases: [",
+              "build: rewrite chain (broken)",
+            );
+          } else {
+            // Attempt 2: innocuous commit (chain.ts untouched → gate skips).
+            await writeAndCommit(
+              inv.cwd,
+              "src/o.ts",
+              "recovered\n",
+              "build: recover",
+            );
+          }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      await dispatcher.tick(); // attempt 1 → broken chain.ts committed, reverted
+      baton.wake("build"); // re-wake (handoff () => [] slept it)
+      await dispatcher.tick(); // attempt 2 → prompt carries the chain-load block
+
+      expect(prompts.length).toBe(2);
+
+      // First attempt: no false prior-attempt signal.
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+
+      // Retry: the §5 block names the *chain-load* gate, reverted at
+      // afterCommit, and forwards its full loader failure — not just the
+      // one-line verdict — so the next tick does not blindly re-author the
+      // same broken chain.ts.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain("Reverted at: afterCommit");
+      expect(prompts[1]).toContain("Failing gate: chain-load");
+      expect(prompts[1]).toContain(
+        "Verdict: chain.ts is broken — commit reverted",
+      );
+      // The raw esbuild transform failure (chainLoadGate's `details`) is
+      // forwarded, bounded but verbatim.
+      expect(prompts[1]).toContain("Transform failed");
+      expect(prompts[1]).toContain("Unexpected end of file");
+
+      // chain.ts is back at the last-good version after the revert.
+      expect(
+        await readFile(join(fx.repo, ".flume", "chain.ts"), "utf8"),
+      ).toBe(goodChain);
+    },
+    20_000,
+  );
+});
+
 describe("Dispatcher — ungated chain resolution failure → loud no-work outcome (§3)", () => {
   it("tick() with a rejecting chainLoader returns a failed no-work outcome, logs loudly, does not throw", async () => {
     new Baton(fx.repo).wake("plan");
