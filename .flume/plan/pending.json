@@ -1,60 +1,15 @@
 [
   {
-    "tag": "LOOP-PROCESS-PER-TICK",
-    "summary": "flume loop becomes a supervisor spawning one flume tick subprocess per iteration; drop diskChainLoader content-hash memo + lastChainModule in-process resolution-failure fallback",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "2. Per-tick chain re-resolution"
-    },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        {
-          "path": "tests/loop-process-boundary.test.ts",
-          "description": "Integration: spawn real `flume tick` twice against a real on-disk .flume/chain.ts mutated between invocations (add/rename a phase); 2nd process schedules per the new chain. NOT a fake loader (§2 bullet 1 / §10)."
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "loop subcommand → supervisor: re-exec `flume tick` as a child process per iteration; between children read continuation/hibernation from disk baton (or child exit) and honor --max N. tick stays single-process resolve+run."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "diskChainLoader: drop content-hash memo (one tsImport/tick; no in-process recompile to memoize). Remove lastChainModule field + retain-last-good try/catch in tick(); resolution failure → loud error log + no-work failed-tick outcome (process exits; supervisor proceeds, never crashes)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Replace the fake-loader §2 re-resolution test. Add: configDir-only construct → tick() resolves on-disk chain in-process (no subprocess); loop spawns exactly one child/iteration + --max/hibernation terminate (stubbed spawn); ungated resolution-fail → no-work outcome, supervisor no-crash."
-        }
-      ],
-      "retire": [
-        "diskChainLoader content-hash memoization",
-        "Dispatcher.lastChainModule + in-process resolution-failure fallback (moot under process-per-tick)"
-      ]
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/loop-process-boundary.test.ts",
-        "asserts": "real `flume tick` run twice vs a chain.ts mutated on disk between runs → second tick runs the new chain (§2 acceptance bullet 1)"
-      },
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "configDir-only construct resolves on-disk chain; loop = one child/iteration + correct --max/hibernation termination; ungated resolution failure → loud no-work outcome, supervisor no-crash (§2 bullets 2-3, §3 acceptance bullet 2)"
-      }
-    ],
-    "acceptance": "Real `flume tick` run twice vs a between-run-mutated on-disk chain.ts → 2nd runs new chain; loop spawns one child/iteration with --max/hibernation still terminating; configDir-only Dispatcher resolves on-disk chain; ungated resolve-fail → loud no-work, supervisor survives; pnpm test green",
-    "notes": "Re-derives §2. PER-TICK-CHAIN-RELOAD (0c24b29) shipped OLD §2 (in-process content-hash memo); a950a0c added lastChainModule retain-last-good. New §2/§3/§12 remove both as moot under process-per-tick (Node ESM registry non-evictable — OQ#1 resolved by 4187f44). chainLoadGate/loadChainModule/index export survive unchanged. Folds §3 acceptance bullet 2 (ungated resolve-fail → loud no-work, supervisor survives); §3 bullet 1 is GATE-FAILURE-FEEDBACK. Per §12 no standalone §3 entry."
-  },
-  {
     "tag": "GATE-FAILURE-FEEDBACK",
     "summary": "On gate-revert, persist a bounded prior-attempt block (failing gate name, full details, reverted-diff digest) to disk; next flume tick injects it into the rendered prompt — afterCommit + afterMerge",
     "per": {
       "path": "spec/RELEASE-v0.2.md",
       "section": "5. Gate-failure feedback to the retrying tick"
     },
-    "gate": { "kind": "blockedBy", "tag": "LOOP-PROCESS-PER-TICK" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "LOOP-PROCESS-PER-TICK"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -98,7 +53,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "6. No-commit outcome taxonomy"
     },
-    "gate": { "kind": "blockedBy", "tag": "GATE-FAILURE-FEEDBACK" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "GATE-FAILURE-FEEDBACK"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -130,7 +88,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "7. Fanout revert isolation + gate-placement defaults"
     },
-    "gate": { "kind": "blockedBy", "tag": "NO-COMMIT-TAXONOMY" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "NO-COMMIT-TAXONOMY"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -162,7 +123,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "8. Plan-tick prose durability"
     },
-    "gate": { "kind": "blockedBy", "tag": "AFTERMERGE-REVERT-ISOLATION" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "AFTERMERGE-REVERT-ISOLATION"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -194,7 +158,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "4. Worktree create/teardown race serialization"
     },
-    "gate": { "kind": "blockedBy", "tag": "PLAN-PROSE-DURABILITY" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "PLAN-PROSE-DURABILITY"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -226,7 +193,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "7. Fanout revert isolation + gate-placement defaults"
     },
-    "gate": { "kind": "blockedBy", "tag": "WORKTREE-RACE-SERIALIZE" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "WORKTREE-RACE-SERIALIZE"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -249,7 +219,10 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "9. Versioning & distribution"
     },
-    "gate": { "kind": "blockedBy", "tag": "CHAIN-AUTHORING-GATE-GUIDANCE" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "CHAIN-AUTHORING-GATE-GUIDANCE"
+    },
     "files": {
       "new": [],
       "edit": [
