@@ -63,7 +63,11 @@ If the delta is small enough that you can meet the bar across every dimension, d
 
 `files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it.
 
-Telegraphic: short enough that build can act on the entry without re-reading the spec. **Calibration anchor: ≤200 chars on uncapped fields.** This isn't a hard cap — it's a signal: if you can't fit, the entry is doing too much OR you're repeating spec. Both are revisions, not workarounds. The downstream cost is real: every build tick re-reads the full entry JSON, and bloated fields tax every tick until the entry ships.
+Telegraphic: short enough that build can act on the entry without re-reading the spec.
+
+**Hard caps (zod-enforced; over-cap reverts the whole tick via `pendingParseGate`, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
+
+Hitting a cap is a signal, never a license to truncate or overrun: the entry is doing too much, or it's repeating spec. The fix is to **decompose** into discrete, shippable units (more, smaller entries), or — if a whole spec section can't decompose into telegraphic entries — **park an open-question proposing a spec split** (per *Derive*, above). Both are revisions, not workarounds. The downstream cost is real: every build tick re-reads the full entry JSON, and bloated fields tax every tick until the entry ships.
 
 # OUTPUT
 
