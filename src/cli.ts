@@ -13,15 +13,12 @@
 
 import { resolve, join, dirname } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { pathToFileURL, fileURLToPath } from "node:url";
-
-import { tsImport } from "tsx/esm/api";
+import { fileURLToPath } from "node:url";
 
 import { Baton } from "./Baton.js";
-import { Dispatcher } from "./Dispatcher.js";
+import { Dispatcher, diskChainLoader } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
-import type { Agent } from "./Agent.js";
-import type { Chain, TickContext } from "./Phase.js";
+import type { TickContext } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import { parsePending } from "./PendingSchema.js";
 
@@ -134,49 +131,6 @@ function wantsHelp(args: readonly string[]): boolean {
   return args.includes("--help") || args.includes("-h");
 }
 
-interface ChainModule {
-  default: Chain;
-  agent?: Agent;
-}
-
-async function loadChain(repoRoot: string): Promise<ChainModule> {
-  const path = resolve(repoRoot, ".flume", "chain.ts");
-  if (!existsSync(path)) {
-    throw new Error(
-      `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
-    );
-  }
-  // tsImport (tsx/esm/api) compiles the .ts source in-process so the published
-  // dist/cli.js can resolve consumer chain.ts files without a node loader flag
-  // (plain `await import()` would fail: node refuses .ts under node_modules,
-  // and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
-  const ns = (await tsImport(
-    pathToFileURL(path).href,
-    import.meta.url,
-  )) as Record<string, unknown>;
-
-  // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
-  // is { default: { __esModule: true, default: <realDefault> } }. A module
-  // with named exports stays true ESM: ns.default is the value directly and
-  // named exports are siblings on ns. Normalize both shapes — the documented
-  // minimal chain (default export only, e.g. examples/minimal-chain.ts) hits
-  // the interop path.
-  const d = ns.default as Record<string, unknown> | undefined;
-  const interop =
-    !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
-  const chain = (interop ? d!.default : d) as Chain | undefined;
-  const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
-    | Agent
-    | undefined;
-
-  if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
-    throw new Error(
-      `${path} must default-export a Chain (an object with a phases[] array)`,
-    );
-  }
-  return agent ? { default: chain, agent } : { default: chain };
-}
-
 async function main(): Promise<number> {
   const [, , firstArg, ...restArgs] = process.argv;
   const repoRoot = process.cwd();
@@ -231,13 +185,16 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const { default: chain, agent: chainAgent } = await loadChain(repoRoot);
-  const agent = chainAgent ?? claudeCode();
+  // Dispatcher re-resolves .flume/chain.ts (content-hash memoized) at the
+  // start of every tick from configDir; a chain.ts that exports `agent`
+  // overrides this default per tick. `render` resolves the chain directly
+  // (it inspects phases without invoking the agent).
+  const configDir = resolve(repoRoot, ".flume");
+  const resolveChain = diskChainLoader(configDir);
   const dispatcher = new Dispatcher({
-    chain,
     repoRoot,
-    configDir: resolve(repoRoot, ".flume"),
-    agent,
+    configDir,
+    agent: claudeCode(),
   });
 
   if (cmd === "tick") {
@@ -259,6 +216,7 @@ async function main(): Promise<number> {
       console.error("usage: flume render <phase> [--entry <tag>]");
       return 2;
     }
+    const { default: chain } = await resolveChain();
     const phase = chain.phases.find((p) => p.name === phaseName);
     if (!phase) {
       console.error(`unknown phase: ${phaseName}`);

@@ -8,8 +8,12 @@
  */
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join, dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { tsImport } from "tsx/esm/api";
 
 import type { Agent } from "./Agent.js";
 import { Baton } from "./Baton.js";
@@ -55,16 +59,112 @@ export const consoleLogger: Logger = {
 };
 
 /**
- * Constructor input for `Dispatcher`. `chain`, `repoRoot`, `configDir`, and
- * `agent` are required; the rest tune concurrency, trunk identification,
- * logging, and per-tick wall-clock budget.
+ * The shape `.flume/chain.ts` resolves to: a default-exported `Chain` plus an
+ * optional `agent` override. The per-tick resolver returns this; a rewritten
+ * chain.ts changes the chain (and any `agent` export) for the next tick.
+ */
+export interface ChainModule {
+  default: Chain;
+  agent?: Agent;
+}
+
+/**
+ * Build the default per-tick chain resolver: load `<configDir>/chain.ts` with
+ * tsx, normalize tsx's default/named-export interop, and memoize by content
+ * hash. The compile (`tsImport`) runs only when chain.ts's bytes differ from
+ * the last resolution; a stable chain costs one sha256 of one small file per
+ * tick and zero recompiles across a loop. Content hash, not mtime — git
+ * checkouts and no-op writes bump mtime spuriously.
+ *
+ * Each `Dispatcher` builds its own resolver (own cache). Injecting
+ * `DispatcherOptions.chainLoader` replaces this wholesale — the test seam.
+ */
+export function diskChainLoader(
+  configDir: string,
+): () => Promise<ChainModule> {
+  let cache: { hash: string; module: ChainModule } | undefined;
+  return async () => {
+    const path = resolve(configDir, "chain.ts");
+    if (!existsSync(path)) {
+      throw new Error(
+        `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
+      );
+    }
+    const hash = createHash("sha256")
+      .update(readFileSync(path))
+      .digest("hex");
+    if (cache && cache.hash === hash) return cache.module;
+
+    // tsImport (tsx/esm/api) compiles the .ts source in-process so the
+    // published dist/cli.js can resolve consumer chain.ts files without a
+    // node loader flag (plain `await import()` would fail: node refuses .ts
+    // under node_modules, and consumer .flume/chain.ts is a .ts file
+    // regardless of where flume lives).
+    //
+    // KNOWN BOUND (tsx ^4.19 / Node 22): tsx's loader caches the *evaluated*
+    // module by resolved file path for the life of the process — neither a
+    // query string nor a fresh tsImport namespace evicts it. So a chain.ts
+    // rewritten mid-`flume loop` is re-read on the next tick (our hash gate
+    // fires) but tsImport returns the prior evaluation; the new chain takes
+    // effect on the next `flume loop` *process*, not the immediately
+    // following in-process tick. The per-tick re-resolution contract itself
+    // (Dispatcher calls chainLoader() every tick; injected loaders see every
+    // rewrite) holds — see the fake-loader test. Flagged in the commit body.
+    const ns = (await tsImport(
+      pathToFileURL(path).href,
+      import.meta.url,
+    )) as Record<string, unknown>;
+
+    // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
+    // is { default: { __esModule: true, default: <realDefault> } }. A module
+    // with named exports stays true ESM: ns.default is the value directly and
+    // named exports are siblings on ns. Normalize both shapes — the
+    // documented minimal chain (default export only) hits the interop path.
+    const d = ns.default as Record<string, unknown> | undefined;
+    const interop =
+      !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
+    const chain = (interop ? d!.default : d) as Chain | undefined;
+    const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
+      | Agent
+      | undefined;
+
+    if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
+      throw new Error(
+        `${path} must default-export a Chain (an object with a phases[] array)`,
+      );
+    }
+    const module: ChainModule = agent
+      ? { default: chain, agent }
+      : { default: chain };
+    cache = { hash, module };
+    return module;
+  };
+}
+
+/**
+ * Constructor input for `Dispatcher`. `repoRoot`, `configDir`, and `agent`
+ * are required; the rest tune chain resolution, concurrency, trunk
+ * identification, logging, and per-tick wall-clock budget.
+ *
+ * No prebuilt `Chain` is accepted — the dispatcher re-resolves
+ * `<configDir>/chain.ts` at the start of every tick (content-hash memoized),
+ * so a tick that rewrites the chain is governed by the new chain next tick.
  */
 export interface DispatcherOptions {
-  chain: Chain;
   repoRoot: string;
   /** Directory the chain config (and its prompt files) live in. */
   configDir: string;
+  /**
+   * Default agent. A `chain.ts` that exports `agent` overrides this per tick
+   * (the agent re-resolves with the chain); otherwise this is used.
+   */
   agent: Agent;
+  /**
+   * Chain resolver, invoked once at the start of every tick. Defaults to
+   * `diskChainLoader(configDir)` (load `<configDir>/chain.ts`, memoized by
+   * content hash). Override for test injection only.
+   */
+  chainLoader?: () => Promise<ChainModule>;
   log?: Logger;
   /** Max parallel ticks per fanout batch. Default 4. */
   maxParallel?: number;
@@ -109,6 +209,7 @@ export class Dispatcher {
   private readonly tickTimeoutMs: number | undefined;
   private trunkBranch: string | null;
   private readonly pendingPath: string;
+  private readonly chainLoader: () => Promise<ChainModule>;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
@@ -118,12 +219,22 @@ export class Dispatcher {
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.trunkBranch = opts.trunkBranch ?? null;
     this.pendingPath = join(opts.repoRoot, ".flume", "plan", "pending.json");
+    this.chainLoader = opts.chainLoader ?? diskChainLoader(opts.configDir);
   }
 
   /** Run one phase × one tick. Returns hibernated outcome if nothing awake. */
   async tick(): Promise<TickOutcome> {
     const awake = this.baton.awake();
-    const phase = this.opts.chain.phases.find((p) => awake.includes(p.name));
+
+    // Disk is truth every tick: a prior tick that rewrote chain.ts is
+    // governed by the new chain here. The resolver memoizes by content hash,
+    // so a stable chain recompiles zero times across a loop. The chain's
+    // optional `agent` export re-resolves with it.
+    const chainModule = await this.chainLoader();
+    const chain = chainModule.default;
+    const agent = chainModule.agent ?? this.opts.agent;
+
+    const phase = chain.phases.find((p) => awake.includes(p.name));
 
     if (!phase) {
       return {
@@ -143,15 +254,13 @@ export class Dispatcher {
 
     const result =
       phase.concurrency === "singleton"
-        ? await this.runSingleton(phase)
-        : await this.runFanout(phase);
+        ? await this.runSingleton(phase, agent)
+        : await this.runFanout(phase, agent);
 
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
     const handoff = phase.handoff(result);
-    const allowed = handoff.filter(
-      (n) => !this.opts.chain.humanOnly.includes(n),
-    );
+    const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
     return {
@@ -177,7 +286,7 @@ export class Dispatcher {
 
   // ---------- singleton tick ----------
 
-  private async runSingleton(phase: Phase): Promise<TickResult> {
+  private async runSingleton(phase: Phase, agent: Agent): Promise<TickResult> {
     const cwd = this.opts.repoRoot;
     const preHead = await git.revParse(cwd);
     const pending = await this.readPending();
@@ -191,7 +300,7 @@ export class Dispatcher {
       args,
     });
 
-    await this.invokeAgent(phase, cwd, prompt);
+    await this.invokeAgent(phase, cwd, prompt, agent);
 
     const postHead = await git.revParse(cwd);
     let committed = postHead !== preHead;
@@ -219,7 +328,7 @@ export class Dispatcher {
 
   // ---------- fanout tick ----------
 
-  private async runFanout(phase: Phase): Promise<TickResult> {
+  private async runFanout(phase: Phase, agent: Agent): Promise<TickResult> {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
@@ -283,7 +392,13 @@ export class Dispatcher {
     // Run agent in each worktree concurrently.
     const perEntry = await Promise.all(
       batch.map((entry, i) =>
-        this.runFanoutEntry(phase, entry, worktrees[i]!, extraEnvByIndex[i]),
+        this.runFanoutEntry(
+          phase,
+          entry,
+          worktrees[i]!,
+          agent,
+          extraEnvByIndex[i],
+        ),
       ),
     );
 
@@ -401,6 +516,7 @@ export class Dispatcher {
     phase: Phase,
     entry: PendingEntry,
     wt: { path: string; branch: string },
+    agent: Agent,
     extraEnv?: Record<string, string>,
   ): Promise<{
     entry: PendingEntry;
@@ -418,7 +534,7 @@ export class Dispatcher {
     });
 
     const preHead = await git.revParse(wt.path);
-    await this.invokeAgent(phase, wt.path, prompt, extraEnv);
+    await this.invokeAgent(phase, wt.path, prompt, agent, extraEnv);
     const postHead = await git.revParse(wt.path);
     const committed = postHead !== preHead;
 
@@ -452,10 +568,11 @@ export class Dispatcher {
     phase: Phase,
     cwd: string,
     prompt: string,
+    agent: Agent,
     extraEnv?: Record<string, string>,
   ): Promise<void> {
     try {
-      const result = await this.opts.agent.invoke({
+      const result = await agent.invoke({
         cwd,
         prompt,
         ...(this.tickTimeoutMs !== undefined

@@ -7,7 +7,12 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { Dispatcher, type Logger } from "../src/Dispatcher.ts";
+import {
+  Dispatcher,
+  diskChainLoader,
+  type ChainModule,
+  type Logger,
+} from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import type { Gate } from "../src/Gate.ts";
@@ -21,6 +26,15 @@ const silent: Logger = {
   warn: () => {},
   error: () => {},
 };
+
+/**
+ * Inject a fixed chain as the per-tick resolver — the `chainLoader` test
+ * seam (DispatcherOptions no longer takes a prebuilt `Chain`). Returns the
+ * same chain every tick unless the test mutates a closed-over reference.
+ */
+function staticLoader(chain: Chain): () => Promise<ChainModule> {
+  return () => Promise.resolve({ default: chain });
+}
 
 // ---------- temp-repo fixture ----------
 
@@ -182,7 +196,7 @@ describe("Dispatcher singleton — commit detected", () => {
     });
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -223,7 +237,7 @@ describe("Dispatcher singleton — commit detected", () => {
     };
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -264,7 +278,7 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
     });
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -309,7 +323,7 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
     });
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -341,7 +355,7 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
     });
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -361,7 +375,7 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent: singleAgent(async () => {}),
@@ -405,7 +419,7 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
       });
 
       const dispatcher = new Dispatcher({
-        chain,
+        chainLoader: staticLoader(chain),
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent,
@@ -474,7 +488,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       });
 
       const dispatcher = new Dispatcher({
-        chain,
+        chainLoader: staticLoader(chain),
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent,
@@ -545,7 +559,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts the wave", () =>
       });
 
       const dispatcher = new Dispatcher({
-        chain,
+        chainLoader: staticLoader(chain),
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent,
@@ -608,7 +622,7 @@ describe("Dispatcher fanout — empty pickable set", () => {
     const agent = fanoutAgent({});
 
     const dispatcher = new Dispatcher({
-      chain,
+      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -626,5 +640,129 @@ describe("Dispatcher fanout — empty pickable set", () => {
       "DOWN",
       "UP",
     ]);
+  });
+});
+
+// ---------- per-tick chain re-resolution (§2) ----------
+
+describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
+  it("a chain rewritten between ticks governs the next tick", async () => {
+    const baton = new Baton(fx.repo);
+
+    // v1 has only phase "alpha"; v2 renames it to "beta". The baton flag
+    // ("beta") is constant — only the resolved chain decides whether a
+    // matching phase exists, so successor scheduling reflects the rewrite.
+    const v1: Chain = {
+      phases: [makePhase({ name: "alpha", handoff: () => [] })],
+      humanOnly: [],
+    };
+    const v2: Chain = {
+      phases: [makePhase({ name: "beta", handoff: () => [] })],
+      humanOnly: [],
+    };
+
+    let current: Chain = v1;
+    let resolveCount = 0;
+    const chainLoader = (): Promise<ChainModule> => {
+      resolveCount++;
+      return Promise.resolve({ default: current });
+    };
+
+    const dispatcher = new Dispatcher({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/reresolve.ts", "x\n", "build: r");
+      }),
+      log: silent,
+      chainLoader,
+    });
+
+    // Tick 1 under v1: "beta" is awake but v1 has no such phase → hibernate.
+    baton.wake("beta");
+    const o1 = await dispatcher.tick();
+    expect(o1.hibernated).toBe(true);
+
+    // Rewrite the chain between ticks (v2 renames the phase to "beta").
+    current = v2;
+
+    // Tick 2: same baton flag, but the NEW chain governs → "beta" runs.
+    const o2 = await dispatcher.tick();
+    expect(o2.hibernated).toBe(false);
+    expect(o2.phaseName).toBe("beta");
+    expect(o2.result?.committed).toBe(true);
+    // Resolved once per tick, not once per process.
+    expect(resolveCount).toBe(2);
+  });
+
+  it("diskChainLoader memoizes by content hash — stable chain, zero recompiles", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-chainloader-"));
+    try {
+      const chainPath = join(dir, "chain.ts");
+      const v1 =
+        `export default { phases: [{ name: "a", description: "", ` +
+        `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
+        `gates: [], handoff: () => [] }], humanOnly: [] };\n`;
+      await writeFile(chainPath, v1, "utf8");
+
+      const loader = diskChainLoader(dir);
+      const m1 = await loader();
+      const m2 = await loader();
+      // Same module object across calls → memoized; the compile ran once.
+      // This is the §2 "stable chain → zero recompiles" guarantee.
+      expect(m2).toBe(m1);
+      expect(m1.default.phases[0]!.name).toBe("a");
+
+      // A no-op rewrite (identical bytes) still memoizes — the cache keys on
+      // content hash, not mtime, so a git checkout / no-op write is free.
+      await writeFile(chainPath, v1, "utf8");
+      expect(await loader()).toBe(m1);
+
+      // A real content change busts our memo: the hash differs, so the
+      // loader re-resolves and returns a distinct module wrapper rather
+      // than the memoized one. (Whether tsImport yields fresh *content*
+      // in-process is bounded by tsx's loader cache — see diskChainLoader's
+      // KNOWN BOUND comment and the commit body; the per-tick contract is
+      // covered by the fake-loader test above.)
+      await writeFile(chainPath, v1.replace('name: "a"', 'name: "b"'), "utf8");
+      const m3 = await loader();
+      expect(m3).not.toBe(m1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("constructs with only configDir → resolves the on-disk chain.ts", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-ondisk-"));
+    try {
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default { phases: [{ name: "ondisk", description: "", ` +
+          `promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+          `humanOnly: [] };\n`,
+        "utf8",
+      );
+
+      new Baton(fx.repo).wake("ondisk");
+
+      // No chainLoader → default diskChainLoader(configDir).
+      const dispatcher = new Dispatcher({
+        repoRoot: fx.repo,
+        configDir: cfg,
+        agent: singleAgent(async (cwd) => {
+          await writeAndCommit(cwd, "src/ondisk.ts", "x\n", "build: ondisk");
+        }),
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+      expect(outcome.hibernated).toBe(false);
+      expect(outcome.phaseName).toBe("ondisk");
+      expect(outcome.result?.committed).toBe(true);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
   });
 });

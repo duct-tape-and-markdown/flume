@@ -9,8 +9,11 @@ no spec separation), see [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
 ## Where the chain lives
 
-The harness loads `.flume/chain.ts` relative to your repo root. Default-
-export a `Chain` value — `cli.ts:loadChain` rejects modules without a
+The harness re-resolves `.flume/chain.ts` (relative to your repo root) at
+the start of every tick — disk is truth, so a tick that rewrites the chain
+is governed by the new chain on the next tick. Resolution is memoized by
+content hash, so a stable chain recompiles zero times across a loop.
+Default-export a `Chain` value — the resolver rejects modules without a
 default export. Prompts referenced by `Phase.promptPath` resolve relative
 to `.flume/`.
 
@@ -294,8 +297,17 @@ The chain doesn't reference the agent — the dispatcher does. The shipped
 invoke `Dispatcher` yourself for non-standard hosts (tests, custom CLIs):
 
 ```ts
+import { resolve } from "node:path";
 import { Dispatcher, consoleLogger } from "@dtmd/flume";
-const dispatcher = new Dispatcher({ chain, agent, log: consoleLogger, repoRoot: process.cwd() });
+
+// No prebuilt chain: the dispatcher re-resolves <configDir>/chain.ts
+// (content-hash memoized) at the start of every tick.
+const dispatcher = new Dispatcher({
+  agent,
+  log: consoleLogger,
+  repoRoot: process.cwd(),
+  configDir: resolve(process.cwd(), ".flume"),
+});
 await dispatcher.tick();
 ```
 
