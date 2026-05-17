@@ -11,6 +11,66 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-17
+
+Dispatcher correctness for long-running and autonomous loops: the harness
+is now safe to leave running unattended — fanning out, retrying, and
+rewriting its own chain — without corrupting its state, silently
+discarding work, or looping blind.
+
+### Breaking
+
+- `DispatcherOptions` no longer accepts a constructed `chain`. The
+  dispatcher resolves `.flume/chain.ts` from `configDir` itself, once per
+  tick, in its own process. A `chainLoader?: () => Promise<ChainModule>`
+  option is added for in-process test injection only and defaults to the
+  disk resolver. Construct `Dispatcher` with `configDir` and drop the
+  `chain` argument.
+
+### Added
+
+- `chainLoadGate` — a builtin gate (joining `shellGate`, `tscGate`,
+  `vitestGate`, `eslintGate`, `writablePathsGate`). Declared on phases
+  that can write `.flume/chain.ts`, it validates that the post-tick file
+  loads and default-exports a valid `Chain`; a broken rewrite fails the
+  gate and the revert path restores the last-good `chain.ts`.
+- Per-tick chain re-resolution: `.flume/chain.ts` is read fresh at the
+  start of every tick, so a tick that commits a rewritten chain (new
+  phases, handoff, gates, writablePaths) is governed by it on the next
+  tick.
+- Prior-outcome context for retries: when a prior tick produced no usable
+  commit, the next tick's rendered prompt carries a mode-tagged block —
+  `gate-revert` (failing gate name, full details, and a bounded digest of
+  the reverted commit), `voluntary-bail` (the constraint the agent
+  refused to cross), or `platform-preempt` (the non-work failure class,
+  marked as not a defect in the prior work) — so a retry no longer
+  re-derives the same wall blind. The block is empty on a first attempt.
+- No-commit outcome taxonomy on `TickOutcome`: a no-commit tick is
+  classified as exactly one of `gate-revert`, `voluntary-bail`, or
+  `platform-preempt`, distinguishable in the trajectory/logger record
+  without reading session logs.
+
+### Fixed
+
+- Worktree create/teardown race: every `.git/worktrees/`-mutating git
+  operation (create, remove, prune) is now serialized, so a sibling
+  task's stale-slug cleanup can no longer fail a concurrent
+  `git worktree add` mid-wave. Per-entry agent invocations stay parallel.
+- `afterMerge` wave-revert blast-radius: an `afterMerge` gate failure now
+  reverts only the offending entry's commit and leaves it pending; its
+  clean siblings in the same fanout wave stay shipped instead of being
+  reset with it.
+- Silent plan-prose loss on revert: a gate-reverted plan tick's prose
+  (`state.md`, `open-questions.md`) is now recoverable without reading
+  session logs.
+
+### Changed
+
+- `flume loop` is now a supervisor that spawns one `flume tick` process
+  per iteration (process-per-tick) — the boundary that makes per-tick
+  chain re-resolution real. Observable `--max` and hibernation behavior
+  is unchanged.
+
 ## [0.1.1] - 2026-05-15
 
 Interim npm release, published out-of-band from a branch since reconciled
