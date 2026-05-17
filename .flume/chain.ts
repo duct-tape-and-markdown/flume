@@ -45,7 +45,7 @@ import {
   parsePending,
   renderSchemaForPrompt,
 } from "../src/PendingSchema.ts";
-import { tscGate, vitestGate } from "../src/builtinGates.ts";
+import { tscGate, shellGate } from "../src/builtinGates.ts";
 
 // ---------- project-specific gates ----------
 
@@ -238,7 +238,21 @@ const build: Phase = {
     // .claude/{rules,settings*.json}. Those are harness/human territory;
     // edits flow through `chore(flume):` commits, not build ticks.
   ],
-  gates: [worktreeDepsGate, tscGate, vitestGate],
+  // §7a (RELEASE-v0.2.md): vitest runs afterMerge, not afterCommit. Under
+  // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
+  // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
+  // afterCommit — cheap, structural, catches type errors before merge.
+  gates: [
+    worktreeDepsGate,
+    tscGate,
+    shellGate({
+      name: "vitest",
+      when: "afterMerge",
+      cmd: "pnpm",
+      args: ["test", "--run"],
+      failHint: "Tests failed — wave reverted",
+    }),
+  ],
   setupWorktree: buildSetupWorktree,
   promptArgs(ctx: TickContext) {
     if (!ctx.assignedEntry) {
