@@ -1,21 +1,25 @@
 # State
 
-Phase: **v0.1 public-release prep — tagging gate.** Mode this tick: **audit** — the only non-empty delta dimension is the commit-delta (3 commits). No spec-delta, empty inbox, empty pending: derive/drain/promote all no-op.
+Phase: **v0.1 line shipped (tagged `v0.1.0/.1/.2`, published `@dtmd/flume@0.1.2`); v0.2 staged but uncommitted.** Mode this tick: **audit** — heaviest non-empty dimension is the 13-commit delta. Spec-delta exists but derive is a no-op (see below); inbox empty; pending empty.
 
-- **Audit, `92e6984` (build, `DOCS-SETUPWORKTREE-PNPM`, per §6).** Faithful. All five §6 setupWorktree-acceptance clauses met: no node_modules-symlink recommendation; `pnpm install --frozen-lockfile` documented as the default (with the concrete `execFile` call inline); `enableGlobalVirtualStore` flagged experimental opt-in with the exact `pnpm-workspace.yaml` + pnpm/git-worktrees cites; strategy-agnostic `afterCommit` sanity gate recommended; file = 400 (≤400). §1 hook-table row corrected to match. Scope clean — single declared file; the extra intro/Fanout prose tightening is the ≤400-ceiling consequence the entry itself anticipated ("file is currently 401"), not creep. One trivial precision loss accepted as debt: the Fanout prose dropped "in commit order" from the merge sentence — doc stays correct, not a §6-acceptance clause, re-adding it would force a fresh cut at the 400-line ceiling. Not worth a pending entry.
-- **Audit, `fb8d82b` (build, `CI-PACK-FILESET-GUARD`, per §8 + §4 L107).** Faithful. `npm pack --dry-run --json` diffed against the `files` allowlist; fails both drift directions (stray = over-inclusion, empty = under-inclusion). Positioned after `pnpm build` so `dist/` exists (npm pack does not run prepublishOnly — comment is correct); `--dry-run` writes no tarball so it is order-independent vs the real `npm pack` in consumer-smoke. npm's always-included set is covered: `package.json` handled explicitly, README/LICENSE/CHANGELOG attributable via the allowlist exact-match. No false stray. Scope: `ci.yml` only. Acceptance met locally; "green on `main` for ≥1 PR before tag" is the out-of-band §8 ship gate (workflow runs on push/PR — not plan-verifiable).
-- **Audit, `6bc60ff` (`chore(flume):`).** Ship commit for both entries above; drained `pending.json` `[…]→[]`. Harness lane, faithful.
-- **Derive / Drain / Promote.** No-ops: no spec changes since last plan; inbox empty; pending empty.
+- **Derive (spec-delta §2 `import`→`default`, committed `271db77`).** No-op. `package.json` already has `"default": "./dist/index.js"` (shipped `0a104da`); the ci.yml comment was corrected to match (`a366ea4`); §2 acceptance bullets 1–2 unchanged, bullet 3 reworded only. The spec change *documents* an already-shipped decision — nothing to file. Audit confirms conformance.
+- **Audit, `0a104da` / `2d77a9b` (per §4 / §2).** Faithful. `0a104da` bin-symlink resolution + exports `default`; `2d77a9b` tsImport default-export interop in `loadChain`. Both align with §2's new paragraph (`tsImport` require-ish path needs `default`, not `import`); consumer-install smoke is the binding check (§4).
+- **Audit, `a366ea4` / `2c181d7` (per §2 / §4 L110).** Faithful. attw → continue-on-error (upstream `@arethetypeswrong/cli@0.18.2` crash, unreproducible locally); a binding nodenext `.mts` consumer type-resolution gate replaces attw's lost value and exercises the `types` condition incl. `WorktreeSetupResult`. §2/§4 still satisfied — attw kept for signal, real resolution now bindingly gated.
+- **Audit, `e9adb1c` / `8fbcdf1` (per §6 docs / hygiene).** Faithful. README + `docs/CHAIN-AUTHORING.md` scope placeholder `@<scope>/flume`→`@dtmd/flume`; untrack `reference/` scratch + gitignore. No tarball impact (`reference/` off `files`).
+- **Audit, `fcf6a45` / `488c303` / `69eea5d` (per §8 / §8 / INTENT).** Faithful. gitignore `.env` (keep `.env.example`); CHANGELOG `[0.1.0]`; INTENT post-v0.1 dependency-aware fanout note (correctly *rejects* agent-teams stateful sessions; design-intent lane).
+- **Audit, `a665ed8b` (`chore(flume):`).** Faithful, harness lane. `buildSetupWorktree` now does fresh `pnpm install` (comment cites pnpm/pnpm#9973, hardlink-from-store) + `worktreeDepsGate` sentinel-`zod` check. **Closes the stale state.md item** "switch chain.ts buildSetupWorktree" — dogfood now matches the §6 docs. (Working tree currently re-dirties `.flume/chain.ts` — uncommitted human edit, not derived from.)
+- **Audit, `ab2f10f` + `25dc78b` (NO spec authority).** `feat(phase):` added `teardownWorktree` / `WorktreeSetupResult` / `setupWorktree→{extraEnv}`, exported and **published in `v0.1.2`**. Unspecced public surface (not §2/§6, not v0.2 §2–§7). → **OQ #2** (NEEDS AMENDMENT; can't backfill — no `per` cite).
+- **Audit, `25dc78b` CHANGELOG `[0.1.1]` + body.** Asserts "no `v0.1.1` git tag exists"; **false** — annotated `v0.1.1 → ce73d95` (off-`main` fork commit; `v0.1.0` tag also off-`main`; only `v0.1.2`==HEAD on `main`). Ship-artifact falsehood coupled to an unresolved tag-reconciliation call. → **OQ #3**.
 
-Queue: 0 entries. In flight: nothing.
+Queue: 0 entries. In flight: nothing. Pending stays `[]` — all three findings park (no clean `per` cite ⇒ open question, not pending, per spec-plan-build).
 
-Remaining v0.1 acceptance — all out-of-band, none plan- or build-derivable:
-- **`chore(flume):` switch `.flume/chain.ts` `buildSetupWorktree`** (L84–92 still symlinks `node_modules`; L81 comment still claims "A symlink suffices") to `pnpm install --frozen-lockfile` + optional `afterCommit` sanity gate (§6/§11). This is now the *only* doc-vs-dogfood inconsistency: docs teach pnpm-install (shipped `92e6984`), the dogfood chain still symlinks. chain.ts is the `chore(flume):` lane — off build *and* plan writablePaths. Decision is made (spec normative); execution is harness lane. Not an open question (no decision to park), not a pending entry (off-allowlist) — tracked here.
-- **Final scope name** — `@dtmd/flume` currently in `ci.yml` smoke + `package.json`; record in `CHANGELOG.md` at the v0.1 tag (§4, publish-time decision).
-- **Land a CI-green PR on `main`** (§8 acceptance) then tag v0.1.
+v0.1 status correction (prior state.md was stale): v0.1 is **shipped** — tags `v0.1.0/.1/.2` all exist, `package.json` 0.1.2, CHANGELOG entries present, scope `@dtmd/flume` resolved & recorded. The prior "remaining: switch chain.ts / pick scope / CI-green-PR-then-tag" list is done or moot (tags exist). The live concerns are now the three OQs, not v0.1 prep.
 
-Open questions: 0.
+Open questions: **3** —
+1. `spec/RELEASE-v0.2.md` untracked → v0.2 derive blocked until committed (PARKED; rec: commit it).
+2. Unspecced published worktree-hook surface → which spec line owns it + process gap (PARKED/NEEDS AMENDMENT; rec: add to v0.2 §2).
+3. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec: keep tags, correct CHANGELOG — build follow-up once decided).
 
-Trunk: delta since last green check is `docs/` + `ci.yml` only — no `src/`/`tests/`/config change (`git diff ef31b9b..HEAD` over those paths is empty). `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests). (`ci.yml` workflow itself runs on push/PR — not plan-verifiable locally.)
+Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests). HEAD `25dc78b` == `v0.1.2`. (ci.yml runs on push/PR — not plan-verifiable locally.)
 
 Plan continues: no
