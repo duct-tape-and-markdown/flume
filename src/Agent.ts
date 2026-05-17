@@ -40,6 +40,13 @@ export interface AgentInvocation {
   onStdout?: (chunk: string) => void;
   /** Stream callback for stderr chunks. Same chunk-boundary caveat as stdout. */
   onStderr?: (chunk: string) => void;
+  /**
+   * Extra env vars to layer on top of `process.env` for the agent
+   * subprocess. The dispatcher populates this from
+   * `Phase.setupWorktree`'s `{ extraEnv }` return value for fanout
+   * phases. Singleton phases never carry extraEnv.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -113,7 +120,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 
   return {
     name: "claude-code",
-    invoke({ cwd, prompt, signal, timeoutMs, onStdout, onStderr }) {
+    invoke({ cwd, prompt, signal, timeoutMs, onStdout, onStderr, extraEnv }) {
       return new Promise((resolve, reject) => {
         const args = [
           "-p",
@@ -127,6 +134,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           cwd,
           stdio: ["pipe", "pipe", "pipe"],
           ...(effective ? { signal: effective } : {}),
+          ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
         });
 
         let stdout = "";

@@ -114,8 +114,26 @@ export interface Phase {
    * the gates need — typically `node_modules` and `.env` — by symlinking
    * them from the main repo. Singleton phases run in the main repo and do
    * not invoke this.
+   *
+   * Returning `{ extraEnv }` injects those vars into the agent invocation
+   * for this worktree, layered on top of the harness's `process.env`. Use
+   * this when the worktree needs an ephemeral resource handle the chain
+   * provisioned at setup time (per-worktree DATABASE_URL, scratch dir,
+   * issued credential). Existing void-returning implementations are
+   * unaffected.
    */
-  setupWorktree?: (ctx: WorktreeSetupContext) => Promise<void>;
+  setupWorktree?: (
+    ctx: WorktreeSetupContext,
+  ) => Promise<void | WorktreeSetupResult>;
+
+  /**
+   * Optional hook invoked after the agent exits and gates run, before the
+   * worktree is removed. Mirrors `setupWorktree` for resource cleanup —
+   * drop a per-worktree DB, release a lease, etc. Best-effort: failures
+   * are logged but do not block worktree removal. The same ctx fields are
+   * available as at setup time.
+   */
+  teardownWorktree?: (ctx: WorktreeSetupContext) => Promise<void>;
 }
 
 /** Context handed to Phase.setupWorktree after a fanout worktree is created. */
@@ -126,6 +144,19 @@ export interface WorktreeSetupContext {
   repoRoot: string;
   /** Tag of the pending entry assigned to this worktree. */
   entryTag: string;
+}
+
+/** Optional return shape from Phase.setupWorktree. */
+export interface WorktreeSetupResult {
+  /**
+   * Extra env vars to merge into the agent invocation env for this
+   * worktree. Layered on top of the harness's `process.env`. Useful for
+   * per-worktree DATABASE_URL, scratch paths, short-lived credentials —
+   * anything the chain provisioned during setup that the agent (and
+   * gates run inside the worktree) need at runtime without baking into
+   * the worktree's tracked filesystem.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 /**

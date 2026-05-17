@@ -22,6 +22,7 @@ export type {
   TickContext,
   TickResult,
   WorktreeSetupContext,
+  WorktreeSetupResult,
 } from "./Phase.js";
 
 export type { Gate, GateContext, GatePhase, GateResult } from "./Gate.js";
