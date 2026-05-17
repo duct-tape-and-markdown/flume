@@ -7,8 +7,7 @@
       "section": "4. Worktree create/teardown race serialization"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "PLAN-PROSE-DURABILITY"
+      "kind": "open"
     },
     "files": {
       "new": [],
