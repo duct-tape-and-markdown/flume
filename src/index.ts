@@ -32,6 +32,7 @@ export {
   tscGate,
   vitestGate,
   eslintGate,
+  chainLoadGate,
   writablePathsGate,
 } from "./builtinGates.js";
 

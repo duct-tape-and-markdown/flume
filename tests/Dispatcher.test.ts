@@ -15,6 +15,7 @@ import {
 } from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
+import { chainLoadGate } from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
 import { parsePending, type PendingEntry } from "../src/PendingSchema.ts";
@@ -764,5 +765,159 @@ describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------- chain-load gate + engine fallback (§3) ----------
+
+describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)", () => {
+  it(
+    "broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues",
+    async () => {
+      // Last-good chain.ts on trunk; the broken rewrite must revert to this.
+      const goodChain =
+        `export default { phases: [{ name: "build", description: "", ` +
+        `promptPath: "prompt.md", concurrency: "singleton", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [] };\n`;
+      await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
+      const preHead = await head(fx.repo);
+
+      new Baton(fx.repo).wake("build");
+
+      // The dispatcher resolves via the test seam (staticLoader); the on-disk
+      // chain.ts is what the agent rewrites and chainLoadGate validates.
+      const phase = makePhase({
+        name: "build",
+        concurrency: "singleton",
+        gates: [chainLoadGate],
+        handoff: () => [],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = singleAgent(async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          ".flume/chain.ts",
+          "export default { phases: [",
+          "build: rewrite chain (broken)",
+        );
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      // Producing tick reverted: trunk back at preHead, no commit reported.
+      expect(outcome.result?.committed).toBe(false);
+      expect(outcome.result?.commitSha).toBeUndefined();
+      expect(await head(fx.repo)).toBe(preHead);
+      // chain.ts restored to the last-good version.
+      expect(
+        await readFile(join(fx.repo, ".flume", "chain.ts"), "utf8"),
+      ).toBe(goodChain);
+      // chain-load is the recorded failure (it runs before writable-paths).
+      const gr = outcome.result?.gateResults ?? [];
+      expect(gr.some((g) => g.gate === "chain-load" && !g.ok)).toBe(true);
+      expect(gr.some((g) => g.gate === "writable-paths")).toBe(false);
+      // Loop survives the bad self-edit — tick() returned normally.
+      expect(outcome.hibernated).toBe(false);
+    },
+    20_000,
+  );
+});
+
+describe("Dispatcher — engine resolution-failure fallback (§3)", () => {
+  it(
+    "resolution failure with no gate → last-good retained, error logged, loop() does not throw",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      const chain: Chain = {
+        phases: [
+          makePhase({
+            name: "plan",
+            concurrency: "singleton",
+            handoff: () => ["plan"], // self-rewake so the loop keeps running
+          }),
+        ],
+        humanOnly: [],
+      };
+
+      // First resolution succeeds (establishes last-good); every later
+      // resolution throws — the chain declared no chainLoadGate, so a broken
+      // self-edit reaches per-tick resolution unguarded.
+      let calls = 0;
+      const chainLoader = (): Promise<ChainModule> => {
+        calls++;
+        return calls === 1
+          ? Promise.resolve({ default: chain })
+          : Promise.reject(new Error("simulated broken chain.ts"));
+      };
+
+      const errors: string[] = [];
+      const rec: Logger = {
+        info: () => {},
+        warn: () => {},
+        error: (l) => errors.push(l),
+      };
+
+      let n = 0;
+      const dispatcher = new Dispatcher({
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        chainLoader,
+        agent: singleAgent(async (cwd) => {
+          await writeAndCommit(cwd, "src/loop.ts", `tick ${++n}\n`, `build: ${n}`);
+        }),
+        log: rec,
+      });
+
+      const outcomes = await dispatcher.loop(3);
+
+      expect(outcomes).toHaveLength(3);
+      // No tick hibernated — last-good kept the loop alive and producing.
+      expect(outcomes.every((o) => !o.hibernated)).toBe(true);
+      expect(outcomes.every((o) => o.result?.committed === true)).toBe(true);
+      // Resolver invoked every tick (per-tick re-resolution, §2).
+      expect(calls).toBe(3);
+      // The failure surfaced loudly via the error channel, twice.
+      const fails = errors.filter((e) => /chain resolution failed/.test(e));
+      expect(fails.length).toBe(2);
+      expect(fails.every((e) => /last-good/.test(e))).toBe(true);
+    },
+    20_000,
+  );
+
+  it("first resolution fails with no last-good → loop() hibernates without throwing", async () => {
+    new Baton(fx.repo).wake("plan");
+
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const dispatcher = new Dispatcher({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      chainLoader: () => Promise.reject(new Error("cannot resolve chain")),
+      agent: singleAgent(async () => {}),
+      log: rec,
+    });
+
+    const outcomes = await dispatcher.loop(2);
+
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]!.hibernated).toBe(true);
+    expect(errors.some((e) => /no last-good/.test(e))).toBe(true);
   });
 });

@@ -69,12 +69,69 @@ export interface ChainModule {
 }
 
 /**
- * Build the default per-tick chain resolver: load `<configDir>/chain.ts` with
- * tsx, normalize tsx's default/named-export interop, and memoize by content
- * hash. The compile (`tsImport`) runs only when chain.ts's bytes differ from
- * the last resolution; a stable chain costs one sha256 of one small file per
- * tick and zero recompiles across a loop. Content hash, not mtime — git
- * checkouts and no-op writes bump mtime spuriously.
+ * Load + normalize + validate a chain module from an absolute `chain.ts`
+ * path. Throws on a missing file, a compile/syntax error, or a shape that
+ * isn't a Chain (no resolvable default export, or `phases` not an array).
+ *
+ * This is the single load+validate path the runtime trusts. `diskChainLoader`
+ * wraps it with content-hash memoization; `chainLoadGate` (builtinGates)
+ * calls it to validate a just-committed `chain.ts` so a broken self-edit
+ * fails its gate and is reverted before the next tick's resolution hits it.
+ *
+ * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
+ * dist/cli.js can resolve consumer chain.ts files without a node loader flag
+ * (plain `await import()` would fail: node refuses .ts under node_modules,
+ * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
+ *
+ * KNOWN BOUND (tsx ^4.19 / Node 22): tsx's loader caches the *evaluated*
+ * module by resolved file path for the life of the process — neither a query
+ * string nor a fresh tsImport namespace evicts it. So a chain.ts rewritten
+ * mid-`flume loop` is re-read on the next tick (diskChainLoader's hash gate
+ * fires) but tsImport returns the prior evaluation; the new chain takes
+ * effect on the next `flume loop` *process*, not the immediately following
+ * in-process tick. The per-tick re-resolution contract itself (Dispatcher
+ * calls chainLoader() every tick; injected loaders see every rewrite) holds —
+ * see the fake-loader test. Flagged in the commit body.
+ */
+export async function loadChainModule(path: string): Promise<ChainModule> {
+  if (!existsSync(path)) {
+    throw new Error(
+      `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
+    );
+  }
+  const ns = (await tsImport(
+    pathToFileURL(path).href,
+    import.meta.url,
+  )) as Record<string, unknown>;
+
+  // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
+  // is { default: { __esModule: true, default: <realDefault> } }. A module
+  // with named exports stays true ESM: ns.default is the value directly and
+  // named exports are siblings on ns. Normalize both shapes — the documented
+  // minimal chain (default export only) hits the interop path.
+  const d = ns.default as Record<string, unknown> | undefined;
+  const interop =
+    !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
+  const chain = (interop ? d!.default : d) as Chain | undefined;
+  const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
+    | Agent
+    | undefined;
+
+  if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
+    throw new Error(
+      `${path} must default-export a Chain (an object with a phases[] array)`,
+    );
+  }
+  return agent ? { default: chain, agent } : { default: chain };
+}
+
+/**
+ * Build the default per-tick chain resolver: load `<configDir>/chain.ts` (via
+ * `loadChainModule`) and memoize by content hash. The compile runs only when
+ * chain.ts's bytes differ from the last resolution; a stable chain costs one
+ * sha256 of one small file per tick and zero recompiles across a loop.
+ * Content hash, not mtime — git checkouts and no-op writes bump mtime
+ * spuriously.
  *
  * Each `Dispatcher` builds its own resolver (own cache). Injecting
  * `DispatcherOptions.chainLoader` replaces this wholesale — the test seam.
@@ -94,48 +151,7 @@ export function diskChainLoader(
       .update(readFileSync(path))
       .digest("hex");
     if (cache && cache.hash === hash) return cache.module;
-
-    // tsImport (tsx/esm/api) compiles the .ts source in-process so the
-    // published dist/cli.js can resolve consumer chain.ts files without a
-    // node loader flag (plain `await import()` would fail: node refuses .ts
-    // under node_modules, and consumer .flume/chain.ts is a .ts file
-    // regardless of where flume lives).
-    //
-    // KNOWN BOUND (tsx ^4.19 / Node 22): tsx's loader caches the *evaluated*
-    // module by resolved file path for the life of the process — neither a
-    // query string nor a fresh tsImport namespace evicts it. So a chain.ts
-    // rewritten mid-`flume loop` is re-read on the next tick (our hash gate
-    // fires) but tsImport returns the prior evaluation; the new chain takes
-    // effect on the next `flume loop` *process*, not the immediately
-    // following in-process tick. The per-tick re-resolution contract itself
-    // (Dispatcher calls chainLoader() every tick; injected loaders see every
-    // rewrite) holds — see the fake-loader test. Flagged in the commit body.
-    const ns = (await tsImport(
-      pathToFileURL(path).href,
-      import.meta.url,
-    )) as Record<string, unknown>;
-
-    // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
-    // is { default: { __esModule: true, default: <realDefault> } }. A module
-    // with named exports stays true ESM: ns.default is the value directly and
-    // named exports are siblings on ns. Normalize both shapes — the
-    // documented minimal chain (default export only) hits the interop path.
-    const d = ns.default as Record<string, unknown> | undefined;
-    const interop =
-      !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
-    const chain = (interop ? d!.default : d) as Chain | undefined;
-    const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
-      | Agent
-      | undefined;
-
-    if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
-      throw new Error(
-        `${path} must default-export a Chain (an object with a phases[] array)`,
-      );
-    }
-    const module: ChainModule = agent
-      ? { default: chain, agent }
-      : { default: chain };
+    const module = await loadChainModule(path);
     cache = { hash, module };
     return module;
   };
@@ -210,6 +226,13 @@ export class Dispatcher {
   private trunkBranch: string | null;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
+  /**
+   * Last successfully-resolved chain module. The engine resolution-failure
+   * fallback (§3) reverts to this when a tick's `chainLoader()` throws and no
+   * `chainLoadGate` reverted the producing tick — a broken self-edit must not
+   * hard-crash a long-running loop.
+   */
+  private lastChainModule: ChainModule | undefined;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
@@ -230,7 +253,35 @@ export class Dispatcher {
     // governed by the new chain here. The resolver memoizes by content hash,
     // so a stable chain recompiles zero times across a loop. The chain's
     // optional `agent` export re-resolves with it.
-    const chainModule = await this.chainLoader();
+    //
+    // Engine resolution-failure fallback (§3): if resolution throws and no
+    // `chainLoadGate` reverted the producing tick (the chain author omitted
+    // it), retain the last successfully-resolved chain for this process,
+    // log loudly, and continue — a broken self-edit must never hard-crash a
+    // long-running loop. With no last-good yet (the very first resolution
+    // fails) there is nothing to run: log and hibernate so `loop()` exits
+    // cleanly instead of throwing.
+    let chainModule: ChainModule;
+    try {
+      chainModule = await this.chainLoader();
+      this.lastChainModule = chainModule;
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (!this.lastChainModule) {
+        this.log.error(
+          `[flume] chain resolution failed with no last-good chain to fall back to: ${msg}; hibernating`,
+        );
+        return {
+          hibernated: true,
+          awakeAfter: this.baton.awake(),
+          summary: `chain resolution failed (no last-good): ${msg}; hibernating`,
+        };
+      }
+      this.log.error(
+        `[flume] chain resolution failed: ${msg}; retaining last-good chain for this process and continuing`,
+      );
+      chainModule = this.lastChainModule;
+    }
     const chain = chainModule.default;
     const agent = chainModule.agent ?? this.opts.agent;
 

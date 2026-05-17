@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -11,6 +11,7 @@ import {
   tscGate,
   vitestGate,
   eslintGate,
+  chainLoadGate,
   writablePathsGate,
 } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
@@ -217,5 +218,112 @@ describe("afterCommit vs afterMerge wiring", () => {
     const afterMergeResult = await make("afterMerge").run(ctx(process.cwd()));
     expect(afterCommitResult.ok).toBe(true);
     expect(afterMergeResult.ok).toBe(true);
+  });
+
+  it("chainLoadGate declares afterCommit", () => {
+    expect(chainLoadGate.when).toBe("afterCommit");
+    expect(chainLoadGate.name).toBe("chain-load");
+  });
+});
+
+// ---------- chainLoadGate (RELEASE-v0.2 §3) ----------
+
+const VALID_CHAIN =
+  `export default { phases: [{ name: "a", description: "", ` +
+  `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
+  `gates: [], handoff: () => [] }], humanOnly: [] };\n`;
+
+describe("chainLoadGate — post-tick chain.ts validation", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "flume-chainload-"));
+    const opts = { cwd: repo };
+    await exec("git", ["init", "-q"], opts);
+    await exec("git", ["config", "user.email", "test@example.com"], opts);
+    await exec("git", ["config", "user.name", "Test User"], opts);
+    await exec("git", ["config", "commit.gpgsign", "false"], opts);
+    await writeFile(join(repo, ".seed"), "");
+    await exec("git", ["add", "."], opts);
+    await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  async function commit(
+    files: Record<string, string>,
+    msg: string,
+  ): Promise<string> {
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = join(repo, rel);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, content);
+    }
+    const opts = { cwd: repo };
+    await exec("git", ["add", "."], opts);
+    await exec("git", ["commit", "-q", "-m", msg], opts);
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], opts);
+    return stdout.trim();
+  }
+
+  it("passes a commit whose post-tick .flume/chain.ts loads as a valid Chain", async () => {
+    const sha = await commit(
+      { ".flume/chain.ts": VALID_CHAIN },
+      "build: rewrite chain",
+    );
+    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/valid Chain/);
+  });
+
+  it("is a no-op when the commit did not touch .flume/chain.ts", async () => {
+    const sha = await commit(
+      { "src/unrelated.ts": "export const x = 1;\n" },
+      "build: unrelated",
+    );
+    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/untouched/);
+  });
+
+  it("fails a syntactically-broken chain.ts → reverting the commit restores the last-good chain", async () => {
+    // Last-good chain.ts on trunk; the broken rewrite must revert to this.
+    await commit({ ".flume/chain.ts": VALID_CHAIN }, "build: good chain");
+    const brokenSha = await commit(
+      { ".flume/chain.ts": "export default { phases: [" },
+      "build: rewrite chain (broken)",
+    );
+
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: brokenSha }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/broken/);
+    expect(result.details ?? "").not.toBe("");
+
+    // Gate failure ⇒ the dispatcher drops the commit (hard reset). chain.ts
+    // is back to the last-good version; the next resolution would succeed.
+    await exec("git", ["reset", "--hard", "HEAD~1"], { cwd: repo });
+    expect(
+      await readFile(join(repo, ".flume", "chain.ts"), "utf8"),
+    ).toBe(VALID_CHAIN);
+  });
+
+  it("fails a chain.ts that has no default export", async () => {
+    const sha = await commit(
+      { ".flume/chain.ts": "export const notTheDefault = 1;\n" },
+      "build: no default export",
+    );
+    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    expect(result.ok).toBe(false);
+    expect(result.details ?? "").toMatch(/default-export a Chain/);
+  });
+
+  it("fails fast when commitSha is missing from the context", async () => {
+    const result = await chainLoadGate.run(ctx(repo));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/requires commitSha/);
   });
 });

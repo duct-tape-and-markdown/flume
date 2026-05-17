@@ -7,9 +7,16 @@
  */
 
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
+// Intentional cycle: Dispatcher imports `writablePathsGate` from here.
+// Both sides reference the imported symbol only inside function bodies, never
+// at module top-level, so ESM live bindings resolve cleanly. `chainLoadGate`
+// validates through the exact load path the runtime uses so the gate's
+// verdict can never disagree with what the next tick's resolution would do.
+import { loadChainModule } from "./Dispatcher.js";
 
 const exec = promisify(execFile);
 
@@ -101,6 +108,58 @@ export const eslintGate: Gate = shellGate({
   args: ["lint"],
   failHint: "Lint errors — commit reverted",
 });
+
+/**
+ * Relative path, from the repo root, of the chain config every flume project
+ * keeps. Hardcoded because the gate sees only `GateContext` (no configDir),
+ * and `.flume/chain.ts` is the universal convention — which is exactly why
+ * this gate is a builtin and not chain-local (RELEASE-v0.2 §3).
+ */
+const CHAIN_REL_PATH = join(".flume", "chain.ts");
+
+/**
+ * Builtin chain-load gate. Declared by any chain on the phase(s) that may
+ * rewrite `.flume/chain.ts` (a self-modifying loop). On a commit that touched
+ * `.flume/chain.ts`, it loads the post-commit file through the same
+ * load+validate path the runtime uses (`loadChainModule`): the default export
+ * resolves and `phases` is an array. A broken rewrite (syntax error, no
+ * default export, no `phases[]`) fails the gate → flume's existing revert
+ * path drops the commit → `chain.ts` returns to the last-good version → the
+ * loop continues against a chain that still loads.
+ *
+ * No-op on the overwhelming majority of ticks (the commit didn't touch
+ * `chain.ts`). Promoted to a builtin — not chain-local like the pending-parse
+ * gate — because `chain.ts` is universal to every flume project (pending.json
+ * is specific to a plan/build chain).
+ */
+export const chainLoadGate: Gate = {
+  name: "chain-load",
+  when: "afterCommit",
+  async run(ctx: GateContext): Promise<GateResult> {
+    if (!ctx.commitSha) {
+      return { ok: false, message: "chain-load gate requires commitSha" };
+    }
+    const { stdout } = await exec(
+      "git",
+      ["show", "--name-only", "--pretty=format:", ctx.commitSha],
+      { cwd: ctx.cwd },
+    );
+    const touched = stdout.split("\n").filter((l) => l.length > 0);
+    if (!touched.includes(CHAIN_REL_PATH.split(/[\\/]/).join("/"))) {
+      return { ok: true, message: "chain.ts untouched — gate skipped" };
+    }
+    try {
+      await loadChainModule(join(ctx.cwd, CHAIN_REL_PATH));
+      return { ok: true, message: "chain.ts loads as a valid Chain" };
+    } catch (err) {
+      return {
+        ok: false,
+        message: "chain.ts is broken — commit reverted",
+        details: (err as Error).message,
+      };
+    }
+  },
+};
 
 /**
  * Verify the commit's diff stays inside the phase's declared writablePaths.
