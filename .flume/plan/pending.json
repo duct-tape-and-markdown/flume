@@ -7,8 +7,7 @@
       "section": "7. Fanout revert isolation + gate-placement defaults"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "NO-COMMIT-TAXONOMY"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -32,7 +31,7 @@
       }
     ],
     "acceptance": "In an N≥2 wave with one afterMerge gate failure, only the offending entry reverts and stays pending, the other N−1 stay shipped, the retry carries the §5 block, and the parallelism assertion stays green; pnpm test green",
-    "notes": "§7b — heaviest item by §12 (changes merge/revert granularity, not a parameter). Current whole-wave site: git.hardResetTo(repoRoot, preHead) in the afterMerge path (Dispatcher.ts ~496; shifts after upstream entries). Depends on the §5 union (NO-COMMIT-TAXONOMY) for the retry block. §7a/§7c are docs (CHAIN-AUTHORING-GATE-GUIDANCE); §7c (v) is docs-only per §12, no runtime entry."
+    "notes": "§7b — heaviest by §12 (changes merge/revert granularity, not a parameter). Whole-wave site: git.hardResetTo(repoRoot, preHead) in the afterMerge path (Dispatcher.ts ~496; shifts after upstream entries). NO-COMMIT-TAXONOMY shipped (58d8491); §5 union exists. ALSO re-derive runFanout's §6 waveNoCommit aggregation — its `!waveOk && shipped.length>0 → add gate-revert` branch assumes whole-wave revert. §7a/§7c → CHAIN-AUTHORING-GATE-GUIDANCE; §7c(v) docs-only, no runtime entry."
   },
   {
     "tag": "PLAN-PROSE-DURABILITY",
@@ -67,7 +66,7 @@
       }
     ],
     "acceptance": "A plan tick with prose + a pendingParseGate-failing pending.json leaves its findings recoverable after revert without session logs (on disk or in the next plan tick's §5 block); pnpm test green",
-    "notes": "§8. Mechanism is build's choice; spec mandates the property (no silent prose loss). The §5-carry option rides the widened union (NO-COMMIT-TAXONOMY, transitively via blockedBy). Evidenced: pendingParseGate reverting 5f4b583 lost CLI-SEARCH-WALK/skill-path findings, hand-reconstructed in 9432489. pendingParseGate is the chain-local plan gate in .flume/chain.ts."
+    "notes": "§8. Mechanism is build's choice; spec mandates the property (no silent prose loss). The §5-carry option rides the widened union (NO-COMMIT-TAXONOMY shipped, 58d8491). Evidenced: pendingParseGate reverting 5f4b583 lost CLI-SEARCH-WALK/skill-path findings, hand-reconstructed in 9432489. pendingParseGate is the chain-local plan gate in .flume/chain.ts."
   },
   {
     "tag": "WORKTREE-RACE-SERIALIZE",
@@ -105,6 +104,41 @@
     "notes": "§4 unchanged in substance. Structural sites (line numbers fragile, shift after upstream Dispatcher.ts entries; spec §4's :257/:284/:353 are pre-reload): setup Promise.all(batch.map(createWorktree)) ~417, teardown Promise.all(...removeWorktree) ~519, agent fanout Promise.all ~444 stays parallel. Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking."
   },
   {
+    "tag": "BAIL-CONSTRAINT-LEGIBILITY",
+    "summary": "voluntary-bail constraint capture degrades to NDJSON noise under the dogfood stream-json agent; extract the agent's final message from the transcript before bounding, not the raw stdout tail",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "5. Prior-outcome feedback to the retrying tick"
+    },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "WORKTREE-RACE-SERIALIZE"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "buildVoluntaryBail must capture the agent's final message, not tailBound(raw result.stdout). Extract the final assistant/result text from the stream-json transcript shape when stdout is NDJSON; fall back to the raw tail for plain-text agents. Keep the existing bound + empty-final-message placeholder."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Add a voluntary-bail case whose fake agent emits stream-json NDJSON stdout (assistant text + result event + cost/usage) → the next tick's §5 block names the refused constraint cleanly, free of escaped-JSON/cost-metadata; the existing plain-text voluntary-bail test stays green."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "stream-json-stdout voluntary-bail → §5 <prior-attempt> names the refused constraint legibly (no NDJSON/cost noise); plain-text voluntary-bail path unchanged (§5 voluntary-bail variant / §6 'names the prior bail and its constraint')"
+      }
+    ],
+    "acceptance": "A voluntary-bail under a stream-json agent forwards a legible refused-constraint in the next tick's §5 block (not raw NDJSON/cost metadata); the plain-text path stays green; pnpm test green",
+    "notes": "Audit 58d8491: buildVoluntaryBail = tailBound(result.stdout). OK for claudeCode({text}); dogfood .flume/chain.ts uses withTerminalRenderer(withSessionCapture(claudeCode({stream-json}))) — decorators pass stdout raw, so the tail is escaped-JSON result/assistant + cost/usage, the loop §6 targets. Agent.ts already parses stream-json (renderStreamJsonLine). Alt finalMessage-on-AgentResult is an unspecced v0.1-§2 add (cf. teardownWorktree OQ); prefer in-lane extraction."
+  },
+  {
     "tag": "CHAIN-AUTHORING-GATE-GUIDANCE",
     "summary": "CHAIN-AUTHORING.md: add gate-placement default (expensive correctness→afterMerge, cheap structural→afterCommit) + contention rationale, and the byte-equality anti-pattern section",
     "per": {
@@ -113,7 +147,7 @@
     },
     "gate": {
       "kind": "blockedBy",
-      "tag": "WORKTREE-RACE-SERIALIZE"
+      "tag": "BAIL-CONSTRAINT-LEGIBILITY"
     },
     "files": {
       "new": [],
@@ -128,7 +162,7 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "CHAIN-AUTHORING.md documents the expensive→afterMerge / structural→afterCommit default with rationale and contains the byte-equality anti-pattern section with the bundleFreshnessGate example",
-    "notes": "§7 (a) doc + (c) doc only — both docs/, build-writable. §7a's actual dogfood .flume/chain.ts gate-move (vitestGate→afterMerge) is OFF build's writablePaths → parked OQ (chore(flume)/human). §7c (v) is docs-only per §12 — no runtime entry. blockedBy WORKTREE-RACE linearizes Dispatcher.ts-touch order; semantically wants §7b landed so the afterMerge guidance isn't a pre-isolation footgun."
+    "notes": "§7 (a) doc + (c) doc only — both docs/, build-writable. §7a's actual dogfood .flume/chain.ts gate-move (vitestGate→afterMerge) is OFF build's writablePaths → parked OQ (chore(flume)/human). §7c (v) is docs-only per §12 — no runtime entry. blockedBy BAIL-CONSTRAINT linearizes Dispatcher.ts-touch order; semantically wants §7b landed so the afterMerge guidance isn't a pre-isolation footgun."
   },
   {
     "tag": "RELEASE-0.2.0",
