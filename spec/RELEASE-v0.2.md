@@ -16,7 +16,7 @@ In scope:
 - Per-tick chain re-resolution — `.flume/chain.ts` is disk-truth every tick (§2).
 - A builtin chain-load gate + engine resolution-failure fallback (§3).
 - Worktree create/teardown race serialization (§4).
-- Gate-failure feedback into the retrying tick (§5).
+- Prior-outcome feedback to the retrying tick (§5).
 - No-commit outcome taxonomy (§6).
 - Fanout revert isolation + gate-placement defaults (§7).
 - Plan-tick prose durability (§8).
@@ -69,21 +69,23 @@ Acceptance:
 - Teardown of an N≥2 wave leaves `git worktree list` clean (test).
 - Per-entry agent invocations still run concurrently (test: the existing fanout-parallelism assertion stays green).
 
-## 5. Gate-failure feedback to the retrying tick
+## 5. Prior-outcome feedback to the retrying tick
 
 The highest-leverage change in this release; closes the blindness loop (§1). Today `Dispatcher` forwards only `{gate, ok, message}` to the next tick's context, captures gate `details` to dispatcher stdout only, and `git reset`s the reverted SHA out of existence — so a retry's only state channel (`git log`) shows nothing, and the agent re-derives the same wall every attempt (package-json-hygiene ×15; corpus-config-example ×8). This is the unaddressed upstream ask flume already filed against itself.
 
 Normative behavior:
-- When a tick's commit is **reverted by a gate**, the next tick scheduled for that same entry (fanout) or phase (singleton) receives, **in its rendered prompt**, a prior-attempt block: (a) that a previous attempt was made and reverted, (b) the failing gate's `name` and full `details` (not just `message`), (c) a digest of the reverted attempt (the diff or a stat summary) so the agent does not blindly reconstruct.
+- When a prior tick for the same entry (fanout) or phase (singleton) produced no usable commit, the next tick receives, **in its rendered prompt**, a **prior-outcome block**: a mode-tagged record, exactly one variant, so the agent does not blindly reconstruct:
+  - **gate-revert** — a commit was made and a gate reverted it: the failing gate's `name`, full `details` (not just `message`), and a bounded `git show --stat` digest of the reverted commit.
+  - **voluntary-bail** — the agent exited cleanly without committing: the constraint it refused to cross (the off-`writablePaths` path, the Rule-0/spec conflict), bounded. No commit, no gate.
+  - **platform-preempt** — the agent process failed for non-work reasons (rate-limit, auth, timeout, dispatcher-killed): the failure class, explicitly marked *not* a defect in the prior attempt's work. No commit, no gate.
 - **Cross-process by construction.** Per §2 the next tick is a fresh process with no in-memory carry; the prior-attempt block is persisted to disk by the supervisor/dispatcher (alongside baton state, disk-is-truth) and read by the next `flume tick` at prompt render. An in-memory handoff is architecturally impossible — build must not assume one.
-- Symmetric across `afterCommit` **and** `afterMerge`. `afterMerge` currently surfaces nothing to the agent; it must forward the same prior-attempt block. The `afterMerge` failure detail dying with the dispatcher process (07:11Z bcrypt — agent reported success, kill invisible) is the explicit anti-pattern this closes.
+- The **gate-revert** variant fires for both `afterCommit` **and** `afterMerge` gates — `afterMerge` currently surfaces nothing to the agent (its detail dying with the dispatcher process, 07:11Z bcrypt — agent reported success, kill invisible — is the explicit anti-pattern this closes). **voluntary-bail** and **platform-preempt** are detected at tick level, independent of gate phase.
 - The prior-attempt block is part of the prompt-template surface; `prompts/build.md` (and `prompts/plan.md`) gain a documented slot for it. The slot is empty on a first attempt.
 - The forwarded context is bounded (a digest, not unbounded diff dumps) per the telegraphic-prose discipline — enough to not re-derive, not a transcript.
 
 Acceptance:
-- Fake gate fails with structured `details` at `afterCommit` → the next tick's *rendered prompt* contains the gate name, the details, and a prior-attempt marker (test against the render path + fake agent).
-- Same at `afterMerge` (test) — explicitly, because today this path is silent.
-- First attempt for an entry → the prior-attempt slot is empty/absent (test: no false signal).
+- Each variant renders distinctly in the next tick's *rendered prompt*: gate-revert (gate name + details + digest) at `afterCommit` **and** at `afterMerge` (the latter explicit — today silent); voluntary-bail (the constraint); platform-preempt (the failure class, marked not-your-fault) — tests against the render path + fake agent/outcome.
+- First attempt for an entry → the prior-outcome slot is empty/absent (test: no false signal).
 
 ## 6. No-commit outcome taxonomy
 
@@ -91,8 +93,9 @@ Acceptance:
 
 Normative behavior:
 - A no-commit tick is classified as exactly one of: **gate-revert** (a commit was made then reverted by a gate), **voluntary-bail** (the agent exited cleanly without committing — e.g. a writablePaths/Rule-0 conflict it refused to cross), **platform-preempt** (the agent process failed for non-work reasons — rate-limit, auth, timeout, dispatcher-killed).
-- The classification is surfaced (a) into `TickOutcome` / the trajectory or logger record, and (b) into the next-tick prior-attempt block per §5 ("last attempt: voluntary-bail at <constraint>" reads differently from "gate-revert: <gate> <details>" reads differently from "platform-preempt: retried, no work signal").
+- The classification is surfaced (a) into `TickOutcome` / the trajectory or logger record, and (b) by populating the matching §5 prior-outcome variant. §6 owns *detecting and classifying* the no-commit tick; §5 owns the *channel shape* (the tagged union).
 - `voluntary-bail` loops (corpus-config-example: five consecutive sessions bailing at the same writablePaths wall) and `platform-preempt` runs (17 sessions, rate-limit) must be distinguishable in the record without reading session logs.
+- §6 **widens §5's already-shipped surface in place** — `PriorAttempt`, the `<prior-attempt>` block, the dispatcher persistence — to carry the full union, adding **voluntary-bail** + **platform-preempt** detection. The **gate-revert** variant is already built (`22487fd`/`4cd0e68`); plan does not re-derive it — §6 extends, it does not rebuild. Reopening a shipped surface within the minor is intended: edit in place, no shim (pre-1.0 clean-slate, `.claude/rules/spec-plan-build.md`).
 
 Acceptance:
 - Three tests, one per mode, asserting the distinct classification on `TickOutcome` and in the §5 forward block.
@@ -127,7 +130,7 @@ Acceptance:
 - **0.2.0**, a minor. Governed by v0.1 §9: the `DispatcherOptions` change (§2) is the only §2-breaking change → minor. Everything else is additive or behavioral.
 - `CHANGELOG.md` `## [0.2.0]`:
   - `### Breaking` — `DispatcherOptions`: removed `chain`, resolution now per-tick from `configDir` (§2).
-  - `### Added` — `chainLoadGate` (§3); per-tick chain re-resolution (§2); gate-failure prior-attempt context surfaced to the retrying tick (§5); no-commit outcome taxonomy on `TickOutcome` (§6).
+  - `### Added` — `chainLoadGate` (§3); per-tick chain re-resolution (§2); prior-outcome context (gate-revert | voluntary-bail | platform-preempt) surfaced to the retrying tick (§5/§6); no-commit outcome taxonomy on `TickOutcome` (§6).
   - `### Fixed` — worktree create/teardown race (§4); `afterMerge` wave-revert blast-radius (§7b); silent plan-prose loss on revert (§8).
   - `### Changed` — dogfood gate placement: expensive correctness gates → `afterMerge` (§7a); `flume loop` is now a supervisor spawning one `flume tick` process per iteration (process-per-tick, §2) — observable `--max`/hibernation behavior unchanged.
 - Published as `@dtmd/flume@0.2.0`; scope unchanged from v0.1 §4.
@@ -167,6 +170,7 @@ For audit. Normative content lives above; this is reference.
 
 - **The footgun is blindness, not revert.** Revert is mechanically sound (`git reset` pre-push). The unsoundness is the amnesiac loop around it — no failure signal forwarded, SHA erased, `git log` the only state channel. §5–§8 target the blindness; the revert primitive is unchanged. Evidenced by a 39-hour / 8,825-turn autonomous-run forensic; the originating analysis lives in this round's conversation and commit body, not duplicated here.
 - **§3 + §5 ship together.** A chainLoadGate without gate-feedback reproduces the blind revert loop for chain.ts. Plan must not derive §3 as independently shippable.
+- **§5 is a prior-*outcome* channel, not gate-revert-only; §6 widens it.** §5 first shipped the gate-revert variant alone (`22487fd`); NO-COMMIT-TAXONOMY then needed voluntary-bail/platform-preempt to flow through it, but those have no commit and no gate and did not fit the shipped `PriorAttempt` shape — a build tick correctly produced no commit rather than unilaterally redesign a shipped contract. Resolution: §5 defines the tagged union (the channel); §6 detects/classifies and widens the shipped surface in place. The gate-revert slice stands; this is extension, not rework-by-error.
 - **(v) is delivered as docs, not runtime.** The byte-equality offender was a consumer chain gate; flume's only lever is teaching gate design (§7c → `CHAIN-AUTHORING.md`). Not a Dispatcher change — do not derive a runtime entry for it.
 - **§7b is the heaviest item, by decision.** Per-entry `afterMerge` revert isolation changes merge/revert granularity, not a parameter. Bundled into 0.2.0 deliberately: all of §5–§8 are one coherent theme (the dispatcher is unsafe for long autonomous/fanout runs); splitting it leaves autonomous flume footgunned across releases. Sized honestly so derivation does not under-scope it.
 - **Version is 0.2.0, not 0.1.3.** The §2 `DispatcherOptions` removal breaks v0.1 §2; v0.1 §9 classifies a §2 break as a minor. Patch-preserving shims are forbidden by the pre-1.0 clean-slate posture. The number is a consequence of two existing rules.
