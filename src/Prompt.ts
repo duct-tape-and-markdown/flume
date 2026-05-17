@@ -13,6 +13,12 @@
  * declared capabilities (writable paths, gate names). This keeps prompts DRY
  * — the human-authored prompt file states the task; the harness injects what
  * it will enforce.
+ *
+ * A `<prior-attempt>` block follows it whenever the dispatcher hands in a
+ * persisted {@link PriorAttempt} — the bounded record of a previous attempt
+ * that committed and was reverted by a gate. Like `<harness>` it is
+ * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
+ * `promptArgs`. Absent on a first attempt; cleared once an attempt ships.
  */
 
 import { execFile } from "node:child_process";
@@ -27,6 +33,26 @@ const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 
 /**
+ * A reverted prior attempt for one entry (fanout, keyed by tag) or phase
+ * (singleton, keyed by phase name). The dispatcher persists this to disk on
+ * a gate-revert and reads it back on the next tick — the carry is
+ * cross-process by construction (each tick is a fresh process; there is no
+ * in-memory handoff). Bounded by construction: a digest, not a transcript.
+ */
+export interface PriorAttempt {
+  /** Which gate phase reverted the prior commit. */
+  when: "afterCommit" | "afterMerge";
+  /** Failing gate's stable `name`. */
+  gate: string;
+  /** Gate's one-line verdict (`GateResult.message`). */
+  message: string;
+  /** Gate's full captured output (`GateResult.details`), bounded. */
+  details?: string;
+  /** `git show --stat` digest of the reverted commit, bounded. */
+  diffStat: string;
+}
+
+/**
  * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
  * chain's config directory plus `phase.promptPath`; `args` and `cwd` come
  * from the per-tick `TickContext` and the phase's `promptArgs` builder.
@@ -39,19 +65,29 @@ export interface RenderOptions {
   cwd: string;
   /** Substitution map. */
   args: Record<string, string>;
+  /**
+   * A prior reverted attempt for this entry/phase, read from disk by the
+   * dispatcher. Injected as the dispatcher-owned `<prior-attempt>` block.
+   * Omitted on a first attempt — the block is then absent entirely.
+   */
+  priorAttempt?: PriorAttempt;
 }
 
 /**
  * Resolve a phase's prompt file for one tick: substitute `{{KEY}}`
  * placeholders from `args`, evaluate `` !`cmd` `` inline-exec blocks in
- * `cwd`, then prepend the `<harness>` block describing writable paths and
- * gates. Returns the fully-rendered prompt ready to feed an Agent.
+ * `cwd`, prepend the optional `<prior-attempt>` block, then prepend the
+ * `<harness>` block describing writable paths and gates. Returns the
+ * fully-rendered prompt ready to feed an Agent. Block order in the result:
+ * `<harness>` first, then `<prior-attempt>` (if any), then the task body —
+ * what is enforced, then what failed last time, then the work.
  */
 export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const raw = await readFile(opts.promptFile, "utf8");
   const withArgs = substitutePlaceholders(raw, opts.args);
   const withExec = await evaluateInlineExec(withArgs, opts.cwd);
-  return prependHarnessBlock(opts.phase, withExec);
+  const withPrior = prependPriorAttemptBlock(opts.priorAttempt, withExec);
+  return prependHarnessBlock(opts.phase, withPrior);
 }
 
 // ---------- transformations ----------
@@ -133,4 +169,47 @@ function prependHarnessBlock(phase: Phase, body: string): string {
   ].join("\n");
 
   return harness + body;
+}
+
+function indentBlock(s: string): string {
+  const trimmed = s.replace(/\s+$/, "");
+  if (trimmed.length === 0) return "  (none)";
+  return trimmed
+    .split("\n")
+    .map((l) => `  ${l}`)
+    .join("\n");
+}
+
+/**
+ * Prepend the dispatcher-owned `<prior-attempt>` block. Mirrors
+ * `prependHarnessBlock`: structural, not authored — there is no `{{token}}`
+ * for it in the prompt file. Absent (identity transform) on a first attempt,
+ * so the slot carries no false signal. When present it tells the retrying
+ * tick a prior commit was gate-reverted, names the gate and its full
+ * details, and gives a bounded digest of the reverted change so the agent
+ * does not blindly reconstruct the wall it already hit.
+ */
+function prependPriorAttemptBlock(
+  prior: PriorAttempt | undefined,
+  body: string,
+): string {
+  if (!prior) return body;
+
+  const block = [
+    `<prior-attempt>`,
+    `A previous attempt at this work committed and was REVERTED by a gate.`,
+    `Read the failure below and change your approach — do not blindly`,
+    `reconstruct the reverted change.`,
+    `Reverted at: ${prior.when}`,
+    `Failing gate: ${prior.gate}`,
+    `Verdict: ${prior.message}`,
+    `Gate details:`,
+    indentBlock(prior.details ?? ""),
+    `Reverted change digest (git show --stat):`,
+    indentBlock(prior.diffStat),
+    `</prior-attempt>`,
+    "",
+  ].join("\n");
+
+  return block + body;
 }
