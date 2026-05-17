@@ -1,39 +1,5 @@
 [
   {
-    "tag": "PLAN-PROSE-DURABILITY",
-    "summary": "A gate-reverted plan tick must not silently destroy state.md/open-questions.md prose; recoverable without session logs (scope the revert to the failing artifact, or carry prose via the §5 block)",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "8. Plan-tick prose durability"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "On a gate-revert of a plan tick, do not silently drop the prose: either scope the revert to the failing machine-checkable artifact (e.g. pending.json) and keep state.md/open-questions.md, OR carry the prior prose into the next plan tick via the §5 block. Build picks one; recovery must never need session logs."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Plan tick writes open-questions.md/state.md + a pending.json that fails pendingParseGate → post-revert the findings are recoverable without session logs (on disk OR in the next plan tick's §5 block)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "plan tick: prose + schema-invalid pending.json → after revert, prose recoverable w/o session logs (on disk or next-tick §5 block) (§8 acceptance)"
-      }
-    ],
-    "acceptance": "A plan tick with prose + a pendingParseGate-failing pending.json leaves its findings recoverable after revert without session logs (on disk or in the next plan tick's §5 block); pnpm test green",
-    "notes": "§8. Mechanism is build's choice; spec mandates the property (no silent prose loss). The §5-carry option rides the widened union (NO-COMMIT-TAXONOMY shipped, 58d8491). Evidenced: pendingParseGate reverting 5f4b583 lost CLI-SEARCH-WALK/skill-path findings, hand-reconstructed in 9432489. pendingParseGate is the chain-local plan gate in .flume/chain.ts."
-  },
-  {
     "tag": "WORKTREE-RACE-SERIALIZE",
     "summary": "Serialize .git/worktrees/-mutating ops: setup createWorktree Promise.all + teardown removeWorktree Promise.all → sequential for…await; keep the per-entry agent fanout Promise.all parallel",
     "per": {
