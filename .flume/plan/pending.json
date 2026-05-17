@@ -7,8 +7,7 @@
       "section": "5. Prior-outcome feedback to the retrying tick"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "WORKTREE-RACE-SERIALIZE"
+      "kind": "open"
     },
     "files": {
       "new": [],
