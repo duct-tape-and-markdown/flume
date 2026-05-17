@@ -89,6 +89,60 @@ jobs:
           npx --no-install flume status
           npx --no-install flume render notes >/dev/null
 
+      - name: Consumer type-resolution gate
+        # attw's binding value: can a consumer's TS compiler resolve the
+        # shipped .d.ts through the exports map? Verified directly here
+        # because attw@0.18.2 crashes (see the attw step). nodenext + an
+        # ESM (.mts) consumer is the strict, faithful resolution mode for
+        # this ESM-only package — exercises the exports `types` condition.
+        # Reuses the tarball already installed by the smoke step above.
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/flume-consumer"
+          npm install --no-audit --no-fund -D typescript@5 >/dev/null
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "module": "nodenext",
+              "moduleResolution": "nodenext",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": []
+            },
+            "files": ["consumer.mts"]
+          }
+          EOF
+          cat > consumer.mts <<'EOF'
+          import {
+            shellGate, tscGate, partitionByFileOverlap, renderPrompt,
+            Baton, Dispatcher, claudeCode,
+          } from "@dtmd/flume";
+          import type {
+            Chain, Phase, Gate, PendingEntry,
+            WorktreeSetupContext, WorktreeSetupResult,
+          } from "@dtmd/flume";
+
+          const _v: unknown[] = [
+            shellGate, tscGate, partitionByFileOverlap, renderPrompt,
+            Baton, Dispatcher, claudeCode,
+          ];
+          const _p: Phase = {
+            name: "x",
+            description: "type-resolution probe",
+            promptPath: "p.md",
+            concurrency: "singleton",
+            writablePaths: [],
+            gates: [],
+            handoff: () => [],
+          };
+          type _T = [Chain, Gate, PendingEntry, WorktreeSetupContext, WorktreeSetupResult];
+          void _v;
+          void _p;
+          void (0 as unknown as _T);
+          EOF
+          npx tsc --noEmit -p tsconfig.json
+
       - name: npm pack file-set guard
         # The packed tarball must contain exactly the package.json "files"
         # allowlist (plus package.json, which npm packs unconditionally).
