@@ -1,39 +1,5 @@
 [
   {
-    "tag": "BAIL-CONSTRAINT-LEGIBILITY",
-    "summary": "voluntary-bail constraint capture degrades to NDJSON noise under the dogfood stream-json agent; extract the agent's final message from the transcript before bounding, not the raw stdout tail",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "5. Prior-outcome feedback to the retrying tick"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "buildVoluntaryBail must capture the agent's final message, not tailBound(raw result.stdout). Extract the final assistant/result text from the stream-json transcript shape when stdout is NDJSON; fall back to the raw tail for plain-text agents. Keep the existing bound + empty-final-message placeholder."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Add a voluntary-bail case whose fake agent emits stream-json NDJSON stdout (assistant text + result event + cost/usage) → the next tick's §5 block names the refused constraint cleanly, free of escaped-JSON/cost-metadata; the existing plain-text voluntary-bail test stays green."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "stream-json-stdout voluntary-bail → §5 <prior-attempt> names the refused constraint legibly (no NDJSON/cost noise); plain-text voluntary-bail path unchanged (§5 voluntary-bail variant / §6 'names the prior bail and its constraint')"
-      }
-    ],
-    "acceptance": "A voluntary-bail under a stream-json agent forwards a legible refused-constraint in the next tick's §5 block (not raw NDJSON/cost metadata); the plain-text path stays green; pnpm test green",
-    "notes": "Audit 58d8491: buildVoluntaryBail = tailBound(result.stdout). OK for claudeCode({text}); dogfood .flume/chain.ts uses withTerminalRenderer(withSessionCapture(claudeCode({stream-json}))) — decorators pass stdout raw, so the tail is escaped-JSON result/assistant + cost/usage, the loop §6 targets. Agent.ts already parses stream-json (renderStreamJsonLine). Alt finalMessage-on-AgentResult is an unspecced v0.1-§2 add (cf. teardownWorktree OQ); prefer in-lane extraction."
-  },
-  {
     "tag": "CHAIN-AUTHORING-GATE-GUIDANCE",
     "summary": "CHAIN-AUTHORING.md: add gate-placement default (expensive correctness→afterMerge, cheap structural→afterCommit) + contention rationale, and the byte-equality anti-pattern section",
     "per": {
