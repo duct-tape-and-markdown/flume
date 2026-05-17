@@ -258,9 +258,14 @@ export class Dispatcher {
       batch.map((entry) => this.createWorktree(entry, preHead)),
     );
 
-    // Optional per-phase setup (e.g. symlink node_modules / .env so gates run).
+    // Optional per-phase setup (e.g. symlink node_modules / .env so gates
+    // run). The return value MAY contribute extraEnv that the dispatcher
+    // layers onto the agent invocation env (e.g. per-worktree DATABASE_URL
+    // from a chain that provisioned an ephemeral DB at setup time).
+    const extraEnvByIndex: Array<Record<string, string> | undefined> =
+      worktrees.map(() => undefined);
     if (phase.setupWorktree) {
-      await Promise.all(
+      const setupResults = await Promise.all(
         batch.map((entry, i) =>
           phase.setupWorktree!({
             worktreePath: worktrees[i]!.path,
@@ -269,11 +274,17 @@ export class Dispatcher {
           }),
         ),
       );
+      for (let i = 0; i < setupResults.length; i++) {
+        const r = setupResults[i];
+        if (r && r.extraEnv) extraEnvByIndex[i] = r.extraEnv;
+      }
     }
 
     // Run agent in each worktree concurrently.
     const perEntry = await Promise.all(
-      batch.map((entry, i) => this.runFanoutEntry(phase, entry, worktrees[i]!)),
+      batch.map((entry, i) =>
+        this.runFanoutEntry(phase, entry, worktrees[i]!, extraEnvByIndex[i]),
+      ),
     );
 
     // Cherry-pick winners onto trunk in batch order.
@@ -333,10 +344,27 @@ export class Dispatcher {
       );
     }
 
-    // Cleanup worktrees.
+    // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
+    // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
+    // releases while the worktree path still exists. Teardown failures are
+    // logged but do not block worktree removal — leaks are recoverable, a
+    // stuck worktree is not.
     let cleaned = 0;
     await Promise.all(
-      worktrees.map(async (wt) => {
+      worktrees.map(async (wt, i) => {
+        if (phase.teardownWorktree) {
+          try {
+            await phase.teardownWorktree({
+              worktreePath: wt.path,
+              repoRoot,
+              entryTag: batch[i]!.tag,
+            });
+          } catch (err) {
+            this.log.warn(
+              `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
+            );
+          }
+        }
         try {
           await git.removeWorktree(repoRoot, wt.path);
           cleaned++;
@@ -373,6 +401,7 @@ export class Dispatcher {
     phase: Phase,
     entry: PendingEntry,
     wt: { path: string; branch: string },
+    extraEnv?: Record<string, string>,
   ): Promise<{
     entry: PendingEntry;
     committed: boolean;
@@ -389,7 +418,7 @@ export class Dispatcher {
     });
 
     const preHead = await git.revParse(wt.path);
-    await this.invokeAgent(phase, wt.path, prompt);
+    await this.invokeAgent(phase, wt.path, prompt, extraEnv);
     const postHead = await git.revParse(wt.path);
     const committed = postHead !== preHead;
 
@@ -423,6 +452,7 @@ export class Dispatcher {
     phase: Phase,
     cwd: string,
     prompt: string,
+    extraEnv?: Record<string, string>,
   ): Promise<void> {
     try {
       const result = await this.opts.agent.invoke({
@@ -433,6 +463,7 @@ export class Dispatcher {
           : {}),
         onStdout: (chunk) => process.stdout.write(chunk),
         onStderr: (chunk) => process.stderr.write(chunk),
+        ...(extraEnv ? { extraEnv } : {}),
       });
       if (result.exitCode !== 0) {
         this.log.warn(
