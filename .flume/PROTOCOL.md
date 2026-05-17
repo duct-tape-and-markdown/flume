@@ -4,9 +4,9 @@ Runtime mechanics (baton, gates, handoff, pending schema) live in `.flume/chain.
 
 ## The chain
 
-`spec/RELEASE-v0.1.md` → `.flume/plan/` → `src/` (+ `tests/`, `docs/`, etc.) → git log
+`spec/RELEASE-*.md` → `.flume/plan/` → `src/` (+ `tests/`, `docs/`, etc.) → git log
 
-`spec/RELEASE-v0.1.md` is the human-curated ship-readiness target for the v0.1 public release. Plan derives the work breakdown against it; build executes one entry at a time. Plan is advisory to build (build re-validates against the cited section before acting).
+The spec corpus — `spec/RELEASE-*.md` — is the human-directed ship-readiness target (owned by the human, edited in interactive sessions under explicit direction — never by an autonomous phase). Each file is one release line; the newest is the active plan target, earlier ones are frozen once shipped. Plan derives the work breakdown against whatever changed in `spec/` since the last `plan:` commit; build executes one entry at a time, re-validating against the cited section (in the file its `per.path` names) before acting.
 
 | Layer | Author | Phase | Commit prefix |
 | ----- | ------ | ----- | ------------- |
