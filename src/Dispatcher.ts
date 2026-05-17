@@ -33,7 +33,13 @@ import type {
   TickResult,
 } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
-import type { PriorAttempt } from "./Prompt.js";
+import type {
+  PriorAttempt,
+  GateRevertAttempt,
+  VoluntaryBailAttempt,
+  PlatformPreemptAttempt,
+  NoCommitMode,
+} from "./Prompt.js";
 import * as git from "./git.js";
 
 const execFileP = promisify(execFile);
@@ -51,6 +57,24 @@ const PRIOR_ATTEMPTS_DIR = join(".flume", "prior-attempts");
 const MAX_PRIOR_DETAILS = 8 * 1024;
 /** Bound on the persisted `git show --stat` digest. */
 const MAX_PRIOR_DIFFSTAT = 4 * 1024;
+/**
+ * Bound on the persisted voluntary-bail constraint / platform-preempt
+ * failure class. Same telegraphic discipline as the gate digest: enough to
+ * name the wall, not the transcript.
+ */
+const MAX_PRIOR_NOCOMMIT = 4 * 1024;
+
+/**
+ * How an agent invocation ended — consulted by §6 classification ONLY when
+ * the tick produced no commit. A clean exit with no commit is a
+ * voluntary-bail (the agent refused a constraint and said so in its final
+ * message, captured here as `stdout`); any process failure is a
+ * platform-preempt (not a defect in the work). When a commit landed, how the
+ * process ended is irrelevant — the commit is honored regardless.
+ */
+type AgentTermination =
+  | { kind: "clean"; stdout: string }
+  | { kind: "process-failure"; failureClass: string };
 
 /** Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt keying. */
 function slugify(tag: string): string {
@@ -61,6 +85,16 @@ function slugify(tag: string): string {
 function bound(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max) + `\n…[truncated ${s.length - max} chars]`;
+}
+
+/**
+ * Keep the *last* `max` chars (the agent's final message — where a bail
+ * names its refused constraint — lives at the tail of stdout), marking the
+ * elision at the head so truncation is visible.
+ */
+function tailBound(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `[truncated ${s.length - max} chars]…\n` + s.slice(s.length - max);
 }
 
 // ---------- public surface ----------
@@ -231,6 +265,26 @@ export interface TickOutcome {
    * produced or kept no commit).
    */
   failed?: boolean;
+  /**
+   * For a no-commit tick where an agent ran (§6): which of the three
+   * causally-distinct modes produced no usable commit —
+   *  - `gate-revert`      a commit was made then a gate reverted it,
+   *  - `voluntary-bail`   the agent exited cleanly without committing
+   *                       (a constraint it refused to cross),
+   *  - `platform-preempt` the agent process failed for non-work reasons
+   *                       (rate-limit, auth, timeout, dispatcher-killed) —
+   *                       NOT a defect in the work.
+   * Absent when the tick shipped a usable commit, hibernated, `failed`
+   * (chain resolution threw), or ran no agent (nothing pickable). For a
+   * fanout wave it is the representative cause when the whole wave shipped
+   * nothing (precedence gate-revert > platform-preempt > voluntary-bail —
+   * §6's stated harm is platform failures masquerading as agent failures,
+   * so platform-preempt outranks voluntary-bail in the wave summary); each
+   * entry's own mode is persisted to its §5 prior-attempt record (the
+   * durable per-entry channel §6 mandates for telling voluntary-bail loops
+   * from platform-preempt runs without reading session logs).
+   */
+  noCommit?: NoCommitMode;
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -319,7 +373,7 @@ export class Dispatcher {
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
-    const result =
+    const { result, noCommit } =
       phase.concurrency === "singleton"
         ? await this.runSingleton(phase, agent)
         : await this.runFanout(phase, agent);
@@ -334,14 +388,18 @@ export class Dispatcher {
       hibernated: false,
       phaseName: phase.name,
       result,
+      ...(noCommit ? { noCommit } : {}),
       awakeAfter: this.baton.awake(),
-      summary: summarize(phase.name, result, allowed),
+      summary: summarize(phase.name, result, allowed, noCommit),
     };
   }
 
   // ---------- singleton tick ----------
 
-  private async runSingleton(phase: Phase, agent: Agent): Promise<TickResult> {
+  private async runSingleton(
+    phase: Phase,
+    agent: Agent,
+  ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
     const cwd = this.opts.repoRoot;
     const preHead = await git.revParse(cwd);
     const pending = await this.readPending();
@@ -359,11 +417,12 @@ export class Dispatcher {
       ...(prior ? { priorAttempt: prior } : {}),
     });
 
-    await this.invokeAgent(phase, cwd, prompt, agent);
+    const termination = await this.invokeAgent(phase, cwd, prompt, agent);
 
     const postHead = await git.revParse(cwd);
     let committed = postHead !== preHead;
     const gateResults: GateResultEntry[] = [];
+    let noCommit: NoCommitMode | undefined;
 
     if (committed) {
       const verdict = await this.runAfterCommitGates(phase, cwd, postHead);
@@ -380,6 +439,7 @@ export class Dispatcher {
         );
         await git.dropLastCommit(cwd);
         committed = false;
+        noCommit = "gate-revert";
         await this.writePriorAttempt(key, record);
         this.log.warn(
           `[flume] ${phase.name} commit reverted: ${verdict.failure?.message}`,
@@ -387,23 +447,38 @@ export class Dispatcher {
       }
     }
 
-    // A clean ship clears the slot so the next tick starts with no stale
-    // prior-attempt signal.
-    if (committed) await this.clearPriorAttempt(key);
+    if (committed) {
+      // A clean ship clears the slot so the next tick starts with no stale
+      // prior-attempt signal.
+      await this.clearPriorAttempt(key);
+    } else if (!noCommit) {
+      // No commit and no gate ran: classify the agent's own termination
+      // (§6). A clean exit that produced nothing is a voluntary-bail (the
+      // agent refused a constraint and named it in its final message); any
+      // process failure is a platform-preempt (not a defect in the work).
+      noCommit = await this.classifyNoCommit(key, termination);
+      this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
+    }
 
     return {
-      phaseName: phase.name,
-      committed,
-      ...(committed ? { commitSha: postHead } : {}),
-      gateResults,
-      pendingAfter: await this.readPending(),
-      shippedTags: [],
+      result: {
+        phaseName: phase.name,
+        committed,
+        ...(committed ? { commitSha: postHead } : {}),
+        gateResults,
+        pendingAfter: await this.readPending(),
+        shippedTags: [],
+      },
+      ...(noCommit ? { noCommit } : {}),
     };
   }
 
   // ---------- fanout tick ----------
 
-  private async runFanout(phase: Phase, agent: Agent): Promise<TickResult> {
+  private async runFanout(
+    phase: Phase,
+    agent: Agent,
+  ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
@@ -411,13 +486,16 @@ export class Dispatcher {
     const pickable = pending.filter((e) => isPickable(e, pending));
 
     if (pickable.length === 0) {
+      // No agent ran — not a no-commit *agent* tick, so no §6 classification.
       this.log.info(`[flume] ${phase.name}: nothing pickable`);
       return {
-        phaseName: phase.name,
-        committed: false,
-        gateResults: [],
-        pendingAfter: pending,
-        shippedTags: [],
+        result: {
+          phaseName: phase.name,
+          committed: false,
+          gateResults: [],
+          pendingAfter: pending,
+          shippedTags: [],
+        },
       };
     }
 
@@ -603,13 +681,43 @@ export class Dispatcher {
 
     const allGateResults = perEntry.flatMap((r) => r.gateResults).concat(mergeGateResults);
 
+    const committedWave = waveOk && shipped.length > 0;
+
+    // Wave-level §6 cause, only when the whole wave shipped nothing usable.
+    // Per-entry modes are already persisted to each entry's own §5 record
+    // (the durable channel §6 mandates); this is the single representative
+    // label for the logger/TickOutcome. Precedence gate-revert >
+    // platform-preempt > voluntary-bail: gate-revert means work was produced
+    // and lost (highest signal); platform-preempt outranks voluntary-bail so
+    // a rate-limited wave is not misread as the agents bailing — §6's
+    // explicit "platform failures masquerade as agent failures" harm.
+    let waveNoCommit: NoCommitMode | undefined;
+    if (!committedWave) {
+      const modes = new Set<NoCommitMode>(
+        perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
+      );
+      // The afterMerge revert path wrote per-entry gate-revert records for
+      // every cherry-picked entry before the hard reset.
+      if (!waveOk && shipped.length > 0) modes.add("gate-revert");
+      waveNoCommit = modes.has("gate-revert")
+        ? "gate-revert"
+        : modes.has("platform-preempt")
+          ? "platform-preempt"
+          : modes.has("voluntary-bail")
+            ? "voluntary-bail"
+            : undefined;
+    }
+
     return {
-      phaseName: phase.name,
-      committed: waveOk && shipped.length > 0,
-      ...(chorSha ? { commitSha: chorSha } : {}),
-      gateResults: allGateResults,
-      pendingAfter: await this.readPending(),
-      shippedTags: waveOk ? shipped.map((s) => s.entry.tag) : [],
+      result: {
+        phaseName: phase.name,
+        committed: committedWave,
+        ...(chorSha ? { commitSha: chorSha } : {}),
+        gateResults: allGateResults,
+        pendingAfter: await this.readPending(),
+        shippedTags: waveOk ? shipped.map((s) => s.entry.tag) : [],
+      },
+      ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     };
   }
 
@@ -626,6 +734,8 @@ export class Dispatcher {
     committed: boolean;
     commitSha?: string;
     gateResults: GateResultEntry[];
+    /** §6 mode when this entry produced no usable commit; absent when it shipped. */
+    noCommit?: NoCommitMode;
   }> {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
@@ -644,14 +754,25 @@ export class Dispatcher {
     });
 
     const preHead = await git.revParse(wt.path);
-    await this.invokeAgent(phase, wt.path, prompt, agent, extraEnv);
+    const termination = await this.invokeAgent(
+      phase,
+      wt.path,
+      prompt,
+      agent,
+      extraEnv,
+    );
     const postHead = await git.revParse(wt.path);
     const committed = postHead !== preHead;
 
     const gateResults: GateResultEntry[] = [];
     if (!committed) {
-      this.log.warn(`[flume] ${entry.tag}: agent produced no commit`);
-      return { entry, committed: false, gateResults };
+      // No commit, no gate: classify per-entry and persist the matching §5
+      // record (the durable per-entry channel §6 names — corpus-config-example
+      // bailed at the same writablePaths wall five sessions running; that
+      // must be legible without reading session logs).
+      const mode = await this.classifyNoCommit(key, termination);
+      this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
+      return { entry, committed: false, gateResults, noCommit: mode };
     }
 
     const verdict = await this.runAfterCommitGates(phase, wt.path, postHead);
@@ -668,7 +789,7 @@ export class Dispatcher {
       this.log.warn(
         `[flume] ${entry.tag}: commit reverted (${verdict.failure?.message})`,
       );
-      return { entry, committed: false, gateResults };
+      return { entry, committed: false, gateResults, noCommit: "gate-revert" };
     }
 
     return {
@@ -687,7 +808,7 @@ export class Dispatcher {
     prompt: string,
     agent: Agent,
     extraEnv?: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<AgentTermination> {
     try {
       const result = await agent.invoke({
         cwd,
@@ -700,21 +821,30 @@ export class Dispatcher {
         ...(extraEnv ? { extraEnv } : {}),
       });
       if (result.exitCode !== 0) {
-        this.log.warn(
-          `[flume] ${phase.name}: agent exited with code ${result.exitCode}`,
-        );
+        // A non-zero exit is a process failure, not a deliberate bail: crash,
+        // OOM/SIGKILL, auth, or rate-limit surfaced as a non-zero code. §6
+        // platform-preempt — not a defect in the work.
+        const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
+        this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
+        return { kind: "process-failure", failureClass };
       }
+      // Clean exit. `result.stdout` is the full captured transcript; the
+      // agent's final message — where a writablePaths/Rule-0/spec bail names
+      // the constraint it refused — lives at its tail.
+      return { kind: "clean", stdout: result.stdout };
     } catch (err) {
       // Swallow abort/timeout/spawn errors so a single bad invocation doesn't
       // tear down the loop. The post-invocation `git rev-parse` still runs,
       // so any commit the agent managed to make before aborting is honored;
-      // otherwise the phase falls through with `committed: false`.
+      // otherwise the phase falls through with `committed: false`. Either way
+      // this is a §6 platform-preempt — not a defect in the work.
       const e = err as Error & { name?: string; code?: string };
-      const kind =
+      const failureClass =
         e.name === "AbortError" || e.code === "ABORT_ERR"
-          ? "aborted (timeout or signal)"
-          : `errored: ${e.message}`;
-      this.log.warn(`[flume] ${phase.name}: agent ${kind}`);
+          ? "agent process aborted (per-tick timeout or dispatcher signal)"
+          : `agent process error before exit: ${e.message}`;
+      this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
+      return { kind: "process-failure", failureClass };
     }
   }
 
@@ -798,14 +928,28 @@ export class Dispatcher {
     return join(this.opts.repoRoot, PRIOR_ATTEMPTS_DIR, `${key}.json`);
   }
 
-  /** Read a persisted prior-attempt record, if any. Corrupt → treated as absent. */
+  /**
+   * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
+   * unrecognized `mode` discriminant → treated as absent: the renderer is
+   * exhaustive over the three known modes and must never be fed an unknown
+   * shape (and a stale slot should never become a false signal).
+   */
   private async readPriorAttempt(
     key: string,
   ): Promise<PriorAttempt | undefined> {
     const p = this.priorAttemptPath(key);
     if (!existsSync(p)) return undefined;
     try {
-      return JSON.parse(await readFile(p, "utf8")) as PriorAttempt;
+      const rec = JSON.parse(await readFile(p, "utf8")) as { mode?: unknown };
+      if (
+        rec &&
+        (rec.mode === "gate-revert" ||
+          rec.mode === "voluntary-bail" ||
+          rec.mode === "platform-preempt")
+      ) {
+        return rec as PriorAttempt;
+      }
+      return undefined;
     } catch {
       // A garbled record must not crash the tick — degrade to "no prior".
       return undefined;
@@ -846,13 +990,14 @@ export class Dispatcher {
   }
 
   private async buildPriorAttempt(
-    when: PriorAttempt["when"],
+    when: GateRevertAttempt["when"],
     failure: { gate: string; message: string; details?: string },
     diffCwd: string,
     sha: string,
-  ): Promise<PriorAttempt> {
+  ): Promise<GateRevertAttempt> {
     const diffStat = await this.capturedDiffStat(diffCwd, sha);
     return {
+      mode: "gate-revert",
       when,
       gate: failure.gate,
       message: failure.message,
@@ -861,6 +1006,30 @@ export class Dispatcher {
         : {}),
       diffStat,
     };
+  }
+
+  /**
+   * Classify a no-commit-no-gate tick (§6) and persist the matching §5
+   * record so the retry's prompt carries it. A clean agent exit that
+   * produced nothing is a **voluntary-bail** — the constraint it refused is
+   * its final message (the build/plan prompts instruct the agent to name the
+   * writablePaths/Rule-0/spec gap there); a **platform-preempt** otherwise —
+   * the non-work failure class, explicitly not a defect in the work. Returns
+   * the mode for `TickOutcome` / the logger record.
+   */
+  private async classifyNoCommit(
+    key: string,
+    termination: AgentTermination,
+  ): Promise<NoCommitMode> {
+    if (termination.kind === "clean") {
+      await this.writePriorAttempt(key, buildVoluntaryBail(termination.stdout));
+      return "voluntary-bail";
+    }
+    await this.writePriorAttempt(
+      key,
+      buildPlatformPreempt(termination.failureClass),
+    );
+    return "platform-preempt";
   }
 
   private async readPending(): Promise<PendingEntry[]> {
@@ -998,6 +1167,7 @@ function summarize(
   phaseName: string,
   result: TickResult,
   awaking: string[],
+  noCommit?: NoCommitMode,
 ): string {
   const parts: string[] = [phaseName];
   if (result.committed) {
@@ -1007,11 +1177,39 @@ function summarize(
       parts.push(`committed ${result.commitSha.slice(0, 8)}`);
     }
   } else {
-    parts.push("no commit");
+    // The §6 mode in the one-liner is the logger record that lets a
+    // voluntary-bail loop be told from a platform-preempt run without
+    // reading session logs.
+    parts.push(noCommit ? `no commit (${noCommit})` : "no commit");
   }
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
   return parts.join(" ");
+}
+
+/**
+ * Build the §6 voluntary-bail record: the agent exited cleanly without
+ * committing. The constraint it refused is its final message — the tail of
+ * stdout (the build/plan prompts instruct it to name the
+ * writablePaths/Rule-0/spec gap there), bounded.
+ */
+function buildVoluntaryBail(stdout: string): VoluntaryBailAttempt {
+  const tail = tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
+  return {
+    mode: "voluntary-bail",
+    constraint:
+      tail.length > 0
+        ? tail
+        : "(agent exited cleanly without committing and produced no final message naming a constraint)",
+  };
+}
+
+/** Build the §6 platform-preempt record from the non-work failure class. */
+function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
+  return {
+    mode: "platform-preempt",
+    failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
+  };
 }
 
 /**
