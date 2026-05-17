@@ -1,25 +1,82 @@
 [
   {
-    "tag": "WORKTREE-RACE-SERIALIZE",
-    "summary": "Serialize .git/worktrees/-mutating ops: setup Promise.all (Dispatcher.ts:366) + teardown (:468) → sequential for…await; keep agent fanout (:393) parallel",
+    "tag": "LOOP-PROCESS-PER-TICK",
+    "summary": "flume loop becomes a supervisor spawning one flume tick subprocess per iteration; drop diskChainLoader content-hash memo + lastChainModule in-process resolution-failure fallback",
     "per": {
       "path": "spec/RELEASE-v0.2.md",
-      "section": "4. Worktree create/teardown race serialization"
+      "section": "2. Per-tick chain re-resolution"
     },
-    "gate": {
-      "kind": "blockedBy",
-      "tag": "CHAIN-LOAD-GATE"
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "tests/loop-process-boundary.test.ts",
+          "description": "Integration: spawn real `flume tick` twice against a real on-disk .flume/chain.ts mutated between invocations (add/rename a phase); 2nd process schedules per the new chain. NOT a fake loader (§2 bullet 1 / §10)."
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "loop subcommand → supervisor: re-exec `flume tick` as a child process per iteration; between children read continuation/hibernation from disk baton (or child exit) and honor --max N. tick stays single-process resolve+run."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "diskChainLoader: drop content-hash memo (one tsImport/tick; no in-process recompile to memoize). Remove lastChainModule field + retain-last-good try/catch in tick(); resolution failure → loud error log + no-work failed-tick outcome (process exits; supervisor proceeds, never crashes)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Replace the fake-loader §2 re-resolution test. Add: configDir-only construct → tick() resolves on-disk chain in-process (no subprocess); loop spawns exactly one child/iteration + --max/hibernation terminate (stubbed spawn); ungated resolution-fail → no-work outcome, supervisor no-crash."
+        }
+      ],
+      "retire": [
+        "diskChainLoader content-hash memoization",
+        "Dispatcher.lastChainModule + in-process resolution-failure fallback (moot under process-per-tick)"
+      ]
     },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/loop-process-boundary.test.ts",
+        "asserts": "real `flume tick` run twice vs a chain.ts mutated on disk between runs → second tick runs the new chain (§2 acceptance bullet 1)"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "configDir-only construct resolves on-disk chain; loop = one child/iteration + correct --max/hibernation termination; ungated resolution failure → loud no-work outcome, supervisor no-crash (§2 bullets 2-3, §3 acceptance bullet 2)"
+      }
+    ],
+    "acceptance": "Real `flume tick` run twice vs a between-run-mutated on-disk chain.ts → 2nd runs new chain; loop spawns one child/iteration with --max/hibernation still terminating; configDir-only Dispatcher resolves on-disk chain; ungated resolve-fail → loud no-work, supervisor survives; pnpm test green",
+    "notes": "Re-derives §2. PER-TICK-CHAIN-RELOAD (0c24b29) shipped OLD §2 (in-process content-hash memo); a950a0c added lastChainModule retain-last-good. New §2/§3/§12 remove both as moot under process-per-tick (Node ESM registry non-evictable — OQ#1 resolved by 4187f44). chainLoadGate/loadChainModule/index export survive unchanged. Folds §3 acceptance bullet 2 (ungated resolve-fail → loud no-work, supervisor survives); §3 bullet 1 is GATE-FAILURE-FEEDBACK. Per §12 no standalone §3 entry."
+  },
+  {
+    "tag": "GATE-FAILURE-FEEDBACK",
+    "summary": "On gate-revert, persist a bounded prior-attempt block (failing gate name, full details, reverted-diff digest) to disk; next flume tick injects it into the rendered prompt — afterCommit + afterMerge",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "5. Gate-failure feedback to the retrying tick"
+    },
+    "gate": { "kind": "blockedBy", "tag": "LOOP-PROCESS-PER-TICK" },
     "files": {
       "new": [],
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "createWorktree loop (:366) and teardown loop (:468) → sequential for…await; per-entry agent Promise.all (:393) stays parallel."
+          "description": "On gate-revert at afterCommit AND afterMerge, persist a bounded prior-attempt record (failing gate name + full details + reverted-diff stat/digest) keyed by entry tag (fanout) / phase (singleton) to a gitignored .flume/ runtime dir; clear it when a later attempt commits clean."
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "renderPrompt injects the persisted prior-attempt block as a dispatcher-owned structural section, mirroring prependHarnessBlock (the `<harness>` block, Prompt.ts:117); absent/empty on first attempt. No chain.ts promptArgs or .flume/prompts/*.md token."
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Document the dispatcher-injected prior-attempt block beside the existing `<harness>` block section."
+        },
+        {
+          "path": ".gitignore",
+          "description": "Ignore the new prior-attempt runtime dir (mirror .flume/awake/ .flume/sessions/)."
         },
         {
           "path": "tests/Dispatcher.test.ts",
-          "description": "Stale-slug-seeded N≥2 wave: all worktrees created + entries shipped; teardown leaves git worktree list clean; fanout-parallelism assertion stays green."
+          "description": "afterCommit + afterMerge gate-fail → next rendered prompt carries gate name, full details, prior-attempt marker; first attempt → slot empty/absent."
         }
       ],
       "retire": []
@@ -28,23 +85,171 @@
     "tests": [
       {
         "path": "tests/Dispatcher.test.ts",
-        "asserts": "stale-slug N≥2 wave completes (no add fails on sibling remove); teardown leaves clean git worktree list; existing fanout-parallelism assertion stays green (§4 acceptance)"
+        "asserts": "fake gate fails with structured details at afterCommit and (separately) afterMerge → next rendered prompt contains gate name + full details + prior-attempt marker; first attempt → no marker (§5 acceptance; also §3 acceptance bullet 1)"
       }
     ],
-    "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; existing fanout-parallelism assertion green",
-    "notes": "Cites re-anchored to post-PER-TICK-CHAIN-RELOAD Dispatcher.ts (diskChainLoader added ~140 lines): setup :366, agent fanout :393, teardown :468 (spec §4 says :257/:284/:353 — pre-reload). Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking. blockedBy is ordering-only; linearizes so RELEASE-0.2.0 gates on one tag. All v0.2 entries touch src/Dispatcher.ts → fanout partitioner serializes them regardless."
+    "acceptance": "afterCommit and afterMerge gate-fail each produce a next-tick rendered prompt containing the failing gate name, full details, and a prior-attempt marker; first attempt's slot is empty/absent; pnpm test green",
+    "notes": "Highest-leverage (§5, §1). Cross-process per §2: next tick is a fresh process → block persisted to disk beside baton (.flume/awake/), read at render. Inject like the `<harness>` block (Prompt.ts:117 prependHarnessBlock), NOT a {{token}} — no off-allowlist .flume/prompts or chain.ts edit (the `<harness>` precedent resolves §5's 'documented slot' per Inform-before-parking). Also closes §3 acceptance bullet 1. §6/§7b/§8 build on this block."
+  },
+  {
+    "tag": "NO-COMMIT-TAXONOMY",
+    "summary": "Classify every no-commit tick as exactly one of gate-revert | voluntary-bail | platform-preempt on TickOutcome and in the §5 prior-attempt block",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "6. No-commit outcome taxonomy"
+    },
+    "gate": { "kind": "blockedBy", "tag": "GATE-FAILURE-FEEDBACK" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Add a no-commit classification (gate-revert | voluntary-bail | platform-preempt) to TickOutcome and feed it into the §5 prior-attempt block; distinguish a clean agent exit w/o commit (voluntary-bail) from a non-work process failure (platform-preempt) from a committed-then-gate-reverted tick (gate-revert)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Three tests, one per mode, asserting distinct classification on TickOutcome + in the §5 forward block; voluntary-bail then retry → retry prompt names the prior bail + its constraint."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "one test per mode (gate-revert / voluntary-bail / platform-preempt) asserts the distinct TickOutcome classification + §5 block text; voluntary-bail→retry prompt names the prior bail + constraint (§6 acceptance)"
+      }
+    ],
+    "acceptance": "TickOutcome carries exactly one of gate-revert|voluntary-bail|platform-preempt per no-commit tick; each surfaces distinctly in the §5 block; voluntary-bail→retry prompt names the prior bail + constraint; pnpm test green",
+    "notes": "TickOutcome at src/Dispatcher.ts (~204-212; shifts after LOOP-PROCESS-PER-TICK). Depends on GATE-FAILURE-FEEDBACK for the §5 block channel. Distinguishes the corpus-config-example voluntary-bail loop (5 sessions, same writablePaths wall) from the 17-session platform-preempt rate-limit run without reading session logs."
+  },
+  {
+    "tag": "AFTERMERGE-REVERT-ISOLATION",
+    "summary": "afterMerge gate failure reverts only the offending entry's commit (not hardResetTo(preHead) whole-wave); N−1 clean siblings stay shipped; offending entry stays pending with the §5 block",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "7. Fanout revert isolation + gate-placement defaults"
+    },
+    "gate": { "kind": "blockedBy", "tag": "NO-COMMIT-TAXONOMY" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "afterMerge gate failure: revert only the offending entry's merged commit instead of git.hardResetTo(repoRoot, preHead) whole-wave; keep the N−1 clean siblings shipped; the offending entry stays pending and its retry carries the §5 prior-attempt block. Per-entry agent parallelism unchanged."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Fanout N≥2, one entry's afterMerge gate fails → only that entry reverts + stays pending, others stay shipped; existing parallelism assertion stays green."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "N≥2 wave, one afterMerge gate fails → only the offending commit reverts, N−1 siblings stay shipped, offending stays pending w/ §5 block; fanout-parallelism assertion green (§7b acceptance)"
+      }
+    ],
+    "acceptance": "In an N≥2 wave with one afterMerge gate failure, only the offending entry reverts and stays pending, the other N−1 stay shipped, the retry carries the §5 block, and the parallelism assertion stays green; pnpm test green",
+    "notes": "§7b — heaviest item by §12 (changes merge/revert granularity, not a parameter). Current whole-wave site: git.hardResetTo(repoRoot, preHead) in the afterMerge path (Dispatcher.ts ~496; shifts after upstream entries). Depends on GATE-FAILURE-FEEDBACK (retry carries §5 block). §7a/§7c are docs (CHAIN-AUTHORING-GATE-GUIDANCE); §7c (v) is docs-only per §12, no runtime entry."
+  },
+  {
+    "tag": "PLAN-PROSE-DURABILITY",
+    "summary": "A gate-reverted plan tick must not silently destroy state.md/open-questions.md prose; recoverable without session logs (scope the revert to the failing artifact, or carry prose via the §5 block)",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "8. Plan-tick prose durability"
+    },
+    "gate": { "kind": "blockedBy", "tag": "AFTERMERGE-REVERT-ISOLATION" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "On a gate-revert of a plan tick, do not silently drop the prose: either scope the revert to the failing machine-checkable artifact (e.g. pending.json) and keep state.md/open-questions.md, OR carry the prior prose into the next plan tick via the §5 block. Build picks one; recovery must never need session logs."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Plan tick writes open-questions.md/state.md + a pending.json that fails pendingParseGate → post-revert the findings are recoverable without session logs (on disk OR in the next plan tick's §5 block)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "plan tick: prose + schema-invalid pending.json → after revert, prose recoverable w/o session logs (on disk or next-tick §5 block) (§8 acceptance)"
+      }
+    ],
+    "acceptance": "A plan tick with prose + a pendingParseGate-failing pending.json leaves its findings recoverable after revert without session logs (on disk or in the next plan tick's §5 block); pnpm test green",
+    "notes": "§8. Mechanism is build's choice; spec mandates the property (no silent prose loss). The §5-carry option needs GATE-FAILURE-FEEDBACK (blockedBy). Evidenced: pendingParseGate reverting 5f4b583 lost CLI-SEARCH-WALK/skill-path findings, hand-reconstructed in 9432489. pendingParseGate is the chain-local plan gate in .flume/chain.ts."
+  },
+  {
+    "tag": "WORKTREE-RACE-SERIALIZE",
+    "summary": "Serialize .git/worktrees/-mutating ops: setup createWorktree Promise.all + teardown removeWorktree Promise.all → sequential for…await; keep the per-entry agent fanout Promise.all parallel",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "4. Worktree create/teardown race serialization"
+    },
+    "gate": { "kind": "blockedBy", "tag": "PLAN-PROSE-DURABILITY" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Convert the setup worktree-create Promise.all and the teardown worktree-remove Promise.all to sequential for…await (mirror the already-serialized pre-wave pruneWorktrees); the per-entry agent-invocation Promise.all stays parallel."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Stale-slug-seeded N≥2 wave: all worktrees created + entries shipped; teardown leaves git worktree list clean; existing fanout-parallelism assertion stays green."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "stale-slug N≥2 wave completes (no add fails on a sibling remove); teardown leaves clean git worktree list; fanout-parallelism assertion green (§4 acceptance)"
+      }
+    ],
+    "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; the existing fanout-parallelism assertion stays green; pnpm test green",
+    "notes": "§4 unchanged in substance (spec added an Acceptance block). Structural sites (line numbers fragile, shift after upstream Dispatcher.ts entries; spec §4's :257/:284/:353 are pre-reload): setup Promise.all(batch.map(createWorktree)) ~417, teardown Promise.all(...removeWorktree) ~519, agent fanout Promise.all ~444 stays parallel. Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-GATE-GUIDANCE",
+    "summary": "CHAIN-AUTHORING.md: add gate-placement default (expensive correctness→afterMerge, cheap structural→afterCommit) + contention rationale, and the byte-equality anti-pattern section",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "7. Fanout revert isolation + gate-placement defaults"
+    },
+    "gate": { "kind": "blockedBy", "tag": "WORKTREE-RACE-SERIALIZE" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Add (a) gate-placement default guidance — expensive correctness gates at afterMerge, cheap structural (tscGate, bundle self-containment) at afterCommit — with the fanout-contention rationale; (c) a 'gate on the safety property, never on byte-equality of generated artifacts' anti-pattern section using the bundleFreshnessGate worked example."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "CHAIN-AUTHORING.md documents the expensive→afterMerge / structural→afterCommit default with rationale and contains the byte-equality anti-pattern section with the bundleFreshnessGate example",
+    "notes": "§7 (a) doc + (c) doc only — both docs/, build-writable. §7a's actual dogfood .flume/chain.ts gate-move (vitestGate→afterMerge) is OFF build's writablePaths → parked OQ (chore(flume)/human). §7c (v) is docs-only per §12 — no runtime entry. blockedBy WORKTREE-RACE linearizes Dispatcher.ts-touch order; semantically wants §7b landed so the afterMerge guidance isn't a pre-isolation footgun."
   },
   {
     "tag": "RELEASE-0.2.0",
-    "summary": "Cut 0.2.0: package.json version → 0.2.0; CHANGELOG ## [0.2.0] with ### Breaking / ### Added / ### Fixed per §5",
+    "summary": "Cut 0.2.0: package.json version → 0.2.0; CHANGELOG ## [0.2.0] with ### Breaking / ### Added / ### Fixed / ### Changed exactly per §9",
     "per": {
       "path": "spec/RELEASE-v0.2.md",
-      "section": "5. Versioning & distribution"
+      "section": "9. Versioning & distribution"
     },
-    "gate": {
-      "kind": "blockedBy",
-      "tag": "WORKTREE-RACE-SERIALIZE"
-    },
+    "gate": { "kind": "blockedBy", "tag": "CHAIN-AUTHORING-GATE-GUIDANCE" },
     "files": {
       "new": [],
       "edit": [
@@ -54,14 +259,14 @@
         },
         {
           "path": "CHANGELOG.md",
-          "description": "Add ## [0.2.0]: ### Breaking (DispatcherOptions removed chain; resolution per-tick from configDir), ### Added (chainLoadGate, per-tick chain re-resolution), ### Fixed (worktree create/teardown race serialization)."
+          "description": "Add ## [0.2.0] with the four subsections exactly per §9: ### Breaking (DispatcherOptions removed chain; resolution per-tick from configDir), ### Added (chainLoadGate; per-tick chain re-resolution; gate-failure prior-attempt context; no-commit taxonomy on TickOutcome), ### Fixed (worktree create/teardown race; afterMerge wave-revert blast-radius; silent plan-prose loss), ### Changed (dogfood gate placement expensive→afterMerge; flume loop now a supervisor spawning one flume tick/iteration — observable --max/hibernation unchanged)."
         }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [],
-    "acceptance": "package.json is 0.2.0; CHANGELOG has ## [0.2.0] with the three subsections; pnpm build clean; v0.1 §8 consumer-install smoke + attw green in CI",
-    "notes": "Single consolidated [0.2.0] section avoids 3-way CHANGELOG cherry-pick conflicts → a release-cut entry blockedBy the last functional entry. npm publish + git tag are human release-ceremony (cf. open-questions tag lane), out of build's scope. CONTINGENT: `### Added (per-tick chain re-resolution)` wording depends on OQ '§2 in-process reload' — if disposition (d), soften to 're-resolution across loop-process boundaries'; do not ship an over-claiming CHANGELOG."
+    "acceptance": "package.json is 0.2.0; CHANGELOG has ## [0.2.0] with all four §9 subsections; pnpm build clean; v0.1 §8 consumer-install smoke + attw esm-only green in CI",
+    "notes": "Single consolidated [0.2.0] section, blockedBy the last functional entry, avoids CHANGELOG cherry-pick conflicts. npm publish + git tag are human release-ceremony (OQ#3 lane), out of build scope. OQ#1 resolved by 4187f44 → the prior CONTINGENT wording note is dropped. CONTINGENT: the ### Changed dogfood-gate-placement line depends on the §7a chain.ts OQ (chore(flume) move shipped) — else omit/soften, do not over-claim."
   }
 ]
