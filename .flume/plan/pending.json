@@ -1,53 +1,5 @@
 [
   {
-    "tag": "CHAIN-LOAD-GATE",
-    "summary": "Builtin chainLoadGate + engine last-good fallback so a broken self-edited chain.ts can't crash a long-running loop, per §3",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "3. Chain-load gate + engine fallback"
-    },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "Add chainLoadGate: on a tick that touched .flume/chain.ts, validate it loads and default-exports a valid Chain (same checks diskChainLoader makes)."
-        },
-        {
-          "path": "src/index.ts",
-          "description": "Export chainLoadGate (additive to v0.1 §2 builtin-gate list)."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Engine fallback: per-tick resolution throws with no gate caught → retain last-good chain module, log a loud error, continue the loop."
-        },
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "chainLoadGate: valid post-tick chain passes; broken chain fails → producing tick reverts."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Resolution failure, no gate declared → last-good retained, error logged, loop() does not throw."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Gate.test.ts",
-        "asserts": "valid post-tick chain.ts passes chainLoadGate; syntactically-broken chain.ts fails → producing tick reverted"
-      },
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "resolution failure with no gate → engine retains last-good chain, logs error, loop() does not throw (§3 acceptance)"
-      }
-    ],
-    "acceptance": "Broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues; resolution failure w/o gate → last-good retained, error logged, no throw",
-    "notes": "Both layers required (§3). PER-TICK-CHAIN-RELOAD moved load+validate into diskChainLoader (Dispatcher.ts:82) — gate mirrors those checks against the post-tick file, not the memoized module (loadChain no longer exists). Dogfood .flume/chain.ts does NOT declare chainLoadGate (no flume-on-flume phase writes chain.ts) — engine fallback is its net. No .flume/chain.ts edit."
-  },
-  {
     "tag": "WORKTREE-RACE-SERIALIZE",
     "summary": "Serialize .git/worktrees/-mutating ops: setup Promise.all (Dispatcher.ts:366) + teardown (:468) → sequential for…await; keep agent fanout (:393) parallel",
     "per": {
