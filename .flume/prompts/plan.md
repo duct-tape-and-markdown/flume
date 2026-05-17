@@ -67,7 +67,7 @@ Telegraphic: short enough that build can act on the entry without re-reading the
 
 **Hard caps (zod-enforced; over-cap reverts the whole tick via `pendingParseGate`, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
 
-Hitting a cap is a signal, never a license to truncate or overrun: the entry is doing too much, or it's repeating spec. The fix is to **decompose** into discrete, shippable units (more, smaller entries), or — if a whole spec section can't decompose into telegraphic entries — **park an open-question proposing a spec split** (per *Derive*, above). Both are revisions, not workarounds. The downstream cost is real: every build tick re-reads the full entry JSON, and bloated fields tax every tick until the entry ships.
+A cap overrun almost always means the entry is **restating the spec instead of pointing at it**. The spec holds intent and mechanics; a plan entry points into it — `do X per §N`, `widen Y per §N` — sized so build acts without the entry re-explaining the spec. The fix is to **point harder, not shrink the spec**: cut restated mechanics, trust the `per` cite. Decompose into more entries only when one genuinely bundles several independent shippable units. A spec-split open-question is a last resort — for a section enumerating many unrelated deliverables, never for a section whose intent is merely rich; the spec is sized for intent, not for plan's character budget. Downstream cost is real: every build tick re-reads the full entry JSON; bloated fields tax every tick until the entry ships.
 
 # OUTPUT
 
