@@ -1093,6 +1093,126 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   );
 });
 
+// ---------- plan-tick prose durability (§8) ----------
+
+// Plan is a singleton phase. When its pending.json fails the chain-local
+// pendingParseGate, the whole commit is `git reset --hard`-ed away — the
+// state.md / open-questions.md prose in that same commit dies with it,
+// recoverable pre-§8 only by a human reading session logs. §8 mandates the
+// findings stay recoverable without session logs. This asserts the chosen
+// mechanism: a verbatim, durable, reset-surviving on-disk snapshot.
+
+describe("Dispatcher — plan-tick prose durability (§8)", () => {
+  it(
+    "gate-reverted plan tick: state.md/open-questions.md findings recoverable on disk w/o session logs; cleared on a later clean ship",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      // Stands in for the chain-local pendingParseGate: an afterCommit gate
+      // that vetoes a schema-invalid pending.json on the first attempt only.
+      // The §8 property is gate-agnostic — the dispatcher snapshots whatever
+      // the reverted commit touched, with no "which file is prose" knowledge.
+      let calls = 0;
+      const pendingParses: Gate = {
+        name: "pending.json parses",
+        when: "afterCommit",
+        async run() {
+          calls++;
+          return calls === 1
+            ? {
+                ok: false,
+                message: "pending.json has 1 schema violation",
+                details: "[0] gate.kind: invalid discriminant",
+              }
+            : { ok: true, message: "pending.json parsed (0 entries)" };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [pendingParses],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const FINDING_OQ =
+        "OPEN QUESTION: CLI-SEARCH-WALK — should `flume render` walk skill " +
+        "paths? Needs a human call before plan can derive an entry.";
+      const FINDING_STATE =
+        "Plan continues: yes\nAudited bd5e6f4 §7b; filed the skill-path finding.";
+
+      let attempt = 0;
+      const agent: Agent = {
+        name: "plan-prose-singleton",
+        async invoke(inv) {
+          const n = attempt++;
+          const oq = join(inv.cwd, ".flume", "plan", "open-questions.md");
+          const st = join(inv.cwd, ".flume", "plan", "state.md");
+          const pj = join(inv.cwd, ".flume", "plan", "pending.json");
+          await mkdir(dirname(oq), { recursive: true });
+          await writeFile(oq, `# Open Questions\n\n${FINDING_OQ}\n`);
+          await writeFile(st, `${FINDING_STATE}\n`);
+          // Attempt 0's pending.json is schema-invalid (gate vetoes it);
+          // attempt 1's is clean. Commit scoped to .flume/plan, exactly as
+          // plan does — the harness writes the snapshot to gitignored
+          // .flume/prior-attempts/, never into the agent's commit.
+          await writeFile(pj, n === 0 ? "[ broken json " : "[]\n");
+          await exec("git", ["add", "--", ".flume/plan"], { cwd: inv.cwd });
+          await exec(
+            "git",
+            ["commit", "-q", "-m", `plan: attempt ${n}`],
+            { cwd: inv.cwd },
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const preHead = await head(fx.repo);
+      const first = await dispatcher.tick(); // attempt 0 → committed, reverted
+
+      // The broken pending.json never ships: commit reverted to preHead.
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("gate-revert");
+      expect(await head(fx.repo)).toBe(preHead);
+      // The prose is GONE from the worktree (git reset --hard) — proving the
+      // loss §8 closes is real, and recovery cannot come from the worktree.
+      expect(
+        existsSync(join(fx.repo, ".flume", "plan", "open-questions.md")),
+      ).toBe(false);
+
+      // §8 acceptance: findings recoverable WITHOUT session logs — verbatim
+      // on disk in the durable, reset-surviving snapshot mirror.
+      const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+      const recoveredOQ = await readFile(
+        join(snapDir, ".flume", "plan", "open-questions.md"),
+        "utf8",
+      );
+      const recoveredState = await readFile(
+        join(snapDir, ".flume", "plan", "state.md"),
+        "utf8",
+      );
+      expect(recoveredOQ).toContain(FINDING_OQ);
+      expect(recoveredState).toContain(FINDING_STATE);
+
+      // A later clean ship clears the recovery artifact — no stale prose
+      // outliving the entry it belonged to (mirrors the §5 slot invariant).
+      baton.wake("plan");
+      const second = await dispatcher.tick(); // attempt 1 → ships clean
+      expect(second.result?.committed).toBe(true);
+      expect(existsSync(snapDir)).toBe(false);
+    },
+    20_000,
+  );
+});
+
 // ---------- per-tick chain re-resolution (§2) ----------
 
 describe("Dispatcher — per-tick chain re-resolution (§2)", () => {

@@ -428,15 +428,21 @@ export class Dispatcher {
       const verdict = await this.runAfterCommitGates(phase, cwd, postHead);
       gateResults.push(...verdict.results);
       if (!verdict.ok) {
-        // Capture the §5 record while the reverted commit is still
-        // reachable, then drop it. The next tick is a fresh process — this
-        // disk record is the only carry.
+        // Capture the §5 record AND the §8 prose snapshot while the reverted
+        // commit is still reachable, then drop it. The next tick is a fresh
+        // process — these disk artifacts are the only carry. The snapshot is
+        // what keeps a reverted *plan* tick's state.md / open-questions.md
+        // findings recoverable without session logs (§8): the `git reset
+        // --hard` below would otherwise destroy them, leaving hand-recovery
+        // from `.flume/sessions/` the only path (the `5f4b583` →
+        // hand-reconstructed-in-`9432489` incident).
         const record = await this.buildPriorAttempt(
           "afterCommit",
           verdict.failure!,
           cwd,
           postHead,
         );
+        await this.snapshotRevertedFiles(cwd, postHead, key);
         await git.dropLastCommit(cwd);
         committed = false;
         noCommit = "gate-revert";
@@ -988,9 +994,88 @@ export class Dispatcher {
     await writeFile(p, JSON.stringify(rec, null, 2) + "\n", "utf8");
   }
 
-  /** Clear a prior-attempt record once a later attempt commits clean. */
+  /**
+   * Clear a prior-attempt record once a later attempt commits clean — both
+   * the §5 JSON and the §8 reverted-prose snapshot, so a clean ship leaves no
+   * stale recovery artifact (the same no-false-signal invariant the §5 slot
+   * already holds, extended to the prose snapshot).
+   */
   private async clearPriorAttempt(key: string): Promise<void> {
     await rm(this.priorAttemptPath(key), { force: true });
+    await rm(this.revertedSnapshotDir(key), { recursive: true, force: true });
+  }
+
+  // ---------- reverted-prose durability (§8) ----------
+
+  /**
+   * Durable, gitignored snapshot dir for a gate-reverted commit's files.
+   * Sibling to the §5 JSON under `.flume/prior-attempts/` (repo root, NOT the
+   * per-entry worktree) so it outlives both `git reset --hard` and a fanout
+   * worktree teardown — the same durability the §5 record relies on.
+   */
+  private revertedSnapshotDir(key: string): string {
+    return join(this.opts.repoRoot, PRIOR_ATTEMPTS_DIR, `${key}.reverted`);
+  }
+
+  /**
+   * Snapshot every non-deleted file the reverted commit touched, verbatim,
+   * into the durable snapshot dir before the hard reset destroys it (§8).
+   *
+   * A gate-reverted plan tick otherwise loses its state.md /
+   * open-questions.md prose to `git reset --hard`, recoverable only by a
+   * human reading `.flume/sessions/` logs. The snapshot is post-image content
+   * under a mirror of the repo path, so recovery is "open the file" — not
+   * "read a diff", not "grep a session log". `diffStat` (the §5 digest) is
+   * `git show --stat`: filenames and counts, never content — it cannot
+   * recover findings, which is why §8 needs this distinct artifact.
+   *
+   * Generic by construction: it snapshots whatever the reverted commit
+   * changed (for plan that is the prose plus the schema-failing
+   * pending.json), so the dispatcher needs no chain-specific notion of which
+   * artifact is "prose" vs "machine-checkable". Must run while `sha` is still
+   * reachable (before the drop). Best-effort: §8 mandates the property, not a
+   * guarantee under a broken git — a snapshot failure must never block or
+   * fail the revert.
+   */
+  private async snapshotRevertedFiles(
+    cwd: string,
+    sha: string,
+    key: string,
+  ): Promise<void> {
+    const dir = this.revertedSnapshotDir(key);
+    try {
+      // The artifact tracks the *latest* reverted attempt only — drop any
+      // stale snapshot from an earlier revert under this key first.
+      await rm(dir, { recursive: true, force: true });
+      const { stdout } = await execFileP(
+        "git",
+        [
+          "show",
+          "--name-only",
+          "--diff-filter=d",
+          "--format=",
+          "--no-color",
+          sha,
+        ],
+        { cwd, maxBuffer: 16 * 1024 * 1024 },
+      );
+      const files = stdout
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+      for (const rel of files) {
+        const { stdout: content } = await execFileP(
+          "git",
+          ["show", `${sha}:${rel}`],
+          { cwd, maxBuffer: 16 * 1024 * 1024 },
+        );
+        const dest = join(dir, rel);
+        await mkdir(dirname(dest), { recursive: true });
+        await writeFile(dest, content, "utf8");
+      }
+    } catch {
+      // Recovery is best-effort by spec; never block or fail the revert path.
+    }
   }
 
   /**
