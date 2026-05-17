@@ -1,1 +1,153 @@
-[]
+[
+  {
+    "tag": "PER-TICK-CHAIN-RELOAD",
+    "summary": "Resolve chain from .flume/chain.ts each tick (content-hash memoized); drop DispatcherOptions.chain, add chainLoader? — Dispatcher resolves from configDir per §2",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "2. Per-tick chain re-resolution"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "Extract loadChain into a reusable content-hash-memoized resolver; stop passing chain to Dispatcher (configDir already passed)."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Resolve chain at the start of every tick() via chainLoader (default: disk resolver from configDir); remove chain from DispatcherOptions."
+        },
+        {
+          "path": "src/index.ts",
+          "description": "Export ChainModule alongside DispatcherOptions (now referenced by the chainLoader? option type)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Migrate 10 constructor sites off chain:; add per-tick re-resolution, zero-recompile, and configDir-only cases (§2 acceptance)."
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Fix the new Dispatcher({ chain }) example (:298) to the per-tick resolution signature."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "chain rewritten between ticks → next tick runs the new chain; stable chain → 0 recompiles; configDir-only construction resolves on-disk chain (§2 acceptance)"
+      }
+    ],
+    "acceptance": "Dispatcher resolves .flume/chain.ts per tick; DispatcherOptions has no chain (chainLoader? only); stable chain → 0 recompiles; pnpm tsc + test green",
+    "notes": "ChainModule is currently a local cli.ts interface — promote to a shared module so DispatcherOptions can reference it. .flume/chain.ts needs NO edit: it never constructs Dispatcher; the §2 break is confined to build-writable src/ + tests/ + docs/ (resolves the latent §5 'chain.ts in same commit' concern — vacuous here)."
+  },
+  {
+    "tag": "CHAIN-LOAD-GATE",
+    "summary": "Builtin chainLoadGate + engine last-good fallback so a broken self-edited chain.ts can't crash a long-running loop, per §3",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "3. Chain-load gate + engine fallback"
+    },
+    "gate": { "kind": "blockedBy", "tag": "PER-TICK-CHAIN-RELOAD" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "Add chainLoadGate: on a tick that touched .flume/chain.ts, validate it loads and default-exports a valid Chain (same checks loadChain makes)."
+        },
+        {
+          "path": "src/index.ts",
+          "description": "Export chainLoadGate (additive to v0.1 §2 builtin-gate list)."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Engine fallback: per-tick resolution throws with no gate caught → retain last-good chain module, log a loud error, continue the loop."
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "chainLoadGate: valid post-tick chain passes; broken chain fails → producing tick reverts."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Resolution failure, no gate declared → last-good retained, error logged, loop() does not throw."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "valid post-tick chain.ts passes chainLoadGate; syntactically-broken chain.ts fails → producing tick reverted"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "resolution failure with no gate → engine retains last-good chain, logs error, loop() does not throw (§3 acceptance)"
+      }
+    ],
+    "acceptance": "Broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues; resolution failure w/o gate → last-good retained, error logged, no throw",
+    "notes": "Both layers required (§3). Dogfood .flume/chain.ts does NOT declare chainLoadGate — no flume-on-flume phase writes chain.ts, so the engine fallback is its net. No .flume/chain.ts edit."
+  },
+  {
+    "tag": "WORKTREE-RACE-SERIALIZE",
+    "summary": "Serialize .git/worktrees/-mutating ops: setup Promise.all (Dispatcher.ts:257) + teardown (:353) → sequential for…await; keep agent fanout (:284) parallel",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "4. Worktree create/teardown race serialization"
+    },
+    "gate": { "kind": "blockedBy", "tag": "CHAIN-LOAD-GATE" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "createWorktree loop (:257) and teardown loop (:353) → sequential for…await; per-entry agent Promise.all (:284) stays parallel."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Stale-slug-seeded N≥2 wave: all worktrees created + entries shipped; teardown leaves git worktree list clean; fanout-parallelism assertion stays green."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "stale-slug N≥2 wave completes (no add fails on sibling remove); teardown leaves clean git worktree list; existing fanout-parallelism assertion stays green (§4 acceptance)"
+      }
+    ],
+    "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; existing fanout-parallelism assertion green",
+    "notes": "Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking. blockedBy is ordering-only (logically independent); linearizes so RELEASE-0.2.0 can gate on one tag (single-tag blockedBy). All three v0.2 entries touch src/Dispatcher.ts → the fanout partitioner serializes them regardless."
+  },
+  {
+    "tag": "RELEASE-0.2.0",
+    "summary": "Cut 0.2.0: package.json version → 0.2.0; CHANGELOG ## [0.2.0] with ### Breaking / ### Added / ### Fixed per §5",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "5. Versioning & distribution"
+    },
+    "gate": { "kind": "blockedBy", "tag": "WORKTREE-RACE-SERIALIZE" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "version → 0.2.0."
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Add ## [0.2.0]: ### Breaking (DispatcherOptions removed chain; resolution per-tick from configDir), ### Added (chainLoadGate, per-tick chain re-resolution), ### Fixed (worktree create/teardown race serialization)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "package.json is 0.2.0; CHANGELOG has ## [0.2.0] with the three subsections; pnpm build clean; v0.1 §8 consumer-install smoke + attw green in CI",
+    "notes": "Single consolidated [0.2.0] section avoids 3-way CHANGELOG cherry-pick conflicts → a release-cut entry blockedBy the last functional entry. npm publish @dtmd/flume@0.2.0 + git tag are human release-ceremony (cf. open-questions tag lane), out of build's scope."
+  }
+]
