@@ -34,9 +34,17 @@ jobs:
 
       - name: attw — declaration-file shape lint
         # flume is intentionally ESM-only ("type":"module", Node 22+, exports
-        # map with only an `import` condition). The esm-only profile suppresses
-        # CJSResolvesToESM, which is the expected/correct shape here, not a
-        # defect — see spec/RELEASE-v0.1.md §2.
+        # map with only a `default` condition per §2). The esm-only profile
+        # suppresses CJSResolvesToESM, which is the expected/correct shape
+        # here, not a defect — see spec/RELEASE-v0.1.md §2.
+        #
+        # NON-BLOCKING: @arethetypeswrong/cli@0.18.2 crashes internally
+        # ("Cannot read properties of undefined (reading 'filename')", exit 3)
+        # pre-analysis, no finding, unreproducible locally. Declaration-shape
+        # correctness is bindingly verified by the consumer-install smoke
+        # below (which has caught real publish-path defects). Keep attw for
+        # signal when the upstream crash is fixed.
+        continue-on-error: true
         run: npx --yes @arethetypeswrong/cli@latest --pack . --profile esm-only
 
       - name: Consumer-install smoke
