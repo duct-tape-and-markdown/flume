@@ -7,8 +7,7 @@
       "section": "9. Versioning & distribution"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "CHAIN-AUTHORING-GATE-GUIDANCE"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -27,6 +26,6 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "package.json is 0.2.0; CHANGELOG has ## [0.2.0] with all four §9 subsections; pnpm build clean; v0.1 §8 consumer-install smoke + attw esm-only green in CI",
-    "notes": "Single consolidated [0.2.0] section, blockedBy the last functional entry, avoids CHANGELOG cherry-pick conflicts. npm publish + git tag are human release-ceremony (OQ#3 lane), out of build scope. OQ#1 resolved by 4187f44 → the prior CONTINGENT wording note is dropped. CONTINGENT: the ### Changed dogfood-gate-placement line depends on the §7a chain.ts OQ (chore(flume) move shipped) — else omit/soften, do not over-claim."
+    "notes": "One consolidated [0.2.0] block (no per-entry cherry-picks → no CHANGELOG conflicts); now open queue head (blocker GUIDANCE shipped ff98457). npm publish + git tag are human release-ceremony, out of build scope. §9 ### Added wording settled by 4187f44. STILL CONTINGENT: the ### Changed 'dogfood gate placement → afterMerge (§7a)' line — the §7a .flume/chain.ts gate-move has NOT shipped (parked OQ, human/chore(flume); only docs half landed, 142ff5c). Build omits/softens it — do not over-claim."
   }
 ]
