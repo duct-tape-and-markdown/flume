@@ -7,8 +7,7 @@
       "section": "5. Gate-failure feedback to the retrying tick"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "CHAIN-AUTHORING-RELOAD-DOCS"
+      "kind": "open"
     },
     "files": {
       "new": [],
