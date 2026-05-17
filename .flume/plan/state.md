@@ -1,34 +1,27 @@
 # State
 
-Phase: **v0.1 line shipped (`@dtmd/flume@0.1.2`, tags `v0.1.0/.1/.2`); v0.2 spec committed (`2e2fc5b`) → v0.2 derive active.** Mode this tick: **derive** — heaviest dimension is the new normative spec file `spec/RELEASE-v0.2.md`. Inbox empty; pending was `[]` (no drain, no promote).
+Phase: **v0.1 line shipped; v0.2 derive line active.** Mode this tick: **audit** — heaviest dimension is the PER-TICK-CHAIN-RELOAD build (`0c24b29`) + its harness ship (`d05e297`), which carried an architectural flag in its commit body. No spec delta (no derive); inbox empty (no drain). Promote fired (mechanical).
 
-## Derive — `spec/RELEASE-v0.2.md` (`2e2fc5b`)
+## Audit — `0c24b29` (build PER-TICK-CHAIN-RELOAD) + `d05e297` (ship)
 
-Decomposed §2/§3/§4/§5 into **4 entries**, linear `blockedBy` chain (all three functional entries touch `src/Dispatcher.ts` → fanout partitioner serializes them regardless; the chain also lets the single-tag `blockedBy` express "release gates on all prior"):
+- **Conformance: green.** §2 mechanism implemented as prescribed — per-tick `chainLoader()` at `tick()` top (`Dispatcher.ts:233`), `diskChainLoader` content-hash memoized (`:82`), `DispatcherOptions.chain` removed in place + `chainLoader?` added, `agent` re-resolves with the chain. All three §2 acceptance tests present and passing. Files touched = entry.files exactly (cli/Dispatcher/index/Dispatcher.test/CHAIN-AUTHORING) — **no scope creep**.
+- **`.flume/chain.ts` verified uncoupled** — `grep` confirms zero `Dispatcher`/`chainLoader`/`chain:` refs; the §2 break stayed inside build-writable `src/+tests/+docs/`, exactly as the prior plan predicted. §5 "same commit" concern vacuous (confirmed, not just asserted).
+- **`d05e297`** faithful harness-lane ship (pending.json only; removed PER-TICK-CHAIN-RELOAD, normalized remaining gate formatting). Off plan's writable paths; not separately actionable.
+- **One material finding → new OQ.** §2's prescribed mechanism (`tsImport`+content-hash) cannot deliver §2's own in-process headline guarantee; §2's acceptance test uses a fake loader so the suite is green while the disk-reload intent is untested. Build flagged honestly via commit body (correct: open-questions.md off its writable paths) — did not paper over. Routed to open-questions with *Inform-before-parking* research folded in (tsx docs contradict the build's empirical claim → disposition branches on a reproduction probe). NOT a pending entry: no clean buildable unit (4 options, several human-lane spec edits, one zero-code), and the premise needs a probe first.
 
-1. **PER-TICK-CHAIN-RELOAD** (§2, open) — per-tick content-hash-memoized chain resolution; remove `DispatcherOptions.chain`, add `chainLoader?`. Confirmed by source read: the §2 break is confined to build-writable `src/cli.ts` + `src/Dispatcher.ts` + `src/index.ts` + `tests/Dispatcher.test.ts` + `docs/CHAIN-AUTHORING.md:298`. **`.flume/chain.ts` needs no edit** (it never constructs Dispatcher; `Chain`/`Phase` types unchanged) → the latent §5 "chain.ts in same commit" / writablePaths concern is vacuous here. Recorded in the entry's notes.
-2. **CHAIN-LOAD-GATE** (§3, blockedBy 1) — builtin `chainLoadGate` + engine last-good fallback. Dogfood chain does not declare it (no flume-on-flume phase writes `.flume/chain.ts`); engine fallback is its net.
-3. **WORKTREE-RACE-SERIALIZE** (§4, blockedBy 2) — `Dispatcher.ts:257`/`:353` Promise.all → `for…await`; agent fanout `:284` stays parallel. Spec line cites verified against current `Dispatcher.ts` (254/257/284/353/517/527 all match).
-4. **RELEASE-0.2.0** (§5, blockedBy 3) — `package.json` → 0.2.0 + consolidated `## [0.2.0]` CHANGELOG (one section, avoids 3-way cherry-pick conflict). npm publish + git tag = human ceremony, out of build scope.
+## Promote (mechanical)
 
-§1/§7/§8 are scope/non-goals/audit-reference (not derivable units); §6 tests folded into each entry's `tests[]` per the v0.1 §5 representative-not-exhaustive posture.
-
-## Audit (commit-delta)
-
-- **`173ad39` (`chore(flume):` de-version spec directives).** Faithful, harness lane (off plan's writable paths). Generalizes 8 sites to `spec/RELEASE-*.md` and relaxes "human-curated" → "human-directed, edited in-session". Directly enables this tick: plan.md's `per.path` directive is now corpus-relative — entries cite `spec/RELEASE-v0.2.md` accordingly. No spec authority needed (chore).
-- **`2e2fc5b` (`spec:`)** is the derive source itself (human lane), not separately audited.
-
-## Resolved this tick
-
-- **OQ #1 (v0.2 untracked) — CLOSED.** Human committed `spec/RELEASE-v0.2.md` as `2e2fc5b` (took recommendation A) and the harness-lane working-tree edits as `173ad39`. Block lifted; queue derived. Removed from open-questions.
+- **CHAIN-LOAD-GATE: `blockedBy PER-TICK-CHAIN-RELOAD` → `open`.** Dep no longer in pending (shipped `d05e297`). It is now queue head, pickable. Unaffected by the new OQ (chainLoadGate + engine fallback is orthogonal to in-process disk reload).
+- Audit-driven pointer maintenance (plan re-derives pending vs current src): CHAIN-LOAD-GATE description `loadChain`→`diskChainLoader` (loadChain no longer exists post-ship); WORKTREE-RACE-SERIALIZE line cites re-anchored `:257/:284/:353`→`:366/:393/:468` (diskChainLoader added ~140 lines; spec §4's cites are pre-reload); RELEASE-0.2.0 notes flag the CHANGELOG `### Added` wording contingent on the new OQ.
 
 ## Queue / OQs / trunk
 
-- Queue head: **PER-TICK-CHAIN-RELOAD** (open, pickable). Entries 2–4 `blockedBy` chained behind it. In flight: nothing.
-- Open questions: **2** —
-  1. Unspecced published worktree-hook surface (`teardownWorktree`/`WorktreeSetupResult`/`extraEnv`) — v0.2 spec committed *without* folding it in despite the standing rec; the obvious window closed (PARKED/NEEDS AMENDMENT; rec A: amend v0.2 spec, which now also implies a §1 scope call).
-  2. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec A: keep tags, correct CHANGELOG — build follow-up once decided).
-- Writable-paths: all 4 entries' file targets (`src/**`, `tests/**`, `docs/**`, `package.json`, `CHANGELOG.md`) are within build's writablePaths. No off-allowlist target; no chain.ts amendment needed.
-- Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests) — verified this tick. HEAD `2e2fc5b`. (ci.yml runs on push/PR — not plan-verifiable locally.)
+- Queue head: **CHAIN-LOAD-GATE** (open, pickable). WORKTREE-RACE-SERIALIZE `blockedBy` it; RELEASE-0.2.0 `blockedBy` that. In flight: nothing.
+- Open questions: **3** —
+  1. **NEW** — §2's `tsImport`+content-hash mechanism can't deliver §2's in-process reload guarantee (PARKED/NEEDS AMENDMENT; rec: run reproduction probe (0) first — tsx docs contradict the build's empirical finding; then likely (d) amend §2 prose, else (a) bump tsx).
+  2. Unspecced published worktree-hook surface (`teardownWorktree`/`WorktreeSetupResult`/`extraEnv`) — v0.2 spec shipped without folding it in (PARKED/NEEDS AMENDMENT; rec A).
+  3. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec A: keep tags, correct CHANGELOG).
+- Writable-paths: all 3 remaining entries' targets (`src/**`, `tests/**`, `package.json`, `CHANGELOG.md`) within build's writablePaths. No off-allowlist target; no chain.ts amendment needed.
+- Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, **71** tests, was 68 — PER-TICK-CHAIN-RELOAD added 3 §2 tests). HEAD `d05e297`. (ci.yml runs on push/PR — not plan-verifiable locally.)
 
 Plan continues: no

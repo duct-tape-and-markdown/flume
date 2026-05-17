@@ -6,16 +6,13 @@
       "path": "spec/RELEASE-v0.2.md",
       "section": "3. Chain-load gate + engine fallback"
     },
-    "gate": {
-      "kind": "blockedBy",
-      "tag": "PER-TICK-CHAIN-RELOAD"
-    },
+    "gate": { "kind": "open" },
     "files": {
       "new": [],
       "edit": [
         {
           "path": "src/builtinGates.ts",
-          "description": "Add chainLoadGate: on a tick that touched .flume/chain.ts, validate it loads and default-exports a valid Chain (same checks loadChain makes)."
+          "description": "Add chainLoadGate: on a tick that touched .flume/chain.ts, validate it loads and default-exports a valid Chain (same checks diskChainLoader makes)."
         },
         {
           "path": "src/index.ts",
@@ -48,11 +45,11 @@
       }
     ],
     "acceptance": "Broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues; resolution failure w/o gate → last-good retained, error logged, no throw",
-    "notes": "Both layers required (§3). Dogfood .flume/chain.ts does NOT declare chainLoadGate — no flume-on-flume phase writes chain.ts, so the engine fallback is its net. No .flume/chain.ts edit."
+    "notes": "Both layers required (§3). PER-TICK-CHAIN-RELOAD moved load+validate into diskChainLoader (Dispatcher.ts:82) — gate mirrors those checks against the post-tick file, not the memoized module (loadChain no longer exists). Dogfood .flume/chain.ts does NOT declare chainLoadGate (no flume-on-flume phase writes chain.ts) — engine fallback is its net. No .flume/chain.ts edit."
   },
   {
     "tag": "WORKTREE-RACE-SERIALIZE",
-    "summary": "Serialize .git/worktrees/-mutating ops: setup Promise.all (Dispatcher.ts:257) + teardown (:353) → sequential for…await; keep agent fanout (:284) parallel",
+    "summary": "Serialize .git/worktrees/-mutating ops: setup Promise.all (Dispatcher.ts:366) + teardown (:468) → sequential for…await; keep agent fanout (:393) parallel",
     "per": {
       "path": "spec/RELEASE-v0.2.md",
       "section": "4. Worktree create/teardown race serialization"
@@ -66,7 +63,7 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "createWorktree loop (:257) and teardown loop (:353) → sequential for…await; per-entry agent Promise.all (:284) stays parallel."
+          "description": "createWorktree loop (:366) and teardown loop (:468) → sequential for…await; per-entry agent Promise.all (:393) stays parallel."
         },
         {
           "path": "tests/Dispatcher.test.ts",
@@ -83,7 +80,7 @@
       }
     ],
     "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; existing fanout-parallelism assertion green",
-    "notes": "Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking. blockedBy is ordering-only (logically independent); linearizes so RELEASE-0.2.0 can gate on one tag (single-tag blockedBy). All three v0.2 entries touch src/Dispatcher.ts → the fanout partitioner serializes them regardless."
+    "notes": "Cites re-anchored to post-PER-TICK-CHAIN-RELOAD Dispatcher.ts (diskChainLoader added ~140 lines): setup :366, agent fanout :393, teardown :468 (spec §4 says :257/:284/:353 — pre-reload). Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking. blockedBy is ordering-only; linearizes so RELEASE-0.2.0 gates on one tag. All v0.2 entries touch src/Dispatcher.ts → fanout partitioner serializes them regardless."
   },
   {
     "tag": "RELEASE-0.2.0",
@@ -113,6 +110,6 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "package.json is 0.2.0; CHANGELOG has ## [0.2.0] with the three subsections; pnpm build clean; v0.1 §8 consumer-install smoke + attw green in CI",
-    "notes": "Single consolidated [0.2.0] section avoids 3-way CHANGELOG cherry-pick conflicts → a release-cut entry blockedBy the last functional entry. npm publish @dtmd/flume@0.2.0 + git tag are human release-ceremony (cf. open-questions tag lane), out of build's scope."
+    "notes": "Single consolidated [0.2.0] section avoids 3-way CHANGELOG cherry-pick conflicts → a release-cut entry blockedBy the last functional entry. npm publish + git tag are human release-ceremony (cf. open-questions tag lane), out of build's scope. CONTINGENT: `### Added (per-tick chain re-resolution)` wording depends on OQ '§2 in-process reload' — if disposition (d), soften to 're-resolution across loop-process boundaries'; do not ship an over-claiming CHANGELOG."
   }
 ]

@@ -9,6 +9,27 @@ Status markers:
 
 <!-- questions below this line -->
 
+## 2026-05-17 — §2's prescribed chain-reload mechanism cannot deliver §2's own in-process headline guarantee (build flag, `0c24b29`)
+
+**Status: PARKED — NEEDS AMENDMENT** (resolution branches on a reproducible probe; several branches edit `spec/RELEASE-v0.2.md` §2/§6 — human lane)
+
+`0c24b29` shipped PER-TICK-CHAIN-RELOAD exactly per §2's prescribed mechanism (`tsImport` + content-hash memoization) and verified it conforms (§2 acceptance tests green). The build then flagged, via its commit body, an internal tension in §2 itself:
+
+- **§2 prose + acceptance preamble** promise in-process disk reload: "A tick that commits a rewritten `chain.ts` … is governed by the new chain on the next tick" / "**Within one `flume loop` process**: … the immediately following tick."
+- **§2's prescribed mechanism** ("reuse `loadChain`/`tsImport`, cache-bust by content hash") cannot deliver that, per the build's empirical test (tsx 4.21 / Node 22.21): the content-hash gate fires and re-calls `tsImport`, but `tsImport` returns the **prior evaluation** — the new chain takes effect on the next `flume loop` *process*, not the next in-process tick.
+- **§2's acceptance test is specified with a fake loader** ("rewrite between ticks with a fake loader"). So the suite is green while testing only the per-tick *re-invocation contract* (Dispatcher calls `chainLoader()` every tick), not the headline disk-reload guarantee. The build correctly did **not** paper this over with a passing-but-false assertion; it routed the flag via the commit body because `open-questions.md` is outside build's writable paths. This is the pipeline working as designed for an architectural misstep, not a process violation.
+
+**Research (per *Inform before parking*) — and it sharpens, not closes, the question.** tsx's own `tsImport()` docs directly contradict the build's empirical claim: "*Since this is designed for one-time use, it does not cache loaded modules*" — calling it twice on the same path "*does not yield a cache-hit and re-loads it*" (https://tsx.is/dev-api/ts-import; mechanism is a per-call `?tsx-namespace=<uuid>` on the entry URL, cf. privatenumber/tsx#750). Documented contract and observed-on-pinned-version behavior disagree. Empirical evidence on the *actual pinned toolchain* outranks docs that may describe a different version — but this is now a **factual contradiction that must be reproduced before any heavy option is justified**, because the disposition branches hard on the outcome and three of the four options below are expensive.
+
+**Options (the build's four, plus the research-driven step 0):**
+- **(0 — do this first) Minimal reproduction probe** on pinned tsx `^4.19` (resolved 4.21) / Node 22.21: `tsImport` a temp `.ts`, rewrite its bytes, `tsImport` the same path again, assert whether the second evaluation reflects the rewrite. Cheap, decisive, crosses no lane. **If it re-evaluates (docs correct):** the build's finding was a probe artifact — §2 already works in-process; the only gap is that the §2 acceptance test never exercises the real disk loader (add a real-disk-reload test; that test is *beyond* §2's fake-loader acceptance, so it lands as §6 amendment or plan-discretion hardening — no spec rework, no toolchain change). **If it returns the prior evaluation (build correct):** it is a real constraint on the pinned toolchain → choose (a)–(d).
+- **(a) Bump/replace tsx** for a loader with working in-process re-eval. Note pin is `"tsx": "^4.19.0"` — a floated 4.x may already differ from the tested 4.21; intersects directly with step 0.
+- **(b) Content-addressed sibling temp module** beside `chain.ts`. Preserves import resolution; pollutes the consumer's `.flume/` on every chain change.
+- **(c) Child-process resolve per tick.** Correct by construction; a per-tick process-spawn cost regression on the loop's hot path.
+- **(d) Accept "reload across `flume loop` process boundaries"** and amend §2 prose + acceptance to match. No code change. Requires: §2 wording, §6 test description, `docs/CHAIN-AUTHORING.md:9-13` ("governed by the new chain on the next tick" — same overclaim, propagated per spec), and `RELEASE-0.2.0`'s CHANGELOG `### Added` line (noted contingent in `pending.json`).
+
+**Recommended disposition:** Run **(0)** first — it is the only step that resolves the doc-vs-empirical contradiction, and every other option is contingent on its outcome. If it reproduces the build's finding, **(d)** is the lightest honest landing (no shim, no perf hit, no consumer-dir pollution; `flume loop` already re-spawns the agent per tick, and autonomous loops are driven by repeated invocation more than one very-long-lived process — so "reload at process boundary" is close to the real operating model); escalate to **(a)** only if a consumer genuinely rewrites its chain mid-single-`flume loop` and needs same-process effect. **(b)/(c)** are not recommended. The §2 prose overclaim should not reach a published 0.2.0 CHANGELOG unresolved.
+
 ## 2026-05-17 — `teardownWorktree` / `WorktreeSetupResult` / `setupWorktree → {extraEnv}` published with no spec authority
 
 **Status: PARKED — NEEDS AMENDMENT** (API already shipped in `@dtmd/flume@0.1.2`; the natural moment to fold it in — the v0.2-spec authoring round — passed without it)
