@@ -35,4 +35,4 @@ One commit on this worktree's branch, prefixed `build:`. Imperative mood. Body e
 Validation gates (tsc, vitest, writable-paths) run automatically. If any gate fails, your commit is reverted and the entry stays in pending.
 
 Do NOT touch `.flume/plan/pending.json` — the harness updates it post-merge.
-Do NOT touch `spec/**` — the spec corpus is human-curated.
+Do NOT touch `spec/**` — spec is human-directed; it changes only in interactive sessions under explicit direction, never from a build tick.

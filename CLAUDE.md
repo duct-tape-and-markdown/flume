@@ -6,7 +6,7 @@
 
 ## Source of truth
 
-**Read `spec/RELEASE-v0.1.md` first.** It is the canonical v0.1 public-release target — what must ship, what the public API surface looks like, what tests cover, what docs exist. `docs/INTENT.md` carries the longer-range design intent. Historical material lives in `docs/`.
+**Read the spec corpus first** — `spec/RELEASE-*.md`. Each file is one release line's ship target: what must ship, the public API surface, tests, docs. The newest is the active plan target; earlier lines are frozen once shipped. Plan derives against whatever changed in `spec/` since the last `plan:` commit. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
 
 This is flume operating on flume: `.flume/chain.ts` imports the runtime from `../src/` (this repo), not from `flume/` (a published dep). Breaking runtime changes must update chain.ts in the same commit.
 

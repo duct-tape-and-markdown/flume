@@ -9,7 +9,7 @@
 </commit-delta>
 
 <spec-delta>
-!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then DIFF=$(git diff "$LAST..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since last plan)"; else echo "$DIFF" | head -300; fi; else echo "(bootstrap: read spec/RELEASE-v0.1.md in full — it is the delta)"; fi`
+!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then DIFF=$(git diff "$LAST..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since last plan)"; else echo "$DIFF" | head -300; fi; else echo "(bootstrap: read all of spec/RELEASE-*.md in full — the spec corpus is the delta)"; fi`
 </spec-delta>
 
 <pending-now>
@@ -76,7 +76,7 @@ Commit all changes in one commit prefixed `plan:`. **Body opens with `mode: <aud
 
 The harness will reject your commit if `pending.json` doesn't parse, or if you modify anything outside the phase's writable paths.
 
-For `per.path`, use `spec/RELEASE-v0.1.md`. For `per.section`, use the exact section heading text from the spec without the leading `## ` (e.g. `3. CLI surface`, `5. Tests`, `8. Repository hygiene`).
+For `per.path`, use the `spec/RELEASE-*.md` file each section was derived from — one plan round may span multiple release specs (e.g. an older line winding down while a newer one is active). For `per.section`, use that file's exact section heading text without the leading `## `. The `per` cite must resolve in the file it names.
 
 <schema>
 {{PENDING_SCHEMA}}

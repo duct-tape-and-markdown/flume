@@ -4,7 +4,7 @@
  * Loaded by the flume CLI from `.flume/chain.ts`. The default export is the
  * Chain.
  *
- * Two phases (no spec): `spec/RELEASE-v0.1.md` is human-curated and stable.
+ * Two phases (no spec): the spec corpus (`spec/RELEASE-*.md`) is human-directed, not phase-written.
  * Plan derives pending.json from it + current src state; build ships entries.
  *
  * Spec edits flow through normal commits, not through a flume phase. If an
@@ -134,7 +134,7 @@ const plan: Phase = {
     ".flume/plan/open-questions.md",
     ".flume/inbox.md",
     // NOTE: plan does NOT touch spec/. The spec corpus
-    // (spec/RELEASE-v0.1.md and any future spec files) is human-curated;
+    // (spec/RELEASE-*.md) is human-directed, edited in-session not by a phase;
     // if plan discovers ambiguity, it surfaces it via open-questions.md
     // for a human to fold back into the spec.
     //
@@ -266,7 +266,7 @@ const build: Phase = {
 
 const flumeChain: Chain = {
   phases: [plan, build],
-  humanOnly: [], // no spec phase; spec/RELEASE-v0.1.md is edited via normal commits
+  humanOnly: [], // no spec phase; spec corpus (spec/RELEASE-*.md) edited in-session, never by a phase
 };
 
 export default flumeChain;
