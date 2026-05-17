@@ -1,5 +1,35 @@
 [
   {
+    "tag": "CHAINLOAD-FEEDBACK-TEST",
+    "summary": "Add §3 bullet-1 composite test: broken chain.ts reverted by chainLoadGate → next tick's prompt carries the chain-load failure per §5; both runtime halves shipped, only the test is missing",
+    "per": {
+      "path": "spec/RELEASE-v0.2.md",
+      "section": "3. Chain-load gate + engine fallback"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "After the broken-chain revert+restore in the §3 test (tests/Dispatcher.test.ts:906), or a sibling, run a second tick and assert its rendered prompt's <prior-attempt> block names gate `chain-load` + carries the chain-load failure detail, with chain.ts restored to last-good. No src/ change — §5 forwarding is gate-uniform; only the §3-composite asserting test is missing (untestable when CHAIN-LOAD-GATE shipped pre-§5)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "second tick after a chainLoadGate revert: rendered prompt contains <prior-attempt> with `Failing gate: chain-load` + the chain-load failure detail, chain.ts restored to last-good (§3 acceptance bullet 1, the per-§5 clause)"
+      }
+    ],
+    "acceptance": "A broken-chain.ts tick reverted by chainLoadGate is followed by a tick whose rendered prompt's <prior-attempt> block names chain-load and carries its failure detail; chain.ts is restored; pnpm test green",
+    "notes": "Audit of 22487fd: §5 forwarding is gate-uniform (boom-gate afterCommit test exercises the same path) but §3 bullet 1 attaches '(test)' to the chain-load-specific composite, and §3↔§5 ship-together is the release keystone (§12: chainLoadGate w/o feedback = blind chain.ts revert loop). Existing §3 test (Dispatcher.test.ts:906) predates §5; stops at the recorded-failure check. Test-only, build-writable; open — both halves shipped."
+  },
+  {
     "tag": "NO-COMMIT-TAXONOMY",
     "summary": "Classify every no-commit tick as exactly one of gate-revert | voluntary-bail | platform-preempt on TickOutcome and in the §5 prior-attempt block",
     "per": {
@@ -7,8 +37,7 @@
       "section": "6. No-commit outcome taxonomy"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "GATE-FAILURE-FEEDBACK"
+      "kind": "open"
     },
     "files": {
       "new": [],
