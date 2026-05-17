@@ -1,38 +1,39 @@
 # State
 
-Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — heaviest delta dimension is the `build:` commit `4a79a6b` (CHAIN-AUTHORING-RELOAD-DOCS), shipped by harness `c0fd3ab`. No spec delta (no derive); inbox empty (no drain). One mechanical promote.
+Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — heaviest delta dimension is the `build:` commit `22487fd` (GATE-FAILURE-FEEDBACK / §5), shipped by harness `3404fe4`. No spec delta (no derive); inbox empty (no drain). One audit finding routed; one mechanical promote.
 
-## Audit — `4a79a6b` (build: scrub content-hash-memo narrative from CHAIN-AUTHORING.md)
+## Audit — `22487fd` (build: forward gate-revert context to the retrying tick)
 
-Cross-checked the diff against `spec/RELEASE-v0.2.md` §2 (the entry's `per` cite) and the entry's declared scope. **Conformant; nothing routed.**
+Cross-checked the diff against `spec/RELEASE-v0.2.md` §5 (the entry's `per` cite) and the GATE-FAILURE-FEEDBACK entry's declared scope. **Conformant; one composite-acceptance test gap routed (not drift).**
 
-- **Scope** — exactly the one declared file `docs/CHAIN-AUTHORING.md`, the two declared regions (the "Where the chain lives" para + the Dispatcher-wiring code-comment). 11 insert / 7 delete, within build's `docs/**` writablePaths. No code/schema/test touched; entry correctly declared `tests: []`. No creep.
-- **§2 conformance** — both passages now mirror §2's normative language: process boundary is *the* mechanism, not an optimization (§2 bullet 2); one `tsImport` of `chain.ts` per tick, dominated orders of magnitude by the agent invocation (§2 bullet 4); the prior content-hash-memoization design is removed, no in-process recompile/cache-bust (§2 bullet 5). Faithful — neither over- nor under-stated vs. the spec.
-- **Acceptance met** — no content-hash/memoization/zero-recompile *claim* survives; the only two residual grep hits ("no in-process memoization or cache-bust", "no in-process memo or cache-bust") are explicit negations matching §2 verbatim. Docs-only → `pnpm test` unaffected; build ran gates per CLAUDE.md non-negotiables (plan investigates, does not re-run gates).
-- **No gate-bypass** — `c0fd3ab` is the normal harness ship-removal of the entry from pending.json (pure 23-line deletion, nothing else).
+- **Scope** — exactly the 5 declared files (`src/Dispatcher.ts`, `src/Prompt.ts`, `docs/CHAIN-AUTHORING.md`, `.gitignore`, `tests/Dispatcher.test.ts`); the `pending.json` −46 belongs to the separate `chore(flume)` ship `3404fe4`. No creep.
+- **§5 acceptance** — all three bullets carry asserting tests: afterCommit (boom-gate, full details + marker + first-attempt-absent), afterMerge (per-reverted-entry, symmetric), clear-on-clean-ship. Cross-process by construction: record persisted under `.flume/prior-attempts/` at repo root (not the per-entry worktree — survives a fanout retry's fresh worktree), read at render. Bounded (8K details / 4K diffstat, visible-elision `bound()`).
+- **§5 "documented slot"** — satisfied via the dispatcher-owned `<prior-attempt>` block mirroring `<harness>` (no `{{token}}`, no `promptArgs`), documented in `docs/CHAIN-AUTHORING.md`. This is the plan-vetted interpretation (GATE-FAILURE-FEEDBACK notes + OQ#1 lane: `.flume/prompts/*.md` is off build's writablePaths; the `<harness>` precedent resolves "documented slot"). Re-affirmed conformant, not re-litigated.
+- **In-place API change** — `runAfterCommitGates` return `firstFailure?: string` → `failure?: {gate,message,details?}`; all callers updated, `git grep firstFailure` = 0 hits (pre-1.0 clean-slate posture, no shim). `slugify` extracted as a shared helper (worktree + prior-attempt keying) — in declared file, DRY, not creep.
+- **afterMerge under whole-wave revert** — every reverted wave entry (incl. clean siblings) gets the merge-time record. Correct under today's whole-wave revert; per-entry isolation is §7b (AFTERMERGE-REVERT-ISOLATION, separate pending entry) — consistent with the spec and commit body.
+- **No gate-bypass** — `build:` commit then a pure 46-line `chore(flume)` ship-removal of the entry from pending.json. Build ran gates per CLAUDE.md non-negotiables (plan investigates, does not re-run gates).
 
-**Accepted as debt (no entry):** none new. The two prior-tick debt notes (stale "shifts after upstream entries" line-hints; no end-to-end real-subprocess `flume loop` test) are about e2959d2/LOOP-PROCESS-PER-TICK, already audited conformant last tick — not re-litigated; the line-hints are explicitly-fragile pointers per the field-discipline rule, re-pointing them every tick is the bloat-tax that rule warns against.
+**Routed (one pending entry, not OQ, not silent debt):** `CHAINLOAD-FEEDBACK-TEST` — §3 acceptance bullet 1 attaches "(test)" to the composite *broken chain.ts → chainLoadGate revert → restored → next tick's prompt carries the chain-load failure per §5*. Both runtime halves are shipped (`CHAIN-LOAD-GATE` `2675c1c`; this commit), but the existing §3 test (`tests/Dispatcher.test.ts:906`) predates §5 and stops at "chain-load is the recorded failure" — no follow-up tick, no `<prior-attempt>` assertion. §5's boom-gate test exercises the same gate-uniform path, but the spec names this composite as a test and §3↔§5 ship-together is the release keystone (§12). Test-only, build-writable, unblocked → `open`, queue head. Not an OQ (no human input), not silent debt (spec-named acceptance for the keystone).
 
 ## Promote — mechanical
 
-- **GATE-FAILURE-FEEDBACK**: was `blockedBy CHAIN-AUTHORING-RELOAD-DOCS`; that tag shipped (`c0fd3ab`) and left `pending-now`. Flipped to `gate: { kind: "open" }` — it is now the queue head. Its `files`/`notes` need no change: CHAIN-AUTHORING-RELOAD-DOCS only scrubbed the memo narrative; the `<harness>`-block doc section the §5 entry mirrors/extends is untouched, and notes carry no shipped-tag reference.
-- No other entry's `blockedBy` gate references a now-absent tag — each remaining entry blocks on the one directly above it, all still pending. No further promotes.
+- **NO-COMMIT-TAXONOMY**: was `blockedBy GATE-FAILURE-FEEDBACK`; that tag shipped (`3404fe4`) and left `pending-now`. Flipped to `gate: { kind: "open" }`. `files`/`notes` untouched — minimal churn; the "Depends on GATE-FAILURE-FEEDBACK for the §5 block channel" note is now a satisfied-dependency statement, still accurate.
+- No other entry's `blockedBy` references a now-absent tag — the rest is a linear chain (each blocks on the one directly above), all still pending. No further promotes.
 
-## Queue (7 entries, linear chain, one open head)
+## Queue (7 entries — two open heads, then linear chain)
 
-`GATE-FAILURE-FEEDBACK` (open, §5 keystone — NEW head; unblocks §6/§7b/§8) → NO-COMMIT-TAXONOMY (§6) → AFTERMERGE-REVERT-ISOLATION (§7b, heaviest) → PLAN-PROSE-DURABILITY (§8) → WORKTREE-RACE-SERIALIZE (§4) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9).
+`CHAINLOAD-FEEDBACK-TEST` (open, NEW head — closes the §3↔§5 keystone composite acceptance; test-only) → `NO-COMMIT-TAXONOMY` (open, promoted, §6) → AFTERMERGE-REVERT-ISOLATION (§7b, heaviest) → PLAN-PROSE-DURABILITY (§8) → WORKTREE-RACE-SERIALIZE (§4) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9). §2/§3 runtime already shipped (PER-TICK-CHAIN-RELOAD, LOOP-PROCESS-PER-TICK, CHAIN-AUTHORING-RELOAD-DOCS, CHAIN-LOAD-GATE).
 
 ## Open questions
 
-- **3**, all unchanged this tick (no spec delta, no commit touched these surfaces, no human input arrived — not re-litigated per collaboration rule):
+- **3**, all unchanged this tick (no spec delta, no commit touched these surfaces, no human input — not re-litigated per collaboration rule):
   1. §7a dogfood `.flume/chain.ts` gate-placement move — off build's writablePaths + builtin `when` affordance gap; gated on §7b (PARKED; rec A: post-§7b `chore(flume):` move).
   2. Unspecced published worktree-hook surface (`teardownWorktree`/`WorktreeSetupResult`/`extraEnv`) — v0.2 rewrite still didn't fold it in (PARKED — NEEDS AMENDMENT; rec A).
   3. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec A).
-- OQ#1 (§2 in-process reload mechanism) remains CLOSED — resolved `4187f44` → LOOP-PROCESS-PER-TICK, shipped + audited conformant; the doc-drift it spun off (CHAIN-AUTHORING-RELOAD-DOCS) is now also shipped + audited conformant this tick.
 
 ## Writable-paths / trunk
 
-- No entry touched this tick beyond the mechanical gate flip on GATE-FAILURE-FEEDBACK (in-place in pending.json, a plan writable path). GATE-FAILURE-FEEDBACK's declared targets (`src/Dispatcher.ts`, `src/Prompt.ts`, `docs/CHAIN-AUTHORING.md`, `.gitignore`, `tests/Dispatcher.test.ts`) were previously verified within build's writablePaths; the §5-block-as-structural-injection (mirroring `<harness>`) keeps it fully build-writable — no off-allowlist piece, no new OQ.
-- Trunk: HEAD `c0fd3ab`. `4a79a6b` is a `build:` commit → landed only after green tscGate+vitestGate per CLAUDE.md non-negotiables. No code change this tick (plan-artifact-only).
+- Only the new `CHAINLOAD-FEEDBACK-TEST` entry was added + NO-COMMIT-TAXONOMY's gate flipped, both in `.flume/plan/pending.json` (a plan writable path). The new entry's sole target `tests/Dispatcher.test.ts` is within build's `tests/**` writablePaths (no off-allowlist piece → pending entry, not OQ).
+- Trunk: HEAD `3404fe4`. `22487fd` is a `build:` commit → landed only after green tscGate+vitestGate per CLAUDE.md non-negotiables. No code change this tick (plan-artifact-only).
 
 Plan continues: no
