@@ -1,30 +1,5 @@
 [
   {
-    "tag": "CHAIN-AUTHORING-GATE-GUIDANCE",
-    "summary": "CHAIN-AUTHORING.md: add gate-placement default (expensive correctness→afterMerge, cheap structural→afterCommit) + contention rationale, and the byte-equality anti-pattern section",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "7. Fanout revert isolation + gate-placement defaults"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "Add (a) gate-placement default guidance — expensive correctness gates at afterMerge, cheap structural (tscGate, bundle self-containment) at afterCommit — with the fanout-contention rationale; (c) a 'gate on the safety property, never on byte-equality of generated artifacts' anti-pattern section using the bundleFreshnessGate worked example."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "CHAIN-AUTHORING.md documents the expensive→afterMerge / structural→afterCommit default with rationale and contains the byte-equality anti-pattern section with the bundleFreshnessGate example",
-    "notes": "§7 (a) doc + (c) doc only — both docs/, build-writable. §7a's actual dogfood .flume/chain.ts gate-move (vitestGate→afterMerge) is OFF build's writablePaths → parked OQ (chore(flume)/human). §7c (v) is docs-only per §12 — no runtime entry. blockedBy BAIL-CONSTRAINT linearizes Dispatcher.ts-touch order; semantically wants §7b landed so the afterMerge guidance isn't a pre-isolation footgun."
-  },
-  {
     "tag": "RELEASE-0.2.0",
     "summary": "Cut 0.2.0: package.json version → 0.2.0; CHANGELOG ## [0.2.0] with ### Breaking / ### Added / ### Fixed / ### Changed exactly per §9",
     "per": {
