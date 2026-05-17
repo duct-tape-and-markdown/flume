@@ -555,17 +555,27 @@ export class Dispatcher {
       ),
     );
 
-    // Cherry-pick winners onto trunk in batch order.
-    const shipped: { entry: PendingEntry; sha: string }[] = [];
+    // Cherry-pick winners onto trunk in batch order, gating each at
+    // afterMerge individually (§7b). The offending entry is the one whose
+    // cherry-pick turns an afterMerge gate red — nothing else changed since
+    // its pre-cherry-pick trunk — so revert *only* its commit (reset to that
+    // point) and leave it pending. The N−1 clean siblings already on trunk
+    // stay shipped; later siblings are evaluated against the trunk without
+    // the reverted commit. No `hardResetTo(preHead)` whole-wave blast
+    // radius: one flaky merge-time gate no longer kills N−1 clean commits.
+    // Per-entry agent fanout (above) is unchanged — only the serial
+    // post-fanout merge/gate/revert granularity changes.
+    const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
+    const shipped: PendingEntry[] = [];
+    const mergeReverted: PendingEntry[] = [];
+    const mergeGateResults: GateResultEntry[] = [];
+
     for (const r of perEntry) {
       if (!r.committed || !r.commitSha) continue;
+
+      const preCherry = await git.revParse(repoRoot);
       try {
         await git.cherryPick(repoRoot, r.commitSha);
-        const newSha = await git.revParse(repoRoot);
-        shipped.push({ entry: r.entry, sha: newSha });
-        this.log.info(
-          `[flume] cherry-picked ${r.entry.tag} → ${newSha.slice(0, 8)}`,
-        );
       } catch (err) {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
@@ -575,65 +585,78 @@ export class Dispatcher {
         // the next plan tick (which can't run `pnpm install` etc. against a
         // dirty trunk) and require manual `git restore` intervention.
         await git.cherryPickAbort(repoRoot);
+        continue;
       }
-    }
+      const mergedSha = await git.revParse(repoRoot);
 
-    // Run afterMerge gates on the trunk.
-    const mergeGateResults: GateResultEntry[] = [];
-    let waveOk = true;
-    if (shipped.length > 0) {
-      for (const gate of phase.gates.filter((g) => g.when === "afterMerge")) {
-        const headSha = await git.revParse(repoRoot);
-        const r = await gate.run({
+      // Gate this entry's merged commit. The first failing afterMerge gate
+      // attributes the failure to *this* entry — it is the only delta
+      // between `preCherry` and `mergedSha`.
+      let entryFailure:
+        | { gate: string; message: string; details?: string }
+        | undefined;
+      for (const gate of afterMergeGates) {
+        const gr = await gate.run({
           cwd: repoRoot,
           phaseName: phase.name,
-          commitSha: headSha,
+          commitSha: mergedSha,
           log: (l) => this.log.info(l),
         });
-        mergeGateResults.push({ gate: gate.name, ok: r.ok, message: r.message });
-        if (!r.ok) {
-          this.log.warn(
-            `[flume] afterMerge gate '${gate.name}' failed; reverting wave`,
-          );
-          // §5: afterMerge currently surfaces nothing to the agent — the
-          // explicit anti-pattern this closes. Today the whole wave reverts
-          // (per-entry isolation is §7b, separate); every reverted entry
-          // retries, so each one carries the merge-time failure rather than
-          // re-deriving the wall blind. Capture each digest while its
-          // cherry-picked SHA is still reachable, before the hard reset.
-          const failure = {
+        mergeGateResults.push({
+          gate: gate.name,
+          ok: gr.ok,
+          message: gr.message,
+        });
+        if (!gr.ok) {
+          entryFailure = {
             gate: gate.name,
-            message: r.message,
-            ...(r.details ? { details: r.details } : {}),
+            message: gr.message,
+            ...(gr.details ? { details: gr.details } : {}),
           };
-          for (const s of shipped) {
-            const record = await this.buildPriorAttempt(
-              "afterMerge",
-              failure,
-              repoRoot,
-              s.sha,
-            );
-            await this.writePriorAttempt(
-              this.priorAttemptKey(phase, s.entry),
-              record,
-            );
-          }
-          await git.hardResetTo(repoRoot, preHead);
-          waveOk = false;
           break;
         }
       }
+
+      if (entryFailure) {
+        this.log.warn(
+          `[flume] afterMerge gate '${entryFailure.gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
+        );
+        // §5: afterMerge previously surfaced nothing to the agent — the
+        // explicit anti-pattern this closes. Capture the digest while the
+        // cherry-picked SHA is still reachable, then drop ONLY this entry's
+        // commit (reset to the pre-cherry-pick trunk), not the wave. The
+        // entry stays pending; its retry carries this prior-attempt block.
+        const record = await this.buildPriorAttempt(
+          "afterMerge",
+          entryFailure,
+          repoRoot,
+          mergedSha,
+        );
+        await this.writePriorAttempt(
+          this.priorAttemptKey(phase, r.entry),
+          record,
+        );
+        await git.hardResetTo(repoRoot, preCherry);
+        mergeReverted.push(r.entry);
+        continue;
+      }
+
+      shipped.push(r.entry);
+      this.log.info(
+        `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
+      );
     }
 
     // Update pending.json — remove shipped entries — as one harness commit.
     let chorSha: string | undefined;
-    if (waveOk && shipped.length > 0) {
-      // Each shipped entry committed clean — clear any stale prior-attempt
-      // slot so its next plan/build cycle starts with no false signal.
+    if (shipped.length > 0) {
+      // Each shipped entry committed clean *and* passed its afterMerge gate
+      // — clear any stale prior-attempt slot so its next plan/build cycle
+      // starts with no false signal.
       for (const s of shipped) {
-        await this.clearPriorAttempt(this.priorAttemptKey(phase, s.entry));
+        await this.clearPriorAttempt(this.priorAttemptKey(phase, s));
       }
-      const shippedTags = shipped.map((s) => s.entry.tag);
+      const shippedTags = shipped.map((s) => s.tag);
       chorSha = await this.commitPendingUpdate(pending, shippedTags);
       this.log.info(
         `[flume] ship commit ${chorSha.slice(0, 8)}: ${shippedTags.join(", ")}`,
@@ -681,9 +704,9 @@ export class Dispatcher {
 
     const allGateResults = perEntry.flatMap((r) => r.gateResults).concat(mergeGateResults);
 
-    const committedWave = waveOk && shipped.length > 0;
+    const committedWave = shipped.length > 0;
 
-    // Wave-level §6 cause, only when the whole wave shipped nothing usable.
+    // Wave-level §6 cause, only when the wave shipped nothing usable.
     // Per-entry modes are already persisted to each entry's own §5 record
     // (the durable channel §6 mandates); this is the single representative
     // label for the logger/TickOutcome. Precedence gate-revert >
@@ -696,9 +719,9 @@ export class Dispatcher {
       const modes = new Set<NoCommitMode>(
         perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
       );
-      // The afterMerge revert path wrote per-entry gate-revert records for
-      // every cherry-picked entry before the hard reset.
-      if (!waveOk && shipped.length > 0) modes.add("gate-revert");
+      // Per-entry afterMerge isolation (§7b) wrote a gate-revert §5 record
+      // for each merge-reverted entry; reflect that in the wave-level cause.
+      if (mergeReverted.length > 0) modes.add("gate-revert");
       waveNoCommit = modes.has("gate-revert")
         ? "gate-revert"
         : modes.has("platform-preempt")
@@ -715,7 +738,7 @@ export class Dispatcher {
         ...(chorSha ? { commitSha: chorSha } : {}),
         gateResults: allGateResults,
         pendingAfter: await this.readPending(),
-        shippedTags: waveOk ? shipped.map((s) => s.entry.tag) : [],
+        shippedTags: shipped.map((s) => s.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     };
