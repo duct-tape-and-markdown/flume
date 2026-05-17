@@ -1,25 +1,34 @@
 # State
 
-Phase: **v0.1 line shipped (tagged `v0.1.0/.1/.2`, published `@dtmd/flume@0.1.2`); v0.2 staged but uncommitted.** Mode this tick: **audit** — heaviest non-empty dimension is the 13-commit delta. Spec-delta exists but derive is a no-op (see below); inbox empty; pending empty.
+Phase: **v0.1 line shipped (`@dtmd/flume@0.1.2`, tags `v0.1.0/.1/.2`); v0.2 spec committed (`2e2fc5b`) → v0.2 derive active.** Mode this tick: **derive** — heaviest dimension is the new normative spec file `spec/RELEASE-v0.2.md`. Inbox empty; pending was `[]` (no drain, no promote).
 
-- **Derive (spec-delta §2 `import`→`default`, committed `271db77`).** No-op. `package.json` already has `"default": "./dist/index.js"` (shipped `0a104da`); the ci.yml comment was corrected to match (`a366ea4`); §2 acceptance bullets 1–2 unchanged, bullet 3 reworded only. The spec change *documents* an already-shipped decision — nothing to file. Audit confirms conformance.
-- **Audit, `0a104da` / `2d77a9b` (per §4 / §2).** Faithful. `0a104da` bin-symlink resolution + exports `default`; `2d77a9b` tsImport default-export interop in `loadChain`. Both align with §2's new paragraph (`tsImport` require-ish path needs `default`, not `import`); consumer-install smoke is the binding check (§4).
-- **Audit, `a366ea4` / `2c181d7` (per §2 / §4 L110).** Faithful. attw → continue-on-error (upstream `@arethetypeswrong/cli@0.18.2` crash, unreproducible locally); a binding nodenext `.mts` consumer type-resolution gate replaces attw's lost value and exercises the `types` condition incl. `WorktreeSetupResult`. §2/§4 still satisfied — attw kept for signal, real resolution now bindingly gated.
-- **Audit, `e9adb1c` / `8fbcdf1` (per §6 docs / hygiene).** Faithful. README + `docs/CHAIN-AUTHORING.md` scope placeholder `@<scope>/flume`→`@dtmd/flume`; untrack `reference/` scratch + gitignore. No tarball impact (`reference/` off `files`).
-- **Audit, `fcf6a45` / `488c303` / `69eea5d` (per §8 / §8 / INTENT).** Faithful. gitignore `.env` (keep `.env.example`); CHANGELOG `[0.1.0]`; INTENT post-v0.1 dependency-aware fanout note (correctly *rejects* agent-teams stateful sessions; design-intent lane).
-- **Audit, `a665ed8b` (`chore(flume):`).** Faithful, harness lane. `buildSetupWorktree` now does fresh `pnpm install` (comment cites pnpm/pnpm#9973, hardlink-from-store) + `worktreeDepsGate` sentinel-`zod` check. **Closes the stale state.md item** "switch chain.ts buildSetupWorktree" — dogfood now matches the §6 docs. (Working tree currently re-dirties `.flume/chain.ts` — uncommitted human edit, not derived from.)
-- **Audit, `ab2f10f` + `25dc78b` (NO spec authority).** `feat(phase):` added `teardownWorktree` / `WorktreeSetupResult` / `setupWorktree→{extraEnv}`, exported and **published in `v0.1.2`**. Unspecced public surface (not §2/§6, not v0.2 §2–§7). → **OQ #2** (NEEDS AMENDMENT; can't backfill — no `per` cite).
-- **Audit, `25dc78b` CHANGELOG `[0.1.1]` + body.** Asserts "no `v0.1.1` git tag exists"; **false** — annotated `v0.1.1 → ce73d95` (off-`main` fork commit; `v0.1.0` tag also off-`main`; only `v0.1.2`==HEAD on `main`). Ship-artifact falsehood coupled to an unresolved tag-reconciliation call. → **OQ #3**.
+## Derive — `spec/RELEASE-v0.2.md` (`2e2fc5b`)
 
-Queue: 0 entries. In flight: nothing. Pending stays `[]` — all three findings park (no clean `per` cite ⇒ open question, not pending, per spec-plan-build).
+Decomposed §2/§3/§4/§5 into **4 entries**, linear `blockedBy` chain (all three functional entries touch `src/Dispatcher.ts` → fanout partitioner serializes them regardless; the chain also lets the single-tag `blockedBy` express "release gates on all prior"):
 
-v0.1 status correction (prior state.md was stale): v0.1 is **shipped** — tags `v0.1.0/.1/.2` all exist, `package.json` 0.1.2, CHANGELOG entries present, scope `@dtmd/flume` resolved & recorded. The prior "remaining: switch chain.ts / pick scope / CI-green-PR-then-tag" list is done or moot (tags exist). The live concerns are now the three OQs, not v0.1 prep.
+1. **PER-TICK-CHAIN-RELOAD** (§2, open) — per-tick content-hash-memoized chain resolution; remove `DispatcherOptions.chain`, add `chainLoader?`. Confirmed by source read: the §2 break is confined to build-writable `src/cli.ts` + `src/Dispatcher.ts` + `src/index.ts` + `tests/Dispatcher.test.ts` + `docs/CHAIN-AUTHORING.md:298`. **`.flume/chain.ts` needs no edit** (it never constructs Dispatcher; `Chain`/`Phase` types unchanged) → the latent §5 "chain.ts in same commit" / writablePaths concern is vacuous here. Recorded in the entry's notes.
+2. **CHAIN-LOAD-GATE** (§3, blockedBy 1) — builtin `chainLoadGate` + engine last-good fallback. Dogfood chain does not declare it (no flume-on-flume phase writes `.flume/chain.ts`); engine fallback is its net.
+3. **WORKTREE-RACE-SERIALIZE** (§4, blockedBy 2) — `Dispatcher.ts:257`/`:353` Promise.all → `for…await`; agent fanout `:284` stays parallel. Spec line cites verified against current `Dispatcher.ts` (254/257/284/353/517/527 all match).
+4. **RELEASE-0.2.0** (§5, blockedBy 3) — `package.json` → 0.2.0 + consolidated `## [0.2.0]` CHANGELOG (one section, avoids 3-way cherry-pick conflict). npm publish + git tag = human ceremony, out of build scope.
 
-Open questions: **3** —
-1. `spec/RELEASE-v0.2.md` untracked → v0.2 derive blocked until committed (PARKED; rec: commit it).
-2. Unspecced published worktree-hook surface → which spec line owns it + process gap (PARKED/NEEDS AMENDMENT; rec: add to v0.2 §2).
-3. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec: keep tags, correct CHANGELOG — build follow-up once decided).
+§1/§7/§8 are scope/non-goals/audit-reference (not derivable units); §6 tests folded into each entry's `tests[]` per the v0.1 §5 representative-not-exhaustive posture.
 
-Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests). HEAD `25dc78b` == `v0.1.2`. (ci.yml runs on push/PR — not plan-verifiable locally.)
+## Audit (commit-delta)
+
+- **`173ad39` (`chore(flume):` de-version spec directives).** Faithful, harness lane (off plan's writable paths). Generalizes 8 sites to `spec/RELEASE-*.md` and relaxes "human-curated" → "human-directed, edited in-session". Directly enables this tick: plan.md's `per.path` directive is now corpus-relative — entries cite `spec/RELEASE-v0.2.md` accordingly. No spec authority needed (chore).
+- **`2e2fc5b` (`spec:`)** is the derive source itself (human lane), not separately audited.
+
+## Resolved this tick
+
+- **OQ #1 (v0.2 untracked) — CLOSED.** Human committed `spec/RELEASE-v0.2.md` as `2e2fc5b` (took recommendation A) and the harness-lane working-tree edits as `173ad39`. Block lifted; queue derived. Removed from open-questions.
+
+## Queue / OQs / trunk
+
+- Queue head: **PER-TICK-CHAIN-RELOAD** (open, pickable). Entries 2–4 `blockedBy` chained behind it. In flight: nothing.
+- Open questions: **2** —
+  1. Unspecced published worktree-hook surface (`teardownWorktree`/`WorktreeSetupResult`/`extraEnv`) — v0.2 spec committed *without* folding it in despite the standing rec; the obvious window closed (PARKED/NEEDS AMENDMENT; rec A: amend v0.2 spec, which now also implies a §1 scope call).
+  2. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec A: keep tags, correct CHANGELOG — build follow-up once decided).
+- Writable-paths: all 4 entries' file targets (`src/**`, `tests/**`, `docs/**`, `package.json`, `CHANGELOG.md`) are within build's writablePaths. No off-allowlist target; no chain.ts amendment needed.
+- Trunk: `pnpm tsc --noEmit` clean; `pnpm test` green (7 suites, 68 tests) — verified this tick. HEAD `2e2fc5b`. (ci.yml runs on push/PR — not plan-verifiable locally.)
 
 Plan continues: no
