@@ -11,11 +11,14 @@ no spec separation), see [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
 The harness re-resolves `.flume/chain.ts` (relative to your repo root) at
 the start of every tick — disk is truth, so a tick that rewrites the chain
-is governed by the new chain on the next tick. Resolution is memoized by
-content hash, so a stable chain recompiles zero times across a loop.
-Default-export a `Chain` value — the resolver rejects modules without a
-default export. Prompts referenced by `Phase.promptPath` resolve relative
-to `.flume/`.
+is governed by the new chain on the next tick. The reload mechanism is a
+process boundary: `flume loop` is a supervisor that spawns one `flume tick`
+child process per iteration, and each child loads the chain exactly once at
+its start. There is no in-process memoization or cache-bust — one
+`tsImport` of `chain.ts` per tick, a cost dominated by orders of magnitude
+by the tick's own agent invocation. Default-export a `Chain` value — the
+resolver rejects modules without a default export. Prompts referenced by
+`Phase.promptPath` resolve relative to `.flume/`.
 
 ```
 .flume/
@@ -300,8 +303,9 @@ invoke `Dispatcher` yourself for non-standard hosts (tests, custom CLIs):
 import { resolve } from "node:path";
 import { Dispatcher, consoleLogger } from "@dtmd/flume";
 
-// No prebuilt chain: the dispatcher re-resolves <configDir>/chain.ts
-// (content-hash memoized) at the start of every tick.
+// No prebuilt chain: the dispatcher resolves <configDir>/chain.ts in its
+// own process, once at the start of every tick — no in-process memo or
+// cache-bust (each `flume tick` is a fresh process).
 const dispatcher = new Dispatcher({
   agent,
   log: consoleLogger,
