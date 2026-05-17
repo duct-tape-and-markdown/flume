@@ -1,39 +1,5 @@
 [
   {
-    "tag": "AFTERMERGE-REVERT-ISOLATION",
-    "summary": "afterMerge gate failure reverts only the offending entry's commit (not hardResetTo(preHead) whole-wave); N−1 clean siblings stay shipped; offending entry stays pending with the §5 block",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "7. Fanout revert isolation + gate-placement defaults"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "afterMerge gate failure: revert only the offending entry's merged commit instead of git.hardResetTo(repoRoot, preHead) whole-wave; keep the N−1 clean siblings shipped; the offending entry stays pending and its retry carries the §5 prior-attempt block. Per-entry agent parallelism unchanged."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Fanout N≥2, one entry's afterMerge gate fails → only that entry reverts + stays pending, others stay shipped; existing parallelism assertion stays green."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "N≥2 wave, one afterMerge gate fails → only the offending commit reverts, N−1 siblings stay shipped, offending stays pending w/ §5 block; fanout-parallelism assertion green (§7b acceptance)"
-      }
-    ],
-    "acceptance": "In an N≥2 wave with one afterMerge gate failure, only the offending entry reverts and stays pending, the other N−1 stay shipped, the retry carries the §5 block, and the parallelism assertion stays green; pnpm test green",
-    "notes": "§7b — heaviest by §12 (changes merge/revert granularity, not a parameter). Whole-wave site: git.hardResetTo(repoRoot, preHead) in the afterMerge path (Dispatcher.ts ~496; shifts after upstream entries). NO-COMMIT-TAXONOMY shipped (58d8491); §5 union exists. ALSO re-derive runFanout's §6 waveNoCommit aggregation — its `!waveOk && shipped.length>0 → add gate-revert` branch assumes whole-wave revert. §7a/§7c → CHAIN-AUTHORING-GATE-GUIDANCE; §7c(v) docs-only, no runtime entry."
-  },
-  {
     "tag": "PLAN-PROSE-DURABILITY",
     "summary": "A gate-reverted plan tick must not silently destroy state.md/open-questions.md prose; recoverable without session logs (scope the revert to the failing artifact, or carry prose via the §5 block)",
     "per": {
