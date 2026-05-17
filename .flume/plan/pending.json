@@ -7,8 +7,7 @@
       "section": "8. Plan-tick prose durability"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "AFTERMERGE-REVERT-ISOLATION"
+      "kind": "open"
     },
     "files": {
       "new": [],
@@ -54,7 +53,7 @@
         },
         {
           "path": "tests/Dispatcher.test.ts",
-          "description": "Stale-slug-seeded N≥2 wave: all worktrees created + entries shipped; teardown leaves git worktree list clean; existing fanout-parallelism assertion stays green."
+          "description": "Stale-slug-seeded N≥2 wave: all worktrees created + entries shipped; teardown leaves git worktree list clean; the §7b test's maxInFlight===2 agent-fanout parallelism canary stays green (it is the only such assertion — bd5e6f4 folded it there; do not re-derive a standalone one)."
         }
       ],
       "retire": []
@@ -63,11 +62,11 @@
     "tests": [
       {
         "path": "tests/Dispatcher.test.ts",
-        "asserts": "stale-slug N≥2 wave completes (no add fails on a sibling remove); teardown leaves clean git worktree list; fanout-parallelism assertion green (§4 acceptance)"
+        "asserts": "stale-slug N≥2 wave completes (no add fails on a sibling remove); teardown leaves clean git worktree list; the §7b test's maxInFlight===2 parallelism canary stays green (§4 acceptance)"
       }
     ],
-    "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; the existing fanout-parallelism assertion stays green; pnpm test green",
-    "notes": "§4 unchanged in substance. Structural sites (line numbers fragile, shift after upstream Dispatcher.ts entries; spec §4's :257/:284/:353 are pre-reload): setup Promise.all(batch.map(createWorktree)) ~417, teardown Promise.all(...removeWorktree) ~519, agent fanout Promise.all ~444 stays parallel. Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed, non-breaking."
+    "acceptance": "Stale-slug N≥2 wave completes with all worktrees created + entries shipped; teardown leaves git worktree list clean; the §7b test's maxInFlight===2 agent-fanout parallelism canary stays green; pnpm test green",
+    "notes": "§4 substance unchanged. Spec §4's :257/:284/:353 are pre-reload — locate the setup/teardown worktree Promise.alls + the keep-parallel agent-fanout one by shape, not number. Cross-tick: §4's 'existing fanout-parallelism assertion' is NOT standalone — bd5e6f4 folded it into the §7b test (Dispatcher.test.ts, maxInFlight===2 over the agent-fanout Promise.all); assert against that canary, don't re-derive a phantom. Internal git.ts/Dispatcher.ts (not v0.1 §2) → CHANGELOG ### Fixed."
   },
   {
     "tag": "BAIL-CONSTRAINT-LEGIBILITY",

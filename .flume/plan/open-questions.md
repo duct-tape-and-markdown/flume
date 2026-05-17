@@ -11,7 +11,9 @@ Status markers:
 
 ## 2026-05-17 — §7a dogfood `.flume/chain.ts` gate-placement move is outside build's writablePaths
 
-**Status: PARKED** (off-allowlist edit + a builtin affordance gap; needs a human/`chore(flume):` call, gated on §7b shipping)
+**Status: PARKED** (off-allowlist edit + a builtin affordance gap; needs a human/`chore(flume):` call)
+
+**Update 2026-05-17 (post-`b58974d`):** the "must land **after** §7b ships" precondition (wrinkle 2 below) is now **satisfied** — `AFTERMERGE-REVERT-ISOLATION` (§7b per-entry afterMerge isolation) shipped (`bd5e6f4`/`b58974d`). The afterMerge footgun is closed, so moving expensive gates to `afterMerge` no longer risks the whole-wave blast radius. The remaining blockers are unchanged: the off-allowlist edit + the builtin `when:"afterCommit"` affordance gap still require the human/`chore(flume):` call (rec A). No autonomous movement.
 
 §7(a) requires the dogfood `.flume/chain.ts` to place expensive correctness gates at `afterMerge` and cheap structural gates at `afterCommit`. The dogfood build phase's `writablePaths` (`.flume/chain.ts:237-239`) **explicitly excludes** `.flume/{chain.ts,prompts/**,plan/**}` — "harness/human territory; edits flow through `chore(flume):` commits, not build ticks." So `writablePathsGate` would revert any build commit that moved the dogfood gates. Per `.claude/rules/spec-plan-build.md` ("off-allowlist file paths become open questions proposing chain.ts amendments, not pending entries") this is parked, not filed.
 
