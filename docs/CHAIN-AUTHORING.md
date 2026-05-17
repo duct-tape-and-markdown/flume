@@ -128,8 +128,9 @@ interface GateResult {
 
 `afterCommit` runs on the worktree branch; failure drops the commit and the
 entry stays pending. `afterMerge` runs on the trunk after a fanout wave
-lands; failure reverts the wave. Singleton phases never run `afterMerge`
-(they commit straight to the trunk).
+lands; failure reverts **only the offending entry's commit** — its clean
+siblings stay shipped and that one entry returns to pending. Singleton
+phases never run `afterMerge` (they commit straight to the trunk).
 
 ### Use the built-ins first
 
@@ -181,6 +182,72 @@ The shape to internalize:
   worktree, not the main repo. `ctx.commitSha` is set if you need to
   inspect the commit (`git show`, `git diff`).
 
+### Where to place a gate: cheap structural at `afterCommit`, expensive at `afterMerge`
+
+The default: **cheap, deterministic structural gates run at `afterCommit`;
+expensive correctness gates run at `afterMerge`.** `tscGate` and a
+bundle-self-containment check are structural — fast, deterministic, worth
+stopping before a commit ever reaches the trunk. A full test suite is
+expensive correctness — and under fanout that cost multiplies.
+
+The split is about contention, not preference. A fanout wave runs N
+worktrees in parallel and each runs its `afterCommit` gates at the same
+time, so an expensive gate is launched N-wide simultaneously: N full test
+suites contending for the same cores. Under that load a suite that passes
+comfortably in isolation can blow its own timeout — and a timeout is a
+gate failure, so the harness reverts a commit that was never broken.
+(Observed: a fanout wave where assertions blew vitest's 5 s timeout purely
+under CPU contention, reverting three clean commits.)
+
+`afterMerge` gates do not contend. They run on the trunk one entry at a
+time, after the wave has merged — the expensive suite is paid once per
+entry serially instead of N-at-once, so it gets the resources it needs and
+a timeout means a real hang, not contention noise. And because an
+`afterMerge` failure reverts only the offending entry (not the wave), the
+cost of moving a flaky-under-load gate there is bounded to the one entry
+that actually fails.
+
+The tradeoff to weigh: an `afterMerge` gate runs *after* the commit
+reaches the trunk, so a genuinely bad commit is briefly on the trunk
+before it is reverted, whereas an `afterCommit` gate catches it pre-merge.
+Keep structural gates at `afterCommit` for exactly that reason — they are
+cheap enough to run N-wide and you want type errors stopped before merge.
+Split by cost: fast deterministic checks gate the merge; heavy or
+timing-sensitive correctness gates gate the trunk.
+
+This is a default, not a law. A small, fast suite can stay at
+`afterCommit` — the cascade example keeps `vitestGate` there because its
+suite is trivial. Move it to `afterMerge` once the suite is heavy enough
+that running it N-wide is itself what makes it flake.
+
+### Anti-pattern: gate on the safety property, not on byte-equality of a generated artifact
+
+A gate must assert the property you actually care about — not byte-identity
+of a derived artifact against a checked-in copy.
+
+Worked example: `bundleFreshnessGate`. The intent was reasonable — "the
+committed bundle is in sync with source." The implementation was not: it
+rebuilt the bundle and asserted byte-equality against the checked-in
+`dist/`. It reverted a string of clean commits. The cause: pnpm's
+virtual-store hashes leaked into esbuild's output, producing ~257
+pure-reorder / hash-churn lines that changed the bytes without changing a
+single runtime behavior. The property that actually mattered — *the bundle
+is self-contained; no import escapes it* — lived in a different gate,
+`bundleSelfContainmentGate`, which inspected that invariant directly and
+did not churn.
+
+The lesson generalizes. Generated artifacts carry non-semantic entropy:
+content hashes, declaration order, timestamps, embedded toolchain-version
+strings. Byte-equality conflates *changed* with *broke*, so the gate fails
+on entropy and reverts work that was correct.
+
+How to apply: before writing a gate over a generated file, ask "what would
+a *bad* version of this file actually do wrong?" and assert exactly that —
+does it resolve, does it parse, does it satisfy its contract tests, does
+any import escape it. If you cannot name the failure a byte-diff would
+catch, the gate is testing your toolchain's determinism, not your code —
+don't write it.
+
 ## 3. Choosing concurrency
 
 The choice is structural — it follows from what the phase outputs.
@@ -216,7 +283,9 @@ when hand-authoring entries.
 
 Failure modes handled: an `afterCommit` fail drops that worktree's commit
 (siblings continue); a merge cherry-pick conflict leaves that entry in
-pending (others merge); `afterMerge` fail reverts the wave.
+pending (others merge); an `afterMerge` fail reverts only the offending
+entry's commit — the clean siblings stay shipped and that entry returns to
+pending.
 
 ### `setupWorktree` for fanout
 
