@@ -453,6 +453,99 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   );
 });
 
+describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
+  it(
+    "creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean",
+    async () => {
+      const entries = [
+        makeEntry("RACE-A", ["src/race-a.ts"]),
+        makeEntry("RACE-B", ["src/race-b.ts"]),
+      ];
+      await writePending(fx.repo, entries);
+      new Baton(fx.repo).wake("build");
+
+      const repoOpts = { cwd: fx.repo };
+
+      // Seed a stale slug for BOTH entries, exactly as a prior crashed run
+      // leaves it: a *registered* `git worktree` at `.flume/worktrees/<slug>`
+      // (so both `.git/worktrees/<slug>/` metadata and the dir exist). The
+      // wave's createWorktree must `git worktree remove --force` each, then
+      // re-`add` — the precise remove+add pair that, run N-wide in parallel
+      // against the shared `.git/worktrees/` dir, fails a sibling's add
+      // mid-validation. Serialized, every add lands.
+      for (const slug of ["race-a", "race-b"]) {
+        const wtPath = join(fx.repo, ".flume", "worktrees", slug);
+        await mkdir(dirname(wtPath), { recursive: true });
+        await exec(
+          "git",
+          ["worktree", "add", "-B", `stale/${slug}`, wtPath, "HEAD"],
+          repoOpts,
+        );
+      }
+      // Precondition: the stale worktrees are genuinely registered with git
+      // (not just bare dirs) — proving the wave exercises the
+      // `git worktree remove --force` path, not the rm-fallback.
+      const { stdout: before } = await exec(
+        "git",
+        ["worktree", "list", "--porcelain"],
+        repoOpts,
+      );
+      expect(before).toContain(join(".flume", "worktrees", "race-a"));
+      expect(before).toContain(join(".flume", "worktrees", "race-b"));
+
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "race-a": (cwd) =>
+          writeAndCommit(cwd, "src/race-a.ts", "A\n", "build(RACE-A): ship"),
+        "race-b": (cwd) =>
+          writeAndCommit(cwd, "src/race-b.ts", "B\n", "build(RACE-B): ship"),
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        maxParallel: 4,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      // Every worktree was created over its stale slug and every entry
+      // shipped — no `git worktree add` failed on a sibling's concurrent
+      // remove (§4 acceptance: stale-slug N≥2 wave completes).
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["RACE-A", "RACE-B"]);
+      expect(await readFile(join(fx.repo, "src/race-a.ts"), "utf8")).toBe("A\n");
+      expect(await readFile(join(fx.repo, "src/race-b.ts"), "utf8")).toBe("B\n");
+      expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+
+      // Teardown left `git worktree list` clean: no `.flume/worktrees/`
+      // entry survives, neither registered with git nor on disk.
+      const { stdout: after } = await exec(
+        "git",
+        ["worktree", "list", "--porcelain"],
+        repoOpts,
+      );
+      expect(after).not.toContain(join(".flume", "worktrees"));
+      expect(existsSync(join(fx.repo, ".flume", "worktrees", "race-a"))).toBe(
+        false,
+      );
+      expect(existsSync(join(fx.repo, ".flume", "worktrees", "race-b"))).toBe(
+        false,
+      );
+    },
+    30_000,
+  );
+});
+
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it(
     "ships the first entry; second cherry-pick aborts; entry persists in pending",

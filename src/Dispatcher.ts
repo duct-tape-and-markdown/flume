@@ -521,10 +521,18 @@ export class Dispatcher {
     // during validation.
     await git.pruneWorktrees(repoRoot);
 
-    // Spawn worktrees in parallel.
-    const worktrees = await Promise.all(
-      batch.map((entry) => this.createWorktree(entry, preHead)),
-    );
+    // Serialize worktree creation (§4). `createWorktree` internally does
+    // `git worktree remove` (stale-slug cleanup) then `git worktree add`,
+    // both mutating the shared `.git/worktrees/` metadata dir — and git is
+    // NOT concurrency-safe there: a sibling's `--force` remove can fail
+    // another's add mid-validation. Run them one at a time, mirroring the
+    // already-serialized pre-wave `pruneWorktrees` above. The per-entry
+    // agent fanout below stays parallel — that is the expensive work, and
+    // it does not touch `.git/worktrees/`.
+    const worktrees: Array<{ path: string; branch: string }> = [];
+    for (const entry of batch) {
+      worktrees.push(await this.createWorktree(entry, preHead));
+    }
 
     // Optional per-phase setup (e.g. symlink node_modules / .env so gates
     // run). The return value MAY contribute extraEnv that the dispatcher
@@ -675,32 +683,36 @@ export class Dispatcher {
     // logged but do not block worktree removal — leaks are recoverable, a
     // stuck worktree is not.
     let cleaned = 0;
-    await Promise.all(
-      worktrees.map(async (wt, i) => {
-        if (phase.teardownWorktree) {
-          try {
-            await phase.teardownWorktree({
-              worktreePath: wt.path,
-              repoRoot,
-              entryTag: batch[i]!.tag,
-            });
-          } catch (err) {
-            this.log.warn(
-              `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
-            );
-          }
-        }
+    // Serialize teardown for the same reason as setup (§4): N concurrent
+    // `git worktree remove --force` calls race the shared `.git/worktrees/`
+    // dir. The chain's `teardownWorktree` hook and branch deletion ride the
+    // same serial loop — teardown is off the critical path, so a simple
+    // sequential walk beats interleaving the git-mutating step out alone.
+    for (let i = 0; i < worktrees.length; i++) {
+      const wt = worktrees[i]!;
+      if (phase.teardownWorktree) {
         try {
-          await git.removeWorktree(repoRoot, wt.path);
-          cleaned++;
+          await phase.teardownWorktree({
+            worktreePath: wt.path,
+            repoRoot,
+            entryTag: batch[i]!.tag,
+          });
         } catch (err) {
           this.log.warn(
-            `[flume] worktree cleanup failed for ${wt.path}: ${(err as Error).message}`,
+            `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
           );
         }
-        await git.deleteBranch(repoRoot, wt.branch);
-      }),
-    );
+      }
+      try {
+        await git.removeWorktree(repoRoot, wt.path);
+        cleaned++;
+      } catch (err) {
+        this.log.warn(
+          `[flume] worktree cleanup failed for ${wt.path}: ${(err as Error).message}`,
+        );
+      }
+      await git.deleteBranch(repoRoot, wt.branch);
+    }
     this.log.info(
       `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,
     );
