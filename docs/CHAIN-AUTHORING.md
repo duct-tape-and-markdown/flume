@@ -385,6 +385,42 @@ You don't write this block — the harness injects it. The contract: your
 prompt states the task and output shape; the harness states what it will
 enforce. Don't reiterate writable paths in your prompt.
 
+### The `<prior-attempt>` block
+
+When a tick commits and a gate reverts it, the next tick scheduled for the
+same entry (fanout) or phase (singleton) gets a `<prior-attempt>` block
+right after `<harness>`:
+
+```text
+<prior-attempt>
+A previous attempt at this work committed and was REVERTED by a gate.
+Read the failure below and change your approach — do not blindly
+reconstruct the reverted change.
+Reverted at: afterCommit
+Failing gate: tsc
+Verdict: tsc failed (3 errors)
+Gate details:
+  src/Dispatcher.ts(412,7): error TS2322: ...
+Reverted change digest (git show --stat):
+  build: wire prior-attempt persistence
+   src/Dispatcher.ts | 48 ++++++++++++++++--
+   1 file changed, 44 insertions(+), 4 deletions(-)
+</prior-attempt>
+```
+
+Like `<harness>`, this is dispatcher-owned and structural — there is **no
+`{{token}}` for it** and you don't reference it in `promptArgs` or the
+prompt file. It carries the failing gate's `name`, its full `details` (not
+just the one-line `message`), and a bounded `git show --stat` digest of the
+reverted commit, so the retry doesn't re-derive the wall it already hit.
+It is symmetric across `afterCommit` and `afterMerge`. The carry is
+cross-process by construction — the record is persisted under
+`.flume/prior-attempts/` (gitignored, beside the baton) and read back by
+the next `flume tick`'s fresh process. The block is **absent on a first
+attempt** (no false signal) and **cleared once an attempt ships clean**.
+Both the gate `message` and `details` feed it — write `details` for the
+retrying agent to read (concrete paths and line numbers beat narration).
+
 ### Dry-run
 
 `flume render <phase>` evaluates the prompt without invoking the agent and

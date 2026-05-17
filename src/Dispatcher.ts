@@ -9,9 +9,10 @@
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { tsImport } from "tsx/esm/api";
 
@@ -32,7 +33,35 @@ import type {
   TickResult,
 } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
+import type { PriorAttempt } from "./Prompt.js";
 import * as git from "./git.js";
+
+const execFileP = promisify(execFile);
+
+/**
+ * Prior-attempt records live beside the baton (`.flume/awake/`) and session
+ * logs (`.flume/sessions/`) — gitignored harness runtime state at the repo
+ * root, NOT in the per-entry worktree (a fanout retry gets a fresh worktree;
+ * the record must outlive it). One JSON file per key: the entry tag slug
+ * (fanout) or phase name (singleton).
+ */
+const PRIOR_ATTEMPTS_DIR = join(".flume", "prior-attempts");
+
+/** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
+const MAX_PRIOR_DETAILS = 8 * 1024;
+/** Bound on the persisted `git show --stat` digest. */
+const MAX_PRIOR_DIFFSTAT = 4 * 1024;
+
+/** Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt keying. */
+function slugify(tag: string): string {
+  return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+}
+
+/** Cap a string to `max` chars, marking the elision so truncation is visible. */
+function bound(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + `\n…[truncated ${s.length - max} chars]`;
+}
 
 // ---------- public surface ----------
 
@@ -317,6 +346,9 @@ export class Dispatcher {
     const preHead = await git.revParse(cwd);
     const pending = await this.readPending();
 
+    const key = this.priorAttemptKey(phase);
+    const prior = await this.readPriorAttempt(key);
+
     const ctx: TickContext = { cwd, pending };
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
@@ -324,6 +356,7 @@ export class Dispatcher {
       promptFile: join(this.opts.configDir, phase.promptPath),
       cwd,
       args,
+      ...(prior ? { priorAttempt: prior } : {}),
     });
 
     await this.invokeAgent(phase, cwd, prompt, agent);
@@ -336,11 +369,27 @@ export class Dispatcher {
       const verdict = await this.runAfterCommitGates(phase, cwd, postHead);
       gateResults.push(...verdict.results);
       if (!verdict.ok) {
+        // Capture the §5 record while the reverted commit is still
+        // reachable, then drop it. The next tick is a fresh process — this
+        // disk record is the only carry.
+        const record = await this.buildPriorAttempt(
+          "afterCommit",
+          verdict.failure!,
+          cwd,
+          postHead,
+        );
         await git.dropLastCommit(cwd);
         committed = false;
-        this.log.warn(`[flume] ${phase.name} commit reverted: ${verdict.firstFailure}`);
+        await this.writePriorAttempt(key, record);
+        this.log.warn(
+          `[flume] ${phase.name} commit reverted: ${verdict.failure?.message}`,
+        );
       }
     }
+
+    // A clean ship clears the slot so the next tick starts with no stale
+    // prior-attempt signal.
+    if (committed) await this.clearPriorAttempt(key);
 
     return {
       phaseName: phase.name,
@@ -468,6 +517,29 @@ export class Dispatcher {
           this.log.warn(
             `[flume] afterMerge gate '${gate.name}' failed; reverting wave`,
           );
+          // §5: afterMerge currently surfaces nothing to the agent — the
+          // explicit anti-pattern this closes. Today the whole wave reverts
+          // (per-entry isolation is §7b, separate); every reverted entry
+          // retries, so each one carries the merge-time failure rather than
+          // re-deriving the wall blind. Capture each digest while its
+          // cherry-picked SHA is still reachable, before the hard reset.
+          const failure = {
+            gate: gate.name,
+            message: r.message,
+            ...(r.details ? { details: r.details } : {}),
+          };
+          for (const s of shipped) {
+            const record = await this.buildPriorAttempt(
+              "afterMerge",
+              failure,
+              repoRoot,
+              s.sha,
+            );
+            await this.writePriorAttempt(
+              this.priorAttemptKey(phase, s.entry),
+              record,
+            );
+          }
           await git.hardResetTo(repoRoot, preHead);
           waveOk = false;
           break;
@@ -478,6 +550,11 @@ export class Dispatcher {
     // Update pending.json — remove shipped entries — as one harness commit.
     let chorSha: string | undefined;
     if (waveOk && shipped.length > 0) {
+      // Each shipped entry committed clean — clear any stale prior-attempt
+      // slot so its next plan/build cycle starts with no false signal.
+      for (const s of shipped) {
+        await this.clearPriorAttempt(this.priorAttemptKey(phase, s.entry));
+      }
       const shippedTags = shipped.map((s) => s.entry.tag);
       chorSha = await this.commitPendingUpdate(pending, shippedTags);
       this.log.info(
@@ -550,6 +627,12 @@ export class Dispatcher {
     commitSha?: string;
     gateResults: GateResultEntry[];
   }> {
+    // The prior-attempt record lives at the repo root (not this fresh
+    // worktree), keyed by the entry tag — so a reverted attempt's record
+    // survives into the next tick's brand-new worktree.
+    const key = this.priorAttemptKey(phase, entry);
+    const prior = await this.readPriorAttempt(key);
+
     const ctx: TickContext = { cwd: wt.path, assignedEntry: entry };
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
@@ -557,6 +640,7 @@ export class Dispatcher {
       promptFile: join(this.opts.configDir, phase.promptPath),
       cwd: wt.path,
       args,
+      ...(prior ? { priorAttempt: prior } : {}),
     });
 
     const preHead = await git.revParse(wt.path);
@@ -573,9 +657,16 @@ export class Dispatcher {
     const verdict = await this.runAfterCommitGates(phase, wt.path, postHead);
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
+      const record = await this.buildPriorAttempt(
+        "afterCommit",
+        verdict.failure!,
+        wt.path,
+        postHead,
+      );
       await git.dropLastCommit(wt.path);
+      await this.writePriorAttempt(key, record);
       this.log.warn(
-        `[flume] ${entry.tag}: commit reverted (${verdict.firstFailure})`,
+        `[flume] ${entry.tag}: commit reverted (${verdict.failure?.message})`,
       );
       return { entry, committed: false, gateResults };
     }
@@ -633,7 +724,8 @@ export class Dispatcher {
     commitSha: string,
   ): Promise<{
     ok: boolean;
-    firstFailure?: string;
+    /** First failing gate, structured so callers can persist a §5 record. */
+    failure?: { gate: string; message: string; details?: string };
     results: GateResultEntry[];
   }> {
     const gates: Gate[] = [
@@ -651,7 +743,15 @@ export class Dispatcher {
       results.push({ gate: gate.name, ok: r.ok, message: r.message });
       if (!r.ok) {
         if (r.details) this.log.warn(r.details);
-        return { ok: false, firstFailure: r.message, results };
+        return {
+          ok: false,
+          failure: {
+            gate: gate.name,
+            message: r.message,
+            ...(r.details ? { details: r.details } : {}),
+          },
+          results,
+        };
       }
     }
     return { ok: true, results };
@@ -661,7 +761,7 @@ export class Dispatcher {
     entry: PendingEntry,
     fromRef: string,
   ): Promise<{ path: string; branch: string }> {
-    const slug = entry.tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+    const slug = slugify(entry.tag);
     const branch = `flume/${slug}`;
     const path = join(this.opts.repoRoot, ".flume", "worktrees", slug);
     if (existsSync(path)) {
@@ -680,6 +780,87 @@ export class Dispatcher {
       fromRef,
     });
     return { path, branch };
+  }
+
+  // ---------- prior-attempt persistence (§5) ----------
+
+  /**
+   * Key under which a phase/entry's prior-attempt record lives: the entry
+   * tag slug for fanout, the phase name for singleton. A retry is scheduled
+   * "for that same entry (fanout) or phase (singleton)" — the key mirrors
+   * exactly that scope so the next tick reads its own predecessor.
+   */
+  private priorAttemptKey(phase: Phase, entry?: PendingEntry): string {
+    return entry ? slugify(entry.tag) : phase.name;
+  }
+
+  private priorAttemptPath(key: string): string {
+    return join(this.opts.repoRoot, PRIOR_ATTEMPTS_DIR, `${key}.json`);
+  }
+
+  /** Read a persisted prior-attempt record, if any. Corrupt → treated as absent. */
+  private async readPriorAttempt(
+    key: string,
+  ): Promise<PriorAttempt | undefined> {
+    const p = this.priorAttemptPath(key);
+    if (!existsSync(p)) return undefined;
+    try {
+      return JSON.parse(await readFile(p, "utf8")) as PriorAttempt;
+    } catch {
+      // A garbled record must not crash the tick — degrade to "no prior".
+      return undefined;
+    }
+  }
+
+  private async writePriorAttempt(
+    key: string,
+    rec: PriorAttempt,
+  ): Promise<void> {
+    const p = this.priorAttemptPath(key);
+    await mkdir(dirname(p), { recursive: true });
+    await writeFile(p, JSON.stringify(rec, null, 2) + "\n", "utf8");
+  }
+
+  /** Clear a prior-attempt record once a later attempt commits clean. */
+  private async clearPriorAttempt(key: string): Promise<void> {
+    await rm(this.priorAttemptPath(key), { force: true });
+  }
+
+  /**
+   * Bounded `git show --stat` of the reverted commit — the §5 digest so the
+   * retry does not blindly reconstruct. Must be called while `sha` is still
+   * reachable (before the hard reset / commit drop). Best-effort: a failure
+   * here must not block the revert path.
+   */
+  private async capturedDiffStat(cwd: string, sha: string): Promise<string> {
+    try {
+      const { stdout } = await execFileP(
+        "git",
+        ["show", "--stat", "--oneline", "--no-color", sha],
+        { cwd, maxBuffer: 4 * 1024 * 1024 },
+      );
+      return bound(stdout.trimEnd(), MAX_PRIOR_DIFFSTAT);
+    } catch {
+      return "(diff stat unavailable)";
+    }
+  }
+
+  private async buildPriorAttempt(
+    when: PriorAttempt["when"],
+    failure: { gate: string; message: string; details?: string },
+    diffCwd: string,
+    sha: string,
+  ): Promise<PriorAttempt> {
+    const diffStat = await this.capturedDiffStat(diffCwd, sha);
+    return {
+      when,
+      gate: failure.gate,
+      message: failure.message,
+      ...(failure.details
+        ? { details: bound(failure.details, MAX_PRIOR_DETAILS) }
+        : {}),
+      diffStat,
+    };
   }
 
   private async readPending(): Promise<PendingEntry[]> {

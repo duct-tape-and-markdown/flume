@@ -644,6 +644,215 @@ describe("Dispatcher fanout — empty pickable set", () => {
   });
 });
 
+// ---------- gate-failure feedback to the retrying tick (§5) ----------
+
+describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () => {
+  it(
+    "afterCommit gate-revert → next singleton tick's prompt carries gate name + full details + marker; first attempt absent",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      const failing: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          return {
+            ok: false,
+            message: "boom-msg",
+            details: "boom-details-XYZ\nsecond line of details",
+          };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [failing],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "recording-singleton",
+        async invoke(inv) {
+          const n = prompts.length;
+          prompts.push(inv.prompt);
+          await writeAndCommit(
+            inv.cwd,
+            "src/o.ts",
+            `attempt-${n}\n`,
+            "plan: attempt",
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      await dispatcher.tick(); // attempt 1 → committed then reverted
+      baton.wake("plan"); // re-wake (handoff () => [] slept it)
+      await dispatcher.tick(); // attempt 2 → prompt carries the block
+
+      expect(prompts.length).toBe(2);
+      // First attempt: no false signal. (gate name/when also live in the
+      // <harness> block, so assert on block-only substrings.)
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+      expect(prompts[0]).not.toContain("boom-details-XYZ");
+      // Retry: full block — marker, gate name, FULL details, when.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain("Failing gate: boom-gate");
+      expect(prompts[1]).toContain("Reverted at: afterCommit");
+      expect(prompts[1]).toContain("boom-details-XYZ");
+      expect(prompts[1]).toContain("second line of details");
+      expect(prompts[1]).toContain("boom-msg");
+    },
+    20_000,
+  );
+
+  it(
+    "afterMerge gate-revert → each reverted fanout entry's next prompt carries the block; first attempt absent",
+    async () => {
+      const entries = [
+        makeEntry("WAVE-A", ["src/wa.ts"]),
+        makeEntry("WAVE-B", ["src/wb.ts"]),
+      ];
+      await writePending(fx.repo, entries);
+      const baton = new Baton(fx.repo);
+      baton.wake("build");
+
+      const failingMerge: Gate = {
+        name: "merge-veto",
+        when: "afterMerge",
+        async run() {
+          return {
+            ok: false,
+            message: "merge-msg",
+            details: "merge-details-QQQ",
+          };
+        },
+      };
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [failingMerge],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const promptsBySlug: Record<string, string[]> = {};
+      const agent: Agent = {
+        name: "recording-fanout",
+        async invoke(inv) {
+          const slug = inv.cwd.split("/").pop()!;
+          (promptsBySlug[slug] ??= []).push(inv.prompt);
+          const file = slug === "wave-a" ? "src/wa.ts" : "src/wb.ts";
+          await writeAndCommit(inv.cwd, file, `${slug}\n`, `build(${slug})`);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        maxParallel: 4,
+      });
+
+      await dispatcher.tick(); // wave cherry-picked then reverted at afterMerge
+      baton.wake("build"); // re-wake for the retry wave
+      await dispatcher.tick(); // retry wave: each prompt carries the block
+
+      for (const slug of ["wave-a", "wave-b"]) {
+        const ps = promptsBySlug[slug] ?? [];
+        expect(ps.length).toBe(2);
+        // First attempt: silent (this path surfaced nothing pre-§5).
+        expect(ps[0]).not.toContain("<prior-attempt>");
+        expect(ps[0]).not.toContain("merge-details-QQQ");
+        // Retry: afterMerge failure forwarded symmetrically.
+        expect(ps[1]).toContain("<prior-attempt>");
+        expect(ps[1]).toContain("Failing gate: merge-veto");
+        expect(ps[1]).toContain("Reverted at: afterMerge");
+        expect(ps[1]).toContain("merge-details-QQQ");
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "clears the prior-attempt slot once a later attempt ships clean",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      let calls = 0;
+      const flaky: Gate = {
+        name: "flaky-gate",
+        when: "afterCommit",
+        async run() {
+          calls++;
+          return calls === 1
+            ? { ok: false, message: "first fail", details: "DETAIL-ONCE" }
+            : { ok: true, message: "ok now" };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [flaky],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "recording-singleton",
+        async invoke(inv) {
+          const n = prompts.length;
+          prompts.push(inv.prompt);
+          await writeAndCommit(
+            inv.cwd,
+            "src/o.ts",
+            `attempt-${n}\n`,
+            "plan: attempt",
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      await dispatcher.tick(); // attempt 1 → reverted, slot written
+      baton.wake("plan");
+      await dispatcher.tick(); // attempt 2 → ships clean, slot cleared
+      baton.wake("plan");
+      await dispatcher.tick(); // attempt 3 → slot gone, no block
+
+      expect(prompts.length).toBe(3);
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain("DETAIL-ONCE");
+      // Cleared on the clean ship → attempt 3 starts with no stale signal.
+      expect(prompts[2]).not.toContain("<prior-attempt>");
+      expect(
+        existsSync(join(fx.repo, ".flume", "prior-attempts", "plan.json")),
+      ).toBe(false);
+    },
+    20_000,
+  );
+});
+
 // ---------- per-tick chain re-resolution (§2) ----------
 
 describe("Dispatcher — per-tick chain re-resolution (§2)", () => {

@@ -4,6 +4,7 @@ dist/
 .DS_Store
 .flume/awake/
 .flume/sessions/
+.flume/prior-attempts/
 .flume/worktrees/
 .env
 .env.*
