@@ -524,40 +524,68 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
   );
 });
 
-describe("Dispatcher fanout — afterMerge gate failure reverts the wave", () => {
+describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry (§7b)", () => {
   it(
-    "hard-resets trunk to preHead, leaves pending untouched, reports empty shippedTags",
+    "ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the §5 block; per-entry agent fanout stays parallel",
     async () => {
+      // ISO-PASS and ISO-FAIL fan out concurrently (disjoint declared files →
+      // same batch). The afterMerge gate vetoes any merged trunk carrying
+      // ISO-FAIL's file, so it fails for ISO-FAIL's commit and passes for
+      // ISO-PASS's — independent of cherry-pick order.
       const entries = [
-        makeEntry("WAVE-A", ["src/wa.ts"]),
-        makeEntry("WAVE-B", ["src/wb.ts"]),
+        makeEntry("ISO-PASS", ["src/iso-pass.ts"]),
+        makeEntry("ISO-FAIL", ["src/iso-fail.ts"]),
       ];
       await writePending(fx.repo, entries);
-      new Baton(fx.repo).wake("build");
+      const baton = new Baton(fx.repo);
+      baton.wake("build");
 
       const preHead = await head(fx.repo);
 
-      const failingAfterMerge: Gate = {
-        name: "wave-veto",
+      const isoVeto: Gate = {
+        name: "iso-veto",
         when: "afterMerge",
-        async run() {
-          return { ok: false, message: "wave veto" };
+        async run({ cwd }) {
+          // Per-entry: the gate sees the trunk with exactly one more entry
+          // cherry-picked. Veto iff that entry is the offending one.
+          return existsSync(join(cwd, "src", "iso-fail.ts"))
+            ? {
+                ok: false,
+                message: "iso veto",
+                details: "ISO-FAIL-DETAIL-QQQ",
+              }
+            : { ok: true, message: "clean" };
         },
       };
 
       const phase = makePhase({
         name: "build",
         concurrency: "fanout",
-        gates: [failingAfterMerge],
+        gates: [isoVeto],
       });
       const chain: Chain = { phases: [phase], humanOnly: [] };
 
-      const agent = fanoutAgent({
-        "wave-a": (cwd) =>
-          writeAndCommit(cwd, "src/wa.ts", "A\n", "build(WAVE-A)"),
-        "wave-b": (cwd) =>
-          writeAndCommit(cwd, "src/wb.ts", "B\n", "build(WAVE-B)"),
-      });
+      // Parallelism probe: per-entry afterMerge isolation must not serialize
+      // the agent fanout. Hold both invocations open together so the overlap
+      // is real, then assert two were in flight at once.
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const promptsBySlug: Record<string, string[]> = {};
+      const agent: Agent = {
+        name: "recording-fanout",
+        async invoke(inv) {
+          const slug = inv.cwd.split("/").pop()!;
+          (promptsBySlug[slug] ??= []).push(inv.prompt);
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise((r) => setTimeout(r, 50));
+          inFlight--;
+          const file =
+            slug === "iso-pass" ? "src/iso-pass.ts" : "src/iso-fail.ts";
+          await writeAndCommit(inv.cwd, file, `${slug}\n`, `build(${slug})`);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
 
       const dispatcher = new Dispatcher({
         chainLoader: staticLoader(chain),
@@ -568,32 +596,55 @@ describe("Dispatcher fanout — afterMerge gate failure reverts the wave", () =>
         maxParallel: 4,
       });
 
-      const outcome = await dispatcher.tick();
+      const first = await dispatcher.tick();
 
-      // Wave reverted: trunk back where it started, nothing shipped.
-      expect(await head(fx.repo)).toBe(preHead);
-      expect(outcome.result?.committed).toBe(false);
-      expect(outcome.result?.shippedTags).toEqual([]);
+      // Both agents ran concurrently — the fanout is still parallel.
+      expect(maxInFlight).toBe(2);
 
-      // The cherry-pick winners' files don't survive on trunk.
-      expect(existsSync(join(fx.repo, "src", "wa.ts"))).toBe(false);
-      expect(existsSync(join(fx.repo, "src", "wb.ts"))).toBe(false);
+      // Only ISO-PASS shipped; the offending entry's change is NOT on trunk.
+      expect(first.result?.committed).toBe(true);
+      expect(first.result?.shippedTags).toEqual(["ISO-PASS"]);
+      expect(await readFile(join(fx.repo, "src/iso-pass.ts"), "utf8")).toBe(
+        "iso-pass\n",
+      );
+      expect(existsSync(join(fx.repo, "src", "iso-fail.ts"))).toBe(false);
 
-      // pending.json untouched — re-deriving sees both entries.
+      // Trunk advanced past preHead (ISO-PASS cherry-pick + ship chore), NOT
+      // reset to preHead — the whole-wave blast radius is gone.
+      expect(await head(fx.repo)).not.toBe(preHead);
+
+      // ISO-FAIL stays pending; ISO-PASS removed by the ship chore.
       const onDisk = await readPendingFromDisk(fx.repo);
-      expect(onDisk.map((e) => e.tag)).toEqual(["WAVE-A", "WAVE-B"]);
-      expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-        "WAVE-A",
-        "WAVE-B",
+      expect(onDisk.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
+      expect(first.result?.pendingAfter.map((e) => e.tag)).toEqual([
+        "ISO-FAIL",
       ]);
 
-      // The failing afterMerge gate is recorded in gateResults.
-      const gateRecord = outcome.result?.gateResults ?? [];
-      expect(
-        gateRecord.some((g) => g.gate === "wave-veto" && !g.ok),
-      ).toBe(true);
+      // The offending entry's afterMerge gate failure is recorded; the clean
+      // sibling's passing run is too.
+      const gr = first.result?.gateResults ?? [];
+      expect(gr.some((g) => g.gate === "iso-veto" && !g.ok)).toBe(true);
+      expect(gr.some((g) => g.gate === "iso-veto" && g.ok)).toBe(true);
+
+      // Retry wave: only ISO-FAIL is still pickable. Its prompt carries the
+      // §5 gate-revert block (afterMerge); ISO-PASS never runs again.
+      baton.wake("build");
+      await dispatcher.tick();
+
+      const passPrompts = promptsBySlug["iso-pass"] ?? [];
+      const failPrompts = promptsBySlug["iso-fail"] ?? [];
+      expect(passPrompts.length).toBe(1); // shipped — never retried
+      expect(passPrompts[0]).not.toContain("<prior-attempt>");
+      expect(failPrompts.length).toBe(2); // reverted — retried
+      // First attempt: no false signal.
+      expect(failPrompts[0]).not.toContain("<prior-attempt>");
+      // Retry: the §5 gate-revert block, afterMerge, with the gate detail.
+      expect(failPrompts[1]).toContain("<prior-attempt>");
+      expect(failPrompts[1]).toContain("Failing gate: iso-veto");
+      expect(failPrompts[1]).toContain("Reverted at: afterMerge");
+      expect(failPrompts[1]).toContain("ISO-FAIL-DETAIL-QQQ");
     },
-    20_000,
+    30_000,
   );
 });
 
