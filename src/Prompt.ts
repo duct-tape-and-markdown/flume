@@ -15,10 +15,15 @@
  * it will enforce.
  *
  * A `<prior-attempt>` block follows it whenever the dispatcher hands in a
- * persisted {@link PriorAttempt} — the bounded record of a previous attempt
- * that committed and was reverted by a gate. Like `<harness>` it is
- * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
- * `promptArgs`. Absent on a first attempt; cleared once an attempt ships.
+ * persisted {@link PriorAttempt} — the bounded record of a previous no-commit
+ * attempt, tagged with exactly one of the three causally-distinct modes
+ * (§6 no-commit taxonomy): `gate-revert` (committed then a gate reverted it),
+ * `voluntary-bail` (exited cleanly refusing a constraint), `platform-preempt`
+ * (the process failed for non-work reasons — not a defect in the work). Each
+ * renders distinctly so the retry knows what actually happened. Like
+ * `<harness>` it is dispatcher-owned and structural: no `{{token}}` in the
+ * prompt file, no `promptArgs`. Absent on a first attempt; cleared once an
+ * attempt ships.
  */
 
 import { execFile } from "node:child_process";
@@ -33,13 +38,19 @@ const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 
 /**
- * A reverted prior attempt for one entry (fanout, keyed by tag) or phase
- * (singleton, keyed by phase name). The dispatcher persists this to disk on
- * a gate-revert and reads it back on the next tick — the carry is
- * cross-process by construction (each tick is a fresh process; there is no
- * in-memory handoff). Bounded by construction: a digest, not a transcript.
+ * The three causally-distinct ways a tick produces no usable commit (§6).
+ * The discriminant of {@link PriorAttempt} and the value carried on
+ * `TickOutcome.noCommit`; exactly one per no-commit tick.
  */
-export interface PriorAttempt {
+export type NoCommitMode = "gate-revert" | "voluntary-bail" | "platform-preempt";
+
+/**
+ * A prior attempt that committed and was then REVERTED by a gate
+ * (`afterCommit` or `afterMerge`). The only variant shipped at §5; §6 widens
+ * the union around it without reshaping it.
+ */
+export interface GateRevertAttempt {
+  mode: "gate-revert";
   /** Which gate phase reverted the prior commit. */
   when: "afterCommit" | "afterMerge";
   /** Failing gate's stable `name`. */
@@ -51,6 +62,48 @@ export interface PriorAttempt {
   /** `git show --stat` digest of the reverted commit, bounded. */
   diffStat: string;
 }
+
+/**
+ * The agent exited cleanly without committing — it refused to cross a
+ * constraint rather than do the wrong thing. No commit, no gate; the prior
+ * judgment likely still holds, so the retry must resolve or escalate the
+ * constraint, not blindly re-run the same edit.
+ */
+export interface VoluntaryBailAttempt {
+  mode: "voluntary-bail";
+  /**
+   * The constraint the prior attempt refused to cross (off-`writablePaths`
+   * path, Rule-0 / spec conflict) — the agent's final message, bounded. The
+   * build/plan prompts instruct the agent to state the gap in that message
+   * on a bail, so its tail is where the constraint is named.
+   */
+  constraint: string;
+}
+
+/**
+ * The agent process failed for non-work reasons (rate-limit, auth, per-tick
+ * timeout, dispatcher-killed). Explicitly NOT a defect in the prior
+ * attempt's work — its reasoning is not discredited; the retry resumes the
+ * work rather than treating the cut-off as a wall.
+ */
+export interface PlatformPreemptAttempt {
+  mode: "platform-preempt";
+  /** The non-work failure class, bounded. */
+  failureClass: string;
+}
+
+/**
+ * A prior no-commit attempt for one entry (fanout, keyed by tag) or phase
+ * (singleton, keyed by phase name) — a mode-tagged union, exactly one
+ * variant. The dispatcher persists this to disk when a tick yields no usable
+ * commit and reads it back on the next tick: the carry is cross-process by
+ * construction (each tick is a fresh process; there is no in-memory
+ * handoff). Bounded by construction: a digest, not a transcript.
+ */
+export type PriorAttempt =
+  | GateRevertAttempt
+  | VoluntaryBailAttempt
+  | PlatformPreemptAttempt;
 
 /**
  * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
@@ -66,9 +119,10 @@ export interface RenderOptions {
   /** Substitution map. */
   args: Record<string, string>;
   /**
-   * A prior reverted attempt for this entry/phase, read from disk by the
-   * dispatcher. Injected as the dispatcher-owned `<prior-attempt>` block.
-   * Omitted on a first attempt — the block is then absent entirely.
+   * A prior no-commit attempt for this entry/phase (any of the three §6
+   * modes), read from disk by the dispatcher. Injected as the
+   * dispatcher-owned `<prior-attempt>` block. Omitted on a first attempt —
+   * the block is then absent entirely.
    */
   priorAttempt?: PriorAttempt;
 }
@@ -185,9 +239,11 @@ function indentBlock(s: string): string {
  * `prependHarnessBlock`: structural, not authored — there is no `{{token}}`
  * for it in the prompt file. Absent (identity transform) on a first attempt,
  * so the slot carries no false signal. When present it tells the retrying
- * tick a prior commit was gate-reverted, names the gate and its full
- * details, and gives a bounded digest of the reverted change so the agent
- * does not blindly reconstruct the wall it already hit.
+ * tick exactly which of the three §6 no-commit modes the prior attempt hit,
+ * rendered distinctly per variant so the agent reads what actually happened
+ * — a reverted commit, a refused constraint, or a platform cut-off that is
+ * explicitly NOT its predecessor's fault — rather than blindly reconstructing
+ * a wall that may not exist.
  */
 function prependPriorAttemptBlock(
   prior: PriorAttempt | undefined,
@@ -197,19 +253,46 @@ function prependPriorAttemptBlock(
 
   const block = [
     `<prior-attempt>`,
-    `A previous attempt at this work committed and was REVERTED by a gate.`,
-    `Read the failure below and change your approach — do not blindly`,
-    `reconstruct the reverted change.`,
-    `Reverted at: ${prior.when}`,
-    `Failing gate: ${prior.gate}`,
-    `Verdict: ${prior.message}`,
-    `Gate details:`,
-    indentBlock(prior.details ?? ""),
-    `Reverted change digest (git show --stat):`,
-    indentBlock(prior.diffStat),
+    ...priorAttemptLines(prior),
     `</prior-attempt>`,
     "",
   ].join("\n");
 
   return block + body;
+}
+
+/** The mode-specific body of the `<prior-attempt>` block. Exhaustive over the union. */
+function priorAttemptLines(prior: PriorAttempt): string[] {
+  switch (prior.mode) {
+    case "gate-revert":
+      return [
+        `A previous attempt at this work committed and was REVERTED by a gate.`,
+        `Read the failure below and change your approach — do not blindly`,
+        `reconstruct the reverted change.`,
+        `Reverted at: ${prior.when}`,
+        `Failing gate: ${prior.gate}`,
+        `Verdict: ${prior.message}`,
+        `Gate details:`,
+        indentBlock(prior.details ?? ""),
+        `Reverted change digest (git show --stat):`,
+        indentBlock(prior.diffStat),
+      ];
+    case "voluntary-bail":
+      return [
+        `A previous attempt exited deliberately WITHOUT committing — it`,
+        `refused to cross the constraint below rather than do the wrong`,
+        `thing. That judgment likely still holds: resolve the constraint or`,
+        `escalate it, do not just re-run the same edit. No commit, no gate.`,
+        `Refused constraint (prior attempt's final message):`,
+        indentBlock(prior.constraint),
+      ];
+    case "platform-preempt":
+      return [
+        `A previous attempt was cut short by a PLATFORM failure — NOT a`,
+        `defect in the work. The prior reasoning is not discredited; do not`,
+        `treat this as a wall in the task. Resume the work. No commit, no gate.`,
+        `Failure class (not your fault):`,
+        indentBlock(prior.failureClass),
+      ];
+  }
 }

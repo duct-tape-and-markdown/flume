@@ -853,6 +853,195 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
   );
 });
 
+// ---------- no-commit outcome taxonomy (§6) ----------
+
+// One test per causally-distinct no-commit mode. Each asserts (a) the
+// distinct classification on `TickOutcome.noCommit` for the producing tick,
+// and (b) that the next tick's rendered prompt carries the matching §5
+// variant and *only* that variant (the three are mutually distinguishable,
+// not one block with a label). Singleton path: a tick is one agent
+// invocation, so "exactly one mode per no-commit tick" is exact and
+// directly observable on the outcome. First attempt carries no
+// <prior-attempt> — no false signal.
+
+const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
+const BAIL_INTRO = "exited deliberately WITHOUT committing";
+const PREEMPT_INTRO = "cut short by a PLATFORM failure";
+
+describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
+  it(
+    "gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      const failing: Gate = {
+        name: "revert-gate",
+        when: "afterCommit",
+        async run() {
+          return {
+            ok: false,
+            message: "gate said no",
+            details: "GATE-DETAIL-ZZZ",
+          };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [failing],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "recording-singleton",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          await writeAndCommit(inv.cwd, "src/o.ts", "x\n", "plan: attempt");
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("gate-revert");
+
+      baton.wake("plan");
+      await dispatcher.tick();
+
+      expect(prompts.length).toBe(2);
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+      // Distinct gate-revert variant, with the gate's full detail + when.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain(GATE_REVERT_INTRO);
+      expect(prompts[1]).toContain("Failing gate: revert-gate");
+      expect(prompts[1]).toContain("Reverted at: afterCommit");
+      expect(prompts[1]).toContain("GATE-DETAIL-ZZZ");
+      // …and ONLY that variant — not the other two modes' phrasing.
+      expect(prompts[1]).not.toContain(BAIL_INTRO);
+      expect(prompts[1]).not.toContain(PREEMPT_INTRO);
+    },
+    20_000,
+  );
+
+  it(
+    "voluntary-bail: TickOutcome.noCommit==='voluntary-bail'; retry prompt names the prior bail + its constraint; first attempt empty",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      // No gates. The agent exits cleanly (exit 0) WITHOUT committing and
+      // names the constraint it refused in its final message — exactly what
+      // the build prompt instructs on a writablePaths/Rule-0 bail.
+      const phase = makePhase({ name: "plan", concurrency: "singleton" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const CONSTRAINT =
+        "BAILED: entry.files names spec/RELEASE-v0.2.md, outside the build " +
+        "phase writablePaths; not pivoting. Route as an open question.";
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "bailing-singleton",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          // Clean exit, no commit, constraint stated in the final message.
+          return { exitCode: 0, stdout: `working…\n\n${CONSTRAINT}\n`, stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("voluntary-bail");
+
+      baton.wake("plan");
+      await dispatcher.tick();
+
+      expect(prompts.length).toBe(2);
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+      // Distinct voluntary-bail variant naming the refused constraint.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain(BAIL_INTRO);
+      expect(prompts[1]).toContain("Refused constraint");
+      expect(prompts[1]).toContain(
+        "spec/RELEASE-v0.2.md, outside the build phase writablePaths",
+      );
+      // …and ONLY that variant.
+      expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
+      expect(prompts[1]).not.toContain(PREEMPT_INTRO);
+    },
+    20_000,
+  );
+
+  it(
+    "platform-preempt: TickOutcome.noCommit==='platform-preempt'; retry prompt marks it not-a-defect with the failure class; first attempt empty",
+    async () => {
+      const baton = new Baton(fx.repo);
+      baton.wake("plan");
+
+      // No gates. The agent process fails for non-work reasons — a non-zero
+      // exit (137 = SIGKILL / OOM / dispatcher-killed) with no commit.
+      const phase = makePhase({ name: "plan", concurrency: "singleton" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "preempted-singleton",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 137, stdout: "", stderr: "Killed" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("platform-preempt");
+
+      baton.wake("plan");
+      await dispatcher.tick();
+
+      expect(prompts.length).toBe(2);
+      expect(prompts[0]).not.toContain("<prior-attempt>");
+      // Distinct platform-preempt variant: explicitly NOT a defect, with the
+      // non-work failure class forwarded.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain(PREEMPT_INTRO);
+      expect(prompts[1]).toContain("NOT a");
+      expect(prompts[1]).toContain("Failure class");
+      expect(prompts[1]).toContain("exited with code 137");
+      // …and ONLY that variant.
+      expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
+      expect(prompts[1]).not.toContain(BAIL_INTRO);
+    },
+    20_000,
+  );
+});
+
 // ---------- per-tick chain re-resolution (§2) ----------
 
 describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
