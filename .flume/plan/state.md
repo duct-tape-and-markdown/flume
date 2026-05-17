@@ -1,39 +1,35 @@
 # State
 
-Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — heaviest delta dimension is the `build:` commit `22487fd` (GATE-FAILURE-FEEDBACK / §5), shipped by harness `3404fe4`. No spec delta (no derive); inbox empty (no drain). One audit finding routed; one mechanical promote.
+Phase: **v0.1 line shipped; v0.2 build line active.** Mode this tick: **audit** — the only meaningful delta dimension is the `build:` commit `4cd0e68` (CHAINLOAD-FEEDBACK-TEST) + its `chore(flume)` ship `e2f9b37`. No spec delta (no derive); inbox empty (no drain); no `blockedBy` points at an absent tag (no promote). Plan-artifact-only tick: pending.json/open-questions.md/inbox.md unchanged; only state.md re-derived.
 
-## Audit — `22487fd` (build: forward gate-revert context to the retrying tick)
+## Audit — `4cd0e68` (build: assert chainLoadGate revert forwards chain-load failure to next tick)
 
-Cross-checked the diff against `spec/RELEASE-v0.2.md` §5 (the entry's `per` cite) and the GATE-FAILURE-FEEDBACK entry's declared scope. **Conformant; one composite-acceptance test gap routed (not drift).**
+Cross-checked the diff against `spec/RELEASE-v0.2.md` §3 (the entry's `per` cite) read in full, plus §5 (the per-§5 clause). **Conformant — no drift, no creep, no bypass, no missed case. Nothing routed.**
 
-- **Scope** — exactly the 5 declared files (`src/Dispatcher.ts`, `src/Prompt.ts`, `docs/CHAIN-AUTHORING.md`, `.gitignore`, `tests/Dispatcher.test.ts`); the `pending.json` −46 belongs to the separate `chore(flume)` ship `3404fe4`. No creep.
-- **§5 acceptance** — all three bullets carry asserting tests: afterCommit (boom-gate, full details + marker + first-attempt-absent), afterMerge (per-reverted-entry, symmetric), clear-on-clean-ship. Cross-process by construction: record persisted under `.flume/prior-attempts/` at repo root (not the per-entry worktree — survives a fanout retry's fresh worktree), read at render. Bounded (8K details / 4K diffstat, visible-elision `bound()`).
-- **§5 "documented slot"** — satisfied via the dispatcher-owned `<prior-attempt>` block mirroring `<harness>` (no `{{token}}`, no `promptArgs`), documented in `docs/CHAIN-AUTHORING.md`. This is the plan-vetted interpretation (GATE-FAILURE-FEEDBACK notes + OQ#1 lane: `.flume/prompts/*.md` is off build's writablePaths; the `<harness>` precedent resolves "documented slot"). Re-affirmed conformant, not re-litigated.
-- **In-place API change** — `runAfterCommitGates` return `firstFailure?: string` → `failure?: {gate,message,details?}`; all callers updated, `git grep firstFailure` = 0 hits (pre-1.0 clean-slate posture, no shim). `slugify` extracted as a shared helper (worktree + prior-attempt keying) — in declared file, DRY, not creep.
-- **afterMerge under whole-wave revert** — every reverted wave entry (incl. clean siblings) gets the merge-time record. Correct under today's whole-wave revert; per-entry isolation is §7b (AFTERMERGE-REVERT-ISOLATION, separate pending entry) — consistent with the spec and commit body.
-- **No gate-bypass** — `build:` commit then a pure 46-line `chore(flume)` ship-removal of the entry from pending.json. Build ran gates per CLAUDE.md non-negotiables (plan investigates, does not re-run gates).
+- **Scope** — exactly the one declared file (`tests/Dispatcher.test.ts`, +100, one sibling `describe`/`it` at :966, after the existing §3 test). No `src/` change — as the entry predicted (§5 forwarding is gate-uniform; only the chain-load-specific composite assertion was missing). Zero creep.
+- **§3 bullet 1 composite (the per-§5 clause)** — test encodes the entry's acceptance faithfully: agent self-edits `chain.ts` → committed → `chainLoadGate` fails afterCommit → revert; second tick's rendered prompt asserted to carry `<prior-attempt>` with `Failing gate: chain-load`, `Reverted at: afterCommit`, the verdict, AND the raw esbuild loader `details` verbatim-but-bounded (`Transform failed` / `Unexpected end of file`); `chain.ts` byte-restored to last-good. First attempt asserts no false `<prior-attempt>` signal (re-covers §5 bullet 3 on the chain-load path).
+- **§3 fully tested now** — bullet 1 (revert+restore+recorded-failure by the pre-existing :966 test; the composite by this sibling); bullet 2 (ungated resolution-failure → loud no-work) by the pre-existing `ungated chain resolution failure` test immediately below. §3 runtime (`CHAIN-LOAD-GATE` `2675c1c`) + §5 runtime (`GATE-FAILURE-FEEDBACK` `22487fd`) shipped earlier; this closes the §3↔§5 keystone composite acceptance (§12: chainLoadGate without feedback = a blind chain.ts revert loop).
+- **Test-injection path correct** — uses `staticLoader(chain)` for phase/gate config (the §2-sanctioned in-process `chainLoader` injection) while `chainLoadGate` genuinely validates the on-disk `.flume/chain.ts` post-tick; the test writes a real broken file and asserts the real on-disk restore. Not a fake-loader shortcut around the gate.
+- **No gate-bypass** — `4cd0e68` is `build:`, test-only, within build's `tests/**` writablePaths; landed on `main` only after green tscGate+vitestGate per CLAUDE.md non-negotiables (plan investigates, does not re-run gates). `e2f9b37` is a clean 30-line `chore(flume)` ship-removal of the entry from pending.json — no creep, no bypass.
 
-**Routed (one pending entry, not OQ, not silent debt):** `CHAINLOAD-FEEDBACK-TEST` — §3 acceptance bullet 1 attaches "(test)" to the composite *broken chain.ts → chainLoadGate revert → restored → next tick's prompt carries the chain-load failure per §5*. Both runtime halves are shipped (`CHAIN-LOAD-GATE` `2675c1c`; this commit), but the existing §3 test (`tests/Dispatcher.test.ts:906`) predates §5 and stops at "chain-load is the recorded failure" — no follow-up tick, no `<prior-attempt>` assertion. §5's boom-gate test exercises the same gate-uniform path, but the spec names this composite as a test and §3↔§5 ship-together is the release keystone (§12). Test-only, build-writable, unblocked → `open`, queue head. Not an OQ (no human input), not silent debt (spec-named acceptance for the keystone).
+## Promote — none
 
-## Promote — mechanical
+`CHAINLOAD-FEEDBACK-TEST` (the prior queue head) was a standalone test entry; nothing was `blockedBy` it. The remaining 6 form a linear `blockedBy` chain with `NO-COMMIT-TAXONOMY` (open) at the head — every upstream tag is still present. Mechanical scan: no entry blocks on an absent tag. No flips.
 
-- **NO-COMMIT-TAXONOMY**: was `blockedBy GATE-FAILURE-FEEDBACK`; that tag shipped (`3404fe4`) and left `pending-now`. Flipped to `gate: { kind: "open" }`. `files`/`notes` untouched — minimal churn; the "Depends on GATE-FAILURE-FEEDBACK for the §5 block channel" note is now a satisfied-dependency statement, still accurate.
-- No other entry's `blockedBy` references a now-absent tag — the rest is a linear chain (each blocks on the one directly above), all still pending. No further promotes.
+## Queue (6 — one open head, then a linear chain)
 
-## Queue (7 entries — two open heads, then linear chain)
-
-`CHAINLOAD-FEEDBACK-TEST` (open, NEW head — closes the §3↔§5 keystone composite acceptance; test-only) → `NO-COMMIT-TAXONOMY` (open, promoted, §6) → AFTERMERGE-REVERT-ISOLATION (§7b, heaviest) → PLAN-PROSE-DURABILITY (§8) → WORKTREE-RACE-SERIALIZE (§4) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9). §2/§3 runtime already shipped (PER-TICK-CHAIN-RELOAD, LOOP-PROCESS-PER-TICK, CHAIN-AUTHORING-RELOAD-DOCS, CHAIN-LOAD-GATE).
+`NO-COMMIT-TAXONOMY` (open, §6 — next for build) → AFTERMERGE-REVERT-ISOLATION (§7b, heaviest) → PLAN-PROSE-DURABILITY (§8) → WORKTREE-RACE-SERIALIZE (§4) → CHAIN-AUTHORING-GATE-GUIDANCE (§7a/§7c docs) → RELEASE-0.2.0 (§9). §2/§3/§5 runtime + the §3↔§5 composite test all shipped (PER-TICK-CHAIN-RELOAD, LOOP-PROCESS-PER-TICK, CHAIN-AUTHORING-RELOAD-DOCS, CHAIN-LOAD-GATE, GATE-FAILURE-FEEDBACK, CHAINLOAD-FEEDBACK-TEST).
 
 ## Open questions
 
-- **3**, all unchanged this tick (no spec delta, no commit touched these surfaces, no human input — not re-litigated per collaboration rule):
+- **3**, all unchanged this tick (no spec delta, no commit touched these surfaces, no human input — not re-litigated per the collaboration rule):
   1. §7a dogfood `.flume/chain.ts` gate-placement move — off build's writablePaths + builtin `when` affordance gap; gated on §7b (PARKED; rec A: post-§7b `chore(flume):` move).
   2. Unspecced published worktree-hook surface (`teardownWorktree`/`WorktreeSetupResult`/`extraEnv`) — v0.2 rewrite still didn't fold it in (PARKED — NEEDS AMENDMENT; rec A).
   3. `v0.1.1` tag exists vs CHANGELOG/`25dc78b` claim it doesn't (PARKED; rec A).
 
 ## Writable-paths / trunk
 
-- Only the new `CHAINLOAD-FEEDBACK-TEST` entry was added + NO-COMMIT-TAXONOMY's gate flipped, both in `.flume/plan/pending.json` (a plan writable path). The new entry's sole target `tests/Dispatcher.test.ts` is within build's `tests/**` writablePaths (no off-allowlist piece → pending entry, not OQ).
-- Trunk: HEAD `3404fe4`. `22487fd` is a `build:` commit → landed only after green tscGate+vitestGate per CLAUDE.md non-negotiables. No code change this tick (plan-artifact-only).
+- This tick wrote only `.flume/plan/state.md` (a plan writable path). pending.json/open-questions.md/inbox.md byte-unchanged.
+- Trunk: HEAD `e2f9b37`. `4cd0e68` is `build:` (test-only) → green tscGate+vitestGate before landing per CLAUDE.md non-negotiables. No code change this tick (plan-artifact-only).
 
 Plan continues: no
