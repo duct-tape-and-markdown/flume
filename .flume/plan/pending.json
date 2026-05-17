@@ -1,43 +1,5 @@
 [
   {
-    "tag": "NO-COMMIT-TAXONOMY",
-    "summary": "Widen the shipped §5 gate-revert PriorAttempt in place to the prior-outcome union (gate-revert|voluntary-bail|platform-preempt); detect+classify the two new no-commit modes on TickOutcome",
-    "per": {
-      "path": "spec/RELEASE-v0.2.md",
-      "section": "6. No-commit outcome taxonomy"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "Widen `PriorAttempt` from the gate-revert-only shape into the §5 prior-outcome tagged union; make `prependPriorAttemptBlock` render each variant distinctly (gate-revert keeps current text; voluntary-bail names the refused constraint; platform-preempt marked not-a-defect). Edit in place — keep the `PriorAttempt`/`<prior-attempt>` names (§6 widen-in-place, no shim)."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Detect voluntary-bail (clean agent exit, no commit, no gate) vs platform-preempt (non-work process failure) at tick level per §6; classify every no-commit tick onto `TickOutcome`; persist the matching widened §5 variant via the existing buildPriorAttempt/writePriorAttempt path. Gate-revert write path already exists (22487fd) — extend, do not rebuild."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Three tests, one per mode, asserting the distinct `TickOutcome` classification + distinct §5 block text; voluntary-bail→retry prompt names the prior bail + its constraint; first-attempt slot still empty (no false-signal regression)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "one test/mode (gate-revert|voluntary-bail|platform-preempt): distinct TickOutcome classification + distinct §5 <prior-attempt> block; voluntary-bail→retry names prior bail+constraint; first attempt empty (§5/§6 acceptance)"
-      }
-    ],
-    "acceptance": "TickOutcome carries exactly one of gate-revert|voluntary-bail|platform-preempt per no-commit tick; each renders distinctly in the §5 <prior-attempt> block; voluntary-bail→retry prompt names the prior bail + constraint; first attempt empty; pnpm test green",
-    "notes": "§5 surface: src/Prompt.ts (PriorAttempt iface ~42; prependPriorAttemptBlock ~192) + src/Dispatcher.ts (TickOutcome ~221; buildPriorAttempt ~848; persistence ~785-864). Gate-revert shipped 22487fd/4cd0e68; §6+§12 mandate widen-in-place, no shim (pre-1.0 clean-slate). The prior build tick correctly bailed on the gate-revert-only shape; that spec contradiction is now resolved — widen, don't re-derive gate-revert."
-  },
-  {
     "tag": "AFTERMERGE-REVERT-ISOLATION",
     "summary": "afterMerge gate failure reverts only the offending entry's commit (not hardResetTo(preHead) whole-wave); N−1 clean siblings stay shipped; offending entry stays pending with the §5 block",
     "per": {
