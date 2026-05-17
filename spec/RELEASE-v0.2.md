@@ -2,7 +2,7 @@
 
 The human-directed ship target for the 0.2.0 minor — owned by the human, edited in interactive sessions under explicit direction, never by an autonomous phase. Plan derives pending entries against this; build executes them. When something here is ambiguous, the answer goes through `.flume/plan/open-questions.md` → human edit of this file → next plan tick.
 
-This is a release-readiness doc, not a design doc. Design intent lives in `docs/INTENT.md`. `spec/RELEASE-v0.1.md` stays frozen as the v0.1-line target; its §2 (public surface) and §9 (versioning policy) remain governing — this doc *adds to* that surface (`chainLoadGate`, the gate-feedback context), *breaks* it (`DispatcherOptions`), and *fixes behavior behind* it (worktree serialization, fanout revert isolation, plan-prose durability). The §2 break is why this is a minor per v0.1 §9, not a patch.
+This is a release-readiness doc, not a design doc. Design intent lives in `docs/INTENT.md`. `spec/RELEASE-v0.1.md` stays frozen as the v0.1-line target; its §2 (public surface) and §9 (versioning policy) remain governing — this doc *adds to* that surface (`chainLoadGate`, the gate-feedback context, and — recorded after the fact, §1a — the v0.1.2 worktree-lifecycle surface), *breaks* it (`DispatcherOptions`), and *fixes behavior behind* it (worktree serialization, fanout revert isolation, plan-prose durability). The §2 break is why this is a minor per v0.1 §9, not a patch.
 
 Status: **READY FOR PLAN.** All design questions resolved. Sections below are normative for plan derivation.
 
@@ -22,6 +22,15 @@ In scope:
 - Plan-tick prose durability (§8).
 
 Out of scope — still deferred, do not derive (§11 enumerates).
+
+## 1a. Recorded after the fact — v0.1.2 worktree-lifecycle surface
+
+Not part of the v0.2 themes above. Recorded here because it shipped to npm in `@dtmd/flume@0.1.2` (`25dc78b`, `ab2f10f`) ahead of any spec authority, and v0.1's spec is frozen. **Additive to v0.1 §2's public-surface list — no break:**
+- `Phase.teardownWorktree?(ctx)` — best-effort per-worktree cleanup hook.
+- `WorktreeSetupResult` — exported type.
+- `setupWorktree` may return `{ extraEnv }` (was `Promise<void>`).
+
+Already implemented, JSDoc'd, exported via `src/index.ts`, wired in the dispatcher. This is the spec **record**, not new work: plan derives **no** build entry from it. Process note: `feat(phase):` code landing outside the `build:`-per-entry path is how this bypassed plan; if out-of-band feature commits are expected during fork reconciliation, `.claude/rules/spec-plan-build.md` should say so explicitly.
 
 ## 2. Per-tick chain re-resolution
 
