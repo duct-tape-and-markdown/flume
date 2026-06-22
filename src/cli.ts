@@ -13,7 +13,7 @@
 
 import { resolve, join, dirname } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import { Dispatcher, diskChainLoader, superviseLoop } from "./Dispatcher.js";
@@ -35,6 +35,34 @@ function readPackageVersion(): string {
     throw new Error(`package.json at ${pkgPath} has no string "version"`);
   }
   return pkg.version;
+}
+
+/**
+ * Resolve the mutable-state root (`flumeDir`) and the chain+prompt dir
+ * (`configDir`) from `env`, canonicalizing each to an **absolute** path, and
+ * write the resolved values back into `env`.
+ *
+ * Writing back is the point (§12): a chain loaded later in this same process
+ * (via tsx) and any spawned child then read the single resolved value from
+ * `FLUME_DIR` / `FLUME_CONFIG_DIR` rather than re-deriving the default or
+ * falling back to a coincidentally-equal `configDir`. `FLUME_DIR` becomes a
+ * reliable, always-present source of truth for the state root.
+ *
+ * Both default to `<repoRoot>/.flume` when unset; a set-but-relative value is
+ * resolved against the cwd. Independent of one another: a dock sets both to its
+ * ephemeral dir to co-locate config and state.
+ */
+export function resolveStateDirs(
+  env: NodeJS.ProcessEnv,
+  repoRoot: string,
+): { flumeDir: string; configDir: string } {
+  const flumeDir = env.FLUME_DIR ? resolve(env.FLUME_DIR) : join(repoRoot, ".flume");
+  const configDir = env.FLUME_CONFIG_DIR
+    ? resolve(env.FLUME_CONFIG_DIR)
+    : join(repoRoot, ".flume");
+  env.FLUME_DIR = flumeDir;
+  env.FLUME_CONFIG_DIR = configDir;
+  return { flumeDir, configDir };
 }
 
 const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
@@ -135,13 +163,15 @@ async function main(): Promise<number> {
   const [, , firstArg, ...restArgs] = process.argv;
   const repoRoot = process.cwd();
 
-  // Mutable-state root (baton, pending, worktrees, prior-attempts). Defaults to
-  // `<repoRoot>/.flume`; `FLUME_DIR` relocates it for a self-contained,
-  // ephemeral harness. Resolved here (not constructed) so it survives the
-  // `loop` → `tick` process boundary — children inherit the env var.
-  const flumeDir = process.env.FLUME_DIR
-    ? resolve(process.env.FLUME_DIR)
-    : join(repoRoot, ".flume");
+  // Resolve both state roots up front and canonicalize them back into the env
+  // (§12). `flumeDir` is the mutable-state root (baton, pending, worktrees,
+  // prior-attempts); `configDir` is the chain+prompt dir. Both default to
+  // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them for a
+  // self-contained, ephemeral harness. Resolving here (not constructing) lets
+  // them survive the `loop` → `tick` process boundary — children inherit the
+  // (now absolute-canonical) env vars — and lets a chain loaded later in this
+  // process read one authoritative state root.
+  const { flumeDir, configDir } = resolveStateDirs(process.env, repoRoot);
 
   // Top-level --help / --version short-circuit before subcommand dispatch
   // (and before any chain load) so they work in any cwd.
@@ -198,11 +228,6 @@ async function main(): Promise<number> {
   // `flume tick` per iteration, §2); a chain.ts that exports `agent`
   // overrides the default agent per tick. `render` resolves the chain
   // directly (it inspects phases without invoking the agent).
-  // Chain + prompt dir. Independent of `flumeDir`; `FLUME_CONFIG_DIR` relocates
-  // it (a dock sets both to its ephemeral dir to co-locate config and state).
-  const configDir = process.env.FLUME_CONFIG_DIR
-    ? resolve(process.env.FLUME_CONFIG_DIR)
-    : resolve(repoRoot, ".flume");
   const resolveChain = diskChainLoader(configDir);
   const dispatcher = new Dispatcher({
     repoRoot,
@@ -292,9 +317,17 @@ async function main(): Promise<number> {
   return 2;
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+// Run only when invoked as the binary, not when imported (tests reach in for
+// `resolveStateDirs` at the resolution seam, §14).
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

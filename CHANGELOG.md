@@ -33,6 +33,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- Session logs leaked outside a relocated dock when `FLUME_DIR` was unset or
+  relative: the CLI now canonicalizes the resolved `flumeDir` / `configDir` back
+  into `process.env.FLUME_DIR` / `process.env.FLUME_CONFIG_DIR` as **absolute**
+  paths, so a chain loaded later in the same process (and any spawned child)
+  reads one authoritative state root. The dogfood chain's `?? CHAIN_DIR`
+  session-dir fallback is now defensive only — `FLUME_DIR` is always set to the
+  resolved root, keeping the whole footprint under one `rm`.
 - `flume render` resolved prompt files from `<repoRoot>/.flume` instead of the
   configured `configDir`; it now honors `configDir` (and `FLUME_CONFIG_DIR`).
 
