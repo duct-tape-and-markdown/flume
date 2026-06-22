@@ -185,7 +185,7 @@ function fanoutAgent(
 describe("Dispatcher singleton — commit detected", () => {
   it("returns committed=true and the agent's new SHA, gates green", async () => {
     const preHead = await head(fx.repo);
-    new Baton(fx.repo).wake("plan");
+    new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const phase = makePhase({
       name: "plan",
@@ -225,7 +225,7 @@ describe("Dispatcher singleton — commit detected", () => {
 
   it("reports committed=false (no commit) when the agent does nothing", async () => {
     const preHead = await head(fx.repo);
-    new Baton(fx.repo).wake("plan");
+    new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -258,7 +258,7 @@ describe("Dispatcher singleton — commit detected", () => {
 describe("Dispatcher singleton — afterCommit gate failure reverts the commit", () => {
   it("drops the agent's commit and reports the failing gate", async () => {
     const preHead = await head(fx.repo);
-    new Baton(fx.repo).wake("plan");
+    new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const failingGate: Gate = {
       name: "intentional-fail",
@@ -310,7 +310,7 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
 
 describe("Dispatcher singleton — handoff wakes the successor", () => {
   it("sleeps the running phase and wakes only the named successor", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     const phase = makePhase({
@@ -342,7 +342,7 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
   });
 
   it("respects chain.humanOnly — does not wake handoff targets on the list", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
     const phase = makePhase({
@@ -400,7 +400,7 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
       makeEntry("TEST-B", ["src/b.ts"]),
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const preHead = await head(fx.repo);
 
@@ -461,7 +461,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
       makeEntry("RACE-B", ["src/race-b.ts"]),
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const repoOpts = { cwd: fx.repo };
 
@@ -560,7 +560,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       makeEntry("CONFLICT-B", ["src/decoy-b.ts"]),
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
@@ -621,7 +621,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
       makeEntry("ISO-FAIL", ["src/iso-fail.ts"]),
     ];
     await writePending(fx.repo, entries);
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
     const preHead = await head(fx.repo);
@@ -742,7 +742,7 @@ describe("Dispatcher fanout — empty pickable set", () => {
       },
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
@@ -790,7 +790,7 @@ describe("Dispatcher fanout — foundations governor skips fork-blocked entries"
       },
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
@@ -832,7 +832,7 @@ describe("Dispatcher fanout — all entries fork-blocked", () => {
       { ...makeEntry("B", ["src/b.ts"]), dependsOnForks: ["open-fork"] },
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
@@ -869,7 +869,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
       { ...makeEntry("ONLY", ["src/only.ts"]), dependsOnForks: ["open-fork"] },
     ];
     await writePending(fx.repo, entries);
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
@@ -906,7 +906,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
 
 describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () => {
   it("afterCommit gate-revert → next singleton tick's prompt carries gate name + full details + marker; first attempt absent", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     const failing: Gate = {
@@ -975,7 +975,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
       makeEntry("WAVE-B", ["src/wb.ts"]),
     ];
     await writePending(fx.repo, entries);
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
     const failingMerge: Gate = {
@@ -1036,7 +1036,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
   }, 30_000);
 
   it("clears the prior-attempt slot once a later attempt ships clean", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     let calls = 0;
@@ -1116,7 +1116,7 @@ const PREEMPT_INTRO = "cut short by a PLATFORM failure";
 
 describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   it("gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     const failing: Gate = {
@@ -1176,7 +1176,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 
   it("voluntary-bail: TickOutcome.noCommit==='voluntary-bail'; retry prompt names the prior bail + its constraint; first attempt empty", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     // No gates. The agent exits cleanly (exit 0) WITHOUT committing and
@@ -1233,7 +1233,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 
   it("voluntary-bail under a stream-json agent: §5 block names the refused constraint legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     // The dogfood chain runs the agent under
@@ -1382,7 +1382,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 
   it("platform-preempt: TickOutcome.noCommit==='platform-preempt'; retry prompt marks it not-a-defect with the failure class; first attempt empty", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     // No gates. The agent process fails for non-work reasons — a non-zero
@@ -1440,7 +1440,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
 describe("Dispatcher — plan-tick prose durability (§8)", () => {
   it("gate-reverted plan tick: state.md/open-questions.md findings recoverable on disk w/o session logs; cleared on a later clean ship", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     // Stands in for the chain-local pendingParseGate: an afterCommit gate
@@ -1569,7 +1569,7 @@ describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
         "utf8",
       );
 
-      new Baton(fx.repo).wake("ondisk");
+      new Baton(join(fx.repo, ".flume")).wake("ondisk");
 
       // No chainLoader → default diskChainLoader(configDir).
       const dispatcher = new Dispatcher({
@@ -1604,7 +1604,7 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
     const preHead = await head(fx.repo);
 
-    new Baton(fx.repo).wake("build");
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
     // The dispatcher resolves via the test seam (staticLoader); the on-disk
     // chain.ts is what the agent rewrites and chainLoadGate validates.
@@ -1668,7 +1668,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
       `humanOnly: [] };\n`;
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
 
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
     const phase = makePhase({
@@ -1750,7 +1750,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
 
 describe("Dispatcher — ungated chain resolution failure → loud no-work outcome (§3)", () => {
   it("tick() with a rejecting chainLoader returns a failed no-work outcome, logs loudly, does not throw", async () => {
-    new Baton(fx.repo).wake("plan");
+    new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const errors: string[] = [];
     const rec: Logger = {
@@ -1785,7 +1785,7 @@ describe("Dispatcher — ungated chain resolution failure → loud no-work outco
 
 describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   it("spawns exactly one child per iteration and stops at hibernation", async () => {
-    const baton = new Baton(fx.repo);
+    const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     let calls = 0;
@@ -1811,7 +1811,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   });
 
   it("stops at --max when the chain never hibernates", async () => {
-    new Baton(fx.repo).wake("plan"); // never slept → never hibernates
+    new Baton(join(fx.repo, ".flume")).wake("plan"); // never slept → never hibernates
 
     let calls = 0;
     const runTick = (): Promise<{ exitCode: number | null }> => {
@@ -1832,7 +1832,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   });
 
   it("ungated resolution failure: child exits non-zero → supervisor logs and proceeds, never crashes (§3)", async () => {
-    new Baton(fx.repo).wake("plan"); // a failed tick does no baton work
+    new Baton(join(fx.repo, ".flume")).wake("plan"); // a failed tick does no baton work
 
     const warns: string[] = [];
     const rec: Logger = {

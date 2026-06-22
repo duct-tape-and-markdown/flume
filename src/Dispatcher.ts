@@ -40,13 +40,13 @@ import * as git from "./git.js";
 const execFileP = promisify(execFile);
 
 /**
- * Prior-attempt records live beside the baton (`.flume/awake/`) and session
- * logs (`.flume/sessions/`) — gitignored harness runtime state at the repo
- * root, NOT in the per-entry worktree (a fanout retry gets a fresh worktree;
- * the record must outlive it). One JSON file per key: the entry tag slug
- * (fanout) or phase name (singleton).
+ * Prior-attempt records live beside the baton (`<flumeDir>/awake/`) and session
+ * logs (`<flumeDir>/sessions/`) — gitignored harness runtime state under the
+ * flume state dir, NOT in the per-entry worktree (a fanout retry gets a fresh
+ * worktree; the record must outlive it). One JSON file per key: the entry tag
+ * slug (fanout) or phase name (singleton).
  */
-const PRIOR_ATTEMPTS_DIR = join(".flume", "prior-attempts");
+const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
 const MAX_PRIOR_DETAILS = 8 * 1024;
@@ -223,6 +223,17 @@ export interface DispatcherOptions {
   /** Directory the chain config (and its prompt files) live in. */
   configDir: string;
   /**
+   * Mutable-state root: where the baton (`awake/`), pending
+   * (`plan/pending.json`), worktrees (`worktrees/`), and prior-attempt records
+   * (`prior-attempts/`) live. Defaults to `<repoRoot>/.flume` — the historical
+   * fixed location. Relocate it to run a fully self-contained, ephemeral
+   * harness whose entire footprint can be removed in one `rm` (the
+   * attach-work-detach posture: state never bleeds into `<repoRoot>/.flume`).
+   * Independent of `configDir`; set both to the same dir to co-locate config
+   * and state.
+   */
+  flumeDir?: string;
+  /**
    * Default agent. A `chain.ts` that exports `agent` overrides this per tick
    * (the agent re-resolves with the chain); otherwise this is used.
    */
@@ -316,17 +327,19 @@ export class Dispatcher {
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
   private trunkBranch: string | null;
+  private readonly flumeDir: string;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
-    this.baton = new Baton(opts.repoRoot);
+    this.flumeDir = opts.flumeDir ?? join(opts.repoRoot, ".flume");
+    this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.trunkBranch = opts.trunkBranch ?? null;
-    this.pendingPath = join(opts.repoRoot, ".flume", "plan", "pending.json");
+    this.pendingPath = join(this.flumeDir, "plan", "pending.json");
     this.chainLoader = opts.chainLoader ?? diskChainLoader(opts.configDir);
   }
 
@@ -957,7 +970,7 @@ export class Dispatcher {
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(entry.tag);
     const branch = `flume/${slug}`;
-    const path = join(this.opts.repoRoot, ".flume", "worktrees", slug);
+    const path = join(this.flumeDir, "worktrees", slug);
     if (existsSync(path)) {
       // Stale from a prior crashed run; clean up.
       try {
@@ -989,7 +1002,7 @@ export class Dispatcher {
   }
 
   private priorAttemptPath(key: string): string {
-    return join(this.opts.repoRoot, PRIOR_ATTEMPTS_DIR, `${key}.json`);
+    return join(this.flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${key}.json`);
   }
 
   /**
@@ -1044,12 +1057,12 @@ export class Dispatcher {
 
   /**
    * Durable, gitignored snapshot dir for a gate-reverted commit's files.
-   * Sibling to the §5 JSON under `.flume/prior-attempts/` (repo root, NOT the
+   * Sibling to the §5 JSON under `<flumeDir>/prior-attempts/` (NOT the
    * per-entry worktree) so it outlives both `git reset --hard` and a fanout
    * worktree teardown — the same durability the §5 record relies on.
    */
   private revertedSnapshotDir(key: string): string {
-    return join(this.opts.repoRoot, PRIOR_ATTEMPTS_DIR, `${key}.reverted`);
+    return join(this.flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${key}.reverted`);
   }
 
   /**
@@ -1214,8 +1227,15 @@ export class Dispatcher {
 
 /** Options for {@link superviseLoop}. */
 export interface SuperviseLoopOptions {
-  /** Repo root; the supervisor reads baton state here between child ticks. */
+  /** Repo root; child ticks spawn with this as their cwd. */
   repoRoot: string;
+  /**
+   * Mutable-state root the supervisor reads baton state from between child
+   * ticks. Must match the `flumeDir` the children write to (the CLI carries it
+   * across the process boundary via the `FLUME_DIR` env var, which children
+   * inherit). Defaults to `<repoRoot>/.flume`.
+   */
+  flumeDir?: string;
   /** Max child ticks before stopping (the `--max N` cap). Default 50. */
   maxTicks?: number;
   log?: Logger;
@@ -1252,7 +1272,7 @@ export async function superviseLoop(
 ): Promise<SuperviseResult> {
   const log = opts.log ?? consoleLogger;
   const maxTicks = opts.maxTicks ?? 50;
-  const baton = new Baton(opts.repoRoot);
+  const baton = new Baton(opts.flumeDir ?? join(opts.repoRoot, ".flume"));
   const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
 
   let ticks = 0;
