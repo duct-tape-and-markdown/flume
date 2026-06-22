@@ -109,7 +109,7 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
       // without scheduling anything. The unknown-phase path does not touch
       // the baton, so the "beta" flag persists for tick #2.
       await writeFile(chainPath, chainSrc("alpha"), "utf8");
-      new Baton(repo.dir).wake("beta");
+      new Baton(join(repo.dir, ".flume")).wake("beta");
 
       const t1 = await runTick(repo.dir);
       expect(t1.code).toBe(0);
