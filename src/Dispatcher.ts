@@ -40,11 +40,17 @@ import * as git from "./git.js";
 const execFileP = promisify(execFile);
 
 /**
- * Prior-attempt records live beside the baton (`<flumeDir>/awake/`) and session
- * logs (`<flumeDir>/sessions/`) — gitignored harness runtime state under the
- * flume state dir, NOT in the per-entry worktree (a fanout retry gets a fresh
- * worktree; the record must outlive it). One JSON file per key: the entry tag
- * slug (fanout) or phase name (singleton).
+ * Prior-attempt records live beside the baton (`<flumeDir>/awake/`) —
+ * gitignored harness runtime state under the flume state dir, NOT in the
+ * per-entry worktree (a fanout retry gets a fresh worktree; the record must
+ * outlive it). One JSON file per key: the entry tag slug (fanout) or phase
+ * name (singleton).
+ *
+ * Session logs sit alongside under the same root (the dogfood chain places
+ * them at `<flumeDir>/sessions/`), but that placement is chain-supplied, not
+ * runtime: the runtime owns only `flumeDir` itself and the baton/prior-attempt
+ * dirs it derives from it. A chain that captures sessions roots them under
+ * `process.env.FLUME_DIR` so the whole footprint tears down in one `rm`.
  */
 const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
 
