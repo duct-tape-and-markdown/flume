@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isPickableNow,
   parsePending,
   renderSchemaForPrompt,
   type PendingEntry,
@@ -140,6 +141,83 @@ describe("parsePending — rejects malformed entries", () => {
   });
 });
 
+describe("dependsOnForks — foundations governor", () => {
+  const noForks = new Set<string>();
+
+  it("defaults to an empty array when omitted", () => {
+    const parsed = roundTrip({ ...baseEntry, gate: { kind: "open" } });
+    expect(parsed.dependsOnForks).toEqual([]);
+  });
+
+  it("round-trips declared fork slugs", () => {
+    const parsed = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      dependsOnForks: ["coldstart-2", "unread-count-model"],
+    });
+    expect(parsed.dependsOnForks).toEqual([
+      "coldstart-2",
+      "unread-count-model",
+    ]);
+  });
+
+  it("an open entry with an unresolved fork is NOT pickable", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      dependsOnForks: ["coldstart-2"],
+    });
+    expect(isPickableNow(entry, noForks, () => false)).toBe(false);
+  });
+
+  it("an open entry whose forks all resolve IS pickable", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      dependsOnForks: ["coldstart-2", "unread-count-model"],
+    });
+    expect(isPickableNow(entry, noForks, () => true)).toBe(true);
+  });
+
+  it("blocks if ANY declared fork is unresolved", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      dependsOnForks: ["resolved-one", "open-one"],
+    });
+    const resolved = (slug: string) => slug === "resolved-one";
+    expect(isPickableNow(entry, noForks, resolved)).toBe(false);
+  });
+
+  it("the default predicate (no resolver) preserves v0.2 pickability", () => {
+    const open = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      dependsOnForks: ["anything"],
+    });
+    // No third argument → every fork treated as resolved → gate decides.
+    expect(isPickableNow(open, noForks)).toBe(true);
+
+    const parked = roundTrip({
+      ...baseEntry,
+      gate: { kind: "parked", reason: "x" },
+    });
+    expect(isPickableNow(parked, noForks)).toBe(false);
+  });
+
+  it("an unresolved fork blocks even a blockedBy-satisfied entry", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "blockedBy", tag: "UPSTREAM" },
+      dependsOnForks: ["open-one"],
+    });
+    // Upstream shipped (gate would pass) but the fork is open → not pickable.
+    expect(isPickableNow(entry, new Set(["UPSTREAM"]), () => false)).toBe(
+      false,
+    );
+  });
+});
+
 describe("renderSchemaForPrompt", () => {
   it("matches the documented prompt shape", () => {
     expect(renderSchemaForPrompt()).toMatchInlineSnapshot(`
@@ -157,6 +235,7 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresDockerHost" },                     // env gate (v1)
+        "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
         "files": {
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],

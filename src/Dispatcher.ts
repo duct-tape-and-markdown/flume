@@ -26,12 +26,7 @@ import type { PendingEntry } from "./PendingSchema.js";
 
 /** Local-mutable shape for accumulating gate results before they widen to TickResult.gateResults. */
 type GateResultEntry = { gate: string; ok: boolean; message: string };
-import type {
-  Chain,
-  Phase,
-  TickContext,
-  TickResult,
-} from "./Phase.js";
+import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import type {
   PriorAttempt,
@@ -123,12 +118,18 @@ export const consoleLogger: Logger = {
 
 /**
  * The shape `.flume/chain.ts` resolves to: a default-exported `Chain` plus an
- * optional `agent` override. The per-tick resolver returns this; a rewritten
- * chain.ts changes the chain (and any `agent` export) for the next tick.
+ * optional `agent` override and an optional `forkResolver` (the foundations
+ * governor, §v0.3). The per-tick resolver returns this; a rewritten chain.ts
+ * changes the chain (and any `agent`/`forkResolver` export) for the next tick.
+ *
+ * Exporting `forkResolver` from chain.ts is how a stock-CLI consumer supplies
+ * the governor's resolution predicate — it overrides `DispatcherOptions.forkResolver`
+ * per tick exactly as `agent` overrides the default agent.
  */
 export interface ChainModule {
   default: Chain;
   agent?: Agent;
+  forkResolver?: (repoRoot: string) => (slug: string) => boolean;
 }
 
 /**
@@ -174,7 +175,9 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
   // minimal chain (default export only) hits the interop path.
   const d = ns.default as Record<string, unknown> | undefined;
   const interop =
-    !!d && (d as { __esModule?: boolean }).__esModule === true && "default" in d;
+    !!d &&
+    (d as { __esModule?: boolean }).__esModule === true &&
+    "default" in d;
   const chain = (interop ? d!.default : d) as Chain | undefined;
   const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
     | Agent
@@ -200,9 +203,7 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
  * Injecting `DispatcherOptions.chainLoader` replaces this wholesale — the
  * in-process unit-test seam (tests call `tick()` directly, no subprocess).
  */
-export function diskChainLoader(
-  configDir: string,
-): () => Promise<ChainModule> {
+export function diskChainLoader(configDir: string): () => Promise<ChainModule> {
   return () => loadChainModule(resolve(configDir, "chain.ts"));
 }
 
@@ -232,6 +233,17 @@ export interface DispatcherOptions {
    * process). Override for in-process test injection only (no subprocess).
    */
   chainLoader?: () => Promise<ChainModule>;
+  /**
+   * Foundations governor (§v0.3). Given the repo root, returns a predicate
+   * answering "is this open-question fork resolved?". Consulted once per tick;
+   * an entry whose `dependsOnForks` contains any unresolved slug is not
+   * pickable, skipped in favour of a foundation-settled sibling (or the tick
+   * idles if none). Default: every fork resolved — a chain that supplies no
+   * resolver is behaviourally identical to v0.2. The runtime stays
+   * format-agnostic: how a project records and resolves forks lives in the
+   * resolver, not here.
+   */
+  forkResolver?: (repoRoot: string) => (slug: string) => boolean;
   log?: Logger;
   /** Max parallel ticks per fanout batch. Default 4. */
   maxParallel?: number;
@@ -354,6 +366,9 @@ export class Dispatcher {
     }
     const chain = chainModule.default;
     const agent = chainModule.agent ?? this.opts.agent;
+    // Foundations governor: a chain.ts `forkResolver` export overrides the
+    // constructor default per tick, mirroring the `agent` override.
+    const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
 
     const phase = chain.phases.find((p) => awake.includes(p.name));
 
@@ -376,7 +391,7 @@ export class Dispatcher {
     const { result, noCommit } =
       phase.concurrency === "singleton"
         ? await this.runSingleton(phase, agent)
-        : await this.runFanout(phase, agent);
+        : await this.runFanout(phase, agent, forkResolver);
 
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
@@ -484,12 +499,18 @@ export class Dispatcher {
   private async runFanout(
     phase: Phase,
     agent: Agent,
+    forkResolver?: (repoRoot: string) => (slug: string) => boolean,
   ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
 
-    const pickable = pending.filter((e) => isPickable(e, pending));
+    // Foundations governor: resolve the per-tick fork predicate once, then let
+    // it gate selection alongside `blockedBy`. Default: every fork resolved.
+    const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
+    const pickable = pending.filter((e) =>
+      isPickable(e, pending, isForkResolved),
+    );
 
     if (pickable.length === 0) {
       // No agent ran — not a no-commit *agent* tick, so no §6 classification.
@@ -720,7 +741,9 @@ export class Dispatcher {
       `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
     );
 
-    const allGateResults = perEntry.flatMap((r) => r.gateResults).concat(mergeGateResults);
+    const allGateResults = perEntry
+      .flatMap((r) => r.gateResults)
+      .concat(mergeGateResults);
 
     const committedWave = shipped.length > 0;
 
@@ -1412,11 +1435,18 @@ function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
  * Pickability in the fanout context. The dispatcher's model: a dep is
  * satisfied iff it is no longer in pending (we remove entries on ship).
  * `requiresDockerHost` is opt-in and deferred to v1.
+ *
+ * The foundations governor (§v0.3) runs first: an entry whose `dependsOnForks`
+ * contains any unresolved slug is not pickable, regardless of gate kind.
+ * `isForkResolved` defaults to always-resolved so the check is a no-op when no
+ * resolver is wired or no entry declares a fork dependency.
  */
 function isPickable(
   entry: PendingEntry,
   pending: readonly PendingEntry[],
+  isForkResolved: (slug: string) => boolean = () => true,
 ): boolean {
+  if (!entry.dependsOnForks.every(isForkResolved)) return false;
   switch (entry.gate.kind) {
     case "open":
       return true;
