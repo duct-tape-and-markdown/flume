@@ -397,6 +397,37 @@ The dogfood chain (`.flume/chain.ts`) is the worked example: its session dir is
 `resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions")`, exactly the shape
 above. `CHAIN_DIR` there is `dirname(fileURLToPath(import.meta.url))`.
 
+#### Gates and prompts get `flumeDir` injected — don't reach into `process.env`
+
+For per-run *artifact placement* (the sessions case above), `process.env.FLUME_DIR`
+is the seam, because that placement is decided at chain-load before any tick
+context exists. But **inside a gate or a prompt**, the runtime hands you the
+resolved root directly, so you never reach into the global env or hardcode
+`.flume/`:
+
+- **Gates** receive `ctx.flumeDir` on `GateContext` — the absolute resolved
+  state root. A gate that reads pending validates
+  `join(ctx.flumeDir, "plan", "pending.json")`. The dogfood `pendingParseGate`
+  is the worked example.
+- **Prompts** can use the reserved `{{FLUME_DIR}}` placeholder with **no
+  `promptArgs` boilerplate** — the dispatcher auto-injects it into every
+  prompt's substitution map. Write `{{FLUME_DIR}}/plan/pending.json` (or
+  `$FLUME_DIR` inside an inline-exec, which inherits the env). `{{FLUME_DIR}}`
+  is reserved and dispatcher-authoritative: a `promptArgs` value of the same
+  name cannot shadow it.
+- **`promptArgs(ctx)`** also receives `ctx.flumeDir` if you need to derive a
+  path programmatically.
+
+`writablePaths` is the one place that stays `process.env.FLUME_DIR`-derived: it
+is static config evaluated at chain-load, before any per-tick context exists.
+
+**The boundary:** placement (chain-load, static) → `process.env.FLUME_DIR`;
+reading/referencing at tick time (gates, prompts) → `ctx.flumeDir` /
+`{{FLUME_DIR}}`. Hardcoding `.flume/` in a gate, prompt, or `writablePaths`
+breaks under a relocated `flumeDir` — the dispatcher reads `<flumeDir>/plan/`
+while your hardcoded site points at `.flume/plan/`, and the tick's writes land
+where the harness isn't looking.
+
 ### Wiring into the dispatcher
 
 The chain doesn't reference the agent — the dispatcher does. The shipped

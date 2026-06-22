@@ -448,10 +448,11 @@ export class Dispatcher {
     const key = this.priorAttemptKey(phase);
     const prior = await this.readPriorAttempt(key);
 
-    const ctx: TickContext = { cwd, pending };
+    const ctx: TickContext = { cwd, flumeDir: this.flumeDir, pending };
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
       phase,
+      flumeDir: this.flumeDir,
       promptFile: join(this.opts.configDir, phase.promptPath),
       cwd,
       args,
@@ -659,6 +660,7 @@ export class Dispatcher {
       for (const gate of afterMergeGates) {
         const gr = await gate.run({
           cwd: repoRoot,
+          flumeDir: this.flumeDir,
           phaseName: phase.name,
           commitSha: mergedSha,
           log: (l) => this.log.info(l),
@@ -833,10 +835,15 @@ export class Dispatcher {
     const key = this.priorAttemptKey(phase, entry);
     const prior = await this.readPriorAttempt(key);
 
-    const ctx: TickContext = { cwd: wt.path, assignedEntry: entry };
+    const ctx: TickContext = {
+      cwd: wt.path,
+      flumeDir: this.flumeDir,
+      assignedEntry: entry,
+    };
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
       phase,
+      flumeDir: this.flumeDir,
       promptFile: join(this.opts.configDir, phase.promptPath),
       cwd: wt.path,
       args,
@@ -956,6 +963,7 @@ export class Dispatcher {
     for (const gate of gates) {
       const r: GateResult = await gate.run({
         cwd,
+        flumeDir: this.flumeDir,
         phaseName: phase.name,
         commitSha,
         log: (l) => this.log.info(l),

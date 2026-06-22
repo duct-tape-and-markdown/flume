@@ -2063,3 +2063,90 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(warns.filter((w) => /exited with code 1/.test(w)).length).toBe(3);
   });
 });
+
+describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
+  it("threads the resolved flumeDir into GateContext and TickContext (default location)", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let gateFlumeDir: string | undefined;
+    let ctxFlumeDir: string | undefined;
+
+    const capturingGate: Gate = {
+      name: "capture-flumedir",
+      when: "afterCommit",
+      run(ctx) {
+        gateFlumeDir = ctx.flumeDir;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [capturingGate],
+      promptArgs: (ctx) => {
+        ctxFlumeDir = ctx.flumeDir;
+        return {};
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    // Default flumeDir is <repoRoot>/.flume, and the same resolved value reaches
+    // both the prompt-arg builder (pre-agent) and the gate (post-commit).
+    expect(ctxFlumeDir).toBe(join(fx.repo, ".flume"));
+    expect(gateFlumeDir).toBe(join(fx.repo, ".flume"));
+  });
+
+  it("honors a relocated flumeDir option in GateContext", async () => {
+    const dock = join(fx.repo, "dock-state");
+    new Baton(dock).wake("plan");
+
+    let gateFlumeDir: string | undefined;
+    const capturingGate: Gate = {
+      name: "capture-flumedir",
+      when: "afterCommit",
+      run(ctx) {
+        gateFlumeDir = ctx.flumeDir;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [capturingGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      flumeDir: dock,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(gateFlumeDir).toBe(dock);
+  });
+});
