@@ -116,13 +116,22 @@ of the existing `runFanout` filter for free:
 
 ## 6. Versioning & distribution
 
-- **0.3.0**, a minor. Every change is additive: a new defaulted schema field, a
-  new optional `DispatcherOptions` member, and new trailing optional parameters
-  on `isPickableNow` and the internal `isPickable`. No existing signature breaks;
-  flume-on-flume's `.flume/chain.ts` (which imports `../src/`) typechecks
-  unchanged. Governed by v0.1 §9: new backward-compatible functionality → minor.
-- **`CHANGELOG.md`** records the field, the seam, and the semantics under
-  `### Added`, citing this release.
+- **0.3.0**, a minor. The foundations governor (§§2–5) is wholly additive: a new
+  defaulted schema field, a new optional `DispatcherOptions` member, and new
+  trailing optional parameters on `isPickableNow` and the internal `isPickable`.
+  No existing signature breaks; flume-on-flume's `.flume/chain.ts` (which imports
+  `../src/`) typechecks unchanged. Governed by v0.1 §9: new backward-compatible
+  functionality → minor.
+- **0.3.0 also carries the relocatable-state deliverable (§§10–15)**, which adds
+  the release's one **breaking** change — the `Baton(flumeDir)` constructor
+  signature (§11). Pre-1.0 a minor may break the public surface (v0.1 §2, §9), so
+  0.3.0 stays a minor and the break lands under a `### Breaking` subheading.
+  Folding into 0.3.0 (rather than a new 0.4 line) is correct because **0.3.0 is
+  unpublished** — `0.2.0` is the current npm release, so the still-in-repo 0.3.0
+  is the right home for both deliverables.
+- **`CHANGELOG.md`** records the governor field/seam/semantics under `### Added`,
+  and the relocation surface + sessions closure under `### Breaking` / `### Added`
+  / `### Fixed`, all citing 0.3.0.
 
 ## 7. Tests
 
@@ -194,3 +203,137 @@ of the existing `runFanout` filter for free:
   (defaulted field, optional option, trailing optional params). v0.1 §9 → minor;
   the pre-1.0 clean-slate posture forbids compatibility shims, and none are
   needed.
+
+---
+
+# Second deliverable: relocatable state dir
+
+## 10. Purpose & scope
+
+A **relocatable state dir**. Flume's mutable runtime state — the baton
+(`awake/`), pending (`plan/pending.json`), worktrees (`worktrees/`), and
+prior-attempt records (`prior-attempts/`) — has always lived at the fixed
+`<repoRoot>/.flume`. 0.3.0 also moves all of it under one configurable root,
+`flumeDir`, so a fully self-contained, ephemeral harness can **attach** to a
+repo, **run**, and be **torn down in a single `rm`** without its state bleeding
+into `<repoRoot>/.flume` (the attach-work-detach posture).
+
+The runtime surface — `DispatcherOptions.flumeDir?`, the `FLUME_DIR` /
+`FLUME_CONFIG_DIR` env vars, the `Baton(flumeDir)` constructor change, and the
+`flume render` `configDir` fix — **already landed** on `main` (unreleased). This
+deliverable records that surface for traceability (§11) and closes the two gaps
+it left open (§12, §13): the teardown promise leaked because session logs did
+not track `flumeDir`, and the surface was undocumented. The dogfood chain
+(`.flume/chain.ts`) and docs adopt the completed contract.
+
+## 11. The relocation surface (landed; recorded here)
+
+- **`DispatcherOptions.flumeDir?: string`** (`src/Dispatcher.ts`) — mutable-state
+  root; default `<repoRoot>/.flume`. The dispatcher derives the baton, pending
+  path, worktree root, and prior-attempt dir from it. Independent of
+  `configDir`; set both equal to co-locate config and state.
+- **`Baton(flumeDir)`** (`src/Baton.ts`) — constructs from the state dir, not the
+  repo root; `awake/` is `<flumeDir>/awake`. **Breaking** vs v0.2 (the
+  constructor previously took `repoRoot` and appended `.flume/awake`); for the
+  prior location callers pass `join(repoRoot, ".flume")`.
+- **CLI env vars** (`src/cli.ts`) — `FLUME_DIR` relocates the state dir,
+  `FLUME_CONFIG_DIR` relocates the chain+prompt dir. Both default to
+  `<repoRoot>/.flume`. They cross the `loop`→`tick` process boundary by env
+  inheritance: `defaultTickRunner` spawns the child with no `env:` override, so
+  the child inherits the supervisor's `process.env`.
+- **`flume render` fix** — `render` resolved prompt files from
+  `<repoRoot>/.flume`; it now honors `configDir` (and `FLUME_CONFIG_DIR`).
+
+## 12. Sessions track `flumeDir`
+
+The teardown promise — "one `rm` removes the whole footprint" — is only true if
+**every** mutable artifact lives under `flumeDir`. Session-capture logs did not:
+the chain configures their location, and the dogfood chain pinned them to
+`resolve(CHAIN_DIR, "sessions")` — i.e. `configDir`, which diverges from
+`flumeDir` whenever the two are relocated independently. A relocated dock's `rm`
+would leave session logs behind under `configDir`.
+
+The fix has two halves — one runtime (build lane), one chain (harness lane):
+
+- **Runtime canonicalizes the resolved root into the env** (`src/cli.ts`, build
+  lane). After resolving `flumeDir` and `configDir`, the CLI writes the resolved
+  **absolute** paths back to `process.env.FLUME_DIR` and
+  `process.env.FLUME_CONFIG_DIR`. A chain (loaded later in the same process via
+  tsx) and any spawned child then read the **single resolved value** rather than
+  re-deriving the default or falling back to a coincidentally-equal `configDir`.
+  This makes `FLUME_DIR` a reliable, always-present source of truth for the
+  state root, not a maybe-absent caller convenience.
+- **The chain points sessions at the canonical root** (`.flume/chain.ts`,
+  harness lane — outside build's `writablePaths`, landed as `chore(flume):`):
+  the session dir becomes `resolve(process.env.FLUME_DIR ?? CHAIN_DIR,
+  "sessions")`. With the canonicalization above the `??` fallback is defensive
+  only; in normal operation `FLUME_DIR` is always set to the resolved root. This
+  is the **reference implementation** of the chain-author requirement documented
+  in §13 — session placement is a chain concern, the runtime only supplies the
+  root.
+
+The `src/Dispatcher.ts` doc comment that locates prior-attempt records "beside …
+session logs (`<flumeDir>/sessions/`)" becomes accurate under this change and is
+verified (and clarified that placement is chain-supplied) rather than rewritten.
+
+## 13. Documentation & posture
+
+- **Dock lives outside the repo.** A relocated dock is expected to live outside
+  the working tree (e.g. a tmpdir), so `.gitignore` needs no change: the default
+  `<repoRoot>/.flume` stays ignored exactly as today, and an out-of-tree dock is
+  invisible to git by construction. `README.md` and `docs/CHAIN-AUTHORING.md`
+  document this expectation explicitly; no in-repo dock glob is added (§14).
+- **README** documents `FLUME_DIR` / `FLUME_CONFIG_DIR`: what each relocates,
+  their defaults, the attach-work-detach posture, and the one-`rm` teardown.
+- **`docs/CHAIN-AUTHORING.md`** documents the chain-author requirement: a chain
+  that captures sessions (or any other per-run artifact) must place it under
+  `process.env.FLUME_DIR` for the dock to be fully self-contained, with the
+  dogfood chain (§12) as the worked example.
+
+## 14. Relocation tests & non-goals
+
+- **Baton** (`tests/Baton.test.ts`) — already asserts a relocated `flumeDir`
+  places `awake/` under the given dir and leaves `<repoRoot>/.flume` untouched
+  (landed with §11). No change required; recorded here as the relocation
+  invariant.
+- **CLI env canonicalization** (build lane) — after resolution,
+  `process.env.FLUME_DIR` and `process.env.FLUME_CONFIG_DIR` hold the **absolute
+  resolved** root for both the default (env unset) and relocated (env set,
+  possibly relative) cases, so a chain reading the var sees one canonical value.
+  Asserted at the resolution seam in `src/cli.ts` (extract the resolver if
+  needed for testability).
+- **Process-boundary inheritance** (`tests/loop-process-boundary.test.ts` or a
+  sibling) — a child `flume tick` spawned by the supervisor observes the
+  supervisor's `FLUME_DIR`/`FLUME_CONFIG_DIR`, confirming the §11 inheritance
+  claim end-to-end.
+- **Non-goals.** The runtime does **not** own session-capture location (it stays
+  a chain concern; the runtime only supplies the canonical root). No in-repo
+  dock gitignore glob (e.g. `.flume-*/`) — docks live outside the tree. No
+  migration of an existing `<repoRoot>/.flume`. No relocation of `.claude/` or
+  `spec/` (human/harness territory, repo-tracked, not per-run state).
+
+## 15. Relocation — resolved decisions
+
+- **Sessions track `flumeDir` via env canonicalization.** The dock must be
+  removable in one `rm`; sessions under `configDir` broke that. The runtime
+  canonicalizes the resolved root into `process.env.FLUME_DIR` and the chain
+  reads it — keeping placement a chain concern while making the root
+  authoritative. Rejected: **narrowing the claim** (leaving sessions under
+  `configDir` and documenting them out of scope) — it concedes the feature's
+  headline promise. Rejected: **runtime-owned session capture** — needless
+  blast radius on the `Agent` contract.
+- **Dock lives outside the repo.** The attach-work-detach posture wants the dock
+  off the tracked tree, which makes `.gitignore` a non-issue and keeps the
+  default `.flume` ignore rules unchanged. Rejected: an in-repo `.flume-*/`
+  convention glob — it legitimizes in-tree docks and adds tracked surface for a
+  posture that wants none.
+- **CLI canonicalizes rather than the chain re-deriving.** A chain falling back
+  to `CHAIN_DIR` is correct only when `configDir == flumeDir`; the whole point
+  of relocation is that they can differ. Writing the resolved root to the env
+  once, at the CLI resolution seam, gives chains and child processes a single
+  source of truth. Rejected: leaving the chain to guess the default.
+- **Folded into 0.3.0, not a new line.** 0.3.0 is unpublished (0.2.0 is the
+  current npm release), so the relocatable-state surface ships with the
+  foundations governor under one minor. The `Baton` break (§11) is the only
+  non-additive change and is permitted pre-1.0 (v0.1 §9). Rejected: a separate
+  0.4.0 line for work that has not yet shipped to npm.
