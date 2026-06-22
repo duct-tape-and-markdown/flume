@@ -900,6 +900,70 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
       expect.objectContaining({ tag: "ONLY" }),
     ]);
   }, 20_000);
+
+  it("loadChainModule surfaces a chain.ts forkResolver export → governs selection, overrides the constructor default", async () => {
+    // The closure-loader test above proves a ChainModule.forkResolver gates
+    // selection, but bypasses loadChainModule — the §3 stock-CLI bridge.
+    // This exercises the real extraction: a chain.ts that *exports*
+    // forkResolver must have it picked up on disk, exactly as `agent` is.
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-forkresolver-"));
+    try {
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default { phases: [{ name: "build", description: "", ` +
+          `promptPath: "prompt.md", concurrency: "fanout", ` +
+          `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+          `humanOnly: [] };\n` +
+          // Nothing resolved — the only entry rests on an open fork.
+          `export const forkResolver = () => () => false;\n`,
+        "utf8",
+      );
+
+      const entries = [
+        {
+          ...makeEntry("ONLY", ["src/only.ts"]),
+          dependsOnForks: ["open-fork"],
+        },
+      ];
+      await writePending(fx.repo, entries);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      // The agent must never run: a fork-blocked entry is filtered before
+      // selection, so invocation here would mean the chain export was dropped.
+      let invoked = false;
+      const agent: Agent = {
+        name: "never",
+        async invoke() {
+          invoked = true;
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const preHead = await head(fx.repo);
+      const dispatcher = new Dispatcher({
+        // No chainLoader → real diskChainLoader(cfg) runs loadChainModule.
+        repoRoot: fx.repo,
+        configDir: cfg,
+        // Constructor default resolves everything; the chain export (which
+        // resolves nothing) must override it, leaving the entry fork-blocked.
+        forkResolver: () => () => true,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(invoked).toBe(false);
+      expect(outcome.result?.committed).toBe(false);
+      expect(await head(fx.repo)).toBe(preHead);
+      expect(await readPendingFromDisk(fx.repo)).toEqual([
+        expect.objectContaining({ tag: "ONLY" }),
+      ]);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
 
 // ---------- gate-failure feedback to the retrying tick (§5) ----------
