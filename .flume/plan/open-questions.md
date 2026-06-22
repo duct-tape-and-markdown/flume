@@ -11,7 +11,9 @@ Status markers:
 
 ## 2026-05-17 — orphaned baton (awake flag → phase absent from chain) hibernates indistinguishably from a clean stop; the inbox's §5/§6 home is a category error
 
-**Status: PARKED** (net-new terminal classification + supervisor stop + exit status; no active spec line and no `per` cite — needs a human spec call: open a v0.3 line, or explicitly reopen v0.2 scoping)
+**Status: PARKED** (net-new terminal classification + supervisor stop + exit status; still no `per` cite — needs a human spec call: add an Axis-C/loop-safety section to the now-live v0.3 line, or explicitly reopen v0.2 scoping)
+
+**Update 2026-06-22 (`RELEASE-v0.3.md` now exists):** disposition A's blocker is half-cleared — a `spec/RELEASE-v0.3.md` line now exists, but it carries the **foundations governor** (§§1-9) and **relocatable state** (§§10-15), **not** an Axis-C/loop-safety/orphaned-baton section. So the finding is still unauthorized by spec (no section to carry a `per` cite into) and stays PARKED. The recommended landing is now *cheaper than originally framed*: append a new section to the existing, live, editable RELEASE-v0.3.md (a human edit) rather than create the file from scratch. The Axis-C shape below is unchanged; nothing to re-derive.
 
 Drained from inbox this tick (source: `2026-05-17 chaos-flume dogfood`, human). The finding is **real and verified at source, and slightly worse than reported**:
 
