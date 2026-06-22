@@ -18,6 +18,12 @@ This split is load-bearing. Anything a prompt can drift on, the harness owns:
 - **Baton.** Filesystem flags at `.flume/awake/<phase>` signal what wakes next. Presence wakes; absence hibernates.
 - **Provenance.** Inter-layer references (workshop → spec → plan → code) are typed citations the harness can verify.
 
+### The commit is the transaction
+
+A tick's commit is the atomic unit of work, and `git reset --hard` is the only rollback primitive. This is why **pipeline state — `pending.json`, plan prose — is committed on purpose, not as bookkeeping**: committing it is what makes a gate-revert atomic (a malformed `pending.json` is reverted by the same machinery that reverts bad code) and what makes a half-finished tick recoverable (the prior commit is intact). The plan phase's whole reliability rests on this.
+
+A consequence for anything built on flume: a layer that wants *ephemeral* pipeline state (run, then leave no trace) cannot get there by **un**committing — that deletes the transaction the plan phase depends on. It gets there by **disposing of the commits**: confine them to a throwaway branch/ref and extract only the real deliverable at teardown. Disposable ≠ uncommitted. Where the committed state *lives* is relocatable (`flumeDir`); *that* it is committed is not.
+
 ## What stays prose
 
 Specs, workshop notes, ADRs, READMEs, plan-State summaries, open-questions lists. These are documentation surfaces for humans and prose-aware agents. Markdown is correct here.
