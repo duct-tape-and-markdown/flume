@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "tag": "FLUMEDIR-CONTEXT-EXPOSURE",
+    "summary": "Expose resolved flumeDir on GateContext + TickContext and auto-inject reserved {{FLUME_DIR}} prompt arg per §16",
+    "per": {
+      "path": "spec/RELEASE-v0.3.md",
+      "section": "16. `flumeDir` exposure to gates & prompts (ergonomic primitive)"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "New file. {{FLUME_DIR}} resolves in a rendered prompt with no chain-declared arg, per §16a"
+        }
+      ],
+      "edit": [
+        { "path": "src/Gate.ts", "description": "Add GateContext.flumeDir per §16 (absolute resolved root)" },
+        { "path": "src/Phase.ts", "description": "Add TickContext.flumeDir per §16 (surfaced to promptArgs(ctx))" },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Thread this.flumeDir into both gate.run ctxs (~l660 afterMerge, ~l957 afterCommit), both TickContext (~l451 singleton, ~l836 fanout), and auto-inject FLUME_DIR into both renderPrompt arg maps (~l452, ~l837) per §16"
+        },
+        { "path": "src/Prompt.ts", "description": "Note the reserved FLUME_DIR substitution in the renderer doc-comment per §16" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Gate.test.ts", "asserts": "GateContext.flumeDir carries the resolved root in default (<repoRoot>/.flume) and relocated cases, per §16a" },
+      { "path": "tests/Dispatcher.test.ts", "asserts": "TickContext.flumeDir is populated at tick time, per §16a" },
+      { "path": "tests/Prompt.test.ts", "asserts": "{{FLUME_DIR}} resolves with no chain-declared arg, per §16a" }
+    ],
+    "acceptance": "GateContext.flumeDir & TickContext.flumeDir carry the resolved root; {{FLUME_DIR}} renders with zero chain boilerplate; tsc + vitest green",
+    "notes": "Additive 0.3.0, no signature breaks (§16a). writablePaths stays process.env.FLUME_DIR-derived (§16b) — do NOT thread context into it. Dogfood pendingParseGate adoption of ctx.flumeDir is off-allowlist (.flume/chain.ts) → OQ#5, not this entry."
+  }
+]
