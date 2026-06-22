@@ -11,6 +11,31 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Breaking
+
+- `Baton` now constructs from the flume **state dir**, not the repo root:
+  `new Baton(flumeDir)` (was `new Baton(repoRoot)`, which appended
+  `.flume/awake` internally). For the prior location pass
+  `join(repoRoot, ".flume")`. All in-tree callers (`Dispatcher`, `cli`) are
+  updated; the `.flume` default now lives one layer up (Dispatcher/CLI).
+
+### Added
+
+- Relocatable state dir (`flumeDir`): `DispatcherOptions.flumeDir?` (default
+  `<repoRoot>/.flume`) moves the baton (`awake/`), pending
+  (`plan/pending.json`), worktrees (`worktrees/`), and prior-attempt records
+  (`prior-attempts/`) under one configurable root — so a fully self-contained,
+  ephemeral harness can attach, run, and be torn down in a single `rm` without
+  state bleeding into `<repoRoot>/.flume`. Independent of `configDir`; set both
+  to the same dir to co-locate config and state. The CLI reads `FLUME_DIR`
+  (state) and `FLUME_CONFIG_DIR` (chain + prompts) and carries them across the
+  `loop`→`tick` process boundary via env inheritance.
+
+### Fixed
+
+- `flume render` resolved prompt files from `<repoRoot>/.flume` instead of the
+  configured `configDir`; it now honors `configDir` (and `FLUME_CONFIG_DIR`).
+
 ## [0.2.0] - 2026-05-17
 
 Dispatcher correctness for long-running and autonomous loops: the harness
