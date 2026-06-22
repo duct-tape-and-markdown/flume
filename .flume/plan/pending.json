@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "SESSION-PLACEMENT-DOCCOMMENT",
+    "summary": "Verify+clarify the src/Dispatcher.ts doc comment that session placement is chain-supplied, not runtime — §12's doc-comment clause CLI-ENV-CANONICALIZATION skipped",
+    "per": {
+      "path": "spec/RELEASE-v0.3.md",
+      "section": "12. Sessions track `flumeDir`"
+    },
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Verify the prior-attempt doc comment's `<flumeDir>/sessions/` ref and clarify session placement is chain-supplied (runtime supplies the root only) per §12 last paragraph. Verify-not-rewrite — no behavior change."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "Doc comment notes session placement is chain-supplied (runtime supplies the root); tsc/vitest unchanged.",
+    "notes": "Audit (ef112ce): CLI-ENV-CANONICALIZATION built §12's runtime half but scoped only cli.ts+CHANGELOG+tests; the §12 doc-comment clause was missed. Comment at src/Dispatcher.ts:43-44 lists `<flumeDir>/sessions/` flat alongside runtime-placed awake/+prior-attempts/, conflating chain-placed sessions with runtime placement — the exact accuracy §12's clarification targets."
+  }
+]
