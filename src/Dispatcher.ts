@@ -182,13 +182,20 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
   const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
     | Agent
     | undefined;
+  const forkResolver = (ns.forkResolver ??
+    (interop ? d!.forkResolver : undefined)) as
+    | ((repoRoot: string) => (slug: string) => boolean)
+    | undefined;
 
   if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
     throw new Error(
       `${path} must default-export a Chain (an object with a phases[] array)`,
     );
   }
-  return agent ? { default: chain, agent } : { default: chain };
+  const module: ChainModule = { default: chain };
+  if (agent) module.agent = agent;
+  if (forkResolver) module.forkResolver = forkResolver;
+  return module;
 }
 
 /**
