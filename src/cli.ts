@@ -135,6 +135,14 @@ async function main(): Promise<number> {
   const [, , firstArg, ...restArgs] = process.argv;
   const repoRoot = process.cwd();
 
+  // Mutable-state root (baton, pending, worktrees, prior-attempts). Defaults to
+  // `<repoRoot>/.flume`; `FLUME_DIR` relocates it for a self-contained,
+  // ephemeral harness. Resolved here (not constructed) so it survives the
+  // `loop` → `tick` process boundary — children inherit the env var.
+  const flumeDir = process.env.FLUME_DIR
+    ? resolve(process.env.FLUME_DIR)
+    : join(repoRoot, ".flume");
+
   // Top-level --help / --version short-circuit before subcommand dispatch
   // (and before any chain load) so they work in any cwd.
   if (firstArg === "--help" || firstArg === "-h") {
@@ -157,7 +165,7 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "status") {
-    const baton = new Baton(repoRoot);
+    const baton = new Baton(flumeDir);
     const awake = baton.awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
     return 0;
@@ -169,7 +177,7 @@ async function main(): Promise<number> {
       console.error("usage: flume wake <phase>");
       return 2;
     }
-    new Baton(repoRoot).wake(phase);
+    new Baton(flumeDir).wake(phase);
     console.log(`woke ${phase}`);
     return 0;
   }
@@ -180,7 +188,7 @@ async function main(): Promise<number> {
       console.error("usage: flume sleep <phase>");
       return 2;
     }
-    new Baton(repoRoot).sleep(phase);
+    new Baton(flumeDir).sleep(phase);
     console.log(`slept ${phase}`);
     return 0;
   }
@@ -190,11 +198,16 @@ async function main(): Promise<number> {
   // `flume tick` per iteration, §2); a chain.ts that exports `agent`
   // overrides the default agent per tick. `render` resolves the chain
   // directly (it inspects phases without invoking the agent).
-  const configDir = resolve(repoRoot, ".flume");
+  // Chain + prompt dir. Independent of `flumeDir`; `FLUME_CONFIG_DIR` relocates
+  // it (a dock sets both to its ephemeral dir to co-locate config and state).
+  const configDir = process.env.FLUME_CONFIG_DIR
+    ? resolve(process.env.FLUME_CONFIG_DIR)
+    : resolve(repoRoot, ".flume");
   const resolveChain = diskChainLoader(configDir);
   const dispatcher = new Dispatcher({
     repoRoot,
     configDir,
+    flumeDir,
     agent: claudeCode(),
   });
 
@@ -212,7 +225,7 @@ async function main(): Promise<number> {
     // Supervisor: one fresh `flume tick` process per iteration (§2). The
     // dispatcher constructed above is unused on this path — each child
     // builds its own and resolves chain.ts in its own process.
-    await superviseLoop({ repoRoot, maxTicks: max });
+    await superviseLoop({ repoRoot, flumeDir, maxTicks: max });
     return 0;
   }
 
@@ -232,7 +245,7 @@ async function main(): Promise<number> {
     const entryIdx = rest.indexOf("--entry");
     const entryTag = entryIdx >= 0 ? rest[entryIdx + 1] : undefined;
 
-    const pendingPath = join(repoRoot, ".flume", "plan", "pending.json");
+    const pendingPath = join(flumeDir, "plan", "pending.json");
     const pending = existsSync(pendingPath)
       ? (() => {
           const r = parsePending(readFileSync(pendingPath, "utf8"));
@@ -266,7 +279,7 @@ async function main(): Promise<number> {
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
       phase,
-      promptFile: join(repoRoot, ".flume", phase.promptPath),
+      promptFile: join(configDir, phase.promptPath),
       cwd: repoRoot,
       args,
     });
