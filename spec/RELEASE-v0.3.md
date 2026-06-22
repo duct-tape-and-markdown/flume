@@ -401,3 +401,55 @@ on.
 - **Optional, not a blocker.** Shipped because it is the right primitive and
   removes the hardcoding footgun, not because any consumer requires it — the
   dock and any relocated chain already function via §12's canonicalized env.
+
+## 17. Test-suite lanes — integration tests off the in-worktree gate
+
+The dogfood build's `afterMerge` vitest gate runs `pnpm test` (= `vitest run`)
+**inside the fanout worktree**. Real-subprocess integration tests — the
+process-boundary suite spawns real `flume tick`/`loop` via `tsx` — are fast
+standalone (~2s; verified) but, in a freshly-`pnpm install`'d worktree under
+full-suite parallel load on WSL2, their cold `tsx` cold-starts exceed vitest's
+30s default and **revert clean commits**. This is an execution-environment
+artifact, **not** a §2 defect and **not** a hang: the chain-reload guarantee
+completes in <1s and the supervisor exits cleanly (confirmed by direct
+reproduction). It is why §16 had to ship outside the loop.
+
+Resolution — split the suite into two lanes:
+
+- **Fast lane** — unit + fast tests; the default `vitest run`. This is exactly
+  what the build's `afterMerge` gate (`shellGate` running `pnpm test`) invokes,
+  so it must stay fast and worktree-safe.
+- **Integration lane** — tests that spawn real subprocesses (`flume tick`/`loop`,
+  real `git`) or otherwise need a warm host. Marked by the
+  `*.integration.test.ts` filename convention and **excluded from the default
+  run** via `vitest.config.ts`, so the in-worktree gate never runs them. They
+  run at the **host** (main checkout, warm deps, no worktree) via a dedicated
+  `pnpm test:integration` script — pre-merge / CI, not the autonomous gate.
+
+Deliverable (all build-lane; no chain change — the gate runs `vitest run`, which
+the config narrows, so the commit that adds the exclude benefits in its own
+`afterMerge` gate):
+
+- `vitest.config.ts` excludes `**/*.integration.test.ts` from the default run.
+- `package.json` gains `test:integration` running only that lane.
+- `tests/loop-process-boundary.test.ts` → `tests/loop-process-boundary.integration.test.ts`
+  (the one current real-subprocess suite).
+- `docs/CHAIN-AUTHORING.md` documents the lane convention: don't gate the
+  autonomous in-worktree build on host-level integration tests.
+
+### 17a. Resolved decisions
+
+- **Exclude from the default run, don't raise the timeout.** The tests are ~2s
+  standalone; a bigger timeout masks nothing and leaves the worktree-hostility
+  (cold `tsx` + parallel contention) in place. Rejected: bumping the timeout.
+- **Filename convention + config exclude, not vitest projects.** Lowest-ceremony
+  mechanism that makes `vitest run` the fast lane and a script the integration
+  lane; a workspace/projects split is heavier than one integration file
+  warrants. Build may choose projects if it prefers — the spec mandates the lane
+  boundary, not the vitest mechanism.
+- **Integration coverage is preserved, relocated — not dropped.** The §2/§14
+  process-boundary guarantees still run, at the host where they are fast and
+  reliable. Rejected: deleting the real-subprocess tests to fit the worktree gate.
+- **No runtime fix.** The investigation found no §2 defect; chain-reload is
+  correct and prompt. Nothing in `src/` changes — this is test-suite policy and
+  chain-authoring discipline only.
