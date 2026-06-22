@@ -966,6 +966,144 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
   }, 20_000);
 });
 
+describe("Dispatcher fanout — fork-blocked entry becomes pickable when the predicate flips", () => {
+  it("skips the entry while its fork is open, then builds it once the fork resolves", async () => {
+    const entries = [
+      { ...makeEntry("GATED", ["src/gated.ts"]), dependsOnForks: ["the-fork"] },
+    ];
+    await writePending(fx.repo, entries);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      gated: (cwd) =>
+        writeAndCommit(cwd, "src/gated.ts", "ok\n", "build(GATED): ship"),
+    });
+
+    // Mutable resolver state: the fork is unresolved on tick 1, resolved on 2.
+    let resolved = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      forkResolver: () => () => resolved,
+    });
+
+    // Tick 1: fork open → entry skipped, nothing ships, entry stays pending.
+    const preHead = await head(fx.repo);
+    const first = await dispatcher.tick();
+    expect(first.result?.committed).toBe(false);
+    expect(first.result?.shippedTags).toEqual([]);
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      expect.objectContaining({ tag: "GATED" }),
+    ]);
+
+    // Predicate flips; re-wake the phase the idle handoff slept (() => []).
+    resolved = true;
+    baton.wake("build");
+
+    // Tick 2: fork resolved → the same entry is now pickable and ships.
+    const second = await dispatcher.tick();
+    expect(second.result?.shippedTags).toEqual(["GATED"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+});
+
+describe("Dispatcher fanout — no forkResolver supplied is identical to v0.2", () => {
+  it("builds an entry that declares dependsOnForks because the default predicate resolves every slug", async () => {
+    const entries = [
+      { ...makeEntry("ONLY", ["src/only.ts"]), dependsOnForks: ["some-fork"] },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      only: (cwd) =>
+        writeAndCommit(cwd, "src/only.ts", "ok\n", "build(ONLY): ship"),
+    });
+
+    // No forkResolver on the constructor and none on the chain module: the
+    // governor's always-resolved default applies, so a declared dependsOnForks
+    // never blocks — selection is identical to v0.2.
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["ONLY"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+});
+
+describe("Dispatcher fanout — forkResolver invoked once per tick with the repo root", () => {
+  it("calls the resolver once with repoRoot and lets its predicate govern selection", async () => {
+    const entries = [
+      { ...makeEntry("OPEN", ["src/open.ts"]), dependsOnForks: ["open-fork"] },
+      { ...makeEntry("DONE", ["src/done.ts"]), dependsOnForks: ["done-fork"] },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      done: (cwd) =>
+        writeAndCommit(cwd, "src/done.ts", "ok\n", "build(DONE): ship"),
+      // No action for `open` — selecting it would throw.
+    });
+
+    const repoRootCalls: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      forkResolver: (repoRoot) => {
+        repoRootCalls.push(repoRoot);
+        return (slug) => slug === "done-fork";
+      },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Invoked exactly once for the tick, with the dispatcher's repo root.
+    expect(repoRootCalls).toEqual([fx.repo]);
+    // The injected predicate governs selection: only the resolved entry ships.
+    expect(outcome.result?.shippedTags).toEqual(["DONE"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      expect.objectContaining({ tag: "OPEN" }),
+    ]);
+  }, 20_000);
+});
+
 // ---------- gate-failure feedback to the retrying tick (§5) ----------
 
 describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () => {
