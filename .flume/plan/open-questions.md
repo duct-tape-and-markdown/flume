@@ -9,20 +9,20 @@ Status markers:
 
 <!-- questions below this line -->
 
-## 2026-06-22 — §16 dogfood `pendingParseGate` adoption of `ctx.flumeDir` is an off-allowlist `.flume/chain.ts` edit
+## 2026-06-22 — process-boundary integration tests (`tests/loop-process-boundary.test.ts`) exceed vitest's 30s default and are fanout-hostile
 
-**Status: PARKED** (off-allowlist edit; harness `chore(flume):` lane; blocked on `FLUMEDIR-CONTEXT-EXPOSURE` shipping first)
+**Status: PARKED** (test-infra strategy; no `per` cite — no spec section authorizes test-timeout/suite-partitioning policy; fix options carry tradeoffs)
 
-§16 names the dogfood `pendingParseGate` (`.flume/chain.ts:53-78`) as the **reference use** of the new `GateContext.flumeDir`: it should read `join(ctx.flumeDir, "plan", "pending.json")` instead of the current hardcoded `${ctx.cwd}/.flume/plan/pending.json` (`.flume/chain.ts:59`). The runtime field is build-derivable (`FLUMEDIR-CONTEXT-EXPOSURE`, filed this tick), but the chain.ts adoption itself is **off-allowlist** — build's `writablePaths` explicitly excludes `.flume/chain.ts` (`.flume/chain.ts:237-239`; "harness/human territory, `chore(flume):` not build"). Per `.claude/rules/spec-plan-build.md` (off-allowlist → open question, not pending entry), parked here rather than filed.
+Surfaced auditing the §16 delta. `b62d1b6`'s body states it was "Built directly (interactive), not via a fanout tick" because "the entry's process-boundary test spawns real `flume tick` subprocesses that are worktree-hostile … Recorded as a follow-up finding" — but that finding had **no home** in any plan artifact (inbox empty, no OQ). Recording it here so it stops getting re-discovered.
 
-**Semantic nuance for whoever lands it (not papered over):** `ctx.cwd` is the *worktree* path; `ctx.flumeDir` is the *absolute resolved state root*. Switching `pendingParseGate` to `ctx.flumeDir` changes **which** pending.json the gate inspects — the canonical state root, not the worktree copy. For plan (singleton, `cwd == repoRoot`, default `flumeDir == cwd/.flume`) these coincide; they diverge under a relocated `flumeDir`. §16's intent is exactly that the gate stop hardcoding `.flume/` and agree with the dispatcher's resolved root — so `ctx.flumeDir` is the correct seam — but the edit is a deliberate behavior alignment, not a pure refactor, so it wants a human eye in the `chore(flume):` commit.
+**Verified at source:** `tests/loop-process-boundary.test.ts` runs the real CLI via `execFile(TSX, [CLI, …])` — no stubbed loader, by design (§2 module-cache reload can only be proven with fresh OS processes). One test (single `tick`) passes; the second ("a chain.ts rewritten on disk between two real tick processes governs the second", multiple sequential `tsx` cold-starts) times out at exactly the 30s vitest default — reproduces in isolation. Cumulative real-subprocess cold-start cost (WSL2) is the likely cause; a true hang in the rewritten-chain path isn't fully ruled out and should be checked before just raising the limit. Pre-existing since `1152671`; **not** a §16 regression — `b62d1b6`/`cd03386` are otherwise clean (tsc green; §16 Dispatcher/Prompt/Gate coverage passes). Operational impact: a real fanout build `vitestGate` reverts here, which is exactly why §16 shipped interactively.
 
 **Options:**
-- **(A — recommended) After `FLUMEDIR-CONTEXT-EXPOSURE` ships, a human/`chore(flume):` commit rewrites `pendingParseGate` to `join(ctx.flumeDir, "plan", "pending.json")`.** Smallest honest landing; no widening of build's authority; same lane as OQ#1's §7a chain.ts move. Plan files nothing — harness ceremony.
-- **(B) Amend build's `writablePaths` to admit `.flume/chain.ts`** so a build entry can do it. Widens build into harness territory permanently for a one-time edit; itself a chain.ts change. Rejected as precedent (mirrors OQ#1 rec).
-- **(C) Leave the gate hardcoded.** Rejected — drops named §16 spec surface; re-introduces the exact `.flume/`-hardcoding footgun §16 exists to remove, in the dogfood chain that's supposed to be the reference use.
+- **(A) Raise the per-file/per-test timeout** (build-writable: the test file's 3rd arg, or `vitest.config.ts`). Cheapest; unblocks the gate. But masks slowness and does **not** fix worktree/fanout-hostility (a worktree can't spawn the real CLI cleanly) — and if the second test actually hangs, a bigger timeout just stalls longer.
+- **(B) Partition real-subprocess tests into a separate slow/integration project** excluded from the fanout `vitestGate`, run on trunk/CI only. Fixes both timeout and fanout-hostility; more infra; needs a gate-strategy decision (which suite each gate runs).
+- **(C) Accept the carve-out:** entries touching this surface always build interactively (as `b62d1b6` did); document it. No code change; leaves the footgun live and undocumented for future fanout ticks.
 
-**Recommended disposition:** A. Optional (§16b: "no consumer blocked"), so no urgency — the runtime field ships first via the build entry, and this is the cheap harness-lane follow-up that demonstrates it.
+**Recommended disposition:** B if process-boundary coverage is meant to run under autonomous fanout build at all; otherwise A as a stopgap with a one-line note. Either way **first confirm the second test is slow, not hung** — a hang is a real §2 defect, not a timeout-tuning question. No `per` cite exists (test-suite policy is unspecced), so parked rather than filed; a spec section on gate/suite partitioning would let plan derive this.
 
 ## 2026-05-17 — orphaned baton (awake flag → phase absent from chain) hibernates indistinguishably from a clean stop; the inbox's §5/§6 home is a category error
 
