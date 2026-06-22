@@ -290,7 +290,7 @@ export default flumeChain;
  *
  * `claude -p --output-format stream-json --verbose` emits NDJSON per turn
  * (tool calls, content, token usage). withSessionCapture (innermost) tees
- * the raw stream into `.flume/sessions/<timestamp>-<cwd>.jsonl` for cost
+ * the raw stream into `<FLUME_DIR>/sessions/<timestamp>-<cwd>.jsonl` for cost
  * analysis and replay. withTerminalRenderer (outermost) consumes the same
  * stream and forwards a one-line-per-tool-call summary to the dispatcher's
  * stdout instead of the raw JSON wall.
@@ -308,10 +308,13 @@ export const agent = withTerminalRenderer(
       ],
     }),
     {
-      // Absolute path so build (which runs in .flume/worktrees/<tag>/) still
-      // writes into the main repo's .flume/sessions/. Worktree cleanup would
-      // otherwise eat the build transcripts.
-      dir: resolve(CHAIN_DIR, "sessions"),
+      // Sessions track the flume state dir (FLUME_DIR), so a relocated,
+      // ephemeral dock owns its transcripts too and one `rm` removes the whole
+      // footprint (RELEASE-v0.3 §12). The CLI canonicalizes the resolved root
+      // into FLUME_DIR; the `?? CHAIN_DIR` fallback is defensive only. Absolute
+      // either way, so build (which runs in <flumeDir>/worktrees/<tag>/) writes
+      // up into the state dir's sessions/ rather than a worktree git eats.
+      dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
       filename: (inv) => {
         const ts = new Date().toISOString().replace(/[:.]/g, "-");
         const cwdName = inv.cwd.split("/").pop() ?? "tick";
