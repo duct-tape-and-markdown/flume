@@ -56,7 +56,10 @@ const pendingParseGate: Gate = {
   async run(ctx) {
     let raw: string;
     try {
-      raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, "utf8");
+      // §16 reference use: read pending from the resolved state root the
+      // dispatcher hands in, not a hardcoded `.flume/` — so this gate is
+      // correct under a relocated flumeDir.
+      raw = await readFile(join(ctx.flumeDir, "plan", "pending.json"), "utf8");
     } catch {
       return { ok: false, message: "pending.json missing after plan commit" };
     }
