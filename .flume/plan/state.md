@@ -4,13 +4,13 @@ Phase: **v0.3 line ACTIVE** — `spec/RELEASE-v0.3.md` (foundations governor §�
 
 ## This tick — no-op (empty delta)
 
-HEAD == last `plan:` (`417791f`). No commits to audit, no spec delta to derive, inbox empty, no blocked entry to promote. All four dimensions inert:
-- **Audit:** no commits since `417791f`. Nothing to cross-check.
+HEAD == last `plan:` (`7f0fc38`). No commits to audit, no spec delta to derive, inbox empty, no blocked entry to promote. All four dimensions inert:
+- **Audit:** no commits since `7f0fc38`. Nothing to cross-check.
 - **Derive:** no `spec/` change. v0.3 derivable surface already complete (§§1-16 all derived).
 - **Drain:** inbox empty.
 - **Promote:** the lone pending entry is already `open`; no `blockedBy` gates outstanding.
 
-Only state.md re-derived. pending.json / open-questions.md / inbox.md unchanged from `417791f`.
+Only state.md re-derived (trunk refs advanced `417791f`→`7f0fc38`). pending.json / open-questions.md / inbox.md unchanged.
 
 ## Queue (1)
 
@@ -32,6 +32,6 @@ Only state.md re-derived. pending.json / open-questions.md / inbox.md unchanged 
 ## Writable-paths / trunk
 
 - Wrote `.flume/plan/state.md` only. pending.json, open-questions.md, inbox unchanged. No off-allowlist path.
-- Trunk: HEAD `417791f`. Plan-artifact-only tick. tsc not re-run (no src/ delta).
+- Trunk: HEAD `7f0fc38`. Plan-artifact-only tick. tsc not re-run (no src/ delta).
 
 Plan continues: no
