@@ -41,16 +41,16 @@ A `Phase` is plain data the dispatcher interprets. No per-phase imperative
 code path; the harness owns the tick lifecycle and reads the fields you
 set. The full interface lives in `src/Phase.ts`. The fields that matter:
 
-| Field | Role |
-| ----- | ---- |
-| `name` | Stable id. Matches the awake-flag file `.flume/awake/<name>`. |
-| `description` | One-line description shown in `flume status`. |
-| `promptPath` | Prompt file path, relative to `.flume/`. |
-| `concurrency` | `"singleton"` or `"fanout"` — see §3. |
-| `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit. |
-| `gates` | Validation steps the harness runs post-commit. See §2. |
-| `promptArgs` | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`. |
-| `handoff` | Returns sibling phases to wake based on the tick's `TickResult`. |
+| Field           | Role                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | Stable id. Matches the awake-flag file `.flume/awake/<name>`.                                                                     |
+| `description`   | One-line description shown in `flume status`.                                                                                     |
+| `promptPath`    | Prompt file path, relative to `.flume/`.                                                                                          |
+| `concurrency`   | `"singleton"` or `"fanout"` — see §3.                                                                                             |
+| `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit.                                              |
+| `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
+| `promptArgs`    | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                                       |
+| `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
 | `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. See §3. |
 
 The `plan` phase from `examples/cascade-chain.ts`:
@@ -121,8 +121,8 @@ interface Gate {
 
 interface GateResult {
   ok: boolean;
-  message: string;   // one-line verdict for dispatcher + agent
-  details?: string;  // captured output, fed into next tick's prompt as context
+  message: string; // one-line verdict for dispatcher + agent
+  details?: string; // captured output, fed into next tick's prompt as context
 }
 ```
 
@@ -160,11 +160,14 @@ const pendingParseGate: Gate = {
   async run(ctx) {
     const raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, "utf8");
     const r = parsePending(raw);
-    if (r.ok) return { ok: true, message: `parsed (${r.entries.length} entries)` };
+    if (r.ok)
+      return { ok: true, message: `parsed (${r.entries.length} entries)` };
     return {
       ok: false,
       message: `pending.json has ${r.errors.length} schema violations`,
-      details: r.errors.map((e) => `  [${e.index}] ${e.path}: ${e.message}`).join("\n"),
+      details: r.errors
+        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+        .join("\n"),
     };
   },
 };
@@ -207,7 +210,7 @@ a timeout means a real hang, not contention noise. And because an
 cost of moving a flaky-under-load gate there is bounded to the one entry
 that actually fails.
 
-The tradeoff to weigh: an `afterMerge` gate runs *after* the commit
+The tradeoff to weigh: an `afterMerge` gate runs _after_ the commit
 reaches the trunk, so a genuinely bad commit is briefly on the trunk
 before it is reverted, whereas an `afterCommit` gate catches it pre-merge.
 Keep structural gates at `afterCommit` for exactly that reason — they are
@@ -231,18 +234,18 @@ rebuilt the bundle and asserted byte-equality against the checked-in
 `dist/`. It reverted a string of clean commits. The cause: pnpm's
 virtual-store hashes leaked into esbuild's output, producing ~257
 pure-reorder / hash-churn lines that changed the bytes without changing a
-single runtime behavior. The property that actually mattered — *the bundle
-is self-contained; no import escapes it* — lived in a different gate,
+single runtime behavior. The property that actually mattered — _the bundle
+is self-contained; no import escapes it_ — lived in a different gate,
 `bundleSelfContainmentGate`, which inspected that invariant directly and
 did not churn.
 
 The lesson generalizes. Generated artifacts carry non-semantic entropy:
 content hashes, declaration order, timestamps, embedded toolchain-version
-strings. Byte-equality conflates *changed* with *broke*, so the gate fails
+strings. Byte-equality conflates _changed_ with _broke_, so the gate fails
 on entropy and reverts work that was correct.
 
 How to apply: before writing a gate over a generated file, ask "what would
-a *bad* version of this file actually do wrong?" and assert exactly that —
+a _bad_ version of this file actually do wrong?" and assert exactly that —
 does it resolve, does it parse, does it satisfy its contract tests, does
 any import escape it. If you cannot name the failure a byte-diff would
 catch, the gate is testing your toolchain's determinism, not your code —
@@ -316,7 +319,11 @@ them.
 one implementation, `claudeCode()`, plus two decorators.
 
 ```ts
-import { claudeCode, withSessionCapture, withTerminalRenderer } from "@dtmd/flume";
+import {
+  claudeCode,
+  withSessionCapture,
+  withTerminalRenderer,
+} from "@dtmd/flume";
 
 const agent = claudeCode({
   outputFormat: "stream-json",
@@ -352,10 +359,9 @@ The canonical composition (disk capture + terminal rendering):
 
 ```ts
 const agent = withTerminalRenderer(
-  withSessionCapture(
-    claudeCode({ outputFormat: "stream-json" }),
-    { dir: ".flume/sessions" },
-  ),
+  withSessionCapture(claudeCode({ outputFormat: "stream-json" }), {
+    dir: ".flume/sessions",
+  }),
 );
 ```
 
@@ -429,7 +435,7 @@ Notes:
 - Output is capped at 4 MiB.
 - On failure, the placeholder becomes
   `<exec-failed cmd="...">stderr</exec-failed>` — the prompt still sends.
-  Use inline-exec for *soft* context (recent commits, current state); use
+  Use inline-exec for _soft_ context (recent commits, current state); use
   `promptArgs` for required values.
 
 ### The `<harness>` block
@@ -496,10 +502,68 @@ retrying agent to read (concrete paths and line numbers beat narration).
 prints it to stdout. For fanout phases, it uses the first pickable entry
 as `assignedEntry`.
 
+## 6. The foundations governor (`forkResolver`)
+
+A `gate: open` entry means "schema-valid, not blocked by a sibling entry." It
+does **not** mean "the product/UX decision this work rests on is settled." When
+an entry cites a spec section whose decision is still an open question, building
+it ships a surface onto an undecided foundation. The foundations governor closes
+that gap.
+
+Two pieces wire it up:
+
+1. **Plan declares the dependency.** A pending entry whose work rests on an open
+   question carries `dependsOnForks: ["slug", ...]` — opaque slugs your project
+   uses to key its open questions. The entry is skipped while any slug is
+   unresolved, regardless of gate kind, and picked up automatically once they
+   resolve. No new gate state; foundations cross-cut the gate.
+
+2. **The chain supplies a resolver.** `DispatcherOptions.forkResolver` answers,
+   per repo, "is this slug resolved?" The runtime is format-agnostic — it never
+   reads your open-questions file itself; it calls your predicate. A chain that
+   supplies no resolver is unaffected (every fork is treated as resolved).
+
+```ts
+// Where you construct the Dispatcher / assemble DispatcherOptions.
+forkResolver: (repoRoot: string) => {
+  const text = readFileSync(
+    join(repoRoot, ".flume/plan/open-questions.md"),
+    "utf8",
+  );
+  return (slug: string) => {
+    // Match `(slug` at a boundary — tolerate `(slug)`, `(slug,`, `(slug —…`,
+    // but never let a short slug match a longer one (`(foo` ≠ `(foo-bar`).
+    const esc = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\(${esc}(?![-A-Za-z0-9])`);
+    const line = text.split("\n").find((l) => re.test(l));
+    // Fail OPEN: an absent slug (answered and deleted) or a typo must never
+    // permanently wedge its dependents — treat it as resolved.
+    return !line || /\bRESOLVED\b/.test(line);
+  };
+};
+```
+
+**Fail open, never closed.** The recommended resolver treats an **absent** slug
+as resolved (a fork answered and removed should _unblock_ its dependents) and an
+**unknown/mistyped** slug as resolved (a bookkeeping error must never block the
+loop forever). Every degradation is a _missed block_ — a surface that builds one
+tick early — never a stuck loop. The runtime takes no position here; the bias
+lives in your resolver.
+
+**What happens when an entry is fork-blocked:** it is simply not selected this
+tick. The dispatcher builds a foundation-settled sibling instead
+(skip-to-settled); if _every_ `open` entry is fork-blocked, the tick idles with
+no commit and the phase advances — a loud, visible signal (in `flume status`)
+that the next move needs a human decision, which is strictly safer than shipping
+onto sand. A fork-blocked entry is never marked failed and never reverted.
+
 ## Putting it together
 
 ```ts
-const cascadeChain: Chain = { phases: [plan, build, spec], humanOnly: ["spec"] };
+const cascadeChain: Chain = {
+  phases: [plan, build, spec],
+  humanOnly: ["spec"],
+};
 export default cascadeChain;
 ```
 

@@ -12,6 +12,7 @@ function makeEntry(
     summary: `entry ${tag}`,
     per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
     gate: { kind: "open" },
+    dependsOnForks: [],
     files: {
       new: (paths.new ?? []).map((p) => ({ path: p, description: "n" })),
       edit: (paths.edit ?? []).map((p) => ({ path: p, description: "e" })),
@@ -98,7 +99,10 @@ describe("partitionByFileOverlap — overlap splits stably", () => {
     const second = partitionByFileOverlap(entries, { maxParallel: 4 });
 
     expect(first.map(tags)).toEqual(second.map(tags));
-    expect(first.map(tags)).toEqual([["A", "B"], ["C", "D"]]);
+    expect(first.map(tags)).toEqual([
+      ["A", "B"],
+      ["C", "D"],
+    ]);
   });
 });
 

@@ -11,6 +11,40 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-21
+
+A foundations governor for the build phase. The dispatcher no longer treats
+`gate: open` as "foundations settled" — an entry can now declare the
+open-question forks its work rests on, and is skipped while any remains
+unresolved. Closes the build-laterally failure mode where the loop accreted
+surfaces on product/UX decisions it had itself flagged as open. See
+`spec/RELEASE-v0.3.md`.
+
+### Added
+
+- **`PendingEntry.dependsOnForks: string[]`** — open-question fork slugs an
+  entry's foundation rests on. Optional, defaults to `[]`; additive and
+  non-breaking. Rendered into the plan prompt schema so plan emits it.
+- **`DispatcherOptions.forkResolver?: (repoRoot) => (slug) => boolean`** — the
+  injected resolution seam. Consulted once per tick; an entry with any
+  unresolved declared fork is not pickable. Defaults to always-resolved, so a
+  chain that supplies no resolver is behaviourally identical to 0.2. The
+  runtime stays format-agnostic — how a project records and resolves forks
+  lives in the resolver, not the harness.
+- **`ChainModule.forkResolver?`** — a `.flume/chain.ts` may export a
+  `forkResolver`; the dispatcher resolves `chainModule.forkResolver ??
+opts.forkResolver` per tick, exactly as `agent` overrides the default. This
+  is the adoption path for stock-CLI consumers (which never touch
+  `DispatcherOptions`): export the resolver from chain.ts and the governor
+  picks it up.
+- **`isPickableNow(entry, shippedTags, isForkResolved?)`** — gains a trailing
+  optional fork-resolution predicate (defaults to always-resolved). The
+  foundations check precedes every gate kind. Skip-to-settled and
+  idle-rather-than-build-laterally fall out of the existing fanout filter; a
+  fork-blocked entry is never failed or reverted.
+- `docs/CHAIN-AUTHORING.md` — resolver-authoring guidance, including the
+  fail-open rationale (absent/unknown slug ⇒ resolved) and a worked example.
+
 ## [0.2.0] - 2026-05-17
 
 Dispatcher correctness for long-running and autonomous loops: the harness

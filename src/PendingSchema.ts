@@ -85,6 +85,15 @@ export const PendingEntry = z.object({
   per: PerCitation,
   /** Gate state controlling pickability. */
   gate: Gate,
+  /**
+   * Foundations governor (v0.3). Open-question fork slugs this entry's
+   * foundation rests on. The dispatcher skips the entry while any slug is
+   * unresolved — a cross-cutting predicate that precedes every gate kind, so
+   * an `open` entry sitting on an undecided fork is not built. Empty (the
+   * default) means no foundational dependency. The slug is opaque to the
+   * runtime: it is keyed and resolved by the consuming project (§3).
+   */
+  dependsOnForks: z.array(z.string().min(1)).default([]),
   /** File-level work breakdown. The parallelism partition reads `edit[].path`. */
   files: z.object({
     new: z.array(FileChange).default([]),
@@ -202,6 +211,7 @@ export function renderSchemaForPrompt(): string {
         | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresDockerHost" },                     // env gate (v1)
+  "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
   "files": {
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
@@ -220,14 +230,24 @@ Empty array is valid (means nothing pending).`;
 // ---------- pickability ----------
 
 /**
- * An entry is pickable when its gate is open AND it is not waiting on
- * environment capabilities the dispatcher hasn't asserted. The dispatcher
- * filters this further by checking `blockedBy` tags against shipped entries.
+ * An entry is pickable when every foundational fork it declares is resolved
+ * AND its gate is open AND it is not waiting on environment capabilities the
+ * dispatcher hasn't asserted. The dispatcher filters this further by checking
+ * `blockedBy` tags against shipped entries.
+ *
+ * `isForkResolved` is the foundations governor's injected predicate (§3): it
+ * answers "is this open-question fork resolved?" for the consuming project.
+ * It defaults to always-resolved, so a caller that supplies none — or an entry
+ * that declares no `dependsOnForks` — behaves exactly as before.
  */
 export function isPickableNow(
   entry: PendingEntry,
   shippedTags: ReadonlySet<string>,
+  isForkResolved: (slug: string) => boolean = () => true,
 ): boolean {
+  // Foundations governor: a settled gate is not enough — every declared fork
+  // must resolve. Cross-cuts every gate kind, so it precedes the switch.
+  if (!entry.dependsOnForks.every(isForkResolved)) return false;
   switch (entry.gate.kind) {
     case "open":
       return true;
