@@ -11,6 +11,19 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-22
+
+A foundations governor for the build phase, plus a relocatable state dir for
+self-contained, ephemeral runs.
+
+The governor: the dispatcher no longer treats `gate: open` as "foundations
+settled" — an entry can declare the open-question forks its work rests on, and
+is skipped while any remains unresolved. Closes the build-laterally failure mode
+where the loop accreted surfaces on product/UX decisions it had itself flagged
+as open. Relocation: all mutable state (baton, pending, worktrees,
+prior-attempts) moves under one configurable `flumeDir`, so a harness can
+attach, run, and be torn down in a single `rm`. See `spec/RELEASE-v0.3.md`.
+
 ### Breaking
 
 - `Baton` now constructs from the flume **state dir**, not the repo root:
@@ -30,30 +43,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   to the same dir to co-locate config and state. The CLI reads `FLUME_DIR`
   (state) and `FLUME_CONFIG_DIR` (chain + prompts) and carries them across the
   `loop`→`tick` process boundary via env inheritance.
-
-### Fixed
-
-- Session logs leaked outside a relocated dock when `FLUME_DIR` was unset or
-  relative: the CLI now canonicalizes the resolved `flumeDir` / `configDir` back
-  into `process.env.FLUME_DIR` / `process.env.FLUME_CONFIG_DIR` as **absolute**
-  paths, so a chain loaded later in the same process (and any spawned child)
-  reads one authoritative state root. The dogfood chain's `?? CHAIN_DIR`
-  session-dir fallback is now defensive only — `FLUME_DIR` is always set to the
-  resolved root, keeping the whole footprint under one `rm`.
-- `flume render` resolved prompt files from `<repoRoot>/.flume` instead of the
-  configured `configDir`; it now honors `configDir` (and `FLUME_CONFIG_DIR`).
-
-## [0.3.0] - 2026-06-21
-
-A foundations governor for the build phase. The dispatcher no longer treats
-`gate: open` as "foundations settled" — an entry can now declare the
-open-question forks its work rests on, and is skipped while any remains
-unresolved. Closes the build-laterally failure mode where the loop accreted
-surfaces on product/UX decisions it had itself flagged as open. See
-`spec/RELEASE-v0.3.md`.
-
-### Added
-
+- **`GateContext.flumeDir` / `TickContext.flumeDir` + reserved `{{FLUME_DIR}}`
+  prompt arg** — gates and prompts receive the resolved state root injected, so
+  a chain references state-relative paths without hardcoding `.flume/` or
+  reaching into `process.env`. `{{FLUME_DIR}}` is auto-injected into every
+  prompt's substitution map (a chain-supplied arg cannot shadow it);
+  `writablePaths` stays `process.env.FLUME_DIR`-derived (static, chain-load time).
 - **`PendingEntry.dependsOnForks: string[]`** — open-question fork slugs an
   entry's foundation rests on. Optional, defaults to `[]`; additive and
   non-breaking. Rendered into the plan prompt schema so plan emits it.
@@ -76,6 +71,18 @@ opts.forkResolver` per tick, exactly as `agent` overrides the default. This
   fork-blocked entry is never failed or reverted.
 - `docs/CHAIN-AUTHORING.md` — resolver-authoring guidance, including the
   fail-open rationale (absent/unknown slug ⇒ resolved) and a worked example.
+
+### Fixed
+
+- Session logs leaked outside a relocated dock when `FLUME_DIR` was unset or
+  relative: the CLI now canonicalizes the resolved `flumeDir` / `configDir` back
+  into `process.env.FLUME_DIR` / `process.env.FLUME_CONFIG_DIR` as **absolute**
+  paths, so a chain loaded later in the same process (and any spawned child)
+  reads one authoritative state root. The dogfood chain's `?? CHAIN_DIR`
+  session-dir fallback is now defensive only — `FLUME_DIR` is always set to the
+  resolved root, keeping the whole footprint under one `rm`.
+- `flume render` resolved prompt files from `<repoRoot>/.flume` instead of the
+  configured `configDir`; it now honors `configDir` (and `FLUME_CONFIG_DIR`).
 
 ## [0.2.0] - 2026-05-17
 
