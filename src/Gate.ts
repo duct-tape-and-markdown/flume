@@ -34,6 +34,14 @@ export type GatePhase =
 export interface GateContext {
   /** Absolute path of the worktree (or trunk for postMerge gates). */
   cwd: string;
+  /**
+   * Absolute, resolved flume state root (`flumeDir`) — where the baton,
+   * pending, worktrees, and prior-attempts live (default `<repoRoot>/.flume`,
+   * relocatable via `FLUME_DIR`). A gate reads state-relative paths from here
+   * (`join(ctx.flumeDir, "plan", "pending.json")`) instead of hardcoding
+   * `.flume/` or reaching into `process.env` (RELEASE-v0.3 §16).
+   */
+  flumeDir: string;
   /** Phase the gate is running for. */
   phaseName: string;
   /** SHA of the commit under inspection. */

@@ -285,7 +285,7 @@ async function main(): Promise<number> {
         })()
       : [];
 
-    const ctx: TickContext = { cwd: repoRoot, pending };
+    const ctx: TickContext = { cwd: repoRoot, flumeDir, pending };
     if (phase.concurrency === "fanout") {
       const target = entryTag
         ? pending.find((e) => e.tag === entryTag)
@@ -304,6 +304,7 @@ async function main(): Promise<number> {
     const args = phase.promptArgs?.(ctx) ?? {};
     const prompt = await renderPrompt({
       phase,
+      flumeDir,
       promptFile: join(configDir, phase.promptPath),
       cwd: repoRoot,
       args,

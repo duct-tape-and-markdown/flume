@@ -30,6 +30,14 @@ export type Concurrency = "singleton" | "fanout";
 export interface TickContext {
   /** Absolute path of the worktree this tick runs in. */
   cwd: string;
+  /**
+   * Absolute, resolved flume state root (`flumeDir`; default
+   * `<repoRoot>/.flume`, relocatable via `FLUME_DIR`). Surfaced so a phase's
+   * `promptArgs` can derive state-relative paths from it. The dispatcher also
+   * auto-injects this as the reserved `{{FLUME_DIR}}` prompt arg, so most
+   * prompts need no `promptArgs` boilerplate (RELEASE-v0.3 §16).
+   */
+  flumeDir: string;
   /** Pending entry assigned to this tick (fanout phases only). */
   assignedEntry?: PendingEntry;
   /** All pending entries (singleton phases that read the plan). */

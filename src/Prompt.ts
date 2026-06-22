@@ -116,6 +116,14 @@ export interface RenderOptions {
   promptFile: string;
   /** Working directory for inline-exec evaluation. */
   cwd: string;
+  /**
+   * Resolved flume state root. Auto-injected as the reserved `{{FLUME_DIR}}`
+   * substitution key, so any prompt can reference state-relative paths
+   * (`{{FLUME_DIR}}/plan/pending.json`) with no `promptArgs` boilerplate. A
+   * chain-supplied `FLUME_DIR` in `args` does not override it — the resolved
+   * root is authoritative (RELEASE-v0.3 §16).
+   */
+  flumeDir: string;
   /** Substitution map. */
   args: Record<string, string>;
   /**
@@ -138,7 +146,10 @@ export interface RenderOptions {
  */
 export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const raw = await readFile(opts.promptFile, "utf8");
-  const withArgs = substitutePlaceholders(raw, opts.args);
+  // FLUME_DIR is reserved and dispatcher-authoritative: merge it last so a
+  // chain-supplied arg of the same name cannot shadow the resolved root.
+  const args = { ...opts.args, FLUME_DIR: opts.flumeDir };
+  const withArgs = substitutePlaceholders(raw, args);
   const withExec = await evaluateInlineExec(withArgs, opts.cwd);
   const withPrior = prependPriorAttemptBlock(opts.priorAttempt, withExec);
   return prependHarnessBlock(opts.phase, withPrior);
