@@ -9,6 +9,21 @@ Status markers:
 
 <!-- questions below this line -->
 
+## 2026-06-22 — §16 dogfood `pendingParseGate` adoption of `ctx.flumeDir` is an off-allowlist `.flume/chain.ts` edit
+
+**Status: PARKED** (off-allowlist edit; harness `chore(flume):` lane; blocked on `FLUMEDIR-CONTEXT-EXPOSURE` shipping first)
+
+§16 names the dogfood `pendingParseGate` (`.flume/chain.ts:53-78`) as the **reference use** of the new `GateContext.flumeDir`: it should read `join(ctx.flumeDir, "plan", "pending.json")` instead of the current hardcoded `${ctx.cwd}/.flume/plan/pending.json` (`.flume/chain.ts:59`). The runtime field is build-derivable (`FLUMEDIR-CONTEXT-EXPOSURE`, filed this tick), but the chain.ts adoption itself is **off-allowlist** — build's `writablePaths` explicitly excludes `.flume/chain.ts` (`.flume/chain.ts:237-239`; "harness/human territory, `chore(flume):` not build"). Per `.claude/rules/spec-plan-build.md` (off-allowlist → open question, not pending entry), parked here rather than filed.
+
+**Semantic nuance for whoever lands it (not papered over):** `ctx.cwd` is the *worktree* path; `ctx.flumeDir` is the *absolute resolved state root*. Switching `pendingParseGate` to `ctx.flumeDir` changes **which** pending.json the gate inspects — the canonical state root, not the worktree copy. For plan (singleton, `cwd == repoRoot`, default `flumeDir == cwd/.flume`) these coincide; they diverge under a relocated `flumeDir`. §16's intent is exactly that the gate stop hardcoding `.flume/` and agree with the dispatcher's resolved root — so `ctx.flumeDir` is the correct seam — but the edit is a deliberate behavior alignment, not a pure refactor, so it wants a human eye in the `chore(flume):` commit.
+
+**Options:**
+- **(A — recommended) After `FLUMEDIR-CONTEXT-EXPOSURE` ships, a human/`chore(flume):` commit rewrites `pendingParseGate` to `join(ctx.flumeDir, "plan", "pending.json")`.** Smallest honest landing; no widening of build's authority; same lane as OQ#1's §7a chain.ts move. Plan files nothing — harness ceremony.
+- **(B) Amend build's `writablePaths` to admit `.flume/chain.ts`** so a build entry can do it. Widens build into harness territory permanently for a one-time edit; itself a chain.ts change. Rejected as precedent (mirrors OQ#1 rec).
+- **(C) Leave the gate hardcoded.** Rejected — drops named §16 spec surface; re-introduces the exact `.flume/`-hardcoding footgun §16 exists to remove, in the dogfood chain that's supposed to be the reference use.
+
+**Recommended disposition:** A. Optional (§16b: "no consumer blocked"), so no urgency — the runtime field ships first via the build entry, and this is the cheap harness-lane follow-up that demonstrates it.
+
 ## 2026-05-17 — orphaned baton (awake flag → phase absent from chain) hibernates indistinguishably from a clean stop; the inbox's §5/§6 home is a category error
 
 **Status: PARKED** (net-new terminal classification + supervisor stop + exit status; still no `per` cite — needs a human spec call: add an Axis-C/loop-safety section to the now-live v0.3 line, or explicitly reopen v0.2 scoping)
