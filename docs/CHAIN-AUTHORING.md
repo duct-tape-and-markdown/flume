@@ -360,13 +360,42 @@ The canonical composition (disk capture + terminal rendering):
 ```ts
 const agent = withTerminalRenderer(
   withSessionCapture(claudeCode({ outputFormat: "stream-json" }), {
-    dir: ".flume/sessions",
+    dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
   }),
 );
 ```
 
 Order matters: capture innermost so the file holds the full NDJSON;
 render outermost so the terminal sees the human-readable summary.
+
+### Per-run artifacts go under `FLUME_DIR`
+
+Note the `dir` above: it is **`process.env.FLUME_DIR`-relative**, not a fixed
+`.flume/sessions`. This is a requirement, not a stylistic choice.
+
+Flume's mutable state — baton, pending, worktrees, prior-attempts — relocates
+under one root via the `FLUME_DIR` env var, so the whole footprint can live
+outside the repo (a tmpdir) and be torn down in a single `rm` (the
+attach-work-detach posture; see the README). That guarantee holds only if
+**every** per-run artifact a chain writes also lives under that root. Session
+logs are the canonical case: pin them at `configDir` (`CHAIN_DIR`) and a
+relocated dock's `rm` leaves them stranded under the config dir whenever
+`FLUME_DIR` and `FLUME_CONFIG_DIR` are relocated independently.
+
+The runtime makes this reliable: after resolving the dirs, the CLI canonicalizes
+the **absolute** resolved state root back into `process.env.FLUME_DIR`, so a
+chain (loaded later in the same process via tsx) reads one authoritative value
+rather than re-deriving the default. The `?? CHAIN_DIR` fallback above is
+defensive only — in normal operation `FLUME_DIR` is always set. The runtime
+supplies the root; **placement is the chain's job.**
+
+**The rule:** if your chain writes any per-run artifact (session captures,
+scratch logs, anything mutable that a run produces), root its path at
+`process.env.FLUME_DIR`, not at the chain dir or a hardcoded `.flume/`.
+
+The dogfood chain (`.flume/chain.ts`) is the worked example: its session dir is
+`resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions")`, exactly the shape
+above. `CHAIN_DIR` there is `dirname(fileURLToPath(import.meta.url))`.
 
 ### Wiring into the dispatcher
 
