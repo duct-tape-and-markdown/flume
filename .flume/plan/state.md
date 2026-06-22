@@ -1,32 +1,40 @@
 # State
 
-Phase: **v0.1 + v0.2 lines both shipped/frozen.** Mode this tick: **inbox-drain** — human appended one finding (`.flume/inbox.md`, chaos-flume dogfood). No spec delta; no active derive target (no `RELEASE-v0.3.md`); pending stays `[]`.
+Phase: **v0.3 line now ACTIVE** — `spec/RELEASE-v0.3.md` exists (two deliverables: foundations governor §§1-9, relocatable state §§10-15). Mode this tick: **derive** (new spec line → 5 pending entries), with an **audit** pass over the five landed commits that found a confirmed governor bug + 3 missing §7 tests. v0.1 + v0.2 lines frozen.
 
-## This tick — drained inbox item → OQ#4 PARKED (no pending entry)
+## This tick — derived 5 entries from RELEASE-v0.3.md; audited governor + relocatable-state commits
 
-Item: orphaned baton (awake flag names a phase the current chain doesn't declare) hibernates indistinguishably from a clean stop; reviewer proposed it as a 4th §5/§6 `NoCommitMode`.
+Both deliverables' runtime cores already landed (`ccf62c3` governor, `c34ea50` relocatable state, `20940b8` sessions chore). The spec is written largely as gap-closure; this tick decomposes the **unbuilt** remainder and the audit findings into pending.
 
-**Verified at source, worse than reported.** `Dispatcher.ts:360-368`: no-match → `{hibernated:true, awakeAfter:[], summary:"awake flags reference unknown phases…"}`, orphaned flag never `baton.sleep`'d. `cli.ts:206` → exit **0** (==clean hibernate). `superviseLoop` (`Dispatcher.ts:1249`) only stops on `baton.hibernating()`=`awake().length===0` (`Baton.ts:57-59`) → flag still on disk → **never stops**; hot-spins to `--max`, host relaunch → unbounded. Tick *claims* hibernation; supervisor structurally can't honor it.
+**Audit findings (commit-delta):**
+- **`ccf62c3` governor — confirmed bug.** `loadChainModule` (`src/Dispatcher.ts:160-192`) extracts `chain`+`agent` but drops `forkResolver`, though the `ChainModule` type + doc (`:121-132`) promise it as §3's stock-CLI bridge. `tick()`'s `chainModule.forkResolver ?? opts.forkResolver` can therefore never see a chain export. → **GOVERNOR-CHAIN-FORKRESOLVER**.
+- **`ccf62c3` governor — §7 test gap.** Schema/seam/skip tests present; missing 3 §7 cases (predicate-flip, no-resolver≡v0.2, once-per-tick-with-repoRoot). → **GOVERNOR-TESTS**.
+- **`c34ea50`/`20940b8` relocatable state — §12 canonicalization not built.** `src/cli.ts` resolves flumeDir/configDir into locals but never writes them back to `process.env`. The chore commit's session-dir change *explicitly depends* on this build-lane step. → **CLI-ENV-CANONICALIZATION** (top priority). §13 docs + §14 tests also unbuilt → **DOCS-RELOCATION**, **PROCESS-BOUNDARY-ENV-TEST**.
+- CHANGELOG: governor `### Added` present (`CHANGELOG.md:48-71`); Baton `### Breaking` landed with `c34ea50`; sessions `### Fixed` folded into CLI-ENV-CANONICALIZATION. No drift filed.
 
-**Routing: PARKED as OQ#4, not filed.** Two independent each-sufficient blockers: (1) no active spec line (v0.1 + v0.2 both frozen, no v0.3) → no `per` cite; (2) **architectural-misstep flag raised** (collab rule "Caveat — architectural missteps"): inbox's "fits §5/§6 union" is a category error — §5/§6 are per-entry agent-ran no-commit *work* outcomes; orphaned-baton is upstream of agent invocation (no phase picked). Shipped contract already excludes it on purpose: `TickOutcome.noCommit` doc `Dispatcher.ts:277-278` "Absent when … ran no agent (nothing pickable)".
+**No scope creep** flagged in the landed diffs; all touch-points stayed in `src/`/tests/CHANGELOG/docs per §6 additive posture.
 
-**Architectural correction recorded in OQ#4 (user-requested, web-grounded — don't re-derive):** 3 outcome axes — A work/retryable (§5/§6 channel), B clean-quiescence (exit 0 / `hibernating()`), C precondition/config-error (deterministic, non-retryable). Orphaned-baton is **Axis C**, joins §3's `failed`/exit-axis (today only half-built — §3 exits 1, orphaned-baton mis-routed onto B/exit-0). Cites: `sysexits.h` `EX_CONFIG`(78) distinct-exit-class convention; k8s `CreateContainerConfigError` (config, non-retriable, no backoff) vs `CrashLoopBackOff` (runtime, retried) + Pod failure policy fail-fast; poison-pill/dead-letter (silent-ack = ruled-out worst option). Root-cause flag: `superviseLoop`'s sole stop = `baton.hibernating()` reading disk structurally cannot represent "baton non-empty AND unrunnable" — Axis-C stop must come from the child **exit signal**, not the broken disk state. Buildable surface (once specced) is small + `src/`-local (`TickOutcome` field, `cli.ts` exit branch, `superviseLoop` stop, tests) — fully build-derivable, no off-allowlist edit (unlike OQ#1).
+## Queue (5)
 
-## Queue (0)
+1. **CLI-ENV-CANONICALIZATION** (open) — §12 build lane; linchpin, dogfood chain already depends on it.
+2. **GOVERNOR-CHAIN-FORKRESOLVER** (open) — §3 confirmed bug.
+3. **GOVERNOR-TESTS** (open) — §7 three missing cases.
+4. **PROCESS-BOUNDARY-ENV-TEST** (blockedBy CLI-ENV-CANONICALIZATION) — §14 inheritance test.
+5. **DOCS-RELOCATION** (blockedBy CLI-ENV-CANONICALIZATION) — §13 README + CHAIN-AUTHORING.
 
-pending `[]`. Nothing derivable — no spec section authorizes Axis-C work; awaits human spec call (OQ#4 disp A: open `spec/RELEASE-v0.3.md`).
+All files verified against build's `writablePaths` (src/, tests/, CHANGELOG.md, README.md, docs/) — none off-allowlist.
 
 ## Active plan target
 
-**None.** `spec/RELEASE-v0.1.md` (frozen), `spec/RELEASE-v0.2.md` (shipped/frozen). No `RELEASE-v0.3.md` → no derive target. Plan hibernates until a human adds/edits a `spec/RELEASE-*.md` or appends `.flume/inbox.md`.
+`spec/RELEASE-v0.3.md` (active). §§1-9 governor + §§10-15 relocatable state: runtime cores landed; remaining unbuilt surface is the 5 entries above. Non-goals (§8 cascade resolver / flume-on-flume self-adoption / forks.json; §14 in-repo dock glob / state migration) correctly excluded — not derived.
 
 ## Open questions
 
-**4.** OQ#4 (NEW this tick — orphaned-baton Axis-C; PARKED, needs human spec call: v0.3 line vs reopen-v0.2). OQ#1 (§7a chain.ts gate-move, PARKED human/`chore(flume):`), OQ#2 (v0.1.2 worktree surface — note: `4187f44`/`eae1ce9` recorded it as RELEASE-v0.2.md §1a; OQ#2 text may now be closeable next spec-delta tick, not re-litigated here), OQ#3 (v0.1.1 tag vs CHANGELOG, PARKED) — all byte-unchanged this tick.
+**4 (all PARKED, none closed this tick).** OQ#4 (orphaned-baton Axis-C) **updated**: v0.3 line now exists but carries governor + relocatable-state themes, **not** an Axis-C/loop-safety section — so the finding is still unauthorized by spec (no `per` cite) and stays PARKED; disposition A is now cheaper (append a section to the live RELEASE-v0.3.md rather than create the file). OQ#1 (§7a chain.ts gate-move, off-allowlist), OQ#2 (v0.1.2 worktree surface unspecced), OQ#3 (v0.1.1 tag vs CHANGELOG) — unchanged by this delta, not re-litigated.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/open-questions.md` (OQ#4 added) + `.flume/inbox.md` (entry drained → empty queue) + `.flume/plan/state.md`. `pending.json` already `[]`, not re-touched. No off-allowlist path.
-- Trunk: HEAD `eae1ce9`. Plan-artifact-only tick, no code change. tsc not re-run (no `src/` delta).
+- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}`. Inbox already empty (header-only) — not modified. No off-allowlist path.
+- Trunk: HEAD `20940b8`. Plan-artifact-only tick, no code change. tsc not re-run (no `src/` delta this tick).
 
 Plan continues: no
