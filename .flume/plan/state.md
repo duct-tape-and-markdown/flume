@@ -1,27 +1,32 @@
 # State
 
-Phase: **v0.3 line ACTIVE** — `spec/RELEASE-v0.3.md` (foundations governor §§1-9, relocatable state §§10-15, §16 flumeDir exposure, §17 test-suite lanes). Mode this tick: **derive**. v0.1 + v0.2 frozen.
+Phase: **v0.3 line ACTIVE** — `spec/RELEASE-v0.3.md` (foundations governor §§1-9, relocatable state §§10-15, §16 flumeDir exposure, §17 test-suite lanes). Mode this tick: **audit**. v0.1 + v0.2 frozen.
 
-## This tick — derive §17; resolve OQ#5
+## This tick — audit TEST-SUITE-LANES ship
 
-Delta = 1 commit (`87237c2` spec: add §17 — test-suite lanes). Spec-delta → derive.
-- **Derive:** §17 → one entry **TEST-SUITE-LANES** (gate open). Split vitest into fast (default `vitest run`) + integration (`*.integration.test.ts`, excluded from default, run via `test:integration`) lanes. All build-writable (`vitest.config.ts`, `package.json`, `tests/**`, `docs/**`); no `src/`/chain change. The exclude lands in the same commit whose afterMerge gate benefits (gate runs the narrowed `vitest run`), so it's self-greening — gate open, not blocked.
-- **OQ#5 RESOLVED → removed.** §17 specs the test-suite policy OQ#5 was parked for (no `per` cite) and adopts its option B (integration lane partition, host-run). The finding now carries a clean `per` cite (§17) and becomes TEST-SUITE-LANES.
-- **Audit:** delta is a human-authored spec commit (not a build commit) — no build-audit surface this tick.
+Delta = 2 commits (`2bdb2bb` build: vitest lane split; `5981b67` chore: drain pending → []). Commit-delta → audit.
+- **Audit `2bdb2bb` vs §17 — clean, accept.** Verified against the §17 deliverable list, point by point:
+  - `vitest.config.ts` excludes `**/*.integration.test.ts` from default; integration lane gated by `VITEST_LANE`. Verified live: fast lane lists **0** integration files; integration lane lists only the integration suite.
+  - `package.json` gains `test:integration` (`VITEST_LANE=integration vitest run`).
+  - `tests/loop-process-boundary.test.ts` → `.integration.test.ts` (rename; old retired).
+  - `docs/CHAIN-AUTHORING.md` documents the lane convention.
+  - **No `src/` change** (correct per §17a "No runtime fix"). **No scope creep** — exactly the 4 files in `entry.files`. Mechanism = filename-convention + config-exclude, the §17a-sanctioned default.
+- `5981b67` is the harness `chore(flume):` drain (pending → `[]`), not a `build:` commit — no `per`-cite audit surface.
+- **Derive:** spec-delta empty (no `spec/` change since last `plan:`). No derive.
 - **Drain:** inbox empty.
-- **Promote:** no blocked entries.
+- **Promote:** pending empty; no blocked entries.
 
-## Queue (1)
+## Queue (0)
 
-- **TEST-SUITE-LANES** (open) — §17 vitest lane split. Next to ship.
+Empty. v0.3 derivable surface complete (see below).
 
 ## Active plan target
 
-`spec/RELEASE-v0.3.md` — §§1-16 shipped + audited; §17 derived this tick (1 entry, buildable). v0.3 derivable surface = TEST-SUITE-LANES pending; once it ships, surface is complete again pending new `spec/`/inbox/OQ movement.
+`spec/RELEASE-v0.3.md` — §§1-17 all shipped + audited (§17 is the final section; confirmed no later sections). **v0.3 derivable surface is complete.** No further derivation until new `spec/` movement, an inbox entry, or an open-question resolution opens fresh surface.
 
 ## Open questions
 
-**4 (all PARKED).** OQ#5 (process-boundary tests / test-suite policy) RESOLVED by §17 → removed. Net 4:
+**4 (all PARKED)** — unchanged this tick:
 - §7a chain.ts gate-move (off-allowlist chore lane)
 - v0.1.2 worktree surface unspecced
 - v0.1.1 tag vs CHANGELOG
@@ -29,7 +34,7 @@ Delta = 1 commit (`87237c2` spec: add §17 — test-suite lanes). Spec-delta →
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}`. inbox unchanged. No off-allowlist path.
-- Trunk: HEAD `87237c2`. tsc green. (Full vitest carries the one pre-existing process-boundary timeout — exactly what TEST-SUITE-LANES removes from the default run.)
+- Wrote `.flume/plan/state.md`. pending.json already `[]`; open-questions/inbox unchanged. No off-allowlist path.
+- Trunk: HEAD `5981b67`. tsc green. Fast (default) vitest lane green and worktree-safe; integration lane runs at host via `test:integration`.
 
 Plan continues: no
