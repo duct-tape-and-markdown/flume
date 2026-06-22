@@ -223,6 +223,48 @@ This is a default, not a law. A small, fast suite can stay at
 suite is trivial. Move it to `afterMerge` once the suite is heavy enough
 that running it N-wide is itself what makes it flake.
 
+### Don't gate the in-worktree build on host-level integration tests
+
+`vitestGate` runs `pnpm test` (= `vitest run`) **inside the fanout worktree** —
+a freshly `pnpm install`'d tree, under full-suite parallel load. That is the
+wrong place for tests that spawn real subprocesses (`flume tick`/`loop` via
+`tsx`, real `git`) or otherwise need a warm host: their cold start-up costs
+multiply under N-wide contention and can blow the suite's timeout, reverting a
+commit that was never broken. The failure is an execution-environment artifact,
+not a defect in the code under test.
+
+Split the suite into two lanes instead of raising the timeout (a bigger timeout
+masks nothing and leaves the worktree-hostility in place):
+
+- **Fast lane** — unit + fast tests; the default `vitest run`. This is exactly
+  what the build's `afterMerge` gate invokes, so it stays fast and worktree-safe.
+- **Integration lane** — anything needing real subprocesses or a warm host.
+  Mark it with the `*.integration.test.ts` filename convention and **exclude it
+  from the default run** in `vitest.config.ts`, so the in-worktree gate never
+  runs it. It runs at the **host** (main checkout, warm deps, no worktree) via a
+  dedicated `pnpm test:integration` — pre-merge / CI, not the autonomous gate.
+
+```ts
+// vitest.config.ts — exclude the integration lane from the default (gate) run
+import { configDefaults, defineConfig } from "vitest/config";
+const integration = process.env.VITEST_LANE === "integration";
+export default defineConfig({
+  test: {
+    include: integration
+      ? ["tests/**/*.integration.test.ts"]
+      : ["tests/**/*.test.ts"],
+    exclude: integration
+      ? [...configDefaults.exclude]
+      : [...configDefaults.exclude, "**/*.integration.test.ts"],
+  },
+});
+```
+
+Integration coverage is **preserved, relocated** — not dropped. The
+process-boundary guarantees still run, at the host where they are fast and
+reliable. (A vitest workspace/projects split is an equivalent mechanism; the
+boundary is what matters, not the vitest knob.)
+
 ### Anti-pattern: gate on the safety property, not on byte-equality of a generated artifact
 
 A gate must assert the property you actually care about — not byte-identity
