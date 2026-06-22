@@ -10,9 +10,9 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -54,6 +54,46 @@ function chainSrc(phaseName: string): string {
   );
 }
 
+/**
+ * A chain.ts whose singleton phase `<name>` exports an `agent` that records the
+ * `FLUME_DIR`/`FLUME_CONFIG_DIR` it observes *inside the child tick process* to
+ * `<FLUME_DIR>/observed-env.json`. The supervisor (`flume loop`) spawns this
+ * tick with no `env:` override, so the values written here are whatever the
+ * child inherited across the process boundary — the §11/§14 inheritance claim
+ * made observable end-to-end.
+ */
+function envProbeChainSrc(phaseName: string): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "env probe",\n` +
+    `    promptPath: "prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `};\n` +
+    `export const agent = {\n` +
+    `  name: "env-probe",\n` +
+    `  async invoke() {\n` +
+    `    writeFileSync(\n` +
+    `      join(process.env.FLUME_DIR ?? "", "observed-env.json"),\n` +
+    `      JSON.stringify({\n` +
+    `        FLUME_DIR: process.env.FLUME_DIR,\n` +
+    `        FLUME_CONFIG_DIR: process.env.FLUME_CONFIG_DIR,\n` +
+    `      }),\n` +
+    `    );\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `};\n`
+  );
+}
+
 interface Repo {
   dir: string;
   cleanup: () => Promise<void>;
@@ -81,6 +121,28 @@ async function makeRepo(): Promise<Repo> {
 async function runTick(cwd: string): Promise<{ out: string; code: number }> {
   try {
     const { stdout, stderr } = await exec(TSX, [CLI, "tick"], { cwd });
+    return { out: stdout + stderr, code: 0 };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; code?: number };
+    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+  }
+}
+
+/**
+ * Spawn one real `flume loop --max 1` with an explicit `env`; collect combined
+ * output and exit code. The supervisor process inside this invocation spawns
+ * the child `flume tick` itself (`defaultTickRunner`, no `env:` override), so
+ * the boundary under test is real, not stubbed.
+ */
+async function runLoop(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ out: string; code: number }> {
+  try {
+    const { stdout, stderr } = await exec(TSX, [CLI, "loop", "--max", "1"], {
+      cwd,
+      env,
+    });
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -128,6 +190,57 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
       expect(t2.code).toBe(0);
       expect(t2.out).toMatch(/tick → beta \(singleton\)/);
       expect(t2.out).not.toMatch(/unknown phases/);
+    },
+    30_000,
+  );
+});
+
+describe("§14 process-boundary env inheritance — supervisor → child tick", () => {
+  it(
+    "a child `flume tick` spawned by `flume loop` observes the supervisor's canonical FLUME_DIR/FLUME_CONFIG_DIR",
+    async () => {
+      // Relocate state and config OUTSIDE `<repoRoot>/.flume` (the default), in
+      // separate dirs (the attach-work-detach posture, §10/§13). If the child
+      // did NOT inherit the supervisor's env it would fall back to the default
+      // and never see these paths — so observing them end-to-end *is* the
+      // inheritance proof, distinct from a child re-deriving the default.
+      const stateDir = await mkdtemp(join(tmpdir(), "flume-state-"));
+      const configDir = await mkdtemp(join(tmpdir(), "flume-config-"));
+
+      // chain.ts + prompt live under configDir; the agent it exports writes the
+      // env it observes to `<FLUME_DIR>/observed-env.json` inside the child.
+      await writeFile(join(configDir, "chain.ts"), envProbeChainSrc("probe"), "utf8");
+      await writeFile(join(configDir, "prompt.md"), "probe prompt\n", "utf8");
+
+      // Wake the phase in the relocated state dir — the supervisor reads the
+      // baton from FLUME_DIR, so the awake flag must live there, not under
+      // `<repoRoot>/.flume`.
+      new Baton(stateDir).wake("probe");
+
+      const env = {
+        ...process.env,
+        FLUME_DIR: stateDir,
+        FLUME_CONFIG_DIR: configDir,
+      };
+      const loop = await runLoop(repo.dir, env);
+      expect(loop.code).toBe(0);
+      expect(loop.out).toMatch(/tick → probe \(singleton\)/);
+
+      // The child wrote this file under FLUME_DIR — its mere presence there
+      // proves the child resolved FLUME_DIR to the relocated state dir.
+      const observed = JSON.parse(
+        await readFile(join(stateDir, "observed-env.json"), "utf8"),
+      ) as { FLUME_DIR: string; FLUME_CONFIG_DIR: string };
+
+      // The child saw the supervisor's canonical roots — absolute, and exactly
+      // the relocated dirs — confirming loop → tick env inheritance end-to-end.
+      expect(observed.FLUME_DIR).toBe(stateDir);
+      expect(observed.FLUME_CONFIG_DIR).toBe(configDir);
+      expect(isAbsolute(observed.FLUME_DIR)).toBe(true);
+      expect(isAbsolute(observed.FLUME_CONFIG_DIR)).toBe(true);
+
+      await rm(stateDir, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
     },
     30_000,
   );
