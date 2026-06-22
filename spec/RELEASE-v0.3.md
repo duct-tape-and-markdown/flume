@@ -337,3 +337,67 @@ verified (and clarified that placement is chain-supplied) rather than rewritten.
   foundations governor under one minor. The `Baton` break (§11) is the only
   non-additive change and is permitted pre-1.0 (v0.1 §9). Rejected: a separate
   0.4.0 line for work that has not yet shipped to npm.
+
+## 16. `flumeDir` exposure to gates & prompts (ergonomic primitive)
+
+Relocation (§§10-15) moves the state root, and §12 canonicalizes the resolved
+root into `process.env.FLUME_DIR`. That is already enough to author a
+fully `flumeDir`-aware chain today: a gate can read
+`join(process.env.FLUME_DIR, …)`, `writablePaths` can be computed from it at
+chain-load, and a prompt can take it via `promptArgs` (`{{TOKEN}}`) or
+`$FLUME_DIR` in an inline-exec. **No consumer is blocked on this section** — it
+exists to make `flumeDir`-awareness a *blessed, first-class* affordance rather
+than a reach into global `process.env` and a footgun where a chain hardcodes
+`.flume/` while the dispatcher reads `<flumeDir>/`.
+
+- **`GateContext.flumeDir: string`** (`src/Gate.ts`) — the absolute, resolved
+  state root, threaded by the dispatcher into every gate context (it already
+  holds `this.flumeDir`). A gate reads `join(ctx.flumeDir, "plan",
+  "pending.json")` instead of hardcoding `.flume/` or reaching into
+  `process.env`. The dogfood `pendingParseGate` (`.flume/chain.ts`, harness
+  lane) adopts it as the reference use.
+- **`TickContext.flumeDir: string`** (`src/Phase.ts`) — same value, surfaced to
+  `promptArgs(ctx)` so a chain can derive prompt args from the state root
+  programmatically.
+- **Reserved `{{FLUME_DIR}}` prompt arg** — the dispatcher auto-injects
+  `FLUME_DIR` into every prompt's substitution map, alongside the structural
+  `<harness>` / `<prior-attempt>` blocks it already prepends
+  (`src/Prompt.ts`). A prompt uses `{{FLUME_DIR}}/plan/pending.json` with **zero
+  chain boilerplate**; a prompt that never references it is unaffected.
+- **`writablePaths` stays `process.env.FLUME_DIR`-derived** — it is static
+  config evaluated at chain-load, before any per-tick context exists, so the
+  env (canonicalized in §12) is the correct seam there. Called out so it reads
+  as a deliberate boundary, not a missing affordance.
+
+This primitive only changes **where** the committed paths point; it never
+changes **whether** pipeline state is committed — that invariant
+(`docs/INTENT.md`, "the commit is the transaction") is upstream of it and
+unchanged. A relocated chain still commits `pending.json`; `flumeDir` only moves
+the location all four sites (dispatcher, gate, `writablePaths`, prompt) agree
+on.
+
+### 16a. Versioning & tests
+
+- **Additive, 0.3.0.** New fields on dispatcher-*constructed* contexts
+  (`GateContext`, `TickContext`) are additive for consumers (they receive more,
+  never construct them), and an always-present reserved prompt arg breaks no
+  existing prompt. No signature breaks.
+- **Tests** (`tests/Gate.test.ts` / `tests/Prompt.test.ts` / `tests/Dispatcher.test.ts`):
+  `GateContext.flumeDir` carries the resolved root in both the default
+  (`<repoRoot>/.flume`) and relocated cases; `{{FLUME_DIR}}` resolves in a
+  rendered prompt with no chain-declared arg; `TickContext.flumeDir` is
+  populated at tick time.
+
+### 16b. Resolved decisions
+
+- **Expose via context + reserved token, not "every chain reads `process.env`."**
+  `process.env.FLUME_DIR` works but is a global reach-around; a typed
+  `ctx.flumeDir` and an auto-injected `{{FLUME_DIR}}` are the blessed seams,
+  consistent with how the dispatcher already injects `<harness>` /
+  `<prior-attempt>`. Rejected: leaving `process.env` as the only path.
+- **`writablePaths` stays env-derived.** It is evaluated at chain-load with no
+  per-tick context; threading a context into static config would be a larger,
+  unmotivated change. Rejected: a context-bound `writablePaths` builder.
+- **Optional, not a blocker.** Shipped because it is the right primitive and
+  removes the hardcoding footgun, not because any consumer requires it — the
+  dock and any relocated chain already function via §12's canonicalized env.
