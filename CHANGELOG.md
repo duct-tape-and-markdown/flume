@@ -146,9 +146,11 @@ discarding work, or looping blind.
 
 ## [0.1.1] - 2026-05-15
 
-Interim npm release, published out-of-band from a branch since reconciled
-into canonical history. **No `v0.1.1` git tag exists** — its content lives
-in canonical history via the README/docs scope fixes below.
+Interim npm release, published out-of-band from a fork branch. The annotated
+tag `v0.1.1` exists but points at the off-`main` fork commit `ce73d95`; its
+content — the README/docs scope fixes below — was reconciled into canonical
+history on `main` as `e9adb1c`. (`v0.1.0` (`8d6ea2c`) is likewise tagged
+off-`main`; `v0.1.2` onward is tagged on canonical history.)
 
 ### Fixed
 
