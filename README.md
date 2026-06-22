@@ -110,6 +110,39 @@ Everything is on disk under `.flume/`:
 Ticks read these on entry and write them on commit. Across ticks, the disk is
 the only carrier of state.
 
+### Relocating state: `FLUME_DIR` / `FLUME_CONFIG_DIR`
+
+The two halves of `.flume/` relocate independently via env vars:
+
+- **`FLUME_DIR`** moves the **mutable state** — the baton (`awake/`), pending
+  (`plan/`), worktrees (`worktrees/`), prior-attempt records
+  (`prior-attempts/`), and session logs (`sessions/`).
+- **`FLUME_CONFIG_DIR`** moves the **chain + prompts** — `chain.ts` and the
+  prompt files it references.
+
+Both default to `<repoRoot>/.flume`. A set-but-relative value resolves against
+the cwd. They cross the `loop`→`tick` process boundary by inheritance: the
+supervisor's `flume tick` children run with no `env:` override, so they see the
+same resolved values.
+
+This buys an **attach-work-detach** posture: point `FLUME_DIR` at a tmpdir
+outside the working tree, run the loop, and tear the whole footprint down with a
+single `rm` — no state bleeds into `<repoRoot>/.flume`.
+
+```bash
+export FLUME_DIR="$(mktemp -d)/flume-dock"
+flume loop                  # baton, pending, worktrees, sessions all under FLUME_DIR
+rm -rf "$(dirname "$FLUME_DIR")"   # one rm removes the whole dock
+```
+
+A relocated **dock is expected to live outside the repo** (e.g. a tmpdir), so
+`.gitignore` needs no change: the default `<repoRoot>/.flume` stays ignored as
+today, and an out-of-tree dock is invisible to git by construction. The one-`rm`
+guarantee holds only if every per-run artifact your chain writes also lives
+under `FLUME_DIR` — see
+[`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for the chain-author
+requirement.
+
 ## Status
 
 **v0.1** — stable enough to depend on for a project that lives ≥3 months
