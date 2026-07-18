@@ -12,7 +12,7 @@
  */
 
 import { resolve, join, dirname } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { Baton } from "./Baton.js";
@@ -209,6 +209,45 @@ async function main(): Promise<number> {
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
     const max = maxIdx >= 0 ? Number(rest[maxIdx + 1]) : 50;
+    // Cross-process loop lock: one supervisor per repo. A stale pidfile
+    // (dead pid) is reclaimed; a live one refuses the second loop — two
+    // supervisors against one state root race plan/build state.
+    const lockPath = join(repoRoot, ".flume", "loop.pid");
+    if (existsSync(lockPath)) {
+      const prior = Number(readFileSync(lockPath, "utf8").trim());
+      let alive = false;
+      if (Number.isFinite(prior) && prior > 0) {
+        try {
+          process.kill(prior, 0);
+          alive = true;
+        } catch {
+          // dead or not ours — reclaim
+        }
+      }
+      if (alive) {
+        console.error(
+          `[flume] another loop (pid ${prior}) already runs against ${repoRoot}; refusing`,
+        );
+        return 1;
+      }
+    }
+    writeFileSync(lockPath, String(process.pid));
+    const dropLock = () => {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // already gone
+      }
+    };
+    process.on("exit", dropLock);
+    process.on("SIGINT", () => {
+      dropLock();
+      process.exit(130);
+    });
+    process.on("SIGTERM", () => {
+      dropLock();
+      process.exit(143);
+    });
     // Supervisor: one fresh `flume tick` process per iteration (§2). The
     // dispatcher constructed above is unused on this path — each child
     // builds its own and resolves chain.ts in its own process.
