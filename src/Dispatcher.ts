@@ -934,7 +934,14 @@ export class Dispatcher {
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(entry.tag);
     const branch = `flume/${slug}`;
-    const path = join(this.opts.repoRoot, ".flume", "worktrees", slug);
+    // FLUME_WORKTREES_DIR: ephemeral worktrees relocate OUTSIDE the repo so an
+    // agent's pwd never contains the root checkout's path as a prefix (the
+    // observed stray-write vector: a model that sees `<root>/.flume/worktrees/x`
+    // derives `<root>` and operates there). Default stays in-repo for compat.
+    const wtBase = process.env.FLUME_WORKTREES_DIR
+      ? resolve(process.env.FLUME_WORKTREES_DIR)
+      : join(this.opts.repoRoot, ".flume", "worktrees");
+    const path = join(wtBase, slug);
     if (existsSync(path)) {
       // Stale from a prior crashed run; clean up.
       try {
