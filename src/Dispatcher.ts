@@ -1177,7 +1177,17 @@ export class Dispatcher {
     shippedTags: string[],
   ): Promise<string> {
     const shipped = new Set(shippedTags);
-    const after = before.filter((e) => !shipped.has(e.tag));
+    // A blockedBy gate naming a tag this wave shipped is resolved HERE,
+    // mechanically: the dispatcher just merged and gated that tag, so
+    // "did the blocker land" needs no plan tick — the next wave forms
+    // without a plan interim. Judgment gates (parked) stay plan's.
+    const after = before
+      .filter((e) => !shipped.has(e.tag))
+      .map((e) =>
+        e.gate.kind === "blockedBy" && shipped.has(e.gate.tag)
+          ? { ...e, gate: { kind: "open" as const } }
+          : e,
+      );
     await mkdir(dirname(this.pendingPath), { recursive: true });
     await writeFile(
       this.pendingPath,
