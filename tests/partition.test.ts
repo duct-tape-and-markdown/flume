@@ -144,3 +144,18 @@ describe("partitionByFileOverlap — maxParallel respected", () => {
     expect(tags(batches[1]!)).toEqual(["B"]);
   });
 });
+
+describe("partitionByFileOverlap — observed footprints", () => {
+  it("separates entries whose observed footprints overlap even when declared files are disjoint", () => {
+    // A collided with B's ground on a prior merge attempt: its declared
+    // files are disjoint from B's, but its recorded footprint is not.
+    const entries = [
+      { ...makeEntry("A", { edit: ["src/a.ts"] }), observedFiles: ["src/a.ts", "src/b.ts"] },
+      makeEntry("B", { edit: ["src/b.ts"] }),
+    ];
+
+    const batches = partitionByFileOverlap(entries, { maxParallel: 4 });
+
+    expect(batches.map(tags)).toEqual([["A"], ["B"]]);
+  });
+});
