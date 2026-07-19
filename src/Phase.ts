@@ -57,6 +57,12 @@ export interface TickResult {
   pendingAfter: readonly PendingEntry[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
+  /**
+   * Tags whose commits were reverted at merge time (cherry-pick conflict or
+   * afterMerge gate). Distinguishes a merge-thrash re-pick from an in-session
+   * retry in downstream telemetry.
+   */
+  revertedTags: readonly string[];
 }
 
 /**
