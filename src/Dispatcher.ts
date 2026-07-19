@@ -474,6 +474,7 @@ export class Dispatcher {
         gateResults,
         pendingAfter: await this.readPending(),
         shippedTags: [],
+        revertedTags: [],
       },
       ...(noCommit ? { noCommit } : {}),
     };
@@ -501,6 +502,7 @@ export class Dispatcher {
           gateResults: [],
           pendingAfter: pending,
           shippedTags: [],
+          revertedTags: [],
         },
       };
     }
@@ -776,6 +778,7 @@ export class Dispatcher {
         gateResults: allGateResults,
         pendingAfter: await this.readPending(),
         shippedTags: shipped.map((s) => s.tag),
+        revertedTags: mergeReverted.map((e) => e.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     };
