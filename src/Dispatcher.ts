@@ -690,11 +690,22 @@ export class Dispatcher {
         await this.clearPriorAttempt(this.priorAttemptKey(phase, s));
       }
       const shippedTags = shipped.map((s) => s.tag);
-      chorSha = await this.commitPendingUpdate(pending, shippedTags, observed);
+      // The update can no-op (footprint already recorded, nothing shipped):
+      // commitPendingUpdate then returns the pre-existing HEAD, which must
+      // not be reported as this wave's commit.
+      const preUpdate = await git.revParse(repoRoot);
+      const updSha = await this.commitPendingUpdate(
+        pending,
+        shippedTags,
+        observed,
+      );
+      if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
         shippedTags.length > 0
-          ? `[flume] ship commit ${chorSha.slice(0, 8)}: ${shippedTags.join(", ")}`
-          : `[flume] footprint commit ${chorSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
+          ? `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+          : updSha === preUpdate
+            ? `[flume] footprint already recorded, no commit: ${[...observed.keys()].join(", ")}`
+            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
       );
     }
 
