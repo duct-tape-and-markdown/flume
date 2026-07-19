@@ -99,6 +99,13 @@ export const PendingEntry = z.object({
   acceptance: z.string().min(1),
   /** Optional context not in the spec; capped to keep entries scannable. */
   notes: z.string().max(500).optional(),
+  /**
+   * Dispatcher-maintained: actual paths a merge-reverted attempt touched,
+   * unioned into the partition so a retry never rides the same wave as the
+   * entry it collided with. Plan may carry or drop this field freely — the
+   * dispatcher rebuilds it on the next failed merge.
+   */
+  observedFiles: z.array(z.string().min(1)).optional(),
 });
 
 export type PendingEntry = z.infer<typeof PendingEntry>;
@@ -251,5 +258,6 @@ export function touchedPaths(entry: PendingEntry): string[] {
     ...entry.files.new.map((f) => f.path),
     ...entry.files.edit.map((f) => f.path),
     ...entry.files.retire,
+    ...(entry.observedFiles ?? []),
   ];
 }
