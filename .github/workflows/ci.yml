@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  # win32 support lane (spec/RELEASE-v0.4.md §6): typecheck + full suite on
+  # Windows. Single lane, no matrix (§8) — POSIX remains the primary target;
+  # the publish-acceptance steps stay ubuntu-only in the `ci` job.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm tsc --noEmit
+
+      - run: pnpm test
+
   ci:
     runs-on: ubuntu-latest
     steps:
