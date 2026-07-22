@@ -1,1 +1,141 @@
-[]
+[
+  {
+    "tag": "AXIS-C-ORPHANED-AWAKE",
+    "summary": "Orphaned awake flag becomes typed Axis-C terminal: TickOutcome.terminal {kind:\"orphaned-awake\", phases}, tick exit 78, superviseLoop fail-fast on child 78, flag left on disk. Per §3.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "3. Axis-C terminal misconfiguration (orphaned baton)"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "Orphaned path (~:360) sets terminal instead of hibernated; superviseLoop (:1355-1377) stops on child exit 78, summary names phases — never consults baton.hibernating() for this." },
+        { "path": "src/cli.ts", "description": "Exit branch (:250) → 78 when outcome.terminal set; 0/1 axes unchanged." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "orphaned-awake tick → terminal.kind===\"orphaned-awake\" with phases named; flag still on disk; clean hibernation path unchanged" },
+      { "path": "tests/cli.test.ts", "asserts": "tick exits 78 on terminal, 0 on clean hibernate, 1 on §3 resolution failure" },
+      { "path": "tests/loop-process-boundary.integration.test.ts", "asserts": "superviseLoop stops immediately on child 78 with orphaned phases in summary; no further ticks" }
+    ],
+    "acceptance": "§7 Axis-C cases green: 78 classification, supervisor fail-fast, flag persistence, hibernate still exits 0",
+    "notes": "Never clear the flag (silent-ack anti-pattern, §9.2). terminal is a sibling of hibernated/failed, NOT a NoCommitMode member (§3 rejects the Axis-A framing). kind is an open union; \"orphaned-awake\" is its only member this release (§8)."
+  },
+  {
+    "tag": "ENTRY-SCOPED-GUARD",
+    "summary": "Fanout ticks with assignedEntry: write guard narrows to entry.files ∪ Phase.entryChannelPaths with phase writablePaths as outer ceiling; singleton ticks unchanged. Per §5.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "5. Entry-scoped fanout write guard"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Phase.ts", "description": "entryChannelPaths?: string[] (default []), same home as writablePaths." },
+        { "path": "src/builtinGates.ts", "description": "writablePathsGate grows entry-scope support (or a scoped sibling) — both checks apply." },
+        { "path": "src/Dispatcher.ts", "description": "Gate construction (:993) passes entry scope when assignedEntry present; revert feedback names out-of-scope path(s) for the §5 prior-attempt block." },
+        { "path": "src/PendingSchema.ts", "description": "files description text states the plan-side obligation: declare every legitimately-touched path incl. incidentals." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "scoped commit inside files∪channel ships; path outside scope but inside phase globs reverts and retry prompt names it; path inside files but outside phase globs reverts (ceiling); singleton ticks keep phase-wide scope" }
+    ],
+    "acceptance": "§7 §5 matrix green; revert message/feedback names the offending path(s)",
+    "notes": "Enforced from first release — no warn-first (§9.4). Failure semantics identical to existing guard: whole-commit revert. Dogfood adoption (.flume/prompts/plan.md obligation line + chain.ts entryChannelPaths) is off-allowlist chore(flume) — see OQ."
+  },
+  {
+    "tag": "PHASE-AGENT",
+    "summary": "Phase.agent?: Agent — per-phase delegation seam; per-tick resolution phase.agent ?? chainModule.agent ?? opts.agent. Per §4.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "4. Per-phase agent assignment"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Phase.ts", "description": "Optional agent field." },
+        { "path": "src/Dispatcher.ts", "description": "Resolution (:394) gains the inner phase scope." },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "Per-phase model pattern via claudeCode({extraArgs:[\"--model\",…]}) + chain-local helper amortizing the decorator stack." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "phase.agent used for that phase and default elsewhere; chainModule.agent still overrides opts.agent when the phase is silent" }
+    ],
+    "acceptance": "§7 §4 cases green; CHAIN-AUTHORING documents the per-phase model pattern",
+    "notes": "Mechanism only — no Phase.model string sugar (§8, §9.3)."
+  },
+  {
+    "tag": "TEST-PR5-SURFACE",
+    "summary": "Backfill the two §2a test holes: cross-process loop lock and FLUME_WORKTREES_DIR base override. Per §2c. Tests only — no shape changes authorized.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "2c. Derivable gaps"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "tests/cli.test.ts", "description": "Loop-lock cases against <flumeDir>/loop.pid (src/cli.ts:261)." },
+        { "path": "tests/Dispatcher.test.ts", "description": "Worktree base resolution cases (src/Dispatcher.ts:1032)." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/cli.test.ts", "asserts": "second loop against same state root refused while recorded pid alive; stale (dead-pid) pidfile reclaimed" },
+      { "path": "tests/Dispatcher.test.ts", "asserts": "worktree base = resolve(FLUME_WORKTREES_DIR) when set, else join(flumeDir, \"worktrees\")" }
+    ],
+    "acceptance": "Both §2c-listed holes closed; suite green",
+    "notes": "Behavior shipped in 0.3.1; PR #5 carried tests for partition/schema but none for these two."
+  },
+  {
+    "tag": "DOCS-PR5-SURFACE",
+    "summary": "README + CHAIN-AUTHORING coverage of FLUME_WORKTREES_DIR, the loop lock, and the setupWorktree {extraEnv} seam (with teardownWorktree/WorktreeSetupResult context from §2b). Per §2c.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "2c. Derivable gaps"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "README.md", "description": "FLUME_WORKTREES_DIR env + loop lock behavior." },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "{extraEnv} seam + teardownWorktree hook; worktree-base override guidance." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "The three §2c-listed items documented; no undocumented §2a/§2b surface remains",
+    "notes": ""
+  },
+  {
+    "tag": "CI-WINDOWS-LANE",
+    "summary": "Add a windows-latest job running pnpm tsc --noEmit && pnpm test to CI. Per §6.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": ".github/workflows/ci.yml", "description": "windows-latest lane per §6; single lane, no matrix (§8)." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "windows-latest lane present in ci.yml and green",
+    "notes": "Spawn/path/test-repo disciplines of §6 already shipped in 0.3.1 — the lane is their enforcement; §7 says no new unit tests for §6."
+  }
+]
