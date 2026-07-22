@@ -1,84 +1,5 @@
 [
   {
-    "tag": "JOB-FANOUT-PATH",
-    "summary": "Namespace fanout worktree paths <wtBase>/<namespace>/<slug> when namespace set; legacy <wtBase>/<slug> otherwise. Closes shared-FLUME_WORKTREES_DIR path clobber across jobs.",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "4. Job-scoped fanout branches"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "createWorktree path derivation (:1111-1114) mirrors branch namespacing"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "path namespacing asserts alongside the existing §4 branch suite"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "namespace + FLUME_WORKTREES_DIR → worktree at <base>/<ns>/<slug>; two namespaces, shared base, identical tag → disjoint paths, neither run rm's the other's; no namespace → <base>/<slug>"
-      }
-    ],
-    "acceptance": "new path asserts green; existing §4 branch suite unchanged and green",
-    "notes": "Audit finding on ece8c2c: branch namespaced, path still slug-keyed — shared FLUME_WORKTREES_DIR across jobs collides on identical slugs and stale-cleanup rm -rfs the foreign live worktree (worse than §6's fail-a-tick bar). Namespace the path unconditionally when set; redundant level under the default per-job base is harmless. Cross-repo bare-harness collision under a shared global base is pre-existing, out of §4 scope."
-  },
-  {
-    "tag": "JOB-NEW",
-    "summary": "flume job new <name> [--template <dir>]: branch job/<name>, seed jobdir, runtime .gitignore ensure, unconditional @dtmd/flume link, win32 longpaths pin, baseline commit.",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "5a. `flume job new <name> [--template <dir>]`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "src/job.ts",
-          "description": "job verb family module; new impl per §5a steps 1-7"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "§5a unit surface incl. no-dep-tree fixture"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "route `job` subcommand family; help text"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "flume job new section"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "baseline commit excludes runtime + junction; ignore-ensure idempotent + template-preserving; no-dep-tree fixture chain load resolves @dtmd/flume; template-less new warns; name with path separator rejected (exit 2)"
-      }
-    ],
-    "acceptance": "§5a suite green on scratch repos; win32 lane covers junction + longpaths",
-    "notes": "Link target resolve(HERE,'..') from the running CLI; skip only if link exists. Runtime ignore set: awake/, prior-attempts/, worktrees/, node_modules/, loop.pid. Validate <name> shape (reject path separators) before dir+branch construction — accepted-debt routing from the JOB-RESOLUTION audit (--job doesn't validate)."
-  },
-  {
     "tag": "JOB-RUN",
     "summary": "flume job run <name> [--max N]: assert-or-checkout job/<name>, wake chain.phases[0] iff hibernating, then the standard loop under the §3 resolution.",
     "per": {
@@ -86,8 +7,7 @@
       "section": "5b. `flume job run <name> [--max N]`"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-NEW"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
