@@ -2,18 +2,19 @@
 
 Phase: **v0.4 ACTIVE** (`spec/RELEASE-v0.4.md` opened `d2371fe`; v0.1/v0.2/v0.3 frozen). Mode this tick: **audit**.
 
-## This tick — audit the fourth v0.4-era ship wave (1 build commit + chore drain)
+## This tick — audit the harness/spec landing wave; OQ ledger drained to zero
 
-Delta = 2 commits since `8116ce0`, no spec change, empty inbox, no blocked entries.
+Delta = 3 commits since `deccffc` (1 merge + 1 chore + 1 spec), spec delta present but records shipped behavior, empty inbox, pending `[]`.
 
-- `64b4bc4` **PHASE-AGENT vs v0.4 §4: conformant.** `Phase.agent?: Agent` (`src/Phase.ts`); resolution `phase.agent ?? chainModule.agent ?? this.opts.agent` at `src/Dispatcher.ts:462`, moved *after* phase selection — the sole resolution site, feeding both `runSingleton` and `runFanout` by param into the single `agent.invoke` at `:999`. No bypass path. Mechanism-only (Agent value, no model-string sugar) per §8. CHAIN-AUTHORING documents the per-phase pattern incl. the `claudeCode({extraArgs:["--model",…]})` model-only variation + chain-local helper, per §4 bullet 3. Tests cover both §7 §4 mandates (phase.agent wins for its phase; silent sibling falls back chain > opts) plus a both-silent opts-default case. Files touched = declared set exactly; no scope creep. Optional field, non-breaking → no dogfood chain.ts co-update needed. One non-finding: §4's cite `src/Dispatcher.ts:394` now points at :462 post-move — spec line-cite drift on the human surface, not worth an OQ.
-- `4f8bc46` chore drain: removed exactly the 1 shipped tag; pending now `[]`; clean.
+- `d7a13ff` merge PR #6: lands the already-audited 0.3.1→v0.4 line onto main. No new surface; nothing to audit beyond the merge itself. Cleared the 36-behind backlog noted last tick.
+- `12eae61` chore drain, **conformant with v0.4 §5**: `entryChannelPaths: [".flume/plan/open-questions.md"]` set on the dogfood build phase; same path admitted through `writablePaths` (guard's outer ceiling binds channel paths — correct); `prompts/plan.md` Derive dimension carries the `files` obligation with the worked incidental example (`tests/PendingSchema.test.ts`). Matches the §5 dogfood OQ ask exactly → **OQ closed**. Its staleness claim on the §7a OQ verified true: `eef522c` already landed disposition A (vitest as `shellGate({when:"afterMerge"})`, `.flume/chain.ts:264-269`; tscGate stays afterCommit) → **§7a OQ closed** (was stale; the ledger missed the landing).
+- `52e768b` spec, **recording matches shipped code**: loop-propagates-78 (`src/cli.ts:328`, help text `:146`) and mixed-flags-classify-at-quiescence (`tests/Dispatcher.test.ts:442` rides-alongside case) — both §3 additions restate the standing plan rulings verbatim in substance → **§3 NEEDS-AMENDMENT OQ closed**.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none.
+**Derive**: spec delta touches only §3 and records already-shipped-and-tested semantics; no code change mandated, no entries derived. **Drain**: none (inbox empty). **Promote**: none.
 
 ## Queue (0)
 
-Empty. **v0.4 derivable surface is fully shipped**: §3, §4, §5 guard, §2b, §2c, §6 lane (CI proof still pending push). What remains on v0.4 is human-lane only — see open questions.
+Empty. v0.4 derivable surface fully shipped; **open-questions ledger now empty** (all three closed this tick: §7a stale-landed via `eef522c`, §5 dogfood via `12eae61`, §3 recording via `52e768b`).
 
 ## Active plan target
 
@@ -21,11 +22,11 @@ Empty. **v0.4 derivable surface is fully shipped**: §3, §4, §5 guard, §2b, �
 
 ## Open questions
 
-**3**, unchanged this tick: §7a gate-move (PARKED, `chore(flume):` actionable), v0.4-§5 dogfood adoption (PARKED, actionable, can share that commit), §3 loop-78/mixed-flag recording (NEEDS AMENDMENT, two one-line spec edits).
+**0** — ledger drained this tick.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` only; pending.json (`[]`) and open-questions.md carried unchanged; inbox.md untouched (empty). No new/edited entries → no path checks triggered.
-- Trunk: HEAD `4f8bc46` at tick start, tree clean. **origin/main 36 behind** — windows lane and everything post-PR#5 unexercised in CI; human push still pending.
+- Wrote `.flume/plan/{state.md,open-questions.md}`; pending.json carried unchanged (`[]`); inbox.md untouched (empty). No entries → no path checks triggered.
+- Trunk: HEAD `52e768b` at tick start, tree clean. **main ahead 2 of origin/main** (`12eae61`, `52e768b` unpushed); the prior 36-behind backlog cleared via PR #6. Human push of the two harness/spec commits still pending — CI has not exercised them.
 
 Plan continues: no
