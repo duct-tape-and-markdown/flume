@@ -247,8 +247,10 @@ export interface DispatcherOptions {
    */
   flumeDir?: string;
   /**
-   * Default agent. A `chain.ts` that exports `agent` overrides this per tick
-   * (the agent re-resolves with the chain); otherwise this is used.
+   * Default agent. Per-tick resolution is
+   * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` that exports
+   * `agent` overrides this (the agent re-resolves with the chain), and a
+   * phase carrying its own `agent` overrides both for its ticks.
    */
   agent: Agent;
   /**
@@ -420,7 +422,6 @@ export class Dispatcher {
       };
     }
     const chain = chainModule.default;
-    const agent = chainModule.agent ?? this.opts.agent;
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -455,6 +456,10 @@ export class Dispatcher {
     if (!this.trunkBranch) {
       this.trunkBranch = await git.currentBranch(this.opts.repoRoot);
     }
+
+    // Per-phase delegation (§4): the phase's own agent is the innermost
+    // scope of the chain-level override chain.
+    const agent = phase.agent ?? chainModule.agent ?? this.opts.agent;
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
