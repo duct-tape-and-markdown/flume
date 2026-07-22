@@ -516,6 +516,7 @@ export class Dispatcher {
         gateResults,
         pendingAfter: await this.readPending(),
         shippedTags: [],
+        revertedTags: [],
       },
       ...(noCommit ? { noCommit } : {}),
     };
@@ -549,6 +550,7 @@ export class Dispatcher {
           gateResults: [],
           pendingAfter: pending,
           shippedTags: [],
+          revertedTags: [],
         },
       };
     }
@@ -631,6 +633,11 @@ export class Dispatcher {
     const shipped: PendingEntry[] = [];
     const mergeReverted: PendingEntry[] = [];
     const mergeGateResults: GateResultEntry[] = [];
+    // Actual footprints of merge-failed attempts, keyed by tag. Persisted
+    // onto the entry (observedFiles) so the next partition separates the
+    // retry from whatever it collided with — declared `files` is a plan
+    // estimate, and an agent legitimately reaches beyond it.
+    const observed = new Map<string, string[]>();
 
     for (const r of perEntry) {
       if (!r.committed || !r.commitSha) continue;
@@ -642,6 +649,12 @@ export class Dispatcher {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
         );
+        try {
+          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, r.commitSha));
+        } catch {
+          // Footprint capture is best-effort; the retry just partitions on
+          // declared files as before.
+        }
         // Abort the in-progress cherry-pick so the working tree is clean for
         // subsequent ticks. Without this, partially-applied changes block
         // the next plan tick (which can't run `pnpm install` etc. against a
@@ -699,6 +712,11 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
+        try {
+          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, mergedSha));
+        } catch {
+          // Best-effort, as above.
+        }
         await git.hardResetTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
         continue;
@@ -710,9 +728,10 @@ export class Dispatcher {
       );
     }
 
-    // Update pending.json — remove shipped entries — as one harness commit.
+    // Update pending.json — remove shipped entries, record merge-failure
+    // footprints — as one harness commit.
     let chorSha: string | undefined;
-    if (shipped.length > 0) {
+    if (shipped.length > 0 || observed.size > 0) {
       // Each shipped entry committed clean *and* passed its afterMerge gate
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
@@ -720,9 +739,22 @@ export class Dispatcher {
         await this.clearPriorAttempt(this.priorAttemptKey(phase, s));
       }
       const shippedTags = shipped.map((s) => s.tag);
-      chorSha = await this.commitPendingUpdate(pending, shippedTags);
+      // The update can no-op (footprint already recorded, nothing shipped):
+      // commitPendingUpdate then returns the pre-existing HEAD, which must
+      // not be reported as this wave's commit.
+      const preUpdate = await git.revParse(repoRoot);
+      const updSha = await this.commitPendingUpdate(
+        pending,
+        shippedTags,
+        observed,
+      );
+      if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
-        `[flume] ship commit ${chorSha.slice(0, 8)}: ${shippedTags.join(", ")}`,
+        shippedTags.length > 0
+          ? `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+          : updSha === preUpdate
+            ? `[flume] footprint already recorded, no commit: ${[...observed.keys()].join(", ")}`
+            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
       );
     }
 
@@ -808,6 +840,7 @@ export class Dispatcher {
         gateResults: allGateResults,
         pendingAfter: await this.readPending(),
         shippedTags: shipped.map((s) => s.tag),
+        revertedTags: mergeReverted.map((e) => e.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     };
@@ -991,7 +1024,15 @@ export class Dispatcher {
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(entry.tag);
     const branch = `flume/${slug}`;
-    const path = join(this.flumeDir, "worktrees", slug);
+    // FLUME_WORKTREES_DIR: ephemeral worktrees relocate OUTSIDE the repo so an
+    // agent's pwd never contains the root checkout's path as a prefix (the
+    // observed stray-write vector: a model that sees `<root>/.flume/worktrees/x`
+    // derives `<root>` and operates there). Default tracks the state root
+    // (§16), which is itself relocatable via FLUME_DIR.
+    const wtBase = process.env.FLUME_WORKTREES_DIR
+      ? resolve(process.env.FLUME_WORKTREES_DIR)
+      : join(this.flumeDir, "worktrees");
+    const path = join(wtBase, slug);
     if (existsSync(path)) {
       // Stale from a prior crashed run; clean up.
       try {
@@ -1225,20 +1266,43 @@ export class Dispatcher {
   private async commitPendingUpdate(
     before: PendingEntry[],
     shippedTags: string[],
+    observed: ReadonlyMap<string, string[]> = new Map(),
   ): Promise<string> {
     const shipped = new Set(shippedTags);
-    const after = before.filter((e) => !shipped.has(e.tag));
+    // A blockedBy gate naming a tag this wave shipped is resolved HERE,
+    // mechanically: the dispatcher just merged and gated that tag, so
+    // "did the blocker land" needs no plan tick — the next wave forms
+    // without a plan interim. Judgment gates (parked) stay plan's.
+    const after = before
+      .filter((e) => !shipped.has(e.tag))
+      .map((e) =>
+        e.gate.kind === "blockedBy" && shipped.has(e.gate.tag)
+          ? { ...e, gate: { kind: "open" as const } }
+          : e,
+      )
+      .map((e) => {
+        const obs = observed.get(e.tag);
+        if (!obs || obs.length === 0) return e;
+        const merged = [...new Set([...(e.observedFiles ?? []), ...obs])];
+        return { ...e, observedFiles: merged };
+      });
+    const serialized = JSON.stringify(after, null, 2) + "\n";
+    // A footprint-only update can be a no-op (same collision, same paths,
+    // second time around) — committing an unchanged file fails, so skip.
+    const existing = await readFile(this.pendingPath, "utf8").catch(() => "");
+    if (serialized === existing) {
+      return git.revParse(this.opts.repoRoot);
+    }
     await mkdir(dirname(this.pendingPath), { recursive: true });
-    await writeFile(
-      this.pendingPath,
-      JSON.stringify(after, null, 2) + "\n",
-      "utf8",
-    );
+    await writeFile(this.pendingPath, serialized, "utf8");
     // Scoped to pending.json — `git add -A` would sweep up untracked worktree
     // metadata and unrelated user changes into the harness's chore commit.
     return git.commitPaths({
       cwd: this.opts.repoRoot,
-      message: `chore(flume): ship ${shippedTags.join(", ")}`,
+      message:
+        shippedTags.length > 0
+          ? `chore(flume): ship ${shippedTags.join(", ")}`
+          : `chore(flume): record merge-failure footprints for ${[...observed.keys()].join(", ")}`,
       paths: [this.pendingPath],
     });
   }

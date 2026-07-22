@@ -252,3 +252,14 @@ describe("renderSchemaForPrompt", () => {
     `);
   });
 });
+
+describe("parsePending — observedFiles survives the round-trip", () => {
+  it("preserves the dispatcher-written footprint so a re-parse cannot strip it", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      observedFiles: ["src/other.ts", "tests/other.test.ts"],
+    });
+    expect(entry.observedFiles).toEqual(["src/other.ts", "tests/other.test.ts"]);
+  });
+});

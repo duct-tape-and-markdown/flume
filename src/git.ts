@@ -93,6 +93,27 @@ export async function deleteBranch(
   }
 }
 
+/**
+ * File paths touched by a single commit. Used to record an entry's *actual*
+ * footprint when its merge fails, so the partitioner can learn what the
+ * declared `files` under-stated.
+ */
+export async function showNameOnly(
+  repoRoot: string,
+  sha: string,
+): Promise<string[]> {
+  const { stdout } = await run(repoRoot, [
+    "show",
+    "--name-only",
+    "--format=",
+    sha,
+  ]);
+  return stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
 export async function cherryPick(repoRoot: string, sha: string): Promise<void> {
   await run(repoRoot, ["cherry-pick", sha]);
 }
