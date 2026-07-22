@@ -1,40 +1,39 @@
 # State
 
-Phase: **v0.3 line ACTIVE** — `spec/RELEASE-v0.3.md` (foundations governor §§1-9, relocatable state §§10-15, §16 flumeDir exposure, §17 test-suite lanes). Mode this tick: **audit**. v0.1 + v0.2 frozen.
+Phase: **v0.3 SHIPPED + FROZEN** (`0db0500` cut 0.3.0, dated 2026-06-22; §§1-17 all shipped + audited). **No active spec line** — v0.1/v0.2/v0.3 all frozen; no `RELEASE-v0.4.md` yet. Mode this tick: **audit**.
 
-## This tick — audit TEST-SUITE-LANES ship
+## This tick — audit 5-commit delta + drain 2 inbox entries
 
-Delta = 2 commits (`2bdb2bb` build: vitest lane split; `5981b67` chore: drain pending → []). Commit-delta → audit.
-- **Audit `2bdb2bb` vs §17 — clean, accept.** Verified against the §17 deliverable list, point by point:
-  - `vitest.config.ts` excludes `**/*.integration.test.ts` from default; integration lane gated by `VITEST_LANE`. Verified live: fast lane lists **0** integration files; integration lane lists only the integration suite.
-  - `package.json` gains `test:integration` (`VITEST_LANE=integration vitest run`).
-  - `tests/loop-process-boundary.test.ts` → `.integration.test.ts` (rename; old retired).
-  - `docs/CHAIN-AUTHORING.md` documents the lane convention.
-  - **No `src/` change** (correct per §17a "No runtime fix"). **No scope creep** — exactly the 4 files in `entry.files`. Mechanism = filename-convention + config-exclude, the §17a-sanctioned default.
-- `5981b67` is the harness `chore(flume):` drain (pending → `[]`), not a `build:` commit — no `per`-cite audit surface.
-- **Derive:** spec-delta empty (no `spec/` change since last `plan:`). No derive.
-- **Drain:** inbox empty.
-- **Promote:** pending empty; no blocked entries.
+Delta = 5 commits (all non-`build:`), empty spec-delta, empty pending, 2 inbox entries.
 
-## Queue (0)
+**Audit** (`c3ce6a4`..`0db0500`):
+- `b248b72` chore(flume) win32 chain.ts fix → **src/ echo found and filed**: `src/Agent.ts:275` `withTerminalRenderer` default tag has the identical `inv.cwd.split("/").pop()` bug → pending `AGENT-TAG-WIN32-BASENAME` (per v0.1 §2; defect repair on shipped surface, not new derivation). Also swept tests/: `Dispatcher.test.ts:172,661,1205` fake-agent slugs use the same split — green on this win32 host, test-internal → accepted debt.
+- `a59a0f2` executes OQ "v0.1.1 tag vs CHANGELOG" disposition A verbatim (fix text, keep tags) → **OQ closed/removed**.
+- `0db0500` cuts 0.3.0 → v0.3 now frozen per ship→freeze posture → orphaned-baton OQ updated: recommended landing is now a **new `spec/RELEASE-v0.4.md`** line, not a v0.3 append.
+- `c3ce6a4` adds `pnpm-workspace.yaml` (new root file, absent from spec-plan-build lane table) → accepted debt; table addition is a rules edit = human surface.
+- `cdfe399` inbox append — proper external-contributor lane.
 
-Empty. v0.3 derivable surface complete (see below).
+**Drain** (both entries → parked OQs; net-new API surface, no spec authority, cites verified live):
+- per-phase agent/model → OQ (rec: v0.4 section, `Phase.agent?: Agent` resolved phase ?? chain ?? default; global `--model` already expressible via `extraArgs`).
+- entry-scoped fanout write guard → OQ (rec: v0.4 section, enforce on `assignedEntry` ticks; flags that enforcement flips `files` from advisory to load-bearing — plan-side obligation).
+
+**Derive:** none (spec-delta empty). **Promote:** none (pending was empty).
+
+## Queue (1)
+
+1. `AGENT-TAG-WIN32-BASENAME` (open) — platform basename for renderer default tag, src/Agent.ts:275 + test.
 
 ## Active plan target
 
-`spec/RELEASE-v0.3.md` — §§1-17 all shipped + audited (§17 is the final section; confirmed no later sections). **v0.3 derivable surface is complete.** No further derivation until new `spec/` movement, an inbox entry, or an open-question resolution opens fresh surface.
+None — no live spec line. Three v0.4 candidate themes now parked and cross-referenced in open-questions.md (orphaned-baton Axis-C, per-phase agent assignment, entry-scoped write guard); opening `spec/RELEASE-v0.4.md` is a human call. Next derivable surface requires new `spec/` movement, an inbox entry, or an OQ resolution.
 
 ## Open questions
 
-**4 (all PARKED)** — unchanged this tick:
-- §7a chain.ts gate-move (off-allowlist chore lane)
-- v0.1.2 worktree surface unspecced
-- v0.1.1 tag vs CHANGELOG
-- orphaned-baton Axis-C (wants a new v0.3 section)
+**5 (all PARKED)**: orphaned-baton Axis-C (updated → v0.4 landing), §7a chain.ts gate-move, teardownWorktree/NEEDS-AMENDMENT unspecced surface, per-phase agent assignment (new), entry-scoped fanout write guard (new). v0.1.1-tag OQ closed this tick.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md`. pending.json already `[]`; open-questions/inbox unchanged. No off-allowlist path.
-- Trunk: HEAD `5981b67`. tsc green. Fast (default) vitest lane green and worktree-safe; integration lane runs at host via `test:integration`.
+- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}` + `.flume/inbox.md` (drained). All on-allowlist.
+- Trunk: HEAD `c3ce6a4` at tick start. tsc green (harness block empty). Fast vitest lane green; integration lane via `test:integration` at host.
 
 Plan continues: no
