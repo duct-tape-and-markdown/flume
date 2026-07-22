@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
@@ -326,6 +326,49 @@ describe("withTerminalRenderer", () => {
     expect(out).not.toContain("tool-output");
     expect(out).not.toContain("session_id");
     expect(out).not.toContain("\"type\":");
+  });
+
+  describe("default tag", () => {
+    // Renders one non-JSON line so the tag prefix surfaces verbatim.
+    async function defaultTagOutputFor(cwd: string): Promise<string> {
+      const fake: Agent = {
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.("ping\n");
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+      const captured: string[] = [];
+      await withTerminalRenderer(fake).invoke({
+        cwd,
+        prompt: "",
+        onStdout: (chunk) => captured.push(chunk),
+      });
+      return captured.join("");
+    }
+
+    it("renders the leaf dir for a POSIX-style cwd", async () => {
+      expect(await defaultTagOutputFor("/work/wt-agent-1")).toBe(
+        "[wt-agent-1] ping\n",
+      );
+    });
+
+    // path.basename only treats "\" as a separator on win32 hosts, so the
+    // drive-lettered regression is only observable there.
+    it.runIf(process.platform === "win32")(
+      "renders the leaf dir, not the full path, for a drive-lettered backslash cwd",
+      async () => {
+        expect(
+          await defaultTagOutputFor(
+            "C:\\Users\\dev\\repo\\.flume\\worktrees\\wt-agent-1",
+          ),
+        ).toBe("[wt-agent-1] ping\n");
+      },
+    );
+
+    it("falls back to [tick] when the cwd is a bare root", async () => {
+      expect(await defaultTagOutputFor(sep)).toBe("[tick] ping\n");
+    });
   });
 
   it("passes non-JSON lines through verbatim with the tag prefix", async () => {

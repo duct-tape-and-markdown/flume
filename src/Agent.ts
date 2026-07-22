@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /**
  * One agent run, parameterized by cwd, prompt, and stream/abort hooks. The
@@ -272,7 +272,7 @@ export function withTerminalRenderer(
   opts: TerminalRendererOpts = {},
 ): Agent {
   const tagFn =
-    opts.tag ?? ((inv: AgentInvocation) => `[${inv.cwd.split("/").pop() ?? "tick"}]`);
+    opts.tag ?? ((inv: AgentInvocation) => `[${basename(inv.cwd) || "tick"}]`);
   return {
     name: `${agent.name}+render`,
     async invoke(inv) {
