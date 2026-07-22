@@ -107,6 +107,12 @@ export interface ClaudeCodeOptions {
  * Spawn `claude -p` with the rendered prompt on stdin. Captures stdout +
  * stderr, returns the exit code. Streaming callbacks fire on each chunk so
  * the dispatcher can surface progress.
+ *
+ * On Windows, an npm-installed `claude` is a `.cmd` shim, which Node
+ * refuses to spawn without a shell (CVE-2024-27980 hardening). The direct
+ * spawn is tried first so args keep exact quoting; a win32 ENOENT retries
+ * once through the shell — argv is fixed flags plus chain-authored
+ * `extraArgs`, the same quoting tradeoff `shellGate` accepts.
  */
 export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
@@ -130,36 +136,62 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
         ];
 
         const effective = combineSignals(signal, timeoutMs);
-        const proc = spawn(binary, args, {
-          cwd,
-          stdio: ["pipe", "pipe", "pipe"],
-          ...(effective ? { signal: effective } : {}),
-          ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
-        });
 
-        let stdout = "";
-        let stderr = "";
+        const run = (useShell: boolean): void => {
+          const proc = spawn(binary, args, {
+            cwd,
+            stdio: ["pipe", "pipe", "pipe"],
+            ...(useShell ? { shell: true } : {}),
+            ...(effective ? { signal: effective } : {}),
+            ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
+          });
 
-        proc.stdout.setEncoding("utf8");
-        proc.stderr.setEncoding("utf8");
+          let stdout = "";
+          let stderr = "";
+          // Set when this proc is superseded by the shell retry; its late
+          // 'close' (spawn failures can emit both) must not settle the promise.
+          let abandoned = false;
 
-        proc.stdout.on("data", (chunk: string) => {
-          stdout += chunk;
-          onStdout?.(chunk);
-        });
+          proc.stdout.setEncoding("utf8");
+          proc.stderr.setEncoding("utf8");
 
-        proc.stderr.on("data", (chunk: string) => {
-          stderr += chunk;
-          onStderr?.(chunk);
-        });
+          proc.stdout.on("data", (chunk: string) => {
+            stdout += chunk;
+            onStdout?.(chunk);
+          });
 
-        proc.on("error", (err) => reject(err));
-        proc.on("close", (exitCode) =>
-          resolve({ exitCode: exitCode ?? -1, stdout, stderr }),
-        );
+          proc.stderr.on("data", (chunk: string) => {
+            stderr += chunk;
+            onStderr?.(chunk);
+          });
 
-        proc.stdin.write(prompt);
-        proc.stdin.end();
+          proc.on("error", (err) => {
+            if (abandoned) return;
+            if (
+              !useShell &&
+              process.platform === "win32" &&
+              (err as NodeJS.ErrnoException).code === "ENOENT"
+            ) {
+              abandoned = true;
+              run(true);
+              return;
+            }
+            reject(err);
+          });
+          proc.on("close", (exitCode) => {
+            if (abandoned) return;
+            resolve({ exitCode: exitCode ?? -1, stdout, stderr });
+          });
+
+          // A failed spawn destroys stdin with the prompt write still queued,
+          // which raises on the stream; settlement is owned by the proc-level
+          // 'error'/'close' handlers above.
+          proc.stdin.on("error", () => {});
+          proc.stdin.write(prompt);
+          proc.stdin.end();
+        };
+
+        run(false);
       });
     },
   };
