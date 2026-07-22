@@ -97,7 +97,13 @@ Mandated shape:
 - **`superviseLoop` fail-fasts on the child's exit signal** — exit 78
   stops the loop immediately with a summary naming the orphaned phases.
   The supervisor must not consult `baton.hibernating()` for this decision;
-  the orphaned flag definitionally defeats it.
+  the orphaned flag definitionally defeats it. **`flume loop` itself also
+  exits 78** on this stop — exiting 0 would re-mask the misconfiguration
+  one process boundary up.
+- **Mixed flags classify at quiescence.** While any declared phase is
+  awake the tick runs it and the orphan persists untouched; `terminal`
+  fires once every remaining awake flag is orphaned — eventually-loud,
+  never silently cleared.
 - **The orphaned flag stays on disk.** Clearing it would convert the
   misconfiguration into a silent clean stop (the silent-ack anti-pattern).
   The human inspects, then `flume sleep <phase>` or fixes the chain.
