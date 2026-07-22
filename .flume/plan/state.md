@@ -2,25 +2,19 @@
 
 Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md`; v0.1–v0.4 frozen). Mode this tick: **audit**.
 
-## This tick — audit JOB-FANOUT-PATH + JOB-NEW ships
+## This tick — audit JOB-NEW-SCOPE ship
 
-Delta = 2 build commits + 1 chore ship (`ff184df`, `25279a3`, `63d550b`); no spec changes; inbox empty.
+Delta = 1 build commit + 1 chore ship (`0e69a67`, `5f10653`); no spec changes; inbox empty.
 
-**Audit `ff184df` (JOB-FANOUT-PATH vs §4)**: clean. Path derivation mirrors branch namespacing exactly as filed (`src/Dispatcher.ts:1119`); scope = the two declared files. All three path asserts present (tests/Dispatcher.test.ts:1010+), including a live-worktree interleave proving job B's stale-cleanup no longer rm's job A's live worktree, and the legacy no-namespace path (:1159).
+**Audit `0e69a67` (JOB-NEW-SCOPE vs §5a)**: clean. Scope = the two declared files exactly (src/job.ts, tests/job.test.ts). Both entry asserts present: (1) foreign-staged test proves the pathspec'd step-6 commit carries only `.flume/jobs/<name>/.gitignore` while `foreign.txt` stays staged (tests/job.test.ts:266+); (2) file-as-template exits 2 with the usage message before any branch or dir exists (tests/job.test.ts:298+). Mechanics verified: `commit -- <jobdir>` runs immediately after `add -- <jobdir>` so worktree == index under the pathspec — commit content is exactly the staged harness; the `statSync().isDirectory()` gate sits in the pre-flight usage block ahead of step 1 (src/job.ts:160-167). docs/CLI.md:80 already promised exit 2 for "`--template` pointing at no directory" — new message fits, no doc edit needed, matching the entry's "No docs edit needed" claim.
 
-**Audit `25279a3` (JOB-NEW vs §5a)**: conforming on all seven steps; scope = the four declared files exactly; every entry assert present (baseline excludes runtime+junction, ignore-ensure idempotent + template-preserving, no-dep-tree link fixture via injectable linkTarget seam, template-less warn, separator name exit 2). Porcelain kept local to src/job.ts as the entry declared.
+**Findings**: none filed. existsSync→statSync TOCTOU window is trivial (single-operator CLI, race resolves to exit 1 operational) — not worth a debt note beyond this line.
 
-**Findings → filed JOB-NEW-SCOPE** (open, per §5a): (1) step-6 `git commit` carries no pathspec — pre-staged foreign index content gets swept into the seed commit, exceeding "baseline-commit the seeded harness"; (2) `--template` check is existsSync-only — a file passes, cp fails exit 1 raw, while docs/CLI.md promises exit 2 for "no directory". Both mechanical; one entry, src/job.ts + tests/job.test.ts.
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — JOB-NEW-SCOPE blocked nothing; every remaining blockedBy tag (JOB-RUN → RM → STATUS → EXTRACT chain) still in pending.
 
-**Accepted debt**: single-segment job names that are invalid git ref components (`a..b`, `x.lock`, `~^:` chars) surface as loud exit-1 checkout failures, not exit-2 usage errors — git ref grammar stays git's to enforce (noted in commit body).
+## Queue (5)
 
-**Gate shape**: JOB-NEW-SCOPE sits open at head alongside JOB-RUN (open) despite overlapping src/job.ts + tests/job.test.ts — `partitionByFileOverlap` (`src/Dispatcher.ts:611`) batches overlapping entries and runs batch 1 only, so the harness serializes them; no blockedBy needed.
-
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — every blockedBy tag still in pending.
-
-## Queue (6)
-
-Head: **JOB-NEW-SCOPE** (open), then **JOB-RUN** (open, overlap-partitioned to the next wave). Serial after: RM → STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
+Head: **JOB-RUN** (open). Serial after: RM → STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
 
 ## Active plan target
 
@@ -32,7 +26,7 @@ Head: **JOB-NEW-SCOPE** (open), then **JOB-RUN** (open, overlap-partitioned to t
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/pending.json` (JOB-NEW-SCOPE inserted at head) and `.flume/plan/state.md`; open-questions.md unchanged; inbox.md untouched (empty).
-- Trunk: HEAD `63d550b` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 12 of origin/main** — human push pending.
+- Wrote `.flume/plan/state.md` only; pending.json unchanged (queue as shipped-minus-head is already correct); open-questions.md unchanged; inbox.md untouched (empty).
+- Trunk: HEAD `5f10653` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 14 of origin/main** — human push pending.
 
 Plan continues: no
