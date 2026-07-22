@@ -706,6 +706,11 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(onDisk.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
     expect(first.result?.pendingAfter.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
 
+    // The reverted entry's *actual* commit footprint is recorded on the
+    // entry, so the next partition separates the retry from whatever it
+    // collided with even where declared `files` under-stated the reach.
+    expect(onDisk[0]!.observedFiles).toEqual(["src/iso-fail.ts"]);
+
     // The offending entry's afterMerge gate failure is recorded; the clean
     // sibling's passing run is too.
     const gr = first.result?.gateResults ?? [];
