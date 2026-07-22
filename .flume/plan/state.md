@@ -2,29 +2,26 @@
 
 Phase: **v0.3 SHIPPED + FROZEN** (`0db0500` cut 0.3.0; §§1-17 shipped + audited). **No active spec line** — v0.1/v0.2/v0.3 frozen; no `RELEASE-v0.4.md`. Mode this tick: **audit**.
 
-## This tick — audit 4-commit win32-sweep delta
+## This tick — audit win32-shim ship delta (clean)
 
-Delta = 4 commits (1 `build:`, 2 out-of-band `fix:`, 1 `chore(flume):` ship-drain), empty spec-delta, empty inbox, empty pending.
+Delta = 3 commits (2 `build:` shipping the queued defect repairs, 1 `chore(flume):` ship-drain), empty spec-delta, empty inbox, empty pending.
 
-**Audit** (`41ffe1b`..`3e5569c`):
-- `abc6368` build: ships `AGENT-TAG-WIN32-BASENAME` → **conforms**: files match entry, both specced assertions present + bonus bare-root test; `runIf(win32)` guard honest (basename splits `\` only on win32 hosts). Clean; `3e5569c` drains it.
-- `e360352` fix: (interactive, src + chain.ts) pnpm .cmd-shim spawns → sound, but **two findings filed**:
-  1. **`AGENT-SPAWN-WIN32-SHIM`** — `src/Agent.ts:133` spawns bare `claude`; identical .cmd-shim class → ENOENT on win32 npm-installed claude (latent-fatal; this host runs the native exe, which is why the loop survives). Defect repair on v0.1 §2 surface.
-  2. **`GATE-EXECGATE-FALLBACK-TEST`** — the new `execGate` ENOENT→shell fallback (`src/builtinGates.ts:31-45`) landed untested → backfill per v0.1 §5.
-  Swept remaining spawn sites: `Dispatcher.ts:1333` spawns `process.execPath` (real exe, clean); git execFile calls clean.
-- `d4d2317` fix(tests): win32-portable suite → test-lane only, no drift; **closes last tick's accepted-debt** (tests/ `split("/")` slugs).
-- `Prompt.ts:187` inline exec hard-requires `sh` on PATH (all dogfood delta blocks render through it — works on this host via Git Bash; degrades to `<exec-failed>` on sh-less win32) → **accepted debt** (shell-choice semantics not derivable from any spec section; commit body).
+**Audit** (`372ba0a`..`93c852a`):
+- `d869a87` build: ships `AGENT-SPAWN-WIN32-SHIM` → **conforms**. Files match entry exactly; both specced assertions present (win32 ENOENT → exactly one shell:true retry, identical argv, resolves with retried proc's output + stdin prompt; linux ENOENT rejects unchanged) plus bonus cases (retry-also-ENOENTs rejects with no third spawn; win32 EACCES no retry). Abandoned-proc guard tested against the error+late-close double-emit. Behavior shift — truly-missing claude on win32 now reads as non-zero shell exit, not ENOENT reject — is the e360352 tradeoff the entry's notes pre-accepted; dispatcher treats both as failure. No scope creep.
+- `a6c4046` build: ships `GATE-EXECGATE-FALLBACK-TEST` → **conforms**. `runIf(win32)` temp-dir .cmd fixture green via shell retry; bonus red-through-retry case (exit 7, stderr propagated) exceeds the entry's minimum — fallback provably can't mask red. PATH mutation file-local under vitest worker isolation.
+- `93c852a` chore(flume): mechanical drain of both tags → `[]`. Clean.
 
-**Drain:** none (inbox empty). **Derive:** none (spec-delta empty). **Promote:** none (pending was empty).
+Spawn-site sweep unchanged from last tick (no new spawn/execFile in delta). **No findings filed.**
 
-## Queue (2)
+**Drain:** none (inbox empty). **Derive:** none (spec-delta empty). **Promote:** none (pending empty).
 
-1. `AGENT-SPAWN-WIN32-SHIM` (open) — shell:true retry for .cmd-shim claude spawn, src/Agent.ts:133 + mocked-platform test.
-2. `GATE-EXECGATE-FALLBACK-TEST` (open) — runIf(win32) coverage for execGate shell fallback, tests/Gate.test.ts.
+## Queue (0)
+
+Empty. Win32-sweep line fully shipped and audited.
 
 ## Active plan target
 
-None — no live spec line. Three v0.4 candidate themes parked in open-questions.md (orphaned-baton Axis-C, per-phase agent assignment, entry-scoped write guard); opening `spec/RELEASE-v0.4.md` is a human call. Beyond the two queued defect repairs, new derivable surface requires spec movement, an inbox entry, or an OQ resolution.
+None — no live spec line. Three v0.4 candidate themes parked in open-questions.md (orphaned-baton Axis-C, per-phase agent assignment, entry-scoped write guard); opening `spec/RELEASE-v0.4.md` is a human call. New derivable surface requires spec movement, an inbox entry, or an OQ resolution.
 
 ## Open questions
 
@@ -32,7 +29,7 @@ None — no live spec line. Three v0.4 candidate themes parked in open-questions
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/{pending.json,state.md}`. open-questions.md + inbox.md untouched (no movement, inbox already empty). All on-allowlist.
-- Trunk: HEAD `3e5569c` at tick start. tsc green (harness block empty). Suite green on this win32 host since `d4d2317`.
+- Wrote `.flume/plan/state.md` only. pending.json already `[]` (unchanged); open-questions.md + inbox.md untouched (no movement, inbox empty). All on-allowlist.
+- Trunk: HEAD `93c852a` at tick start. tsc green (harness block empty). Suite green on this win32 host; both new win32 suites exercised here.
 
 Plan continues: no
