@@ -179,9 +179,10 @@ export interface WorktreeSetupResult {
    * Extra env vars to merge into the agent invocation env for this
    * worktree. Layered on top of the harness's `process.env`. Useful for
    * per-worktree DATABASE_URL, scratch paths, short-lived credentials —
-   * anything the chain provisioned during setup that the agent (and
-   * gates run inside the worktree) need at runtime without baking into
-   * the worktree's tracked filesystem.
+   * anything the chain provisioned during setup that the agent needs at
+   * runtime without baking into the worktree's tracked filesystem.
+   * Scoped to the agent invocation only: gates spawn from the
+   * dispatcher's own env and do not see these vars.
    */
   extraEnv?: Record<string, string>;
 }
