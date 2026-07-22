@@ -345,6 +345,10 @@ async function main(): Promise<number> {
     configDir,
     flumeDir,
     agent: claudeCode(),
+    // Fanout branch namespace (v0.5 §4): the job resolution above is the one
+    // authority; the dispatcher receives it as an option, never re-derives it
+    // from flumeDir.
+    ...(job !== undefined ? { namespace: job } : {}),
   });
 
   if (cmd === "tick") {

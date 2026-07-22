@@ -392,6 +392,48 @@ function jobEnvProbeChainSrc(phaseName: string): string {
   );
 }
 
+/**
+ * v0.5 §4 — a fanout chain whose agent records the branch of the worktree it
+ * was invoked in to `<FLUME_DIR>/observed-branch.txt`. The agent commits
+ * nothing (the tick falls through clean), so what lands in the file is purely
+ * the branch `createWorktree` named — the namespace claim made observable
+ * through the real CLI.
+ */
+function jobFanoutProbeChainSrc(phaseName: string): string {
+  return (
+    `import { execFileSync } from "node:child_process";\n` +
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "job fanout branch probe",\n` +
+    `    promptPath: "prompt.md",\n` +
+    `    concurrency: "fanout",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `};\n` +
+    `export const agent = {\n` +
+    `  name: "job-fanout-probe",\n` +
+    `  async invoke(inv) {\n` +
+    `    const branch = execFileSync(\n` +
+    `      "git",\n` +
+    `      ["rev-parse", "--abbrev-ref", "HEAD"],\n` +
+    `      { cwd: inv.cwd, encoding: "utf8" },\n` +
+    `    ).trim();\n` +
+    `    writeFileSync(\n` +
+    `      join(process.env.FLUME_DIR ?? "", "observed-branch.txt"),\n` +
+    `      branch,\n` +
+    `    );\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `};\n`
+  );
+}
+
 describe("§3 job resolution — real CLI", () => {
   it(
     "--job alongside explicit FLUME_DIR is a usage error (exit 2); a valueless --job likewise",
@@ -509,6 +551,66 @@ describe("§3 job resolution — real CLI", () => {
         expect(observed.FLUME_DIR).toBe(jobDir);
         expect(observed.FLUME_CONFIG_DIR).toBe(jobDir);
         expect(observed.FLUME_JOB).toBe("foo");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "fanout under FLUME_JOB names the worktree branch flume/<job>/<slug> — namespace flows CLI → dispatcher (v0.5 §4)",
+    async () => {
+      const repo = await makeJobRepo("job/foo");
+      try {
+        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
+        await mkdir(join(jobDir, "plan"), { recursive: true });
+        await writeFile(
+          join(jobDir, "chain.ts"),
+          jobFanoutProbeChainSrc("probe"),
+          "utf8",
+        );
+        await writeFile(join(jobDir, "prompt.md"), "job fanout probe\n", "utf8");
+        await writeFile(
+          join(jobDir, "plan", "pending.json"),
+          JSON.stringify(
+            [
+              {
+                tag: "NS-PROBE",
+                summary: "namespace probe entry",
+                per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+                gate: { kind: "open" },
+                dependsOnForks: [],
+                files: {
+                  new: [],
+                  edit: [{ path: "src/ns-probe.ts", description: "edit" }],
+                  retire: [],
+                },
+                schemaDelta: "none",
+                tests: [],
+                acceptance: "green",
+              },
+            ],
+            null,
+            2,
+          ) + "\n",
+          "utf8",
+        );
+        new Baton(jobDir).wake("probe");
+
+        // FLUME_JOB alone, no --job flag: the env-var resolution path must
+        // carry the namespace to the dispatcher identically (§3 parity).
+        const tick = await runCli(repo.dir, ["tick"], {
+          ...hermeticEnv(),
+          FLUME_JOB: "foo",
+        });
+        expect(tick.code).toBe(0);
+
+        const observed = await readFile(
+          join(jobDir, "observed-branch.txt"),
+          "utf8",
+        );
+        expect(observed).toBe("flume/foo/ns-probe");
       } finally {
         await repo.cleanup();
       }

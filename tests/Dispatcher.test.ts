@@ -858,6 +858,148 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
   }, 30_000);
 });
 
+/**
+ * v0.5 §4 — job-scoped fanout branches. The namespace arrives as a
+ * `DispatcherOptions.namespace` field (the CLI resolves it from `FLUME_JOB`);
+ * with it set, worktree branches are `flume/<namespace>/<slug>`, so two jobs
+ * whose pending entries share a tag slug fan out onto disjoint branches.
+ * Without it the legacy repo-global `flume/<slug>` stands — bare `.flume`
+ * harnesses see no change.
+ */
+describe("Dispatcher fanout — job-scoped branch namespace (v0.5 §4)", () => {
+  async function branchIn(cwd: string): Promise<string> {
+    const { stdout } = await exec(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd },
+    );
+    return stdout.trim();
+  }
+
+  it("namespace set → worktree branch is flume/<job>/<slug>; teardown deletes the namespaced branch", async () => {
+    await writePending(fx.repo, [makeEntry("NS-FAN", ["src/ns-fan.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedBranch: string | undefined;
+    const agent = fanoutAgent({
+      "ns-fan": async (cwd) => {
+        observedBranch = await branchIn(cwd);
+        await writeAndCommit(cwd, "src/ns-fan.ts", "ns\n", "build(NS-FAN): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      namespace: "alpha",
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["NS-FAN"]);
+    expect(observedBranch).toBe("flume/alpha/ns-fan");
+    // Teardown deleted the branch under its namespaced name — the delete
+    // follows the created name, not a re-derived legacy one.
+    const { stdout: branches } = await exec(
+      "git",
+      ["branch", "--list", "flume/alpha/ns-fan"],
+      { cwd: fx.repo },
+    );
+    expect(branches.trim()).toBe("");
+  }, 20_000);
+
+  it("two state roots with identical tags fan out onto disjoint branches", async () => {
+    const dockA = await mkdtemp(join(tmpdir(), "flume-ns-a-"));
+    const dockB = await mkdtemp(join(tmpdir(), "flume-ns-b-"));
+    try {
+      const seed = async (dock: string, editPath: string) => {
+        const pendingPath = join(dock, "plan", "pending.json");
+        await mkdir(dirname(pendingPath), { recursive: true });
+        await writeFile(
+          pendingPath,
+          JSON.stringify([makeEntry("DUP-TAG", [editPath])], null, 2) + "\n",
+          "utf8",
+        );
+        new Baton(dock).wake("build");
+      };
+      await seed(dockA, "src/dup-a.ts");
+      await seed(dockB, "src/dup-b.ts");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const observed: string[] = [];
+      const mkDispatcher = (dock: string, ns: string, file: string) =>
+        new Dispatcher({
+          chainLoader: staticLoader(chain),
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          flumeDir: dock,
+          agent: fanoutAgent({
+            "dup-tag": async (cwd) => {
+              observed.push(await branchIn(cwd));
+              await writeAndCommit(cwd, file, "dup\n", `build(DUP-TAG): ship ${ns}`);
+            },
+          }),
+          log: silent,
+          namespace: ns,
+        });
+
+      const a = await mkDispatcher(dockA, "alpha", "src/dup-a.ts").tick();
+      const b = await mkDispatcher(dockB, "beta", "src/dup-b.ts").tick();
+
+      expect(a.result?.shippedTags).toEqual(["DUP-TAG"]);
+      expect(b.result?.shippedTags).toEqual(["DUP-TAG"]);
+      // Identical tag slugs, disjoint branches — no cross-job clobber (§4).
+      expect(observed).toEqual(["flume/alpha/dup-tag", "flume/beta/dup-tag"]);
+    } finally {
+      await rm(dockA, { recursive: true, force: true });
+      await rm(dockB, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("no namespace → legacy repo-global flume/<slug> (bare .flume harnesses unchanged)", async () => {
+    await writePending(fx.repo, [makeEntry("LEGACY-FAN", ["src/legacy-fan.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedBranch: string | undefined;
+    const agent = fanoutAgent({
+      "legacy-fan": async (cwd) => {
+        observedBranch = await branchIn(cwd);
+        await writeAndCommit(
+          cwd,
+          "src/legacy-fan.ts",
+          "legacy\n",
+          "build(LEGACY-FAN): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["LEGACY-FAN"]);
+    expect(observedBranch).toBe("flume/legacy-fan");
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
     // Both fake agents write to the same baseline file with different

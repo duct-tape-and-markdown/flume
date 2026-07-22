@@ -247,6 +247,14 @@ export interface DispatcherOptions {
    */
   flumeDir?: string;
   /**
+   * Fanout branch namespace (v0.5 §4). When set, ephemeral worktree branches
+   * are `flume/<namespace>/<slug>` instead of the repo-global `flume/<slug>`,
+   * so two jobs whose pending entries share a tag slug fan out onto disjoint
+   * branches. Resolved by the CLI from `FLUME_JOB` and passed down explicitly
+   * — the dispatcher never sniffs `flumeDir` for a job name.
+   */
+  namespace?: string;
+  /**
    * Default agent. Per-tick resolution is
    * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` that exports
    * `agent` overrides this (the agent re-resolves with the chain), and a
@@ -1089,7 +1097,12 @@ export class Dispatcher {
     fromRef: string,
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(entry.tag);
-    const branch = `flume/${slug}`;
+    // Job-scoped branch namespace (v0.5 §4): with a namespace, identical tag
+    // slugs across jobs land on disjoint branches; without one, the legacy
+    // repo-global name stands (bare `.flume` harnesses unchanged).
+    const branch = this.opts.namespace
+      ? `flume/${this.opts.namespace}/${slug}`
+      : `flume/${slug}`;
     // FLUME_WORKTREES_DIR: ephemeral worktrees relocate OUTSIDE the repo so an
     // agent's pwd never contains the root checkout's path as a prefix (the
     // observed stray-write vector: a model that sees `<root>/.flume/worktrees/x`
