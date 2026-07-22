@@ -42,3 +42,14 @@ v0.4 §5 has two dogfood-side consequences the build tick cannot land:
 No design question remains — §5 and §9.5 already decided shape and home; this is only the landing lane, parked per `.claude/rules/spec-plan-build.md` (off-allowlist paths become OQs, not entries).
 
 **Ask:** after `ENTRY-SCOPED-GUARD` ships, one `chore(flume):` commit adds the obligation line to `.flume/prompts/plan.md` and sets `entryChannelPaths` on the dogfood build phase in `.flume/chain.ts`. Same lane as the §7a gate-move above (the two could share a commit if the human lands them together).
+
+## 2026-07-22 — v0.4 §3 shipped surface slightly exceeds spec letter: loop exit 78 + mixed-flag semantics
+
+**Status: NEEDS AMENDMENT** (ruling made this audit; two one-line spec edits would close it)
+
+Build `1749b94` flagged one judgment call in its commit body, and the plan audit surfaced a second. Both are shipped and tested:
+
+1. **`flume loop` propagates 78.** §3 mandates only the *tick's* exit code; the shipped supervisor also exits `flume loop` with 78 when it fail-fasts on a terminal child (`SuperviseResult.terminal`, `src/cli.ts` loop branch). **Plan ruling: keep.** §1's posture ("terminate the loop loudly") and §9.1 (Axis-C members distinguishable at the process boundary — "the entire point of the axis") argue it directly; exiting 0 would re-mask the misconfiguration one boundary up. Build offered "revert to `return 0` if plan rules otherwise" — plan rules: no revert.
+2. **`terminal` fires only when *every* awake flag is orphaned.** §3 is silent on the mixed case (orphaned flag riding alongside a declared awake phase). Shipped: the declared phase runs, the orphan persists untouched, and it is classified terminal at quiescence — eventually-loud, never silently cleared (tested: `tests/Dispatcher.test.ts` "rides alongside" case). **Plan ruling: sound; keep.**
+
+**Ask:** two one-liners in §3 recording both behaviors, so the shipped surface carries spec authority (§2's recording pattern, applied small). No code change either way; the rulings stand regardless.
