@@ -234,15 +234,26 @@ const build: Phase = {
     ".husky/**",
     ".devcontainer/**",
 
+    // Cross-tick channel: a build tick parks judgment calls here for the
+    // next plan tick (collaboration rule) — the one .flume/plan/ file build
+    // may write. Also the §5 channel allowance (entryChannelPaths below).
+    ".flume/plan/open-questions.md",
+
     // NOTE: build does NOT touch .flume/plan/pending.json. Harness writes
     // the ship commit post-merge to avoid cherry-pick conflicts.
     // NOTE: build does NOT touch spec/**. The spec corpus is human-curated;
     // if a build entry needs spec clarification, the entry should be blocked
     // and an open question surfaced.
-    // NOTE: build does NOT touch .flume/{chain.ts,prompts/**,plan/**} or
+    // NOTE: build does NOT touch .flume/{chain.ts,prompts/**} or
+    // .flume/plan/** beyond open-questions.md above, or
     // .claude/{rules,settings*.json}. Those are harness/human territory;
     // edits flow through `chore(flume):` commits, not build ticks.
   ],
+  // v0.4 §5: on a fanout tick with an assignedEntry the write guard narrows
+  // to the entry's declared files ∪ this channel (phase globs stay the outer
+  // ceiling). open-questions.md is the parking lane a scoped tick may always
+  // write regardless of what its entry declared.
+  entryChannelPaths: [".flume/plan/open-questions.md"],
   // §7a (RELEASE-v0.2.md): vitest runs afterMerge, not afterCommit. Under
   // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
   // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
