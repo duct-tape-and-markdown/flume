@@ -1,39 +1,38 @@
 # State
 
-Phase: **v0.3 SHIPPED + FROZEN** (`0db0500` cut 0.3.0, dated 2026-06-22; §§1-17 all shipped + audited). **No active spec line** — v0.1/v0.2/v0.3 all frozen; no `RELEASE-v0.4.md` yet. Mode this tick: **audit**.
+Phase: **v0.3 SHIPPED + FROZEN** (`0db0500` cut 0.3.0; §§1-17 shipped + audited). **No active spec line** — v0.1/v0.2/v0.3 frozen; no `RELEASE-v0.4.md`. Mode this tick: **audit**.
 
-## This tick — audit 5-commit delta + drain 2 inbox entries
+## This tick — audit 4-commit win32-sweep delta
 
-Delta = 5 commits (all non-`build:`), empty spec-delta, empty pending, 2 inbox entries.
+Delta = 4 commits (1 `build:`, 2 out-of-band `fix:`, 1 `chore(flume):` ship-drain), empty spec-delta, empty inbox, empty pending.
 
-**Audit** (`c3ce6a4`..`0db0500`):
-- `b248b72` chore(flume) win32 chain.ts fix → **src/ echo found and filed**: `src/Agent.ts:275` `withTerminalRenderer` default tag has the identical `inv.cwd.split("/").pop()` bug → pending `AGENT-TAG-WIN32-BASENAME` (per v0.1 §2; defect repair on shipped surface, not new derivation). Also swept tests/: `Dispatcher.test.ts:172,661,1205` fake-agent slugs use the same split — green on this win32 host, test-internal → accepted debt.
-- `a59a0f2` executes OQ "v0.1.1 tag vs CHANGELOG" disposition A verbatim (fix text, keep tags) → **OQ closed/removed**.
-- `0db0500` cuts 0.3.0 → v0.3 now frozen per ship→freeze posture → orphaned-baton OQ updated: recommended landing is now a **new `spec/RELEASE-v0.4.md`** line, not a v0.3 append.
-- `c3ce6a4` adds `pnpm-workspace.yaml` (new root file, absent from spec-plan-build lane table) → accepted debt; table addition is a rules edit = human surface.
-- `cdfe399` inbox append — proper external-contributor lane.
+**Audit** (`41ffe1b`..`3e5569c`):
+- `abc6368` build: ships `AGENT-TAG-WIN32-BASENAME` → **conforms**: files match entry, both specced assertions present + bonus bare-root test; `runIf(win32)` guard honest (basename splits `\` only on win32 hosts). Clean; `3e5569c` drains it.
+- `e360352` fix: (interactive, src + chain.ts) pnpm .cmd-shim spawns → sound, but **two findings filed**:
+  1. **`AGENT-SPAWN-WIN32-SHIM`** — `src/Agent.ts:133` spawns bare `claude`; identical .cmd-shim class → ENOENT on win32 npm-installed claude (latent-fatal; this host runs the native exe, which is why the loop survives). Defect repair on v0.1 §2 surface.
+  2. **`GATE-EXECGATE-FALLBACK-TEST`** — the new `execGate` ENOENT→shell fallback (`src/builtinGates.ts:31-45`) landed untested → backfill per v0.1 §5.
+  Swept remaining spawn sites: `Dispatcher.ts:1333` spawns `process.execPath` (real exe, clean); git execFile calls clean.
+- `d4d2317` fix(tests): win32-portable suite → test-lane only, no drift; **closes last tick's accepted-debt** (tests/ `split("/")` slugs).
+- `Prompt.ts:187` inline exec hard-requires `sh` on PATH (all dogfood delta blocks render through it — works on this host via Git Bash; degrades to `<exec-failed>` on sh-less win32) → **accepted debt** (shell-choice semantics not derivable from any spec section; commit body).
 
-**Drain** (both entries → parked OQs; net-new API surface, no spec authority, cites verified live):
-- per-phase agent/model → OQ (rec: v0.4 section, `Phase.agent?: Agent` resolved phase ?? chain ?? default; global `--model` already expressible via `extraArgs`).
-- entry-scoped fanout write guard → OQ (rec: v0.4 section, enforce on `assignedEntry` ticks; flags that enforcement flips `files` from advisory to load-bearing — plan-side obligation).
+**Drain:** none (inbox empty). **Derive:** none (spec-delta empty). **Promote:** none (pending was empty).
 
-**Derive:** none (spec-delta empty). **Promote:** none (pending was empty).
+## Queue (2)
 
-## Queue (1)
-
-1. `AGENT-TAG-WIN32-BASENAME` (open) — platform basename for renderer default tag, src/Agent.ts:275 + test.
+1. `AGENT-SPAWN-WIN32-SHIM` (open) — shell:true retry for .cmd-shim claude spawn, src/Agent.ts:133 + mocked-platform test.
+2. `GATE-EXECGATE-FALLBACK-TEST` (open) — runIf(win32) coverage for execGate shell fallback, tests/Gate.test.ts.
 
 ## Active plan target
 
-None — no live spec line. Three v0.4 candidate themes now parked and cross-referenced in open-questions.md (orphaned-baton Axis-C, per-phase agent assignment, entry-scoped write guard); opening `spec/RELEASE-v0.4.md` is a human call. Next derivable surface requires new `spec/` movement, an inbox entry, or an OQ resolution.
+None — no live spec line. Three v0.4 candidate themes parked in open-questions.md (orphaned-baton Axis-C, per-phase agent assignment, entry-scoped write guard); opening `spec/RELEASE-v0.4.md` is a human call. Beyond the two queued defect repairs, new derivable surface requires spec movement, an inbox entry, or an OQ resolution.
 
 ## Open questions
 
-**5 (all PARKED)**: orphaned-baton Axis-C (updated → v0.4 landing), §7a chain.ts gate-move, teardownWorktree/NEEDS-AMENDMENT unspecced surface, per-phase agent assignment (new), entry-scoped fanout write guard (new). v0.1.1-tag OQ closed this tick.
+**5 (all PARKED, unchanged this tick)**: orphaned-baton Axis-C (v0.4 landing), §7a chain.ts gate-move, teardownWorktree/NEEDS-AMENDMENT unspecced surface, per-phase agent assignment, entry-scoped fanout write guard.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}` + `.flume/inbox.md` (drained). All on-allowlist.
-- Trunk: HEAD `c3ce6a4` at tick start. tsc green (harness block empty). Fast vitest lane green; integration lane via `test:integration` at host.
+- Wrote `.flume/plan/{pending.json,state.md}`. open-questions.md + inbox.md untouched (no movement, inbox already empty). All on-allowlist.
+- Trunk: HEAD `3e5569c` at tick start. tsc green (harness block empty). Suite green on this win32 host since `d4d2317`.
 
 Plan continues: no
