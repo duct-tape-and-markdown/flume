@@ -1,1 +1,227 @@
-[]
+[
+  {
+    "tag": "TRUNK-PURGE",
+    "summary": "Purge dead DispatcherOptions.trunkBranch (option, field, lazy currentBranch default) per §2. HEAD-is-truth prose ships with JOB-DOCS.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "2. Trunk contract — HEAD-is-truth, `trunkBranch` purged"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "delete option (:277), field (:373), assign (:385), lazy default (:456-457)" },
+        { "path": "tests/Dispatcher.test.ts", "description": "type-level absence; ship-on-checked-out-branch assertion" }
+      ],
+      "retire": ["DispatcherOptions.trunkBranch"]
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "trunkBranch absent from DispatcherOptions (type-level); ship path still lands on the checked-out branch" }
+    ],
+    "acceptance": "tsc + Dispatcher suite green with the option gone",
+    "notes": "Grep-verified consumed nowhere (only the four cited lines). Pre-1.0 clean-slate: edit in place, no shim."
+  },
+  {
+    "tag": "JOB-RESOLUTION",
+    "summary": "Global --job/FLUME_JOB resolution to <repoRoot>/.flume/jobs/<name> with §12 env write-back; exit 2 on explicit-dir conflict; wrong-branch guard on tick/loop.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "3. Job resolution — `--job <name>` / `FLUME_JOB`"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "global flag parse; extend resolveStateDirs write-back (+FLUME_JOB); guard via git.currentBranch; help text" },
+        { "path": "tests/cli.test.ts", "description": "§3 test surface per §7" },
+        { "path": "docs/CLI.md", "description": "global --job flag + guard semantics" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/cli.test.ts", "asserts": "write-back of all three env vars; child ticks inherit; explicit FLUME_DIR/FLUME_CONFIG_DIR + --job → exit 2; guard refuses tick/loop off job/<name>, passes on it; status/render/wake/sleep skip" }
+    ],
+    "acceptance": "§3 cli suite green",
+    "notes": "Guard applies under job resolution only (flag or env); bare invocation keeps HEAD-is-truth untouched. Non-zero refusal names both branches."
+  },
+  {
+    "tag": "JOB-FANOUT-NS",
+    "summary": "Fanout branches flume/<job>/<slug> when FLUME_JOB set, legacy flume/<slug> otherwise; namespace flows CLI→DispatcherOptions, no path-sniffing of flumeDir.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "4. Job-scoped fanout branches"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-RESOLUTION" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "DispatcherOptions namespace field; createWorktree branch naming (:1095-1124)" },
+        { "path": "src/cli.ts", "description": "resolve namespace from FLUME_JOB, pass as option" },
+        { "path": "tests/Dispatcher.test.ts", "description": "branch naming with/without namespace" },
+        { "path": "tests/cli.test.ts", "description": "CLI passes namespace from FLUME_JOB" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "with FLUME_JOB worktree branch is flume/<job>/<slug>; two state roots with identical tags → disjoint branches; legacy name without FLUME_JOB" }
+    ],
+    "acceptance": "§4 suite green; bare .flume harness naming unchanged",
+    "notes": ""
+  },
+  {
+    "tag": "JOB-NEW",
+    "summary": "flume job new <name> [--template <dir>]: branch job/<name>, seed jobdir, runtime .gitignore ensure, unconditional @dtmd/flume link, win32 longpaths pin, baseline commit.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5a. `flume job new <name> [--template <dir>]`"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-FANOUT-NS" },
+    "files": {
+      "new": [
+        { "path": "src/job.ts", "description": "job verb family module; new impl per §5a steps 1-7" },
+        { "path": "tests/job.test.ts", "description": "§5a unit surface incl. no-dep-tree fixture" }
+      ],
+      "edit": [
+        { "path": "src/cli.ts", "description": "route `job` subcommand family; help text" },
+        { "path": "docs/CLI.md", "description": "flume job new section" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.test.ts", "asserts": "baseline commit excludes runtime + junction; ignore-ensure idempotent + template-preserving; no-dep-tree fixture chain load resolves @dtmd/flume; template-less new warns" }
+    ],
+    "acceptance": "§5a suite green on scratch repos; win32 lane covers junction + longpaths",
+    "notes": "Link target resolve(HERE,'..') from the running CLI; skip only if link exists. Runtime ignore set: awake/, prior-attempts/, worktrees/, node_modules/, loop.pid. Blocked on JOB-FANOUT-NS to serialize src/cli.ts edits (fanout conflict avoidance), not a semantic dep."
+  },
+  {
+    "tag": "JOB-RUN",
+    "summary": "flume job run <name> [--max N]: assert-or-checkout job/<name>, wake chain.phases[0] iff hibernating, then the standard loop under the §3 resolution.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5b. `flume job run <name> [--max N]`"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-NEW" },
+    "files": {
+      "new": [
+        { "path": "tests/job.integration.test.ts", "description": "new→run(tick) on scratch repo, inside a linked worktree (§6 recipe viability per §7)" }
+      ],
+      "edit": [
+        { "path": "src/job.ts", "description": "run impl per §5b" },
+        { "path": "src/cli.ts", "description": "help text" },
+        { "path": "tests/job.test.ts", "description": "wake/branch-assert units" },
+        { "path": "docs/CLI.md", "description": "flume job run section" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.test.ts", "asserts": "wakes phases[0] only from hibernation (mid-job baton untouched); errors when branch missing" },
+      { "path": "tests/job.integration.test.ts", "asserts": "new→run(tick) end-to-end; lock/supervisor/exit codes unchanged from flume loop" }
+    ],
+    "acceptance": "§5b suite green",
+    "notes": "Entry phase is chain.phases[0] — content-free convention, no hardcoded phase names (decision 6)."
+  },
+  {
+    "tag": "JOB-RM",
+    "summary": "flume job rm <name>: refuse on live loop.pid; git rm -r jobdir + cleanup commit on job branch; remove untracked runtime; worktree prune; branch survives.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5c. `flume job rm <name>`"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-RUN" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/job.ts", "description": "rm impl per §5c" },
+        { "path": "src/cli.ts", "description": "help text" },
+        { "path": "tests/job.test.ts", "description": "refusal + removal units" },
+        { "path": "tests/job.integration.test.ts", "description": "new→run(tick)→rm e2e" },
+        { "path": "docs/CLI.md", "description": "flume job rm section" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.test.ts", "asserts": "refuses on live pid; removes dir; job branch + history survive" }
+    ],
+    "acceptance": "§5c suite green",
+    "notes": "Integration (merge/squash) and branch deletion stay operator acts — rm never deletes the branch."
+  },
+  {
+    "tag": "JOB-STATUS",
+    "summary": "flume job status: enumerate .flume/jobs/* — awake phases + pending count per job (per-job Baton read; observational, no side effects).",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5d. `flume job status`"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-RM" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/job.ts", "description": "status impl per §5d" },
+        { "path": "src/cli.ts", "description": "help text" },
+        { "path": "tests/job.test.ts", "description": "enumeration units" },
+        { "path": "docs/CLI.md", "description": "flume job status section" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.test.ts", "asserts": "enumerates jobs with awake phases + pending counts; zero side effects" }
+    ],
+    "acceptance": "§5d suite green",
+    "notes": ""
+  },
+  {
+    "tag": "JOB-EXTRACT",
+    "summary": "flume job extract <name> --onto <base> [--intake <p>]...: fork off --onto, intake-first commit, oldest-first cherry-pick of non-harness commits, conflict unwind, harvest, consume job.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5e. `flume job extract <name> --onto <base> [--intake <path>]...`"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-STATUS" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/job.ts", "description": "extract impl per §5e steps 1-5" },
+        { "path": "src/git.ts", "description": "cherry-pick / branch-exists / git-show helpers as needed" },
+        { "path": "src/cli.ts", "description": "help text" },
+        { "path": "tests/job.test.ts", "description": "selection/refusal/unwind units" },
+        { "path": "tests/job.integration.test.ts", "description": "new→run→extract e2e on scratch repo" },
+        { "path": "docs/CLI.md", "description": "flume job extract section" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.integration.test.ts", "asserts": "intake-first ordering; non-harness commit selection; clobber refusal; conflict unwind leaves job intact; harvest to stdout; job branch + dir gone" }
+    ],
+    "acceptance": "§5e suite green on scratch repos",
+    "notes": "--onto required, never guessed. Harvest friction.md + plan/open-questions.md via git show off the job branch, not worktree."
+  },
+  {
+    "tag": "JOB-DOCS",
+    "summary": "README: job flow (new→tune→run→rm/extract), two endings, §6 concurrency recipe, HEAD-is-truth contract. CHAIN-AUTHORING: template expectations under job new, phases[0] entry convention.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "8. Docs"
+    },
+    "gate": { "kind": "blockedBy", "tag": "JOB-EXTRACT" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "README.md", "description": "job flow, endings, concurrency recipe, trunk contract" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "template expectations, phases[0] convention" }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "docs describe the shipped verb surface; tsc + vitest unaffected",
+    "notes": "Also closes §2's 'document HEAD-is-truth' bullet and §6's documentation obligation (spec statement, no machinery). Per-command CLI.md sections already ride the verb entries."
+  }
+]
