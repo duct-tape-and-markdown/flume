@@ -528,6 +528,105 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+/**
+ * v0.4 §2a — worktree base resolution:
+ * `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`. The override exists
+ * so ephemeral worktrees can relocate outside every repo-path prefix (the
+ * observed stray-write vector); the default tracks the state root, which is
+ * itself relocatable via `flumeDir`. `createWorktree` reads the env var at
+ * call time, so these tests stash/restore it around each case.
+ */
+describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
+  const savedOverride = process.env.FLUME_WORKTREES_DIR;
+
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = savedOverride;
+  });
+
+  it("FLUME_WORKTREES_DIR set → worktree lands under resolve(override), default base never materializes", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-wt-override-"));
+    try {
+      // Absolute override — its own resolve() fixed point, so asserting
+      // placement under it asserts the resolved base verbatim.
+      const base = join(container, "wt-base");
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      await writePending(fx.repo, [makeEntry("WT-OVER", ["src/wt-over.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "wt-over": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(cwd, "src/wt-over.ts", "over\n", "build(WT-OVER): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["WT-OVER"]);
+      // The agent ran inside `<resolve(override)>/<slug>` …
+      expect(observedCwd).toBe(join(base, "wt-over"));
+      // … and the default `<flumeDir>/worktrees` base was never created.
+      expect(existsSync(join(fx.repo, ".flume", "worktrees"))).toBe(false);
+      // Teardown cleaned the relocated worktree too.
+      expect(existsSync(join(base, "wt-over"))).toBe(false);
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("no override → worktree lands under join(flumeDir, 'worktrees')", async () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    const flumeDir = join(fx.repo, ".flume");
+
+    await writePending(fx.repo, [makeEntry("WT-DEF", ["src/wt-def.ts"])]);
+    new Baton(flumeDir).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedCwd: string | undefined;
+    const agent = fanoutAgent({
+      "wt-def": async (cwd) => {
+        observedCwd = cwd;
+        await writeAndCommit(cwd, "src/wt-def.ts", "def\n", "build(WT-DEF): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["WT-DEF"]);
+    // The agent ran inside `<flumeDir>/worktrees/<slug>` — the base tracks
+    // the state root, not a hardcoded repo-relative location.
+    expect(observedCwd).toBe(join(flumeDir, "worktrees", "wt-def"));
+    // Teardown cleaned the slug dir under the state root.
+    expect(existsSync(join(flumeDir, "worktrees", "wt-def"))).toBe(false);
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
   it("creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean", async () => {
     const entries = [
