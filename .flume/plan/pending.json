@@ -1,5 +1,40 @@
 [
   {
+    "tag": "JOB-NEW-SCOPE",
+    "summary": "Pathspec-scope job new's baseline commit to the job dir so pre-staged foreign work is never swept in; usage-reject --template paths that exist but are not directories (exit 2).",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5a. `flume job new <name> [--template <dir>]`"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "step-6 commit gains `-- <jobdir>` pathspec; --template usage check gains isDirectory"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "foreign-staged-index and file-template asserts alongside the existing §5a suite"
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "pre-staged unrelated file stays staged and is absent from the seed commit; --template pointing at a file exits 2 with a usage message, no branch or dir created"
+      }
+    ],
+    "acceptance": "new asserts green; existing §5a suite unchanged and green",
+    "notes": "Audit findings on 25279a3: (1) step-6 `git commit` has no pathspec — operator's pre-staged unrelated changes get swept into the seed commit; commit `-- <jobdir>` after the add. (2) existsSync passes for a file --template; cp then fails exit 1 raw, but docs/CLI.md already promises exit 2 for 'no directory' — add an isDirectory check to the usage gate. No docs edit needed. File overlap with JOB-RUN is handled by partitionByFileOverlap — no blockedBy."
+  },
+  {
     "tag": "JOB-RUN",
     "summary": "flume job run <name> [--max N]: assert-or-checkout job/<name>, wake chain.phases[0] iff hibernating, then the standard loop under the §3 resolution.",
     "per": {

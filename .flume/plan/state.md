@@ -2,21 +2,25 @@
 
 Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md`; v0.1–v0.4 frozen). Mode this tick: **audit**.
 
-## This tick — audit JOB-FANOUT-NS ship
+## This tick — audit JOB-FANOUT-PATH + JOB-NEW ships
 
-Delta = 1 build commit + 1 chore ship (`ece8c2c`, `4ae3817`); no spec changes; inbox empty.
+Delta = 2 build commits + 1 chore ship (`ff184df`, `25279a3`, `63d550b`); no spec changes; inbox empty.
 
-**Audit `ece8c2c` (JOB-FANOUT-NS vs §4)**: conforming on everything §4 names. Branch naming with/without namespace exact; namespace flows CLI→`DispatcherOptions.namespace`, dispatcher never sniffs flumeDir; teardown deletes `wt.branch` by created name (`src/Dispatcher.ts:846`) — verified, not just claimed. All three §7-§4 asserts present in tests/Dispatcher.test.ts, plus a real-CLI env-resolution e2e in tests/cli.test.ts. Scope = the four declared files exactly.
+**Audit `ff184df` (JOB-FANOUT-PATH vs §4)**: clean. Path derivation mirrors branch namespacing exactly as filed (`src/Dispatcher.ts:1119`); scope = the two declared files. All three path asserts present (tests/Dispatcher.test.ts:1010+), including a live-worktree interleave proving job B's stale-cleanup no longer rm's job A's live worktree, and the legacy no-namespace path (:1159).
 
-**Finding → filed**: branch is namespaced but the worktree **path** is still slug-keyed (`join(wtBase, slug)`, `src/Dispatcher.ts:1114`). Default per-job base is disjoint, but a shared `FLUME_WORKTREES_DIR` (the sanctioned escape hatch, plausibly set globally per its own stray-write rationale) collides across concurrent jobs on identical slugs — and stale-cleanup (`:1115`) rm -rfs the foreign **live** worktree. That exceeds §6's accepted-contention bar (fail a tick, not the repo). Filed **JOB-FANOUT-PATH** (open, per §4) — fix is mechanical: mirror the branch namespacing in the path.
+**Audit `25279a3` (JOB-NEW vs §5a)**: conforming on all seven steps; scope = the four declared files exactly; every entry assert present (baseline excludes runtime+junction, ignore-ensure idempotent + template-preserving, no-dep-tree link fixture via injectable linkTarget seam, template-less warn, separator name exit 2). Porcelain kept local to src/job.ts as the entry declared.
 
-**Routing completed**: prior tick's accepted debt (`--job` name-shape unvalidated) made actionable in JOB-NEW — notes + asserts now carry the validation requirement; stale blockedBy prose dropped from JOB-NEW notes (gate already open).
+**Findings → filed JOB-NEW-SCOPE** (open, per §5a): (1) step-6 `git commit` carries no pathspec — pre-staged foreign index content gets swept into the seed commit, exceeding "baseline-commit the seeded harness"; (2) `--template` check is existsSync-only — a file passes, cp fails exit 1 raw, while docs/CLI.md promises exit 2 for "no directory". Both mechanical; one entry, src/job.ts + tests/job.test.ts.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — ship commit `4ae3817` already flipped JOB-NEW open; remaining blockedBy chain intact.
+**Accepted debt**: single-segment job names that are invalid git ref components (`a..b`, `x.lock`, `~^:` chars) surface as loud exit-1 checkout failures, not exit-2 usage errors — git ref grammar stays git's to enforce (noted in commit body).
 
-## Queue (7)
+**Gate shape**: JOB-NEW-SCOPE sits open at head alongside JOB-RUN (open) despite overlapping src/job.ts + tests/job.test.ts — `partitionByFileOverlap` (`src/Dispatcher.ts:611`) batches overlapping entries and runs batch 1 only, so the harness serializes them; no blockedBy needed.
 
-Head: **JOB-FANOUT-PATH** (open) and **JOB-NEW** (open) — file-disjoint, can fan out together. Then serial: RUN → RM → STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — every blockedBy tag still in pending.
+
+## Queue (6)
+
+Head: **JOB-NEW-SCOPE** (open), then **JOB-RUN** (open, overlap-partitioned to the next wave). Serial after: RM → STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
 
 ## Active plan target
 
@@ -28,7 +32,7 @@ Head: **JOB-FANOUT-PATH** (open) and **JOB-NEW** (open) — file-disjoint, can f
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/pending.json` (new JOB-FANOUT-PATH entry; JOB-NEW notes/asserts routing) and `.flume/plan/state.md`; open-questions.md unchanged; inbox.md untouched (empty).
-- Trunk: HEAD `4ae3817` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 8 of origin/main** — human push pending.
+- Wrote `.flume/plan/pending.json` (JOB-NEW-SCOPE inserted at head) and `.flume/plan/state.md`; open-questions.md unchanged; inbox.md untouched (empty).
+- Trunk: HEAD `63d550b` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 12 of origin/main** — human push pending.
 
 Plan continues: no
