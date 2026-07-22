@@ -19,7 +19,12 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveStateDirs, tickExitCode } from "../src/cli.ts";
+import {
+  JobResolutionConflictError,
+  resolveStateDirs,
+  tickExitCode,
+} from "../src/cli.ts";
+import { Baton } from "../src/Baton.ts";
 import { EX_TERMINAL_MISCONFIG, type TickOutcome } from "../src/Dispatcher.ts";
 
 const exec = promisify(execFile);
@@ -59,6 +64,15 @@ describe("resolveStateDirs", () => {
     expect(env.FLUME_CONFIG_DIR).toBe(configDir);
   });
 
+  it("leaves FLUME_JOB unset on a bare invocation — HEAD-is-truth untouched", () => {
+    const env: NodeJS.ProcessEnv = {};
+    const { flumeDir, job } = resolveStateDirs(env, repoRoot);
+
+    expect(job).toBeUndefined();
+    expect(env.FLUME_JOB).toBeUndefined();
+    expect(flumeDir).toBe(join(repoRoot, ".flume"));
+  });
+
   it("leaves an already-absolute FLUME_DIR untouched and independent of configDir", () => {
     // resolve() drive-qualifies on win32, so the fixture is absolute on
     // every platform — the untouched assertion needs a true absolute input.
@@ -74,6 +88,73 @@ describe("resolveStateDirs", () => {
     expect(configDir).toBe(flumeConfig);
     expect(env.FLUME_DIR).toBe(dockState);
     expect(env.FLUME_CONFIG_DIR).toBe(flumeConfig);
+  });
+});
+
+/**
+ * v0.5 §3 — job resolution at the seam. `--job <name>` (or `FLUME_JOB`)
+ * retargets both state roots to `<repoRoot>/.flume/jobs/<name>` and writes
+ * all three env vars back, so loop-spawned children inherit the whole
+ * resolution. The flag is a strict authority: explicit dir env vars beside it
+ * are a conflict (exit 2 at the CLI boundary).
+ */
+describe("resolveStateDirs — §3 job resolution", () => {
+  const jobDir = join(repoRoot, ".flume", "jobs", "alpha");
+
+  it("--job resolves both roots to <repoRoot>/.flume/jobs/<name> and writes back all three env vars", () => {
+    const env: NodeJS.ProcessEnv = {};
+    const { flumeDir, configDir, job } = resolveStateDirs(env, repoRoot, "alpha");
+
+    expect(flumeDir).toBe(jobDir);
+    expect(configDir).toBe(jobDir);
+    expect(job).toBe("alpha");
+    expect(isAbsolute(flumeDir)).toBe(true);
+
+    // All three written back — children inherit the resolution via env.
+    expect(env.FLUME_DIR).toBe(jobDir);
+    expect(env.FLUME_CONFIG_DIR).toBe(jobDir);
+    expect(env.FLUME_JOB).toBe("alpha");
+  });
+
+  it("FLUME_JOB set directly (no flag) is honored identically", () => {
+    const env: NodeJS.ProcessEnv = { FLUME_JOB: "alpha" };
+    const { flumeDir, configDir, job } = resolveStateDirs(env, repoRoot);
+
+    expect(flumeDir).toBe(jobDir);
+    expect(configDir).toBe(jobDir);
+    expect(job).toBe("alpha");
+    expect(env.FLUME_DIR).toBe(jobDir);
+    expect(env.FLUME_CONFIG_DIR).toBe(jobDir);
+    expect(env.FLUME_JOB).toBe("alpha");
+  });
+
+  it("--job alongside an explicit FLUME_DIR or FLUME_CONFIG_DIR throws the conflict error", () => {
+    expect(() =>
+      resolveStateDirs({ FLUME_DIR: resolve("/x/state") }, repoRoot, "alpha"),
+    ).toThrow(JobResolutionConflictError);
+    expect(() =>
+      resolveStateDirs({ FLUME_CONFIG_DIR: resolve("/x/cfg") }, repoRoot, "alpha"),
+    ).toThrow(JobResolutionConflictError);
+  });
+
+  it("env FLUME_JOB composes with explicit dirs (the loop → tick boundary): dirs win, job rides along", () => {
+    // The parent's write-back sets all three; the child must not classify its
+    // own inheritance as a conflict. The dir vars ARE the canonical job
+    // resolution, so they win, and the job name survives for the guard.
+    // resolve() drive-qualifies on win32 — the untouched assertion needs a
+    // true absolute input.
+    const inherited = resolve(jobDir);
+    const env: NodeJS.ProcessEnv = {
+      FLUME_JOB: "alpha",
+      FLUME_DIR: inherited,
+      FLUME_CONFIG_DIR: inherited,
+    };
+    const { flumeDir, configDir, job } = resolveStateDirs(env, repoRoot);
+
+    expect(flumeDir).toBe(inherited);
+    expect(configDir).toBe(inherited);
+    expect(job).toBe("alpha");
+    expect(env.FLUME_JOB).toBe("alpha");
   });
 });
 
@@ -149,28 +230,31 @@ const TSX_CLI = fileURLToPath(
 
 /**
  * A copy of this process's env with the canonical FLUME_DIR /
- * FLUME_CONFIG_DIR stripped, so the spawned loop resolves the temp dir's
- * `.flume` default. Without this the suite is not hermetic: run under a
- * flume harness (whose canonicalized env the vitest process inherits), the
- * child would lock — or refuse against — the outer state root.
+ * FLUME_CONFIG_DIR / FLUME_JOB stripped, so the spawned CLI resolves the temp
+ * dir's `.flume` default (or the test's own job resolution). Without this the
+ * suite is not hermetic: run under a flume harness (whose canonicalized env
+ * the vitest process inherits), the child would lock — or refuse against —
+ * the outer state root.
  */
 function hermeticEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.FLUME_DIR;
   delete env.FLUME_CONFIG_DIR;
+  delete env.FLUME_JOB;
   return env;
 }
 
-/** Spawn one real `flume loop --max <max>`; collect output + exit code. */
-async function runLoop(
+/** Spawn one real `flume <args>`; collect combined output + exit code. */
+async function runCli(
   cwd: string,
-  max: number,
+  args: string[],
+  env: NodeJS.ProcessEnv = hermeticEnv(),
 ): Promise<{ out: string; code: number }> {
   try {
     const { stdout, stderr } = await exec(
       process.execPath,
-      [TSX_CLI, CLI, "loop", "--max", String(max)],
-      { cwd, env: hermeticEnv() },
+      [TSX_CLI, CLI, ...args],
+      { cwd, env },
     );
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
@@ -192,7 +276,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(process.pid), "utf8");
 
-        const r = await runLoop(dir, 0);
+        const r = await runCli(dir, ["loop", "--max", "0"]);
 
         expect(r.code).toBe(1);
         expect(r.out).toContain(
@@ -227,7 +311,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(deadPid), "utf8");
 
-        const r = await runLoop(dir, 0);
+        const r = await runCli(dir, ["loop", "--max", "0"]);
 
         // Not refused — the dead holder was reclaimed and the loop ran to
         // its --max 0 stop.
@@ -242,5 +326,193 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
       }
     },
     30_000,
+  );
+});
+
+// ---------- v0.5 §3 — job resolution through the real CLI ----------
+
+/**
+ * Scratch git repo on a chosen branch — the wrong-branch guard reads HEAD via
+ * `git rev-parse`, so only a real repo can exercise it.
+ */
+async function makeJobRepo(branch: string): Promise<{
+  dir: string;
+  cleanup: () => Promise<void>;
+}> {
+  const dir = await mkdtemp(join(tmpdir(), "flume-job-"));
+  const opts = { cwd: dir };
+  await exec("git", ["init", "-q", "-b", branch], opts);
+  await exec("git", ["config", "user.email", "test@example.com"], opts);
+  await exec("git", ["config", "user.name", "Test User"], opts);
+  await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  await writeFile(join(dir, "README.md"), "seed\n");
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * A chain.ts whose singleton phase records the FLUME_DIR / FLUME_CONFIG_DIR /
+ * FLUME_JOB it observes *inside the child tick process* to
+ * `<FLUME_DIR>/observed-env.json`. The supervisor spawns the tick with no
+ * `env:` override, so what lands in that file is exactly what the child
+ * inherited across the loop → tick boundary — the §3 inheritance claim made
+ * observable end-to-end.
+ */
+function jobEnvProbeChainSrc(phaseName: string): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "job env probe",\n` +
+    `    promptPath: "prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `};\n` +
+    `export const agent = {\n` +
+    `  name: "job-env-probe",\n` +
+    `  async invoke() {\n` +
+    `    writeFileSync(\n` +
+    `      join(process.env.FLUME_DIR ?? "", "observed-env.json"),\n` +
+    `      JSON.stringify({\n` +
+    `        FLUME_DIR: process.env.FLUME_DIR,\n` +
+    `        FLUME_CONFIG_DIR: process.env.FLUME_CONFIG_DIR,\n` +
+    `        FLUME_JOB: process.env.FLUME_JOB,\n` +
+    `      }),\n` +
+    `    );\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `};\n`
+  );
+}
+
+describe("§3 job resolution — real CLI", () => {
+  it(
+    "--job alongside explicit FLUME_DIR is a usage error (exit 2); a valueless --job likewise",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-job-conflict-"));
+      try {
+        const conflict = await runCli(dir, ["--job", "foo", "status"], {
+          ...hermeticEnv(),
+          FLUME_DIR: dir,
+        });
+        expect(conflict.code).toBe(2);
+        expect(conflict.out).toContain("--job foo");
+        expect(conflict.out).toContain("FLUME_DIR");
+        expect(conflict.out).toContain("one resolution authority");
+
+        const bare = await runCli(dir, ["--job"]);
+        expect(bare.code).toBe(2);
+        expect(bare.out).toContain("usage: flume --job <name>");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "wrong-branch guard refuses tick and loop off job/<name>, naming both branches; FLUME_JOB alone triggers it identically",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const tick = await runCli(repo.dir, ["--job", "foo", "tick"]);
+        expect(tick.code).toBe(1);
+        expect(tick.out).toContain("'job/foo'");
+        expect(tick.out).toContain("'main'");
+        expect(tick.out).toContain("refusing tick");
+
+        const loop = await runCli(repo.dir, ["--job", "foo", "loop", "--max", "0"]);
+        expect(loop.code).toBe(1);
+        expect(loop.out).toContain("refusing loop");
+        // Refused before dispatch — the loop never took its lock.
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "foo", "loop.pid")),
+        ).toBe(false);
+
+        // The env var is honored identically to the flag (§3).
+        const envOnly = await runCli(repo.dir, ["tick"], {
+          ...hermeticEnv(),
+          FLUME_JOB: "foo",
+        });
+        expect(envOnly.code).toBe(1);
+        expect(envOnly.out).toContain("'job/foo'");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "read-only subcommands (status, wake, sleep, render) skip the guard and operate on the job state root",
+    async () => {
+      const repo = await makeJobRepo("main"); // deliberately NOT job/foo
+      try {
+        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
+        await mkdir(jobDir, { recursive: true });
+        await writeFile(join(jobDir, "chain.ts"), jobEnvProbeChainSrc("probe"), "utf8");
+        await writeFile(join(jobDir, "prompt.md"), "job probe prompt\n", "utf8");
+
+        const status = await runCli(repo.dir, ["--job", "foo", "status"]);
+        expect(status.code).toBe(0);
+        expect(status.out).toContain("hibernating");
+
+        // wake lands the flag under the JOB state root — resolution proof.
+        const wake = await runCli(repo.dir, ["--job", "foo", "wake", "probe"]);
+        expect(wake.code).toBe(0);
+        expect(existsSync(join(jobDir, "awake", "probe"))).toBe(true);
+
+        // render loads chain + prompt from the job config dir.
+        const render = await runCli(repo.dir, ["--job", "foo", "render", "probe"]);
+        expect(render.code).toBe(0);
+        expect(render.out).toContain("job probe prompt");
+
+        const sleep = await runCli(repo.dir, ["--job", "foo", "sleep", "probe"]);
+        expect(sleep.code).toBe(0);
+        expect(existsSync(join(jobDir, "awake", "probe"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "on job/<name> the guard passes and a loop-spawned child tick inherits all three env vars",
+    async () => {
+      const repo = await makeJobRepo("job/foo");
+      try {
+        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
+        await mkdir(jobDir, { recursive: true });
+        await writeFile(join(jobDir, "chain.ts"), jobEnvProbeChainSrc("probe"), "utf8");
+        await writeFile(join(jobDir, "prompt.md"), "job probe prompt\n", "utf8");
+        new Baton(jobDir).wake("probe");
+
+        const loop = await runCli(repo.dir, ["--job", "foo", "loop", "--max", "1"]);
+        expect(loop.code).toBe(0);
+        expect(loop.out).not.toContain("refusing");
+        expect(loop.out).toMatch(/tick → probe \(singleton\)/);
+
+        // Written by the agent inside the CHILD tick process, under the dir
+        // it saw as FLUME_DIR — presence + content prove the child inherited
+        // the supervisor's canonical job resolution, not a re-derived default.
+        const observed = JSON.parse(
+          await readFile(join(jobDir, "observed-env.json"), "utf8"),
+        ) as { FLUME_DIR: string; FLUME_CONFIG_DIR: string; FLUME_JOB: string };
+        expect(observed.FLUME_DIR).toBe(jobDir);
+        expect(observed.FLUME_CONFIG_DIR).toBe(jobDir);
+        expect(observed.FLUME_JOB).toBe("foo");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
   );
 });

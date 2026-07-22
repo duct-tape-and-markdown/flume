@@ -22,6 +22,7 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
+import { currentBranch } from "./git.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -50,6 +51,13 @@ function readPackageVersion(): string {
 }
 
 /**
+ * `--job <name>` given alongside an explicitly-set `FLUME_DIR` /
+ * `FLUME_CONFIG_DIR`: two resolution authorities for one state root (v0.5 §3).
+ * The CLI maps this to a usage error (exit 2).
+ */
+export class JobResolutionConflictError extends Error {}
+
+/**
  * Resolve the mutable-state root (`flumeDir`) and the chain+prompt dir
  * (`configDir`) from `env`, canonicalizing each to an **absolute** path, and
  * write the resolved values back into `env`.
@@ -63,18 +71,43 @@ function readPackageVersion(): string {
  * Both default to `<repoRoot>/.flume` when unset; a set-but-relative value is
  * resolved against the cwd. Independent of one another: a dock sets both to its
  * ephemeral dir to co-locate config and state.
+ *
+ * Job resolution (v0.5 §3): `jobFlag` (the global `--job <name>`) or a
+ * pre-set `FLUME_JOB` retargets both defaults to
+ * `<repoRoot>/.flume/jobs/<name>` and writes `FLUME_JOB` back alongside the
+ * dirs, so loop-spawned tick children inherit the whole resolution via env.
+ * The flag is a strict authority — an explicitly-set dir env var beside it
+ * throws {@link JobResolutionConflictError}. `FLUME_JOB` from env composes
+ * with explicit dirs instead of conflicting: on the loop → tick boundary the
+ * child sees all three written-back vars, and the dir vars *are* the parent's
+ * canonical job resolution, so set dirs win and the job name rides along for
+ * the branch guard and fanout namespacing.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
   repoRoot: string,
-): { flumeDir: string; configDir: string } {
-  const flumeDir = env.FLUME_DIR ? resolve(env.FLUME_DIR) : join(repoRoot, ".flume");
+  jobFlag?: string,
+): { flumeDir: string; configDir: string; job: string | undefined } {
+  if (jobFlag && (env.FLUME_DIR || env.FLUME_CONFIG_DIR)) {
+    const set = [env.FLUME_DIR && "FLUME_DIR", env.FLUME_CONFIG_DIR && "FLUME_CONFIG_DIR"]
+      .filter(Boolean)
+      .join(" and ");
+    throw new JobResolutionConflictError(
+      `--job ${jobFlag} conflicts with explicit ${set}: one resolution authority — drop --job or unset the env`,
+    );
+  }
+  const job = jobFlag ?? (env.FLUME_JOB || undefined);
+  const jobDefault = job ? join(repoRoot, ".flume", "jobs", job) : undefined;
+  const flumeDir = env.FLUME_DIR
+    ? resolve(env.FLUME_DIR)
+    : (jobDefault ?? join(repoRoot, ".flume"));
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
-    : join(repoRoot, ".flume");
+    : (jobDefault ?? join(repoRoot, ".flume"));
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
-  return { flumeDir, configDir };
+  if (job) env.FLUME_JOB = job;
+  return { flumeDir, configDir, job };
 }
 
 /**
@@ -105,6 +138,10 @@ Commands:
                       the agent.
 
 Options:
+  --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
+                      and set FLUME_JOB=<name> (equivalent to setting the env
+                      var). Conflicts with explicit FLUME_DIR/FLUME_CONFIG_DIR
+                      (exit 2). tick/loop then require HEAD == job/<name>.
   -h, --help          Print this message.
   -v, --version       Print the flume version.
 
@@ -128,7 +165,8 @@ invokes the agent, and applies validation gates.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
-  1   Harness error (chain load failure, unexpected exception).
+  1   Harness error (chain load failure, unexpected exception), or — under a
+      job resolution (--job/FLUME_JOB) — HEAD is not job/<name>.
   78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
       the chain does not declare. The flags are left on disk — inspect, then
       \`flume sleep <phase>\` or fix the chain.
@@ -142,7 +180,8 @@ Options:
 
 Exit codes:
   0   Hibernation reached, or --max ticks completed.
-  1   Harness error.
+  1   Harness error, another live loop holds the lock, or — under a job
+      resolution (--job/FLUME_JOB) — HEAD is not job/<name>.
   78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
       --help\`); the orphaned awake flags are left on disk.
 `,
@@ -188,21 +227,27 @@ function wantsHelp(args: readonly string[]): boolean {
 }
 
 async function main(): Promise<number> {
-  const [, , firstArg, ...restArgs] = process.argv;
+  const argv = process.argv.slice(2);
   const repoRoot = process.cwd();
 
-  // Resolve both state roots up front and canonicalize them back into the env
-  // (§12). `flumeDir` is the mutable-state root (baton, pending, worktrees,
-  // prior-attempts); `configDir` is the chain+prompt dir. Both default to
-  // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them for a
-  // self-contained, ephemeral harness. Resolving here (not constructing) lets
-  // them survive the `loop` → `tick` process boundary — children inherit the
-  // (now absolute-canonical) env vars — and lets a chain loaded later in this
-  // process read one authoritative state root.
-  const { flumeDir, configDir } = resolveStateDirs(process.env, repoRoot);
+  // Global `--job <name>` (v0.5 §3): extract it wherever it appears so it
+  // composes with every subcommand, before any dispatch.
+  let jobFlag: string | undefined;
+  const jobIdx = argv.indexOf("--job");
+  if (jobIdx >= 0) {
+    const value = argv[jobIdx + 1];
+    if (!value || value.startsWith("-")) {
+      console.error("usage: flume --job <name> <command>");
+      return 2;
+    }
+    jobFlag = value;
+    argv.splice(jobIdx, 2);
+  }
+
+  const [firstArg, ...restArgs] = argv;
 
   // Top-level --help / --version short-circuit before subcommand dispatch
-  // (and before any chain load) so they work in any cwd.
+  // (and before any resolution or chain load) so they work in any cwd.
   if (firstArg === "--help" || firstArg === "-h") {
     process.stdout.write(HELP_TOP);
     return 0;
@@ -220,6 +265,44 @@ async function main(): Promise<number> {
   if (isSubcommand(cmd) && wantsHelp(rest)) {
     process.stdout.write(HELP_SUB[cmd]);
     return 0;
+  }
+
+  // Resolve both state roots up front and canonicalize them back into the env
+  // (§12). `flumeDir` is the mutable-state root (baton, pending, worktrees,
+  // prior-attempts); `configDir` is the chain+prompt dir. Both default to
+  // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them, and
+  // `--job` / `FLUME_JOB` retargets the default to `.flume/jobs/<name>`
+  // (v0.5 §3). Resolving here (not constructing) lets the values survive the
+  // `loop` → `tick` process boundary — children inherit the (now
+  // absolute-canonical) env vars — and lets a chain loaded later in this
+  // process read one authoritative state root.
+  let flumeDir: string;
+  let configDir: string;
+  let job: string | undefined;
+  try {
+    ({ flumeDir, configDir, job } = resolveStateDirs(process.env, repoRoot, jobFlag));
+  } catch (err) {
+    if (err instanceof JobResolutionConflictError) {
+      console.error(`[flume] ${err.message}`);
+      return 2;
+    }
+    throw err;
+  }
+
+  // Wrong-branch guard (v0.5 §3): under a job resolution the mutating
+  // subcommands commit to the working tree's HEAD (HEAD-is-truth, §2), so
+  // they assert HEAD is the job's conventional branch before dispatch.
+  // Read-only subcommands skip the check; bare invocation (no job) keeps
+  // HEAD-is-truth untouched.
+  if (job && (cmd === "tick" || cmd === "loop")) {
+    const head = await currentBranch(repoRoot);
+    const want = `job/${job}`;
+    if (head !== want) {
+      console.error(
+        `[flume] job '${job}' mutates branch '${want}' but HEAD is '${head}'; refusing ${cmd} — check out ${want} first`,
+      );
+      return 1;
+    }
   }
 
   if (cmd === "status") {

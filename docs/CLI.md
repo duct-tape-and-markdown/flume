@@ -2,6 +2,20 @@
 
 `flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands, `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes.
 
+## Global `--job <name>` / `FLUME_JOB`
+
+`flume --job <name> <subcommand>` (the flag composes with every subcommand, at any argument position) resolves both `FLUME_DIR` and `FLUME_CONFIG_DIR` to `<repoRoot>/.flume/jobs/<name>` and sets `FLUME_JOB=<name>` — all three canonicalized and written back into the environment at CLI entry, so loop-spawned tick children inherit the resolution via env rather than flags. Setting `FLUME_JOB=<name>` directly (no flag) is honored identically.
+
+The flag is a strict resolution authority: passing `--job` while `FLUME_DIR` or `FLUME_CONFIG_DIR` is explicitly set is a usage error (exit `2`). The env-var form composes instead of conflicting — on the loop → tick boundary the child inherits all three written-back vars, and the dir vars *are* the parent's canonical job resolution, so explicitly-set dirs win and the job name rides along.
+
+**Wrong-branch guard.** Under a job resolution, the mutating subcommands (`tick`, `loop`) commit to the working tree's HEAD, so before dispatch they assert `HEAD == job/<name>` and refuse otherwise (exit `1`, naming both branches). Read-only subcommands (`status`, `render`, `wake`, `sleep`) skip the check. Bare invocation — no flag, no `FLUME_JOB` — leaves the HEAD-is-truth contract untouched: commits land on whatever branch is checked out.
+
+```sh
+flume --job docs-refresh status        # reads .flume/jobs/docs-refresh/awake/
+flume --job docs-refresh loop          # requires HEAD == job/docs-refresh
+FLUME_JOB=docs-refresh flume tick      # identical resolution via env
+```
+
 ## `flume status`
 
 Prints baton state: the list of awake phases (or `hibernating` if none) read from `.flume/awake/`. Observational only — no chain is loaded, no agent is invoked, nothing on disk changes. Exit code is `0` regardless of the awake set; status is the right call to bake into shell prompts or watch loops without risk of side effects.
