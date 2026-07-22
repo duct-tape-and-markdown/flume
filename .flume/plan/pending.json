@@ -1,48 +1,5 @@
 [
   {
-    "tag": "ENTRY-SCOPED-GUARD",
-    "summary": "Fanout ticks with assignedEntry: write guard narrows to entry.files ∪ Phase.entryChannelPaths with phase writablePaths as outer ceiling; singleton ticks unchanged. Per §5.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "5. Entry-scoped fanout write guard"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "entryChannelPaths?: string[] (default []), same home as writablePaths."
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "writablePathsGate grows entry-scope support (or a scoped sibling) — both checks apply."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Gate construction (:993) passes entry scope when assignedEntry present; revert feedback names out-of-scope path(s) for the §5 prior-attempt block."
-        },
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "files description text states the plan-side obligation: declare every legitimately-touched path incl. incidentals."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "scoped commit inside files∪channel ships; path outside scope but inside phase globs reverts and retry prompt names it; path inside files but outside phase globs reverts (ceiling); singleton ticks keep phase-wide scope"
-      }
-    ],
-    "acceptance": "§7 §5 matrix green; revert message/feedback names the offending path(s)",
-    "notes": "Enforced from first release — no warn-first (§9.4). Failure semantics identical to existing guard: whole-commit revert. Dogfood adoption (.flume/prompts/plan.md obligation line + chain.ts entryChannelPaths) is off-allowlist chore(flume) — see OQ."
-  },
-  {
     "tag": "PHASE-AGENT",
     "summary": "Phase.agent?: Agent — per-phase delegation seam; per-tick resolution phase.agent ?? chainModule.agent ?? opts.agent. Per §4.",
     "per": {
@@ -80,45 +37,6 @@
     ],
     "acceptance": "§7 §4 cases green; CHAIN-AUTHORING documents the per-phase model pattern",
     "notes": "Mechanism only — no Phase.model string sugar (§8, §9.3)."
-  },
-  {
-    "tag": "TEST-PR5-SURFACE",
-    "summary": "Backfill the two §2a test holes: cross-process loop lock and FLUME_WORKTREES_DIR base override. Per §2c. Tests only — no shape changes authorized.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "2c. Derivable gaps"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Loop-lock cases against <flumeDir>/loop.pid (src/cli.ts:261)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Worktree base resolution cases (src/Dispatcher.ts:1032)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "second loop against same state root refused while recorded pid alive; stale (dead-pid) pidfile reclaimed"
-      },
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "worktree base = resolve(FLUME_WORKTREES_DIR) when set, else join(flumeDir, \"worktrees\")"
-      }
-    ],
-    "acceptance": "Both §2c-listed holes closed; suite green",
-    "notes": "Behavior shipped in 0.3.1; PR #5 carried tests for partition/schema but none for these two."
   },
   {
     "tag": "FIX-EXTRAENV-JSDOC-SCOPE",
