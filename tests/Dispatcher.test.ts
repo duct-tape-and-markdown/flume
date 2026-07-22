@@ -627,6 +627,83 @@ describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
   }, 20_000);
 });
 
+/**
+ * v0.3 §13 posture — an out-of-tree dock is invisible to git by construction.
+ * Ship bookkeeping must not `git add` a pendingPath outside repoRoot (the add
+ * fatals *after* entries already merged); the disk write alone carries the
+ * auto-unblock and observedFiles forward.
+ */
+describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the chore commit", () => {
+  it("merges the entry to trunk, updates pending at the relocated path, no chore commit, no git fatal", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(
+        pendingPath,
+        JSON.stringify([makeEntry("RELOC-A", ["src/reloc-a.ts"])], null, 2) +
+          "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "reloc-a": (cwd) =>
+          writeAndCommit(cwd, "src/reloc-a.ts", "reloc\n", "build(RELOC-A): ship"),
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent,
+        log: silent,
+      });
+
+      const preHead = await head(fx.repo);
+      const outcome = await dispatcher.tick();
+
+      // The entry merged to trunk.
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["RELOC-A"]);
+      expect(await readFile(join(fx.repo, "src/reloc-a.ts"), "utf8")).toBe(
+        "reloc\n",
+      );
+
+      // Trunk gained exactly the cherry-picked entry commit — no chore
+      // commit rides on top, and none is reported as this wave's commit.
+      const { stdout: count } = await exec(
+        "git",
+        ["rev-list", "--count", `${preHead}..HEAD`],
+        { cwd: fx.repo },
+      );
+      expect(count.trim()).toBe("1");
+      const { stdout: subject } = await exec(
+        "git",
+        ["log", "-1", "--format=%s"],
+        { cwd: fx.repo },
+      );
+      expect(subject.trim()).toBe("build(RELOC-A): ship");
+      expect(outcome.result?.commitSha).toBeUndefined();
+
+      // Pending was updated on disk at the relocated path.
+      const parsed = parsePending(await readFile(pendingPath, "utf8"));
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.entries).toEqual([]);
+      expect(outcome.result?.pendingAfter).toEqual([]);
+
+      // No state bled into the default in-repo location.
+      expect(existsSync(join(fx.repo, ".flume"))).toBe(false);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
   it("creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean", async () => {
     const entries = [
