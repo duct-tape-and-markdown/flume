@@ -21,6 +21,31 @@ import { loadChainModule } from "./Dispatcher.js";
 const exec = promisify(execFile);
 
 /**
+ * execFile with a Windows shim fallback. Package-manager binaries (pnpm,
+ * npm) are .cmd shims on Windows, which Node refuses to spawn without a
+ * shell (CVE-2024-27980 hardening). A direct spawn is tried first so args
+ * keep exact quoting semantics; only a win32 ENOENT — the shim case, where
+ * gate args are chain-authored flags — retries through the shell.
+ */
+async function execGate(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await exec(cmd, args, opts);
+  } catch (err) {
+    if (
+      process.platform === "win32" &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return await exec(cmd, args, { ...opts, shell: true });
+    }
+    throw err;
+  }
+}
+
+/**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
  * worktree's cwd; non-zero exit = fail. `failHint` is the message surfaced
  * to the dispatcher on failure (and embedded in the next agent prompt's
@@ -49,7 +74,7 @@ export function shellGate(opts: ShellGateOptions): Gate {
     when: opts.when,
     async run(ctx: GateContext): Promise<GateResult> {
       try {
-        const { stdout, stderr } = await exec(opts.cmd, opts.args, {
+        const { stdout, stderr } = await execGate(opts.cmd, opts.args, {
           cwd: ctx.cwd,
           maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,
         });
