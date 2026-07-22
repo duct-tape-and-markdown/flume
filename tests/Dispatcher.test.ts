@@ -1000,6 +1000,205 @@ describe("Dispatcher fanout — job-scoped branch namespace (v0.5 §4)", () => {
   }, 20_000);
 });
 
+/**
+ * v0.5 §4 residual — job-scoped worktree PATHS. The branch namespace alone
+ * left paths slug-keyed: two jobs sharing a tag slug under one
+ * FLUME_WORKTREES_DIR collide on `<base>/<slug>`, and createWorktree's
+ * stale-slug cleanup rm's the OTHER job's live worktree. With a namespace the
+ * path mirrors the branch: `<base>/<namespace>/<slug>`; without one the
+ * legacy `<base>/<slug>` stands.
+ */
+describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
+  const savedOverride = process.env.FLUME_WORKTREES_DIR;
+
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = savedOverride;
+  });
+
+  it("namespace + FLUME_WORKTREES_DIR → worktree at <base>/<namespace>/<slug>; teardown cleans it", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-nspath-"));
+    try {
+      const base = join(container, "wt-base");
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      await writePending(fx.repo, [makeEntry("NS-PATH", ["src/ns-path.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "ns-path": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(cwd, "src/ns-path.ts", "ns\n", "build(NS-PATH): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        namespace: "alpha",
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.shippedTags).toEqual(["NS-PATH"]);
+      // The path mirrors the branch namespacing under the shared base …
+      expect(observedCwd).toBe(join(base, "alpha", "ns-path"));
+      // … the legacy slug-keyed location never materializes …
+      expect(existsSync(join(base, "ns-path"))).toBe(false);
+      // … and teardown cleans the namespaced dir.
+      expect(existsSync(join(base, "alpha", "ns-path"))).toBe(false);
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("two namespaces, shared base, identical tag → disjoint paths; neither run rm's the other's live worktree", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-nspath-shared-"));
+    const dockA = await mkdtemp(join(tmpdir(), "flume-nspath-a-"));
+    const dockB = await mkdtemp(join(tmpdir(), "flume-nspath-b-"));
+    try {
+      const base = join(container, "wt-base");
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      const seed = async (dock: string, editPath: string) => {
+        const pendingPath = join(dock, "plan", "pending.json");
+        await mkdir(dirname(pendingPath), { recursive: true });
+        await writeFile(
+          pendingPath,
+          JSON.stringify([makeEntry("DUP-TAG", [editPath])], null, 2) + "\n",
+          "utf8",
+        );
+        new Baton(dock).wake("build");
+      };
+      await seed(dockA, "src/dup-a.ts");
+      await seed(dockB, "src/dup-b.ts");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      // Interleave: park job A mid-agent with its worktree LIVE, then run
+      // job B's entire tick (create → agent → teardown) against the shared
+      // base. Slug-keyed paths would make B's createWorktree treat
+      // `<base>/dup-tag` as a stale remnant and rm A's live worktree out
+      // from under its parked agent — the exact clobber this closes.
+      let releaseA!: () => void;
+      const gate = new Promise<void>((res) => (releaseA = res));
+      let signalStarted!: () => void;
+      const aStarted = new Promise<void>((res) => (signalStarted = res));
+
+      let cwdA: string | undefined;
+      let cwdB: string | undefined;
+
+      const dispA = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dockA,
+        agent: fanoutAgent({
+          "dup-tag": async (cwd) => {
+            cwdA = cwd;
+            signalStarted();
+            await gate;
+            await writeAndCommit(cwd, "src/dup-a.ts", "A\n", "build(DUP-TAG): ship alpha");
+          },
+        }),
+        log: silent,
+        namespace: "alpha",
+      });
+      const dispB = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dockB,
+        agent: fanoutAgent({
+          "dup-tag": async (cwd) => {
+            cwdB = cwd;
+            await writeAndCommit(cwd, "src/dup-b.ts", "B\n", "build(DUP-TAG): ship beta");
+          },
+        }),
+        log: silent,
+        namespace: "beta",
+      });
+
+      const aTick = dispA.tick();
+      try {
+        await aStarted;
+
+        const bOutcome = await dispB.tick();
+        expect(bOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
+
+        // Identical tag slugs, disjoint paths under the one shared base.
+        expect(cwdA).toBe(join(base, "alpha", "dup-tag"));
+        expect(cwdB).toBe(join(base, "beta", "dup-tag"));
+        // B's full run — including its stale-slug cleanup and teardown —
+        // left A's live worktree standing.
+        expect(existsSync(join(base, "alpha", "dup-tag"))).toBe(true);
+      } finally {
+        releaseA();
+      }
+
+      const aOutcome = await aTick;
+      expect(aOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
+      // Both entries landed on trunk; neither wave lost its commit.
+      expect(await readFile(join(fx.repo, "src/dup-a.ts"), "utf8")).toBe("A\n");
+      expect(await readFile(join(fx.repo, "src/dup-b.ts"), "utf8")).toBe("B\n");
+    } finally {
+      await rm(container, { recursive: true, force: true });
+      await rm(dockA, { recursive: true, force: true });
+      await rm(dockB, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("no namespace → legacy <base>/<slug> (bare .flume harnesses unchanged)", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-nspath-legacy-"));
+    try {
+      const base = join(container, "wt-base");
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      await writePending(fx.repo, [makeEntry("LEGACY-PATH", ["src/legacy-path.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "legacy-path": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(
+            cwd,
+            "src/legacy-path.ts",
+            "legacy\n",
+            "build(LEGACY-PATH): ship",
+          );
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.shippedTags).toEqual(["LEGACY-PATH"]);
+      expect(observedCwd).toBe(join(base, "legacy-path"));
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
     // Both fake agents write to the same baseline file with different

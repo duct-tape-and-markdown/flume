@@ -249,9 +249,12 @@ export interface DispatcherOptions {
   /**
    * Fanout branch namespace (v0.5 §4). When set, ephemeral worktree branches
    * are `flume/<namespace>/<slug>` instead of the repo-global `flume/<slug>`,
-   * so two jobs whose pending entries share a tag slug fan out onto disjoint
-   * branches. Resolved by the CLI from `FLUME_JOB` and passed down explicitly
-   * — the dispatcher never sniffs `flumeDir` for a job name.
+   * and worktree paths are `<wtBase>/<namespace>/<slug>` instead of
+   * `<wtBase>/<slug>`, so two jobs whose pending entries share a tag slug fan
+   * out onto disjoint branches AND disjoint paths (a shared
+   * FLUME_WORKTREES_DIR would otherwise clobber). Resolved by the CLI from
+   * `FLUME_JOB` and passed down explicitly — the dispatcher never sniffs
+   * `flumeDir` for a job name.
    */
   namespace?: string;
   /**
@@ -1111,7 +1114,14 @@ export class Dispatcher {
     const wtBase = process.env.FLUME_WORKTREES_DIR
       ? resolve(process.env.FLUME_WORKTREES_DIR)
       : join(this.flumeDir, "worktrees");
-    const path = join(wtBase, slug);
+    // The path mirrors the branch namespacing: under a shared
+    // FLUME_WORKTREES_DIR two jobs with identical tag slugs would otherwise
+    // collide on <base>/<slug>, and the stale-cleanup below would rm the
+    // OTHER job's live worktree. Namespaced unconditionally when set — the
+    // redundant level under a default per-job base is harmless.
+    const path = this.opts.namespace
+      ? join(wtBase, this.opts.namespace, slug)
+      : join(wtBase, slug);
     if (existsSync(path)) {
       // Stale from a prior crashed run; clean up.
       try {
