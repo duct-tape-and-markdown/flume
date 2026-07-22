@@ -2,24 +2,22 @@
 
 Phase: **v0.4 ACTIVE** (`spec/RELEASE-v0.4.md` opened `d2371fe`; v0.1/v0.2/v0.3 frozen). Mode this tick: **audit**.
 
-## This tick — audit the third v0.4-era ship wave (2 build commits + chore drain)
+## This tick — audit the fourth v0.4-era ship wave (1 build commit + chore drain)
 
-Delta = 3 commits since `e615052`, no spec change, empty inbox, no blocked entries.
+Delta = 2 commits since `8116ce0`, no spec change, empty inbox, no blocked entries.
 
-- `898dfbb` **FIX-RELOCATED-PENDING-COMMIT vs v0.3 §11: conformant.** Verified at `src/Dispatcher.ts:1371-1374`: out-of-repo pendingPath detected via `relative(repoRoot, pendingPath)` after the disk write; returns `revParse` HEAD, so the caller's existing `updSha === preUpdate` branch keeps `commitSha` undefined (`:795`) and narrates the no-commit variant (`:799`). Test asserts all four mandated outcomes (entry merged to trunk, pending updated at the relocated path, exactly 1 trunk commit + no reported chore SHA, no in-repo `.flume` bleed). Ship-log no-commit variant: incidental within the declared file, serves §13 honest-narration intent, accepted. Two corner debts **ACCEPTED** (see commit body): `..`-prefixed-dirname false positive in the detection idiom; footprint-only relocated wave misnarrated as "already recorded".
-- `c7de392` **FIX-EXTRAENV-JSDOC-SCOPE vs v0.4 §2b: conformant.** Comment-only, declared file only. Acceptance's literal "no gate mention remains" is over-strict — shipped JSDoc mentions gates precisely to negate the stale claim ("gates … do not see these vars"), which serves the §2b intent better than silence. Plan wording defect, not a build defect; no finding.
-- `fbed998` chore drain: removed exactly the 2 shipped tags; clean.
-- Follow-through: the §2a default-base test carries no stale in-repo-pin comment (`tests/Dispatcher.test.ts:622`) — the optional relax the entry offered turned out unneeded.
+- `64b4bc4` **PHASE-AGENT vs v0.4 §4: conformant.** `Phase.agent?: Agent` (`src/Phase.ts`); resolution `phase.agent ?? chainModule.agent ?? this.opts.agent` at `src/Dispatcher.ts:462`, moved *after* phase selection — the sole resolution site, feeding both `runSingleton` and `runFanout` by param into the single `agent.invoke` at `:999`. No bypass path. Mechanism-only (Agent value, no model-string sugar) per §8. CHAIN-AUTHORING documents the per-phase pattern incl. the `claudeCode({extraArgs:["--model",…]})` model-only variation + chain-local helper, per §4 bullet 3. Tests cover both §7 §4 mandates (phase.agent wins for its phase; silent sibling falls back chain > opts) plus a both-silent opts-default case. Files touched = declared set exactly; no scope creep. Optional field, non-breaking → no dogfood chain.ts co-update needed. One non-finding: §4's cite `src/Dispatcher.ts:394` now points at :462 post-move — spec line-cite drift on the human surface, not worth an OQ.
+- `4f8bc46` chore drain: removed exactly the 1 shipped tag; pending now `[]`; clean.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none (no blockedBy gates).
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none.
 
-## Queue (1)
+## Queue (0)
 
-Head: `PHASE-AGENT` (§4 per-phase agent seam). Open, no gates — sole remaining entry.
+Empty. **v0.4 derivable surface is fully shipped**: §3, §4, §5 guard, §2b, §2c, §6 lane (CI proof still pending push). What remains on v0.4 is human-lane only — see open questions.
 
 ## Active plan target
 
-`spec/RELEASE-v0.4.md` — decomposition current; underived surface: none. Shipped so far: §3, §2c tests + docs, §5 guard, §6 lane (CI proof still pending push), §2b JSDoc align, plus the v0.3 §11 relocated-dock bookkeeping fix. Remaining spec work: §4 (`PHASE-AGENT`).
+`spec/RELEASE-v0.4.md` — decomposition complete; underived surface: none. Next derivation trigger is a spec delta (v0.4 amendments or a v0.5 file).
 
 ## Open questions
 
@@ -27,7 +25,7 @@ Head: `PHASE-AGENT` (§4 per-phase agent seam). Open, no gates — sole remainin
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` only; pending.json and open-questions.md carried unchanged; inbox.md untouched (empty). No new/edited entries → no path checks triggered.
-- Trunk: HEAD `fbed998` at tick start, tree clean. **origin/main 34 behind** — windows lane and everything post-PR#5 unexercised in CI; human push still pending.
+- Wrote `.flume/plan/state.md` only; pending.json (`[]`) and open-questions.md carried unchanged; inbox.md untouched (empty). No new/edited entries → no path checks triggered.
+- Trunk: HEAD `4f8bc46` at tick start, tree clean. **origin/main 36 behind** — windows lane and everything post-PR#5 unexercised in CI; human push still pending.
 
 Plan continues: no
