@@ -11,7 +11,9 @@ Status markers:
 
 ## 2026-05-17 — orphaned baton (awake flag → phase absent from chain) hibernates indistinguishably from a clean stop; the inbox's §5/§6 home is a category error
 
-**Status: PARKED** (net-new terminal classification + supervisor stop + exit status; still no `per` cite — needs a human spec call: add an Axis-C/loop-safety section to the now-live v0.3 line, or explicitly reopen v0.2 scoping)
+**Status: PARKED** (net-new terminal classification + supervisor stop + exit status; still no `per` cite — needs a human spec call: open a v0.4 line carrying an Axis-C/loop-safety section)
+
+**Update 2026-07-22 (0.3.0 cut, `0db0500`):** v0.3 is now shipped and frozen per the ship→freeze posture, so disposition A's "append a section to the live RELEASE-v0.3.md" is stale. The cheap landing is now **open `spec/RELEASE-v0.4.md`** with the loop-safety/Axis-C section as a founding theme. Two v0.4-candidate asks drained this tick (per-phase agent assignment; entry-scoped fanout write guard — both below) make a natural v0.4 grouping. The Axis-C shape and analysis below are unchanged; nothing to re-derive.
 
 **Update 2026-06-22 (`RELEASE-v0.3.md` now exists):** disposition A's blocker is half-cleared — a `spec/RELEASE-v0.3.md` line now exists, but it carries the **foundations governor** (§§1-9) and **relocatable state** (§§10-15), **not** an Axis-C/loop-safety/orphaned-baton section. So the finding is still unauthorized by spec (no section to carry a `per` cite into) and stays PARKED. The recommended landing is now *cheaper than originally framed*: append a new section to the existing, live, editable RELEASE-v0.3.md (a human edit) rather than create the file from scratch. The Axis-C shape below is unchanged; nothing to re-derive.
 
@@ -93,21 +95,40 @@ The code itself is coherent (JSDoc'd; `void`-returning impls unaffected; dispatc
 
 **Recommended disposition:** A. Also a process note: `feat(phase):`-prefixed code landing outside the `build:`-per-pending-entry path is how this bypassed plan; if out-of-band feature commits are expected during fork reconciliation, `.claude/rules/spec-plan-build.md` should say so explicitly.
 
-## 2026-05-17 — `v0.1.1` git tag exists but CHANGELOG and `25dc78b` assert it does not
+## 2026-07-22 — per-phase agent/model assignment (drained from inbox; source: human via flume-dock)
 
-**Status: PARKED** (CHANGELOG is a ship artifact stating a falsehood; correct text depends on a tag-reconciliation decision the spec is silent on)
+**Status: PARKED** (net-new public API surface; no spec section to carry a `per` cite — v0.3 is cut/frozen, no v0.4 line exists; v0.4 candidate)
 
-`CHANGELOG.md` `[0.1.1]` states: **"No `v0.1.1` git tag exists."** Commit `25dc78b` body states: "no v0.1.1 git tag — that release has no canonical commit. Only v0.1.2 is tagged." Both are **false**: `git for-each-ref` shows an annotated tag `v0.1.1 → 060b481 → ce73d95 "build: v0.1.1 — fix README scope placeholder"`.
+Finding verified at source this tick, and slightly sharper than reported:
 
-`ce73d95` is **not reachable from `main`** — it is a fork-branch commit whose content `main` re-landed as `e9adb1c`. Wider reality: `v0.1.0` (`8d6ea2c`) is **also** an off-`main` fork commit; only `v0.1.2` (`25dc78b`) is on `main` and equals `HEAD`. So three published tags exist; two point at history not in the canonical branch, and the CHANGELOG narrative about that reconciliation contains a verifiably wrong claim.
-
-§8 makes CHANGELOG accuracy a ship requirement ("v0.1 entry summarizes what shipped"). The factual sentence can be fixed by build, but the *right* sentence depends on what happens to the off-`main` tags — a release-ceremony call the spec does not cover. Filing a "fix the sentence" pending entry would paper over the unresolved tag state (per *architectural missteps*, flag the root).
+- One Agent serves every phase. `src/cli.ts:236` wires `agent: claudeCode()` as the dispatcher default; per-tick resolution is `chainModule.agent ?? this.opts.agent` (`src/Dispatcher.ts:394`) — a chain-level **global** override, no phase dimension. `Phase` (`src/Phase.ts`) carries no agent or model field.
+- A *global* model override is already expressible today with zero new surface: `claudeCode({ extraArgs: ["--model", "…"] })` in the chain's `agent` export (`ClaudeCodeOptions.extraArgs`, `src/Agent.ts:102-103`). Only the **per-phase seam** is missing — the ask is real and correctly scoped.
+- Prior art (from the inbox, sound): aider's architect/editor split validates strong-model-derives / cheap-model-executes. First consumer: flume-dock's sweep preset (plan mid-tier, build cheap).
 
 **Options:**
-- **(A — recommended) Keep the tags as-is; correct the CHANGELOG to state the off-`main` reality accurately.** e.g. `[0.1.1]`: "Tagged `v0.1.1` at off-`main` fork commit `ce73d95`; content reconciled into canonical history via `e9adb1c`." Honest, no history rewrite. Cheapest, but leaves published tags pointing off-`main` permanently.
-- **(B) Delete the `v0.1.0`/`v0.1.1` tags** (they point off canonical history); CHANGELOG's "no v0.1.1 tag" claim becomes true and `[0.1.0]` is re-tagged on `main`. Cleanest history story; mutates already-published tags (npm dist-tags unaffected, but git consumers may have fetched them).
-- **(C) Re-point `v0.1.0`/`v0.1.1` to the `main` commits that carried their content** (`v0.1.1 → e9adb1c`, `v0.1.0 → <main commit>`). Tags become reachable from `main`; still a published-tag mutation.
+- **(A — recommended) `Phase.agent?: Agent`**, resolved `phase.agent ?? chainModule.agent ?? opts.agent`. Most general: composes with decorators — the dogfood chain wraps `claudeCode` in `withTerminalRenderer(withSessionCapture(…))`, and a bare model string cannot express "same decorators, different model". Provider-agnostic; mirrors the existing per-tick `agent`/`forkResolver` override pattern (`src/Dispatcher.ts:394-397`). Cost: the chain author re-states the decorator stack per phase (a chain-local helper amortizes this).
+- **(B) `Phase.model?: string`** flowing to `--model` in the `claudeCode` argv. Smaller ask, matches the inbox's second framing — but leaks a provider concept into `Phase`, and the dispatcher would have to rebuild/rewrap the agent per phase or go claudeCode-only. Weakest composition story.
+- **(C) A + B** (A as mechanism, B as sugar). Defer B until a second provider or real ergonomic pain exists.
 
-Tag creation/deletion/move is human release-ceremony lane (not plan's, not build's `build:` lane). Once chosen, the CHANGELOG correction is a `build:`/`chore(release):` follow-up under §8 — plan files it as a pending entry *then*, with the disposition fixed.
+**Recommended disposition:** spec a v0.4 section mandating (A). Natural v0.4 grouping with the orphaned-baton Axis-C section (above) and the entry-scoped write guard (below). Once specced, the surface is small and fully build-derivable (`Phase` field + dispatcher resolution + tests + CHAIN-AUTHORING.md note).
 
-**Recommended disposition:** A — least disruptive, no published-tag mutation, and the CHANGELOG becomes truthful with one factual edit. If a clean canonical-history story matters more than tag stability, B.
+## 2026-07-22 — fanout write guard scoped to the assigned entry's declared files (drained from inbox; source: human via flume-dock)
+
+**Status: PARKED** (net-new normative guard behavior; no spec section to carry a `per` cite; v0.4 candidate — and enforcement semantics need a human call)
+
+Finding verified at source:
+
+- `writablePaths` is a static phase-wide union (`src/Phase.ts:98`); the post-commit guard diffs against phase globs only.
+- The per-entry scope already exists as data: `files.new/edit/retire` (`src/PendingSchema.ts`) drives the fanout partition, and fanout ticks carry `assignedEntry` (`src/Phase.ts:42`, populated at `src/Dispatcher.ts:841`, threaded by `src/cli.ts:301`). The ask: for a fanout tick with an `assignedEntry`, guard = entry's declared paths ∪ an explicit channel allowance (e.g. open-questions/intake file), with the phase globs as outer ceiling. Prior art (from the inbox, sound): Spec Kit tasks and BMAD stories carry their own file scope.
+
+**Design points the spec author must call (why this can't be filed as-is — enforcement changes `files`' contract):**
+1. **`files` becomes load-bearing.** Today it is advisory/descriptive; enforced, an under-declared entry's legitimate incidental edit (a lockfile, a barrel export) becomes a whole-commit revert. That changes what *plan* must guarantee when authoring entries — worth stating in the spec as a plan-side obligation, not just a guard behavior.
+2. **Channel allowance shape is API surface.** Per-phase config? Chain-level? A `Phase` field naming extra globs always writable on scoped ticks? Needs a decided home and name.
+3. **Failure semantics** — presumably the existing guard's revert-whole-commit; the spec should say so explicitly (and whether the §5/§6 feedback block tells the retry *which* path was out of scope — it should).
+
+**Options:**
+- **(A — recommended) Enforce on fanout ticks with `assignedEntry` only**, exactly as asked: entry paths + channel allowance, phase globs as ceiling. Singleton ticks keep phase-wide scope. Sharpest containment where fanout parallelism makes cross-entry bleed most costly.
+- **(B) Warn-first soft launch** — same scope computation, but log/feedback the violation without reverting for one release, to calibrate how often plan under-declares before flipping to revert. Cheap insurance against (1); costs a release of non-enforcement.
+- **(C) Status quo + prompt discipline.** Rejected as the endpoint — "prose rules in prompts" is exactly what `writablePaths` exists to replace (`src/Phase.ts:92-94`).
+
+**Recommended disposition:** spec a v0.4 section; (A), with (B) considered as its rollout mode if the under-declaration risk in (1) feels real. Fully build-derivable once specced (guard scope computation + `Phase` channel field + tests + docs).

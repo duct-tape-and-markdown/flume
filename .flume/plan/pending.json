@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "AGENT-TAG-WIN32-BASENAME",
+    "summary": "withTerminalRenderer default tag uses inv.cwd.split(\"/\").pop() — on win32 the full drive-lettered path renders instead of the worktree name. Use platform basename (src/Agent.ts:275).",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "2. Public API surface"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "Default tag: basename(inv.cwd) || \"tick\" via node:path — mirrors chain.ts fix b248b72."
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "Assert default tag is the leaf dir for a win32-style backslash cwd (and still for POSIX)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Agent.test.ts",
+        "asserts": "withTerminalRenderer default tag renders cwd basename under both separator styles"
+      }
+    ],
+    "acceptance": "pnpm test green; default renderer tag on a drive-lettered cwd is the leaf dir name, not the full path",
+    "notes": "Audit find off b248b72 (identical bug class, fixed in dogfood chain.ts; this is the src/ echo). Cosmetic (display tag), not fatal. Defect repair on shipped v0.1 §2 surface — no API change; freeze posture governs spec text and new derivation, not restoring specced surface to correct cross-platform behavior."
+  }
+]
