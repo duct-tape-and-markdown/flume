@@ -94,6 +94,67 @@ describe("shellGate — fail path", () => {
   });
 });
 
+// Node refuses to spawn .cmd shims without a shell (CVE-2024-27980
+// hardening), so an extension-less command that resolves only to a .cmd
+// shim ENOENTs on the direct spawn and must go green through execGate's
+// shell retry. Only observable on hosts where .cmd is an executable form.
+describe.runIf(process.platform === "win32")(
+  "shellGate — win32 .cmd shim fallback",
+  () => {
+    let shimDir: string;
+    let originalPath: string | undefined;
+
+    beforeEach(async () => {
+      shimDir = await mkdtemp(join(tmpdir(), "flume-shim-"));
+      await writeFile(
+        join(shimDir, "flume-shim-fixture.cmd"),
+        "@echo off\r\necho shim-ok %1\r\n",
+      );
+      originalPath = process.env.PATH;
+      process.env.PATH = `${shimDir};${process.env.PATH ?? ""}`;
+    });
+
+    afterEach(async () => {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      await rm(shimDir, { recursive: true, force: true });
+    });
+
+    it("turns green via the shell retry when only a .cmd shim exists", async () => {
+      const gate = shellGate({
+        name: "shim",
+        when: "afterCommit",
+        cmd: "flume-shim-fixture",
+        args: ["arg1"],
+      });
+      const result = await gate.run(ctx(process.cwd()));
+      expect(result.ok).toBe(true);
+      expect(result.message).toBe("shim green");
+      expect(result.details).toContain("shim-ok arg1");
+    });
+
+    it("still reports ok=false when the shim exits non-zero through the retry", async () => {
+      await writeFile(
+        join(shimDir, "flume-shim-red.cmd"),
+        "@echo off\r\necho shim-stderr 1>&2\r\nexit /b 7\r\n",
+      );
+      const gate = shellGate({
+        name: "shim-red",
+        when: "afterCommit",
+        cmd: "flume-shim-red",
+        args: [],
+      });
+      const result = await gate.run(ctx(process.cwd()));
+      expect(result.ok).toBe(false);
+      expect(result.message).toBe("shim-red failed");
+      expect(result.details).toContain("shim-stderr");
+    });
+  },
+);
+
 describe("writablePathsGate — git-backed checks", () => {
   let repo: string;
 
@@ -104,6 +165,9 @@ describe("writablePathsGate — git-backed checks", () => {
     await exec("git", ["config", "user.email", "test@example.com"], opts);
     await exec("git", ["config", "user.name", "Test User"], opts);
     await exec("git", ["config", "commit.gpgsign", "false"], opts);
+    // Byte-exact checkout on Windows: revert-path assertions compare file
+    // content, and a host-level autocrlf=true would rewrite LF on reset.
+    await exec("git", ["config", "core.autocrlf", "false"], opts);
     // Seed an initial commit so HEAD exists and `git show` works cleanly.
     await writeFile(join(repo, ".seed"), "");
     await exec("git", ["add", "."], opts);
@@ -243,6 +307,9 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     await exec("git", ["config", "user.email", "test@example.com"], opts);
     await exec("git", ["config", "user.name", "Test User"], opts);
     await exec("git", ["config", "commit.gpgsign", "false"], opts);
+    // Byte-exact checkout on Windows: revert-path assertions compare file
+    // content, and a host-level autocrlf=true would rewrite LF on reset.
+    await exec("git", ["config", "core.autocrlf", "false"], opts);
     await writeFile(join(repo, ".seed"), "");
     await exec("git", ["add", "."], opts);
     await exec("git", ["commit", "-q", "-m", "seed"], opts);

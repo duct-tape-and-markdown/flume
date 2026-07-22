@@ -20,7 +20,7 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -95,8 +95,10 @@ const pendingParseGate: Gate = {
 const buildSetupWorktree = async (
   ctx: WorktreeSetupContext,
 ): Promise<void> => {
+  // shell: pnpm is a .cmd shim on Windows; Node can't spawn those bare.
   await execFileP("pnpm", ["install", "--frozen-lockfile"], {
     cwd: ctx.worktreePath,
+    shell: process.platform === "win32",
   });
 };
 
@@ -320,7 +322,7 @@ export const agent = withTerminalRenderer(
       dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
       filename: (inv) => {
         const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        const cwdName = inv.cwd.split("/").pop() ?? "tick";
+        const cwdName = basename(inv.cwd) || "tick";
         return `${ts}-${cwdName}.jsonl`;
       },
     },

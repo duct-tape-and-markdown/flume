@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Dispatcher,
   superviseLoop,
+  EX_TERMINAL_MISCONFIG,
   type ChainModule,
   type Logger,
 } from "../src/Dispatcher.ts";
@@ -52,6 +53,9 @@ async function makeFixture(): Promise<Fixture> {
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact checkout on Windows: revert-path assertions compare file
+  // content, and a host-level autocrlf=true would rewrite LF on reset.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(repo, "README.md"), "seed\n");
   await mkdir(join(repo, "src"), { recursive: true });
   await writeFile(join(repo, "src", "seed.ts"), "// seed\n");
@@ -169,7 +173,7 @@ function fanoutAgent(
   return {
     name: "fake-fanout",
     async invoke(inv) {
-      const slug = inv.cwd.split("/").pop()!;
+      const slug = basename(inv.cwd);
       const action = bySlug[slug];
       if (!action) {
         throw new Error(`fanoutAgent: no action registered for slug '${slug}'`);
@@ -387,7 +391,77 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
     const outcome = await dispatcher.tick();
     expect(outcome.hibernated).toBe(true);
     expect(outcome.phaseName).toBeUndefined();
+    expect(outcome.terminal).toBeUndefined();
     expect(outcome.awakeAfter).toEqual([]);
+  });
+});
+
+// ---------- Axis-C terminal misconfiguration (§3) ----------
+
+describe("Dispatcher — orphaned awake flags → Axis-C terminal (§3)", () => {
+  it("returns terminal.kind='orphaned-awake' naming the phases, leaves the flags on disk, runs no agent", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("ghost");
+    baton.wake("wraith");
+
+    // The chain declares only "plan" — neither awake flag matches.
+    const phase = makePhase({ name: "plan" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {
+        invoked = true;
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Axis C, not Axis B (hibernated) and not Axis A (noCommit): no agent
+    // ran, nothing exists to retry.
+    expect(outcome.terminal).toEqual({
+      kind: "orphaned-awake",
+      phases: ["ghost", "wraith"],
+    });
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.failed).toBeUndefined();
+    expect(outcome.noCommit).toBeUndefined();
+    expect(invoked).toBe(false);
+    expect(outcome.summary).toMatch(/ghost, wraith/);
+
+    // Silent-ack anti-pattern guard: the flags must survive the tick.
+    expect(baton.isAwake("ghost")).toBe(true);
+    expect(baton.isAwake("wraith")).toBe(true);
+    expect(outcome.awakeAfter).toEqual(["ghost", "wraith"]);
+  });
+
+  it("a declared awake phase still runs when an orphaned flag rides alongside it", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.wake("ghost");
+
+    const phase = makePhase({ name: "plan" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Terminal fires only when *every* awake flag is orphaned; a runnable
+    // phase runs and the stray flag persists for the next tick to classify.
+    expect(outcome.terminal).toBeUndefined();
+    expect(outcome.phaseName).toBe("plan");
+    expect(baton.isAwake("ghost")).toBe(true);
   });
 });
 
@@ -454,6 +528,182 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+/**
+ * v0.4 §2a — worktree base resolution:
+ * `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`. The override exists
+ * so ephemeral worktrees can relocate outside every repo-path prefix (the
+ * observed stray-write vector); the default tracks the state root, which is
+ * itself relocatable via `flumeDir`. `createWorktree` reads the env var at
+ * call time, so these tests stash/restore it around each case.
+ */
+describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
+  const savedOverride = process.env.FLUME_WORKTREES_DIR;
+
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = savedOverride;
+  });
+
+  it("FLUME_WORKTREES_DIR set → worktree lands under resolve(override), default base never materializes", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-wt-override-"));
+    try {
+      // Absolute override — its own resolve() fixed point, so asserting
+      // placement under it asserts the resolved base verbatim.
+      const base = join(container, "wt-base");
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      await writePending(fx.repo, [makeEntry("WT-OVER", ["src/wt-over.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "wt-over": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(cwd, "src/wt-over.ts", "over\n", "build(WT-OVER): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["WT-OVER"]);
+      // The agent ran inside `<resolve(override)>/<slug>` …
+      expect(observedCwd).toBe(join(base, "wt-over"));
+      // … and the default `<flumeDir>/worktrees` base was never created.
+      expect(existsSync(join(fx.repo, ".flume", "worktrees"))).toBe(false);
+      // Teardown cleaned the relocated worktree too.
+      expect(existsSync(join(base, "wt-over"))).toBe(false);
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("no override → worktree lands under join(flumeDir, 'worktrees')", async () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    const flumeDir = join(fx.repo, ".flume");
+
+    await writePending(fx.repo, [makeEntry("WT-DEF", ["src/wt-def.ts"])]);
+    new Baton(flumeDir).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedCwd: string | undefined;
+    const agent = fanoutAgent({
+      "wt-def": async (cwd) => {
+        observedCwd = cwd;
+        await writeAndCommit(cwd, "src/wt-def.ts", "def\n", "build(WT-DEF): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["WT-DEF"]);
+    // The agent ran inside `<flumeDir>/worktrees/<slug>` — the base tracks
+    // the state root, not a hardcoded repo-relative location.
+    expect(observedCwd).toBe(join(flumeDir, "worktrees", "wt-def"));
+    // Teardown cleaned the slug dir under the state root.
+    expect(existsSync(join(flumeDir, "worktrees", "wt-def"))).toBe(false);
+  }, 20_000);
+});
+
+/**
+ * v0.3 §13 posture — an out-of-tree dock is invisible to git by construction.
+ * Ship bookkeeping must not `git add` a pendingPath outside repoRoot (the add
+ * fatals *after* entries already merged); the disk write alone carries the
+ * auto-unblock and observedFiles forward.
+ */
+describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the chore commit", () => {
+  it("merges the entry to trunk, updates pending at the relocated path, no chore commit, no git fatal", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(
+        pendingPath,
+        JSON.stringify([makeEntry("RELOC-A", ["src/reloc-a.ts"])], null, 2) +
+          "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "reloc-a": (cwd) =>
+          writeAndCommit(cwd, "src/reloc-a.ts", "reloc\n", "build(RELOC-A): ship"),
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent,
+        log: silent,
+      });
+
+      const preHead = await head(fx.repo);
+      const outcome = await dispatcher.tick();
+
+      // The entry merged to trunk.
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["RELOC-A"]);
+      expect(await readFile(join(fx.repo, "src/reloc-a.ts"), "utf8")).toBe(
+        "reloc\n",
+      );
+
+      // Trunk gained exactly the cherry-picked entry commit — no chore
+      // commit rides on top, and none is reported as this wave's commit.
+      const { stdout: count } = await exec(
+        "git",
+        ["rev-list", "--count", `${preHead}..HEAD`],
+        { cwd: fx.repo },
+      );
+      expect(count.trim()).toBe("1");
+      const { stdout: subject } = await exec(
+        "git",
+        ["log", "-1", "--format=%s"],
+        { cwd: fx.repo },
+      );
+      expect(subject.trim()).toBe("build(RELOC-A): ship");
+      expect(outcome.result?.commitSha).toBeUndefined();
+
+      // Pending was updated on disk at the relocated path.
+      const parsed = parsePending(await readFile(pendingPath, "utf8"));
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.entries).toEqual([]);
+      expect(outcome.result?.pendingAfter).toEqual([]);
+
+      // No state bled into the default in-repo location.
+      expect(existsSync(join(fx.repo, ".flume"))).toBe(false);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
   it("creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean", async () => {
     const entries = [
@@ -489,8 +739,9 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
       ["worktree", "list", "--porcelain"],
       repoOpts,
     );
-    expect(before).toContain(join(".flume", "worktrees", "race-a"));
-    expect(before).toContain(join(".flume", "worktrees", "race-b"));
+    // git porcelain output prints forward slashes on every platform.
+    expect(before).toContain(".flume/worktrees/race-a");
+    expect(before).toContain(".flume/worktrees/race-b");
 
     const phase = makePhase({
       name: "build",
@@ -546,7 +797,9 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
     // Both fake agents write to the same baseline file with different
-    // content. Declared paths are disjoint so partition packs them together.
+    // content. Declared paths are disjoint so partition packs them together;
+    // the shared file is an entryChannelPaths allowance — the §5-era conflict
+    // vector, since disjoint declared files can no longer collide directly.
     // The first cherry-pick succeeds; the second conflicts because trunk now
     // has 'from-A' where B's diff expects 'baseline'.
     await mkdir(join(fx.repo, "src"), { recursive: true });
@@ -565,6 +818,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     const phase = makePhase({
       name: "build",
       concurrency: "fanout",
+      entryChannelPaths: ["src/shared.ts"],
       gates: [],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -658,7 +912,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     const agent: Agent = {
       name: "recording-fanout",
       async invoke(inv) {
-        const slug = inv.cwd.split("/").pop()!;
+        const slug = basename(inv.cwd);
         (promptsBySlug[slug] ??= []).push(inv.prompt);
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
@@ -702,6 +956,11 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(onDisk.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
     expect(first.result?.pendingAfter.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
 
+    // The reverted entry's *actual* commit footprint is recorded on the
+    // entry, so the next partition separates the retry from whatever it
+    // collided with even where declared `files` under-stated the reach.
+    expect(onDisk[0]!.observedFiles).toEqual(["src/iso-fail.ts"]);
+
     // The offending entry's afterMerge gate failure is recorded; the clean
     // sibling's passing run is too.
     const gr = first.result?.gateResults ?? [];
@@ -726,6 +985,226 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(failPrompts[1]).toContain("Reverted at: afterMerge");
     expect(failPrompts[1]).toContain("ISO-FAIL-DETAIL-QQQ");
   }, 30_000);
+});
+
+// ---------- entry-scoped write guard (v0.4 §5) ----------
+
+describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
+  it("ships a scoped commit that stays inside entry.files ∪ entryChannelPaths", async () => {
+    await writePending(fx.repo, [makeEntry("SCOPE-OK", ["src/ok.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "notes/**"],
+      entryChannelPaths: ["notes/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // One commit touching the declared file AND an undeclared channel path.
+    const agent = fanoutAgent({
+      "scope-ok": async (cwd) => {
+        await writeFile(join(cwd, "src", "ok.ts"), "ok\n");
+        await mkdir(join(cwd, "notes"), { recursive: true });
+        await writeFile(join(cwd, "notes", "finding.md"), "cross-tick\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", "build(SCOPE-OK): ship"], {
+          cwd,
+        });
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["SCOPE-OK"]);
+    expect(await readFile(join(fx.repo, "src/ok.ts"), "utf8")).toBe("ok\n");
+    expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
+      "cross-tick\n",
+    );
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+
+  it("reverts a path outside entry scope but inside phase globs; the retry prompt names it", async () => {
+    await writePending(fx.repo, [makeEntry("SCOPE-STRAY", ["src/a.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "recording-fanout",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        if (prompts.length === 1) {
+          // Attempt 1: one commit touching the declared file AND a stray
+          // sibling that is inside phase globs but undeclared by the entry.
+          await writeFile(join(inv.cwd, "src", "a.ts"), "a\n");
+          await writeFile(join(inv.cwd, "src", "stray.ts"), "stray\n");
+          await exec("git", ["add", "."], { cwd: inv.cwd });
+          await exec(
+            "git",
+            ["commit", "-q", "-m", "build(SCOPE-STRAY): overreach"],
+            { cwd: inv.cwd },
+          );
+        } else {
+          // Retry: stays inside the declared scope.
+          await writeAndCommit(
+            inv.cwd,
+            "src/a.ts",
+            "clean\n",
+            "build(SCOPE-STRAY): retry",
+          );
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+
+    // Whole-commit revert: nothing shipped, neither file reached trunk, the
+    // entry stays pending.
+    expect(first.result?.shippedTags).toEqual([]);
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
+    expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "SCOPE-STRAY",
+    ]);
+    const gr = first.result?.gateResults ?? [];
+    expect(gr.some((g) => g.gate === "writable-paths" && !g.ok)).toBe(true);
+
+    // Retry: the §5 prior-attempt block names the out-of-scope path.
+    baton.wake("build");
+    const second = await dispatcher.tick();
+
+    expect(prompts.length).toBe(2);
+    expect(prompts[0]).not.toContain("<prior-attempt>");
+    expect(prompts[1]).toContain("<prior-attempt>");
+    expect(prompts[1]).toContain("Failing gate: writable-paths");
+    expect(prompts[1]).toContain("entry-scoped write allowance");
+    // The gate's own detail line — not merely the diffStat — names the path.
+    expect(prompts[1]).toContain(
+      "src/stray.ts (inside phase writablePaths but outside",
+    );
+    expect(prompts[1]).not.toContain("- src/a.ts");
+
+    // The in-scope retry ships.
+    expect(second.result?.shippedTags).toEqual(["SCOPE-STRAY"]);
+    expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe("clean\n");
+  }, 30_000);
+
+  it("reverts a path inside entry.files but outside phase globs — the ceiling still binds", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SCOPE-CEIL", ["src/c.ts", "outside/d.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "scope-ceil": async (cwd) => {
+        await writeFile(join(cwd, "src", "c.ts"), "c\n");
+        await mkdir(join(cwd, "outside"), { recursive: true });
+        await writeFile(join(cwd, "outside", "d.ts"), "d\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", "build(SCOPE-CEIL): ship"], {
+          cwd,
+        });
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(existsSync(join(fx.repo, "outside", "d.ts"))).toBe(false);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "SCOPE-CEIL",
+    ]);
+
+    // The persisted §5 record names the ceiling violation, path included.
+    const record = JSON.parse(
+      await readFile(
+        join(fx.repo, ".flume", "prior-attempts", "scope-ceil.json"),
+        "utf8",
+      ),
+    ) as { mode: string; gate: string; details?: string };
+    expect(record.mode).toBe("gate-revert");
+    expect(record.gate).toBe("writable-paths");
+    expect(record.details).toContain("outside/d.ts");
+    expect(record.details).toContain("outside phase writablePaths");
+  }, 20_000);
+
+  it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
+    // Pending declares a different file; a singleton tick is not entry-scoped,
+    // so writing elsewhere inside writablePaths ships. entryChannelPaths on a
+    // singleton phase is inert.
+    await writePending(fx.repo, [makeEntry("SINGLETON-IGNORES", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      writablePaths: ["src/**", ".flume/**"],
+      entryChannelPaths: ["notes/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/unrelated.ts", "u\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(
+      outcome.result?.gateResults.some(
+        (g) => g.gate === "writable-paths" && g.ok,
+      ),
+    ).toBe(true);
+  }, 20_000);
 });
 
 describe("Dispatcher fanout — empty pickable set", () => {
@@ -966,6 +1445,75 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
   }, 20_000);
 });
 
+describe("Dispatcher — per-phase agent resolution (§4)", () => {
+  function recordingAgent(name: string, ran: string[]): Agent {
+    return {
+      name,
+      async invoke() {
+        ran.push(name);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+  }
+
+  it("phase.agent runs that phase's tick; a silent sibling falls back to chainModule.agent over opts.agent", async () => {
+    const ran: string[] = [];
+    const phaseAgent = recordingAgent("phase-agent", ran);
+    const chainAgent = recordingAgent("chain-agent", ran);
+    const optsAgent = recordingAgent("opts-agent", ran);
+
+    const withOwn = makePhase({ name: "plan", agent: phaseAgent });
+    const silentPhase = makePhase({ name: "review" });
+    const chain: Chain = { phases: [withOwn, silentPhase], humanOnly: [] };
+
+    const loader = (): Promise<ChainModule> =>
+      Promise.resolve({ default: chain, agent: chainAgent });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: loader,
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: optsAgent,
+      log: silent,
+    });
+
+    const baton = new Baton(join(fx.repo, ".flume"));
+
+    // Innermost scope: the phase's own agent wins even with a chain-level
+    // override present.
+    baton.wake("plan");
+    await dispatcher.tick();
+    expect(ran).toEqual(["phase-agent"]);
+
+    // Silent phase: the pre-§4 chain > constructor order is unchanged.
+    baton.wake("review");
+    await dispatcher.tick();
+    expect(ran).toEqual(["phase-agent", "chain-agent"]);
+  });
+
+  it("opts.agent remains the default when phase and chain are both silent", async () => {
+    const ran: string[] = [];
+    const optsAgent = recordingAgent("opts-agent", ran);
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: optsAgent,
+      log: silent,
+    });
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await dispatcher.tick();
+    expect(ran).toEqual(["opts-agent"]);
+  });
+});
+
 describe("Dispatcher fanout — fork-blocked entry becomes pickable when the predicate flips", () => {
   it("skips the entry while its fork is open, then builds it once the fork resolves", async () => {
     const entries = [
@@ -1202,7 +1750,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     const agent: Agent = {
       name: "recording-fanout",
       async invoke(inv) {
-        const slug = inv.cwd.split("/").pop()!;
+        const slug = basename(inv.cwd);
         (promptsBySlug[slug] ??= []).push(inv.prompt);
         const file = slug === "wave-a" ? "src/wa.ts" : "src/wb.ts";
         await writeAndCommit(inv.cwd, file, `${slug}\n`, `build(${slug})`);
@@ -2061,6 +2609,44 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
     expect(warns.filter((w) => /exited with code 1/.test(w)).length).toBe(3);
+  });
+
+  it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    // The orphaned flag keeps hibernating() false — the stop must come from
+    // the exit signal alone, never from re-reading the broken baton state.
+    baton.wake("ghost");
+
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: EX_TERMINAL_MISCONFIG });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: rec,
+    });
+
+    // Immediate stop: no further ticks despite --max 5 and a non-empty baton.
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
+    expect(res.hibernated).toBe(false);
+    expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
+    expect(
+      errors.some((e) => /terminal misconfiguration/.test(e) && /ghost/.test(e)),
+    ).toBe(true);
+    // The supervisor never clears the flag either — diagnosability over tidiness.
+    expect(baton.isAwake("ghost")).toBe(true);
   });
 });
 

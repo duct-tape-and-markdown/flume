@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
@@ -22,10 +22,15 @@ const spawnMock = vi.mocked(spawn);
 interface FakeChildStream extends EventEmitter {
   setEncoding: (encoding: string) => void;
 }
+interface FakeChildStdin extends EventEmitter {
+  write: (chunk: string) => void;
+  end: () => void;
+  written: string[];
+}
 interface FakeChildProcess extends EventEmitter {
   stdout: FakeChildStream;
   stderr: FakeChildStream;
-  stdin: { write: (chunk: string) => void; end: () => void };
+  stdin: FakeChildStdin;
 }
 
 function fakeChildProcess(): FakeChildProcess {
@@ -34,10 +39,29 @@ function fakeChildProcess(): FakeChildProcess {
   stdout.setEncoding = (): void => {};
   const stderr = new EventEmitter() as FakeChildStream;
   stderr.setEncoding = (): void => {};
+  const stdin = new EventEmitter() as FakeChildStdin;
+  stdin.written = [];
+  stdin.write = (chunk: string): void => {
+    stdin.written.push(chunk);
+  };
+  stdin.end = (): void => {};
   proc.stdout = stdout;
   proc.stderr = stderr;
-  proc.stdin = { write: (): void => {}, end: (): void => {} };
+  proc.stdin = stdin;
   return proc;
+}
+
+async function withPlatform(
+  platform: NodeJS.Platform,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: platform });
+  try {
+    await fn();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
 }
 
 beforeEach(() => {
@@ -105,6 +129,97 @@ describe("claudeCode — outputFormat flags", () => {
       "--model",
       "opus",
     ]);
+  });
+});
+
+describe("claudeCode — win32 .cmd shim fallback", () => {
+  function enoent(): NodeJS.ErrnoException {
+    return Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
+  }
+
+  it("retries exactly once with shell:true when the direct win32 spawn ENOENTs", async () => {
+    await withPlatform("win32", async () => {
+      const first = fakeChildProcess();
+      const second = fakeChildProcess();
+      spawnMock
+        .mockReturnValueOnce(first as never)
+        .mockReturnValueOnce(second as never);
+
+      const result = claudeCode().invoke({
+        cwd: "C:\\wt",
+        prompt: "the-prompt",
+      });
+      first.emit("error", enoent());
+      // Real spawn failures can emit 'close' after 'error'; the abandoned
+      // first proc must not settle the promise with empty output.
+      first.emit("close", -1);
+
+      second.stdout.emit("data", "shim-output");
+      second.emit("close", 0);
+
+      await expect(result).resolves.toEqual({
+        exitCode: 0,
+        stdout: "shim-output",
+        stderr: "",
+      });
+
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+      const [, firstArgs, firstOpts] = spawnMock.mock.calls[0]!;
+      const [retryBin, retryArgs, retryOpts] = spawnMock.mock.calls[1]!;
+      expect("shell" in (firstOpts as Record<string, unknown>)).toBe(false);
+      expect(retryBin).toBe("claude");
+      expect(retryArgs).toEqual(firstArgs);
+      expect(retryOpts).toMatchObject({ cwd: "C:\\wt", shell: true });
+      expect(second.stdin.written.join("")).toBe("the-prompt");
+    });
+  });
+
+  it("rejects without a third spawn when the shell retry also errors", async () => {
+    await withPlatform("win32", async () => {
+      const first = fakeChildProcess();
+      const second = fakeChildProcess();
+      spawnMock
+        .mockReturnValueOnce(first as never)
+        .mockReturnValueOnce(second as never);
+
+      const result = claudeCode().invoke({ cwd: "C:\\wt", prompt: "p" });
+      first.emit("error", enoent());
+      const retryErr = enoent();
+      second.emit("error", retryErr);
+
+      await expect(result).rejects.toBe(retryErr);
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("rejects win32 non-ENOENT spawn errors without retrying", async () => {
+    await withPlatform("win32", async () => {
+      const proc = fakeChildProcess();
+      spawnMock.mockReturnValueOnce(proc as never);
+
+      const result = claudeCode().invoke({ cwd: "C:\\wt", prompt: "p" });
+      const eacces = Object.assign(new Error("spawn claude EACCES"), {
+        code: "EACCES",
+      });
+      proc.emit("error", eacces);
+
+      await expect(result).rejects.toBe(eacces);
+      expect(spawnMock).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("rejects ENOENT unchanged on non-win32 platforms", async () => {
+    await withPlatform("linux", async () => {
+      const proc = fakeChildProcess();
+      spawnMock.mockReturnValueOnce(proc as never);
+
+      const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+      const err = enoent();
+      proc.emit("error", err);
+
+      await expect(result).rejects.toBe(err);
+      expect(spawnMock).toHaveBeenCalledOnce();
+    });
   });
 });
 
@@ -326,6 +441,49 @@ describe("withTerminalRenderer", () => {
     expect(out).not.toContain("tool-output");
     expect(out).not.toContain("session_id");
     expect(out).not.toContain("\"type\":");
+  });
+
+  describe("default tag", () => {
+    // Renders one non-JSON line so the tag prefix surfaces verbatim.
+    async function defaultTagOutputFor(cwd: string): Promise<string> {
+      const fake: Agent = {
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.("ping\n");
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+      const captured: string[] = [];
+      await withTerminalRenderer(fake).invoke({
+        cwd,
+        prompt: "",
+        onStdout: (chunk) => captured.push(chunk),
+      });
+      return captured.join("");
+    }
+
+    it("renders the leaf dir for a POSIX-style cwd", async () => {
+      expect(await defaultTagOutputFor("/work/wt-agent-1")).toBe(
+        "[wt-agent-1] ping\n",
+      );
+    });
+
+    // path.basename only treats "\" as a separator on win32 hosts, so the
+    // drive-lettered regression is only observable there.
+    it.runIf(process.platform === "win32")(
+      "renders the leaf dir, not the full path, for a drive-lettered backslash cwd",
+      async () => {
+        expect(
+          await defaultTagOutputFor(
+            "C:\\Users\\dev\\repo\\.flume\\worktrees\\wt-agent-1",
+          ),
+        ).toBe("[wt-agent-1] ping\n");
+      },
+    );
+
+    it("falls back to [tick] when the cwd is a bare root", async () => {
+      expect(await defaultTagOutputFor(sep)).toBe("[tick] ping\n");
+    });
   });
 
   it("passes non-JSON lines through verbatim with the tag prefix", async () => {

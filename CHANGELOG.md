@@ -11,6 +11,42 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-22
+
+Reconciliation and portability. Folds the temper-side runtime hand-patches
+(PR #5, forked at 0.2.0) into source so consumers stop re-patching
+`node_modules` after every install, and makes win32 a working host end to
+end — spawns, session capture, and the full test suite.
+
+### Added
+
+- `FLUME_WORKTREES_DIR`: relocate fanout worktrees outside every repo-path
+  prefix (stray-write vector). Default remains `<flumeDir>/worktrees`.
+- Cross-process loop lock: `flume loop` writes `<flumeDir>/loop.pid`;
+  a second supervisor against the same state root is refused while the
+  recorded pid is alive; stale pidfiles are reclaimed.
+- `PendingEntry.observedFiles`: a reverted attempt's actual commit
+  footprint persists on the entry and joins the next partition, so a retry
+  never rides with what it collided with.
+- `TickResult.revertedTags`: merge-thrash vs in-session retry is
+  telemetry-visible.
+- Ship bookkeeping auto-opens `blockedBy` gates whose blocker shipped in
+  the same wave.
+
+### Fixed
+
+- A no-op footprint update no longer reports the pre-existing HEAD as its
+  commit.
+- win32: package-manager `.cmd` shims spawn through a direct-spawn →
+  ENOENT → shell-retry fallback in `shellGate` and the claude invocation
+  (Node CVE-2024-27980 hardening refuses bare `.cmd` spawns).
+- win32: `withTerminalRenderer`'s default tag and session-capture
+  filenames derive from `basename()`, not `split("/")` — drive-lettered
+  cwds no longer produce invalid filenames or full-path tags.
+- win32: test suite is fully green — portable slug parsing in fanout
+  fixtures, `core.autocrlf false` pinned in temp repos, platform-absolute
+  path fixtures.
+
 ## [0.3.0] - 2026-06-22
 
 A foundations governor for the build phase, plus a relocatable state dir for

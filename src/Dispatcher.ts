@@ -10,7 +10,7 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn, execFile } from "node:child_process";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -247,8 +247,10 @@ export interface DispatcherOptions {
    */
   flumeDir?: string;
   /**
-   * Default agent. A `chain.ts` that exports `agent` overrides this per tick
-   * (the agent re-resolves with the chain); otherwise this is used.
+   * Default agent. Per-tick resolution is
+   * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` that exports
+   * `agent` overrides this (the agent re-resolves with the chain), and a
+   * phase carrying its own `agent` overrides both for its ticks.
    */
   agent: Agent;
   /**
@@ -281,6 +283,26 @@ export interface DispatcherOptions {
    * unset — a hung agent will block the tick indefinitely.
    */
   tickTimeoutMs?: number;
+}
+
+/**
+ * `flume tick` exit code for an Axis-C terminal misconfiguration (§3):
+ * sysexits.h `EX_CONFIG`. Distinct from 0 (clean hibernate) and 1 (chain
+ * resolution failure) so the process boundary classifies the failure without
+ * reading logs. `superviseLoop` fail-fasts on a child exiting with this code.
+ */
+export const EX_TERMINAL_MISCONFIG = 78;
+
+/**
+ * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
+ * deterministic, non-retryable, no agent ran. `kind` is a union open to
+ * future Axis-C members; `"orphaned-awake"` (awake flags naming phases the
+ * chain does not declare) is its founding member.
+ */
+export interface TerminalMisconfiguration {
+  kind: "orphaned-awake";
+  /** The awake-flag names the chain does not declare. Flags stay on disk. */
+  phases: string[];
 }
 
 /**
@@ -321,6 +343,15 @@ export interface TickOutcome {
    * from platform-preempt runs without reading session logs).
    */
   noCommit?: NoCommitMode;
+  /**
+   * Axis-C terminal misconfiguration (§3) — sibling of `hibernated` /
+   * `failed`, never a `NoCommitMode` member (no agent ran, no entry exists
+   * to retry). Set when every awake flag names a phase the chain does not
+   * declare. The flags are deliberately left on disk: clearing them would
+   * convert the misconfiguration into a silent clean stop. `flume tick`
+   * exits {@link EX_TERMINAL_MISCONFIG} when this is set.
+   */
+  terminal?: TerminalMisconfiguration;
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -391,7 +422,6 @@ export class Dispatcher {
       };
     }
     const chain = chainModule.default;
-    const agent = chainModule.agent ?? this.opts.agent;
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -399,18 +429,37 @@ export class Dispatcher {
     const phase = chain.phases.find((p) => awake.includes(p.name));
 
     if (!phase) {
+      if (awake.length > 0) {
+        // Axis C (§3): every awake flag names a phase the chain does not
+        // declare. Not Axis B (nothing here is quiescent — the flags persist)
+        // and not Axis A (no agent ran, nothing to retry). The flags stay on
+        // disk so the human inspects, then `flume sleep <phase>` or fixes
+        // the chain; clearing them would be a silent ack.
+        const msg =
+          `awake flags reference unknown phases: ${awake.join(", ")}; ` +
+          `terminal misconfiguration (orphaned-awake), flags left on disk`;
+        this.log.error(`[flume] ${msg}`);
+        return {
+          hibernated: false,
+          terminal: { kind: "orphaned-awake", phases: awake },
+          awakeAfter: awake,
+          summary: msg,
+        };
+      }
       return {
         hibernated: true,
         awakeAfter: [],
-        summary: awake.length
-          ? `awake flags reference unknown phases: ${awake.join(", ")}; hibernating`
-          : "no phases awake; hibernating",
+        summary: "no phases awake; hibernating",
       };
     }
 
     if (!this.trunkBranch) {
       this.trunkBranch = await git.currentBranch(this.opts.repoRoot);
     }
+
+    // Per-phase delegation (§4): the phase's own agent is the innermost
+    // scope of the chain-level override chain.
+    const agent = phase.agent ?? chainModule.agent ?? this.opts.agent;
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
@@ -516,6 +565,7 @@ export class Dispatcher {
         gateResults,
         pendingAfter: await this.readPending(),
         shippedTags: [],
+        revertedTags: [],
       },
       ...(noCommit ? { noCommit } : {}),
     };
@@ -549,6 +599,7 @@ export class Dispatcher {
           gateResults: [],
           pendingAfter: pending,
           shippedTags: [],
+          revertedTags: [],
         },
       };
     }
@@ -631,6 +682,11 @@ export class Dispatcher {
     const shipped: PendingEntry[] = [];
     const mergeReverted: PendingEntry[] = [];
     const mergeGateResults: GateResultEntry[] = [];
+    // Actual footprints of merge-failed attempts, keyed by tag. Persisted
+    // onto the entry (observedFiles) so the next partition separates the
+    // retry from whatever it collided with — declared `files` is a plan
+    // estimate, and an agent legitimately reaches beyond it.
+    const observed = new Map<string, string[]>();
 
     for (const r of perEntry) {
       if (!r.committed || !r.commitSha) continue;
@@ -642,6 +698,12 @@ export class Dispatcher {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
         );
+        try {
+          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, r.commitSha));
+        } catch {
+          // Footprint capture is best-effort; the retry just partitions on
+          // declared files as before.
+        }
         // Abort the in-progress cherry-pick so the working tree is clean for
         // subsequent ticks. Without this, partially-applied changes block
         // the next plan tick (which can't run `pnpm install` etc. against a
@@ -699,6 +761,11 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
+        try {
+          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, mergedSha));
+        } catch {
+          // Best-effort, as above.
+        }
         await git.hardResetTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
         continue;
@@ -710,9 +777,10 @@ export class Dispatcher {
       );
     }
 
-    // Update pending.json — remove shipped entries — as one harness commit.
+    // Update pending.json — remove shipped entries, record merge-failure
+    // footprints — as one harness commit.
     let chorSha: string | undefined;
-    if (shipped.length > 0) {
+    if (shipped.length > 0 || observed.size > 0) {
       // Each shipped entry committed clean *and* passed its afterMerge gate
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
@@ -720,9 +788,24 @@ export class Dispatcher {
         await this.clearPriorAttempt(this.priorAttemptKey(phase, s));
       }
       const shippedTags = shipped.map((s) => s.tag);
-      chorSha = await this.commitPendingUpdate(pending, shippedTags);
+      // The update can no-op (footprint already recorded, nothing shipped):
+      // commitPendingUpdate then returns the pre-existing HEAD, which must
+      // not be reported as this wave's commit.
+      const preUpdate = await git.revParse(repoRoot);
+      const updSha = await this.commitPendingUpdate(
+        pending,
+        shippedTags,
+        observed,
+      );
+      if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
-        `[flume] ship commit ${chorSha.slice(0, 8)}: ${shippedTags.join(", ")}`,
+        shippedTags.length > 0
+          ? updSha === preUpdate
+            ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
+            : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+          : updSha === preUpdate
+            ? `[flume] footprint already recorded, no commit: ${[...observed.keys()].join(", ")}`
+            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
       );
     }
 
@@ -808,6 +891,7 @@ export class Dispatcher {
         gateResults: allGateResults,
         pendingAfter: await this.readPending(),
         shippedTags: shipped.map((s) => s.tag),
+        revertedTags: mergeReverted.map((e) => e.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     };
@@ -872,7 +956,12 @@ export class Dispatcher {
       return { entry, committed: false, gateResults, noCommit: mode };
     }
 
-    const verdict = await this.runAfterCommitGates(phase, wt.path, postHead);
+    const verdict = await this.runAfterCommitGates(
+      phase,
+      wt.path,
+      postHead,
+      entry,
+    );
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
       const record = await this.buildPriorAttempt(
@@ -949,15 +1038,33 @@ export class Dispatcher {
     phase: Phase,
     cwd: string,
     commitSha: string,
+    assignedEntry?: PendingEntry,
   ): Promise<{
     ok: boolean;
     /** First failing gate, structured so callers can persist a §5 record. */
     failure?: { gate: string; message: string; details?: string };
     results: GateResultEntry[];
   }> {
+    // Entry-scoped write guard (§5): a fanout tick's allowance narrows to the
+    // assigned entry's declared files ∪ the phase's channel globs, with the
+    // phase-wide globs as the outer ceiling. Singleton ticks (no entry) keep
+    // phase-wide scope. `observedFiles` is deliberately excluded — it feeds
+    // the partition, not the write allowance.
     const gates: Gate[] = [
       ...phase.gates.filter((g) => g.when === "afterCommit"),
-      writablePathsGate(phase.writablePaths),
+      writablePathsGate(
+        phase.writablePaths,
+        assignedEntry
+          ? {
+              entryPaths: [
+                ...assignedEntry.files.new.map((f) => f.path),
+                ...assignedEntry.files.edit.map((f) => f.path),
+                ...assignedEntry.files.retire,
+              ],
+              channelPaths: phase.entryChannelPaths ?? [],
+            }
+          : undefined,
+      ),
     ];
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
@@ -991,7 +1098,15 @@ export class Dispatcher {
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(entry.tag);
     const branch = `flume/${slug}`;
-    const path = join(this.flumeDir, "worktrees", slug);
+    // FLUME_WORKTREES_DIR: ephemeral worktrees relocate OUTSIDE the repo so an
+    // agent's pwd never contains the root checkout's path as a prefix (the
+    // observed stray-write vector: a model that sees `<root>/.flume/worktrees/x`
+    // derives `<root>` and operates there). Default tracks the state root
+    // (§16), which is itself relocatable via FLUME_DIR.
+    const wtBase = process.env.FLUME_WORKTREES_DIR
+      ? resolve(process.env.FLUME_WORKTREES_DIR)
+      : join(this.flumeDir, "worktrees");
+    const path = join(wtBase, slug);
     if (existsSync(path)) {
       // Stale from a prior crashed run; clean up.
       try {
@@ -1225,20 +1340,51 @@ export class Dispatcher {
   private async commitPendingUpdate(
     before: PendingEntry[],
     shippedTags: string[],
+    observed: ReadonlyMap<string, string[]> = new Map(),
   ): Promise<string> {
     const shipped = new Set(shippedTags);
-    const after = before.filter((e) => !shipped.has(e.tag));
+    // A blockedBy gate naming a tag this wave shipped is resolved HERE,
+    // mechanically: the dispatcher just merged and gated that tag, so
+    // "did the blocker land" needs no plan tick — the next wave forms
+    // without a plan interim. Judgment gates (parked) stay plan's.
+    const after = before
+      .filter((e) => !shipped.has(e.tag))
+      .map((e) =>
+        e.gate.kind === "blockedBy" && shipped.has(e.gate.tag)
+          ? { ...e, gate: { kind: "open" as const } }
+          : e,
+      )
+      .map((e) => {
+        const obs = observed.get(e.tag);
+        if (!obs || obs.length === 0) return e;
+        const merged = [...new Set([...(e.observedFiles ?? []), ...obs])];
+        return { ...e, observedFiles: merged };
+      });
+    const serialized = JSON.stringify(after, null, 2) + "\n";
+    // A footprint-only update can be a no-op (same collision, same paths,
+    // second time around) — committing an unchanged file fails, so skip.
+    const existing = await readFile(this.pendingPath, "utf8").catch(() => "");
+    if (serialized === existing) {
+      return git.revParse(this.opts.repoRoot);
+    }
     await mkdir(dirname(this.pendingPath), { recursive: true });
-    await writeFile(
-      this.pendingPath,
-      JSON.stringify(after, null, 2) + "\n",
-      "utf8",
-    );
+    await writeFile(this.pendingPath, serialized, "utf8");
+    // A relocated flumeDir puts pendingPath outside the repo, where staging
+    // it would fatal — after the entries already merged. An out-of-tree dock
+    // is invisible to git by construction, so no chore commit is wanted: the
+    // disk write alone carries the auto-unblock and observedFiles forward.
+    const rel = relative(this.opts.repoRoot, this.pendingPath);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      return git.revParse(this.opts.repoRoot);
+    }
     // Scoped to pending.json — `git add -A` would sweep up untracked worktree
     // metadata and unrelated user changes into the harness's chore commit.
     return git.commitPaths({
       cwd: this.opts.repoRoot,
-      message: `chore(flume): ship ${shippedTags.join(", ")}`,
+      message:
+        shippedTags.length > 0
+          ? `chore(flume): ship ${shippedTags.join(", ")}`
+          : `chore(flume): record merge-failure footprints for ${[...observed.keys()].join(", ")}`,
       paths: [this.pendingPath],
     });
   }
@@ -1274,6 +1420,13 @@ export interface SuperviseLoopOptions {
 export interface SuperviseResult {
   ticks: number;
   hibernated: boolean;
+  /**
+   * Set when the loop fail-fasted on a child exiting
+   * {@link EX_TERMINAL_MISCONFIG} (§3). `phases` are the orphaned awake
+   * flags read off disk for the summary — the stop *decision* is the exit
+   * code alone.
+   */
+  terminal?: TerminalMisconfiguration;
 }
 
 /**
@@ -1284,7 +1437,11 @@ export interface SuperviseResult {
  * `loadChainModule`). Between children it reads the on-disk baton
  * (disk-is-truth): no awake flags ⇒ hibernation ⇒ stop. A child that exits
  * non-zero (e.g. an ungated broken chain.ts: §3) is logged and the loop
- * proceeds — the supervisor never crashes. Bounded by `maxTicks` (the
+ * proceeds — the supervisor never crashes — except
+ * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration), which
+ * stops the loop immediately: the orphaned awake flags that produced it
+ * defeat the hibernation check, so proceeding would hot-spin to `--max`
+ * while masquerading each iteration as routine. Bounded by `maxTicks` (the
  * `--max N` cap); observable `--max`/hibernation behavior is unchanged from
  * the prior in-process loop.
  */
@@ -1300,6 +1457,27 @@ export async function superviseLoop(
   for (let i = 0; i < maxTicks; i++) {
     const { exitCode } = await runTick();
     ticks++;
+    if (exitCode === EX_TERMINAL_MISCONFIG) {
+      // Axis-C fail-fast (§3): the child classified a terminal
+      // misconfiguration (orphaned awake flags). The decision comes from the
+      // exit signal alone — the orphaned flags definitionally defeat
+      // `baton.hibernating()`, so it is never consulted here. The flags are
+      // still on disk (the child leaves them); read them only to *name* the
+      // orphans in the summary.
+      const phases = baton.awake();
+      log.error(
+        `[flume] tick exited ${exitCode} (terminal misconfiguration): ` +
+          `orphaned awake flags name unknown phases: ` +
+          `${phases.length > 0 ? phases.join(", ") : "(none on disk)"}; ` +
+          `stopping after ${ticks} tick(s). Inspect, then ` +
+          `\`flume sleep <phase>\` or fix the chain.`,
+      );
+      return {
+        ticks,
+        hibernated: false,
+        terminal: { kind: "orphaned-awake", phases },
+      };
+    }
     if (exitCode !== 0) {
       log.warn(
         `[flume] tick process exited with code ${exitCode}; ` +

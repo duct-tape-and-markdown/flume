@@ -103,7 +103,10 @@ Everything is on disk under `.flume/`:
 - `.flume/plan/state.md`, `.flume/plan/open-questions.md` — prose scratch
   that survives across ticks.
 - `.flume/inbox.md` — transient findings queue drained by plan.
-- `.flume/worktrees/<phase>/<entry>/` — per-entry worktrees during fanout.
+- `.flume/worktrees/<entry-slug>/` — per-entry worktrees during fanout. The
+  base dir is overridable via `FLUME_WORKTREES_DIR` (below).
+- `.flume/loop.pid` — cross-process loop lock, present while a `flume loop`
+  runs against this state root (below).
 - `.flume/sessions/<timestamp>.jsonl` — captured agent NDJSON (opt-in via
   `withSessionCapture`).
 
@@ -142,6 +145,37 @@ guarantee holds only if every per-run artifact your chain writes also lives
 under `FLUME_DIR` — see
 [`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for the chain-author
 requirement.
+
+### Relocating fanout worktrees only: `FLUME_WORKTREES_DIR`
+
+Fanout worktrees default to `<flumeDir>/worktrees` — inside the state root, so
+they move with `FLUME_DIR` and are covered by the one-`rm` teardown.
+`FLUME_WORKTREES_DIR` overrides just the worktree base, resolved as
+`FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`; a relative value resolves
+against the cwd.
+
+The override exists for one specific hazard: an agent whose working directory
+*contains the root checkout's path as a prefix* (the default
+`<repoRoot>/.flume/worktrees/<entry>` does) can derive the root from its own
+cwd and operate there instead of in its worktree — a stray write the
+writable-paths guard never sees, because it lands outside the worktree being
+diffed. Pointing `FLUME_WORKTREES_DIR` at a directory outside every repo-path
+prefix (e.g. a sibling tmpdir) removes the vector. If you relocate worktrees
+outside `FLUME_DIR`, they leave the one-`rm` footprint — they are ephemeral
+(created and removed per wave), but a crashed run can strand one there.
+
+### One loop per state root
+
+`flume loop` writes its pid to `<flumeDir>/loop.pid`. A second loop started
+against the same state root is refused (exit 1, naming the holder's pid) while
+the recorded pid is alive — two supervisors racing one baton would corrupt
+plan/build state. A stale pidfile left by a dead process is reclaimed
+automatically, and the lock is dropped on normal exit, `SIGINT`, and `SIGTERM`,
+so no manual cleanup is ever required.
+
+The lock lives under `flumeDir`, not the repo: the state root is the resource
+that races, and a dock relocated via `FLUME_DIR` carries its lock with it —
+two loops against *different* docks over the same repo are allowed.
 
 ## Status
 

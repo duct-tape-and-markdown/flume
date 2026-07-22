@@ -1,40 +1,31 @@
 # State
 
-Phase: **v0.3 line ACTIVE** — `spec/RELEASE-v0.3.md` (foundations governor §§1-9, relocatable state §§10-15, §16 flumeDir exposure, §17 test-suite lanes). Mode this tick: **audit**. v0.1 + v0.2 frozen.
+Phase: **v0.4 ACTIVE** (`spec/RELEASE-v0.4.md` opened `d2371fe`; v0.1/v0.2/v0.3 frozen). Mode this tick: **audit**.
 
-## This tick — audit TEST-SUITE-LANES ship
+## This tick — audit the fourth v0.4-era ship wave (1 build commit + chore drain)
 
-Delta = 2 commits (`2bdb2bb` build: vitest lane split; `5981b67` chore: drain pending → []). Commit-delta → audit.
-- **Audit `2bdb2bb` vs §17 — clean, accept.** Verified against the §17 deliverable list, point by point:
-  - `vitest.config.ts` excludes `**/*.integration.test.ts` from default; integration lane gated by `VITEST_LANE`. Verified live: fast lane lists **0** integration files; integration lane lists only the integration suite.
-  - `package.json` gains `test:integration` (`VITEST_LANE=integration vitest run`).
-  - `tests/loop-process-boundary.test.ts` → `.integration.test.ts` (rename; old retired).
-  - `docs/CHAIN-AUTHORING.md` documents the lane convention.
-  - **No `src/` change** (correct per §17a "No runtime fix"). **No scope creep** — exactly the 4 files in `entry.files`. Mechanism = filename-convention + config-exclude, the §17a-sanctioned default.
-- `5981b67` is the harness `chore(flume):` drain (pending → `[]`), not a `build:` commit — no `per`-cite audit surface.
-- **Derive:** spec-delta empty (no `spec/` change since last `plan:`). No derive.
-- **Drain:** inbox empty.
-- **Promote:** pending empty; no blocked entries.
+Delta = 2 commits since `8116ce0`, no spec change, empty inbox, no blocked entries.
+
+- `64b4bc4` **PHASE-AGENT vs v0.4 §4: conformant.** `Phase.agent?: Agent` (`src/Phase.ts`); resolution `phase.agent ?? chainModule.agent ?? this.opts.agent` at `src/Dispatcher.ts:462`, moved *after* phase selection — the sole resolution site, feeding both `runSingleton` and `runFanout` by param into the single `agent.invoke` at `:999`. No bypass path. Mechanism-only (Agent value, no model-string sugar) per §8. CHAIN-AUTHORING documents the per-phase pattern incl. the `claudeCode({extraArgs:["--model",…]})` model-only variation + chain-local helper, per §4 bullet 3. Tests cover both §7 §4 mandates (phase.agent wins for its phase; silent sibling falls back chain > opts) plus a both-silent opts-default case. Files touched = declared set exactly; no scope creep. Optional field, non-breaking → no dogfood chain.ts co-update needed. One non-finding: §4's cite `src/Dispatcher.ts:394` now points at :462 post-move — spec line-cite drift on the human surface, not worth an OQ.
+- `4f8bc46` chore drain: removed exactly the 1 shipped tag; pending now `[]`; clean.
+
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none.
 
 ## Queue (0)
 
-Empty. v0.3 derivable surface complete (see below).
+Empty. **v0.4 derivable surface is fully shipped**: §3, §4, §5 guard, §2b, §2c, §6 lane (CI proof still pending push). What remains on v0.4 is human-lane only — see open questions.
 
 ## Active plan target
 
-`spec/RELEASE-v0.3.md` — §§1-17 all shipped + audited (§17 is the final section; confirmed no later sections). **v0.3 derivable surface is complete.** No further derivation until new `spec/` movement, an inbox entry, or an open-question resolution opens fresh surface.
+`spec/RELEASE-v0.4.md` — decomposition complete; underived surface: none. Next derivation trigger is a spec delta (v0.4 amendments or a v0.5 file).
 
 ## Open questions
 
-**4 (all PARKED)** — unchanged this tick:
-- §7a chain.ts gate-move (off-allowlist chore lane)
-- v0.1.2 worktree surface unspecced
-- v0.1.1 tag vs CHANGELOG
-- orphaned-baton Axis-C (wants a new v0.3 section)
+**3**, unchanged this tick: §7a gate-move (PARKED, `chore(flume):` actionable), v0.4-§5 dogfood adoption (PARKED, actionable, can share that commit), §3 loop-78/mixed-flag recording (NEEDS AMENDMENT, two one-line spec edits).
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md`. pending.json already `[]`; open-questions/inbox unchanged. No off-allowlist path.
-- Trunk: HEAD `5981b67`. tsc green. Fast (default) vitest lane green and worktree-safe; integration lane runs at host via `test:integration`.
+- Wrote `.flume/plan/state.md` only; pending.json (`[]`) and open-questions.md carried unchanged; inbox.md untouched (empty). No new/edited entries → no path checks triggered.
+- Trunk: HEAD `4f8bc46` at tick start, tree clean. **origin/main 36 behind** — windows lane and everything post-PR#5 unexercised in CI; human push still pending.
 
 Plan continues: no

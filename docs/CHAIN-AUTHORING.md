@@ -47,11 +47,13 @@ set. The full interface lives in `src/Phase.ts`. The fields that matter:
 | `description`   | One-line description shown in `flume status`.                                                                                     |
 | `promptPath`    | Prompt file path, relative to `.flume/`.                                                                                          |
 | `concurrency`   | `"singleton"` or `"fanout"` — see §3.                                                                                             |
+| `agent`         | Optional per-phase `Agent` override; resolution `phase.agent ?? chainModule.agent ?? dispatcher default`. See §4.                  |
 | `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit.                                              |
 | `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
 | `promptArgs`    | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                                       |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
-| `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. See §3. |
+| `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. See §3. |
+| `teardownWorktree` | Optional fanout hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. See §3. |
 
 The `plan` phase from `examples/cascade-chain.ts`:
 
@@ -85,8 +87,10 @@ Things to notice:
   reverts on out-of-glob paths. This replaces "You may NOT modify X" rules
   in prompts.
 - **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`,
-  `gateResults`, `pendingAfter`, `shippedTags`. Return `[]` to leave nobody
-  awake — the system hibernates when no flag files are present.
+  `gateResults`, `pendingAfter`, `shippedTags`, `revertedTags` (entries a
+  fanout wave reverted at merge — lets a handoff distinguish merge-thrash
+  from a clean wave). Return `[]` to leave nobody awake — the system
+  hibernates when no flag files are present.
 - **`promptArgs` returns strings only.** Pre-stringify JSON yourself.
 
 A fanout phase's `promptArgs` reads the `assignedEntry` for the tick:
@@ -314,8 +318,9 @@ it writes, and entries with disjoint sets run in parallel.
 
 The dispatcher uses `partitionByFileOverlap` to group pickable entries
 into maximal disjoint batches, picks the first, and spawns one worktree
-per entry under `.flume/worktrees/<phase>/<tag>/`. Agent + `afterCommit`
-gates run in parallel; the wave then merges to trunk and runs `afterMerge`.
+per entry under `<flumeDir>/worktrees/<entry-slug>/` (base overridable via
+`FLUME_WORKTREES_DIR` — see below). Agent + `afterCommit` gates run in
+parallel; the wave then merges to trunk and runs `afterMerge`.
 
 ```ts
 partitionByFileOverlap(entries, { maxParallel: 4 });
@@ -324,13 +329,19 @@ partitionByFileOverlap(entries, { maxParallel: 4 });
 
 The partition reads `entry.files.new[].path`/`.edit[].path`/`.retire[]`
 (see `touchedPaths()` in `PendingSchema.ts`); declare files truthfully
-when hand-authoring entries.
+when hand-authoring entries. When a merge-time failure reverts an entry,
+the dispatcher persists the attempt's *actual* commit footprint onto it as
+`PendingEntry.observedFiles`, and the partition reads that alongside the
+declared `files` — so the retry is separated from whatever it collided
+with even where the declaration under-stated the reach.
 
 Failure modes handled: an `afterCommit` fail drops that worktree's commit
 (siblings continue); a merge cherry-pick conflict leaves that entry in
 pending (others merge); an `afterMerge` fail reverts only the offending
 entry's commit — the clean siblings stay shipped and that entry returns to
-pending.
+pending. On the success side, ship bookkeeping auto-opens `blockedBy`
+gates whose blocker shipped in the same wave, so a chained entry becomes
+pickable without waiting for an interim plan tick.
 
 ### `setupWorktree` for fanout
 
@@ -354,6 +365,77 @@ root (`node -e "require.resolve('vitest')"`).
 
 Singleton phases run in the main repo, so the hook is never invoked for
 them.
+
+### `{ extraEnv }`: per-worktree env for the agent
+
+`setupWorktree` may return a `WorktreeSetupResult` — `{ extraEnv }` — and
+the dispatcher layers those vars on top of its own `process.env` for **that
+worktree's agent invocation**. This is the seam for an ephemeral resource
+handle the chain provisions at setup time: a per-worktree `DATABASE_URL`, a
+scratch dir, a short-lived credential — anything the agent needs at runtime
+that shouldn't be baked into the worktree's tracked filesystem.
+
+```ts
+async setupWorktree({ worktreePath, entryTag }) {
+  await execFileP("pnpm", ["install", "--frozen-lockfile"], {
+    cwd: worktreePath,
+  });
+  const dbUrl = await provisionScratchDb(entryTag);
+  return { extraEnv: { DATABASE_URL: dbUrl } };
+},
+```
+
+Scope notes:
+
+- **Agent only.** `extraEnv` reaches the agent invocation; gates spawn from
+  the dispatcher's own env. A gate that needs the handle should read it from
+  disk state the setup hook wrote, not expect the var.
+- **Fanout only.** Singleton phases never invoke `setupWorktree`, so they
+  never carry `extraEnv`.
+- **Void returns are fine.** An implementation that only provisions deps and
+  returns nothing is unaffected.
+
+### `teardownWorktree`: the cleanup mirror
+
+`teardownWorktree(ctx)` runs after the agent exits and gates finish, just
+before the harness removes the worktree. It receives the same
+`WorktreeSetupContext` as setup (`worktreePath`, `repoRoot`, `entryTag`) —
+use it to release whatever setup acquired: drop the scratch DB, return the
+lease, delete the issued credential.
+
+```ts
+async teardownWorktree({ entryTag }) {
+  await dropScratchDb(entryTag);
+},
+```
+
+It is **best-effort**: a throw is logged and does not block worktree
+removal. Don't put anything correctness-critical here — a crashed tick can
+skip it, so acquired resources should also be reclaimable by an external
+sweep (a TTL, a startup cleanup pass).
+
+### Where worktrees live: `FLUME_WORKTREES_DIR`
+
+Fanout worktrees are created under `<flumeDir>/worktrees/<entry-slug>/`;
+the `FLUME_WORKTREES_DIR` env var overrides that base
+(`FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`, resolved against the
+cwd when relative).
+
+Reach for the override when worktrees must sit **outside every repo-path
+prefix**. The observed failure it exists for: an agent whose cwd contains
+the root checkout's path as a prefix (the default
+`<repoRoot>/.flume/worktrees/<entry>` does) derives the root from its own
+cwd and operates there instead of in its worktree — writes the
+writable-paths guard never sees, because they never land in the worktree
+being diffed. An out-of-tree base (a sibling tmpdir) removes that vector.
+Two chain-author consequences:
+
+- `setupWorktree`/`teardownWorktree` receive absolute `worktreePath`s, so a
+  hook that already uses `ctx.worktreePath` (rather than assuming
+  `.flume/worktrees/…`) is unaffected by the override.
+- Worktrees relocated outside `FLUME_DIR` leave the dock's one-`rm`
+  footprint (see the README). They are ephemeral — created and removed per
+  wave — but a crashed run can strand one at the override location.
 
 ## 4. The agent seam
 
@@ -409,6 +491,42 @@ const agent = withTerminalRenderer(
 
 Order matters: capture innermost so the file holds the full NDJSON;
 render outermost so the terminal sees the human-readable summary.
+
+### Per-phase agents
+
+`Phase.agent` assigns an agent to one phase. Per-tick resolution is
+
+```
+phase.agent ?? chainModule.agent ?? DispatcherOptions.agent
+```
+
+— the phase's own value, else the chain's `agent` export, else the
+dispatcher default. Phases without an `agent` field are unaffected.
+
+The field takes an `Agent` value, not a model string, so it composes with
+the decorators above — "same decorator stack, different model" is exactly
+what a string cannot express. The canonical use is the architect/editor
+split (plan on a stronger model, build on a cheaper one). A model-only
+variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside the
+phase's agent value; a chain-local helper amortizes re-stating the
+decorator stack:
+
+```ts
+const SESSIONS = resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions");
+
+function modelAgent(model: string): Agent {
+  return withTerminalRenderer(
+    withSessionCapture(
+      claudeCode({ outputFormat: "stream-json", extraArgs: ["--model", model] }),
+      { dir: SESSIONS },
+    ),
+  );
+}
+
+const plan: Phase = { /* … */ agent: modelAgent("claude-opus-4-8") };
+const build: Phase = { /* … */ agent: modelAgent("claude-haiku-4-5") };
+// Phases with no `agent` field keep the chain/dispatcher default.
+```
 
 ### Per-run artifacts go under `FLUME_DIR`
 

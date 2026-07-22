@@ -21,6 +21,31 @@ import { loadChainModule } from "./Dispatcher.js";
 const exec = promisify(execFile);
 
 /**
+ * execFile with a Windows shim fallback. Package-manager binaries (pnpm,
+ * npm) are .cmd shims on Windows, which Node refuses to spawn without a
+ * shell (CVE-2024-27980 hardening). A direct spawn is tried first so args
+ * keep exact quoting semantics; only a win32 ENOENT — the shim case, where
+ * gate args are chain-authored flags — retries through the shell.
+ */
+async function execGate(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await exec(cmd, args, opts);
+  } catch (err) {
+    if (
+      process.platform === "win32" &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return await exec(cmd, args, { ...opts, shell: true });
+    }
+    throw err;
+  }
+}
+
+/**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
  * worktree's cwd; non-zero exit = fail. `failHint` is the message surfaced
  * to the dispatcher on failure (and embedded in the next agent prompt's
@@ -49,7 +74,7 @@ export function shellGate(opts: ShellGateOptions): Gate {
     when: opts.when,
     async run(ctx: GateContext): Promise<GateResult> {
       try {
-        const { stdout, stderr } = await exec(opts.cmd, opts.args, {
+        const { stdout, stderr } = await execGate(opts.cmd, opts.args, {
           cwd: ctx.cwd,
           maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,
         });
@@ -162,13 +187,30 @@ export const chainLoadGate: Gate = {
 };
 
 /**
- * Verify the commit's diff stays inside the phase's declared writablePaths.
- * Constructed at runtime by the dispatcher because it needs the path globs.
+ * Entry scope for a fanout tick carrying an assignedEntry (RELEASE-v0.4 §5).
+ * When present, the write allowance narrows to `entryPaths ∪ channelPaths`;
+ * the phase globs remain the outer ceiling — both checks apply.
+ */
+export interface EntryWriteScope {
+  /** Literal paths the assigned entry declares (`files.{new,edit,retire}`). */
+  entryPaths: string[];
+  /** `Phase.entryChannelPaths` globs — always in scope on a scoped tick. */
+  channelPaths: string[];
+}
+
+/**
+ * Verify the commit's diff stays inside the phase's declared writablePaths —
+ * and, when `entryScope` is given (fanout tick with an assignedEntry), also
+ * inside the entry's declared files ∪ the phase's channel globs. Constructed
+ * at runtime by the dispatcher because it needs the path globs.
  *
  * Implementation note: we don't ship this as a static export because it
  * depends on the phase config. The dispatcher attaches it automatically.
  */
-export function writablePathsGate(globs: string[]): Gate {
+export function writablePathsGate(
+  globs: string[],
+  entryScope?: EntryWriteScope,
+): Gate {
   return {
     name: "writable-paths",
     when: "afterCommit",
@@ -185,14 +227,40 @@ export function writablePathsGate(globs: string[]): Gate {
         { cwd: ctx.cwd },
       );
       const touched = stdout.split("\n").filter((l) => l.length > 0);
-      const violations = touched.filter((p) => !matchesAny(p, globs));
-      if (violations.length === 0) {
+      // Ceiling check: phase-wide globs bind on every tick, scoped or not.
+      const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));
+      // Entry-scope check: a scoped tick's allowance is the entry's declared
+      // paths ∪ the channel globs. Literal paths pass through the same glob
+      // matcher (specials are escaped, so a literal matches only itself).
+      const outsideScope = entryScope
+        ? touched.filter(
+            (p) =>
+              matchesAny(p, globs) &&
+              !matchesAny(p, [
+                ...entryScope.entryPaths,
+                ...entryScope.channelPaths,
+              ]),
+          )
+        : [];
+      if (outsideCeiling.length === 0 && outsideScope.length === 0) {
         return { ok: true, message: "writable paths respected" };
       }
+      const lines = [
+        ...outsideCeiling.map(
+          (p) => `  - ${p}` + (entryScope ? " (outside phase writablePaths)" : ""),
+        ),
+        ...outsideScope.map(
+          (p) =>
+            `  - ${p} (inside phase writablePaths but outside the assigned entry's declared files ∪ entryChannelPaths)`,
+        ),
+      ];
+      const total = outsideCeiling.length + outsideScope.length;
       return {
         ok: false,
-        message: `commit touched ${violations.length} path(s) outside writablePaths`,
-        details: violations.map((p) => `  - ${p}`).join("\n"),
+        message: `commit touched ${total} path(s) outside ${
+          entryScope ? "the entry-scoped write allowance" : "writablePaths"
+        }`,
+        details: lines.join("\n"),
       };
     },
   };

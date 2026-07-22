@@ -34,27 +34,3 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
-
-## 2026-07-22 — per-phase agent/model assignment (human, via flume-dock)
-
-The plan/build norm encodes a model cascade — a stronger model derives
-work, a cheaper model executes it (empirically validated by aider's
-architect/editor split) — but there is no seam: one Agent instance serves
-every phase (src/cli.ts:236 wires a single `claudeCode()`; Phase carries
-no agent/model field, src/Phase.ts). Ask: a per-phase override
-(`Phase.agent?: Agent`, or `model?: string` flowing to `--model` in the
-claudeCode argv), resolved as phase override ?? harness default. First
-consumer: flume-dock's sweep preset wants plan on a mid-tier model and
-build on a cheap one.
-
-## 2026-07-22 — fanout write scope derived from the assigned entry (human, via flume-dock)
-
-`writablePaths` is a static phase-wide union (src/Phase.ts:98), but the
-scope dictation already lives per-entry: `files.new/edit/retire`
-(src/PendingSchema.ts:97) is what the fanout partition reads. Ask: for a
-fanout tick with an assignedEntry, the post-commit write guard scopes to
-the entry's declared paths plus an explicit channel allowance (e.g. a
-friction/intake file), with the phase globs as the outer ceiling. Plan
-dictates "here is the objective, here are the files"; the mechanism
-enforces exactly the atom it assigned. Convergent with how Spec Kit tasks
-carry exact file paths and BMAD stories carry their own scope.

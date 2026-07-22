@@ -22,11 +22,15 @@ import { Baton } from "../src/Baton.ts";
 
 const exec = promisify(execFile);
 
-// Run the source CLI through the project's own `tsx` shim (no build step in
-// this repo). The shim is an absolute path so cwd can be the temp repo; tsx
+// Run the source CLI through the project's own `tsx` (no build step in this
+// repo) — via `node <tsx cli.mjs>`, not the `.bin/tsx` shim: the shim is a
+// shell script (`.cmd` on win32) that `execFile` cannot spawn without a shell
+// (§6 spawn discipline). Absolute paths so cwd can be the temp repo; tsx
 // resolves cli.ts's own imports relative to cli.ts, independent of cwd.
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-const TSX = fileURLToPath(new URL("../node_modules/.bin/tsx", import.meta.url));
+const TSX_CLI = fileURLToPath(
+  new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
+);
 
 /**
  * A chain.ts that declares one singleton phase `<name>` and exports a no-op
@@ -106,6 +110,9 @@ async function makeRepo(): Promise<Repo> {
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact checkout on Windows: revert-path assertions compare file
+  // content, and a host-level autocrlf=true would rewrite LF on reset.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(dir, "README.md"), "seed\n");
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
@@ -117,10 +124,27 @@ async function makeRepo(): Promise<Repo> {
   };
 }
 
+/**
+ * A copy of this process's env with the canonical FLUME_DIR /
+ * FLUME_CONFIG_DIR stripped, so a spawned tick resolves the temp repo's
+ * `.flume` default. Without this the suite is not hermetic: run under a
+ * flume harness (whose canonicalized env the vitest process inherits), the
+ * child would escape its temp repo and operate on the outer state root.
+ */
+function hermeticEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.FLUME_DIR;
+  delete env.FLUME_CONFIG_DIR;
+  return env;
+}
+
 /** Spawn one real `flume tick`; collect combined stdout+stderr and exit code. */
 async function runTick(cwd: string): Promise<{ out: string; code: number }> {
   try {
-    const { stdout, stderr } = await exec(TSX, [CLI, "tick"], { cwd });
+    const { stdout, stderr } = await exec(process.execPath, [TSX_CLI, CLI, "tick"], {
+      cwd,
+      env: hermeticEnv(),
+    });
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -129,20 +153,22 @@ async function runTick(cwd: string): Promise<{ out: string; code: number }> {
 }
 
 /**
- * Spawn one real `flume loop --max 1` with an explicit `env`; collect combined
- * output and exit code. The supervisor process inside this invocation spawns
- * the child `flume tick` itself (`defaultTickRunner`, no `env:` override), so
- * the boundary under test is real, not stubbed.
+ * Spawn one real `flume loop --max <max>` with an explicit `env`; collect
+ * combined output and exit code. The supervisor process inside this invocation
+ * spawns the child `flume tick` itself (`defaultTickRunner`, no `env:`
+ * override), so the boundary under test is real, not stubbed.
  */
 async function runLoop(
   cwd: string,
   env: NodeJS.ProcessEnv,
+  max = 1,
 ): Promise<{ out: string; code: number }> {
   try {
-    const { stdout, stderr } = await exec(TSX, [CLI, "loop", "--max", "1"], {
-      cwd,
-      env,
-    });
+    const { stdout, stderr } = await exec(
+      process.execPath,
+      [TSX_CLI, CLI, "loop", "--max", String(max)],
+      { cwd, env },
+    );
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -167,14 +193,15 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
       const chainPath = join(repo.dir, ".flume", "chain.ts");
 
       // v1 declares only phase "alpha". The baton wakes "beta" — a phase v1
-      // does not have — so tick #1 finds no matching phase and hibernates
-      // without scheduling anything. The unknown-phase path does not touch
-      // the baton, so the "beta" flag persists for tick #2.
+      // does not have — so tick #1 classifies an Axis-C terminal
+      // misconfiguration (§3): exit 78, and the orphaned "beta" flag is left
+      // on disk, which is exactly what lets tick #2 pick it up after the
+      // chain rewrite below.
       await writeFile(chainPath, chainSrc("alpha"), "utf8");
       new Baton(join(repo.dir, ".flume")).wake("beta");
 
       const t1 = await runTick(repo.dir);
-      expect(t1.code).toBe(0);
+      expect(t1.code).toBe(78);
       expect(t1.out).not.toMatch(/tick → beta/);
       expect(t1.out).toMatch(/unknown phases: beta/);
 
@@ -241,6 +268,35 @@ describe("§14 process-boundary env inheritance — supervisor → child tick", 
 
       await rm(stateDir, { recursive: true, force: true });
       await rm(configDir, { recursive: true, force: true });
+    },
+    30_000,
+  );
+});
+
+describe("§3 Axis-C fail-fast — real `flume loop` over an orphaned awake flag", () => {
+  it(
+    "supervisor stops on the child's 78 after one tick, names the orphaned phase, leaves the flag; loop exits 78",
+    async () => {
+      // The chain declares only "alpha"; the awake flag names "beta". Every
+      // child tick would exit 78 forever — before §3 this hot-spun to --max
+      // as a parade of "clean" hibernation reports.
+      await writeFile(join(repo.dir, ".flume", "chain.ts"), chainSrc("alpha"), "utf8");
+      const baton = new Baton(join(repo.dir, ".flume"));
+      baton.wake("beta");
+
+      const loop = await runLoop(repo.dir, hermeticEnv(), 3);
+
+      // Fail-fast: one child, then stop — never --max, never "hibernating".
+      expect(loop.code).toBe(78);
+      expect(loop.out).toMatch(/terminal misconfiguration/);
+      expect(loop.out).toMatch(/beta/);
+      expect(loop.out).not.toMatch(/reached --max/);
+      expect(loop.out).not.toMatch(/hibernating after/);
+      expect(loop.out.match(/tick exited 78/g)).toHaveLength(1);
+
+      // The orphaned flag survives supervisor and child alike — the human
+      // inspects, then `flume sleep beta` or fixes the chain.
+      expect(baton.isAwake("beta")).toBe(true);
     },
     30_000,
   );

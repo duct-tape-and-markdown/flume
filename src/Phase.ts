@@ -6,6 +6,7 @@
  * and which sibling phases to wake.
  */
 
+import type { Agent } from "./Agent.js";
 import type { Gate } from "./Gate.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
@@ -65,6 +66,12 @@ export interface TickResult {
   pendingAfter: readonly PendingEntry[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
+  /**
+   * Tags whose commits were reverted at merge time (cherry-pick conflict or
+   * afterMerge gate). Distinguishes a merge-thrash re-pick from an in-session
+   * retry in downstream telemetry.
+   */
+  revertedTags: readonly string[];
 }
 
 /**
@@ -89,6 +96,16 @@ export interface Phase {
   concurrency: Concurrency;
 
   /**
+   * Agent that runs this phase's ticks. Per-tick resolution is
+   * `phase.agent ?? chainModule.agent ?? DispatcherOptions.agent` — the
+   * innermost scope of the existing chain-level override. An `Agent` value
+   * (not a model string) so it composes with decorators; a model-only
+   * variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside this
+   * value. Absent, the phase runs on the chain/dispatcher default.
+   */
+  agent?: Agent;
+
+  /**
    * Glob patterns the phase is permitted to modify. Post-commit, the
    * harness diffs the commit against these patterns; violations revert
    * the commit. This replaces prose "You may NOT modify X" rules in prompts.
@@ -96,6 +113,19 @@ export interface Phase {
    * Paths are relative to the repo root. Patterns are minimatch-style.
    */
   writablePaths: string[];
+
+  /**
+   * Globs always writable on an entry-scoped fanout tick, regardless of the
+   * assigned entry's declared files — the channel allowance for cross-tick
+   * artifacts an entry never declares (e.g. a build phase that reports
+   * findings into `.flume/plan/open-questions.md`).
+   *
+   * On a fanout tick carrying an assignedEntry, the write guard narrows to
+   * the entry's `files.{new,edit,retire}` paths ∪ these globs, with
+   * `writablePaths` as the outer ceiling (both checks apply). Singleton
+   * ticks keep phase-wide scope and ignore this. Default `[]`.
+   */
+  entryChannelPaths?: string[];
 
   /** Gates that run at preCommit / postCommit / postMerge points. */
   gates: Gate[];
@@ -160,9 +190,10 @@ export interface WorktreeSetupResult {
    * Extra env vars to merge into the agent invocation env for this
    * worktree. Layered on top of the harness's `process.env`. Useful for
    * per-worktree DATABASE_URL, scratch paths, short-lived credentials —
-   * anything the chain provisioned during setup that the agent (and
-   * gates run inside the worktree) need at runtime without baking into
-   * the worktree's tracked filesystem.
+   * anything the chain provisioned during setup that the agent needs at
+   * runtime without baking into the worktree's tracked filesystem.
+   * Scoped to the agent invocation only: gates spawn from the
+   * dispatcher's own env and do not see these vars.
    */
   extraEnv?: Record<string, string>;
 }

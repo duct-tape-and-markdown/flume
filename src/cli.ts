@@ -12,11 +12,23 @@
  */
 
 import { resolve, join, dirname } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+} from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
-import { Dispatcher, diskChainLoader, superviseLoop } from "./Dispatcher.js";
+import {
+  Dispatcher,
+  diskChainLoader,
+  superviseLoop,
+  EX_TERMINAL_MISCONFIG,
+  type TickOutcome,
+} from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { TickContext } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
@@ -65,6 +77,17 @@ export function resolveStateDirs(
   return { flumeDir, configDir };
 }
 
+/**
+ * Map a tick outcome to the `flume tick` process exit code — the §3 axis
+ * classification at the process boundary: 78 (`EX_CONFIG`) terminal
+ * misconfiguration, 1 chain-resolution failure, 0 otherwise (work done or
+ * clean hibernation). Exported for the exit-code seam tests.
+ */
+export function tickExitCode(outcome: TickOutcome): number {
+  if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
+  return outcome.failed ? 1 : 0;
+}
+
 const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -106,6 +129,9 @@ invokes the agent, and applies validation gates.
 Exit codes:
   0   Success, or hibernation (no phase awake).
   1   Harness error (chain load failure, unexpected exception).
+  78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
+      the chain does not declare. The flags are left on disk — inspect, then
+      \`flume sleep <phase>\` or fix the chain.
 `,
   loop: `Usage: flume loop [--max N]
 
@@ -117,6 +143,8 @@ Options:
 Exit codes:
   0   Hibernation reached, or --max ticks completed.
   1   Harness error.
+  78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
+      --help\`); the orphaned awake flags are left on disk.
 `,
   wake: `Usage: flume wake <phase>
 
@@ -239,19 +267,65 @@ async function main(): Promise<number> {
   if (cmd === "tick") {
     const outcome = await dispatcher.tick();
     console.log(outcome.summary);
-    // Fail loudly on an unrecoverable resolution failure (§3) so the
-    // supervisor — and any human watching exit codes — sees a no-work tick.
-    return outcome.failed ? 1 : 0;
+    // Fail loudly on the Axis-C exits (§3) so the supervisor — and any human
+    // watching exit codes — classifies the failure without reading logs:
+    // 78 terminal misconfiguration, 1 resolution failure, 0 otherwise.
+    return tickExitCode(outcome);
   }
 
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
     const max = maxIdx >= 0 ? Number(rest[maxIdx + 1]) : 50;
+    // Cross-process loop lock: one supervisor per state root. A stale
+    // pidfile (dead pid) is reclaimed; a live one refuses the second loop —
+    // two supervisors against one state root race plan/build state. Lives
+    // under flumeDir (§16): the state root is what races, and a relocated
+    // dock must carry its lock with it.
+    const lockPath = join(flumeDir, "loop.pid");
+    mkdirSync(flumeDir, { recursive: true });
+    if (existsSync(lockPath)) {
+      const prior = Number(readFileSync(lockPath, "utf8").trim());
+      let alive = false;
+      if (Number.isFinite(prior) && prior > 0) {
+        try {
+          process.kill(prior, 0);
+          alive = true;
+        } catch {
+          // dead or not ours — reclaim
+        }
+      }
+      if (alive) {
+        console.error(
+          `[flume] another loop (pid ${prior}) already runs against ${flumeDir}; refusing`,
+        );
+        return 1;
+      }
+    }
+    writeFileSync(lockPath, String(process.pid));
+    const dropLock = () => {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // already gone
+      }
+    };
+    process.on("exit", dropLock);
+    process.on("SIGINT", () => {
+      dropLock();
+      process.exit(130);
+    });
+    process.on("SIGTERM", () => {
+      dropLock();
+      process.exit(143);
+    });
     // Supervisor: one fresh `flume tick` process per iteration (§2). The
     // dispatcher constructed above is unused on this path — each child
-    // builds its own and resolves chain.ts in its own process.
-    await superviseLoop({ repoRoot, flumeDir, maxTicks: max });
-    return 0;
+    // builds its own and resolves chain.ts in its own process. A terminal
+    // stop (§3) propagates the child's 78 out of `flume loop` too: exiting
+    // 0 here would re-mask the misconfiguration as clean at the next
+    // process boundary up.
+    const supervised = await superviseLoop({ repoRoot, flumeDir, maxTicks: max });
+    return supervised.terminal ? EX_TERMINAL_MISCONFIG : 0;
   }
 
   if (cmd === "render") {

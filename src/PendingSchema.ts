@@ -94,7 +94,15 @@ export const PendingEntry = z.object({
    * runtime: it is keyed and resolved by the consuming project (§3).
    */
   dependsOnForks: z.array(z.string().min(1)).default([]),
-  /** File-level work breakdown. The parallelism partition reads `edit[].path`. */
+  /**
+   * File-level work breakdown. The parallelism partition reads `edit[].path`.
+   *
+   * Load-bearing on entry-scoped fanout phases: the write guard narrows a
+   * scoped tick to exactly these paths ∪ the phase's `entryChannelPaths`, so
+   * plan must declare EVERY path the work legitimately touches — tests,
+   * incidentals (lockfile, barrel export) included. An entry that
+   * under-declares is a plan defect, not a guard defect.
+   */
   files: z.object({
     new: z.array(FileChange).default([]),
     edit: z.array(FileChange).default([]),
@@ -108,6 +116,13 @@ export const PendingEntry = z.object({
   acceptance: z.string().min(1),
   /** Optional context not in the spec; capped to keep entries scannable. */
   notes: z.string().max(500).optional(),
+  /**
+   * Dispatcher-maintained: actual paths a merge-reverted attempt touched,
+   * unioned into the partition so a retry never rides the same wave as the
+   * entry it collided with. Plan may carry or drop this field freely — the
+   * dispatcher rebuilds it on the next failed merge.
+   */
+  observedFiles: z.array(z.string().min(1)).optional(),
 });
 
 export type PendingEntry = z.infer<typeof PendingEntry>;
@@ -212,7 +227,7 @@ export function renderSchemaForPrompt(): string {
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresDockerHost" },                     // env gate (v1)
   "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
-  "files": {
+  "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
     "retire": [ "path or symbol", ... ]
@@ -271,5 +286,6 @@ export function touchedPaths(entry: PendingEntry): string[] {
     ...entry.files.new.map((f) => f.path),
     ...entry.files.edit.map((f) => f.path),
     ...entry.files.retire,
+    ...(entry.observedFiles ?? []),
   ];
 }
