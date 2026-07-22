@@ -10,7 +10,7 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn, execFile } from "node:child_process";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -795,7 +795,9 @@ export class Dispatcher {
       if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
         shippedTags.length > 0
-          ? `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+          ? updSha === preUpdate
+            ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
+            : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
           : updSha === preUpdate
             ? `[flume] footprint already recorded, no commit: ${[...observed.keys()].join(", ")}`
             : `[flume] footprint commit ${updSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
@@ -1362,6 +1364,14 @@ export class Dispatcher {
     }
     await mkdir(dirname(this.pendingPath), { recursive: true });
     await writeFile(this.pendingPath, serialized, "utf8");
+    // A relocated flumeDir puts pendingPath outside the repo, where staging
+    // it would fatal — after the entries already merged. An out-of-tree dock
+    // is invisible to git by construction, so no chore commit is wanted: the
+    // disk write alone carries the auto-unblock and observedFiles forward.
+    const rel = relative(this.opts.repoRoot, this.pendingPath);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      return git.revParse(this.opts.repoRoot);
+    }
     // Scoped to pending.json — `git add -A` would sweep up untracked worktree
     // metadata and unrelated user changes into the harness's chore commit.
     return git.commitPaths({
