@@ -1,40 +1,5 @@
 [
   {
-    "tag": "FIX-RELOCATED-PENDING-COMMIT",
-    "summary": "commitPendingUpdate: when pendingPath lies outside repoRoot (relocated flumeDir), write pending to disk and skip the repo chore commit — fanout ship bookkeeping currently fatals on git add.",
-    "per": {
-      "path": "spec/RELEASE-v0.3.md",
-      "section": "11. The relocation surface (landed; recorded here)"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "commitPendingUpdate (:1333) — out-of-repo pendingPath: write serialized pending, return current HEAD, no git add/commit. Detect via relative(repoRoot, pendingPath)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Relocated-flumeDir fanout ship case (57b99bd flagged this variant as blocked on the fix; its in-repo-pin comment on the §2a default-base test may be relaxed)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "fanout ship with flumeDir outside the repo: entry merges to trunk, pending updated on disk at the relocated path, no chore commit and no git fatal; in-repo dock bookkeeping unchanged"
-      }
-    ],
-    "acceptance": "Relocated-dock fanout ship case green; existing bookkeeping suite green",
-    "notes": "Found by build 57b99bd (commit body), verified at src/Dispatcher.ts:1367: git.commitPaths stages pendingPath into the repo commit; outside repoRoot, git add fatals after entries already merged. v0.3 §13 posture — an out-of-tree dock is invisible to git by construction — means no commit is desired there; disk write alone carries auto-unblock + observedFiles."
-  },
-  {
     "tag": "PHASE-AGENT",
     "summary": "Phase.agent?: Agent — per-phase delegation seam; per-tick resolution phase.agent ?? chainModule.agent ?? opts.agent. Per §4.",
     "per": {
@@ -72,31 +37,5 @@
     ],
     "acceptance": "§7 §4 cases green; CHAIN-AUTHORING documents the per-phase model pattern",
     "notes": "Mechanism only — no Phase.model string sugar (§8, §9.3)."
-  },
-  {
-    "tag": "FIX-EXTRAENV-JSDOC-SCOPE",
-    "summary": "Correct WorktreeSetupResult.extraEnv JSDoc in src/Phase.ts: agent-invocation-only — drop the \"(and gates run inside the worktree)\" claim contradicting §2b's recorded semantics. Comment-only.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "2b. v0.1.2 worktree hooks (OQ backfill)"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "WorktreeSetupResult.extraEnv JSDoc (:164-174) — scope claim aligned with dispatcher reality (extraEnv reaches agent.invoke only, src/Dispatcher.ts:995; gates spawn from the dispatcher env)."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "Phase.ts JSDoc states agent-only scope, no gate mention remains; tsc green",
-    "notes": "Audit finding from 9ac9d61: the docs commit verified agent-only scope against invokeAgent and documented it in CHAIN-AUTHORING, but the stale source JSDoc it flagged was outside its declared files. §2c \"no shape changes\" respected — comment-only."
   }
 ]
