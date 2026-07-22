@@ -47,6 +47,7 @@ set. The full interface lives in `src/Phase.ts`. The fields that matter:
 | `description`   | One-line description shown in `flume status`.                                                                                     |
 | `promptPath`    | Prompt file path, relative to `.flume/`.                                                                                          |
 | `concurrency`   | `"singleton"` or `"fanout"` — see §3.                                                                                             |
+| `agent`         | Optional per-phase `Agent` override; resolution `phase.agent ?? chainModule.agent ?? dispatcher default`. See §4.                  |
 | `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit.                                              |
 | `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
 | `promptArgs`    | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                                       |
@@ -490,6 +491,42 @@ const agent = withTerminalRenderer(
 
 Order matters: capture innermost so the file holds the full NDJSON;
 render outermost so the terminal sees the human-readable summary.
+
+### Per-phase agents
+
+`Phase.agent` assigns an agent to one phase. Per-tick resolution is
+
+```
+phase.agent ?? chainModule.agent ?? DispatcherOptions.agent
+```
+
+— the phase's own value, else the chain's `agent` export, else the
+dispatcher default. Phases without an `agent` field are unaffected.
+
+The field takes an `Agent` value, not a model string, so it composes with
+the decorators above — "same decorator stack, different model" is exactly
+what a string cannot express. The canonical use is the architect/editor
+split (plan on a stronger model, build on a cheaper one). A model-only
+variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside the
+phase's agent value; a chain-local helper amortizes re-stating the
+decorator stack:
+
+```ts
+const SESSIONS = resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions");
+
+function modelAgent(model: string): Agent {
+  return withTerminalRenderer(
+    withSessionCapture(
+      claudeCode({ outputFormat: "stream-json", extraArgs: ["--model", model] }),
+      { dir: SESSIONS },
+    ),
+  );
+}
+
+const plan: Phase = { /* … */ agent: modelAgent("claude-opus-4-8") };
+const build: Phase = { /* … */ agent: modelAgent("claude-haiku-4-5") };
+// Phases with no `agent` field keep the chain/dispatcher default.
+```
 
 ### Per-run artifacts go under `FLUME_DIR`
 

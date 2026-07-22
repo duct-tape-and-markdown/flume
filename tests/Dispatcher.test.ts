@@ -1445,6 +1445,75 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
   }, 20_000);
 });
 
+describe("Dispatcher — per-phase agent resolution (§4)", () => {
+  function recordingAgent(name: string, ran: string[]): Agent {
+    return {
+      name,
+      async invoke() {
+        ran.push(name);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+  }
+
+  it("phase.agent runs that phase's tick; a silent sibling falls back to chainModule.agent over opts.agent", async () => {
+    const ran: string[] = [];
+    const phaseAgent = recordingAgent("phase-agent", ran);
+    const chainAgent = recordingAgent("chain-agent", ran);
+    const optsAgent = recordingAgent("opts-agent", ran);
+
+    const withOwn = makePhase({ name: "plan", agent: phaseAgent });
+    const silentPhase = makePhase({ name: "review" });
+    const chain: Chain = { phases: [withOwn, silentPhase], humanOnly: [] };
+
+    const loader = (): Promise<ChainModule> =>
+      Promise.resolve({ default: chain, agent: chainAgent });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: loader,
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: optsAgent,
+      log: silent,
+    });
+
+    const baton = new Baton(join(fx.repo, ".flume"));
+
+    // Innermost scope: the phase's own agent wins even with a chain-level
+    // override present.
+    baton.wake("plan");
+    await dispatcher.tick();
+    expect(ran).toEqual(["phase-agent"]);
+
+    // Silent phase: the pre-§4 chain > constructor order is unchanged.
+    baton.wake("review");
+    await dispatcher.tick();
+    expect(ran).toEqual(["phase-agent", "chain-agent"]);
+  });
+
+  it("opts.agent remains the default when phase and chain are both silent", async () => {
+    const ran: string[] = [];
+    const optsAgent = recordingAgent("opts-agent", ran);
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: optsAgent,
+      log: silent,
+    });
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await dispatcher.tick();
+    expect(ran).toEqual(["opts-agent"]);
+  });
+});
+
 describe("Dispatcher fanout — fork-blocked entry becomes pickable when the predicate flips", () => {
   it("skips the entry while its fork is open, then builds it once the fork resolves", async () => {
     const entries = [

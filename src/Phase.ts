@@ -6,6 +6,7 @@
  * and which sibling phases to wake.
  */
 
+import type { Agent } from "./Agent.js";
 import type { Gate } from "./Gate.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
@@ -93,6 +94,16 @@ export interface Phase {
 
   /** Concurrency model — see Concurrency above. */
   concurrency: Concurrency;
+
+  /**
+   * Agent that runs this phase's ticks. Per-tick resolution is
+   * `phase.agent ?? chainModule.agent ?? DispatcherOptions.agent` — the
+   * innermost scope of the existing chain-level override. An `Agent` value
+   * (not a model string) so it composes with decorators; a model-only
+   * variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside this
+   * value. Absent, the phase runs on the chain/dispatcher default.
+   */
+  agent?: Agent;
 
   /**
    * Glob patterns the phase is permitted to modify. Post-commit, the
