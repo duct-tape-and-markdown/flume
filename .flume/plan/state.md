@@ -1,20 +1,22 @@
 # State
 
-Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md` opened `d6f2632`; v0.1–v0.4 frozen). Mode this tick: **derive**.
+Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md`; v0.1–v0.4 frozen). Mode this tick: **audit**.
 
-## This tick — derive the v0.5 line (dock collapse → job verbs)
+## This tick — audit TRUNK-PURGE + JOB-RESOLUTION ship
 
-Delta = 1 spec commit (`d6f2632`: `spec/RELEASE-v0.5.md` + `docs/PRD-dock-collapse.md`), empty inbox, pending `[]`, no promotes.
+Delta = 2 build commits + 1 chore ship (`0183c81`, `5242634`, `36b1a93`); no spec changes; inbox empty.
 
-**Audit**: spec commit is human-lane (spec corpus + design record; correct authorship). All source cites verified true against src: `trunkBranch` stored/defaulted at `Dispatcher.ts:277,373,385,456-457`, consumed nowhere (grep-clean); fanout branch `flume/${slug}` at `Dispatcher.ts:1100` via `git.ts addWorktree:48`; §12 write-back pattern is `resolveStateDirs` (`cli.ts:67-78`), ready to extend with `FLUME_JOB`. No drift, no findings.
+**Audit `0183c81` (TRUNK-PURGE vs §2)**: clean. Exactly the four cited deletion sites removed from `src/Dispatcher.ts`; both §7 tests landed (type-level `TrunkBranchPurged`, ship-follows-HEAD with left-behind branch pinned unmoved). open-questions.md write is the sanctioned channel (tests-typecheck question, still parked). No drift, no scope creep.
 
-**Derive**: full decomposition, 9 entries — TRUNK-PURGE (§2), JOB-RESOLUTION (§3), JOB-FANOUT-NS (§4, blockedBy RESOLUTION — real dep), JOB-NEW→RUN→RM→STATUS→EXTRACT (§5a–e, serial chain), JOB-DOCS (§8, blockedBy EXTRACT). §7 tests folded per-entry; §6 concurrency is doc-only → rides JOB-DOCS; §9/§10 non-derivable. `docs/CLI.md` enumerates commands per-section → declared on every CLI-surface entry. All paths verified inside build `writablePaths`. Serialization rationale: every verb entry touches `src/cli.ts`+`src/job.ts`; the chain (incl. JOB-NEW blockedBy JOB-FANOUT-NS, non-semantic) prevents fanout cherry-pick conflicts; TRUNK-PURGE ∥ JOB-RESOLUTION are file-disjoint and open together.
+**Audit `5242634` (JOB-RESOLUTION vs §3)**: clean. Flag+explicit-dirs → exit 2 naming the vars; env `FLUME_JOB` composes with explicit dirs — conforming: §3 names only the flag as the usage error, and strict-conflict would break loop→tick write-back inheritance (child would classify its own inherited vars as conflict). Guard on tick/loop only (incl. bare-`flume`→tick default), exit 1 naming both branches, read-only verbs skip, per-subcommand `--help` short-circuits before guard. Test surface covers every planned assert + env-compose semantics. Scope matches declared files.
 
-**Drain**: none (inbox empty). **Promote**: none. **Open questions**: none filed — spec is precise, cites verified, no product gaps found.
+**Accepted debt**: `--job` doesn't validate name shape (`a/b` → nested jobdir, branch `job/a/b`); validation belongs where names are created — `job new` §5a (JOB-NEW should cover it).
 
-## Queue (9)
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — ship commit `36b1a93` already flipped JOB-FANOUT-NS to open; remaining blockedBy chain intact.
 
-Head: **TRUNK-PURGE** + **JOB-RESOLUTION** (both open, file-disjoint). Then the blocked chain unblocks mechanically as tags ship: FANOUT-NS → NEW → RUN → RM → STATUS → EXTRACT → DOCS.
+## Queue (7)
+
+Head: **JOB-FANOUT-NS** (open). Then serial: NEW → RUN → RM → STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
 
 ## Active plan target
 
@@ -22,11 +24,11 @@ Head: **TRUNK-PURGE** + **JOB-RESOLUTION** (both open, file-disjoint). Then the 
 
 ## Open questions
 
-**0** — ledger empty.
+**1** — type-level tests not gate-enforced (tsconfig excludes `tests/`); PARKED, options captured, human toolchain call.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/{pending.json,state.md}`; open-questions.md untouched (empty ledger); inbox.md untouched (empty). All entry file paths verified against build `writablePaths` (README.md, docs/**, src/**, tests/** all covered).
-- Trunk: HEAD `d6f2632` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 1 of origin/main** (`d6f2632` unpushed) — human push pending.
+- Wrote `.flume/plan/state.md` only; pending.json unchanged (no delta to derive, head already open); open-questions.md unchanged; inbox.md untouched (empty).
+- Trunk: HEAD `36b1a93` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 5 of origin/main** — human push pending.
 
 Plan continues: no
