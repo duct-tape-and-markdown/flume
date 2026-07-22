@@ -264,6 +264,59 @@ describe("flume job new — real CLI on a scratch repo", () => {
   );
 
   it(
+    "leaves a pre-staged unrelated file staged and out of the seed commit",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        // Operator work in flight: staged before `job new` runs.
+        await writeFile(join(repo.dir, "foreign.txt"), "in-flight edit\n");
+        await exec("git", ["add", "foreign.txt"], { cwd: repo.dir });
+
+        const r = await runCli(repo.dir, ["job", "new", "scoped"]);
+        expect(r.code).toBe(0);
+
+        // Seed commit carries only the harness — the foreign file is absent.
+        const committed = await gitOut(repo.dir, [
+          "show",
+          "--name-only",
+          "--format=",
+          "HEAD",
+        ]);
+        expect(committed).toBe(".flume/jobs/scoped/.gitignore");
+
+        // The operator's file is still staged, untouched.
+        expect(await gitOut(repo.dir, ["diff", "--cached", "--name-only"])).toBe(
+          "foreign.txt",
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "--template pointing at a file exits 2; no branch or dir is created",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        const file = join(repo.dir, "tpl-as-file");
+        await writeFile(file, "exists, but is no directory\n");
+
+        const r = await runCli(repo.dir, ["job", "new", "ft", "--template", file]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("--template is not a directory");
+
+        expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
+        expect(await gitOut(repo.dir, ["branch", "--list", "job/*"])).toBe("");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "usage errors exit 2 before any dir or branch is constructed: separator name, missing name, missing template dir, unknown verb",
     async () => {
       const repo = await makeRepo();

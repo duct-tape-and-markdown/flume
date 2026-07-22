@@ -11,7 +11,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import {
   cp,
   lstat,
@@ -157,8 +157,13 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
 
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
-  if (opts.template !== undefined && !existsSync(opts.template)) {
-    throw new JobUsageError(`--template dir not found: ${opts.template}`);
+  if (opts.template !== undefined) {
+    if (!existsSync(opts.template)) {
+      throw new JobUsageError(`--template dir not found: ${opts.template}`);
+    }
+    if (!statSync(opts.template).isDirectory()) {
+      throw new JobUsageError(`--template is not a directory: ${opts.template}`);
+    }
   }
 
   // 1. Branch by convention, from current HEAD; reuse an existing job branch.
@@ -195,11 +200,20 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   }
 
   // 6. Baseline-commit the seeded harness so plan/build produce clean deltas.
+  // The commit is pathspec-scoped: anything the operator pre-staged outside
+  // the job dir stays in the index instead of being swept into the seed.
   const rel = join(".flume", "jobs", name);
   await git(repoRoot, ["add", "--", rel]);
   const staged = await git(repoRoot, ["status", "--porcelain", "--", rel]);
   if (staged.length > 0) {
-    await git(repoRoot, ["commit", "-q", "-m", `chore(flume): seed job ${name}`]);
+    await git(repoRoot, [
+      "commit",
+      "-q",
+      "-m",
+      `chore(flume): seed job ${name}`,
+      "--",
+      rel,
+    ]);
     log(`[flume] baseline commit on ${branch}`);
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
