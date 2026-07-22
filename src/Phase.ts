@@ -103,6 +103,19 @@ export interface Phase {
    */
   writablePaths: string[];
 
+  /**
+   * Globs always writable on an entry-scoped fanout tick, regardless of the
+   * assigned entry's declared files — the channel allowance for cross-tick
+   * artifacts an entry never declares (e.g. a build phase that reports
+   * findings into `.flume/plan/open-questions.md`).
+   *
+   * On a fanout tick carrying an assignedEntry, the write guard narrows to
+   * the entry's `files.{new,edit,retire}` paths ∪ these globs, with
+   * `writablePaths` as the outer ceiling (both checks apply). Singleton
+   * ticks keep phase-wide scope and ignore this. Default `[]`.
+   */
+  entryChannelPaths?: string[];
+
   /** Gates that run at preCommit / postCommit / postMerge points. */
   gates: Gate[];
 

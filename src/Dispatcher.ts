@@ -949,7 +949,12 @@ export class Dispatcher {
       return { entry, committed: false, gateResults, noCommit: mode };
     }
 
-    const verdict = await this.runAfterCommitGates(phase, wt.path, postHead);
+    const verdict = await this.runAfterCommitGates(
+      phase,
+      wt.path,
+      postHead,
+      entry,
+    );
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
       const record = await this.buildPriorAttempt(
@@ -1026,15 +1031,33 @@ export class Dispatcher {
     phase: Phase,
     cwd: string,
     commitSha: string,
+    assignedEntry?: PendingEntry,
   ): Promise<{
     ok: boolean;
     /** First failing gate, structured so callers can persist a §5 record. */
     failure?: { gate: string; message: string; details?: string };
     results: GateResultEntry[];
   }> {
+    // Entry-scoped write guard (§5): a fanout tick's allowance narrows to the
+    // assigned entry's declared files ∪ the phase's channel globs, with the
+    // phase-wide globs as the outer ceiling. Singleton ticks (no entry) keep
+    // phase-wide scope. `observedFiles` is deliberately excluded — it feeds
+    // the partition, not the write allowance.
     const gates: Gate[] = [
       ...phase.gates.filter((g) => g.when === "afterCommit"),
-      writablePathsGate(phase.writablePaths),
+      writablePathsGate(
+        phase.writablePaths,
+        assignedEntry
+          ? {
+              entryPaths: [
+                ...assignedEntry.files.new.map((f) => f.path),
+                ...assignedEntry.files.edit.map((f) => f.path),
+                ...assignedEntry.files.retire,
+              ],
+              channelPaths: phase.entryChannelPaths ?? [],
+            }
+          : undefined,
+      ),
     ];
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
