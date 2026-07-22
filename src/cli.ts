@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import { currentBranch } from "./git.js";
+import { jobNew, JobUsageError } from "./job.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -136,6 +137,9 @@ Commands:
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
   render <phase>      Print the rendered prompt for <phase> without invoking
                       the agent.
+  job new <name> [--template <dir>]
+                      Create branch job/<name> + seed .flume/jobs/<name>/
+                      (runtime .gitignore, @dtmd/flume link, baseline commit).
 
 Options:
   --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
@@ -218,12 +222,91 @@ Exit codes:
 `,
 };
 
+const HELP_JOB = `Usage: flume job <verb> [args]
+
+Lifecycle verbs over the job convention (a job is branch job/<name> plus
+state root .flume/jobs/<name>/). Machinery only — harness content (chain.ts,
+prompts) arrives via --template, caller-owned.
+
+Verbs:
+  new <name> [--template <dir>]
+      From current HEAD: create branch job/<name> (reuse if it exists), seed
+      .flume/jobs/<name>/ from --template (verbatim copy; absent → empty dir
+      plus a warning), merge runtime ignore entries into the job dir's
+      .gitignore (awake/, prior-attempts/, worktrees/, node_modules/,
+      loop.pid), link node_modules/@dtmd/flume to the running flume's
+      package root (junction on win32; skipped if the link exists), pin
+      core.longpaths repo-locally (win32), and baseline-commit the seeded
+      harness. Stays on job/<name>.
+
+Exit codes:
+  0   Success.
+  1   Git or filesystem failure (checkout, link provisioning, commit).
+  2   Usage error: missing or unknown verb, missing <name>, a <name> that is
+      not a single path segment, or --template pointing at no directory.
+`;
+
 function isSubcommand(value: string): value is Subcommand {
   return (SUBCOMMANDS as readonly string[]).includes(value);
 }
 
 function wantsHelp(args: readonly string[]): boolean {
   return args.includes("--help") || args.includes("-h");
+}
+
+/**
+ * `flume job <verb> …` (v0.5 §5). Only `new` exists so far; the rest of the
+ * family (§5b–§5e) lands verb by verb. Usage-shaped failures exit 2,
+ * operational failures 1 — mirroring the JobUsageError split in `jobNew`.
+ */
+async function runJobVerb(
+  args: readonly string[],
+  repoRoot: string,
+): Promise<number> {
+  const [verb, ...rest] = args;
+  if (verb !== "new") {
+    console.error(
+      verb ? `unknown job verb: ${verb}` : "usage: flume job <verb> [args]",
+    );
+    console.error("Run `flume job --help` for usage.");
+    return 2;
+  }
+
+  const words = [...rest];
+  let template: string | undefined;
+  const tplIdx = words.indexOf("--template");
+  if (tplIdx >= 0) {
+    const value = words[tplIdx + 1];
+    if (!value || value.startsWith("-")) {
+      console.error("usage: flume job new <name> [--template <dir>]");
+      return 2;
+    }
+    template = value;
+    words.splice(tplIdx, 2);
+  }
+  const name = words[0];
+  if (!name || words.length > 1) {
+    console.error("usage: flume job new <name> [--template <dir>]");
+    return 2;
+  }
+
+  try {
+    await jobNew({
+      repoRoot,
+      name,
+      ...(template !== undefined ? { template } : {}),
+    });
+    return 0;
+  } catch (err) {
+    if (err instanceof JobUsageError) {
+      console.error(`[flume] ${err.message}`);
+      return 2;
+    }
+    console.error(
+      `[flume] job new failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return 1;
+  }
 }
 
 async function main(): Promise<number> {
@@ -265,6 +348,17 @@ async function main(): Promise<number> {
   if (isSubcommand(cmd) && wantsHelp(rest)) {
     process.stdout.write(HELP_SUB[cmd]);
     return 0;
+  }
+
+  // `flume job <verb>` (v0.5 §5) — repo-level lifecycle verbs, routed before
+  // state-dir resolution: they operate on the repo and the job dir named by
+  // their argument, not on a resolved state root.
+  if (cmd === "job") {
+    if (wantsHelp(rest)) {
+      process.stdout.write(HELP_JOB);
+      return 0;
+    }
+    return runJobVerb(rest, repoRoot);
   }
 
   // Resolve both state roots up front and canonicalize them back into the env

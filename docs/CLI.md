@@ -65,3 +65,21 @@ Loads `.flume/chain.ts` and prints the rendered prompt for the named phase to st
 flume render plan
 flume render build --entry DOCS-CLI
 ```
+
+## `flume job new <name> [--template <dir>]`
+
+Creates a job — branch `job/<name>` plus state root `.flume/jobs/<name>/`, both named by convention — from the current HEAD. If the branch already exists it is reused (checked out) rather than recreated. The job dir is seeded from `--template` by verbatim recursive copy; with no template it is created empty and a warning reminds you to populate it (chain.ts, prompts) before `flume job run`. Machinery only: no presets, no harness content — that is the template's to carry. The job name must be a single path/branch segment; a name containing a path separator is rejected before any directory or branch is constructed.
+
+Every run (idempotent) also:
+
+- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving template-authored lines. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the template's to declare.
+- **Links `node_modules/@dtmd/flume`** inside the job dir (junction on Windows, symlink elsewhere) to the running flume's own package root, so the chain resolves the exact flume that ticks it even when the repo declares another version. Skipped if the link already exists; a non-link squatting on that path is an error.
+- **Pins `core.longpaths true`** repo-locally on Windows.
+- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state and the link out of the commit), so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
+
+Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, or `--template` pointing at no directory).
+
+```sh
+flume job new docs-refresh --template ../templates/docs-effort
+flume job new scratch                 # empty; warns to populate before run
+```
