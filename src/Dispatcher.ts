@@ -284,6 +284,26 @@ export interface DispatcherOptions {
 }
 
 /**
+ * `flume tick` exit code for an Axis-C terminal misconfiguration (§3):
+ * sysexits.h `EX_CONFIG`. Distinct from 0 (clean hibernate) and 1 (chain
+ * resolution failure) so the process boundary classifies the failure without
+ * reading logs. `superviseLoop` fail-fasts on a child exiting with this code.
+ */
+export const EX_TERMINAL_MISCONFIG = 78;
+
+/**
+ * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
+ * deterministic, non-retryable, no agent ran. `kind` is a union open to
+ * future Axis-C members; `"orphaned-awake"` (awake flags naming phases the
+ * chain does not declare) is its founding member.
+ */
+export interface TerminalMisconfiguration {
+  kind: "orphaned-awake";
+  /** The awake-flag names the chain does not declare. Flags stay on disk. */
+  phases: string[];
+}
+
+/**
  * Per-tick summary returned by `Dispatcher.tick()`. The loop inspects
  * `hibernated` to decide when to exit; `summary` is the one-liner the
  * dispatcher surfaces through the logger after each tick.
@@ -321,6 +341,15 @@ export interface TickOutcome {
    * from platform-preempt runs without reading session logs).
    */
   noCommit?: NoCommitMode;
+  /**
+   * Axis-C terminal misconfiguration (§3) — sibling of `hibernated` /
+   * `failed`, never a `NoCommitMode` member (no agent ran, no entry exists
+   * to retry). Set when every awake flag names a phase the chain does not
+   * declare. The flags are deliberately left on disk: clearing them would
+   * convert the misconfiguration into a silent clean stop. `flume tick`
+   * exits {@link EX_TERMINAL_MISCONFIG} when this is set.
+   */
+  terminal?: TerminalMisconfiguration;
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -399,12 +428,27 @@ export class Dispatcher {
     const phase = chain.phases.find((p) => awake.includes(p.name));
 
     if (!phase) {
+      if (awake.length > 0) {
+        // Axis C (§3): every awake flag names a phase the chain does not
+        // declare. Not Axis B (nothing here is quiescent — the flags persist)
+        // and not Axis A (no agent ran, nothing to retry). The flags stay on
+        // disk so the human inspects, then `flume sleep <phase>` or fixes
+        // the chain; clearing them would be a silent ack.
+        const msg =
+          `awake flags reference unknown phases: ${awake.join(", ")}; ` +
+          `terminal misconfiguration (orphaned-awake), flags left on disk`;
+        this.log.error(`[flume] ${msg}`);
+        return {
+          hibernated: false,
+          terminal: { kind: "orphaned-awake", phases: awake },
+          awakeAfter: awake,
+          summary: msg,
+        };
+      }
       return {
         hibernated: true,
         awakeAfter: [],
-        summary: awake.length
-          ? `awake flags reference unknown phases: ${awake.join(", ")}; hibernating`
-          : "no phases awake; hibernating",
+        summary: "no phases awake; hibernating",
       };
     }
 
@@ -1338,6 +1382,13 @@ export interface SuperviseLoopOptions {
 export interface SuperviseResult {
   ticks: number;
   hibernated: boolean;
+  /**
+   * Set when the loop fail-fasted on a child exiting
+   * {@link EX_TERMINAL_MISCONFIG} (§3). `phases` are the orphaned awake
+   * flags read off disk for the summary — the stop *decision* is the exit
+   * code alone.
+   */
+  terminal?: TerminalMisconfiguration;
 }
 
 /**
@@ -1348,7 +1399,11 @@ export interface SuperviseResult {
  * `loadChainModule`). Between children it reads the on-disk baton
  * (disk-is-truth): no awake flags ⇒ hibernation ⇒ stop. A child that exits
  * non-zero (e.g. an ungated broken chain.ts: §3) is logged and the loop
- * proceeds — the supervisor never crashes. Bounded by `maxTicks` (the
+ * proceeds — the supervisor never crashes — except
+ * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration), which
+ * stops the loop immediately: the orphaned awake flags that produced it
+ * defeat the hibernation check, so proceeding would hot-spin to `--max`
+ * while masquerading each iteration as routine. Bounded by `maxTicks` (the
  * `--max N` cap); observable `--max`/hibernation behavior is unchanged from
  * the prior in-process loop.
  */
@@ -1364,6 +1419,27 @@ export async function superviseLoop(
   for (let i = 0; i < maxTicks; i++) {
     const { exitCode } = await runTick();
     ticks++;
+    if (exitCode === EX_TERMINAL_MISCONFIG) {
+      // Axis-C fail-fast (§3): the child classified a terminal
+      // misconfiguration (orphaned awake flags). The decision comes from the
+      // exit signal alone — the orphaned flags definitionally defeat
+      // `baton.hibernating()`, so it is never consulted here. The flags are
+      // still on disk (the child leaves them); read them only to *name* the
+      // orphans in the summary.
+      const phases = baton.awake();
+      log.error(
+        `[flume] tick exited ${exitCode} (terminal misconfiguration): ` +
+          `orphaned awake flags name unknown phases: ` +
+          `${phases.length > 0 ? phases.join(", ") : "(none on disk)"}; ` +
+          `stopping after ${ticks} tick(s). Inspect, then ` +
+          `\`flume sleep <phase>\` or fix the chain.`,
+      );
+      return {
+        ticks,
+        hibernated: false,
+        terminal: { kind: "orphaned-awake", phases },
+      };
+    }
     if (exitCode !== 0) {
       log.warn(
         `[flume] tick process exited with code ${exitCode}; ` +

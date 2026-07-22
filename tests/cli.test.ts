@@ -13,7 +13,8 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveStateDirs } from "../src/cli.ts";
+import { resolveStateDirs, tickExitCode } from "../src/cli.ts";
+import { EX_TERMINAL_MISCONFIG, type TickOutcome } from "../src/Dispatcher.ts";
 
 const repoRoot = "/repo/root";
 
@@ -65,5 +66,54 @@ describe("resolveStateDirs", () => {
     expect(configDir).toBe(flumeConfig);
     expect(env.FLUME_DIR).toBe(dockState);
     expect(env.FLUME_CONFIG_DIR).toBe(flumeConfig);
+  });
+});
+
+/**
+ * §3 — `flume tick` exit-code classification at the process boundary:
+ * 78 (`EX_CONFIG`) terminal misconfiguration, 1 chain-resolution failure,
+ * 0 clean hibernate or ordinary work. Exercised at the mapping seam
+ * (`tickExitCode`); the loop-process-boundary integration suite proves 78
+ * end-to-end through a real subprocess.
+ */
+describe("tickExitCode — §3 axis classification", () => {
+  it("terminal misconfiguration → 78 (EX_CONFIG)", () => {
+    const outcome: TickOutcome = {
+      hibernated: false,
+      terminal: { kind: "orphaned-awake", phases: ["ghost"] },
+      awakeAfter: ["ghost"],
+      summary: "awake flags reference unknown phases: ghost",
+    };
+    expect(EX_TERMINAL_MISCONFIG).toBe(78);
+    expect(tickExitCode(outcome)).toBe(78);
+  });
+
+  it("clean hibernation → 0", () => {
+    const outcome: TickOutcome = {
+      hibernated: true,
+      awakeAfter: [],
+      summary: "no phases awake; hibernating",
+    };
+    expect(tickExitCode(outcome)).toBe(0);
+  });
+
+  it("chain resolution failure (§3, other Axis-C member) → 1", () => {
+    const outcome: TickOutcome = {
+      hibernated: false,
+      failed: true,
+      awakeAfter: ["plan"],
+      summary: "chain resolution failed: boom; no work",
+    };
+    expect(tickExitCode(outcome)).toBe(1);
+  });
+
+  it("ordinary work tick → 0", () => {
+    const outcome: TickOutcome = {
+      hibernated: false,
+      phaseName: "plan",
+      awakeAfter: ["build"],
+      summary: "plan committed abcd1234 → build",
+    };
+    expect(tickExitCode(outcome)).toBe(0);
   });
 });

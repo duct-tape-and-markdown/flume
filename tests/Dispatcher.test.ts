@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Dispatcher,
   superviseLoop,
+  EX_TERMINAL_MISCONFIG,
   type ChainModule,
   type Logger,
 } from "../src/Dispatcher.ts";
@@ -390,7 +391,77 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
     const outcome = await dispatcher.tick();
     expect(outcome.hibernated).toBe(true);
     expect(outcome.phaseName).toBeUndefined();
+    expect(outcome.terminal).toBeUndefined();
     expect(outcome.awakeAfter).toEqual([]);
+  });
+});
+
+// ---------- Axis-C terminal misconfiguration (§3) ----------
+
+describe("Dispatcher — orphaned awake flags → Axis-C terminal (§3)", () => {
+  it("returns terminal.kind='orphaned-awake' naming the phases, leaves the flags on disk, runs no agent", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("ghost");
+    baton.wake("wraith");
+
+    // The chain declares only "plan" — neither awake flag matches.
+    const phase = makePhase({ name: "plan" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {
+        invoked = true;
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Axis C, not Axis B (hibernated) and not Axis A (noCommit): no agent
+    // ran, nothing exists to retry.
+    expect(outcome.terminal).toEqual({
+      kind: "orphaned-awake",
+      phases: ["ghost", "wraith"],
+    });
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.failed).toBeUndefined();
+    expect(outcome.noCommit).toBeUndefined();
+    expect(invoked).toBe(false);
+    expect(outcome.summary).toMatch(/ghost, wraith/);
+
+    // Silent-ack anti-pattern guard: the flags must survive the tick.
+    expect(baton.isAwake("ghost")).toBe(true);
+    expect(baton.isAwake("wraith")).toBe(true);
+    expect(outcome.awakeAfter).toEqual(["ghost", "wraith"]);
+  });
+
+  it("a declared awake phase still runs when an orphaned flag rides alongside it", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.wake("ghost");
+
+    const phase = makePhase({ name: "plan" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Terminal fires only when *every* awake flag is orphaned; a runnable
+    // phase runs and the stray flag persists for the next tick to classify.
+    expect(outcome.terminal).toBeUndefined();
+    expect(outcome.phaseName).toBe("plan");
+    expect(baton.isAwake("ghost")).toBe(true);
   });
 });
 
@@ -2070,6 +2141,44 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
     expect(warns.filter((w) => /exited with code 1/.test(w)).length).toBe(3);
+  });
+
+  it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    // The orphaned flag keeps hibernating() false — the stop must come from
+    // the exit signal alone, never from re-reading the broken baton state.
+    baton.wake("ghost");
+
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: EX_TERMINAL_MISCONFIG });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: rec,
+    });
+
+    // Immediate stop: no further ticks despite --max 5 and a non-empty baton.
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
+    expect(res.hibernated).toBe(false);
+    expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
+    expect(
+      errors.some((e) => /terminal misconfiguration/.test(e) && /ghost/.test(e)),
+    ).toBe(true);
+    // The supervisor never clears the flag either — diagnosability over tidiness.
+    expect(baton.isAwake("ghost")).toBe(true);
   });
 });
 
