@@ -95,8 +95,10 @@ const pendingParseGate: Gate = {
 const buildSetupWorktree = async (
   ctx: WorktreeSetupContext,
 ): Promise<void> => {
+  // shell: pnpm is a .cmd shim on Windows; Node can't spawn those bare.
   await execFileP("pnpm", ["install", "--frozen-lockfile"], {
     cwd: ctx.worktreePath,
+    shell: process.platform === "win32",
   });
 };
 
