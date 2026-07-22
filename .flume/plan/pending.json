@@ -1,48 +1,5 @@
 [
   {
-    "tag": "JOB-FANOUT-NS",
-    "summary": "Fanout branches flume/<job>/<slug> when FLUME_JOB set, legacy flume/<slug> otherwise; namespace flows CLI→DispatcherOptions, no path-sniffing of flumeDir.",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "4. Job-scoped fanout branches"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "DispatcherOptions namespace field; createWorktree branch naming (:1095-1124)"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "resolve namespace from FLUME_JOB, pass as option"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "branch naming with/without namespace"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "CLI passes namespace from FLUME_JOB"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "with FLUME_JOB worktree branch is flume/<job>/<slug>; two state roots with identical tags → disjoint branches; legacy name without FLUME_JOB"
-      }
-    ],
-    "acceptance": "§4 suite green; bare .flume harness naming unchanged",
-    "notes": ""
-  },
-  {
     "tag": "JOB-NEW",
     "summary": "flume job new <name> [--template <dir>]: branch job/<name>, seed jobdir, runtime .gitignore ensure, unconditional @dtmd/flume link, win32 longpaths pin, baseline commit.",
     "per": {
@@ -50,8 +7,7 @@
       "section": "5a. `flume job new <name> [--template <dir>]`"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-FANOUT-NS"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
