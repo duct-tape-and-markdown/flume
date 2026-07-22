@@ -2,32 +2,31 @@
 
 Phase: **v0.4 ACTIVE** (`spec/RELEASE-v0.4.md` opened `d2371fe`; v0.1/v0.2/v0.3 frozen). Mode this tick: **audit**.
 
-## This tick — audit the first v0.4 ship wave (3 build commits + chore drain)
+## This tick — audit the second v0.4 ship wave (2 build commits + chore drain)
 
-Delta = 4 commits since `edf2051`, no spec change, empty inbox, no blocked entries.
+Delta = 3 commits since `519ed9f`, no spec change, empty inbox, no blocked entries.
 
-- `1749b94` **AXIS-C-ORPHANED-AWAKE vs §3: conformant.** All four mandates verified at source — typed `terminal` sibling (`src/Dispatcher.ts` `TerminalMisconfiguration`), exit 78 via `tickExitCode` seam (`src/cli.ts`), `superviseLoop` stop on exit code alone (flags read only to *name* orphans), flags left on disk. §7 §3 matrix fully tested (unit + real-subprocess integration) plus a mixed-flag case. Two beyond-letter calls **RATIFIED**: `flume loop` propagates 78 (`SuperviseResult.terminal`); terminal only when *every* awake flag orphaned (mixed → declared phase runs, orphan classified at quiescence). Both → new OQ (NEEDS AMENDMENT — two one-line §3 additions). Test-harness fixes (tsx via `node cli.mjs`, `hermeticEnv` FLUME_DIR scrub) accepted: §6-aligned, in-lane, closed a real hermeticity escape (stray child ran against this repo's live `.flume`).
-- `9ac9d61` **DOCS-PR5-SURFACE vs §2c: conformant.** All three mandated items (FLUME_WORKTREES_DIR, loop lock, `{extraEnv}` seam) + residual §2a gaps (revertedTags/observedFiles/wave auto-unblock) + stale worktree-layout fix; edits confined to declared README/CHAIN-AUTHORING. Verified the agent-only extraEnv claim at `src/Dispatcher.ts:995`. **FINDING → `FIX-EXTRAENV-JSDOC-SCOPE`**: `src/Phase.ts:164-174` JSDoc still claims gates see extraEnv, contradicting §2b's recorded semantics.
-- `8f708d4` **CI-WINDOWS-LANE vs §6/§8: shape conformant** (single windows-latest lane, separate tsc/test steps, no matrix, publish-acceptance stays ubuntu). Acceptance "green" **UNVERIFIABLE**: origin/main = `cdfe399` — trunk is 10 commits ahead unpushed, the lane has never run, and the last pushed run is red (ubuntu Consumer-install smoke, pre-PR#5-era). **Human action: push main** to exercise the lane + post-reconciliation suite.
-- `9735347` chore drain: removed exactly the 3 shipped tags; `dependsOnForks: []` + reformat are harness-side; clean.
+- `40852cc` **ENTRY-SCOPED-GUARD vs §5: conformant.** All mandates verified at source: `Phase.entryChannelPaths` (default `[]`), gate narrows to entry∪channel with phase globs as ceiling — both checks apply (`writablePathsGate` + `EntryWriteScope`, `src/builtinGates.ts`), singleton ticks untouched, failure details name each path with which check it fell outside, PendingSchema obligation text lands in both the zod JSDoc and `renderSchemaForPrompt`. §7 §5 matrix fully tested (4 cases, incl. persisted §5 record + retry-prompt path naming). Verified the literal-path-through-glob-matcher claim: `globToRegex` escapes regex specials; `*`/`?` unescaped but illegal in win32 filenames — no finding. Cherry-pick-conflict test re-plumb via `entryChannelPaths`: necessary §5 consequence, accepted. **Confessed incidental** (`tests/PendingSchema.test.ts` snapshot moved with the mandated schema text, undeclared by the entry): plan defect last tick, **ACCEPTED AS DEBT** — the obligation text is now standing; plan declares snapshot-covered incidentals henceforth, and the example feeds the §5-dogfood OQ's prompt line.
+- `57b99bd` **TEST-PR5-SURFACE vs §2c: conformant.** Tests only, both files declared. Loop-lock: both mandated outcomes via one real CLI spawn each (`--max 0`, `hermeticEnv`, `node <tsx cli.mjs>` per §6), plus pidfile-lifecycle asserts. Worktree-base: override + default cases asserting agent cwd placement and teardown. **FINDING** (from commit body, verified at `src/Dispatcher.ts:1367`) → **`FIX-RELOCATED-PENDING-COMMIT`**: `commitPendingUpdate` stages `pendingPath` into the repo chore commit unconditionally; with flumeDir relocated outside the repo (v0.3 §11) the `git add` fatals *after entries already merged* — relocated-dock fanout ship bookkeeping is broken. Derived at queue head (bites the imminent flume-dock consumer: out-of-tree docks per v0.3 §13 + fanout).
+- `52186ef` chore drain: removed exactly the 2 shipped tags; clean.
 
-**Derive**: 1 entry from the audit finding (`FIX-EXTRAENV-JSDOC-SCOPE`, per §2b, comment-only, build-writable `src/`). **Drain**: none (inbox empty). **Promote**: none (no blockedBy gates).
+**Derive**: 1 entry from the build-flagged finding (`FIX-RELOCATED-PENDING-COMMIT`, per v0.3 §11, fix shape unambiguous — §13's out-of-tree-dock posture decides it, no OQ). **Drain**: none (inbox empty). **Promote**: none (no blockedBy gates).
 
-## Queue (4)
+## Queue (3)
 
-Head: `ENTRY-SCOPED-GUARD`. Then `PHASE-AGENT`, `TEST-PR5-SURFACE`, `FIX-EXTRAENV-JSDOC-SCOPE`. All open, no gates.
+Head: `FIX-RELOCATED-PENDING-COMMIT` (shipped-surface correctness first). Then `PHASE-AGENT`, `FIX-EXTRAENV-JSDOC-SCOPE`. All open, no gates.
 
 ## Active plan target
 
-`spec/RELEASE-v0.4.md` — decomposition current; underived surface: none. 3 of 6 original v0.4 entries shipped this wave; §3 done, §2c docs done, §6 lane authored (CI proof pending push).
+`spec/RELEASE-v0.4.md` — decomposition current; underived surface: none. Shipped so far: §3, §2c tests + docs, §5 guard, §6 lane (CI proof still pending push). Remaining spec work: §4 (`PHASE-AGENT`).
 
 ## Open questions
 
-**3**: §7a gate-move (PARKED, `chore(flume):`), v0.4-§5 dogfood adoption (PARKED, after `ENTRY-SCOPED-GUARD`), §3 loop-78/mixed-flag recording (NEEDS AMENDMENT, new this tick — rulings made, spec edit optional but closes it).
+**3**: §7a gate-move (PARKED, `chore(flume):`), v0.4-§5 dogfood adoption (PARKED — **precondition satisfied** this tick, `chore(flume):` actionable, can share a commit with the §7a move), §3 loop-78/mixed-flag recording (NEEDS AMENDMENT, two one-line spec edits).
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}`. inbox.md untouched (empty). All on-allowlist; `FIX-EXTRAENV-JSDOC-SCOPE` targets `src/` (build-writable ✓).
-- Trunk: HEAD `9735347` at tick start, tree clean. **origin/main 10 behind** — windows lane and all post-PR#5 fixes unexercised in CI until the human pushes.
+- Wrote `.flume/plan/{pending.json,state.md,open-questions.md}`; inbox.md untouched (empty). New entry targets `src/` + `tests/` (build-writable ✓).
+- Trunk: HEAD `52186ef` at tick start, tree clean. **origin/main 30 behind** — windows lane and everything post-PR#5 unexercised in CI; human push still pending.
 
 Plan continues: no

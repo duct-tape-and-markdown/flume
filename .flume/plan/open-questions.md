@@ -32,7 +32,9 @@ The buildable half of §7a/§7c (the `CHAIN-AUTHORING.md` guidance + byte-equali
 
 ## 2026-07-22 — v0.4 §5 dogfood adoption needs off-allowlist harness edits (plan-prompt obligation text + chain.ts entryChannelPaths)
 
-**Status: PARKED** (`chore(flume):` edit; sequenced after `ENTRY-SCOPED-GUARD` ships)
+**Status: PARKED** (`chore(flume):` edit; was sequenced after `ENTRY-SCOPED-GUARD` — now actionable)
+
+**Update 2026-07-22 (post-`40852cc`):** `ENTRY-SCOPED-GUARD` shipped and its audit is clean — the sequencing precondition is **satisfied**; the ask below is now actionable whenever the human wants to land it. One calibration note from the ship: the build commit itself demonstrated the incidental class the obligation line must warn about (an inline-snapshot test, `tests/PendingSchema.test.ts`, moved with a schema-text change but was undeclared by the entry) — worth citing as the worked example in the prompt line.
 
 v0.4 §5 has two dogfood-side consequences the build tick cannot land:
 
