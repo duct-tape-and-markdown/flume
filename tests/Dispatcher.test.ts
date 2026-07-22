@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -52,6 +52,9 @@ async function makeFixture(): Promise<Fixture> {
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact checkout on Windows: revert-path assertions compare file
+  // content, and a host-level autocrlf=true would rewrite LF on reset.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(repo, "README.md"), "seed\n");
   await mkdir(join(repo, "src"), { recursive: true });
   await writeFile(join(repo, "src", "seed.ts"), "// seed\n");
@@ -169,7 +172,7 @@ function fanoutAgent(
   return {
     name: "fake-fanout",
     async invoke(inv) {
-      const slug = inv.cwd.split("/").pop()!;
+      const slug = basename(inv.cwd);
       const action = bySlug[slug];
       if (!action) {
         throw new Error(`fanoutAgent: no action registered for slug '${slug}'`);
@@ -489,8 +492,9 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
       ["worktree", "list", "--porcelain"],
       repoOpts,
     );
-    expect(before).toContain(join(".flume", "worktrees", "race-a"));
-    expect(before).toContain(join(".flume", "worktrees", "race-b"));
+    // git porcelain output prints forward slashes on every platform.
+    expect(before).toContain(".flume/worktrees/race-a");
+    expect(before).toContain(".flume/worktrees/race-b");
 
     const phase = makePhase({
       name: "build",
@@ -658,7 +662,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     const agent: Agent = {
       name: "recording-fanout",
       async invoke(inv) {
-        const slug = inv.cwd.split("/").pop()!;
+        const slug = basename(inv.cwd);
         (promptsBySlug[slug] ??= []).push(inv.prompt);
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
@@ -1202,7 +1206,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     const agent: Agent = {
       name: "recording-fanout",
       async invoke(inv) {
-        const slug = inv.cwd.split("/").pop()!;
+        const slug = basename(inv.cwd);
         (promptsBySlug[slug] ??= []).push(inv.prompt);
         const file = slug === "wave-a" ? "src/wa.ts" : "src/wb.ts";
         await writeAndCommit(inv.cwd, file, `${slug}\n`, `build(${slug})`);

@@ -106,6 +106,9 @@ async function makeRepo(): Promise<Repo> {
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact checkout on Windows: revert-path assertions compare file
+  // content, and a host-level autocrlf=true would rewrite LF on reset.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(dir, "README.md"), "seed\n");
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);

@@ -51,15 +51,19 @@ describe("resolveStateDirs", () => {
   });
 
   it("leaves an already-absolute FLUME_DIR untouched and independent of configDir", () => {
+    // resolve() drive-qualifies on win32, so the fixture is absolute on
+    // every platform — the untouched assertion needs a true absolute input.
+    const dockState = resolve("/var/dock/state");
+    const flumeConfig = resolve("/etc/flume/config");
     const env: NodeJS.ProcessEnv = {
-      FLUME_DIR: "/var/dock/state",
-      FLUME_CONFIG_DIR: "/etc/flume/config",
+      FLUME_DIR: dockState,
+      FLUME_CONFIG_DIR: flumeConfig,
     };
     const { flumeDir, configDir } = resolveStateDirs(env, repoRoot);
 
-    expect(flumeDir).toBe("/var/dock/state");
-    expect(configDir).toBe("/etc/flume/config");
-    expect(env.FLUME_DIR).toBe("/var/dock/state");
-    expect(env.FLUME_CONFIG_DIR).toBe("/etc/flume/config");
+    expect(flumeDir).toBe(dockState);
+    expect(configDir).toBe(flumeConfig);
+    expect(env.FLUME_DIR).toBe(dockState);
+    expect(env.FLUME_CONFIG_DIR).toBe(flumeConfig);
   });
 });
