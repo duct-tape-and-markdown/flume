@@ -12,6 +12,7 @@ import {
   superviseLoop,
   EX_TERMINAL_MISCONFIG,
   type ChainModule,
+  type DispatcherOptions,
   type Logger,
 } from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
@@ -525,6 +526,69 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "test-b"))).toBe(
       false,
     );
+  }, 20_000);
+});
+
+// ---------- trunk contract (v0.5 §2) ----------
+
+describe("Trunk contract — HEAD-is-truth, trunkBranch purged (v0.5 §2)", () => {
+  it("DispatcherOptions no longer carries trunkBranch (type-level)", () => {
+    // Resolves to `never` (unassignable) if the key ever returns.
+    type TrunkBranchPurged = "trunkBranch" extends keyof DispatcherOptions
+      ? never
+      : true;
+    const purged: TrunkBranchPurged = true;
+    expect(purged).toBe(true);
+  });
+
+  it("ships onto the checked-out branch — HEAD is the trunk", async () => {
+    // Move the fixture off its init branch; the ship path must follow HEAD,
+    // not any recorded branch name.
+    const initBranch = (
+      await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: fx.repo })
+    ).stdout.trim();
+    const initTip = await head(fx.repo);
+    await exec("git", ["checkout", "-q", "-b", "job/elsewhere"], {
+      cwd: fx.repo,
+    });
+
+    await writePending(fx.repo, [makeEntry("TRUNK-HEAD", ["src/t.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "trunk-head": (cwd) =>
+        writeAndCommit(cwd, "src/t.ts", "on-head\n", "build(TRUNK-HEAD): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["TRUNK-HEAD"]);
+
+    // Landed on the checked-out branch; the runtime never switched away.
+    const onBranch = (
+      await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: fx.repo })
+    ).stdout.trim();
+    expect(onBranch).toBe("job/elsewhere");
+    expect(await readFile(join(fx.repo, "src/t.ts"), "utf8")).toBe("on-head\n");
+
+    // The branch we left behind did not move.
+    const initTipAfter = (
+      await exec("git", ["rev-parse", initBranch], { cwd: fx.repo })
+    ).stdout.trim();
+    expect(initTipAfter).toBe(initTip);
   }, 20_000);
 });
 

@@ -273,8 +273,6 @@ export interface DispatcherOptions {
   log?: Logger;
   /** Max parallel ticks per fanout batch. Default 4. */
   maxParallel?: number;
-  /** Trunk branch name for cherry-pick. Default current branch at dispatch time. */
-  trunkBranch?: string;
   /**
    * Wall-clock timeout per agent invocation in milliseconds. When exceeded,
    * the underlying agent process is aborted; the dispatcher logs a warning
@@ -370,7 +368,6 @@ export class Dispatcher {
   private readonly log: Logger;
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
-  private trunkBranch: string | null;
   private readonly flumeDir: string;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
@@ -382,7 +379,6 @@ export class Dispatcher {
     this.log = opts.log ?? consoleLogger;
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
-    this.trunkBranch = opts.trunkBranch ?? null;
     this.pendingPath = join(this.flumeDir, "plan", "pending.json");
     this.chainLoader = opts.chainLoader ?? diskChainLoader(opts.configDir);
   }
@@ -451,10 +447,6 @@ export class Dispatcher {
         awakeAfter: [],
         summary: "no phases awake; hibernating",
       };
-    }
-
-    if (!this.trunkBranch) {
-      this.trunkBranch = await git.currentBranch(this.opts.repoRoot);
     }
 
     // Per-phase delegation (§4): the phase's own agent is the innermost
