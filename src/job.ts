@@ -24,6 +24,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { Baton } from "./Baton.js";
+import { loadChainModule } from "./Dispatcher.js";
+
 const exec = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -219,4 +222,72 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
     log(`[flume] harness already baselined; nothing to commit`);
   }
   // 7. Stay on job/<name> — tune, then `flume job run`.
+}
+
+export interface JobRunOptions {
+  repoRoot: string;
+  name: string;
+  /** Job state root — where the baton lives (resolved by the CLI, §3). */
+  flumeDir: string;
+  /** Chain dir — `chain.ts` is loaded from here, after the checkout. */
+  configDir: string;
+  log?: (line: string) => void;
+}
+
+/**
+ * `flume job run <name>` preflight (v0.5 §5b-1/2): assert-or-checkout
+ * `job/<name>`, then wake the chain's entry phase — `chain.phases[0]`, a
+ * content-free convention (decision 6, no hardcoded phase names) — iff the
+ * baton is hibernating. A non-hibernating baton is left untouched (mid-job
+ * resume). The loop itself (§5b-3) is the CLI's standard `flume loop` path
+ * under the job resolution; this function owns only the two steps before it.
+ *
+ * Throws {@link JobUsageError} on a bad name or a branch that does not exist
+ * (the job was never created — exit 2 at the CLI); any other throw is an
+ * operational failure (exit 1).
+ */
+export async function jobRun(opts: JobRunOptions): Promise<void> {
+  const { repoRoot, name, flumeDir, configDir } = opts;
+  const log = opts.log ?? ((line: string) => console.log(line));
+
+  const invalid = validateJobName(name);
+  if (invalid) throw new JobUsageError(invalid);
+
+  // 1. Assert-or-checkout. Checkout is a verb act (§2 HEAD-is-truth): the
+  // loop never switches branches, so the switch happens here or not at all.
+  // Inside a linked worktree already on job/<name> (the §6 concurrency
+  // recipe) the assert passes and no checkout runs — git would refuse to
+  // check out a branch another worktree holds anyway.
+  const branch = `job/${name}`;
+  if (!(await branchExists(repoRoot, branch))) {
+    throw new JobUsageError(
+      `branch ${branch} does not exist; create the job first: flume job new ${name}`,
+    );
+  }
+  const head = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (head === branch) {
+    log(`[flume] on ${branch}`);
+  } else {
+    await git(repoRoot, ["checkout", "-q", branch]);
+    log(`[flume] checked out ${branch}`);
+  }
+
+  // 2. Wake the entry phase iff hibernating. The chain loads AFTER the
+  // checkout — chain.ts lives on the job branch.
+  const baton = new Baton(flumeDir);
+  if (!baton.hibernating()) {
+    log(
+      `[flume] baton awake (${baton.awake().join(", ")}); resuming mid-job, entry phase untouched`,
+    );
+    return;
+  }
+  const { default: chain } = await loadChainModule(
+    resolve(configDir, "chain.ts"),
+  );
+  const entry = chain.phases[0];
+  if (!entry) {
+    throw new Error(`chain at ${configDir} declares no phases; nothing to wake`);
+  }
+  baton.wake(entry.name);
+  log(`[flume] woke ${entry.name} (entry phase)`);
 }

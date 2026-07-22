@@ -20,10 +20,12 @@ import { describe, expect, it } from "vitest";
 import {
   ensureRuntimeIgnores,
   jobNew,
+  jobRun,
   JobUsageError,
   RUNTIME_IGNORES,
   validateJobName,
 } from "../src/job.ts";
+import { Baton } from "../src/Baton.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 
 const exec = promisify(execFile);
@@ -437,6 +439,149 @@ describe("§5a-4 provisioning — no-dep-tree fixture", () => {
       jobNew({ repoRoot: "irrelevant", name: "a/b", log: () => {} }),
     ).rejects.toBeInstanceOf(JobUsageError);
   });
+});
+
+// ---------- v0.5 §5b — `flume job run` preflight units ----------
+
+/**
+ * Minimal two-phase chain: `alpha` is `phases[0]` — the entry phase by
+ * convention (decision 6) — and `beta` exists to prove the wake targets
+ * position, not a name.
+ */
+function twoPhaseChainSrc(): string {
+  const phase = (name: string) =>
+    `{ name: ${JSON.stringify(name)}, description: "", promptPath: "p.md", ` +
+    `concurrency: "singleton", writablePaths: ["**"], gates: [], ` +
+    `handoff: () => [] }`;
+  return `export default { phases: [${phase("alpha")}, ${phase("beta")}], humanOnly: [] };\n`;
+}
+
+/** `job new` + a two-phase chain.ts in the job dir; returns the job dir. */
+async function makeRunnableJob(repoDir: string, name: string): Promise<string> {
+  await jobNew({ repoRoot: repoDir, name, log: () => {} });
+  const jobDir = join(repoDir, ".flume", "jobs", name);
+  await writeFile(join(jobDir, "chain.ts"), twoPhaseChainSrc(), "utf8");
+  return jobDir;
+}
+
+describe("jobRun preflight — §5b wake/branch-assert units", () => {
+  it("errors as JobUsageError when the branch does not exist, touching neither HEAD nor the state root", async () => {
+    const repo = await makeRepo();
+    try {
+      const flumeDir = join(repo.dir, ".flume", "jobs", "ghost");
+      await expect(
+        jobRun({
+          repoRoot: repo.dir,
+          name: "ghost",
+          flumeDir,
+          configDir: flumeDir,
+          log: () => {},
+        }),
+      ).rejects.toThrow(/branch job\/ghost does not exist.*flume job new ghost/);
+      await expect(
+        jobRun({
+          repoRoot: repo.dir,
+          name: "ghost",
+          flumeDir,
+          configDir: flumeDir,
+          log: () => {},
+        }),
+      ).rejects.toBeInstanceOf(JobUsageError);
+
+      // Nothing mutated: HEAD stays on main, no state root materialized.
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "main",
+      );
+      expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("from hibernation, wakes exactly phases[0]; a re-run is idempotent", async () => {
+    const repo = await makeRepo();
+    try {
+      const jobDir = await makeRunnableJob(repo.dir, "r1");
+      const opts = {
+        repoRoot: repo.dir,
+        name: "r1",
+        flumeDir: jobDir,
+        configDir: jobDir,
+        log: () => {},
+      };
+      await jobRun(opts);
+      expect(new Baton(jobDir).awake()).toEqual(["alpha"]);
+
+      await jobRun(opts);
+      expect(new Baton(jobDir).awake()).toEqual(["alpha"]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("leaves a non-hibernating baton untouched — mid-job resume never re-wakes the entry phase", async () => {
+    const repo = await makeRepo();
+    try {
+      const jobDir = await makeRunnableJob(repo.dir, "r2");
+      new Baton(jobDir).wake("beta");
+
+      await jobRun({
+        repoRoot: repo.dir,
+        name: "r2",
+        flumeDir: jobDir,
+        configDir: jobDir,
+        log: () => {},
+      });
+      expect(new Baton(jobDir).awake()).toEqual(["beta"]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("checks out job/<name> when HEAD is elsewhere; no checkout when already on it", async () => {
+    const repo = await makeRepo();
+    try {
+      const jobDir = await makeRunnableJob(repo.dir, "r3");
+      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+
+      const lines: string[] = [];
+      const opts = {
+        repoRoot: repo.dir,
+        name: "r3",
+        flumeDir: jobDir,
+        configDir: jobDir,
+        log: (l: string) => lines.push(l),
+      };
+      await jobRun(opts);
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "job/r3",
+      );
+      expect(lines.join("\n")).toContain("checked out job/r3");
+
+      lines.length = 0;
+      await jobRun(opts);
+      expect(lines.join("\n")).toContain("on job/r3");
+      expect(lines.join("\n")).not.toContain("checked out");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("real CLI: missing <name> and nonexistent branch both exit 2", async () => {
+    const repo = await makeRepo();
+    try {
+      const noName = await runCli(repo.dir, ["job", "run"]);
+      expect(noName.code).toBe(2);
+      expect(noName.out).toContain("usage: flume job run <name> [--max N]");
+
+      const ghost = await runCli(repo.dir, ["job", "run", "ghost"]);
+      expect(ghost.code).toBe(2);
+      expect(ghost.out).toContain("branch job/ghost does not exist");
+      expect(ghost.out).toContain("flume job new ghost");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
 });
 
 // win32 lane (v0.4 §6): the junction + longpaths paths only exist on

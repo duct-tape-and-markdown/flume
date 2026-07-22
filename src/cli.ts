@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import { currentBranch } from "./git.js";
-import { jobNew, JobUsageError } from "./job.js";
+import { jobNew, jobRun, JobUsageError } from "./job.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -140,6 +140,9 @@ Commands:
   job new <name> [--template <dir>]
                       Create branch job/<name> + seed .flume/jobs/<name>/
                       (runtime .gitignore, @dtmd/flume link, baseline commit).
+  job run <name> [--max N]
+                      Check out job/<name>, wake the chain's entry phase from
+                      hibernation, then loop under the job resolution.
 
 Options:
   --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
@@ -239,11 +242,22 @@ Verbs:
       core.longpaths repo-locally (win32), and baseline-commit the seeded
       harness. Stays on job/<name>.
 
+  run <name> [--max N]
+      Assert branch job/<name> exists (error otherwise) and check it out
+      unless HEAD is already on it; wake the chain's entry phase (phases[0])
+      iff the baton is hibernating — a mid-job baton is left untouched; then
+      run the standard loop under the job resolution. Lock, supervisor, and
+      exit codes are identical to \`flume --job <name> loop [--max N]\`.
+
 Exit codes:
-  0   Success.
-  1   Git or filesystem failure (checkout, link provisioning, commit).
+  0   Success (run: hibernation reached, or --max ticks completed).
+  1   Git or filesystem failure (checkout, link provisioning, commit); for
+      run also: harness error, or another live loop holds the job's lock.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
-      not a single path segment, or --template pointing at no directory.
+      not a single path segment, --template pointing at no directory, or run
+      on a job whose branch does not exist.
+  78  run: stopped on a child tick's terminal misconfiguration (see
+      \`flume tick --help\`).
 `;
 
 function isSubcommand(value: string): value is Subcommand {
@@ -255,9 +269,11 @@ function wantsHelp(args: readonly string[]): boolean {
 }
 
 /**
- * `flume job <verb> …` (v0.5 §5). Only `new` exists so far; the rest of the
- * family (§5b–§5e) lands verb by verb. Usage-shaped failures exit 2,
- * operational failures 1 — mirroring the JobUsageError split in `jobNew`.
+ * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
+ * loop under a job resolution and is rewritten in `main()` before dispatch
+ * reaches here. The rest of the family (§5c–§5e) lands verb by verb.
+ * Usage-shaped failures exit 2, operational failures 1 — mirroring the
+ * JobUsageError split in `jobNew`.
  */
 async function runJobVerb(
   args: readonly string[],
@@ -340,8 +356,8 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const cmd = firstArg ?? "tick";
-  const rest = restArgs;
+  let cmd = firstArg ?? "tick";
+  let rest = restArgs;
 
   // Per-subcommand --help short-circuits before any side effects (chain load,
   // baton mutation, agent invocation).
@@ -352,13 +368,47 @@ async function main(): Promise<number> {
 
   // `flume job <verb>` (v0.5 §5) — repo-level lifecycle verbs, routed before
   // state-dir resolution: they operate on the repo and the job dir named by
-  // their argument, not on a resolved state root.
+  // their argument, not on a resolved state root. `run` is the exception —
+  // it IS the standard loop under the job resolution (§5b-3), so it rewrites
+  // itself into `--job <name> loop [--max N]` and falls through; only its
+  // preflight (branch + entry-phase wake) runs before the loop, below.
+  let jobRunName: string | undefined;
   if (cmd === "job") {
     if (wantsHelp(rest)) {
       process.stdout.write(HELP_JOB);
       return 0;
     }
-    return runJobVerb(rest, repoRoot);
+    if (rest[0] === "run") {
+      const words = rest.slice(1);
+      let maxArgs: string[] = [];
+      const maxIdx = words.indexOf("--max");
+      if (maxIdx >= 0) {
+        const value = words[maxIdx + 1];
+        if (!value || value.startsWith("-")) {
+          console.error("usage: flume job run <name> [--max N]");
+          return 2;
+        }
+        maxArgs = ["--max", value];
+        words.splice(maxIdx, 2);
+      }
+      const name = words[0];
+      if (!name || words.length > 1) {
+        console.error("usage: flume job run <name> [--max N]");
+        return 2;
+      }
+      if (jobFlag !== undefined && jobFlag !== name) {
+        console.error(
+          `[flume] --job ${jobFlag} conflicts with \`job run ${name}\`: one resolution authority — drop --job`,
+        );
+        return 2;
+      }
+      jobRunName = name;
+      jobFlag = name;
+      cmd = "loop";
+      rest = maxArgs;
+    } else {
+      return runJobVerb(rest, repoRoot);
+    }
   }
 
   // Resolve both state roots up front and canonicalize them back into the env
@@ -381,6 +431,25 @@ async function main(): Promise<number> {
       return 2;
     }
     throw err;
+  }
+
+  // `job run` preflight (v0.5 §5b-1/2): assert-or-checkout job/<name>, wake
+  // the entry phase iff hibernating. Placed after the resolution (a conflict
+  // must refuse before any mutation) and before the wrong-branch guard —
+  // the checkout is what satisfies it.
+  if (jobRunName !== undefined) {
+    try {
+      await jobRun({ repoRoot, name: jobRunName, flumeDir, configDir });
+    } catch (err) {
+      if (err instanceof JobUsageError) {
+        console.error(`[flume] ${err.message}`);
+        return 2;
+      }
+      console.error(
+        `[flume] job run failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 1;
+    }
   }
 
   // Wrong-branch guard (v0.5 §3): under a job resolution the mutating

@@ -83,3 +83,18 @@ Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0
 flume job new docs-refresh --template ../templates/docs-effort
 flume job new scratch                 # empty; warns to populate before run
 ```
+
+## `flume job run <name> [--max N]`
+
+Runs a job. Three steps, the first two a preflight:
+
+1. **Assert-or-checkout `job/<name>`.** The branch must exist (error if not — create the job with `flume job new` first); it is checked out unless HEAD is already on it. Inside a linked worktree that already holds `job/<name>` (the concurrency recipe: `git worktree add .git/flume-jobs/<name> job/<name>`, then run from inside it) the assert passes and no checkout runs.
+2. **Wake the entry phase iff the baton is hibernating.** The entry phase is `chain.phases[0]` — a content-free convention, no hardcoded phase names. A non-hibernating baton is left untouched, so an interrupted job resumes mid-flight instead of being restarted from the top.
+3. **Run the standard loop under the job resolution.** From here this is exactly `flume --job <name> loop [--max N]`: same `loop.pid` lock in the job state root, same one-child-process-per-tick supervisor, same exit codes.
+
+Exits `0` on hibernation or when `--max` (default 50) is hit; `1` on git or harness failure, or while another live loop holds the job's lock; `2` on usage errors (missing `<name>`, or the job branch does not exist); `78` when a child tick reports terminal misconfiguration (see `flume tick`).
+
+```sh
+flume job new docs-refresh --template ../templates/docs-effort
+flume job run docs-refresh --max 20
+```
