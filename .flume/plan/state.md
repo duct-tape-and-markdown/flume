@@ -1,31 +1,35 @@
 # State
 
-Phase: **v0.5 CODE-COMPLETE** (`spec/RELEASE-v0.5.md`; all §2–§8 surface shipped; release cut parked as OQ 2; v0.1–v0.4 frozen). Mode this tick: **audit**.
+Phase: **v0.5 cut queued** (`spec/RELEASE-v0.5.md`; §2–§8 surface shipped; §7 amendment + §11 cut derived this tick; v0.1–v0.4 frozen). Mode this tick: **derive**.
 
-## This tick — audit EXTRACT-WORKTREE-GUARD + JOB-DOCS ship
+## This tick — derive from spec amendment `6cb9194`
 
-Delta = 2 build commits + chore ship (`3e26606`, `91f72b3`, `a9c37f0`); no spec changes; inbox empty.
+Delta = 1 spec commit (`6cb9194`, human-authored); no build commits; inbox empty.
 
-**Audit `3e26606` (EXTRACT-WORKTREE-GUARD vs §5e)**: faithful. Scope = exactly the 5 declared files. Guard sits beside the dirty-tree/live-loop refusals; the HEAD==job/<name> exemption is sound (git permits one holder, so HEAD holding it proves no foreign holder); porcelain parse is safe (`git()` trimEnd, plumbing emits LF even on win32). Both planned tests present; the integration case runs the §6 recipe verbatim inside a linked worktree — refuse-from-root then extract-from-inside — which also hardens §7's §6 recipe-viability bullet. Debt accepted (commit body): the refusal's first suggested exit (`git worktree remove` the holder) is impossible when the holder is the *main* worktree; the second exit (run extract from inside it) covers that case — cosmetic.
+**Audit**: `6cb9194` touches only `spec/RELEASE-v0.5.md` (+37) — spec-lane, human-authored; nothing to cross-check.
 
-**Audit `91f72b3` (JOB-DOCS vs §8)**: complete. All four README bullets (flow, two endings, concurrency recipe, HEAD-is-truth) + both CHAIN-AUTHORING items (template expectations under `job new`, phases[0]-as-entry) delivered; content cross-checked against §§2–6 shipped behavior — accurate, incl. the ignore-entry list and the @dtmd/flume link semantics. Scope = the 2 declared files. Also closes §2's document bullet and §6's doc obligation. §8's "getting-started" names no standalone doc — CHAIN-AUTHORING is that doc; conforming. Debt: README omits `job new`'s reuse-if-exists nuance (CLI.md carries it) — cosmetic.
+**Derive (2 entries)**:
+- **TESTS-TSC-GATE** (§7 amendment): tsconfig `include` += `tests/**/*`; fix the single TS2375 in `tests/Gate.test.ts:22`. Probe re-run this tick (temp extending tsconfig) confirms the spec's single-error claim — exactly one error, nothing else enters the program.
+- **CUT-0-5-0** (§11, blockedBy TESTS-TSC-GATE): CHANGELOG reconcile `v0.3.1..HEAD` + bump to 0.5.0, commit `chore(release): cut 0.5.0` (precedent `9be3c0f`). Blocked so the cut lands last as the line's completion marker.
 
-**Finding — parked as OQ 2 (NEEDS AMENDMENT)**: v0.5 is uncut. CHANGELOG `[Unreleased]` is empty and package.json sits at 0.3.1, while §2's `trunkBranch` deletion obligates a minor bump + `### Breaking` entry per frozen v0.1 §9. v0.2/v0.3 each ended with a versioning section plan derived the cut from; v0.4 and v0.5 carry none, so the cut has no spec anchor. Research + concrete block proposal captured in the question per Inform-before-parking.
+**OQs closed (2 → 0)**: OQ 1 (type-tests not gate-enforced) resolved by the §7 amendment — option (a), tests join tsconfig include. OQ 2 (line uncut, no spec anchor) resolved by §11 — option (a), one consolidated 0.5.0. Both removed.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none (ship commit already emptied pending).
+**Drain**: none (inbox empty). **Promote**: none.
 
-## Queue (0)
+## Queue (2)
 
-Empty — v0.5 decomposition complete and fully shipped. Next derivation trigger: a v0.5 amendment (versioning section per OQ 2) or a v0.6 file.
+1. **TESTS-TSC-GATE** — open
+2. **CUT-0-5-0** — blockedBy TESTS-TSC-GATE
+
+After the cut ships, the v0.5 line is complete; next derivation trigger is a v0.6 spec file. npm publish of 0.5.0 stays a human act (§11).
 
 ## Open questions
 
-**1** — type-level tests not gate-enforced (tsconfig excludes `tests/`); PARKED, human toolchain call.
-**2** — v0.5 (and v0.4) uncut; no versioning section in the spec; NEEDS AMENDMENT, proposal captured.
+None.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` + `.flume/plan/open-questions.md`; pending.json unchanged (`[]`); inbox.md untouched (empty).
-- Trunk: HEAD `a9c37f0` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 31 of origin/main** at tick start (32 with this commit) — human push pending.
+- Wrote `.flume/plan/pending.json` (2 entries), `.flume/plan/state.md`, `.flume/plan/open-questions.md` (emptied); inbox.md untouched (empty).
+- Trunk: HEAD `6cb9194` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 33 of origin/main** at tick start (34 with this commit) — human push pending; §11 lets the cut land regardless of push order.
 
 Plan continues: no
