@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,11 @@ async function runCli(
   }
 }
 
+async function gitOut(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await exec("git", args, { cwd });
+  return stdout.trimEnd();
+}
+
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{
   dir: string;
@@ -64,6 +69,9 @@ async function makeRepo(): Promise<{
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact content assertions (intake sync, unwind restore) — keep the
+  // host's autocrlf from rewriting checkouts.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(dir, "README.md"), "seed\n");
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
@@ -282,5 +290,218 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
       }
     },
     240_000,
+  );
+});
+
+/**
+ * Chain whose agent does real work: writes `derived.txt` at the repo root
+ * and commits it itself (one tick = one commit), then hands off to nobody —
+ * one tick, hibernation. This is the commit `job extract` must cherry-pick.
+ */
+const WORK_CHAIN_SRC =
+  `import { execFileSync } from "node:child_process";\n` +
+  `import { writeFileSync } from "node:fs";\n` +
+  `import { join } from "node:path";\n` +
+  `export default {\n` +
+  `  phases: [{\n` +
+  `    name: "work",\n` +
+  `    description: "job extract probe",\n` +
+  `    promptPath: "prompt.md",\n` +
+  `    concurrency: "singleton",\n` +
+  `    writablePaths: ["**"],\n` +
+  `    gates: [],\n` +
+  `    handoff: () => [],\n` +
+  `  }],\n` +
+  `  humanOnly: [],\n` +
+  `};\n` +
+  `export const agent = {\n` +
+  `  name: "job-extract-probe",\n` +
+  `  async invoke({ cwd }) {\n` +
+  `    writeFileSync(join(cwd, "derived.txt"), "derived by the job\\n");\n` +
+  `    execFileSync("git", ["add", "derived.txt"], { cwd });\n` +
+  `    execFileSync("git", ["commit", "-q", "-m", "work: derive output"], { cwd });\n` +
+  `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+  `  },\n` +
+  `};\n`;
+
+describe("§5e integration — job new → job run → job extract", () => {
+  it(
+    "extracts a clean branch: clobber refused, intake-first ordering, non-harness picks only, harvest to stdout, job consumed",
+    async () => {
+      const repo = await makeRepo();
+      const tpl = await mkdtemp(join(tmpdir(), "flume-job-extract-tpl-"));
+      try {
+        // The intake file predates the job — plan-side ticks append to it.
+        await writeFile(join(repo.dir, "INTAKE.md"), "intake v1\n");
+        await exec("git", ["add", "INTAKE.md"], { cwd: repo.dir });
+        await exec("git", ["commit", "-q", "-m", "seed intake"], {
+          cwd: repo.dir,
+        });
+
+        await writeFile(join(tpl, "chain.ts"), WORK_CHAIN_SRC, "utf8");
+        await writeFile(join(tpl, "prompt.md"), "derive prompt\n", "utf8");
+
+        const created = await runCli(repo.dir, [
+          "job",
+          "new",
+          "ext",
+          "--template",
+          tpl,
+        ]);
+        expect(created.code).toBe(0);
+
+        // §5b: the run does the job's real work — one tick, one commit.
+        const run = await runCli(repo.dir, ["job", "run", "ext", "--max", "5"]);
+        expect(run.code).toBe(0);
+        expect(run.out).toContain("hibernating after 1 tick(s)");
+
+        // Plan-side artifacts, committed the way ticks commit them: an
+        // intake-only append, then a harness-only friction/questions note.
+        const jobDir = join(repo.dir, ".flume", "jobs", "ext");
+        await writeFile(
+          join(repo.dir, "INTAKE.md"),
+          "intake v1\nintake v2 (plan-side append)\n",
+        );
+        await exec("git", ["add", "INTAKE.md"], { cwd: repo.dir });
+        await exec("git", ["commit", "-q", "-m", "plan: append intake"], {
+          cwd: repo.dir,
+        });
+        await writeFile(join(jobDir, "friction.md"), "friction: template gap\n");
+        await mkdir(join(jobDir, "plan"), { recursive: true });
+        await writeFile(
+          join(jobDir, "plan", "open-questions.md"),
+          "q: naming?\n",
+        );
+        await exec("git", ["add", ".flume/jobs/ext"], { cwd: repo.dir });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "chore(flume): friction + questions"],
+          { cwd: repo.dir },
+        );
+
+        // Base moves on while the job runs — extract forks off its TIP.
+        await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+        await writeFile(join(repo.dir, "mainline.txt"), "main advanced\n");
+        await exec("git", ["add", "mainline.txt"], { cwd: repo.dir });
+        await exec("git", ["commit", "-q", "-m", "main: advance"], {
+          cwd: repo.dir,
+        });
+
+        // Clobber refusal (§5e-1): a branch named like the job blocks it.
+        await exec("git", ["branch", "ext"], { cwd: repo.dir });
+        const refused = await runCli(repo.dir, [
+          "job", "extract", "ext", "--onto", "main", "--intake", "INTAKE.md",
+        ]);
+        expect(refused.code).toBe(1);
+        expect(refused.out).toContain("already exists");
+        expect(await gitOut(repo.dir, ["branch", "--list", "job/ext"])).toContain(
+          "job/ext",
+        );
+        // HEAD is on main here — the harness lives on the job branch.
+        expect(
+          await gitOut(repo.dir, [
+            "ls-tree", "--name-only", "job/ext", "--", ".flume/jobs/ext/.gitignore",
+          ]),
+        ).toContain(".gitignore");
+        await exec("git", ["branch", "-D", "ext"], { cwd: repo.dir });
+
+        const extracted = await runCli(repo.dir, [
+          "job", "extract", "ext", "--onto", "main", "--intake", "INTAKE.md",
+        ]);
+        expect(extracted.code).toBe(0);
+
+        // §5e-4: harvest off the job branch to stdout, for operator routing.
+        expect(extracted.out).toContain("--- job/ext:friction.md ---");
+        expect(extracted.out).toContain("friction: template gap");
+        expect(extracted.out).toContain(
+          "--- job/ext:plan/open-questions.md ---",
+        );
+        expect(extracted.out).toContain("q: naming?");
+
+        // Intake commit first, then the tick's work commit — the harness
+        // commits (seed, friction) and the intake-only append never appear.
+        const subjects = (
+          await gitOut(repo.dir, [
+            "log", "--reverse", "--format=%s", "main..ext",
+          ])
+        ).split("\n");
+        expect(subjects).toEqual([
+          "intake: pass-through from job/ext",
+          "work: derive output",
+        ]);
+
+        // The clean branch carries the work and the synced intake, no
+        // harness anywhere; HEAD ends on it.
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "ext",
+        );
+        expect(await readFile(join(repo.dir, "derived.txt"), "utf8")).toBe(
+          "derived by the job\n",
+        );
+        expect(await readFile(join(repo.dir, "INTAKE.md"), "utf8")).toBe(
+          "intake v1\nintake v2 (plan-side append)\n",
+        );
+        expect(await gitOut(repo.dir, ["ls-files", "--", ".flume"])).toBe("");
+
+        // §5e-5: extract consumed the job — branch and dir both gone.
+        expect(await gitOut(repo.dir, ["branch", "--list", "job/ext"])).toBe("");
+        expect(existsSync(jobDir)).toBe(false);
+      } finally {
+        await repo.cleanup();
+        await rm(tpl, { recursive: true, force: true });
+      }
+    },
+    240_000,
+  );
+
+  it(
+    "cherry-pick conflict unwinds via the CLI: exit 1, retryable, job branch + dir intact, partial branch gone",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        const opts = { cwd: repo.dir };
+        await writeFile(join(repo.dir, "conflict.txt"), "base\n");
+        await exec("git", ["add", "conflict.txt"], opts);
+        await exec("git", ["commit", "-q", "-m", "seed conflict"], opts);
+
+        const created = await runCli(repo.dir, ["job", "new", "cfl"]);
+        expect(created.code).toBe(0);
+        await writeFile(join(repo.dir, "conflict.txt"), "job change\n");
+        await exec("git", ["add", "conflict.txt"], opts);
+        await exec("git", ["commit", "-q", "-m", "job: conflicting"], opts);
+
+        await exec("git", ["checkout", "-q", "main"], opts);
+        await writeFile(join(repo.dir, "conflict.txt"), "main change\n");
+        await exec("git", ["add", "conflict.txt"], opts);
+        await exec("git", ["commit", "-q", "-m", "main: conflicting"], opts);
+        await exec("git", ["checkout", "-q", "job/cfl"], opts);
+
+        const r = await runCli(repo.dir, [
+          "job", "extract", "cfl", "--onto", "main",
+        ]);
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("retryable");
+
+        // §5e-3: nothing lost — job branch checked out and intact, partial
+        // branch deleted, no cherry-pick in flight, tree clean.
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "job/cfl",
+        );
+        expect(await gitOut(repo.dir, ["branch", "--list", "cfl"])).toBe("");
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "cfl", ".gitignore")),
+        ).toBe(true);
+        expect(await readFile(join(repo.dir, "conflict.txt"), "utf8")).toBe(
+          "job change\n",
+        );
+        expect(existsSync(join(repo.dir, ".git", "CHERRY_PICK_HEAD"))).toBe(
+          false,
+        );
+        expect(await gitOut(repo.dir, ["status", "--porcelain"])).toBe("");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    120_000,
   );
 });

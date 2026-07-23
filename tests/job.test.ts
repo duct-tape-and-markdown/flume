@@ -9,7 +9,15 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +27,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ensureRuntimeIgnores,
+  jobExtract,
   jobNew,
   jobRm,
   jobRun,
@@ -80,6 +89,9 @@ async function makeRepo(): Promise<{
   await exec("git", ["config", "user.email", "test@example.com"], opts);
   await exec("git", ["config", "user.name", "Test User"], opts);
   await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact content assertions (intake sync, unwind restore) — keep the
+  // host's autocrlf from rewriting checkouts.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
   await writeFile(join(dir, "README.md"), "seed\n");
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
@@ -864,6 +876,293 @@ describe("jobStatus — §5d enumeration units", () => {
     },
     120_000,
   );
+});
+
+// ---------- v0.5 §5e — `flume job extract` selection/refusal/unwind units ----------
+
+/**
+ * Extract scenario: INTAKE.md seeded on main; job "x" carrying a
+ * non-harness work commit, an intake-only plan-side append, and a
+ * harness-only friction/open-questions commit; main advanced past the fork
+ * afterward. Ends with job/x checked out.
+ */
+async function makeExtractScenario(dir: string): Promise<void> {
+  const opts = { cwd: dir };
+  await writeFile(join(dir, "INTAKE.md"), "intake v1\n");
+  await exec("git", ["add", "INTAKE.md"], opts);
+  await exec("git", ["commit", "-q", "-m", "seed intake"], opts);
+
+  await jobNew({ repoRoot: dir, name: "x", log: () => {} });
+  const jobDir = join(dir, ".flume", "jobs", "x");
+
+  await writeFile(join(dir, "work.txt"), "derived\n");
+  await exec("git", ["add", "work.txt"], opts);
+  await exec("git", ["commit", "-q", "-m", "job: add work"], opts);
+
+  await appendFile(join(dir, "INTAKE.md"), "intake v2 (plan-side append)\n");
+  await exec("git", ["add", "INTAKE.md"], opts);
+  await exec("git", ["commit", "-q", "-m", "plan: append intake"], opts);
+
+  await writeFile(join(jobDir, "friction.md"), "friction: template gap\n");
+  await mkdir(join(jobDir, "plan"), { recursive: true });
+  await writeFile(join(jobDir, "plan", "open-questions.md"), "q: naming?\n");
+  await exec("git", ["add", ".flume/jobs/x"], opts);
+  await exec(
+    "git",
+    ["commit", "-q", "-m", "chore(flume): friction + questions"],
+    opts,
+  );
+
+  await exec("git", ["checkout", "-q", "main"], opts);
+  await writeFile(join(dir, "mainline.txt"), "main advanced\n");
+  await exec("git", ["add", "mainline.txt"], opts);
+  await exec("git", ["commit", "-q", "-m", "main: advance"], opts);
+  await exec("git", ["checkout", "-q", "job/x"], opts);
+}
+
+describe("jobExtract — §5e selection/refusal/unwind units", () => {
+  it("forks off --onto, ships intake first, cherry-picks only non-harness commits oldest-first, harvests, and consumes the job", async () => {
+    const repo = await makeRepo();
+    try {
+      await makeExtractScenario(repo.dir);
+      const result = await jobExtract({
+        repoRoot: repo.dir,
+        name: "x",
+        onto: "main",
+        intake: ["INTAKE.md"],
+        log: () => {},
+      });
+
+      // On the clean branch, forked off main's ADVANCED tip (throws if
+      // main is not an ancestor of x).
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "x",
+      );
+      await exec("git", ["merge-base", "--is-ancestor", "main", "x"], {
+        cwd: repo.dir,
+      });
+
+      // Intake commit first, then the work commit — the harness-only and
+      // intake-only job commits were never picked.
+      const subjects = (
+        await gitOut(repo.dir, ["log", "--reverse", "--format=%s", "main..x"])
+      ).split("\n");
+      expect(subjects).toEqual([
+        "intake: pass-through from job/x",
+        "job: add work",
+      ]);
+      expect(result.picked).toBe(1);
+      expect(result.intakeCommitted).toBe(true);
+
+      // Intake synced to the job tip; work present; no harness tracked.
+      expect(await readFile(join(repo.dir, "INTAKE.md"), "utf8")).toBe(
+        "intake v1\nintake v2 (plan-side append)\n",
+      );
+      expect(await readFile(join(repo.dir, "work.txt"), "utf8")).toBe(
+        "derived\n",
+      );
+      expect(await gitOut(repo.dir, ["ls-files", "--", ".flume"])).toBe("");
+
+      // Harvest came off the branch (git show), not the worktree.
+      expect(result.harvest).toEqual([
+        { path: "friction.md", content: "friction: template gap\n" },
+        { path: "plan/open-questions.md", content: "q: naming?\n" },
+      ]);
+
+      // Consumed: job branch + dir gone; tree clean.
+      expect(await gitOut(repo.dir, ["branch", "--list", "job/x"])).toBe("");
+      expect(existsSync(join(repo.dir, ".flume", "jobs", "x"))).toBe(false);
+      expect(await gitOut(repo.dir, ["status", "--porcelain"])).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("with no intake and no harvest files: no intake commit, null harvest entries", async () => {
+    const repo = await makeRepo();
+    try {
+      await jobNew({ repoRoot: repo.dir, name: "y", log: () => {} });
+      await writeFile(join(repo.dir, "work.txt"), "derived\n");
+      await exec("git", ["add", "work.txt"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "job: add work"], {
+        cwd: repo.dir,
+      });
+
+      const result = await jobExtract({
+        repoRoot: repo.dir,
+        name: "y",
+        onto: "main",
+        log: () => {},
+      });
+      expect(result.picked).toBe(1);
+      expect(result.intakeCommitted).toBe(false);
+      expect(result.harvest).toEqual([
+        { path: "friction.md", content: null },
+        { path: "plan/open-questions.md", content: null },
+      ]);
+      const subjects = (
+        await gitOut(repo.dir, ["log", "--reverse", "--format=%s", "main..y"])
+      ).split("\n");
+      expect(subjects).toEqual(["job: add work"]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("refuses clobber, dirty tracked tree, and a live loop — each leaving the job untouched", async () => {
+    const repo = await makeRepo();
+    try {
+      await makeExtractScenario(repo.dir);
+      const jobTip = await gitOut(repo.dir, ["rev-parse", "job/x"]);
+
+      // Clobber (§5e-1): a pre-existing branch named like the job.
+      await exec("git", ["branch", "x"], { cwd: repo.dir });
+      const cleanTip = await gitOut(repo.dir, ["rev-parse", "x"]);
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "x", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/already exists/);
+      expect(await gitOut(repo.dir, ["rev-parse", "x"])).toBe(cleanTip);
+      await exec("git", ["branch", "-D", "x"], { cwd: repo.dir });
+
+      // Dirty tracked tree.
+      await appendFile(join(repo.dir, "README.md"), "in-flight\n");
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "x", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/uncommitted tracked changes/);
+      await exec("git", ["checkout", "-q", "--", "README.md"], {
+        cwd: repo.dir,
+      });
+
+      // Live loop (mirrors §5c-1) — the vitest worker plays the loop.
+      const pidPath = join(repo.dir, ".flume", "jobs", "x", "loop.pid");
+      await writeFile(pidPath, String(process.pid), "utf8");
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "x", onto: "main", log: () => {} }),
+      ).rejects.toThrow(new RegExp(`live loop \\(pid ${process.pid}\\)`));
+      await rm(pidPath);
+
+      // Nothing was consumed by any refusal: job branch at the same tip,
+      // harness intact, HEAD unmoved, no clean branch left behind.
+      expect(await gitOut(repo.dir, ["rev-parse", "job/x"])).toBe(jobTip);
+      expect(
+        existsSync(join(repo.dir, ".flume", "jobs", "x", ".gitignore")),
+      ).toBe(true);
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "job/x",
+      );
+      expect(await gitOut(repo.dir, ["branch", "--list", "x"])).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("rejects a bad name, a missing job, and an unresolvable --onto as JobUsageError", async () => {
+    await expect(
+      jobExtract({ repoRoot: "irrelevant", name: "a/b", onto: "main", log: () => {} }),
+    ).rejects.toBeInstanceOf(JobUsageError);
+
+    const repo = await makeRepo();
+    try {
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "ghost", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/no job 'ghost'/);
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "ghost", onto: "main", log: () => {} }),
+      ).rejects.toBeInstanceOf(JobUsageError);
+
+      await jobNew({ repoRoot: repo.dir, name: "z", log: () => {} });
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "z", onto: "no-such-ref", log: () => {} }),
+      ).rejects.toThrow(/--onto 'no-such-ref' does not resolve/);
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "z", onto: "no-such-ref", log: () => {} }),
+      ).rejects.toBeInstanceOf(JobUsageError);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("cherry-pick conflict aborts, unwinds to the job branch, and deletes the partial branch — job intact, retryable", async () => {
+    const repo = await makeRepo();
+    try {
+      const opts = { cwd: repo.dir };
+      await writeFile(join(repo.dir, "conflict.txt"), "base\n");
+      await exec("git", ["add", "conflict.txt"], opts);
+      await exec("git", ["commit", "-q", "-m", "seed conflict"], opts);
+
+      await jobNew({ repoRoot: repo.dir, name: "u", log: () => {} });
+      // A good pick before the conflicting one — the unwind must roll back
+      // already-applied picks too.
+      await writeFile(join(repo.dir, "good.txt"), "good\n");
+      await exec("git", ["add", "good.txt"], opts);
+      await exec("git", ["commit", "-q", "-m", "job: good"], opts);
+      await writeFile(join(repo.dir, "conflict.txt"), "job change\n");
+      await exec("git", ["add", "conflict.txt"], opts);
+      await exec("git", ["commit", "-q", "-m", "job: conflicting"], opts);
+      const jobTip = await gitOut(repo.dir, ["rev-parse", "job/u"]);
+
+      await exec("git", ["checkout", "-q", "main"], opts);
+      await writeFile(join(repo.dir, "conflict.txt"), "main change\n");
+      await exec("git", ["add", "conflict.txt"], opts);
+      await exec("git", ["commit", "-q", "-m", "main: conflicting"], opts);
+      await exec("git", ["checkout", "-q", "job/u"], opts);
+
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "u", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/retryable/);
+
+      // Unwound: back on the job branch at the same tip, partial branch
+      // gone, no cherry-pick in flight, tree clean and job-shaped.
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "job/u",
+      );
+      expect(await gitOut(repo.dir, ["rev-parse", "job/u"])).toBe(jobTip);
+      expect(await gitOut(repo.dir, ["branch", "--list", "u"])).toBe("");
+      expect(existsSync(join(repo.dir, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
+      expect(await readFile(join(repo.dir, "conflict.txt"), "utf8")).toBe(
+        "job change\n",
+      );
+      expect(
+        existsSync(join(repo.dir, ".flume", "jobs", "u", ".gitignore")),
+      ).toBe(true);
+      expect(await gitOut(repo.dir, ["status", "--porcelain"])).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("real CLI: missing name, missing --onto, dangling flag values, and a ghost job exit 2", async () => {
+    const repo = await makeRepo();
+    try {
+      const usage =
+        "usage: flume job extract <name> --onto <base> [--intake <path>]...";
+
+      const noName = await runCli(repo.dir, ["job", "extract"]);
+      expect(noName.code).toBe(2);
+      expect(noName.out).toContain(usage);
+
+      // --onto is required, never guessed (§5e).
+      const noOnto = await runCli(repo.dir, ["job", "extract", "x"]);
+      expect(noOnto.code).toBe(2);
+      expect(noOnto.out).toContain(usage);
+
+      const danglingOnto = await runCli(repo.dir, ["job", "extract", "x", "--onto"]);
+      expect(danglingOnto.code).toBe(2);
+
+      const danglingIntake = await runCli(repo.dir, [
+        "job", "extract", "x", "--onto", "main", "--intake",
+      ]);
+      expect(danglingIntake.code).toBe(2);
+
+      const ghost = await runCli(repo.dir, [
+        "job", "extract", "ghost", "--onto", "main",
+      ]);
+      expect(ghost.code).toBe(2);
+      expect(ghost.out).toContain("no job 'ghost'");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
 });
 
 // win32 lane (v0.4 §6): the junction + longpaths paths only exist on

@@ -294,6 +294,24 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
   log(`[flume] woke ${entry.name} (entry phase)`);
 }
 
+/**
+ * The pid recorded in `<jobDir>/loop.pid`, when it names a live process —
+ * `null` for no pidfile, an unparsable one, or a dead/not-ours pid (stale;
+ * callers reclaim silently). Same liveness probe as the loop lock.
+ */
+async function liveLoopPid(jobDir: string): Promise<number | null> {
+  const pidPath = join(jobDir, "loop.pid");
+  if (!existsSync(pidPath)) return null;
+  const pid = Number((await readFile(pidPath, "utf8")).trim());
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
 export interface JobRmOptions {
   repoRoot: string;
   name: string;
@@ -333,24 +351,11 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   // under a running supervisor would strand its ticks. Checked before the
   // checkout below: a live loop implies the branch is HEAD somewhere, and
   // switching under it is exactly the race this refusal exists to prevent.
-  // Same liveness probe as the loop lock: a dead (or not-ours) pid is stale.
-  const pidPath = join(jobDir, "loop.pid");
-  if (existsSync(pidPath)) {
-    const pid = Number((await readFile(pidPath, "utf8")).trim());
-    let alive = false;
-    if (Number.isFinite(pid) && pid > 0) {
-      try {
-        process.kill(pid, 0);
-        alive = true;
-      } catch {
-        // dead or not ours — stale, reclaim silently
-      }
-    }
-    if (alive) {
-      throw new Error(
-        `job '${name}' has a live loop (pid ${pid}); stop it before \`flume job rm\``,
-      );
-    }
+  const livePid = await liveLoopPid(jobDir);
+  if (livePid !== null) {
+    throw new Error(
+      `job '${name}' has a live loop (pid ${livePid}); stop it before \`flume job rm\``,
+    );
   }
 
   // 2. Cleanup commit on the job branch (checkout is a verb act, §2). A
@@ -434,4 +439,224 @@ export function jobStatus(repoRoot: string): JobStatus[] {
       }
       return { name, awake, pending };
     });
+}
+
+/** Files harvested off the job branch tip at extract (§5e-4), job-dir-relative. */
+export const HARVEST_PATHS = ["friction.md", "plan/open-questions.md"] as const;
+
+/** Blob content at `<ref>:<path>`, raw and untrimmed; `null` when absent. */
+async function gitShowBlob(cwd: string, spec: string): Promise<string | null> {
+  try {
+    const { stdout } = await exec("git", ["show", spec], {
+      cwd,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return stdout;
+  } catch {
+    return null;
+  }
+}
+
+export interface JobExtractOptions {
+  repoRoot: string;
+  name: string;
+  /** Base the clean branch forks from (§5e: required, never guessed). */
+  onto: string;
+  /** Intake pass-through files, repo-relative (§5e-2). */
+  intake?: string[];
+  log?: (line: string) => void;
+}
+
+/** What {@link jobExtract} hands back for operator routing. */
+export interface JobExtractResult {
+  /** Cherry-picked commit count (the intake commit is not one of them). */
+  picked: number;
+  /** True when the intake pass-through carried a real delta (one commit). */
+  intakeCommitted: boolean;
+  /**
+   * Harvested prose off the job branch tip (git show, not worktree —
+   * §5e-4): {@link HARVEST_PATHS} entry → content, `null` when absent.
+   */
+  harvest: { path: string; content: string | null }[];
+}
+
+/**
+ * `flume job extract <name> --onto <base> [--intake <path>]...` (v0.5 §5e) —
+ * the clean-history ending, for deliverables where harness commits must
+ * never appear and squash rights are absent. Fork `<name>` off `--onto`,
+ * ship the intake pass-through as one commit, cherry-pick the non-harness
+ * commits oldest-first, harvest the operator prose, then consume the job:
+ * branch `job/<name>` and the harness dir both go.
+ *
+ * On any failure after the fork the partial branch is unwound (§5e-3):
+ * in-flight pick aborted, checkout back on `job/<name>`, partial branch
+ * deleted — extract is retryable, nothing lost.
+ *
+ * Throws {@link JobUsageError} on a bad name, a job whose branch does not
+ * exist, or an unresolvable `--onto` (exit 2 at the CLI); refusals over repo
+ * state (clobber, dirty tree, live loop) and git failures are operational
+ * errors (exit 1).
+ */
+export async function jobExtract(
+  opts: JobExtractOptions,
+): Promise<JobExtractResult> {
+  const { repoRoot, name, onto } = opts;
+  const log = opts.log ?? ((line: string) => console.log(line));
+  // Git pathspecs are forward-slash regardless of host.
+  const intake = (opts.intake ?? []).map((p) => p.replace(/\\/g, "/"));
+
+  const invalid = validateJobName(name);
+  if (invalid) throw new JobUsageError(invalid);
+  const jobBranch = `job/${name}`;
+  const relPosix = `.flume/jobs/${name}`;
+  const jobDir = join(repoRoot, ".flume", "jobs", name);
+
+  if (!(await branchExists(repoRoot, jobBranch))) {
+    throw new JobUsageError(
+      `no job '${name}': branch ${jobBranch} does not exist`,
+    );
+  }
+  try {
+    await git(repoRoot, ["rev-parse", "--verify", "--quiet", `${onto}^{commit}`]);
+  } catch {
+    throw new JobUsageError(`--onto '${onto}' does not resolve to a commit`);
+  }
+
+  // 1. No clobber (§5e-1): the clean branch is named by the job, and a
+  // pre-existing branch of that name is someone's work.
+  if (await branchExists(repoRoot, name)) {
+    throw new Error(
+      `branch '${name}' already exists; refusing to clobber — integrate or delete it, then retry \`flume job extract\``,
+    );
+  }
+
+  // Extract rewrites the checkout (fork, cherry-pick, unwind): tracked
+  // modifications in flight would ride across branches or torpedo the
+  // unwind, so refuse up front. Untracked files pass through harmlessly.
+  const dirtyTracked = await git(repoRoot, [
+    "status",
+    "--porcelain",
+    "--untracked-files=no",
+  ]);
+  if (dirtyTracked.length > 0) {
+    throw new Error(
+      `working tree has uncommitted tracked changes; commit or stash before \`flume job extract\``,
+    );
+  }
+
+  // Mirror §5c-1: consuming a job out from under its live loop strands the
+  // supervisor mid-tick — extract is strictly more destructive than rm.
+  const livePid = await liveLoopPid(jobDir);
+  if (livePid !== null) {
+    throw new Error(
+      `job '${name}' has a live loop (pid ${livePid}); stop it before \`flume job extract\``,
+    );
+  }
+
+  // 2. Fork off --onto.
+  await git(repoRoot, ["checkout", "-q", "-b", name, onto]);
+  log(`[flume] forked '${name}' off ${onto}`);
+
+  let intakeCommitted = false;
+  let picked = 0;
+  try {
+    // Intake pass-through first (§5e-2): each file synced byte-exact to its
+    // job-branch-tip state, the whole delta shipped as ONE commit before any
+    // cherry-pick — so a pick that also grew an intake file (plan-side
+    // appends) lands against final content instead of conflicting.
+    for (const p of intake) {
+      let atTip = true;
+      try {
+        await git(repoRoot, ["cat-file", "-e", `${jobBranch}:${p}`]);
+      } catch {
+        atTip = false;
+      }
+      if (atTip) {
+        // Stages worktree AND index from the tip — no separate add needed.
+        await git(repoRoot, ["checkout", "-q", jobBranch, "--", p]);
+      } else {
+        // Absent at the tip: sync means the fork must not carry it either.
+        await git(repoRoot, ["rm", "-q", "--ignore-unmatch", "--", p]);
+      }
+    }
+    if (intake.length > 0) {
+      const staged = await git(repoRoot, [
+        "status",
+        "--porcelain",
+        "--",
+        ...intake,
+      ]);
+      if (staged.length > 0) {
+        await git(repoRoot, [
+          "commit",
+          "-q",
+          "-m",
+          `intake: pass-through from ${jobBranch}`,
+          "--",
+          ...intake,
+        ]);
+        intakeCommitted = true;
+        log(`[flume] intake pass-through: ${intake.join(", ")} (1 commit)`);
+      } else {
+        log(`[flume] intake already in sync with ${jobBranch}; no commit`);
+      }
+    }
+
+    // Oldest-first selection (§5e-2): commits unique to the job branch that
+    // touch any path outside the harness dir and outside the intake set.
+    // Exclude-only pathspecs match everything else; a mixed commit (harness
+    // + code) is selected and picked whole.
+    const excludes = [relPosix, ...intake].map((p) => `:(exclude)${p}`);
+    const listed = await git(repoRoot, [
+      "rev-list",
+      "--reverse",
+      `${onto}..${jobBranch}`,
+      "--",
+      ...excludes,
+    ]);
+    const picks = listed.length > 0 ? listed.split("\n") : [];
+    for (const sha of picks) {
+      await git(repoRoot, ["cherry-pick", sha]);
+      picked += 1;
+    }
+    log(`[flume] cherry-picked ${picked} commit(s) from ${jobBranch}`);
+  } catch (err) {
+    // 3. Unwind (§5e-3): abort any in-flight pick, return to the job
+    // branch, drop the partial clean branch. The job is untouched.
+    try {
+      await git(repoRoot, ["cherry-pick", "--abort"]);
+    } catch {
+      // no cherry-pick in progress — the failure was elsewhere
+    }
+    await git(repoRoot, ["checkout", "-q", jobBranch]);
+    await git(repoRoot, ["branch", "-q", "-D", name]);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `extract of '${name}' unwound to ${jobBranch} (partial branch deleted; the job is intact — extract is retryable): ${msg}`,
+    );
+  }
+
+  // 4. Harvest off the job branch (git show, not worktree — the working
+  // tree is on the clean branch by now), before the branch is consumed.
+  const harvest: { path: string; content: string | null }[] = [];
+  for (const p of HARVEST_PATHS) {
+    harvest.push({
+      path: p,
+      content: await gitShowBlob(repoRoot, `${jobBranch}:${relPosix}/${p}`),
+    });
+  }
+
+  // 5. Extract consumes the job (§5e-5). The harness dir now holds only
+  // ignored runtime remnants — the checkout off the job branch removed the
+  // tracked files; fs.rm unlinks the @dtmd/flume junction without following
+  // it. Prune afterward for the same reason rm does (§5c-4): the dir held
+  // the job's fanout worktrees.
+  await git(repoRoot, ["branch", "-q", "-D", jobBranch]);
+  await rm(jobDir, { recursive: true, force: true });
+  await git(repoRoot, ["worktree", "prune"]);
+  log(
+    `[flume] consumed job '${name}': branch ${jobBranch} and ${relPosix} removed; HEAD on '${name}'`,
+  );
+
+  return { picked, intakeCommitted, harvest };
 }
