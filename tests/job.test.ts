@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import {
   ensureRuntimeIgnores,
   jobNew,
+  jobRm,
   jobRun,
   JobUsageError,
   RUNTIME_IGNORES,
@@ -578,6 +579,160 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
       expect(ghost.code).toBe(2);
       expect(ghost.out).toContain("branch job/ghost does not exist");
       expect(ghost.out).toContain("flume job new ghost");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+});
+
+// ---------- v0.5 §5c — `flume job rm` refusal + removal units ----------
+
+describe("jobRm — §5c refusal + removal units", () => {
+  it("refuses on a live loop.pid, touching neither dir, branch, nor history", async () => {
+    const repo = await makeRepo();
+    try {
+      await jobNew({ repoRoot: repo.dir, name: "rm1", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "rm1");
+      // The vitest worker plays the live loop — its pid is alive for the
+      // duration of the call.
+      await writeFile(join(jobDir, "loop.pid"), String(process.pid), "utf8");
+      const before = await gitOut(repo.dir, ["rev-list", "--count", "HEAD"]);
+
+      await expect(
+        jobRm({ repoRoot: repo.dir, name: "rm1", log: () => {} }),
+      ).rejects.toThrow(new RegExp(`live loop \\(pid ${process.pid}\\)`));
+
+      expect(existsSync(join(jobDir, ".gitignore"))).toBe(true);
+      expect(await readFile(join(jobDir, "loop.pid"), "utf8")).toBe(
+        String(process.pid),
+      );
+      expect(await gitOut(repo.dir, ["rev-list", "--count", "HEAD"])).toBe(
+        before,
+      );
+      expect(await gitOut(repo.dir, ["branch", "--list", "job/rm1"])).toContain(
+        "job/rm1",
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("removes tracked harness + untracked runtime, commits cleanup on job/<name>; branch, history, and link target survive; stale pid reclaimed", async () => {
+    const repo = await makeRepo();
+    try {
+      await jobNew({ repoRoot: repo.dir, name: "rm2", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "rm2");
+
+      // Runtime remnants a run leaves behind, plus a stale (dead-pid) lock.
+      await mkdir(join(jobDir, "awake"), { recursive: true });
+      await writeFile(join(jobDir, "awake", "build"), "");
+      await mkdir(join(jobDir, "prior-attempts"), { recursive: true });
+      await writeFile(join(jobDir, "prior-attempts", "x.md"), "attempt");
+      await writeFile(join(jobDir, "loop.pid"), "999999999", "utf8");
+
+      // rm from off-branch: the cleanup commit must land on job/rm2.
+      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+      const mainBefore = await gitOut(repo.dir, ["rev-parse", "main"]);
+
+      const lines: string[] = [];
+      await jobRm({
+        repoRoot: repo.dir,
+        name: "rm2",
+        log: (l: string) => lines.push(l),
+      });
+
+      // Dir gone — junction unlinked, not followed: the package root the
+      // link resolved to is intact.
+      expect(existsSync(jobDir)).toBe(false);
+      expect(existsSync(join(PACKAGE_ROOT, "package.json"))).toBe(true);
+
+      // Cleanup commit at the tip of job/rm2; the seed commit (history)
+      // beneath it; main untouched.
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "job/rm2",
+      );
+      const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
+      expect(subjects.split("\n")[0]).toBe("chore(flume): rm job rm2");
+      expect(subjects).toContain("chore(flume): seed job rm2");
+      expect(await gitOut(repo.dir, ["rev-parse", "main"])).toBe(mainBefore);
+      expect(lines.join("\n")).toContain("cleanup commit on job/rm2");
+      expect(lines.join("\n")).toContain("branch job/rm2 survives");
+
+      // Nothing tracked under the job dir; tree clean.
+      expect(
+        await gitOut(repo.dir, ["ls-files", "--", ".flume/jobs/rm2"]),
+      ).toBe("");
+      expect(await gitOut(repo.dir, ["status", "--porcelain"])).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("leaves a pre-staged unrelated file staged and out of the cleanup commit", async () => {
+    const repo = await makeRepo();
+    try {
+      await jobNew({ repoRoot: repo.dir, name: "rm3", log: () => {} });
+      await writeFile(join(repo.dir, "foreign.txt"), "in-flight edit\n");
+      await exec("git", ["add", "foreign.txt"], { cwd: repo.dir });
+
+      await jobRm({ repoRoot: repo.dir, name: "rm3", log: () => {} });
+
+      const committed = await gitOut(repo.dir, [
+        "show",
+        "--name-only",
+        "--format=",
+        "HEAD",
+      ]);
+      expect(committed).toBe(".flume/jobs/rm3/.gitignore");
+      expect(await gitOut(repo.dir, ["diff", "--cached", "--name-only"])).toBe(
+        "foreign.txt",
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("rejects a bad name and a name that names no job as JobUsageError, touching nothing", async () => {
+    await expect(
+      jobRm({ repoRoot: "irrelevant", name: "a/b", log: () => {} }),
+    ).rejects.toBeInstanceOf(JobUsageError);
+
+    const repo = await makeRepo();
+    try {
+      await expect(
+        jobRm({ repoRoot: repo.dir, name: "ghost", log: () => {} }),
+      ).rejects.toThrow(/no job 'ghost'/);
+      await expect(
+        jobRm({ repoRoot: repo.dir, name: "ghost", log: () => {} }),
+      ).rejects.toBeInstanceOf(JobUsageError);
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "main",
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("real CLI: missing <name> and nonexistent job exit 2; live pid exits 1", async () => {
+    const repo = await makeRepo();
+    try {
+      const noName = await runCli(repo.dir, ["job", "rm"]);
+      expect(noName.code).toBe(2);
+      expect(noName.out).toContain("usage: flume job rm <name>");
+
+      const ghost = await runCli(repo.dir, ["job", "rm", "ghost"]);
+      expect(ghost.code).toBe(2);
+      expect(ghost.out).toContain("no job 'ghost'");
+
+      await jobNew({ repoRoot: repo.dir, name: "rl", log: () => {} });
+      await writeFile(
+        join(repo.dir, ".flume", "jobs", "rl", "loop.pid"),
+        String(process.pid),
+        "utf8",
+      );
+      const live = await runCli(repo.dir, ["job", "rm", "rl"]);
+      expect(live.code).toBe(1);
+      expect(live.out).toContain(`live loop (pid ${process.pid})`);
     } finally {
       await repo.cleanup();
     }

@@ -98,3 +98,21 @@ Exits `0` on hibernation or when `--max` (default 50) is hit; `1` on git or harn
 flume job new docs-refresh --template ../templates/docs-effort
 flume job run docs-refresh --max 20
 ```
+
+## `flume job rm <name>`
+
+The discard ending: throw the harness away, keep the work. Four steps:
+
+1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
+2. **`git rm -r .flume/jobs/<name>` + cleanup commit on `job/<name>`.** The branch is checked out first if HEAD is elsewhere (it must be free — git refuses if a linked worktree holds it; run rm from inside that worktree instead). The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index.
+3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, the `node_modules/@dtmd/flume` link, pid files: the ignore entries kept them out of git, so `git rm` left them behind. The link is unlinked, never followed; its target is untouched.
+4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
+
+The job branch survives, cleanup commit at its tip. Integration (merge or squash into a base branch) and branch deletion are the operator's acts, never rm's.
+
+Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a live loop or a git/filesystem failure; `2` on usage errors (missing `<name>`, or a `<name>` that names neither a `job/<name>` branch nor a job dir).
+
+```sh
+flume job rm docs-refresh          # after integrating job/docs-refresh, or to discard
+git branch -D job/docs-refresh     # yours, once the history is merged or unwanted
+```

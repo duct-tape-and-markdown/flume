@@ -17,6 +17,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -290,4 +291,103 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
   }
   baton.wake(entry.name);
   log(`[flume] woke ${entry.name} (entry phase)`);
+}
+
+export interface JobRmOptions {
+  repoRoot: string;
+  name: string;
+  log?: (line: string) => void;
+}
+
+/**
+ * `flume job rm <name>` (v0.5 §5c) — the discard ending: throw the harness
+ * away, keep the work. Refuse while the job's `loop.pid` records a live pid;
+ * `git rm -r` the tracked harness plus a cleanup commit on `job/<name>`;
+ * remove untracked runtime remnants; `git worktree prune`. The job branch
+ * survives — integration (merge/squash) and branch deletion are the
+ * operator's acts, never rm's.
+ *
+ * Throws {@link JobUsageError} on a bad name or a name that names no job
+ * (exit 2 at the CLI); a live loop or git failure is an operational error
+ * (exit 1).
+ */
+export async function jobRm(opts: JobRmOptions): Promise<void> {
+  const { repoRoot, name } = opts;
+  const log = opts.log ?? ((line: string) => console.log(line));
+
+  const invalid = validateJobName(name);
+  if (invalid) throw new JobUsageError(invalid);
+
+  const branch = `job/${name}`;
+  const jobDir = join(repoRoot, ".flume", "jobs", name);
+  const rel = join(".flume", "jobs", name);
+  const haveBranch = await branchExists(repoRoot, branch);
+  if (!haveBranch && !existsSync(jobDir)) {
+    throw new JobUsageError(
+      `no job '${name}': neither branch ${branch} nor ${rel} exists`,
+    );
+  }
+
+  // 1. Refuse while the loop is live — removing the state root out from
+  // under a running supervisor would strand its ticks. Checked before the
+  // checkout below: a live loop implies the branch is HEAD somewhere, and
+  // switching under it is exactly the race this refusal exists to prevent.
+  // Same liveness probe as the loop lock: a dead (or not-ours) pid is stale.
+  const pidPath = join(jobDir, "loop.pid");
+  if (existsSync(pidPath)) {
+    const pid = Number((await readFile(pidPath, "utf8")).trim());
+    let alive = false;
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        alive = true;
+      } catch {
+        // dead or not ours — stale, reclaim silently
+      }
+    }
+    if (alive) {
+      throw new Error(
+        `job '${name}' has a live loop (pid ${pid}); stop it before \`flume job rm\``,
+      );
+    }
+  }
+
+  // 2. Cleanup commit on the job branch (checkout is a verb act, §2). A
+  // branchless dir is a half-created job — clean up on the current HEAD.
+  if (haveBranch) {
+    const head = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    if (head !== branch) {
+      await git(repoRoot, ["checkout", "-q", branch]);
+      log(`[flume] checked out ${branch}`);
+    }
+  }
+  const tracked = await git(repoRoot, ["ls-files", "--", rel]);
+  if (tracked.length > 0) {
+    await git(repoRoot, ["rm", "-q", "-r", "--", rel]);
+    // Pathspec-scoped, like the seed commit: anything the operator staged
+    // outside the job dir stays in the index instead of riding along.
+    await git(repoRoot, [
+      "commit",
+      "-q",
+      "-m",
+      `chore(flume): rm job ${name}`,
+      "--",
+      rel,
+    ]);
+    log(`[flume] cleanup commit on ${haveBranch ? branch : "HEAD"}`);
+  } else {
+    log(`[flume] no tracked harness under ${rel}; nothing to commit`);
+  }
+
+  // 3. Untracked runtime remnants (awake/, prior-attempts/, the @dtmd/flume
+  // link, pid files) — the ignore entries kept them out of git, so git rm
+  // left them behind. fs.rm unlinks the junction/symlink without following
+  // it; the link target is never touched.
+  await rm(jobDir, { recursive: true, force: true });
+
+  // 4. Stale metadata from the job's fanout worktrees.
+  await git(repoRoot, ["worktree", "prune"]);
+  log(
+    `[flume] removed ${rel}; branch ${branch} survives — merge or delete it when integrated`,
+  );
 }

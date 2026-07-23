@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import { currentBranch } from "./git.js";
-import { jobNew, jobRun, JobUsageError } from "./job.js";
+import { jobNew, jobRm, jobRun, JobUsageError } from "./job.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -143,6 +143,9 @@ Commands:
   job run <name> [--max N]
                       Check out job/<name>, wake the chain's entry phase from
                       hibernation, then loop under the job resolution.
+  job rm <name>       Remove the job's state root: git rm + cleanup commit on
+                      job/<name>, untracked runtime swept, worktrees pruned.
+                      Refuses on a live loop; the job branch survives.
 
 Options:
   --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
@@ -249,13 +252,24 @@ Verbs:
       run the standard loop under the job resolution. Lock, supervisor, and
       exit codes are identical to \`flume --job <name> loop [--max N]\`.
 
+  rm <name>
+      Refuse while the job's loop.pid records a live pid. Check out
+      job/<name> if HEAD is elsewhere, \`git rm -r .flume/jobs/<name>\` plus
+      a cleanup commit on the branch, remove untracked runtime remnants
+      (awake/, prior-attempts/, the @dtmd/flume link, pid files), and
+      \`git worktree prune\`. The job branch survives — integration
+      (merge/squash) and branch deletion are the operator's acts.
+
 Exit codes:
-  0   Success (run: hibernation reached, or --max ticks completed).
+  0   Success (run: hibernation reached, or --max ticks completed; rm on an
+      already-clean job is a no-op).
   1   Git or filesystem failure (checkout, link provisioning, commit); for
-      run also: harness error, or another live loop holds the job's lock.
+      run also: harness error, or another live loop holds the job's lock;
+      for rm also: the job's loop is still live.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
-      not a single path segment, --template pointing at no directory, or run
-      on a job whose branch does not exist.
+      not a single path segment, --template pointing at no directory, run
+      on a job whose branch does not exist, or rm on a <name> that names
+      neither a branch nor a job dir.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`).
 `;
@@ -271,15 +285,37 @@ function wantsHelp(args: readonly string[]): boolean {
 /**
  * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
  * loop under a job resolution and is rewritten in `main()` before dispatch
- * reaches here. The rest of the family (§5c–§5e) lands verb by verb.
+ * reaches here. The rest of the family (§5d–§5e) lands verb by verb.
  * Usage-shaped failures exit 2, operational failures 1 — mirroring the
- * JobUsageError split in `jobNew`.
+ * JobUsageError split in the job verbs.
  */
 async function runJobVerb(
   args: readonly string[],
   repoRoot: string,
 ): Promise<number> {
   const [verb, ...rest] = args;
+
+  if (verb === "rm") {
+    const name = rest[0];
+    if (!name || rest.length > 1) {
+      console.error("usage: flume job rm <name>");
+      return 2;
+    }
+    try {
+      await jobRm({ repoRoot, name });
+      return 0;
+    } catch (err) {
+      if (err instanceof JobUsageError) {
+        console.error(`[flume] ${err.message}`);
+        return 2;
+      }
+      console.error(
+        `[flume] job rm failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 1;
+    }
+  }
+
   if (verb !== "new") {
     console.error(
       verb ? `unknown job verb: ${verb}` : "usage: flume job <verb> [args]",

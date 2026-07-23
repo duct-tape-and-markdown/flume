@@ -218,3 +218,69 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
     120_000,
   );
 });
+
+describe("§5c integration — job new → job run (tick) → job rm", () => {
+  it(
+    "rm after a ticked run sweeps the dir and runtime remnants, commits cleanup on the job branch, and leaves branch + history intact; re-run is a no-op",
+    async () => {
+      const repo = await makeRepo();
+      const tpl = await mkdtemp(join(tmpdir(), "flume-job-rm-tpl-"));
+      try {
+        await writeFile(join(tpl, "chain.ts"), PROBE_CHAIN_SRC, "utf8");
+        await writeFile(join(tpl, "prompt.md"), "job run probe prompt\n", "utf8");
+
+        const created = await runCli(repo.dir, [
+          "job",
+          "new",
+          "rme",
+          "--template",
+          tpl,
+        ]);
+        expect(created.code).toBe(0);
+
+        // Run from the root checkout (stays on job/rme): one tick, then
+        // hibernation — leaving runtime remnants in the state root.
+        const run = await runCli(repo.dir, ["job", "run", "rme", "--max", "5"]);
+        expect(run.code).toBe(0);
+        const jobDir = join(repo.dir, ".flume", "jobs", "rme");
+        expect(existsSync(join(jobDir, "observed-env.json"))).toBe(true);
+
+        const removed = await runCli(repo.dir, ["job", "rm", "rme"]);
+        expect(removed.code).toBe(0);
+        expect(removed.out).toContain("cleanup commit on job/rme");
+        expect(removed.out).toContain("branch job/rme survives");
+
+        // State root gone — tracked harness and untracked remnants alike.
+        expect(existsSync(jobDir)).toBe(false);
+
+        // Branch survives with the full history: cleanup at the tip, the
+        // seed beneath it; the tree is clean.
+        expect(
+          await exec("git", ["branch", "--list", "job/rme"], {
+            cwd: repo.dir,
+          }).then((r) => r.stdout),
+        ).toContain("job/rme");
+        const { stdout: subjects } = await exec(
+          "git",
+          ["log", "--format=%s", "job/rme"],
+          { cwd: repo.dir },
+        );
+        expect(subjects.split("\n")[0]).toBe("chore(flume): rm job rme");
+        expect(subjects).toContain("chore(flume): seed job rme");
+        const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+          cwd: repo.dir,
+        });
+        expect(status.trim()).toBe("");
+
+        // Already-clean job: rm again is a harmless no-op, not an error.
+        const again = await runCli(repo.dir, ["job", "rm", "rme"]);
+        expect(again.code).toBe(0);
+        expect(again.out).toContain("nothing to commit");
+      } finally {
+        await repo.cleanup();
+        await rm(tpl, { recursive: true, force: true });
+      }
+    },
+    240_000,
+  );
+});
