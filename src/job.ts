@@ -312,6 +312,24 @@ async function liveLoopPid(jobDir: string): Promise<number | null> {
   }
 }
 
+/**
+ * Path of the worktree that has `branch` checked out, probed via
+ * `git worktree list --porcelain`; `null` when none holds it. Git permits at
+ * most one holder, so the first hit is the only one.
+ */
+async function worktreeHolding(
+  cwd: string,
+  branch: string,
+): Promise<string | null> {
+  const porcelain = await git(cwd, ["worktree", "list", "--porcelain"]);
+  let path: string | null = null;
+  for (const line of porcelain.split("\n")) {
+    if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
+    else if (line === `branch refs/heads/${branch}`) return path;
+  }
+  return null;
+}
+
 export interface JobRmOptions {
   repoRoot: string;
   name: string;
@@ -494,8 +512,8 @@ export interface JobExtractResult {
  *
  * Throws {@link JobUsageError} on a bad name, a job whose branch does not
  * exist, or an unresolvable `--onto` (exit 2 at the CLI); refusals over repo
- * state (clobber, dirty tree, live loop) and git failures are operational
- * errors (exit 1).
+ * state (clobber, dirty tree, live loop, `job/<name>` held by another
+ * worktree) and git failures are operational errors (exit 1).
  */
 export async function jobExtract(
   opts: JobExtractOptions,
@@ -551,6 +569,24 @@ export async function jobExtract(
     throw new Error(
       `job '${name}' has a live loop (pid ${livePid}); stop it before \`flume job extract\``,
     );
+  }
+
+  // §6-recipe jobs hit this routinely: the recipe worktree keeps job/<name>
+  // checked out after its loop stops, and `git branch -D` at consume (step
+  // 5) refuses branches checked out anywhere — it would fail AFTER the
+  // picks, losing the harvest and stranding the clean branch. Refuse up
+  // front instead. The current worktree is exempt: extract itself moves it
+  // off the branch, and git permits one holder — HEAD == job/<name> here
+  // means no other worktree has it.
+  const head = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (head !== jobBranch) {
+    const holder = await worktreeHolding(repoRoot, jobBranch);
+    if (holder !== null) {
+      throw new Error(
+        `branch ${jobBranch} is checked out in another worktree (${holder}); ` +
+          `\`git worktree remove\` it — or run extract from inside it — before \`flume job extract\``,
+      );
+    }
   }
 
   // 2. Fork off --onto.

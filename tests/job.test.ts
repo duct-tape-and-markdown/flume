@@ -1056,6 +1056,51 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     }
   }, 120_000);
 
+  it("refuses while another worktree holds job/<name> — job + tree untouched; from inside that worktree extract succeeds", async () => {
+    const repo = await makeRepo();
+    try {
+      await makeExtractScenario(repo.dir);
+      const jobTip = await gitOut(repo.dir, ["rev-parse", "job/x"]);
+
+      // The §6 recipe shape: step the root checkout off the branch so the
+      // linked worktree can hold it.
+      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+      const wt = join(repo.dir, ".git", "flume-jobs", "x");
+      await exec("git", ["worktree", "add", wt, "job/x"], { cwd: repo.dir });
+
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "x", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/checked out in another worktree/);
+
+      // Untouched: job branch at the same tip, HEAD unmoved, no clean
+      // branch forked, the holding worktree intact on the branch.
+      expect(await gitOut(repo.dir, ["rev-parse", "job/x"])).toBe(jobTip);
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "main",
+      );
+      expect(await gitOut(repo.dir, ["branch", "--list", "x"])).toBe("");
+      expect(await gitOut(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "job/x",
+      );
+
+      // From inside the holder the guard exempts the current worktree —
+      // extract runs to completion and consumes the job.
+      const result = await jobExtract({
+        repoRoot: wt,
+        name: "x",
+        onto: "main",
+        intake: ["INTAKE.md"],
+        log: () => {},
+      });
+      expect(result.picked).toBe(1);
+      expect(await gitOut(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("x");
+      expect(await gitOut(repo.dir, ["branch", "--list", "job/x"])).toBe("");
+      expect(existsSync(join(wt, ".flume", "jobs", "x"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
   it("rejects a bad name, a missing job, and an unresolvable --onto as JobUsageError", async () => {
     await expect(
       jobExtract({ repoRoot: "irrelevant", name: "a/b", onto: "main", log: () => {} }),

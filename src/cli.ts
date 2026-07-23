@@ -300,8 +300,9 @@ Exit codes:
   1   Git or filesystem failure (checkout, link provisioning, commit); for
       run also: harness error, or another live loop holds the job's lock;
       for rm also: the job's loop is still live; for extract also: branch
-      <name> already exists, uncommitted tracked changes, a live loop, or a
-      cherry-pick conflict (unwound to job/<name>; retryable).
+      <name> already exists, uncommitted tracked changes, a live loop,
+      job/<name> checked out in another worktree, or a cherry-pick conflict
+      (unwound to job/<name>; retryable).
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, --template pointing at no directory, run
       on a job whose branch does not exist, rm on a <name> that names

@@ -455,6 +455,79 @@ describe("§5e integration — job new → job run → job extract", () => {
   );
 
   it(
+    "recipe worktree (§6): extract from the root refuses while the worktree holds job/<name>; from inside it, extract succeeds",
+    async () => {
+      const repo = await makeRepo();
+      const tpl = await mkdtemp(join(tmpdir(), "flume-job-extract-wt-tpl-"));
+      try {
+        await writeFile(join(tpl, "chain.ts"), WORK_CHAIN_SRC, "utf8");
+        await writeFile(join(tpl, "prompt.md"), "derive prompt\n", "utf8");
+
+        const created = await runCli(repo.dir, [
+          "job",
+          "new",
+          "wrk",
+          "--template",
+          tpl,
+        ]);
+        expect(created.code).toBe(0);
+
+        // The §6 recipe verbatim: root steps off the branch, the linked
+        // worktree holds it, the loop runs inside the worktree.
+        await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+        const wt = join(repo.dir, ".git", "flume-jobs", "wrk");
+        await exec("git", ["worktree", "add", wt, "job/wrk"], {
+          cwd: repo.dir,
+        });
+        const run = await runCli(wt, ["job", "run", "wrk", "--max", "5"]);
+        expect(run.code).toBe(0);
+        expect(run.out).toContain("hibernating after 1 tick(s)");
+
+        // Loop stopped, worktree still holds job/wrk — extract from the
+        // root refuses up front (before this guard, `git branch -D` failed
+        // AFTER the picks: harvest lost, clean branch stranded).
+        const refused = await runCli(repo.dir, [
+          "job", "extract", "wrk", "--onto", "main",
+        ]);
+        expect(refused.code).toBe(1);
+        expect(refused.out).toContain("checked out in another worktree");
+        expect(await gitOut(repo.dir, ["branch", "--list", "job/wrk"])).toContain(
+          "job/wrk",
+        );
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
+        expect(await gitOut(repo.dir, ["branch", "--list", "wrk"])).toBe("");
+
+        // The refusal names the escape hatch this run takes: extract from
+        // inside the holding worktree.
+        const extracted = await runCli(wt, [
+          "job", "extract", "wrk", "--onto", "main",
+        ]);
+        expect(extracted.code).toBe(0);
+        const subjects = (
+          await gitOut(wt, ["log", "--reverse", "--format=%s", "main..wrk"])
+        ).split("\n");
+        expect(subjects).toEqual(["work: derive output"]);
+        expect(await gitOut(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "wrk",
+        );
+        expect(await readFile(join(wt, "derived.txt"), "utf8")).toBe(
+          "derived by the job\n",
+        );
+
+        // Consumed from the worktree, gone repo-wide.
+        expect(await gitOut(repo.dir, ["branch", "--list", "job/wrk"])).toBe("");
+        expect(existsSync(join(wt, ".flume", "jobs", "wrk"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+        await rm(tpl, { recursive: true, force: true });
+      }
+    },
+    240_000,
+  );
+
+  it(
     "cherry-pick conflict unwinds via the CLI: exit 1, retryable, job branch + dir intact, partial branch gone",
     async () => {
       const repo = await makeRepo();
