@@ -231,7 +231,11 @@ export interface JobRunOptions {
   name: string;
   /** Job state root — where the baton lives (resolved by the CLI, §3). */
   flumeDir: string;
-  /** Chain dir — `chain.ts` is loaded from here, after the checkout. */
+  /**
+   * Chain+prompts dir — repo-resident (v0.6 §2), never the job dir; arrives
+   * already resolved from the CLI (`<repoRoot>/.flume` or explicit
+   * `FLUME_CONFIG_DIR`).
+   */
   configDir: string;
   log?: (line: string) => void;
 }
@@ -274,8 +278,9 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
     log(`[flume] checked out ${branch}`);
   }
 
-  // 2. Wake the entry phase iff hibernating. The chain loads AFTER the
-  // checkout — chain.ts lives on the job branch.
+  // 2. Wake the entry phase iff hibernating. The chain is repo-resident
+  // (`<configDir>/chain.ts`, v0.6 §2) and loads AFTER the checkout — the
+  // checkout decides which branch's copy of the repo chain is on disk.
   const baton = new Baton(flumeDir);
   if (!baton.hibernating()) {
     log(

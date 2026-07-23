@@ -59,9 +59,10 @@ function readPackageVersion(): string {
 }
 
 /**
- * `--job <name>` given alongside an explicitly-set `FLUME_DIR` /
- * `FLUME_CONFIG_DIR`: two resolution authorities for one state root (v0.5 §3).
- * The CLI maps this to a usage error (exit 2).
+ * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two
+ * resolution authorities for one state root (v0.6 §3). The CLI maps this to
+ * a usage error (exit 2). An explicit `FLUME_CONFIG_DIR` composes instead —
+ * the authority was always over state, and config never belonged to the job.
  */
 export class JobResolutionConflictError extends Error {}
 
@@ -80,38 +81,39 @@ export class JobResolutionConflictError extends Error {}
  * resolved against the cwd. Independent of one another: a dock sets both to its
  * ephemeral dir to co-locate config and state.
  *
- * Job resolution (v0.5 §3): `jobFlag` (the global `--job <name>`) or a
- * pre-set `FLUME_JOB` retargets both defaults to
- * `<repoRoot>/.flume/jobs/<name>` and writes `FLUME_JOB` back alongside the
+ * Job resolution (v0.6 §3): `jobFlag` (the global `--job <name>`) or a
+ * pre-set `FLUME_JOB` retargets only the `flumeDir` default (state root →
+ * `<repoRoot>/.flume/jobs/<name>`) and writes `FLUME_JOB` back alongside the
  * dirs, so loop-spawned tick children inherit the whole resolution via env.
- * The flag is a strict authority — an explicitly-set dir env var beside it
- * throws {@link JobResolutionConflictError}. `FLUME_JOB` from env composes
- * with explicit dirs instead of conflicting: on the loop → tick boundary the
- * child sees all three written-back vars, and the dir vars *are* the parent's
- * canonical job resolution, so set dirs win and the job name rides along for
- * the branch guard and fanout namespacing.
+ * `configDir` never retargets — the chain is repo-resident (§2), so it stays
+ * `<repoRoot>/.flume` (or explicit `FLUME_CONFIG_DIR`, which composes: env
+ * owns the chain+prompts dir, job owns state). The flag is a strict authority
+ * over the state root — an explicitly-set `FLUME_DIR` beside it throws
+ * {@link JobResolutionConflictError}. `FLUME_JOB` from env composes with an
+ * explicit `FLUME_DIR` instead of conflicting: on the loop → tick boundary
+ * the child sees all three written-back vars, and the dir vars *are* the
+ * parent's canonical job resolution, so set dirs win and the job name rides
+ * along for the branch guard and fanout namespacing.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
   repoRoot: string,
   jobFlag?: string,
 ): { flumeDir: string; configDir: string; job: string | undefined } {
-  if (jobFlag && (env.FLUME_DIR || env.FLUME_CONFIG_DIR)) {
-    const set = [env.FLUME_DIR && "FLUME_DIR", env.FLUME_CONFIG_DIR && "FLUME_CONFIG_DIR"]
-      .filter(Boolean)
-      .join(" and ");
+  if (jobFlag && env.FLUME_DIR) {
     throw new JobResolutionConflictError(
-      `--job ${jobFlag} conflicts with explicit ${set}: one resolution authority — drop --job or unset the env`,
+      `--job ${jobFlag} conflicts with explicit FLUME_DIR: one resolution authority — drop --job or unset the env`,
     );
   }
   const job = jobFlag ?? (env.FLUME_JOB || undefined);
-  const jobDefault = job ? join(repoRoot, ".flume", "jobs", job) : undefined;
   const flumeDir = env.FLUME_DIR
     ? resolve(env.FLUME_DIR)
-    : (jobDefault ?? join(repoRoot, ".flume"));
+    : job
+      ? join(repoRoot, ".flume", "jobs", job)
+      : join(repoRoot, ".flume");
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
-    : (jobDefault ?? join(repoRoot, ".flume"));
+    : join(repoRoot, ".flume");
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
   if (job) env.FLUME_JOB = job;
@@ -163,10 +165,12 @@ Commands:
                       consumes the job).
 
 Options:
-  --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
-                      and set FLUME_JOB=<name> (equivalent to setting the env
-                      var). Conflicts with explicit FLUME_DIR/FLUME_CONFIG_DIR
-                      (exit 2). tick/loop then require HEAD == job/<name>.
+  --job <name>        Resolve state to <repoRoot>/.flume/jobs/<name> and set
+                      FLUME_JOB=<name> (equivalent to setting the env var).
+                      Config (chain.ts + prompts) stays at <repoRoot>/.flume —
+                      chains are repo-resident; an explicit FLUME_CONFIG_DIR
+                      composes. Conflicts with explicit FLUME_DIR (exit 2).
+                      tick/loop then require HEAD == job/<name>.
   -h, --help          Print this message.
   -v, --version       Print the flume version.
 
@@ -575,8 +579,9 @@ async function main(): Promise<number> {
   // (§12). `flumeDir` is the mutable-state root (baton, pending, worktrees,
   // prior-attempts); `configDir` is the chain+prompt dir. Both default to
   // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them, and
-  // `--job` / `FLUME_JOB` retargets the default to `.flume/jobs/<name>`
-  // (v0.5 §3). Resolving here (not constructing) lets the values survive the
+  // `--job` / `FLUME_JOB` retargets only the flumeDir default to
+  // `.flume/jobs/<name>` — configDir never follows the job (v0.6 §2/§3).
+  // Resolving here (not constructing) lets the values survive the
   // `loop` → `tick` process boundary — children inherit the (now
   // absolute-canonical) env vars — and lets a chain loaded later in this
   // process read one authoritative state root.

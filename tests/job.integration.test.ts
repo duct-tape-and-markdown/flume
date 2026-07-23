@@ -5,6 +5,10 @@
  * recipe, so its viability is proven here per §7). The run path is the
  * standard loop under the job resolution: same `loop.pid` lock, same
  * one-child-per-tick supervisor, same exit codes as `flume loop`.
+ *
+ * Chain residency (v0.6 §2): the chain + prompts are committed at the repo
+ * `.flume/` — one chain per `.flume`, tracked so a linked worktree's checkout
+ * carries it — and job dirs stay thin (state only, no chain shims).
  */
 
 import { execFile } from "node:child_process";
@@ -79,7 +83,27 @@ async function makeRepo(): Promise<{
 }
 
 /**
- * Template chain: one singleton entry phase whose agent records the
+ * Commit a chain + prompt at `<repo>/.flume/` — the repo-resident config
+ * (v0.6 §2), tracked so every branch (and every linked worktree's checkout)
+ * carries it. `promptPath` is a configDir-relative join into the sibling
+ * `prompts/` dir — the §3 shared-prompt shape.
+ */
+async function commitRepoConfig(
+  dir: string,
+  chainSrc: string,
+  promptContent = "job run probe prompt\n",
+): Promise<void> {
+  await mkdir(join(dir, ".flume", "prompts"), { recursive: true });
+  await writeFile(join(dir, ".flume", "chain.ts"), chainSrc, "utf8");
+  await writeFile(join(dir, ".flume", "prompts", "prompt.md"), promptContent, "utf8");
+  await exec("git", ["add", ".flume"], { cwd: dir });
+  await exec("git", ["commit", "-q", "-m", "chore: repo-resident chain"], {
+    cwd: dir,
+  });
+}
+
+/**
+ * Repo chain: one singleton entry phase whose agent records the
  * FLUME_DIR / FLUME_CONFIG_DIR / FLUME_JOB it observes *inside the child
  * tick process* to `<FLUME_DIR>/observed-env.json`, commits nothing, and
  * hands off to nobody — so one tick runs, then the baton hibernates and the
@@ -93,7 +117,7 @@ const PROBE_CHAIN_SRC =
   `  phases: [{\n` +
   `    name: "probe",\n` +
   `    description: "job run probe",\n` +
-  `    promptPath: "prompt.md",\n` +
+  `    promptPath: "prompts/prompt.md",\n` +
   `    concurrency: "singleton",\n` +
   `    writablePaths: ["**"],\n` +
   `    gates: [],\n` +
@@ -118,24 +142,19 @@ const PROBE_CHAIN_SRC =
 
 describe("§5b integration — job new → job run inside a linked worktree", () => {
   it(
-    "new seeds the job, run (in the worktree) wakes the entry phase, ticks it under the job resolution, and releases the lock",
+    "new creates a thin job, run (in the worktree) loads the repo chain off the branch's checkout, wakes the entry phase, ticks it, and releases the lock",
     async () => {
       const repo = await makeRepo();
-      const tpl = await mkdtemp(join(tmpdir(), "flume-job-run-tpl-"));
       try {
-        await writeFile(join(tpl, "chain.ts"), PROBE_CHAIN_SRC, "utf8");
-        await writeFile(join(tpl, "prompt.md"), "job run probe prompt\n", "utf8");
+        // The chain rides the repo (§2) — committed on main BEFORE the job
+        // exists, so job/itest (and its linked-worktree checkout) carries it.
+        await commitRepoConfig(repo.dir, PROBE_CHAIN_SRC);
 
         // §5a: create the job from the root checkout, then step off the
         // branch so the linked worktree can hold it (§6: one working tree
-        // per job; a branch can only be checked out in one worktree).
-        const created = await runCli(repo.dir, [
-          "job",
-          "new",
-          "itest",
-          "--template",
-          tpl,
-        ]);
+        // per job; a branch can only be checked out in one worktree). The
+        // job dir is thin: state only, no chain, no prompts.
+        const created = await runCli(repo.dir, ["job", "new", "itest"]);
         expect(created.code).toBe(0);
         await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
 
@@ -160,12 +179,14 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
         expect(run.out).toContain("hibernating after 1 tick(s)");
 
         // The child tick observed the full §3 job resolution via env —
-        // rooted in the WORKTREE, not the root checkout.
+        // rooted in the WORKTREE, not the root checkout: state in the job
+        // dir, config at the worktree's own repo .flume (chain residency —
+        // each worktree resolves its own checkout's chain).
         const observed = JSON.parse(
           await readFile(join(jobDir, "observed-env.json"), "utf8"),
         ) as { FLUME_DIR: string; FLUME_CONFIG_DIR: string; FLUME_JOB: string };
         expect(observed.FLUME_DIR).toBe(jobDir);
-        expect(observed.FLUME_CONFIG_DIR).toBe(jobDir);
+        expect(observed.FLUME_CONFIG_DIR).toBe(join(wt, ".flume"));
         expect(observed.FLUME_JOB).toBe("itest");
 
         // Lock taken in the job state root and dropped on exit; baton
@@ -180,7 +201,6 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
         expect(rerun.out).toContain("woke probe (entry phase)");
       } finally {
         await repo.cleanup();
-        await rm(tpl, { recursive: true, force: true });
       }
     },
     240_000,
@@ -190,18 +210,9 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
     "run refuses while another live loop holds the job's loop.pid — the standard lock, unchanged",
     async () => {
       const repo = await makeRepo();
-      const tpl = await mkdtemp(join(tmpdir(), "flume-job-run-lock-tpl-"));
       try {
-        await writeFile(join(tpl, "chain.ts"), PROBE_CHAIN_SRC, "utf8");
-        await writeFile(join(tpl, "prompt.md"), "job run probe prompt\n", "utf8");
-
-        const created = await runCli(repo.dir, [
-          "job",
-          "new",
-          "lk",
-          "--template",
-          tpl,
-        ]);
+        await commitRepoConfig(repo.dir, PROBE_CHAIN_SRC);
+        const created = await runCli(repo.dir, ["job", "new", "lk"]);
         expect(created.code).toBe(0);
 
         // The vitest worker plays the live prior supervisor — its pid is
@@ -220,7 +231,6 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
         );
       } finally {
         await repo.cleanup();
-        await rm(tpl, { recursive: true, force: true });
       }
     },
     120_000,
@@ -232,18 +242,9 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
     "rm after a ticked run sweeps the dir and runtime remnants, commits cleanup on the job branch, and leaves branch + history intact; re-run is a no-op",
     async () => {
       const repo = await makeRepo();
-      const tpl = await mkdtemp(join(tmpdir(), "flume-job-rm-tpl-"));
       try {
-        await writeFile(join(tpl, "chain.ts"), PROBE_CHAIN_SRC, "utf8");
-        await writeFile(join(tpl, "prompt.md"), "job run probe prompt\n", "utf8");
-
-        const created = await runCli(repo.dir, [
-          "job",
-          "new",
-          "rme",
-          "--template",
-          tpl,
-        ]);
+        await commitRepoConfig(repo.dir, PROBE_CHAIN_SRC);
+        const created = await runCli(repo.dir, ["job", "new", "rme"]);
         expect(created.code).toBe(0);
 
         // Run from the root checkout (stays on job/rme): one tick, then
@@ -284,9 +285,12 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
         const again = await runCli(repo.dir, ["job", "rm", "rme"]);
         expect(again.code).toBe(0);
         expect(again.out).toContain("nothing to commit");
+
+        // The repo chain survives the removed job (§2) — rm sweeps only the
+        // job's state root.
+        expect(existsSync(join(repo.dir, ".flume", "chain.ts"))).toBe(true);
       } finally {
         await repo.cleanup();
-        await rm(tpl, { recursive: true, force: true });
       }
     },
     240_000,
@@ -306,7 +310,7 @@ const WORK_CHAIN_SRC =
   `  phases: [{\n` +
   `    name: "work",\n` +
   `    description: "job extract probe",\n` +
-  `    promptPath: "prompt.md",\n` +
+  `    promptPath: "prompts/prompt.md",\n` +
   `    concurrency: "singleton",\n` +
   `    writablePaths: ["**"],\n` +
   `    gates: [],\n` +
@@ -329,7 +333,6 @@ describe("§5e integration — job new → job run → job extract", () => {
     "extracts a clean branch: clobber refused, intake-first ordering, non-harness picks only, harvest to stdout, job consumed",
     async () => {
       const repo = await makeRepo();
-      const tpl = await mkdtemp(join(tmpdir(), "flume-job-extract-tpl-"));
       try {
         // The intake file predates the job — plan-side ticks append to it.
         await writeFile(join(repo.dir, "INTAKE.md"), "intake v1\n");
@@ -338,16 +341,10 @@ describe("§5e integration — job new → job run → job extract", () => {
           cwd: repo.dir,
         });
 
-        await writeFile(join(tpl, "chain.ts"), WORK_CHAIN_SRC, "utf8");
-        await writeFile(join(tpl, "prompt.md"), "derive prompt\n", "utf8");
+        // Chain on main, before the fork — part of the base, never a pick.
+        await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
 
-        const created = await runCli(repo.dir, [
-          "job",
-          "new",
-          "ext",
-          "--template",
-          tpl,
-        ]);
+        const created = await runCli(repo.dir, ["job", "new", "ext"]);
         expect(created.code).toBe(0);
 
         // §5b: the run does the job's real work — one tick, one commit.
@@ -441,14 +438,18 @@ describe("§5e integration — job new → job run → job extract", () => {
         expect(await readFile(join(repo.dir, "INTAKE.md"), "utf8")).toBe(
           "intake v1\nintake v2 (plan-side append)\n",
         );
-        expect(await gitOut(repo.dir, ["ls-files", "--", ".flume"])).toBe("");
+        // No job harness on the clean branch; the repo chain survives the
+        // consumed job (§2) — it was part of the base, not the job.
+        expect(await gitOut(repo.dir, ["ls-files", "--", ".flume/jobs"])).toBe("");
+        expect(await gitOut(repo.dir, ["ls-files", "--", ".flume/chain.ts"])).toBe(
+          ".flume/chain.ts",
+        );
 
         // §5e-5: extract consumed the job — branch and dir both gone.
         expect(await gitOut(repo.dir, ["branch", "--list", "job/ext"])).toBe("");
         expect(existsSync(jobDir)).toBe(false);
       } finally {
         await repo.cleanup();
-        await rm(tpl, { recursive: true, force: true });
       }
     },
     240_000,
@@ -458,18 +459,9 @@ describe("§5e integration — job new → job run → job extract", () => {
     "recipe worktree (§6): extract from the root refuses while the worktree holds job/<name>; from inside it, extract succeeds",
     async () => {
       const repo = await makeRepo();
-      const tpl = await mkdtemp(join(tmpdir(), "flume-job-extract-wt-tpl-"));
       try {
-        await writeFile(join(tpl, "chain.ts"), WORK_CHAIN_SRC, "utf8");
-        await writeFile(join(tpl, "prompt.md"), "derive prompt\n", "utf8");
-
-        const created = await runCli(repo.dir, [
-          "job",
-          "new",
-          "wrk",
-          "--template",
-          tpl,
-        ]);
+        await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
+        const created = await runCli(repo.dir, ["job", "new", "wrk"]);
         expect(created.code).toBe(0);
 
         // The §6 recipe verbatim: root steps off the branch, the linked
@@ -521,7 +513,6 @@ describe("§5e integration — job new → job run → job extract", () => {
         expect(existsSync(join(wt, ".flume", "jobs", "wrk"))).toBe(false);
       } finally {
         await repo.cleanup();
-        await rm(tpl, { recursive: true, force: true });
       }
     },
     240_000,

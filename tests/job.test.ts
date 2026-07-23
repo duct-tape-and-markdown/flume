@@ -470,25 +470,30 @@ function twoPhaseChainSrc(): string {
   return `export default { phases: [${phase("alpha")}, ${phase("beta")}], humanOnly: [] };\n`;
 }
 
-/** `job new` + a two-phase chain.ts in the job dir; returns the job dir. */
+/**
+ * `job new` + a two-phase chain.ts at the repo `.flume` — the repo-resident
+ * location (v0.6 §2) the CLI resolves `configDir` to; returns the job dir.
+ */
 async function makeRunnableJob(repoDir: string, name: string): Promise<string> {
   await jobNew({ repoRoot: repoDir, name, log: () => {} });
-  const jobDir = join(repoDir, ".flume", "jobs", name);
-  await writeFile(join(jobDir, "chain.ts"), twoPhaseChainSrc(), "utf8");
-  return jobDir;
+  await writeFile(join(repoDir, ".flume", "chain.ts"), twoPhaseChainSrc(), "utf8");
+  return join(repoDir, ".flume", "jobs", name);
 }
 
 describe("jobRun preflight — §5b wake/branch-assert units", () => {
   it("errors as JobUsageError when the branch does not exist, touching neither HEAD nor the state root", async () => {
     const repo = await makeRepo();
     try {
+      // The resolved shape the CLI hands in (v0.6 §3): state root in the job
+      // dir, config at the repo .flume.
       const flumeDir = join(repo.dir, ".flume", "jobs", "ghost");
+      const configDir = join(repo.dir, ".flume");
       await expect(
         jobRun({
           repoRoot: repo.dir,
           name: "ghost",
           flumeDir,
-          configDir: flumeDir,
+          configDir,
           log: () => {},
         }),
       ).rejects.toThrow(/branch job\/ghost does not exist.*flume job new ghost/);
@@ -497,7 +502,7 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
           repoRoot: repo.dir,
           name: "ghost",
           flumeDir,
-          configDir: flumeDir,
+          configDir,
           log: () => {},
         }),
       ).rejects.toBeInstanceOf(JobUsageError);
@@ -520,7 +525,7 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
         repoRoot: repo.dir,
         name: "r1",
         flumeDir: jobDir,
-        configDir: jobDir,
+        configDir: join(repo.dir, ".flume"),
         log: () => {},
       };
       await jobRun(opts);
@@ -543,7 +548,7 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
         repoRoot: repo.dir,
         name: "r2",
         flumeDir: jobDir,
-        configDir: jobDir,
+        configDir: join(repo.dir, ".flume"),
         log: () => {},
       });
       expect(new Baton(jobDir).awake()).toEqual(["beta"]);
@@ -563,7 +568,7 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
         repoRoot: repo.dir,
         name: "r3",
         flumeDir: jobDir,
-        configDir: jobDir,
+        configDir: join(repo.dir, ".flume"),
         log: (l: string) => lines.push(l),
       };
       await jobRun(opts);
