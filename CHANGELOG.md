@@ -11,6 +11,81 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-23
+
+The dock collapse: a job is a branch plus a state root, both named by
+convention — `.flume/jobs/<name>/` on branch `job/<name>` — and a
+`flume job` verb family operates the lifecycle, so the wrapper repo the
+machinery used to live in retires. Consolidates the uncut v0.4 surface
+(0.4.0 was never published) with the v0.5 surface. See
+`spec/RELEASE-v0.4.md` and `spec/RELEASE-v0.5.md`.
+
+### Breaking
+
+- `DispatcherOptions.trunkBranch` removed — it was dead code (stored,
+  consumed nowhere). The trunk contract is HEAD-is-truth: commits land
+  on the checked-out branch of the working tree the loop runs in; the
+  runtime never switches branches. Checkout is a human/verb act.
+
+### Added
+
+- `flume job` verb family — machinery only, no harness content
+  (templates stay caller-owned):
+  - `job new <name> [--template <dir>]`: create/reuse branch
+    `job/<name>` from HEAD, seed `.flume/jobs/<name>/` from the
+    template, ensure runtime ignore entries (`awake/`,
+    `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid`),
+    provision a junction/symlink `@dtmd/flume` → the running CLI's own
+    package root (version coherence), and baseline-commit the seeded
+    harness scoped to the job dir.
+  - `job run <name> [--max N]`: assert-or-checkout `job/<name>`, wake
+    the chain's entry phase (`phases[0]`) only from hibernation, then
+    run the standard loop under the job resolution.
+  - `job rm <name>`: refuse while `loop.pid` records a live pid;
+    remove the harness dir with a cleanup commit and sweep untracked
+    runtime remnants. The job branch and its history survive.
+  - `job status`: enumerate `.flume/jobs/*` — awake phases + pending
+    count per job, read-only.
+  - `job extract <name> --onto <base> [--intake <path>]...`: the
+    clean-history ending — intake pass-through ships first, then the
+    non-harness commits in `<base>..job/<name>` cherry-pick
+    oldest-first onto the new branch; a conflict unwinds completely
+    (job intact, extract retryable); `friction.md` + open questions are
+    harvested to stdout; the job branch and harness dir are consumed.
+    Refuses to clobber an existing branch or run while another worktree
+    holds `job/<name>`.
+- `--job <name>` global flag / `FLUME_JOB` env: resolves
+  `FLUME_DIR` = `FLUME_CONFIG_DIR` = `<repoRoot>/.flume/jobs/<name>`
+  and writes all three back into env, so loop-spawned tick children
+  inherit the resolution. Explicit `FLUME_DIR`/`FLUME_CONFIG_DIR`
+  alongside `--job` is a usage error (exit 2). Wrong-branch guard:
+  under a job resolution, `tick`/`loop` refuse unless
+  `HEAD == job/<name>`; read-only subcommands skip the check.
+- Job-namespaced fanout: with `FLUME_JOB` set, worktree branches become
+  `flume/<job>/<slug>` and worktree paths gain the matching namespace
+  segment, so two jobs sharing a tag slug no longer clobber each
+  other's branches or checkouts. Without `FLUME_JOB`, legacy names
+  stand — bare `.flume` harnesses are unchanged.
+- The v0.4 surface, previously uncut:
+  - Orphaned awake flags (no matching chain phase) are a typed Axis-C
+    terminal misconfiguration: exit code 78, loop fail-fast instead of
+    silent idling.
+  - `Phase.agent` — per-phase agent resolution, overriding the
+    dispatcher-level default for that phase's ticks.
+  - Entry-scoped fanout write guard: a fanout tick may write only its
+    entry's declared files ∪ the phase's `entryChannelPaths`
+    (cross-entry channel files, e.g. shared plan notes).
+  - windows-latest CI lane, locking in the 0.3.1 win32 portability
+    end to end.
+  - PR #5 reconciliation closed out: docs + regression tests for the
+    surface folded into source at 0.3.1 (`FLUME_WORKTREES_DIR`, the
+    loop lock, `observedFiles`, `revertedTags`, wave auto-unblock).
+
+### Fixed
+
+- A relocated state root (`pendingPath` outside `repoRoot`) no longer
+  produces a bookkeeping chore commit in the target repo.
+
 ## [0.3.1] - 2026-07-22
 
 Reconciliation and portability. Folds the temper-side runtime hand-patches
