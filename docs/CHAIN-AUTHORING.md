@@ -35,6 +35,33 @@ resolver rejects modules without a default export. Prompts referenced by
 `awake/`, `worktrees/`, `sessions/`, and `inbox.md` are harness-managed
 state — you don't author them.
 
+### Packaging a chain as a job template
+
+`flume job new <name> --template <dir>` seeds a job's state root
+(`.flume/jobs/<name>/`) by verbatim recursive copy of `<dir>`. Machinery
+ships no harness content, so the template is the chain author's delivery
+vehicle — the layout above, rooted at the job dir instead of `.flume/`.
+The split of responsibilities:
+
+**The runtime ignores its own layout for you.** `job new` merges these
+entries into the job dir's `.gitignore` — creating the file if the
+template carries none, preserving any lines it does: `awake/`,
+`prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid`. Don't
+restate them in your template.
+
+**Your template carries everything chain-convention.** At minimum
+`chain.ts` and the prompt files it references; also any seed state the
+chain expects on first tick (`plan/` scaffolding, an empty `inbox.md`)
+and ignore entries for dirs your chain writes that the runtime doesn't
+know about. `sessions/` is the canonical case: session capture is a
+chain convention (the `withSessionCapture` decorator), so its ignore
+line is the template's to add.
+
+The runtime also links `node_modules/@dtmd/flume` inside the job dir to
+the running flume's own package root, so `import … from "@dtmd/flume"`
+in a template's `chain.ts` resolves to the exact flume that ticks it —
+a template needs no dependency manifest.
+
 ## 1. Declaring a Phase
 
 A `Phase` is plain data the dispatcher interprets. No per-phase imperative
@@ -787,7 +814,14 @@ const cascadeChain: Chain = {
 export default cascadeChain;
 ```
 
-`phases` is the ordered list. `humanOnly` lists phases the dispatcher
+`phases` is the ordered list, and the order is a contract:
+`flume job run` wakes `phases[0]` when the baton is hibernating — the
+first phase is the chain's entry point, by position rather than by name
+(machinery never hardcodes a phase name). Put the phase a cold start
+should begin with first; cascade leads with `plan` because a fresh job
+must derive pending before anything can build.
+
+`humanOnly` lists phases the dispatcher
 cannot wake via another phase's `handoff` — humans wake them by touching
 `.flume/awake/<name>` (or `flume wake <name>`). Cascade marks `spec`
 human-only because it derives from human-authored workshop content.

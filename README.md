@@ -91,6 +91,10 @@ commit order and runs `afterMerge` gates against the merged state. A cherry-pick
 conflict keeps that entry in pending; an `afterMerge` failure reverts the
 whole wave.
 
+Worktree branches are named `flume/<entry-slug>`; under a job (below) they
+are namespaced `flume/<job>/<slug>`, so two jobs sharing an entry tag never
+clobber each other's branches.
+
 Worktrees are the only isolation primitive in v0.1. Docker / sandbox layers
 are deferred.
 
@@ -176,6 +180,85 @@ so no manual cleanup is ever required.
 The lock lives under `flumeDir`, not the repo: the state root is the resource
 that races, and a dock relocated via `FLUME_DIR` carries its lock with it —
 two loops against *different* docks over the same repo are allowed.
+
+## Trunk contract: HEAD is truth
+
+Commits land on the checked-out branch of the working tree the loop runs in.
+Singleton ticks commit to HEAD; fanout waves cherry-pick back onto HEAD. The
+runtime never switches branches — there is no trunk configuration to point it
+elsewhere. Checkout is a human act (or a job verb's, below): whatever branch
+is checked out when the loop starts is the branch the run ships to.
+
+## Jobs
+
+A job is a branch plus a state root, both named by convention:
+`.flume/jobs/<name>/` (tracked; runtime subdirs gitignored) on branch
+`job/<name>`. The `flume job` verbs are thin sugar over the relocation seams
+above — `flume --job <name> <cmd>` (or `FLUME_JOB=<name>`) resolves
+`FLUME_DIR` and `FLUME_CONFIG_DIR` to the job dir, and the mutating
+subcommands (`tick`, `loop`) refuse to run unless HEAD is `job/<name>`.
+Everything a job does is expressible with the raw seams; the verbs just name
+the convention.
+
+The flow is **`new` → tune → `run` → `rm` or `extract`**:
+
+```bash
+flume job new docs-refresh --template ../templates/docs-effort
+# tune: edit .flume/jobs/docs-refresh/ (chain.ts, prompts) on job/docs-refresh
+flume job run docs-refresh --max 20
+flume job status                   # awake phases + pending count per job
+```
+
+`job new` branches `job/<name>` off the current HEAD, seeds the state root
+from `--template` (verbatim copy — machinery ships no harness content; see
+[`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for what a template must
+carry), merges the runtime's ignore entries into the job dir's `.gitignore`,
+links `node_modules/@dtmd/flume` to the running flume, and baseline-commits
+the seeded harness. `job run` wakes the chain's entry phase —
+`chain.phases[0]`, by convention — iff the baton is hibernating (a mid-flight
+job resumes untouched), then runs the standard loop under the job resolution.
+
+### Two endings
+
+A finished job ends one of two ways; both leave integration to you:
+
+- **`flume job rm <name>`** — the discard ending: throw the harness away,
+  keep the work. Removes the job dir with a cleanup commit on `job/<name>`;
+  the branch survives, harness commits and all. Right when you hold merge or
+  squash rights over the target and can integrate the branch yourself.
+- **`flume job extract <name> --onto <base> [--intake <path>]...`** — the
+  clean-history ending: fork `<name>` off `--onto` and cherry-pick over only
+  the non-harness commits, intake files passing through first as one commit.
+  Harness commits never appear on the result — for deliverables where squash
+  rights are absent. Extract consumes the job (branch and harness dir are
+  gone afterwards); a cherry-pick conflict unwinds fully and leaves the job
+  intact for retry.
+
+Full per-verb contracts — steps, refusals, exit codes — in
+[`docs/CLI.md`](docs/CLI.md).
+
+### Concurrent jobs: one working tree per job
+
+**One loop per working tree.** Singleton ticks, fanout cherry-picks, and
+merge-gate reverts all mutate the working tree's HEAD; two loops in one
+checkout race it. The `loop.pid` lock guards state roots, not working trees —
+per-job state roots mean two jobs' loops never share a lock, so HEAD
+occupancy is the operator-visible signal to respect.
+
+To run jobs concurrently, give each its own working tree:
+
+```bash
+git worktree add .git/flume-jobs/docs-refresh job/docs-refresh
+cd .git/flume-jobs/docs-refresh
+flume job run docs-refresh
+```
+
+The `.git/` placement is legal and keeps the worktree out of the main
+checkout without a `.gitignore` entry. Cross-job contention on git's shared
+`.git/worktrees` metadata is accepted: a race fails one git command → one
+tick, the entry stays pending, and the stateless-tick loop retries.
+Overlapping `writablePaths` across concurrent jobs is operator
+responsibility.
 
 ## Status
 
