@@ -1,60 +1,15 @@
 [
   {
-    "tag": "RESIDENCY-RESOLUTION",
-    "summary": "Job resolution moves only flumeDir; configDir never retargets (stays <repoRoot>/.flume or explicit FLUME_CONFIG_DIR). Conflict narrows to FLUME_DIR; --job + FLUME_CONFIG_DIR composes.",
-    "per": {
-      "path": "spec/RELEASE-v0.6.md",
-      "section": "3. Job resolution — the conflict narrows to `FLUME_DIR`"
-    },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "resolveStateDirs: jobDefault applies to flumeDir only; conflict check drops FLUME_CONFIG_DIR; docstrings + --job help text updated per §2/§3"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "jobRun docstring: chain is repo-resident, not 'lives on the job branch' (mechanics unchanged — configDir arrives resolved)"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "resolveStateDirs §3 + real-CLI suites updated in place; new compose/inertness/prompt cases"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "suites that assume configDir = job dir updated"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "§5b/§5c/§5e fixtures: chain at repo .flume, thin job dirs (shim fixtures retired)"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "under --job configDir=<repoRoot>/.flume and repo chain loads even with a job-dir chain.ts (inert); --job + FLUME_CONFIG_DIR composes (state in job dir, chain from env dir); --job + FLUME_DIR exit 2; all three env vars written back"
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "render/tick under job resolution reads prompts from repo .flume/prompts via unchanged promptPath joins (§6 shared-prompt integration case)"
-      }
-    ],
-    "acceptance": "pnpm test green with the §6 resolution + shared-prompt cases; tsc green",
-    "notes": "Invariant per §2: no job-dir probe, no enforcement, no warning — inert by construction. promptPath mechanics untouched; shared-prompts gap dissolves by consequence (§3). Pre-1.0 edit-in-place, no compat lanes (§6)."
-  },
-  {
     "tag": "SEED-DIR",
     "summary": "Chain.seedDir replaces --template: job new loads the repo chain and seeds the job dir from the configDir-relative seedDir, verbatim skip-existing. --template deleted; bare job, no warning.",
     "per": {
       "path": "spec/RELEASE-v0.6.md",
       "section": "4. Chain-declared seed — `job new` without `--template`"
     },
-    "gate": { "kind": "blockedBy", "tag": "RESIDENCY-RESOLUTION" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -79,7 +34,10 @@
           "description": "fixtures converted from --template to seedDir declarations"
         }
       ],
-      "retire": ["JobNewOptions.template", "--template flag (flume job new)"]
+      "retire": [
+        "JobNewOptions.template",
+        "--template flag (flume job new)"
+      ]
     },
     "schemaDelta": "none",
     "tests": [
@@ -98,7 +56,10 @@
       "path": "spec/RELEASE-v0.6.md",
       "section": "5. Chain-declared harvest — `job extract`"
     },
-    "gate": { "kind": "blockedBy", "tag": "RESIDENCY-RESOLUTION" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -123,7 +84,9 @@
           "description": "§5e integration updated for chain-declared harvest"
         }
       ],
-      "retire": ["HARVEST_PATHS (src/job.ts)"]
+      "retire": [
+        "HARVEST_PATHS (src/job.ts)"
+      ]
     },
     "schemaDelta": "none",
     "tests": [
@@ -142,7 +105,11 @@
       "path": "spec/RELEASE-v0.6.md",
       "section": "7. Docs"
     },
-    "gate": { "kind": "blockedBy", "tag": "HARVEST-DECL" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "HARVEST-DECL"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -173,7 +140,11 @@
       "path": "spec/RELEASE-v0.6.md",
       "section": "10. Versioning — the 0.6.0 cut"
     },
-    "gate": { "kind": "blockedBy", "tag": "DOCS-0-6" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "DOCS-0-6"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
