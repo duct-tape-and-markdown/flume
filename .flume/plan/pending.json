@@ -1,48 +1,5 @@
 [
   {
-    "tag": "JOB-STATUS",
-    "summary": "flume job status: enumerate .flume/jobs/* — awake phases + pending count per job (per-job Baton read; observational, no side effects).",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "5d. `flume job status`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "status impl per §5d"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "help text"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "enumeration units"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "flume job status section"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "enumerates jobs with awake phases + pending counts; zero side effects"
-      }
-    ],
-    "acceptance": "§5d suite green",
-    "notes": ""
-  },
-  {
     "tag": "JOB-EXTRACT",
     "summary": "flume job extract <name> --onto <base> [--intake <p>]...: fork off --onto, intake-first commit, oldest-first cherry-pick of non-harness commits, conflict unwind, harvest, consume job.",
     "per": {
@@ -50,8 +7,7 @@
       "section": "5e. `flume job extract <name> --onto <base> [--intake <path>]...`"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-STATUS"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
