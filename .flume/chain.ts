@@ -321,6 +321,13 @@ export const agent = withTerminalRenderer(
         // Within an active 5-min cache window, consecutive ticks can hit
         // the cached system prefix instead of rebuilding it.
         "--exclude-dynamic-system-prompt-sections",
+        // Both phases on Sonnet for the v0.6 line: the design decisions
+        // live in the spec (grilled 2026-07-23), so remaining plan ticks
+        // are queue bookkeeping and build is well-specced implementation.
+        // Unpin (or re-split per phase) when a line starts from a thinner
+        // spec or dogfood shows gate-revert churn.
+        "--model",
+        "sonnet",
       ],
     }),
     {
