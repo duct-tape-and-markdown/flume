@@ -2,19 +2,19 @@
 
 Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md`; v0.1–v0.4 frozen). Mode this tick: **audit**.
 
-## This tick — audit JOB-RUN ship
+## This tick — audit JOB-RM ship
 
-Delta = 1 build commit + 1 chore ship (`cd25077`, `a0e5edf`); no spec changes; inbox empty.
+Delta = 1 build commit + 1 chore ship (`64079c1`, `e539a1f`); no spec changes; inbox empty.
 
-**Audit `cd25077` (JOB-RUN vs §5b)**: clean. Scope = the five declared files exactly. §5b-1: branchExists assert → JobUsageError exit 2 on missing branch (unit proves neither HEAD nor state root mutated on refusal); checkout only when HEAD elsewhere — inside the §6 worktree the assert passes with no checkout (integration asserts "on job/itest"). §5b-2: Baton check precedes chain load, and the chain loads AFTER checkout (chain.ts lives on the job branch — ordering is correct); two-phase test chain proves the wake targets phases[0] by position, not name; mid-job baton untouched; re-run idempotent. §5b-3 is the standard loop **by construction**: CLI rewrites `job run <name>` → `--job <name> loop` and falls through (src/cli.ts:381-408), preflight placed after resolveStateDirs (resolution conflict refuses before any mutation) and before the wrong-branch guard, which the checkout satisfies (src/cli.ts:436-453). Integration runs the §6 recipe verbatim (`.git/flume-jobs/<name>` linked worktree), proves child-tick env inheritance (FLUME_DIR/CONFIG_DIR/JOB rooted in the worktree), and lock refusal leaves the holder's pidfile intact. Edge sweep: `job run --help` caught by wantsHelp before run parsing; `--job x` vs `job run y` conflict exits 2, same-name composes; env `FLUME_JOB` vs run name resolves flag-wins (conventional explicit-beats-ambient; spec silent; same precedence as `--job` vs env — fine).
+**Audit `64079c1` (JOB-RM vs §5c)**: clean. Scope = the five declared files exactly. §5c-1: pid refusal runs before checkout (live loop implies branch is HEAD somewhere — switching under it is the race the refusal prevents); same liveness probe as the loop lock, dead/garbage pid reclaimed silently; pidPath `join(jobDir, "loop.pid")` matches the loop lock's `join(flumeDir, "loop.pid")` under job resolution (src/cli.ts:570 vs src/job.ts:336). Refusal unit proves dir, pidfile, history, branch all untouched; CLI test proves exit 1. §5c-2: checkout only when HEAD elsewhere; branchless-dir (half-created job) cleans up on current HEAD; `git rm` + commit both pathspec-scoped to the job dir — rm3 unit proves pre-staged foreign file stays staged and out of the cleanup commit; untracked sweep via fs.rm unlinks the @dtmd/flume junction without following (unit asserts PACKAGE_ROOT intact — runs on this win32 host, so the junction path itself is exercised); worktree prune runs. §5c-3: branch + full history survive (cleanup at tip, seed beneath), main untouched; re-run on clean job is exit-0 no-op. Integration: new→run(tick)→rm e2e green incl. runtime-remnant sweep. Exit-code table (0/1/2) consistent across code, tests, CLI.md.
 
-**Findings**: none filed. Two one-line debt observations: (1) preflight wake lands before the loop takes `loop.pid`, so a lock-refused `job run` leaves the entry phase woken — benign (retry resumes "mid-job" into the same phase; §6 accepted-race posture). (2) leading-dash names pass validateJobName (`job run -x` → exit 2 "branch job/-x does not exist") — same class as jobNew's existing gap, single-operator CLI, trivial.
+**Findings**: none filed. Three one-line debt notes: (1) rm from the primary checkout can't see a live loop running in a §6 linked worktree (pidfile lives in the worktree's state root) — backstopped by git's "branch is checked out" refusal on the checkout step, exit 1, no mutation; CLI.md documents "run rm from inside that worktree". (2) `git rm` without `-f` refuses on locally-modified harness files → exit 1; conservative-safe, operator resolves. (3) garbage pidfile → NaN → treated stale → proceeds; same posture as the loop lock.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — the ship commit already flipped JOB-RM to open; remaining blockedBy chain (STATUS → EXTRACT → DOCS) intact in pending.
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — ship commit already flipped JOB-STATUS to open; EXTRACT → DOCS blockedBy chain intact (gate tags still in pending).
 
-## Queue (4)
+## Queue (3)
 
-Head: **JOB-RM** (open). Serial after: STATUS → EXTRACT → DOCS, unblocking mechanically as tags ship.
+Head: **JOB-STATUS** (open). Serial after: EXTRACT → DOCS, unblocking mechanically as tags ship.
 
 ## Active plan target
 
@@ -27,6 +27,6 @@ Head: **JOB-RM** (open). Serial after: STATUS → EXTRACT → DOCS, unblocking m
 ## Writable-paths / trunk
 
 - Wrote `.flume/plan/state.md` only; pending.json unchanged (queue as shipped-minus-head already correct); open-questions.md unchanged; inbox.md untouched (empty).
-- Trunk: HEAD `a0e5edf` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 18 of origin/main** — human push pending.
+- Trunk: HEAD `e539a1f` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 20 of origin/main** — human push pending.
 
 Plan continues: no
