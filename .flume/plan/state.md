@@ -2,19 +2,21 @@
 
 Phase: **v0.5 ACTIVE** (`spec/RELEASE-v0.5.md`; v0.1–v0.4 frozen). Mode this tick: **audit**.
 
-## This tick — audit JOB-STATUS ship
+## This tick — audit JOB-EXTRACT ship
 
-Delta = 1 build commit + 1 chore ship (`ae5abb8`, `e21b8a9`); no spec changes; inbox empty.
+Delta = 1 build commit + 1 chore ship (`5e8a531`, `c06d62d`); no spec changes; inbox empty.
 
-**Audit `ae5abb8` (JOB-STATUS vs §5d)**: clean. Scope = the four declared edit files exactly (cli.ts comment touch-up §5d→§5e rides the declared cli.ts edit). §5d's core contract — "observational, no side effects" — held by construction: Baton mkdirs `awake/` in its constructor, so the enumerator constructs it only when the dir already exists (mkdir-on-existing is a no-op) and reports hibernating otherwise; unit asserts a hibernating job gains no `awake/` and no file changes. Enumeration units: absent `.flume/jobs` (or absent `.flume`) → `[]` with nothing materialized; sorted by name; plain files under `jobs/` skipped; awake phases read via per-job Baton as specced. Pending count reads `<jobdir>/plan/pending.json` through the real `parsePending`. e2e: `no jobs` on empty repo, per-job line with awake+pending on a real job, any argument → exit 2. Exit-code table (0 always / 2 usage / 1 fs) consistent across code, help, CLI.md.
+**Audit `5e8a531` (JOB-EXTRACT vs §5e)**: faithful on all five steps. Scope = 5 of the 6 declared edit files (src/git.ts declared, deliberately untouched — job.ts keeps its own porcelain; allowlist, not creep). §7 §5e bullet fully covered: intake-first ordering asserted via commit-subject order, non-harness selection, clobber refusal, conflict unwind (job intact, retryable, no CHERRY_PICK_HEAD residue), harvest to stdout, branch + dir gone. Build's two spec-silent refusals (dirty tracked tree, live loop) accepted as machinery-safety invariants; exit-code mapping (refusals 1, usage-shaped 2) matches rm precedent.
 
-**Findings**: none filed. Three one-line debt notes: (1) spec is silent on absent/unparsable pending.json — build chose 0 / `null`("unparsable"); small display-level gap-fill, documented in CLI.md + commit body, within the "within reason" carve-out, no park. (2) status reads the working tree only — a job dir living solely on an un-checked-out `job/<name>` branch is invisible; inherent to disk-is-truth, CLI.md documents it. (3) exit-1 fs-failure path untested — not portably triggerable; matches posture of the other job verbs.
+**Finding filed — EXTRACT-WORKTREE-GUARD (pending, head)**: consume step collides with the §6 recipe. A recipe-run job keeps `job/<name>` checked out in `.git/flume-jobs/<name>` after its loop stops; `git branch -D` refuses branches checked out in any worktree, so extract from the main worktree fails at step 5 *after* all picks + harvest — harvest output lost (thrown before print), fully-picked clean branch strands, retry hits the clobber refusal. Extract from inside the recipe worktree works (fork moves it off `job/<name>` first). Fix: up-front refusal when `job/<name>` is checked out in a worktree other than the current one — same guard family build established; auto-removing the operator worktree rejected (clobbers operator work). Researched, not parked, per Inform-before-parking.
 
-**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none — ship commit already flipped JOB-EXTRACT to open; DOCS blockedBy EXTRACT intact (tag still in pending).
+**Debt accepted** (commit body): (1) mixed harness+code commits are picked whole per spec, so they'd carry `.flume/jobs/<name>` paths onto the clean branch — fanout write discipline makes mixed commits not occur; revisit only if one appears. (2) `gitShowBlob` maps any git failure to "absent" — a transient git error at harvest prints "no friction.md" instead of failing; cosmetic.
+
+**Derive**: none (no spec delta). **Drain**: none (inbox empty). **Promote**: none (ship commit already flipped JOB-DOCS to open).
 
 ## Queue (2)
 
-Head: **JOB-EXTRACT** (open). Then DOCS (blockedBy EXTRACT), unblocking mechanically when it ships.
+Head: **EXTRACT-WORKTREE-GUARD** (open) — hardens the shipped verb's §6-recipe path. Then **JOB-DOCS** (open, last v0.5 section); independent, no blockedBy.
 
 ## Active plan target
 
@@ -26,7 +28,7 @@ Head: **JOB-EXTRACT** (open). Then DOCS (blockedBy EXTRACT), unblocking mechanic
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` only; pending.json unchanged (EXTRACT→DOCS queue already correct); open-questions.md unchanged; inbox.md untouched (empty).
-- Trunk: HEAD `e21b8a9` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 24 of origin/main** — human push pending.
+- Wrote `.flume/plan/pending.json` (new head entry) + `.flume/plan/state.md`; open-questions.md unchanged; inbox.md untouched (empty).
+- Trunk: HEAD `c06d62d` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 26 of origin/main** at tick start (27 with this commit) — human push pending.
 
 Plan continues: no
