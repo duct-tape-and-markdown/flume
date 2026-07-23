@@ -27,6 +27,6 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "CHANGELOG carries [0.5.0] with ### Breaking (trunkBranch removed, §2) + ### Added per §11's enumeration; package.json at 0.5.0; gates green",
-    "notes": "Commit message is chore(release): cut 0.5.0 — spec-fixed, not build: (precedent 9be3c0f). Blocked on TESTS-TSC-GATE so the cut lands last as the line's completion marker (§7 amendment is v0.5 surface). npm publish stays human. Version bump does not touch pnpm-lock.yaml."
+    "notes": "Commit message is chore(release): cut 0.5.0 — spec-fixed, not build: (precedent 9be3c0f). Unblocked: TESTS-TSC-GATE shipped 998a20d, audited clean. npm publish stays human. Version bump does not touch pnpm-lock.yaml."
   }
 ]
