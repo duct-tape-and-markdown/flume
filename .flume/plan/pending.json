@@ -1,52 +1,5 @@
 [
   {
-    "tag": "JOB-RM",
-    "summary": "flume job rm <name>: refuse on live loop.pid; git rm -r jobdir + cleanup commit on job branch; remove untracked runtime; worktree prune; branch survives.",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "5c. `flume job rm <name>`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "rm impl per §5c"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "help text"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "refusal + removal units"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "new→run(tick)→rm e2e"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "flume job rm section"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "refuses on live pid; removes dir; job branch + history survive"
-      }
-    ],
-    "acceptance": "§5c suite green",
-    "notes": "Integration (merge/squash) and branch deletion stay operator acts — rm never deletes the branch."
-  },
-  {
     "tag": "JOB-STATUS",
     "summary": "flume job status: enumerate .flume/jobs/* — awake phases + pending count per job (per-job Baton read; observational, no side effects).",
     "per": {
@@ -54,8 +7,7 @@
       "section": "5d. `flume job status`"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-RM"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
