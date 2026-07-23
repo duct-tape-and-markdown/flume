@@ -1,56 +1,5 @@
 [
   {
-    "tag": "JOB-EXTRACT",
-    "summary": "flume job extract <name> --onto <base> [--intake <p>]...: fork off --onto, intake-first commit, oldest-first cherry-pick of non-harness commits, conflict unwind, harvest, consume job.",
-    "per": {
-      "path": "spec/RELEASE-v0.5.md",
-      "section": "5e. `flume job extract <name> --onto <base> [--intake <path>]...`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "extract impl per §5e steps 1-5"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "cherry-pick / branch-exists / git-show helpers as needed"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "help text"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "selection/refusal/unwind units"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "new→run→extract e2e on scratch repo"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "flume job extract section"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.integration.test.ts",
-        "asserts": "intake-first ordering; non-harness commit selection; clobber refusal; conflict unwind leaves job intact; harvest to stdout; job branch + dir gone"
-      }
-    ],
-    "acceptance": "§5e suite green on scratch repos",
-    "notes": "--onto required, never guessed. Harvest friction.md + plan/open-questions.md via git show off the job branch, not worktree."
-  },
-  {
     "tag": "JOB-DOCS",
     "summary": "README: job flow (new→tune→run→rm/extract), two endings, §6 concurrency recipe, HEAD-is-truth contract. CHAIN-AUTHORING: template expectations under job new, phases[0] entry convention.",
     "per": {
@@ -58,8 +7,7 @@
       "section": "8. Docs"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-EXTRACT"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
