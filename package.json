@@ -39,6 +39,7 @@
     "flume": "./bin/flume"
   },
   "scripts": {
+    "flume": "./bin/flume",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "VITEST_LANE=integration vitest run",
