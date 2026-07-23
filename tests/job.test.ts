@@ -22,6 +22,7 @@ import {
   jobNew,
   jobRm,
   jobRun,
+  jobStatus,
   JobUsageError,
   RUNTIME_IGNORES,
   validateJobName,
@@ -737,6 +738,132 @@ describe("jobRm — §5c refusal + removal units", () => {
       await repo.cleanup();
     }
   }, 120_000);
+});
+
+// ---------- v0.5 §5d — `flume job status` enumeration units ----------
+
+/** Minimal valid pending entry (schema defaults fill the rest). */
+function pendingEntry(tag: string): object {
+  return {
+    tag,
+    summary: "a unit of work",
+    per: { path: "spec/RELEASE-v0.5.md", section: "5d" },
+    gate: { kind: "open" },
+    files: {},
+    acceptance: "suite green",
+  };
+}
+
+describe("jobStatus — §5d enumeration units", () => {
+  it("returns [] when .flume/jobs (or .flume itself) is absent, materializing nothing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      expect(jobStatus(dir)).toEqual([]);
+      expect(existsSync(join(dir, ".flume"))).toBe(false);
+
+      await mkdir(join(dir, ".flume", "jobs"), { recursive: true });
+      expect(jobStatus(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("enumerates jobs sorted by name with awake phases + pending counts; skips plain files", async () => {
+    // Pure filesystem convention — no git repo required to observe it.
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+
+      // "beta": awake phases + a two-entry plan.
+      await mkdir(join(jobs, "beta", "awake"), { recursive: true });
+      await writeFile(join(jobs, "beta", "awake", "plan"), "");
+      await writeFile(join(jobs, "beta", "awake", "build"), "");
+      await mkdir(join(jobs, "beta", "plan"), { recursive: true });
+      await writeFile(
+        join(jobs, "beta", "plan", "pending.json"),
+        JSON.stringify([pendingEntry("B-ONE"), pendingEntry("B-TWO")]),
+      );
+
+      // "alpha": hibernating (no awake dir), no plan yet.
+      await mkdir(join(jobs, "alpha"), { recursive: true });
+
+      // Not a job: a stray file under jobs/.
+      await writeFile(join(jobs, "README.md"), "not a job\n");
+
+      expect(jobStatus(dir)).toEqual([
+        { name: "alpha", awake: [], pending: 0 },
+        { name: "beta", awake: ["build", "plan"], pending: 2 },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is observational: a hibernating job gains no awake/ dir, no file anywhere changes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobDir = join(dir, ".flume", "jobs", "quiet");
+      await mkdir(jobDir, { recursive: true });
+
+      jobStatus(dir);
+
+      // The Baton constructor would have mkdir'd awake/ — the read must not.
+      expect(existsSync(join(jobDir, "awake"))).toBe(false);
+      expect((await readdir(jobDir)).sort()).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports null pending for an unparsable pending.json instead of throwing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobDir = join(dir, ".flume", "jobs", "broken");
+      await mkdir(join(jobDir, "plan"), { recursive: true });
+      await writeFile(join(jobDir, "plan", "pending.json"), "not json{");
+
+      expect(jobStatus(dir)).toEqual([
+        { name: "broken", awake: [], pending: null },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it(
+    "real CLI: 'no jobs' on an empty repo; per-job lines with awake + pending; any argument exits 2",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        const none = await runCli(repo.dir, ["job", "status"]);
+        expect(none.code).toBe(0);
+        expect(none.out).toContain("no jobs");
+
+        await jobNew({ repoRoot: repo.dir, name: "s1", log: () => {} });
+        const jobDir = join(repo.dir, ".flume", "jobs", "s1");
+        await mkdir(join(jobDir, "awake"), { recursive: true });
+        await writeFile(join(jobDir, "awake", "build"), "");
+        await mkdir(join(jobDir, "plan"), { recursive: true });
+        await writeFile(
+          join(jobDir, "plan", "pending.json"),
+          JSON.stringify([pendingEntry("S-ONE")]),
+        );
+
+        const r = await runCli(repo.dir, ["job", "status"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("s1");
+        expect(r.out).toContain("awake: build");
+        expect(r.out).toContain("pending: 1");
+
+        const extra = await runCli(repo.dir, ["job", "status", "s1"]);
+        expect(extra.code).toBe(2);
+        expect(extra.out).toContain("usage: flume job status");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    120_000,
+  );
 });
 
 // win32 lane (v0.4 §6): the junction + longpaths paths only exist on

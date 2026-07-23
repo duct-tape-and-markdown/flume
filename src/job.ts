@@ -11,7 +11,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import {
   cp,
   lstat,
@@ -27,6 +27,7 @@ import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
+import { parsePending } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
 
@@ -390,4 +391,47 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   log(
     `[flume] removed ${rel}; branch ${branch} survives — merge or delete it when integrated`,
   );
+}
+
+/** One row of `flume job status` (v0.5 §5d). */
+export interface JobStatus {
+  /** Job name — the directory segment under `.flume/jobs/`. */
+  name: string;
+  /** Awake phases from the job's baton, sorted; empty means hibernating. */
+  awake: string[];
+  /**
+   * Entry count from `<jobdir>/plan/pending.json`: 0 when the file is absent
+   * (nothing planned is nothing pending), `null` when it exists but does not
+   * parse — surfaced, not thrown, so one broken plan never hides the others.
+   */
+  pending: number | null;
+}
+
+/**
+ * `flume job status` (v0.5 §5d): enumerate `.flume/jobs/*` in the working
+ * tree — awake phases + pending count per job. Observational: reads only
+ * what exists and writes nothing. The Baton constructor mkdirs `awake/`, so
+ * it is constructed only when that dir is already on disk (mkdir on an
+ * existing dir is a no-op); non-directories under `jobs/` are skipped.
+ */
+export function jobStatus(repoRoot: string): JobStatus[] {
+  const jobsRoot = join(repoRoot, ".flume", "jobs");
+  if (!existsSync(jobsRoot)) return [];
+  return readdirSync(jobsRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort()
+    .map((name) => {
+      const jobDir = join(jobsRoot, name);
+      const awake = existsSync(join(jobDir, "awake"))
+        ? new Baton(jobDir).awake()
+        : [];
+      const pendingPath = join(jobDir, "plan", "pending.json");
+      let pending: number | null = 0;
+      if (existsSync(pendingPath)) {
+        const parsed = parsePending(readFileSync(pendingPath, "utf8"));
+        pending = parsed.ok ? parsed.entries.length : null;
+      }
+      return { name, awake, pending };
+    });
 }

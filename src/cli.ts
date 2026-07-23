@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import { currentBranch } from "./git.js";
-import { jobNew, jobRm, jobRun, JobUsageError } from "./job.js";
+import { jobNew, jobRm, jobRun, jobStatus, JobUsageError } from "./job.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -146,6 +146,8 @@ Commands:
   job rm <name>       Remove the job's state root: git rm + cleanup commit on
                       job/<name>, untracked runtime swept, worktrees pruned.
                       Refuses on a live loop; the job branch survives.
+  job status          List jobs under .flume/jobs/ — awake phases + pending
+                      count per job. Observational; no side effects.
 
 Options:
   --job <name>        Resolve state + config to <repoRoot>/.flume/jobs/<name>
@@ -260,16 +262,23 @@ Verbs:
       \`git worktree prune\`. The job branch survives — integration
       (merge/squash) and branch deletion are the operator's acts.
 
+  status
+      Enumerate .flume/jobs/* in the working tree: one line per job with its
+      awake phases (or "hibernating") and pending count (entries in the
+      job's plan/pending.json; 0 when absent, "unparsable" when broken).
+      Observational — nothing on disk changes; prints "no jobs" when the
+      jobs dir is empty or missing.
+
 Exit codes:
   0   Success (run: hibernation reached, or --max ticks completed; rm on an
-      already-clean job is a no-op).
+      already-clean job is a no-op; status: always, including no jobs).
   1   Git or filesystem failure (checkout, link provisioning, commit); for
       run also: harness error, or another live loop holds the job's lock;
       for rm also: the job's loop is still live.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, --template pointing at no directory, run
-      on a job whose branch does not exist, or rm on a <name> that names
-      neither a branch nor a job dir.
+      on a job whose branch does not exist, rm on a <name> that names
+      neither a branch nor a job dir, or status given any argument.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`).
 `;
@@ -285,7 +294,7 @@ function wantsHelp(args: readonly string[]): boolean {
 /**
  * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
  * loop under a job resolution and is rewritten in `main()` before dispatch
- * reaches here. The rest of the family (§5d–§5e) lands verb by verb.
+ * reaches here. The rest of the family (§5e) lands verb by verb.
  * Usage-shaped failures exit 2, operational failures 1 — mirroring the
  * JobUsageError split in the job verbs.
  */
@@ -294,6 +303,35 @@ async function runJobVerb(
   repoRoot: string,
 ): Promise<number> {
   const [verb, ...rest] = args;
+
+  if (verb === "status") {
+    if (rest.length > 0) {
+      console.error("usage: flume job status");
+      return 2;
+    }
+    try {
+      const jobs = jobStatus(repoRoot);
+      if (jobs.length === 0) {
+        console.log("no jobs");
+        return 0;
+      }
+      const width = Math.max(...jobs.map((j) => j.name.length));
+      for (const j of jobs) {
+        const state = j.awake.length
+          ? `awake: ${j.awake.join(", ")}`
+          : "hibernating";
+        const pending =
+          j.pending === null ? "pending: unparsable" : `pending: ${j.pending}`;
+        console.log(`${j.name.padEnd(width)}  ${state}  ${pending}`);
+      }
+      return 0;
+    } catch (err) {
+      console.error(
+        `[flume] job status failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 1;
+    }
+  }
 
   if (verb === "rm") {
     const name = rest[0];

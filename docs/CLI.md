@@ -116,3 +116,15 @@ Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a l
 flume job rm docs-refresh          # after integrating job/docs-refresh, or to discard
 git branch -D job/docs-refresh     # yours, once the history is merged or unwanted
 ```
+
+## `flume job status`
+
+Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`); the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing.
+
+Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir that only exists on an un-checked-out `job/<name>` branch will not appear. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
+
+```sh
+flume job status
+# docs-refresh  awake: build  pending: 3
+# scratch       hibernating   pending: 0
+```
