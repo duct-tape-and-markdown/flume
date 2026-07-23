@@ -21,6 +21,7 @@ const exec = promisify(execFile);
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
     cwd,
+    flumeDir: join(cwd, ".flume"),
     phaseName: "test-phase",
     log: () => {},
     ...overrides,

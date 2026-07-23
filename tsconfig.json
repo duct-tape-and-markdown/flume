@@ -17,6 +17,6 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*", "examples/**/*", ".flume/chain.ts"],
+  "include": ["src/**/*", "tests/**/*", "examples/**/*", ".flume/chain.ts"],
   "exclude": ["node_modules"]
 }
