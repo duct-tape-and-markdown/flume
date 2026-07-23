@@ -171,6 +171,13 @@ All ported behavior is **net-new test surface** — flume-dock has no suite.
 - §6: covered by documentation + the §5 integration tests running inside a
   linked worktree (recipe viability); no race-injection tests.
 - win32 lane (v0.4 §6) covers the junction + longpaths paths.
+- **Type-level tests are gate-enforced.** `tsconfig.json` `include` gains
+  `tests/**/*` so the tscGate typechecks the suite — a type-level
+  assertion (e.g. §2's `trunkBranch` absence) that only binds under LSP is
+  not a test. Known cost: one `exactOptionalPropertyTypes` error in
+  `tests/Gate.test.ts` (probe 2026-07-23), fixed in the same entry.
+  Resolves the parked OQ; option (a) — a second tests-only tsconfig was
+  the fallback if the suite had been noisy, and it wasn't.
 
 ## 8. Docs
 
@@ -217,3 +224,33 @@ All ported behavior is **net-new test surface** — flume-dock has no suite.
    a lock is machinery for a failure mode that already converges.
 8. **Runtime ignore entries are machinery's to write** — the runtime owns
    its layout; templates own chain conventions. Not a decision-20 breach.
+9. **One consolidated 0.5.0 cut** (§11): 0.4.0 was never cut or published,
+   so the still-unpublished version is the right home for its surface —
+   the v0.3 §6 reasoning, reapplied. Restores the v0.2/v0.3 pattern of the
+   spec line anchoring its own cut.
+
+## 11. Versioning — the 0.5.0 cut
+
+One cut closes this line: **0.5.0**, consolidating the uncut v0.4 surface
+with the v0.5 surface (0.4.0 never shipped to npm; frozen v0.1 §9 governs —
+a public-API break lands as a minor bump with a `### Breaking` block).
+
+Plan derives one CUT entry for build: reconcile `CHANGELOG.md` against the
+commits since the `v0.3.1` cut, bump `package.json` to `0.5.0`, commit as
+`chore(release): cut 0.5.0`. Block shape:
+
+- **`### Breaking`** — `DispatcherOptions.trunkBranch` removed; HEAD of
+  the loop's working tree is the trunk contract (§2).
+- **`### Added`** — the `flume job` verb family
+  (`new|run|rm|status|extract`, §5); `--job`/`FLUME_JOB` resolution + the
+  wrong-branch guard (§3); job-namespaced fanout branches and worktree
+  paths (§4); the v0.4 surface: Axis-C terminal misconfiguration (exit
+  78), `Phase.agent`, entry-scoped write guard + `entryChannelPaths`,
+  win32 support + CI lane, and the PR #5 reconciliation items
+  (`FLUME_WORKTREES_DIR`, loop lock, `observedFiles`, `revertedTags`,
+  wave auto-unblock).
+- Exact wording is build's to derive from the log; the spec fixes the
+  version, the block structure, and the breaking entry's presence.
+
+Publishing to npm remains a human act (as 0.3.0/0.3.1 were); the cut
+commit is the line's completion marker.
