@@ -1,23 +1,22 @@
 # State
 
-Phase: **v0.5 line complete** — 0.5.0 cut shipped (`31ea59d`, ship-marker `c2074c4`). All lines v0.1–v0.5 frozen. No v0.6 spec file exists; nothing to derive. Mode this tick: **audit**.
+Phase: **v0.6 line active** — `spec/RELEASE-v0.6.md` authored (`7c05fab`); queue derived in full this tick. Lines v0.1–v0.5 frozen. Mode this tick: **derive**.
 
-## This tick — audit the 0.5.0 cut
+## This tick — derive v0.6, drain the dogfood inbox entry, audit 3 commits
 
-Delta = 2 commits (`31ea59d` cut, `c2074c4` chore ship); no spec delta; inbox empty; pending empty.
+Delta = 3 commits (`7c05fab` spec, `0592e90` inbox filing, `cf6995e` chore alias); spec delta = new `spec/RELEASE-v0.6.md`; inbox 1 entry; pending was empty.
 
-**Audit `31ea59d` vs v0.5 §11**: clean. Version 0.5.0, commit message `chore(release): cut 0.5.0` (exact), `### Breaking` carries the trunkBranch removal, `### Added` covers §11's full enumeration (verb family, `--job`/`FLUME_JOB` + wrong-branch guard, namespaced fanout, Axis-C exit 78, `Phase.agent`, entry write guard + `entryChannelPaths`, win32 + CI lane, all five PR #5 items). Files touched = files declared (`CHANGELOG.md`, `package.json`); lockfile untouched as the entry's notes predicted.
+**Derive**: v0.6 decomposed into 5 entries — RESIDENCY-RESOLUTION (§3, open) → SEED-DIR (§4) + HARVEST-DECL (§5, both blockedBy residency) → DOCS-0-6 (§7, blockedBy harvest; also rests on seed via queue order) → CUT-0-6-0 (§10, blockedBy docs). §6 tests folded into each feature entry's `tests`. File declarations verified against source: `resolveStateDirs` src/cli.ts:94-119, `jobNew` template path src/job.ts:165-193, `HARVEST_PATHS` src/job.ts:463, `Chain` src/Phase.ts:205; `--template` referenced by tests/job.test.ts + tests/job.integration.test.ts only (cli.test.ts clean); HARVEST_PATHS not re-exported from index.ts. This repo's `.flume/chain.ts` needs no companion edit — both new `Chain` fields are optional and this repo uses no job resolution.
 
-Two build judgments, both ratified:
+**Drain**: the 2026-07-23 static-.flume dogfood entry routes entirely to pending — asks 1+3 → RESIDENCY-RESOLUTION (spec §2/§3 adopted the filer's "one decision" framing), ask 2 → SEED-DIR (§4). Nothing parked; inbox empty.
 
-1. **`### Fixed` block for `74c17cb`** — §11 fixes version + block structure + Breaking's presence, but also directs "reconcile against the commits since the v0.3.1 cut"; `74c17cb` is a real fix in `9be3c0f..HEAD` and omitting it would misreport the log. §11's block list is the required minimum, not a cap (v0.1 §9 mandates `### Breaking` only).
-2. **PR #5 items phrased as docs+tests close-out** — items appear under `### Added` per the enumeration; the phrasing is truthful (runtime surface shipped at 0.3.1, its block already records it).
+**Audit**: all 3 commits clean. `7c05fab` — human-authored spec, spec lane; source cites spot-checked (cli.ts:117 write-back, job.ts:463, resolveStateDirs lines) and accurate. `0592e90` — external filing to inbox.md, the designated lane. `cf6995e` — human interactive package.json alias; checked docs for `pnpm exec flume` drift: README/docs don't reference either invocation form, no follow-up needed (CLAUDE.md's mention is the human's surface).
 
-**Derive**: none (no spec delta, no `spec/RELEASE-v0.6.md`). **Drain**: none. **Promote**: none.
+**Promote**: none (pending was empty).
 
-## Queue (0)
+## Queue (5)
 
-Empty. Next derivation trigger: a v0.6 spec file (or inbox findings). npm publish of 0.5.0 stays a human act (§11).
+Head: **RESIDENCY-RESOLUTION** (open). Then SEED-DIR, HARVEST-DECL (unblock when residency ships), DOCS-0-6, CUT-0-6-0. Linear line to the 0.6.0 cut.
 
 ## Open questions
 
@@ -25,7 +24,7 @@ None.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` only; pending.json already `[]`, open-questions.md and inbox.md untouched (both empty).
-- Trunk: HEAD `c2074c4` at tick start, tree clean (untracked `.flume/loop.pid` is runtime). **main ahead 39 of origin/main** (40 with this commit) — human push pending.
+- Wrote `.flume/plan/pending.json`, `.flume/plan/state.md`, `.flume/inbox.md` (drained); open-questions.md untouched (empty).
+- Trunk: HEAD `7c05fab` at tick start, tree clean besides plan artifacts (untracked `.flume/loop.pid` is runtime). **main ahead 2 of origin/main** (3 with this commit) — human push pending.
 
 Plan continues: no
