@@ -1,54 +1,5 @@
 [
   {
-    "tag": "HARVEST-DECL",
-    "summary": "Chain.harvest?: string[] replaces the HARVEST_PATHS constant; extract loads the repo chain for the list. Absent = harvest nothing (no default).",
-    "per": {
-      "path": "spec/RELEASE-v0.6.md",
-      "section": "5. Chain-declared harvest — `job extract`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Chain.harvest?: string[] (§5)"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "jobExtract: take configDir, load chain for the harvest list; delete HARVEST_PATHS"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "job extract verb: pass configDir into jobExtract"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "§5e harvest units updated for declared list + absent case"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "§5e integration updated for chain-declared harvest"
-        }
-      ],
-      "retire": [
-        "HARVEST_PATHS (src/job.ts)"
-      ]
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "extract harvests exactly the declared list; absent harvest → empty harvest, extract otherwise unchanged; HARVEST_PATHS gone type-level (tsc gate per v0.5 §7)"
-      }
-    ],
-    "acceptance": "pnpm test green with the §6 harvest cases; tsc green; HARVEST_PATHS unreferenced",
-    "notes": "No ordering hazard: repo chain survives job consumption (§5). Harvest mechanics (git show off branch tip, stdout routing) unchanged."
-  },
-  {
     "tag": "DOCS-0-6",
     "summary": "Docs for chain residency, seedDir + harvest declarations, --template removal, migration note (shims delete, prompt gymnastics unnecessary).",
     "per": {
@@ -56,8 +7,7 @@
       "section": "7. Docs"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "HARVEST-DECL"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
