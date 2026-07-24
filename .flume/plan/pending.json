@@ -81,7 +81,7 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "no doc references --template, job-local chain.ts, or HARVEST_PATHS; migration note present",
-    "notes": "§7 'getting-started' maps to README's quick-start sections — no separate getting-started file exists. Also rests on SEED-DIR (single blockedBy; queue order covers it)."
+    "notes": "§7 'getting-started' maps to README's quick-start sections — no separate getting-started file exists."
   },
   {
     "tag": "CUT-0-6-0",
