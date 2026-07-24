@@ -317,6 +317,7 @@ const WORK_CHAIN_SRC =
   `    handoff: () => [],\n` +
   `  }],\n` +
   `  humanOnly: [],\n` +
+  `  harvest: ["friction.md", "plan/open-questions.md"],\n` +
   `};\n` +
   `export const agent = {\n` +
   `  name: "job-extract-probe",\n` +

@@ -422,7 +422,10 @@ async function runJobVerb(
       return 2;
     }
     try {
-      const result = await jobExtract({ repoRoot, name, onto, intake });
+      const configDir = process.env.FLUME_CONFIG_DIR
+        ? resolve(process.env.FLUME_CONFIG_DIR)
+        : join(repoRoot, ".flume");
+      const result = await jobExtract({ repoRoot, name, onto, intake, configDir });
       // §5e-4: the harvested prose goes to stdout for operator routing.
       for (const h of result.harvest) {
         if (h.content === null) {

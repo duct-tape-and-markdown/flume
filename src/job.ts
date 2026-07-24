@@ -490,9 +490,6 @@ export function jobStatus(repoRoot: string): JobStatus[] {
     });
 }
 
-/** Files harvested off the job branch tip at extract (§5e-4), job-dir-relative. */
-export const HARVEST_PATHS = ["friction.md", "plan/open-questions.md"] as const;
-
 /** Blob content at `<ref>:<path>`, raw and untrimmed; `null` when absent. */
 async function gitShowBlob(cwd: string, spec: string): Promise<string | null> {
   try {
@@ -511,6 +508,12 @@ export interface JobExtractOptions {
   name: string;
   /** Base the clean branch forks from (§5e: required, never guessed). */
   onto: string;
+  /**
+   * Chain+prompts dir — repo-resident (v0.6 §2); defaults to
+   * `<repoRoot>/.flume`. Extract loads the chain from here for its
+   * declared `harvest` list (§5).
+   */
+  configDir?: string;
   /** Intake pass-through files, repo-relative (§5e-2). */
   intake?: string[];
   log?: (line: string) => void;
@@ -524,18 +527,20 @@ export interface JobExtractResult {
   intakeCommitted: boolean;
   /**
    * Harvested prose off the job branch tip (git show, not worktree —
-   * §5e-4): {@link HARVEST_PATHS} entry → content, `null` when absent.
+   * §5e-4): each chain-declared `harvest` (v0.6 §5) entry → content, `null`
+   * when absent. Empty when the chain declares no `harvest`.
    */
   harvest: { path: string; content: string | null }[];
 }
 
 /**
- * `flume job extract <name> --onto <base> [--intake <path>]...` (v0.5 §5e) —
- * the clean-history ending, for deliverables where harness commits must
- * never appear and squash rights are absent. Fork `<name>` off `--onto`,
- * ship the intake pass-through as one commit, cherry-pick the non-harness
- * commits oldest-first, harvest the operator prose, then consume the job:
- * branch `job/<name>` and the harness dir both go.
+ * `flume job extract <name> --onto <base> [--intake <path>]...` (v0.5 §5e,
+ * harvest chain-declared per v0.6 §5) — the clean-history ending, for
+ * deliverables where harness commits must never appear and squash rights are
+ * absent. Load the chain's `harvest` list, fork `<name>` off `--onto`, ship
+ * the intake pass-through as one commit, cherry-pick the non-harness commits
+ * oldest-first, harvest the declared paths, then consume the job: branch
+ * `job/<name>` and the harness dir both go.
  *
  * On any failure after the fork the partial branch is unwound (§5e-3):
  * in-flight pick aborted, checkout back on `job/<name>`, partial branch
@@ -550,6 +555,7 @@ export async function jobExtract(
   opts: JobExtractOptions,
 ): Promise<JobExtractResult> {
   const { repoRoot, name, onto } = opts;
+  const configDir = opts.configDir ?? join(repoRoot, ".flume");
   const log = opts.log ?? ((line: string) => console.log(line));
   // Git pathspecs are forward-slash regardless of host.
   const intake = (opts.intake ?? []).map((p) => p.replace(/\\/g, "/"));
@@ -570,6 +576,13 @@ export async function jobExtract(
   } catch {
     throw new JobUsageError(`--onto '${onto}' does not resolve to a commit`);
   }
+
+  // Load the chain's declared harvest list before any mutation (v0.6 §5) —
+  // a load failure must leave the job untouched, same as the checks above.
+  // No ordering hazard: the repo chain is configDir-resident, not job-dir,
+  // so it survives job consumption regardless of when it's read.
+  const { default: chain } = await loadChainModule(resolve(configDir, "chain.ts"));
+  const harvestPaths = chain.harvest ?? [];
 
   // 1. No clobber (§5e-1): the clean branch is named by the job, and a
   // pre-existing branch of that name is someone's work.
@@ -706,7 +719,7 @@ export async function jobExtract(
   // 4. Harvest off the job branch (git show, not worktree — the working
   // tree is on the clean branch by now), before the branch is consumed.
   const harvest: { path: string; content: string | null }[] = [];
-  for (const p of HARVEST_PATHS) {
+  for (const p of harvestPaths) {
     harvest.push({
       path: p,
       content: await gitShowBlob(repoRoot, `${jobBranch}:${relPosix}/${p}`),

@@ -127,16 +127,22 @@ const MINIMAL_CHAIN_SRC =
  */
 async function writeRepoChain(
   repoDir: string,
-  opts: { seedDir?: string } = {},
+  opts: { seedDir?: string; harvest?: string[] } = {},
 ): Promise<void> {
   await mkdir(join(repoDir, ".flume"), { recursive: true });
-  const src =
-    opts.seedDir === undefined
-      ? MINIMAL_CHAIN_SRC
-      : MINIMAL_CHAIN_SRC.replace(
-          "humanOnly: [],",
-          `humanOnly: [],\n  seedDir: ${JSON.stringify(opts.seedDir)},`,
-        );
+  let src = MINIMAL_CHAIN_SRC;
+  if (opts.seedDir !== undefined) {
+    src = src.replace(
+      "humanOnly: [],",
+      `humanOnly: [],\n  seedDir: ${JSON.stringify(opts.seedDir)},`,
+    );
+  }
+  if (opts.harvest !== undefined) {
+    src = src.replace(
+      "humanOnly: [],",
+      `humanOnly: [],\n  harvest: ${JSON.stringify(opts.harvest)},`,
+    );
+  }
   await writeFile(join(repoDir, ".flume", "chain.ts"), src, "utf8");
   await exec("git", ["add", ".flume"], { cwd: repoDir });
   await exec("git", ["commit", "-q", "-m", "chore: repo chain fixture"], {
@@ -1023,7 +1029,9 @@ async function makeExtractScenario(dir: string): Promise<void> {
   await exec("git", ["add", "INTAKE.md"], opts);
   await exec("git", ["commit", "-q", "-m", "seed intake"], opts);
 
-  await writeRepoChain(dir);
+  await writeRepoChain(dir, {
+    harvest: ["friction.md", "plan/open-questions.md"],
+  });
   await jobNew({ repoRoot: dir, name: "x", log: () => {} });
   const jobDir = join(dir, ".flume", "jobs", "x");
 
@@ -1117,10 +1125,12 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     }
   }, 120_000);
 
-  it("with no intake and no harvest files: no intake commit, null harvest entries", async () => {
+  it("with no intake and declared harvest paths absent on the branch: no intake commit, null harvest entries", async () => {
     const repo = await makeRepo();
     try {
-      await writeRepoChain(repo.dir);
+      await writeRepoChain(repo.dir, {
+        harvest: ["friction.md", "plan/open-questions.md"],
+      });
       await jobNew({ repoRoot: repo.dir, name: "y", log: () => {} });
       await writeFile(join(repo.dir, "work.txt"), "derived\n");
       await exec("git", ["add", "work.txt"], { cwd: repo.dir });
@@ -1144,6 +1154,37 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
         await gitOut(repo.dir, ["log", "--reverse", "--format=%s", "main..y"])
       ).split("\n");
       expect(subjects).toEqual(["job: add work"]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("chain declares no harvest (v0.6 §5): empty harvest array, extract otherwise unchanged", async () => {
+    const repo = await makeRepo();
+    try {
+      // No `harvest` field at all — absent means harvest nothing, no default.
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "z", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "z");
+      await writeFile(join(jobDir, "friction.md"), "friction: undeclared\n");
+      await exec("git", ["add", ".flume/jobs/z"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "chore(flume): friction"], {
+        cwd: repo.dir,
+      });
+      await writeFile(join(repo.dir, "work.txt"), "derived\n");
+      await exec("git", ["add", "work.txt"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "job: add work"], {
+        cwd: repo.dir,
+      });
+
+      const result = await jobExtract({
+        repoRoot: repo.dir,
+        name: "z",
+        onto: "main",
+        log: () => {},
+      });
+      expect(result.picked).toBe(1);
+      expect(result.harvest).toEqual([]);
     } finally {
       await repo.cleanup();
     }

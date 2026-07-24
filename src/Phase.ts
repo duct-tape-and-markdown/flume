@@ -220,4 +220,10 @@ export interface Chain {
    * no warning.
    */
   seedDir?: string;
+  /**
+   * Job-dir-relative paths `flume job extract` harvests off a dying job
+   * branch. Absent means harvest nothing — no default, since a default
+   * would re-house the evicted domain opinion invisibly.
+   */
+  harvest?: string[];
 }
