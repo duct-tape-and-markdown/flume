@@ -35,32 +35,77 @@ resolver rejects modules without a default export. Prompts referenced by
 `awake/`, `worktrees/`, `sessions/`, and `inbox.md` are harness-managed
 state — you don't author them.
 
-### Packaging a chain as a job template
+**One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
+retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —
+never `configDir`. There is no per-job chain resolution: `.flume/chain.ts`
+is the chain for every job in the repo, resolved fresh from whichever
+branch is checked out. See the README's "Chain residency" section for the
+full contract.
 
-`flume job new <name> --template <dir>` seeds a job's state root
-(`.flume/jobs/<name>/`) by verbatim recursive copy of `<dir>`. Machinery
-ships no harness content, so the template is the chain author's delivery
-vehicle — the layout above, rooted at the job dir instead of `.flume/`.
-The split of responsibilities:
+### Chain-declared seed and harvest
 
-**The runtime ignores its own layout for you.** `job new` merges these
-entries into the job dir's `.gitignore` — creating the file if the
-template carries none, preserving any lines it does: `awake/`,
-`prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid`. Don't
-restate them in your template.
+There is no job-local chain, and no `--template` flag. `.flume/jobs/<name>/`
+holds job *state* only — job resolution never retargets `configDir` (see
+"Where the chain lives" above), so every job under this repo ticks the one
+chain at `.flume/chain.ts`, and that chain is the sole author of what a
+fresh job dir contains and what a dying one gives up. Two optional `Chain`
+fields carry the declaration:
 
-**Your template carries everything chain-convention.** At minimum
-`chain.ts` and the prompt files it references; also any seed state the
-chain expects on first tick (`plan/` scaffolding, an empty `inbox.md`)
-and ignore entries for dirs your chain writes that the runtime doesn't
-know about. `sessions/` is the canonical case: session capture is a
-chain convention (the `withSessionCapture` decorator), so its ignore
-line is the template's to add.
+- **`Chain.seedDir?: string`** — a `configDir`-relative directory (the
+  `promptPath` idiom: stubs are real files beside the chain, e.g.
+  `.flume/job-seed/`). `flume job new <name>` copies it into the fresh job
+  dir verbatim, skip-existing: a re-run fills gaps (a stub added to the
+  seed dir reaches jobs already created) and never clobbers a worked file.
+  Absent `seedDir` → a bare job, no warning — state accretes from ticks,
+  and bare is legitimate. No interpolation and no seed-function form: the
+  copy is dumb by design, and `chain.ts` is already code if you need
+  logic.
+- **`Chain.harvest?: string[]`** — job-dir-relative paths `flume job
+  extract` reads off the dying job branch (`git show`, not the working
+  tree) and prints to stdout for operator routing, before the job is
+  consumed. Absent `harvest` → nothing is harvested. There is no default:
+  a default would re-house the exact domain opinion (`friction.md`,
+  `open-questions.md`, or whatever your chain cares about) that this field
+  exists to evict from the machinery.
 
-The runtime also links `node_modules/@dtmd/flume` inside the job dir to
-the running flume's own package root, so `import … from "@dtmd/flume"`
-in a template's `chain.ts` resolves to the exact flume that ticks it —
-a template needs no dependency manifest.
+`flume job new` loads the repo chain before doing anything else — no chain
+at `<configDir>/chain.ts` is a usage error (a job that could never `run`
+must not be creatable), and a declared-but-absent `seedDir` is the same
+class of error, checked before the state root is touched.
+
+**What the runtime still owns, unconditionally, on every `job new`** — the
+line between this and `seedDir` is the same line as "machinery vs.
+opinion" everywhere else in this doc:
+
+- Merging the runtime `.gitignore` entries (`awake/`, `prior-attempts/`,
+  `worktrees/`, `node_modules/`, `loop.pid`) into the job dir — creating
+  the file if `seedDir` carries none, preserving any lines it does.
+- Linking `node_modules/@dtmd/flume` inside the job dir to the running
+  flume's own package root, so `import … from "@dtmd/flume"` in the chain
+  resolves to the exact flume that ticks it — a seed needs no dependency
+  manifest.
+- Pinning `core.longpaths true` repo-locally on Windows.
+- Baseline-committing the seeded harness so subsequent plan/build ticks
+  produce clean deltas.
+
+A dir your chain writes that the runtime doesn't know about is still your
+declaration to make: `sessions/` is the canonical case (session capture is
+the `withSessionCapture` decorator's convention, not the runtime's), so its
+ignore line belongs in your `seedDir`, same as it belonged in a `--template`
+directory before this line.
+
+**Migrating off a per-job shim chain.** Before this line, a job's state
+root carried its own one-line shim chain
+(`export { default } from "../../chain.ts"`) purely so job resolution had
+something to load from the job dir, plus `import.meta.url`-based path
+gymnastics in the repo chain so `promptPath` could still find the shared
+`prompts/` dir regardless of which copy loaded. Neither is needed anymore:
+job resolution never reads a job-local `chain.ts` at all — it's inert,
+unpoliced leftover if one exists — and `promptPath` always joins
+`configDir`, which is now always the directory the chain actually lives in.
+Delete the shims; delete the gymnastics. Loading the repo chain directly is
+behaviorally identical to loading last line's shim, so there's no rush and
+no compatibility window to observe.
 
 ## 1. Declaring a Phase
 

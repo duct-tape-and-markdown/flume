@@ -81,6 +81,31 @@ contract between plan and build. Built-in gates (`tscGate`, `vitestGate`,
 `eslintGate`, `writablePathsGate`) cover the common cases; custom gates are
 plain functions returning `GateResult`.
 
+## Chain residency
+
+**One chain per `.flume`.** The chain lives at `<configDir>/chain.ts`, and
+job resolution never retargets `configDir` — `--job`/`FLUME_JOB` move only
+the mutable state root (`.flume` → `.flume/jobs/<name>`), never which chain
+governs the tick. There is no job-local chain: every job under a repo ticks
+the one repo-resident chain, from whichever branch happens to be checked
+out.
+
+Per-job variation is already served, twice over:
+
+- **A job is a branch.** Edit `.flume/chain.ts` on `job/<name>` and the
+  variation lives and dies with that branch — linked worktrees give
+  concurrent divergence, since each resolves its own checkout's chain.
+- **A chain is code.** `FLUME_JOB` is written back into the environment
+  before the chain loads, so one repo chain can dispatch on the job name
+  itself.
+
+A `chain.ts` sitting inside a job dir — left over from an older layout, or
+hand-placed — is simply inert: the runtime never looks there, and nothing
+polices it. `.flume/jobs/<name>/` holds job *state*; the chain that governs
+every job is always the repo's own `.flume/chain.ts`. Thin job dirs plus one
+static, repo-resident chain is the native shape — not a convention layered
+on top.
+
 ## Concurrency
 
 Phases declared `concurrency: "fanout"` partition their pending entries by
@@ -195,28 +220,35 @@ A job is a branch plus a state root, both named by convention:
 `.flume/jobs/<name>/` (tracked; runtime subdirs gitignored) on branch
 `job/<name>`. The `flume job` verbs are thin sugar over the relocation seams
 above — `flume --job <name> <cmd>` (or `FLUME_JOB=<name>`) resolves
-`FLUME_DIR` and `FLUME_CONFIG_DIR` to the job dir, and the mutating
-subcommands (`tick`, `loop`) refuse to run unless HEAD is `job/<name>`.
-Everything a job does is expressible with the raw seams; the verbs just name
-the convention.
+`FLUME_DIR` to the job dir; `FLUME_CONFIG_DIR` stays at `<repoRoot>/.flume`
+(chains are repo-resident — see "Chain residency" above) unless you set it
+explicitly, which composes rather than conflicts. Only `--job` plus an
+explicit `FLUME_DIR` is a usage error — two authorities for one state root.
+The mutating subcommands (`tick`, `loop`) refuse to run unless HEAD is
+`job/<name>`. Everything a job does is expressible with the raw seams; the
+verbs just name the convention.
 
 The flow is **`new` → tune → `run` → `rm` or `extract`**:
 
 ```bash
-flume job new docs-refresh --template ../templates/docs-effort
-# tune: edit .flume/jobs/docs-refresh/ (chain.ts, prompts) on job/docs-refresh
+flume job new docs-refresh
+# tune: edit .flume/jobs/docs-refresh/ (state only — no chain.ts of its own)
 flume job run docs-refresh --max 20
 flume job status                   # awake phases + pending count per job
 ```
 
-`job new` branches `job/<name>` off the current HEAD, seeds the state root
-from `--template` (verbatim copy — machinery ships no harness content; see
-[`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for what a template must
-carry), merges the runtime's ignore entries into the job dir's `.gitignore`,
-links `node_modules/@dtmd/flume` to the running flume, and baseline-commits
-the seeded harness. `job run` wakes the chain's entry phase —
-`chain.phases[0]`, by convention — iff the baton is hibernating (a mid-flight
-job resumes untouched), then runs the standard loop under the job resolution.
+`job new` branches `job/<name>` off the current HEAD, loads the repo chain
+(no chain at `<configDir>/chain.ts` is a usage error — a job that could never
+`run` must not be creatable), and copies its declared `Chain.seedDir`, if
+any, into the state root verbatim, skip-existing — a re-run fills gaps (a
+stub added to the seed dir reaches jobs already created) without ever
+clobbering a worked file; see
+[`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for what the chain
+declares versus what the runtime provisions unconditionally. No `seedDir`
+declared → a bare job, no warning: state accretes from ticks, and bare is
+legitimate. `job run` wakes the chain's entry phase — `chain.phases[0]`, by
+convention — iff the baton is hibernating (a mid-flight job resumes
+untouched), then runs the standard loop under the job resolution.
 
 ### Two endings
 
@@ -230,9 +262,12 @@ A finished job ends one of two ways; both leave integration to you:
   clean-history ending: fork `<name>` off `--onto` and cherry-pick over only
   the non-harness commits, intake files passing through first as one commit.
   Harness commits never appear on the result — for deliverables where squash
-  rights are absent. Extract consumes the job (branch and harness dir are
-  gone afterwards); a cherry-pick conflict unwinds fully and leaves the job
-  intact for retry.
+  rights are absent. Before the job is consumed, extract harvests whatever
+  paths the repo chain declares via `Chain.harvest` (job-dir-relative) off
+  the job branch tip to stdout for operator routing — an undeclared or
+  absent `harvest` means nothing is harvested, no default. Extract consumes
+  the job (branch and harness dir are gone afterwards); a cherry-pick
+  conflict unwinds fully and leaves the job intact for retry.
 
 Full per-verb contracts — steps, refusals, exit codes — in
 [`docs/CLI.md`](docs/CLI.md).

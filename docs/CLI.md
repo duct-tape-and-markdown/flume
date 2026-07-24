@@ -66,22 +66,23 @@ flume render plan
 flume render build --entry DOCS-CLI
 ```
 
-## `flume job new <name> [--template <dir>]`
+## `flume job new <name>`
 
-Creates a job — branch `job/<name>` plus state root `.flume/jobs/<name>/`, both named by convention — from the current HEAD. If the branch already exists it is reused (checked out) rather than recreated. The job dir is seeded from `--template` by verbatim recursive copy; with no template it is created empty and a warning reminds you to populate it (chain.ts, prompts) before `flume job run`. Machinery only: no presets, no harness content — that is the template's to carry. The job name must be a single path/branch segment; a name containing a path separator is rejected before any directory or branch is constructed.
+Creates a job — branch `job/<name>` plus state root `.flume/jobs/<name>/`, both named by convention — from the current HEAD. If the branch already exists it is reused (checked out) rather than recreated. Then it loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). The job name must be a single path/branch segment; a name containing a path separator is rejected before any directory or branch is constructed.
 
 Every run (idempotent) also:
 
-- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving template-authored lines. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the template's to declare.
+- **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
+- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
 - **Links `node_modules/@dtmd/flume`** inside the job dir (junction on Windows, symlink elsewhere) to the running flume's own package root, so the chain resolves the exact flume that ticks it even when the repo declares another version. Skipped if the link already exists; a non-link squatting on that path is an error.
 - **Pins `core.longpaths true`** repo-locally on Windows.
 - **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state and the link out of the commit), so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
 
-Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, or `--template` pointing at no directory).
+Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, no chain at `<configDir>/chain.ts`, or a declared `seedDir` absent on disk).
 
 ```sh
-flume job new docs-refresh --template ../templates/docs-effort
-flume job new scratch                 # empty; warns to populate before run
+flume job new docs-refresh            # seeds from the repo chain's Chain.seedDir, if declared
+flume job new scratch                 # no seedDir declared: bare job, no warning
 ```
 
 ## `flume job run <name> [--max N]`
@@ -95,7 +96,7 @@ Runs a job. Three steps, the first two a preflight:
 Exits `0` on hibernation or when `--max` (default 50) is hit; `1` on git or harness failure, or while another live loop holds the job's lock; `2` on usage errors (missing `<name>`, or the job branch does not exist); `78` when a child tick reports terminal misconfiguration (see `flume tick`).
 
 ```sh
-flume job new docs-refresh --template ../templates/docs-effort
+flume job new docs-refresh
 flume job run docs-refresh --max 20
 ```
 
@@ -136,7 +137,7 @@ The clean-history ending: a deliverable branch on which harness commits never ap
 1. **Refuse if branch `<name>` already exists** — no clobber; the clean branch is named by the job, and a pre-existing branch of that name is someone's work (exit `1`). Also refused up front: uncommitted tracked changes (extract rewrites the checkout — fork, cherry-pick, possibly unwind), a live job loop (as with `rm`; a stale pidfile is reclaimed silently), and `job/<name>` checked out in another worktree — the §6 recipe worktree keeps holding it after its loop stops, and the branch deletion at step 5 would fail *after* the picks; `git worktree remove` it, or run extract from inside it (the current worktree is exempt — extract moves it off the branch itself).
 2. **Fork `<name>` off `--onto`, intake pass-through first.** Each `--intake` file is synced byte-exact to its state at the `job/<name>` tip, and the whole delta ships as one commit (`intake: pass-through from job/<name>`; no delta, no commit). Intake-first ordering keeps later cherry-picks from conflicting with plan-side appends to the same files. Then cherry-pick, oldest-first, the commits in `<base>..job/<name>` that touch any path outside `.flume/jobs/<name>` and outside the intake set. Harness-only and intake-only commits are never picked; a commit that mixes harness and non-harness paths is picked whole.
 3. **On cherry-pick failure: unwind** (exit `1`). The in-progress pick is aborted, the checkout returns to `job/<name>`, and the partial `<name>` branch is deleted. The job is untouched — extract is retryable, nothing lost.
-4. **Harvest `friction.md` and `plan/open-questions.md`** from the job branch tip (`git show`, not the worktree) to stdout for operator routing; a file that never existed is noted instead of printed.
+4. **Harvest the repo chain's declared `Chain.harvest` list** (job-dir-relative paths; loaded from `<configDir>/chain.ts` up front, alongside the other pre-flight checks) from the job branch tip (`git show`, not the worktree) to stdout for operator routing; a declared path that never existed on the branch is noted instead of printed. No `harvest` declared → nothing is harvested — there is no default list.
 5. **Consume the job**: delete `job/<name>`, remove the harness-dir remnants (the ignored runtime the checkout left behind; the `@dtmd/flume` link is unlinked, never followed), and `git worktree prune`. HEAD ends on `<name>` — the clean branch is yours to route.
 
 Exits `0` on success; `1` on the clobber/dirty-tree/live-loop/worktree-occupancy refusals, a git failure, or an unwound cherry-pick conflict; `2` on usage errors (missing `<name>` or `--onto`, a flag without a value, a `<name>` that is not a single segment, an `--onto` that resolves to no commit, or a `<name>` with no `job/<name>` branch to extract).
