@@ -1,22 +1,22 @@
 # State
 
-Phase: **v0.6 line active** — `spec/RELEASE-v0.6.md` authored (`7c05fab`); queue derived in full this tick. Lines v0.1–v0.5 frozen. Mode this tick: **derive**.
+Phase: **v0.6 line active** — `spec/RELEASE-v0.6.md` (`7c05fab`), queue derived (`dec90d2`). Lines v0.1–v0.5 frozen. Mode this tick: **audit**.
 
-## This tick — derive v0.6, drain the dogfood inbox entry, audit 3 commits
+## This tick — audit 2 commits (RESIDENCY-RESOLUTION shipped)
 
-Delta = 3 commits (`7c05fab` spec, `0592e90` inbox filing, `cf6995e` chore alias); spec delta = new `spec/RELEASE-v0.6.md`; inbox 1 entry; pending was empty.
+Delta = 2 commits since `dec90d2`: `c3b3379` (build: narrow job resolution to flumeDir) and `1957ec7` (chore(flume): ship RESIDENCY-RESOLUTION). No spec-delta, no inbox entries, pending already reflects the post-ship state.
 
-**Derive**: v0.6 decomposed into 5 entries — RESIDENCY-RESOLUTION (§3, open) → SEED-DIR (§4) + HARVEST-DECL (§5, both blockedBy residency) → DOCS-0-6 (§7, blockedBy harvest; also rests on seed via queue order) → CUT-0-6-0 (§10, blockedBy docs). §6 tests folded into each feature entry's `tests`. File declarations verified against source: `resolveStateDirs` src/cli.ts:94-119, `jobNew` template path src/job.ts:165-193, `HARVEST_PATHS` src/job.ts:463, `Chain` src/Phase.ts:205; `--template` referenced by tests/job.test.ts + tests/job.integration.test.ts only (cli.test.ts clean); HARVEST_PATHS not re-exported from index.ts. This repo's `.flume/chain.ts` needs no companion edit — both new `Chain` fields are optional and this repo uses no job resolution.
+**Audit**: both clean.
+- `c3b3379` — cross-checked against spec §2/§3: `resolveStateDirs` (src/cli.ts:94-120) retargets only `flumeDir`; conflict check narrowed to `FLUME_DIR`; `configDir` composes with `FLUME_CONFIG_DIR`. Docstrings (cli.ts:60-97, job.ts:231-237) and help text (cli.ts:168-174) match. Touched files exactly match RESIDENCY-RESOLUTION's declared `files` (src/cli.ts, src/job.ts, tests/cli.test.ts, tests/job.test.ts, tests/job.integration.test.ts) — no scope creep. Test coverage verified live: `tsc --noEmit` clean; `pnpm test` (cli.test.ts, job.test.ts) 56 passed; `pnpm test:integration` (job.integration.test.ts) 6 passed — including the inert-trap-chain fixture and the composed-`FLUME_CONFIG_DIR` end-to-end case §6 calls for. Acceptance ("pnpm test green, tsc green") genuinely met before ship.
+- `1957ec7` — mechanical ship: retired RESIDENCY-RESOLUTION from pending, flipped SEED-DIR + HARVEST-DECL from `blockedBy` to `open`. Verified correct (only pending.json touched; the two dependents' gates are the only ones that cited the shipped tag).
 
-**Drain**: the 2026-07-23 static-.flume dogfood entry routes entirely to pending — asks 1+3 → RESIDENCY-RESOLUTION (spec §2/§3 adopted the filer's "one decision" framing), ask 2 → SEED-DIR (§4). Nothing parked; inbox empty.
+Noted but out of scope for this tick's audit: `c4032cd` (chore(flume): tick agents on Sonnet, `.flume/chain.ts`) landed after this tick's computed commit-delta boundary — a human/harness model-pin, not spec-derived work; nothing to route.
 
-**Audit**: all 3 commits clean. `7c05fab` — human-authored spec, spec lane; source cites spot-checked (cli.ts:117 write-back, job.ts:463, resolveStateDirs lines) and accurate. `0592e90` — external filing to inbox.md, the designated lane. `cf6995e` — human interactive package.json alias; checked docs for `pnpm exec flume` drift: README/docs don't reference either invocation form, no follow-up needed (CLAUDE.md's mention is the human's surface).
+**Derive / Drain / Promote**: no triggers (spec unchanged, inbox empty, no further blockedBy tags reference a now-absent entry). No pending.json changes this tick.
 
-**Promote**: none (pending was empty).
+## Queue (4)
 
-## Queue (5)
-
-Head: **RESIDENCY-RESOLUTION** (open). Then SEED-DIR, HARVEST-DECL (unblock when residency ships), DOCS-0-6, CUT-0-6-0. Linear line to the 0.6.0 cut.
+Head: **SEED-DIR** (open) and **HARVEST-DECL** (open, independent of seed) → **DOCS-0-6** (blockedBy HARVEST-DECL) → **CUT-0-6-0** (blockedBy DOCS-0-6).
 
 ## Open questions
 
@@ -24,7 +24,7 @@ None.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/pending.json`, `.flume/plan/state.md`, `.flume/inbox.md` (drained); open-questions.md untouched (empty).
-- Trunk: HEAD `7c05fab` at tick start, tree clean besides plan artifacts (untracked `.flume/loop.pid` is runtime). **main ahead 2 of origin/main** (3 with this commit) — human push pending.
+- Wrote `.flume/plan/state.md` only this tick; pending.json/open-questions.md/inbox.md unchanged (already correct on disk).
+- Trunk: HEAD `c4032cd` at tick start, tree clean besides plan artifacts and untracked runtime `.flume/loop.pid`. **main ahead of origin** — human push pending.
 
 Plan continues: no
