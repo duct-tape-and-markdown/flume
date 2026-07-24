@@ -1309,6 +1309,42 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     }
   }, 60_000);
 
+  it("no chain at <configDir>/chain.ts at extract time throws JobUsageError before any mutation", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "m", log: () => {} });
+
+      // Drop the repo chain on main — mirrors a caller pointing extract at a
+      // configDir the residency invariant no longer holds for.
+      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+      await rm(join(repo.dir, ".flume", "chain.ts"));
+      await exec("git", ["add", ".flume/chain.ts"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "chore: drop chain"], {
+        cwd: repo.dir,
+      });
+      const before = await gitOut(repo.dir, ["rev-parse", "HEAD"]);
+
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "m", onto: "main", log: () => {} }),
+      ).rejects.toThrow(/no chain at/);
+      await expect(
+        jobExtract({ repoRoot: repo.dir, name: "m", onto: "main", log: () => {} }),
+      ).rejects.toBeInstanceOf(JobUsageError);
+
+      // Nothing moved: still on main at the same commit, job branch intact.
+      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+        "main",
+      );
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(before);
+      expect(
+        (await gitOut(repo.dir, ["branch", "--list", "job/m"])).trim(),
+      ).toBe("job/m");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
   it("cherry-pick conflict aborts, unwinds to the job branch, and deletes the partial branch — job intact, retryable", async () => {
     const repo = await makeRepo();
     try {

@@ -547,9 +547,10 @@ export interface JobExtractResult {
  * deleted — extract is retryable, nothing lost.
  *
  * Throws {@link JobUsageError} on a bad name, a job whose branch does not
- * exist, or an unresolvable `--onto` (exit 2 at the CLI); refusals over repo
- * state (clobber, dirty tree, live loop, `job/<name>` held by another
- * worktree) and git failures are operational errors (exit 1).
+ * exist, an unresolvable `--onto`, or a missing `<configDir>/chain.ts`
+ * (exit 2 at the CLI); refusals over repo state (clobber, dirty tree, live
+ * loop, `job/<name>` held by another worktree) and git failures are
+ * operational errors (exit 1).
  */
 export async function jobExtract(
   opts: JobExtractOptions,
@@ -580,8 +581,16 @@ export async function jobExtract(
   // Load the chain's declared harvest list before any mutation (v0.6 §5) —
   // a load failure must leave the job untouched, same as the checks above.
   // No ordering hazard: the repo chain is configDir-resident, not job-dir,
-  // so it survives job consumption regardless of when it's read.
-  const { default: chain } = await loadChainModule(resolve(configDir, "chain.ts"));
+  // so it survives job consumption regardless of when it's read. Mirrors
+  // jobNew's chainPath guard: a missing chain is usage-shaped, not
+  // operational — the residency invariant (v0.6 §2) guarantees a chain
+  // exists, so its absence means the caller pointed extract at the wrong
+  // configDir.
+  const chainPath = resolve(configDir, "chain.ts");
+  if (!existsSync(chainPath)) {
+    throw new JobUsageError(`no chain at ${chainPath}`);
+  }
+  const { default: chain } = await loadChainModule(chainPath);
   const harvestPaths = chain.harvest ?? [];
 
   // 1. No clobber (§5e-1): the clean branch is named by the job, and a
