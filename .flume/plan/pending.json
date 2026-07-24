@@ -1,55 +1,5 @@
 [
   {
-    "tag": "SEED-DIR",
-    "summary": "Chain.seedDir replaces --template: job new loads the repo chain and seeds the job dir from the configDir-relative seedDir, verbatim skip-existing. --template deleted; bare job, no warning.",
-    "per": {
-      "path": "spec/RELEASE-v0.6.md",
-      "section": "4. Chain-declared seed — `job new` without `--template`"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Chain.seedDir?: string beside humanOnly (§4)"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "jobNew: take configDir, load repo chain (missing chain or declared-but-absent seedDir → JobUsageError/exit 2), cp seedDir force:false; drop template path + empty-dir warning"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "job new verb: drop --template parsing, update usage/help text, pass configDir to jobNew"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "job new suites reworked from --template to Chain.seedDir per §6"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "fixtures converted from --template to seedDir declarations"
-        }
-      ],
-      "retire": [
-        "JobNewOptions.template",
-        "--template flag (flume job new)"
-      ]
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "seedDir seeds + baseline-commits the skeleton; re-run preserves worked file and fills newly added stub (skip-existing); absent seedDir → bare job, no warning; missing chain → exit 2; declared-but-absent seedDir → exit 2; --template rejected as unknown flag"
-      }
-    ],
-    "acceptance": "pnpm test green with the §6 seed cases; tsc green; --template gone from CLI surface",
-    "notes": "Runtime ignores, @dtmd/flume link, longpaths pin, baseline commit all unchanged (§4-5). seedDir is configDir-relative — the promptPath idiom."
-  },
-  {
     "tag": "HARVEST-DECL",
     "summary": "Chain.harvest?: string[] replaces the HARVEST_PATHS constant; extract loads the repo chain for the list. Absent = harvest nothing (no default).",
     "per": {
