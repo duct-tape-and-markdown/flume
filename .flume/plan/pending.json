@@ -1,5 +1,40 @@
 [
   {
+    "tag": "EXTRACT-CHAIN-USAGE",
+    "summary": "job extract: missing/broken repo chain must throw JobUsageError (exit 2) before mutation, mirroring job new; currently falls through to exit 1.",
+    "per": {
+      "path": "spec/RELEASE-v0.6.md",
+      "section": "5. Chain-declared harvest — `job extract`"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "jobExtract: existsSync guard on chainPath before loadChainModule, throw JobUsageError (mirror jobNew's chainPath check, job.ts:190-196); update jobExtract's docstring JobUsageError enumeration"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "add case: no chain at configDir/chain.ts at extract time throws JobUsageError before any mutation"
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "missing repo chain at extract time throws JobUsageError (CLI exit 2); job branch and HEAD untouched"
+      }
+    ],
+    "acceptance": "job extract with no <configDir>/chain.ts throws JobUsageError (CLI exit 2), job left untouched; pnpm test green",
+    "notes": "Audit finding (HARVEST-DECL, b55cc18): commit message claims a broken/missing chain 'fails usage-shaped' but jobExtract calls loadChainModule with no existsSync guard, throwing a plain Error -> exit 1. Confirmed empirically (clean env, scratch repo): exit 1, job/branch + HEAD intact. jobNew has the exit-2 guard; jobExtract lacks its counterpart."
+  },
+  {
     "tag": "DOCS-0-6",
     "summary": "Docs for chain residency, seedDir + harvest declarations, --template removal, migration note (shims delete, prompt gymnastics unnecessary).",
     "per": {
