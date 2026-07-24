@@ -11,6 +11,49 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-23
+
+Static-`.flume` + thin jobs, the native shape: a chain is a repo-resident
+artifact, one chain per `.flume`, known by location, with job dirs holding
+only job state. Driven by the centercode-platform static-`.flume` dogfood.
+See `spec/RELEASE-v0.6.md`.
+
+### Breaking
+
+- Job resolution (`--job`/`FLUME_JOB`) no longer retargets
+  `FLUME_CONFIG_DIR` — it moves only `flumeDir` (state root); `configDir`
+  stays `<repoRoot>/.flume` or explicit `FLUME_CONFIG_DIR`. Chains are
+  repo-resident: a `chain.ts` inside a job dir is never read (inert by
+  construction — no probe, no warning). The v0.5 conflict rule conflated
+  state authority with config authority; job-local chain shims (`export
+  { default } from "../../chain.ts"`) are no longer necessary and can be
+  deleted at leisure.
+- `flume job new --template <dir>` removed. Seed authority moves from a
+  per-invocation flag to the repo chain's declared `seedDir` (see
+  `### Added`); `job new` now requires a repo chain to exist at all — a
+  job that could never `run` must not be creatable.
+- `flume job extract` harvests only chain-declared paths. The hardcoded
+  `HARVEST_PATHS` constant (`friction.md`, open questions) is removed;
+  absent a declared `harvest`, extract harvests nothing — no default.
+
+### Added
+
+- `Chain.seedDir?: string` — a configDir-relative directory copied
+  verbatim into a newborn job dir on `job new` (skip-existing, so re-run
+  fills gaps introduced by a stub added later without clobbering worked
+  files). Absent `seedDir` produces a bare job, no warning. A missing
+  repo chain, or a declared-but-absent `seedDir`, is a usage error
+  (exit 2).
+- `Chain.harvest?: string[]` — job-dir-relative paths `job extract`
+  copies off a dying job branch to stdout for operator routing. Extract
+  loads the repo chain for the list before any git mutation, so a
+  broken/missing chain fails usage-shaped (exit 2) and leaves the job
+  untouched, same as the other pre-flight checks.
+- `--job` composes with an explicit `FLUME_CONFIG_DIR`: env owns the
+  chain+prompts dir, job owns state, no corruption scenario (state stays
+  namespaced under the job dir). `--job` alongside explicit `FLUME_DIR`
+  remains a usage error (exit 2) — two authorities for one state root.
+
 ## [0.5.0] - 2026-07-23
 
 The dock collapse: a job is a branch plus a state root, both named by
