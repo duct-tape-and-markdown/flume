@@ -146,8 +146,8 @@ Commands:
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
   render <phase>      Print the rendered prompt for <phase> without invoking
                       the agent.
-  job new <name> [--template <dir>]
-                      Create branch job/<name> + seed .flume/jobs/<name>/
+  job new <name>      Create branch job/<name> + seed .flume/jobs/<name>/ from
+                      the repo chain's declared Chain.seedDir, if any
                       (runtime .gitignore, @dtmd/flume link, baseline commit).
   job run <name> [--max N]
                       Check out job/<name>, wake the chain's entry phase from
@@ -250,19 +250,21 @@ Exit codes:
 const HELP_JOB = `Usage: flume job <verb> [args]
 
 Lifecycle verbs over the job convention (a job is branch job/<name> plus
-state root .flume/jobs/<name>/). Machinery only — harness content (chain.ts,
-prompts) arrives via --template, caller-owned.
+state root .flume/jobs/<name>/). Machinery only — harness content arrives via
+the repo chain's declared Chain.seedDir, chain-owned.
 
 Verbs:
-  new <name> [--template <dir>]
-      From current HEAD: create branch job/<name> (reuse if it exists), seed
-      .flume/jobs/<name>/ from --template (verbatim copy; absent → empty dir
-      plus a warning), merge runtime ignore entries into the job dir's
-      .gitignore (awake/, prior-attempts/, worktrees/, node_modules/,
-      loop.pid), link node_modules/@dtmd/flume to the running flume's
-      package root (junction on win32; skipped if the link exists), pin
-      core.longpaths repo-locally (win32), and baseline-commit the seeded
-      harness. Stays on job/<name>.
+  new <name>
+      From current HEAD: create branch job/<name> (reuse if it exists), load
+      the repo chain (<configDir>/chain.ts — missing chain exits 2: a job
+      that could never \`run\` must not be creatable), copy its declared
+      seedDir into .flume/jobs/<name>/ verbatim and skip-existing (absent
+      seedDir → bare job, no warning; a declared-but-absent seedDir exits 2),
+      merge runtime ignore entries into the job dir's .gitignore (awake/,
+      prior-attempts/, worktrees/, node_modules/, loop.pid), link
+      node_modules/@dtmd/flume to the running flume's package root (junction
+      on win32; skipped if the link exists), pin core.longpaths repo-locally
+      (win32), and baseline-commit the seeded harness. Stays on job/<name>.
 
   run <name> [--max N]
       Assert branch job/<name> exists (error otherwise) and check it out
@@ -308,11 +310,12 @@ Exit codes:
       job/<name> checked out in another worktree, or a cherry-pick conflict
       (unwound to job/<name>; retryable).
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
-      not a single path segment, --template pointing at no directory, run
-      on a job whose branch does not exist, rm on a <name> that names
-      neither a branch nor a job dir, status given any argument, or extract
-      missing --onto, given a flag without a value, given an --onto that
-      resolves to no commit, or naming a job whose branch does not exist.
+      not a single path segment, new with no chain at <configDir>/chain.ts or
+      a declared seedDir absent on disk, run on a job whose branch does not
+      exist, rm on a <name> that names neither a branch nor a job dir, status
+      given any argument, or extract missing --onto, given a flag without a
+      value, given an --onto that resolves to no commit, or naming a job
+      whose branch does not exist.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`).
 `;
@@ -453,29 +456,17 @@ async function runJobVerb(
   }
 
   const words = [...rest];
-  let template: string | undefined;
-  const tplIdx = words.indexOf("--template");
-  if (tplIdx >= 0) {
-    const value = words[tplIdx + 1];
-    if (!value || value.startsWith("-")) {
-      console.error("usage: flume job new <name> [--template <dir>]");
-      return 2;
-    }
-    template = value;
-    words.splice(tplIdx, 2);
-  }
   const name = words[0];
   if (!name || words.length > 1) {
-    console.error("usage: flume job new <name> [--template <dir>]");
+    console.error("usage: flume job new <name>");
     return 2;
   }
 
   try {
-    await jobNew({
-      repoRoot,
-      name,
-      ...(template !== undefined ? { template } : {}),
-    });
+    const configDir = process.env.FLUME_CONFIG_DIR
+      ? resolve(process.env.FLUME_CONFIG_DIR)
+      : join(repoRoot, ".flume");
+    await jobNew({ repoRoot, name, configDir });
     return 0;
   } catch (err) {
     if (err instanceof JobUsageError) {

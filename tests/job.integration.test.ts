@@ -528,6 +528,10 @@ describe("§5e integration — job new → job run → job extract", () => {
         await exec("git", ["add", "conflict.txt"], opts);
         await exec("git", ["commit", "-q", "-m", "seed conflict"], opts);
 
+        // `job new` now requires the repo chain to exist (v0.6 §4/§9-7) even
+        // though this scenario never runs a tick.
+        await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
+
         const created = await runCli(repo.dir, ["job", "new", "cfl"]);
         expect(created.code).toBe(0);
         await writeFile(join(repo.dir, "conflict.txt"), "job change\n");

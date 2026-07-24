@@ -211,4 +211,13 @@ export interface Chain {
    * content and shouldn't be woken autonomously.
    */
   humanOnly: string[];
+  /**
+   * `configDir`-relative directory `flume job new` seeds a fresh job dir
+   * from — the `promptPath` idiom (stubs are real files beside the chain,
+   * e.g. `.flume/job-seed/`). Copied verbatim, skip-existing (re-run fills
+   * gaps — a stub added to the seed dir reaches existing jobs — and never
+   * clobbers a worked file). Absent means a bare job: no content opinion,
+   * no warning.
+   */
+  seedDir?: string;
 }

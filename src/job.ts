@@ -3,7 +3,8 @@
  * a branch plus a state root, both named by convention —
  * `.flume/jobs/<name>/` (tracked, runtime subdirs ignored) on branch
  * `job/<name>`. Machinery only: no presets, no encoded checks, no harness
- * content — content arrives via `--template`, caller-owned.
+ * content — content arrives via the repo chain's `Chain.seedDir` (v0.6 §4),
+ * chain-owned.
  *
  * `src/cli.ts` routes `flume job <verb>` here. Git access is a local thin
  * wrapper: the verbs speak porcelain (`checkout`, `add`, `commit`,
@@ -11,7 +12,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import {
   cp,
   lstat,
@@ -134,8 +135,13 @@ async function ensureFlumeLink(jobDir: string, target: string): Promise<void> {
 export interface JobNewOptions {
   repoRoot: string;
   name: string;
-  /** Seed the job dir from this directory (verbatim recursive copy). */
-  template?: string;
+  /**
+   * Chain + prompts dir the repo chain (and a declared `Chain.seedDir`)
+   * resolve against — repo-resident (v0.6 §2), never the job dir. Defaults
+   * to `<repoRoot>/.flume`, the same default the CLI resolves absent an
+   * explicit `FLUME_CONFIG_DIR`.
+   */
+  configDir?: string;
   /**
    * Link target for `<jobDir>/node_modules/@dtmd/flume`. Defaults to the
    * running CLI's own package root (`resolve(HERE, "..")`) — version
@@ -148,28 +154,25 @@ export interface JobNewOptions {
 }
 
 /**
- * `flume job new <name> [--template <dir>]` (v0.5 §5a). From current HEAD:
- * branch `job/<name>` (reuse if it exists), seed `.flume/jobs/<name>/`,
- * ensure runtime ignores, link `@dtmd/flume`, pin `core.longpaths` (win32),
- * baseline-commit the harness, stay on the branch. Idempotent on re-run.
+ * `flume job new <name>` (v0.6 §4). From current HEAD: branch `job/<name>`
+ * (reuse if it exists), load the repo chain — no `<configDir>/chain.ts` is a
+ * usage error, since a job that could never `run` must not be creatable —
+ * then copy its declared `seedDir` into `.flume/jobs/<name>/` verbatim,
+ * skip-existing (a declared-but-absent `seedDir` is the same class of usage
+ * error; an undeclared `seedDir` seeds nothing, no warning), ensure runtime
+ * ignores, link `@dtmd/flume`, pin `core.longpaths` (win32), baseline-commit
+ * the harness, stay on the branch. Idempotent on re-run.
  *
  * Throws {@link JobUsageError} on usage-shaped input (exit 2 at the CLI);
  * any other throw is an operational failure (exit 1).
  */
 export async function jobNew(opts: JobNewOptions): Promise<void> {
   const { repoRoot, name } = opts;
+  const configDir = opts.configDir ?? join(repoRoot, ".flume");
   const log = opts.log ?? ((line: string) => console.log(line));
 
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
-  if (opts.template !== undefined) {
-    if (!existsSync(opts.template)) {
-      throw new JobUsageError(`--template dir not found: ${opts.template}`);
-    }
-    if (!statSync(opts.template).isDirectory()) {
-      throw new JobUsageError(`--template is not a directory: ${opts.template}`);
-    }
-  }
 
   // 1. Branch by convention, from current HEAD; reuse an existing job branch.
   const branch = `job/${name}`;
@@ -180,31 +183,54 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   );
   log(`[flume] ${reuse ? "reusing branch" : "created branch"} ${branch}`);
 
-  // 2. Seed the state root. Verbatim copy — the template owns its content.
-  const jobDir = join(repoRoot, ".flume", "jobs", name);
-  await mkdir(jobDir, { recursive: true });
-  if (opts.template !== undefined) {
-    await cp(opts.template, jobDir, { recursive: true });
-    log(`[flume] seeded ${jobDir} from ${opts.template}`);
-  } else {
-    log(
-      `[flume] warning: no --template — job dir is empty; populate ${jobDir} (chain.ts, prompts) before \`flume job run ${name}\``,
+  // 2. Load the repo chain — after the checkout, so the checkout decides
+  // which branch's copy is on disk (mirrors jobRun). The residency invariant
+  // (v0.6 §2) guarantees a chain exists before any job does; a chainless
+  // repo cannot run the job it would create.
+  const chainPath = resolve(configDir, "chain.ts");
+  if (!existsSync(chainPath)) {
+    throw new JobUsageError(
+      `no chain at ${chainPath}; a job that could never \`run\` must not be creatable`,
     );
   }
+  const { default: chain } = await loadChainModule(chainPath);
 
-  // 3. Runtime ignores — written before the baseline add so runtime state
+  // 3. Validate a declared seedDir before touching the state root — a
+  // declared-but-absent seedDir must not leave a stray empty job dir behind.
+  let seedPath: string | undefined;
+  if (chain.seedDir !== undefined) {
+    seedPath = resolve(configDir, chain.seedDir);
+    if (!existsSync(seedPath)) {
+      throw new JobUsageError(
+        `chain declares seedDir '${chain.seedDir}' but ${seedPath} does not exist`,
+      );
+    }
+  }
+
+  // 4. Seed the state root — configDir-relative, verbatim copy,
+  // skip-existing (v0.6 §4): re-run fills gaps (a stub added to the seed
+  // dir reaches existing jobs) and never clobbers a worked file. Absent
+  // seedDir → bare job; state accretes from ticks, no warning.
+  const jobDir = join(repoRoot, ".flume", "jobs", name);
+  await mkdir(jobDir, { recursive: true });
+  if (seedPath !== undefined) {
+    await cp(seedPath, jobDir, { recursive: true, force: false });
+    log(`[flume] seeded ${jobDir} from ${seedPath}`);
+  }
+
+  // 5. Runtime ignores — written before the baseline add so runtime state
   // and the link below never enter the commit.
   await ensureRuntimeIgnores(jobDir);
 
-  // 4. Unconditional provisioning (§5a-4, resolved decision 5).
+  // 6. Unconditional provisioning (§5a-4, resolved decision 5).
   await ensureFlumeLink(jobDir, opts.linkTarget ?? resolve(HERE, ".."));
 
-  // 5. Job dirs nest deep; spare the operator MAX_PATH failures up front.
+  // 7. Job dirs nest deep; spare the operator MAX_PATH failures up front.
   if (process.platform === "win32") {
     await git(repoRoot, ["config", "core.longpaths", "true"]);
   }
 
-  // 6. Baseline-commit the seeded harness so plan/build produce clean deltas.
+  // 8. Baseline-commit the seeded harness so plan/build produce clean deltas.
   // The commit is pathspec-scoped: anything the operator pre-staged outside
   // the job dir stays in the index instead of being swept into the seed.
   const rel = join(".flume", "jobs", name);
@@ -223,7 +249,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
   }
-  // 7. Stay on job/<name> — tune, then `flume job run`.
+  // 9. Stay on job/<name> — tune, then `flume job run`.
 }
 
 export interface JobRunOptions {
