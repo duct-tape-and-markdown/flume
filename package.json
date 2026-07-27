@@ -36,10 +36,10 @@
     "CHANGELOG.md"
   ],
   "bin": {
-    "flume": "./bin/flume"
+    "flume": "./bin/flume.js"
   },
   "scripts": {
-    "flume": "./bin/flume",
+    "flume": "./bin/flume.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "VITEST_LANE=integration vitest run",
