@@ -66,6 +66,17 @@ survives), plan prompt's acceptance-vs-files cross-check, and
 `entryChannelPaths` declared so the escape hatch exists. Engine items above
 are what chains cannot do for themselves.
 
+**Addendum (operator, same day):** friction being gitignored is intentional
+design — the loop-to-owner channel, hand-routed, never in a commit diff —
+and any fix must preserve that. The missing piece is narrower than item 1
+first framed it: the engine owns fanout worktree TEARDOWN, and teardown
+deletes friction before the owner can route it. Candidate shape: at
+worktree removal, harvest `<worktree state root>/friction/*` (and on an
+entry-scope revert, the offending-path list + reverted commit message) back
+to the primary state root — evidence survives with zero commit-stream
+change. Note this lives in the SAME teardown code path as the win32
+cleanup failure below: one visit fixes both.
+
 ## 2026-07-27 — win32 worktree cleanup fails every wave (human)
 
 All three build waves of the v0.6.1 run ended with `worktree cleanup failed …
