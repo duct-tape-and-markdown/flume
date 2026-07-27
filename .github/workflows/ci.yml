@@ -29,6 +29,13 @@ jobs:
 
       - run: pnpm test
 
+      - run: pnpm build
+
+      # Install smoke test (spec/RELEASE-v0.6.1.md §3): pack -> install ->
+      # run the *generated* .cmd shim -> chain load. This is the lane that
+      # would have caught the 0.6.0 sh.exe shim defect.
+      - run: pnpm run smoke:install
+
   ci:
     runs-on: ubuntu-latest
     steps:
