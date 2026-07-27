@@ -1,1 +1,85 @@
-[]
+[
+  {
+    "tag": "NODE-BIN-ENTRY",
+    "summary": "Add Node bin entry (bin/flume.js) so npm's Windows shims resolve without sh.exe; package.json bin/scripts point at it.",
+    "per": {
+      "path": "spec/RELEASE-v0.6.1.md",
+      "section": "2. Node bin entry"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "bin/flume.js",
+          "description": "#!/usr/bin/env node entry exec'ing dist/cli.js per §2 — mirror bin/flume's argv/stdio/exit propagation, no option parsing, no symlink-walk (Node resolves its own module path)."
+        }
+      ],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "bin.flume -> \"./bin/flume.js\"; scripts.flume alias follows, per §2."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "npm pack --dry-run includes bin/flume.js; pnpm tsc --noEmit and pnpm test stay green; bin/flume (POSIX) unchanged and still present for direct callers.",
+    "notes": "bin/flume stays in the package, just no longer what bin.flume points at. Win32 .cmd-shim verification is INSTALL-SMOKE-TEST's acceptance, not this entry's — this machine is win32 so that gate is real, not aspirational."
+  },
+  {
+    "tag": "INSTALL-SMOKE-TEST",
+    "summary": "Add scripts/smoke-install.mjs: pack -> install -> generated shim -> chain-load smoke test; wire into CI windows lane.",
+    "per": {
+      "path": "spec/RELEASE-v0.6.1.md",
+      "section": "3. Install smoke test — pack → install → shim → chain load"
+    },
+    "gate": { "kind": "blockedBy", "tag": "NODE-BIN-ENTRY" },
+    "files": {
+      "new": [
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "Plain-Node script per §3: npm pack repo, install tarball into fs.mkdtemp scratch dir, run generated shim (flume.cmd on win32, flume elsewhere) --version expect 0, scaffold minimal chain fixture, run shim's render <phase> expect 0. Print each step; abort non-zero on first failing step, naming it."
+        }
+      ],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "add scripts.\"smoke:install\": \"node scripts/smoke-install.mjs\" per §3."
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "wire smoke:install into the existing windows-latest lane per §3 (no new lane needed — one already exists)."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "pnpm run smoke:install exits 0 on this win32 machine, log shows both --version and render passing through the .cmd shim; CI windows lane runs it green.",
+    "notes": "Depends on NODE-BIN-ENTRY shipping first — otherwise the --version step fails against the known-bad sh.exe shim, which is the exact defect this test exists to catch."
+  },
+  {
+    "tag": "CHANGELOG-0-6-1",
+    "summary": "Add 0.6.1 CHANGELOG section: Fixed (Windows bin) and Added (smoke:install).",
+    "per": {
+      "path": "spec/RELEASE-v0.6.1.md",
+      "section": "4. CHANGELOG"
+    },
+    "gate": { "kind": "blockedBy", "tag": "INSTALL-SMOKE-TEST" },
+    "files": {
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "New [0.6.1] section per §4: Fixed line (Windows bin was #!/bin/sh, shims needed sh.exe) and Added line (smoke:install pack-and-install test)."
+        }
+      ],
+      "new": [],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "CHANGELOG.md has an [0.6.1] section with the Fixed + Added lines; no version bump (human-performed at cut, per §4).",
+    "notes": "Blocked on INSTALL-SMOKE-TEST rather than NODE-BIN-ENTRY directly — transitively covers both since that entry cannot ship before this one."
+  }
+]

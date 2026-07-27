@@ -1,50 +1,66 @@
 # State
 
-Phase: **v0.6 line closed** — `spec/RELEASE-v0.6.md` (`7c05fab`) shipped end to
-end; 0.6.0 cut. No newer `spec/RELEASE-*.md` exists yet. Mode this tick: **audit**.
+Phase: **v0.6.1 line active** — `spec/RELEASE-v0.6.1.md` (`0e9412f`) is the
+newest spec file: Windows install surface patch (Node bin entry, install
+smoke test, CHANGELOG). Mode this tick: **derive**.
 
-## This tick — audit 2 commits (0.6.0 cut)
+## This tick — derive v0.6.1, drain inbox
 
-Delta = 2 commits since `8b51e06`: `3c9f16f` (chore(release): cut 0.6.0),
-`73c5766` (chore(flume): ship CUT-0-6-0). No spec-delta (no `spec/` file newer
-than RELEASE-v0.6.md), no inbox entries.
+Delta = 3 commits since last `plan:` (`d837e4d`): `a9fe6b2` + `4ca55ef`
+(inbox: four centercode-platform engine requests), `0e9412f` (spec:
+v0.6.1 line). No commit-delta requiring audit — these are human spec/inbox
+commits, not build commits with a `per` cite to cross-check for drift.
 
-**Audit**:
-- `3c9f16f` cross-checked against §10 verbatim: `### Breaking` block covers
-  all three cited breaks (config-retarget removal, `--template` removal,
-  `HARVEST_PATHS` removal); `### Added` covers `Chain.seedDir`,
-  `Chain.harvest`, `--job` + `FLUME_CONFIG_DIR` composition — matches the
-  filed entry's block shape exactly. `package.json` → 0.6.0. `pnpm-lock.yaml`
-  untouched, as the filed entry predicted (version-only bump). Commit
-  message exactly `chore(release): cut 0.6.0`. Clean.
-- `73c5766` — mechanical ship: pending.json → `[]`. Only path touched, per
-  the ship-commit contract. Clean.
-- Ran live: `pnpm tsc --noEmit` clean; `pnpm test` 197 passed, 4 skipped.
-- No drift found. No new findings this tick.
+**Derive** (`spec/RELEASE-v0.6.1.md`, all 4 sections read in full):
+- §1 Purpose & scope — framing only, no entry.
+- §2 Node bin entry → `NODE-BIN-ENTRY` (open). New `bin/flume.js`, edit
+  `package.json` bin/scripts. `bin/flume` (POSIX) stays, not retired.
+- §3 Install smoke test → `INSTALL-SMOKE-TEST` (blockedBy NODE-BIN-ENTRY —
+  its acceptance exercises the win32 shim NODE-BIN-ENTRY fixes, so it must
+  ship second). New `scripts/smoke-install.mjs`, edit `package.json`
+  (script alias) + `.github/workflows/ci.yml` (existing windows-latest lane
+  gets the smoke step — no new lane needed).
+- §4 CHANGELOG → `CHANGELOG-0-6-1` (blockedBy INSTALL-SMOKE-TEST,
+  transitively covers NODE-BIN-ENTRY too). Edit `CHANGELOG.md` only.
+- Verified all three entries' paths (`bin/**`, `scripts/**`, `package.json`,
+  `.github/**`, `CHANGELOG.md`) sit inside build's writablePaths
+  (`.flume/chain.ts` lines ~189-249) — no open-question needed for fencing.
+- Checked `tests/cli.test.ts` — it spawns the tsx CLI directly, not
+  `bin/flume`; no existing vitest coverage touches the bin shim, so no test
+  entries filed. Acceptance for both bin entries rides the smoke script
+  itself (repeatable, not a one-off manual check) per spec intent.
 
-**Promote**: `pending-now` is empty — nothing to unblock.
+**Drain** (inbox, 1 cluster / 4 items — all four centercode-platform engine
+requests): none have a citable `spec/RELEASE-*.md` section (all are `src/`
+engine-architecture asks with no spec yet), so none became pending entries.
+Routed to `.flume/plan/open-questions.md` as one PARKED cluster, recommending
+a human scope an engine-hardening spec line (v0.7?) — flagged item 3
+(`GateContext.repoRoot`) as lowest-risk/first-candidate if the line gets
+trimmed, and flagged items 2 and 4 as touching dispatcher/loop semantics
+non-trivially (real design calls, not just "add a helper"). Inbox drained to
+just the header — queue is empty.
 
-**Drain**: inbox empty, nothing to route.
+**Promote**: `pending-now` was empty at tick start — nothing to unblock.
 
-**Derive**: no spec-delta — `spec/RELEASE-v0.6.md` is still the newest spec
-file and it's now fully shipped. Nothing to decompose until a human authors
-the next `spec/RELEASE-*.md` line.
+## Queue (3)
 
-## Queue (0)
+1. `NODE-BIN-ENTRY` — open, next to build.
+2. `INSTALL-SMOKE-TEST` — blockedBy NODE-BIN-ENTRY.
+3. `CHANGELOG-0-6-1` — blockedBy INSTALL-SMOKE-TEST.
 
-Empty. The v0.6 line is closed; no active spec line has an open queue.
+## Open questions (1)
 
-## Open questions
-
-None.
+- Engine-ownership requests from centercode-platform's chain — PARKED,
+  needs human spec-scoping decision before any of the four can become
+  pending entries.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` only this tick — pending.json and
-  open-questions.md already correct on disk (`[]` / no entries); inbox.md
-  unchanged (already empty of routable entries).
-- Trunk: HEAD `73c5766` at tick start, tree clean besides untracked runtime
-  `.flume/loop.pid`. **main ahead of origin** — human push still pending
-  (unchanged since last tick).
+- Wrote `.flume/plan/pending.json` (3 entries), `.flume/plan/state.md`
+  (this file), `.flume/plan/open-questions.md` (+1 parked cluster),
+  `.flume/inbox.md` (drained to header). All four are plan's declared
+  writable paths.
+- Trunk: HEAD `0e9412f` at tick start, tree clean besides untracked runtime
+  `.flume/loop.pid`. main still ahead of origin — human push still pending.
 
 Plan continues: no
