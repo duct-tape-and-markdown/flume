@@ -34,3 +34,13 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-07-27 — engine requests from centercode-platform's chain (human)
+
+Three requests surfaced from centercode-platform PR #670's subtraction (chain code removed in favor of engine-level enforcement). Each is "the engine owns this truth, so the engine should enforce it" — not chain code looking for a new home.
+
+1. **Engine validates pending.json against its own schema on plan commit.** Flume defines the pending format and exports `parsePending`; today every responsible chain must hand-roll an afterCommit gate that calls the engine's own parser back at it (~30 lines per chain). The engine should refuse a plan commit whose pending.json does not parse against its own schema. Evidence: centercode-platform's `pendingParseGate` caught a real malformed-pending revert in the 2026-07-24 rehearsal (tick-1).
+
+2. **Engine pre-checks planned entry paths against the next phase's writablePaths.** The engine owns both sides of this law — the pending entry format AND writablePaths fence enforcement at build. Chains that want plan-time failure must re-implement glob matching, which can silently diverge from the engine's semantics (centercode-platform carried a second glob matcher for exactly this until 2026-07-27, then cut it). One matcher, one truth: at plan commit, any pickable entry naming a path outside the next phase's fence fails the tick with the offending paths listed. Every chain gets one-tick-earlier failure for free.
+
+3. **GateContext exposes the repo/worktree root.** Gates that shell out to build tools need the worktree root; today they run `git rev-parse --show-toplevel` themselves with a fallback (centercode-platform's `repoRootOf`, `dotnet-build` gate). `ctx.repoRoot` kills the helper in every chain.
