@@ -35,6 +35,37 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-07-27 — entry-scope revert discards the whole tick and eats its own evidence (human, from job dev-9175-cim-usage)
+
+Field report, one fanout wave, two entries, both reverted for exactly one
+undeclared path each — and both overruns were correct engineering (the
+acceptance criteria were unsatisfiable inside the declared `files`; e.g. an
+acceptance requiring a constant wired in from a file the entry didn't list).
+The guard fired correctly; the cost model around it is the finding:
+
+1. **The revert verdict does not survive to plan.** The offending path list
+   and the agent's own explanation (one wrote "outside entry.files, noted in
+   commit body + friction log" — then everything reverted) lived only in
+   supervisor stdout and the fanout worktree, which cleanup deleted. Plan
+   re-scoped from the operator's inbox note, not from the agents' evidence.
+   Engine ask: on an entry-scope revert, persist the offending paths + the
+   reverted commit's message somewhere plan reads — e.g. append to the
+   entry's `gate.reason` in pending.json. Related to parked engine request
+   #2 (plan-time path pre-check): same law, this is its post-hoc half.
+2. **Wholesale discard is the right guarantee, expensive mechanism.** ~7 min
+   of agent work discarded per entry over 1 path out of a dozen touched.
+   Bigger design: revert only offending paths, or stash the full diff and
+   hand it to the retry. Preserve the per-entry narrowing itself — it's what
+   keeps concurrent fanout entries from colliding.
+
+Chain-side mitigations exist and shipped to the personal template
+(flume-template `5b94b3c`): build prompt's needs-rescope discipline
+(channel-only commit when acceptance exceeds `files` — note a friction write
+inside the doomed commit dies WITH the revert; only a channel-only commit
+survives), plan prompt's acceptance-vs-files cross-check, and
+`entryChannelPaths` declared so the escape hatch exists. Engine items above
+are what chains cannot do for themselves.
+
 ## 2026-07-27 — win32 worktree cleanup fails every wave (human)
 
 All three build waves of the v0.6.1 run ended with `worktree cleanup failed …
