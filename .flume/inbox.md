@@ -35,6 +35,15 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-07-27 — CLI through a directory junction silently exits 0, no output (human, from DEV-9191 delivery)
+
+`node <junction-path>/dist/cli.js <cmd>` runs nothing and exits 0:
+`import.meta.url` resolves the real path while `process.argv[1]` keeps the
+junction path, so cli.js's invoked-directly check never matches and `main()`
+is never called. Same silent-success family as parked engine request #4
+(exit-0 supervisor). Candidate fix: compare `realpath`s on both sides of the
+check, or fall back to "no other entry imported us" detection.
+
 ## 2026-07-27 — entry-scope revert discards the whole tick and eats its own evidence (human, from job dev-9175-cim-usage)
 
 Field report, one fanout wave, two entries, both reverted for exactly one
