@@ -34,3 +34,17 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-07-27 — win32 worktree cleanup fails every wave (human)
+
+All three build waves of the v0.6.1 run ended with `worktree cleanup failed …
+Command failed: git worktree remove --force <dir>` / `error: failed to delete
+… Directory not empty`, leaving `node_modules`-laden dirs under
+`.flume/worktrees/` (swept by hand after the run). Likely cause: on Windows,
+`git worktree remove --force` won't delete a dir tree containing files git
+never tracked at that scale (or locked handles); pnpm-installed node_modules
+qualifies. Loop completed fine otherwise — severity is disk-bloat +
+noise-per-wave, not correctness. Candidate fix lives with setupWorktree's
+owner: engine falls back to `git worktree prune` + recursive rm when
+`worktree remove` fails, or documents that chains owning setupWorktree also
+own teardown.
