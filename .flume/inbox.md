@@ -35,67 +35,23 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
-## 2026-07-27 — CLI through a directory junction silently exits 0, no output (human, from DEV-9191 delivery)
+## 2026-07-27 — the harness block misstates the fence on entry-scoped ticks (human, from the two-exemplars study)
 
-`node <junction-path>/dist/cli.js <cmd>` runs nothing and exits 0:
-`import.meta.url` resolves the real path while `process.argv[1]` keeps the
-junction path, so cli.js's invoked-directly check never matches and `main()`
-is never called. Same silent-success family as parked engine request #4
-(exit-0 supervisor). Candidate fix: compare `realpath`s on both sides of the
-check, or fall back to "no other entry imported us" detection.
-
-## 2026-07-27 — entry-scope revert discards the whole tick and eats its own evidence (human, from job dev-9175-cim-usage)
-
-Field report, one fanout wave, two entries, both reverted for exactly one
-undeclared path each — and both overruns were correct engineering (the
-acceptance criteria were unsatisfiable inside the declared `files`; e.g. an
-acceptance requiring a constant wired in from a file the entry didn't list).
-The guard fired correctly; the cost model around it is the finding:
-
-1. **The revert verdict does not survive to plan.** The offending path list
-   and the agent's own explanation (one wrote "outside entry.files, noted in
-   commit body + friction log" — then everything reverted) lived only in
-   supervisor stdout and the fanout worktree, which cleanup deleted. Plan
-   re-scoped from the operator's inbox note, not from the agents' evidence.
-   Engine ask: on an entry-scope revert, persist the offending paths + the
-   reverted commit's message somewhere plan reads — e.g. append to the
-   entry's `gate.reason` in pending.json. Related to parked engine request
-   #2 (plan-time path pre-check): same law, this is its post-hoc half.
-2. **Wholesale discard is the right guarantee, expensive mechanism.** ~7 min
-   of agent work discarded per entry over 1 path out of a dozen touched.
-   Bigger design: revert only offending paths, or stash the full diff and
-   hand it to the retry. Preserve the per-entry narrowing itself — it's what
-   keeps concurrent fanout entries from colliding.
-
-Chain-side mitigations exist and shipped to the personal template
-(flume-template `5b94b3c`): build prompt's needs-rescope discipline
-(channel-only commit when acceptance exceeds `files` — note a friction write
-inside the doomed commit dies WITH the revert; only a channel-only commit
-survives), plan prompt's acceptance-vs-files cross-check, and
-`entryChannelPaths` declared so the escape hatch exists. Engine items above
-are what chains cannot do for themselves.
-
-**Addendum (operator, same day):** friction being gitignored is intentional
-design — the loop-to-owner channel, hand-routed, never in a commit diff —
-and any fix must preserve that. The missing piece is narrower than item 1
-first framed it: the engine owns fanout worktree TEARDOWN, and teardown
-deletes friction before the owner can route it. Candidate shape: at
-worktree removal, harvest `<worktree state root>/friction/*` (and on an
-entry-scope revert, the offending-path list + reverted commit message) back
-to the primary state root — evidence survives with zero commit-stream
-change. Note this lives in the SAME teardown code path as the win32
-cleanup failure below: one visit fixes both.
-
-## 2026-07-27 — win32 worktree cleanup fails every wave (human)
-
-All three build waves of the v0.6.1 run ended with `worktree cleanup failed …
-Command failed: git worktree remove --force <dir>` / `error: failed to delete
-… Directory not empty`, leaving `node_modules`-laden dirs under
-`.flume/worktrees/` (swept by hand after the run). Likely cause: on Windows,
-`git worktree remove --force` won't delete a dir tree containing files git
-never tracked at that scale (or locked handles); pnpm-installed node_modules
-qualifies. Loop completed fine otherwise — severity is disk-bloat +
-noise-per-wave, not correctness. Candidate fix lives with setupWorktree's
-owner: engine falls back to `git worktree prune` + recursive rm when
-`worktree remove` fails, or documents that chains owning setupWorktree also
-own teardown.
+`prependHarnessBlock` (`src/Prompt.ts:218`) renders `phase.writablePaths`
+under "anything else you modify will revert the commit" — on EVERY tick,
+including fanout ticks with an `assignedEntry`, where the guard actually
+narrows to `entry.files ∪ entryChannelPaths`
+(`src/Dispatcher.ts:1056-1068`). The engine's one dispatcher-authoritative
+prompt surface ("your prompt states the task; the harness states what it
+will enforce" — CHAIN-AUTHORING §5) states the wrong fence on exactly the
+ticks where the fence is narrowest. Field consequences, all 2026-07-27:
+dev-9175-cim-usage agents got phase globs in-band while the entry fence
+reverted them; centercode-platform PR #672 had to hand-write fence clarity
+into a chain prompt that the engine should self-transmit; temper's build
+prompt still PROMISES "staying inside [phase paths] never reverts" —
+true on its 0.3.1-era engine, armed as a lie by its 0.6 bump. Fix shape:
+the harness block states the EFFECTIVE fence for this tick — on scoped
+ticks list `entry.files ∪ channelPaths` as the revert boundary and the
+phase globs as the outer ceiling. Chains stop hand-transmitting guard
+semantics; version bumps stop silently invalidating prompts — the engine
+speaks for itself, per tick, version-correct forever.
