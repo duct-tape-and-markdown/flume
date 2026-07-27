@@ -11,6 +11,23 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.6.1]
+
+Patch: the Windows install surface. See `spec/RELEASE-v0.6.1.md`.
+
+### Fixed
+
+- `npm i -g @dtmd/flume` now yields a working `flume` on Windows: the
+  package's bin was `#!/bin/sh`, so npm's generated `.cmd`/`.ps1` shims
+  hunted for `sh.exe` and failed under PowerShell/cmd on a stock Windows
+  box with no `sh` on PATH.
+
+### Added
+
+- `smoke:install` — a pack-and-install smoke test exercising the
+  npm-generated shims and a chain load, closing the gap that let 0.6.0
+  ship with a dead Windows entry point.
+
 ## [0.6.0] - 2026-07-23
 
 Static-`.flume` + thin jobs, the native shape: a chain is a repo-resident
