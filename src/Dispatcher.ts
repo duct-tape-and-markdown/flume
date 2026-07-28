@@ -7,8 +7,17 @@
  * fanout) agent invocation(s). `loop()` runs `tick()` until hibernation.
  */
 
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  rm,
+  readdir,
+  rename,
+  copyFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { spawn, execFile } from "node:child_process";
 import { join, dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -503,7 +512,7 @@ export class Dispatcher {
     const { result, noCommit } =
       phase.concurrency === "singleton"
         ? await this.runSingleton(phase, agent)
-        : await this.runFanout(phase, agent, forkResolver);
+        : await this.runFanout(phase, agent, chain, forkResolver);
 
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
@@ -613,6 +622,7 @@ export class Dispatcher {
   private async runFanout(
     phase: Phase,
     agent: Agent,
+    chain: Chain,
     forkResolver?: (repoRoot: string) => (slug: string) => boolean,
   ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
     const repoRoot = this.opts.repoRoot;
@@ -850,8 +860,14 @@ export class Dispatcher {
     // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
     // releases while the worktree path still exists. Teardown failures are
     // logged but do not block worktree removal — leaks are recoverable, a
-    // stuck worktree is not.
+    // stuck worktree is not. Friction harvest (§4) runs in the same
+    // best-effort slot, immediately before removal — the last point the
+    // worktree-local mirror is still readable.
     let cleaned = 0;
+    // §7: a worktree whose directory survives even the fallback removal is
+    // reported once for the whole wave, not once per worktree — a locked
+    // node_modules on one entry shouldn't produce N identical log lines.
+    const survivingPaths: string[] = [];
     // Serialize teardown for the same reason as setup (§4): N concurrent
     // `git worktree remove --force` calls race the shared `.git/worktrees/`
     // dir. The chain's `teardownWorktree` hook and branch deletion ride the
@@ -859,12 +875,13 @@ export class Dispatcher {
     // sequential walk beats interleaving the git-mutating step out alone.
     for (let i = 0; i < worktrees.length; i++) {
       const wt = worktrees[i]!;
+      const tag = batch[i]!.tag;
       if (phase.teardownWorktree) {
         try {
           await phase.teardownWorktree({
             worktreePath: wt.path,
             repoRoot,
-            entryTag: batch[i]!.tag,
+            entryTag: tag,
           });
         } catch (err) {
           this.log.warn(
@@ -872,19 +889,23 @@ export class Dispatcher {
           );
         }
       }
+      await this.harvestFriction(chain, wt.path, tag);
       try {
         await git.removeWorktree(repoRoot, wt.path);
         cleaned++;
       } catch (err) {
-        this.log.warn(
-          `[flume] worktree cleanup failed for ${wt.path}: ${(err as Error).message}`,
-        );
+        survivingPaths.push(wt.path);
       }
       await git.deleteBranch(repoRoot, wt.branch);
     }
     this.log.info(
       `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,
     );
+    if (survivingPaths.length > 0) {
+      this.log.warn(
+        `[flume] ${phase.name}: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
+      );
+    }
     this.log.info(
       `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
     );
@@ -1127,6 +1148,83 @@ export class Dispatcher {
       }
     }
     return { ok: true, results };
+  }
+
+  /**
+   * §4 (RELEASE-v0.6.2): before a fanout worktree is torn down, move every
+   * file its declared friction channel holds into the primary friction dir,
+   * prefixed `<tag>--` for provenance and collision-freedom. Harvest is
+   * harness code crossing the worktree boundary (the sessions precedent),
+   * not an agent write — worktree agents still only ever write under their
+   * own `$PWD`.
+   *
+   * Undeclared `chain.friction` — no-op. A relocated state root (`flumeDir`
+   * outside the repo tree) has no worktree-local mirror to harvest from —
+   * also a no-op, per §4's stated scope. Any failure here (missing dir,
+   * unreadable file, locked handle) is logged and swallowed: harvest must
+   * never abort the wave, and whatever it can't move is left for §7's
+   * removal-fallback sweep to surface.
+   */
+  private async harvestFriction(
+    chain: Chain,
+    worktreePath: string,
+    tag: string,
+  ): Promise<void> {
+    if (chain.friction === undefined) return;
+    const stateRootRel = relative(this.opts.repoRoot, this.flumeDir);
+    const relocated =
+      stateRootRel === ".." ||
+      stateRootRel.startsWith(`..${sep}`) ||
+      isAbsolute(stateRootRel);
+    if (relocated) return;
+
+    const mirrorDir = join(worktreePath, stateRootRel, chain.friction);
+    let entries: Dirent[];
+    try {
+      entries = await readdir(mirrorDir, { withFileTypes: true });
+    } catch {
+      // Nothing to harvest — dir absent (no friction written this tick) or
+      // unreadable (§4: log-and-continue, not abort).
+      return;
+    }
+    const files = entries.filter((e) => e.isFile());
+    if (files.length === 0) return;
+
+    const primaryDir = join(this.flumeDir, chain.friction);
+    try {
+      await mkdir(primaryDir, { recursive: true });
+    } catch (err) {
+      this.log.warn(
+        `[flume] friction harvest: could not create ${primaryDir}: ${(err as Error).message}`,
+      );
+      return;
+    }
+
+    for (const file of files) {
+      const src = join(mirrorDir, file.name);
+      const dest = join(primaryDir, `${tag}--${file.name}`);
+      try {
+        await rename(src, dest);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+          // Worktree relocated onto a different volume (FLUME_WORKTREES_DIR)
+          // — rename can't cross devices; copy then drop the source instead.
+          try {
+            await copyFile(src, dest);
+            await rm(src, { force: true });
+            continue;
+          } catch (copyErr) {
+            this.log.warn(
+              `[flume] friction harvest: failed to move ${src}: ${(copyErr as Error).message}`,
+            );
+            continue;
+          }
+        }
+        this.log.warn(
+          `[flume] friction harvest: failed to move ${src}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   private async createWorktree(

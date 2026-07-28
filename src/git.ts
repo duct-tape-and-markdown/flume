@@ -5,9 +5,20 @@
  */
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
+
+/**
+ * §7 (RELEASE-v0.6.2): bounded retries for the recursive-removal fallback
+ * below — the EBUSY/ENOTEMPTY class a just-installed, still-settling
+ * node_modules produces on win32 (the v0.6.1 dogfood symptom: three build
+ * waves, three `Directory not empty` failures, hand sweep).
+ */
+const FALLBACK_REMOVE_MAX_RETRIES = 5;
+const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
 
 async function run(
   cwd: string,
@@ -61,11 +72,45 @@ export async function addWorktree(opts: {
   ]);
 }
 
+/**
+ * Remove a worktree, falling back past a bare `git worktree remove --force`
+ * failure (§7, RELEASE-v0.6.2). On win32, a just-installed pnpm
+ * `node_modules` commonly still has handles open when teardown runs,
+ * turning `--force` into `Directory not empty` instead of a clean removal.
+ *
+ * Fallback: `worktree prune` (drops git's metadata once the directory is
+ * gone — a no-op here, since the directory still exists at this point, but
+ * cheap and correct to attempt) then a bounded-retry recursive filesystem
+ * removal, which is exactly what `fs.rm`'s `maxRetries`/`retryDelay` exist
+ * for (the EBUSY/locked-handle class). If the directory still survives
+ * after retries, this throws with the surviving path so the caller can
+ * aggregate — reporting per-worktree here would spam a wave-level failure
+ * once per surviving worktree.
+ */
 export async function removeWorktree(
   repoRoot: string,
   path: string,
 ): Promise<void> {
-  await run(repoRoot, ["worktree", "remove", "--force", path]);
+  try {
+    await run(repoRoot, ["worktree", "remove", "--force", path]);
+    return;
+  } catch {
+    // Bare removal failed (e.g. win32 `Directory not empty`) — fall
+    // through to the recursive-removal fallback below.
+  }
+  await pruneWorktrees(repoRoot);
+  await rm(path, {
+    recursive: true,
+    force: true,
+    maxRetries: FALLBACK_REMOVE_MAX_RETRIES,
+    retryDelay: FALLBACK_REMOVE_RETRY_DELAY_MS,
+  });
+  if (existsSync(path)) {
+    throw new Error(`worktree directory survived removal fallback: ${path}`);
+  }
+  // The directory is gone now — prune the now-stale `.git/worktrees/` entry
+  // `--force` alone left behind.
+  await pruneWorktrees(repoRoot);
 }
 
 /**
