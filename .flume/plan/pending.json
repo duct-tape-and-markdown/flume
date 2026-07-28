@@ -45,31 +45,5 @@
     ],
     "acceptance": "tests/cli.test.ts, tests/job.test.ts, and tests/Dispatcher.test.ts assert §6's surfacing behavior; FRICTION-SURFACING (eb6e076) ships with committed coverage instead of none.",
     "notes": "Same defect shape as FRICTION-DECLARATION-TESTS/FRICTION-GITIGNORE-TESTS/FRICTION-REVERT-NOTE-TESTS: the original FRICTION-SURFACING entry named tests[] paths but never listed them under files.edit, so the entry-scoped write guard excluded them and eb6e076 shipped touching only src/. This entry also closes a case the original tests[] never named at all: superviseLoop's loop-end summary and its configDir plumbing fix, both currently untested."
-  },
-  {
-    "tag": "CHANGELOG-0-6-2",
-    "summary": "Add the 0.6.2 CHANGELOG section per §8",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "8. CHANGELOG"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add [0.6.2] section per §8 (Added: friction declaration/harvest/revert-notes/surfacing; Fixed: win32 worktree-removal fallback). No version bump."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [],
-    "acceptance": "CHANGELOG.md gains a [0.6.2] section matching §8's Added/Fixed content; package.json version untouched (human-performed at cut time).",
-    "notes": "Mirrors the CHANGELOG-0-6-1 precedent: version bump + npm publish stay human actions, out of phase scope."
   }
 ]
