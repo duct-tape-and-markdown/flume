@@ -1102,6 +1102,40 @@ describe("jobStatus — §5d enumeration units", () => {
     }
   });
 
+  it("§6 (v0.6.2): a supplied frictionDir counts files under <jobdir>/<frictionDir>, per job", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      await mkdir(join(jobs, "alpha", "friction"), { recursive: true });
+      await writeFile(join(jobs, "alpha", "friction", "a.md"), "x\n");
+      await writeFile(join(jobs, "alpha", "friction", "b.md"), "y\n");
+      // "beta" declares no friction files of its own — dir absent.
+      await mkdir(join(jobs, "beta"), { recursive: true });
+
+      expect(jobStatus(dir, "friction")).toEqual([
+        { name: "alpha", awake: [], pending: 0, frictionCount: 2 },
+        { name: "beta", awake: [], pending: 0, frictionCount: 0 },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("omits frictionCount entirely when no frictionDir is supplied", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      await mkdir(join(jobs, "alpha", "friction"), { recursive: true });
+      await writeFile(join(jobs, "alpha", "friction", "a.md"), "x\n");
+
+      const rows = jobStatus(dir);
+      expect(rows).toEqual([{ name: "alpha", awake: [], pending: 0 }]);
+      expect("frictionCount" in rows[0]!).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("is observational: a hibernating job gains no awake/ dir, no file anywhere changes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
@@ -1340,6 +1374,92 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
       });
       expect(result.picked).toBe(1);
       expect(result.harvest).toEqual([]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("declared Chain.friction (§6, v0.6.2): the friction dir's working-tree files are harvested after the chain-declared harvest entries", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir, {
+        harvest: ["notes.md"],
+        friction: "friction",
+      });
+      await jobNew({ repoRoot: repo.dir, name: "w", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "w");
+
+      // Chain-declared harvest entry, committed to the job branch.
+      await writeFile(join(jobDir, "notes.md"), "handoff notes\n");
+      await exec("git", ["add", ".flume/jobs/w/notes.md"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "chore(flume): notes"], {
+        cwd: repo.dir,
+      });
+
+      // A non-harness commit so extract has something to cherry-pick.
+      await writeFile(join(repo.dir, "work.txt"), "derived\n");
+      await exec("git", ["add", "work.txt"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "job: add work"], {
+        cwd: repo.dir,
+      });
+
+      // Friction notes are gitignored by design (§3) — left only on the
+      // job dir's working tree, never committed, exactly what §6 says
+      // extract must read instead of git show.
+      await mkdir(join(jobDir, "friction"), { recursive: true });
+      await writeFile(join(jobDir, "friction", "b-note.md"), "blocked on X\n");
+      await writeFile(join(jobDir, "friction", "a-note.md"), "watch Y\n");
+
+      const result = await jobExtract({
+        repoRoot: repo.dir,
+        name: "w",
+        onto: "main",
+        log: () => {},
+      });
+
+      expect(result.harvest).toEqual([
+        { path: "notes.md", content: "handoff notes\n" },
+        { path: "friction/a-note.md", content: "watch Y\n" },
+        { path: "friction/b-note.md", content: "blocked on X\n" },
+      ]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 120_000);
+
+  it("undeclared Chain.friction (§6, v0.6.2): extract's harvest is byte-for-byte unchanged even with a friction-shaped dir present in the job's working tree", async () => {
+    const repo = await makeRepo();
+    try {
+      // `harvest` declared, `friction` deliberately absent.
+      await writeRepoChain(repo.dir, { harvest: ["notes.md"] });
+      await jobNew({ repoRoot: repo.dir, name: "v", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "v");
+
+      await writeFile(join(jobDir, "notes.md"), "handoff notes\n");
+      await exec("git", ["add", ".flume/jobs/v/notes.md"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "chore(flume): notes"], {
+        cwd: repo.dir,
+      });
+      await writeFile(join(repo.dir, "work.txt"), "derived\n");
+      await exec("git", ["add", "work.txt"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "job: add work"], {
+        cwd: repo.dir,
+      });
+
+      // A directory literally named "friction" — stray, never declared.
+      await mkdir(join(jobDir, "friction"), { recursive: true });
+      await writeFile(join(jobDir, "friction", "note.md"), "orphaned\n");
+
+      const result = await jobExtract({
+        repoRoot: repo.dir,
+        name: "v",
+        onto: "main",
+        log: () => {},
+      });
+
+      expect(result.harvest).toEqual([
+        { path: "notes.md", content: "handoff notes\n" },
+      ]);
     } finally {
       await repo.cleanup();
     }

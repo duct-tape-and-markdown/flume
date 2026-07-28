@@ -392,6 +392,147 @@ const INERT_TRAP_CHAIN_SRC =
   `throw new Error("job-local chain.ts was loaded — chains are repo-resident (v0.6 §2)");\n`;
 
 /**
+ * A minimal, otherwise-valid chain — never ticked in the §6 friction tests
+ * below, just loaded for its declared fields. `friction` omitted leaves the
+ * field undeclared entirely (§2: undeclared turns every §6 behavior off).
+ */
+function minimalChainSrc(friction?: string): string {
+  return (
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    (friction !== undefined
+      ? `  friction: ${JSON.stringify(friction)},\n`
+      : ``) +
+    `};\n`
+  );
+}
+
+/**
+ * §6 (v0.6.2) — `flume status`'s friction line (`src/cli.ts:660-667`,
+ * `frictionCountLine`): a count of files in the declared friction dir,
+ * appended only when declared and non-empty. Best-effort: a missing/broken
+ * chain never fails `status` (covered elsewhere); these tests hold the
+ * chain fixed and vary only the friction declaration/dir contents.
+ */
+describe("flume status — friction line (§6)", () => {
+  it("appends a friction count line when Chain.friction is declared and its dir holds files", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      await writeFile(join(frictionDir, "b.md"), "note b\n");
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).toContain("friction: 2 note(s) await routing");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omits the friction line when the declared dir exists but holds no files", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await mkdir(join(repo.dir, ".flume", "friction"), { recursive: true });
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).not.toContain("friction:");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omits the friction line when Chain.friction is undeclared, even with a stray same-named dir present", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      const strayDir = join(repo.dir, ".flume", "friction");
+      await mkdir(strayDir, { recursive: true });
+      await writeFile(join(strayDir, "a.md"), "note a\n");
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).not.toContain("friction:");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
+ * §6 (v0.6.2) — `flume job status`'s per-job friction count
+ * (`src/cli.ts:356-387`, `runJobVerb`'s `status` branch): the repo chain's
+ * declared friction dir, resolved job-dir-relative per job. Jobs are built
+ * as plain directories under `.flume/jobs/` — `job status` is purely
+ * observational (v0.5 §5d), so no real `jobNew`/branch is needed to exercise it.
+ */
+describe("flume job status — friction line (§6)", () => {
+  it("appends a friction count for a job whose declared friction dir holds files", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "friction"), { recursive: true });
+      await writeFile(join(jobDir, "friction", "note.md"), "blocked\n");
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("j1");
+      expect(r.out).toContain("friction: 1 note(s) await routing");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omits the friction segment for a job whose declared friction dir is empty", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "friction"), { recursive: true });
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("j1");
+      expect(r.out).not.toContain("friction:");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omits the friction segment for every job when Chain.friction is undeclared", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "friction"), { recursive: true });
+      await writeFile(join(jobDir, "friction", "note.md"), "blocked\n");
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("j1");
+      expect(r.out).not.toContain("friction:");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
  * A chain.ts whose singleton phase records the FLUME_DIR / FLUME_CONFIG_DIR /
  * FLUME_JOB it observes *inside the child tick process* to
  * `<FLUME_DIR>/observed-env.json`. The supervisor spawns the tick with no

@@ -3056,6 +3056,168 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   });
 });
 
+/**
+ * §6 (v0.6.2) — `superviseLoop`'s loop-end friction summary
+ * (`logFrictionSummary`, `src/Dispatcher.ts:1730-1740`), and the fix it rode
+ * in on: the chain it loads comes from `opts.configDir`, not always
+ * `<repoRoot>/.flume` (the old always-used default). `fx.configDir` is a
+ * separate temp dir from `fx.repo/.flume` in this suite's fixture, so
+ * passing it as `configDir` while leaving `<repoRoot>/.flume` chain-less
+ * proves the plumbing: a summary that still finds the chain must have used
+ * `opts.configDir`.
+ */
+describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing", () => {
+  async function writeFrictionChain(cfg: string, friction?: string): Promise<void> {
+    await mkdir(cfg, { recursive: true });
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default { phases: [{ name: "build", description: "", ` +
+        `promptPath: "prompt.md", concurrency: "singleton", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: []${friction ? `, friction: ${JSON.stringify(friction)}` : ""} };\n`,
+      "utf8",
+    );
+  }
+
+  it("logs the friction count line at the hibernation stop when declared and non-empty, loading the chain from opts.configDir", async () => {
+    // The repo default has no chain.ts at all — only opts.configDir does.
+    expect(existsSync(join(fx.repo, ".flume", "chain.ts"))).toBe(false);
+
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    await writeFrictionChain(fx.configDir, "friction");
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    await mkdir(frictionDir, { recursive: true });
+    await writeFile(join(frictionDir, "a.md"), "note\n");
+    await writeFile(join(frictionDir, "b.md"), "note\n");
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls >= 2) baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 5,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(
+      infos.some((l) => l.includes("friction: 2 note(s) await routing")),
+    ).toBe(true);
+  });
+
+  it("omits the friction line at hibernation when the declared dir exists but holds no files", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    await writeFrictionChain(fx.configDir, "friction");
+    await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls >= 2) baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 5,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(infos.some((l) => l.includes("friction:"))).toBe(false);
+  });
+
+  it("omits the friction line at hibernation when Chain.friction is undeclared", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    await writeFrictionChain(fx.configDir); // no friction declared
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    await mkdir(frictionDir, { recursive: true });
+    await writeFile(join(frictionDir, "a.md"), "note\n");
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls >= 2) baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 5,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(infos.some((l) => l.includes("friction:"))).toBe(false);
+  });
+
+  it("logs the friction count line at the --max-reached stop when declared and non-empty", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan"); // never sleeps → never hibernates
+    await writeFrictionChain(fx.configDir, "friction");
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    await mkdir(frictionDir, { recursive: true });
+    await writeFile(join(frictionDir, "a.md"), "note\n");
+
+    const runTick = (): Promise<{ exitCode: number | null }> =>
+      Promise.resolve({ exitCode: 0 });
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 2,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.hibernated).toBe(false);
+    expect(infos.some((l) => l.includes("reached --max 2"))).toBe(true);
+    expect(
+      infos.some((l) => l.includes("friction: 1 note(s) await routing")),
+    ).toBe(true);
+  });
+
+  it("omits the friction line at the --max-reached stop when the declared dir is empty", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    await writeFrictionChain(fx.configDir, "friction");
+    await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
+
+    const runTick = (): Promise<{ exitCode: number | null }> =>
+      Promise.resolve({ exitCode: 0 });
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 2,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.hibernated).toBe(false);
+    expect(infos.some((l) => l.includes("friction:"))).toBe(false);
+  });
+});
+
 describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
   it("threads the resolved flumeDir into GateContext and TickContext (default location)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
