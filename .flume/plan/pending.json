@@ -1,36 +1,5 @@
 [
   {
-    "tag": "FRICTION-REVERT-NOTE",
-    "summary": "Write the operator's copy of an afterCommit gate-revert verdict to the friction channel per §5",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "5. Revert note — the operator's copy of the verdict"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runFanoutEntry's afterCommit gate-revert branch (~962-981): when Chain.friction is declared, write <friction>/<ISO>--<tag>--reverted.md (gate name, message, details, reverted commit subject+body) before git.dropLastCommit discards it, per §5."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "an afterCommit gate revert with Chain.friction declared leaves a note file with the gate's name/message/details and the reverted commit's subject+body; absent when undeclared."
-      }
-    ],
-    "acceptance": "An entry-scope afterCommit revert, with Chain.friction declared, leaves a dated --tag--reverted.md note in the primary friction dir carrying the gate verdict and the discarded commit's message; undeclared chains are unaffected.",
-    "notes": "Only the plan-addressed half of the dev-9175-cim-usage finding (persisting the verdict where plan itself reads it) is explicitly out of scope per §5 — see open-questions.md."
-  },
-  {
     "tag": "FRICTION-SURFACING",
     "summary": "Surface friction counts on status/loop/job-status and switch job extract off the legacy friction.md guess per §6",
     "per": {
@@ -38,8 +7,7 @@
       "section": "6. Surfacing — the routing trigger"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "FRICTION-REVERT-NOTE"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
