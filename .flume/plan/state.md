@@ -1,59 +1,73 @@
 # State
 
-Phase: **v0.6.2 line in flight** — `spec/RELEASE-v0.6.2.md` (friction
-lifecycle + win32 teardown fallback). `pending.json` holds 1 entry:
-`FRICTION-SURFACING-TESTS` (open, next). Mode this tick: **audit**
-(commit-delta was the only live dimension; clean — no defects found).
+Phase: **v0.6.2 line closed out** — `spec/RELEASE-v0.6.2.md` (friction
+lifecycle + win32 teardown fallback) has no open pending entries left.
+`pending.json` is empty. Mode this tick: **audit** (commit-delta was the
+only live dimension; clean — no defects found).
 
 ## This tick
 
-- `git log --grep='^plan:' -n 1` → `cb18331` (prior plan tick). Two
-  commits since: `afbb053` (build: add 0.6.2 CHANGELOG section,
-  CHANGELOG-0-6-2) and `35de20d` (chore(flume): ship CHANGELOG-0-6-2 —
-  mechanical pending.json entry removal, not plan-authored). **Audit**:
-  triggered on `afbb053`.
-- `git diff cb18331..HEAD -- spec/` → empty. **Derive**: not triggered.
+- `git log --grep='^plan:' -n 1` → `d99ad81` (prior plan tick). Two
+  commits since: `88966e0` (build: cover §6 friction surfacing —
+  status/job-status/loop-end/extract) and `efc9e58` (chore(flume): ship
+  FRICTION-SURFACING-TESTS — mechanical `pending.json` entry removal,
+  not plan-authored). **Audit**: triggered on `88966e0`.
+- `git diff d99ad81..HEAD -- spec/` → empty. **Derive**: not triggered.
 - `.flume/inbox.md` → header-only. **Drain**: not triggered.
-- `pending.json` on disk has zero `blockedBy` entries (the prior
-  `CHANGELOG-0-6-2 blockedBy FRICTION-SURFACING` chain resolved and
-  shipped last tick). **Promote**: nothing to flip.
+- `pending.json` on disk → `[]`, zero `blockedBy` entries. **Promote**:
+  nothing to flip.
 
-**Audit of `afbb053`** (CHANGELOG-0-6-2): cross-checked the diff against
-§8 directly and against the entry's own `files.edit`/`acceptance`.
+**Audit of `88966e0`** (FRICTION-SURFACING-TESTS, closing the coverage
+gap on `eb6e076`'s §6 surfacing): cross-checked the diff against §6
+directly and against the entry's own `files.edit`/`tests`/`acceptance`
+(preserved in the prior tick's commit-delta preview, since the entry
+itself was already removed from `pending.json` by `efc9e58`).
 
-- `git show afbb053 --stat` → exactly the one declared `files.edit` path
-  (`CHANGELOG.md`) — no scope creep.
-- Content matches §8 verbatim in substance: Added lists `Chain.friction`
-  declaration, runtime ignore fold-in, teardown harvest, revert notes,
-  and status/loop/extract friction counts; Fixed lists the win32
-  worktree-removal fallback. Both sections align with §§2–7's shipped
-  behavior, not just §8's summary bullet.
-- `git diff cb18331..HEAD -- package.json` → empty — version bump stays
-  human-performed at cut time, per §8's explicit carve-out. No drift.
-- `35de20d` (the ship chore) touched only `pending.json`, removing the
-  now-shipped `CHANGELOG-0-6-2` entry — mechanical, matches the
-  `FRICTION-SURFACING`/`15a1d89` precedent exactly.
+- `git show 88966e0 --stat` → exactly the three declared `files.edit`
+  paths (`tests/cli.test.ts`, `tests/job.test.ts`,
+  `tests/Dispatcher.test.ts`) — no scope creep, no `src/` touched.
+- Read all three diffs in full: `flume status` / `flume job status`
+  friction-line tests (declared+non-empty appends, declared+empty and
+  undeclared both omit — including a stray same-named dir with no
+  declaration, which the shipped code must ignore); `jobExtract`'s
+  working-tree friction harvest (ordered after chain-declared harvest
+  entries; undeclared leaves harvest byte-for-byte unchanged even with
+  a stray `friction/` dir present); `superviseLoop`'s loop-end summary
+  at both the hibernation and `--max` stops, plus the `opts.configDir`
+  plumbing case (chain loaded from a configDir distinct from
+  `<repoRoot>/.flume`, proving the fix rather than assuming it). All
+  four surfaces named in §6 are covered; no case in §6 was left
+  untested.
+- Ran `pnpm vitest run tests/cli.test.ts tests/job.test.ts
+  tests/Dispatcher.test.ts` directly (not just trusting the build
+  gate's prior green) — 151/151 pass.
+- Ran `pnpm tsc --noEmit` — clean.
+- `efc9e58` (the ship chore) touched only `pending.json`, collapsing it
+  to `[]` — mechanical, matches the `CHANGELOG-0-6-2`/`35de20d`
+  precedent exactly.
 - **No findings.** This audit closes clean; nothing routed to pending,
   open-questions, or accepted-debt.
 
-## Queue (1)
+## Queue (0)
 
-`FRICTION-SURFACING-TESTS` (open, next) — the only pending entry. Filed
-last tick to close the test-coverage gap on `eb6e076`'s friction
-surfacing (§6); unaffected by this tick's CHANGELOG-only commits.
+`pending.json` is empty. The v0.6.2 line has no outstanding entries;
+next tick's `derive` dimension triggers only when a new/changed
+`spec/RELEASE-*.md` section lands.
 
 ## Open questions (3)
 
 Unchanged this tick — no new information surfaced against any of them:
 engine-ownership requests (5 items, awaiting a v0.7 scoping call),
-CLI-through-a-junction silent-exit, and the harness-block fence-mismatch.
+CLI-through-a-junction silent-exit, and the harness-block
+fence-mismatch. All three remain PARKED pending human disposition;
+none are blocking the empty pending queue.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` this tick. `pending.json` unchanged (no
-  audit findings, no derive/drain/promote triggers). `open-questions.md`
-  and `inbox.md` untouched (identical to `HEAD`).
-- Trunk: HEAD `35de20d` at tick start, tree clean besides untracked
+- Wrote `.flume/plan/state.md` this tick. `pending.json` unchanged
+  (`[]` — no audit findings, no derive/drain/promote triggers).
+  `open-questions.md` and `inbox.md` untouched (identical to `HEAD`).
+- Trunk: HEAD `efc9e58` at tick start, tree clean besides untracked
   `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
