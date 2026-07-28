@@ -16,7 +16,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -43,7 +43,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -88,6 +88,10 @@ jobs:
           mkdir -p "$CONSUMER/.flume/prompts"
           cd "$CONSUMER"
           npm init -y >/dev/null
+          # ESM consumer context — same rationale as scripts/smoke-install.mjs:
+          # without type:module the chain.ts load fails as CJS before it can
+          # exercise the package's exports map.
+          npm pkg set type=module
           npm install --no-audit --no-fund "$REPO/$TARBALL"
 
           # Realistic consumer chain.ts: bare-specifier import of the published

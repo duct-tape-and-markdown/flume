@@ -101,6 +101,12 @@ try {
   mkdirSync(consumerDir, { recursive: true });
 
   run("npm init", "npm", ["init", "-y"], { cwd: consumerDir });
+  // ESM consumer context: flume is ESM-only and chain.ts is loaded as ESM;
+  // without type:module the consumer's nearest package.json marks .ts as
+  // CJS and the chain load fails before touching the package under test.
+  run("npm pkg set type=module", "npm", ["pkg", "set", "type=module"], {
+    cwd: consumerDir,
+  });
   run(
     "npm install tarball",
     "npm",
