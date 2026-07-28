@@ -2,13 +2,14 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   Dispatcher,
+  loadChainModule,
   superviseLoop,
   EX_TERMINAL_MISCONFIG,
   type ChainModule,
@@ -3139,5 +3140,79 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
     await dispatcher.tick();
 
     expect(gateFlumeDir).toBe(dock);
+  });
+});
+
+describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
+  // A minimal, otherwise-valid chain.ts; only the `friction` field varies
+  // per test. `frictionSource` is a raw TS expression (or "" to omit the
+  // field entirely) spliced into the default export's object literal.
+  async function writeChainWithFriction(
+    cfg: string,
+    frictionSource: string,
+  ): Promise<void> {
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default { phases: [{ name: "build", description: "", ` +
+        `promptPath: "prompt.md", concurrency: "singleton", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: []${frictionSource ? `, friction: ${frictionSource}` : ""} };\n`,
+      "utf8",
+    );
+  }
+
+  it("rejects an absolute-path friction declaration with a usage-shaped error", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));
+    try {
+      const abs = resolve(tmpdir(), "flume-friction-abs-target");
+      await writeChainWithFriction(cfg, JSON.stringify(abs));
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+        /friction .* as an absolute path/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a friction declaration that resolves outside the state root", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-escape-"));
+    try {
+      await writeChainWithFriction(cfg, JSON.stringify("../escaped-friction"));
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+        /friction .* resolves outside the state root/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a valid state-root-relative friction declaration", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-valid-"));
+    try {
+      await writeChainWithFriction(cfg, JSON.stringify("friction"));
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      expect(mod.default.friction).toBe("friction");
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("treats an undeclared friction field as a strict no-op — chain loads unaffected", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-undeclared-"));
+    try {
+      await writeChainWithFriction(cfg, "");
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      expect(mod.default.friction).toBeUndefined();
+      expect(mod.default.phases).toHaveLength(1);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
   });
 });
