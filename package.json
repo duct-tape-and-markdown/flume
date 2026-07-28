@@ -1,6 +1,6 @@
 {
   "name": "@dtmd/flume",
-  "version": "0.6.0",
+  "version": "0.6.2",
   "description": "A disciplined harness for AI-derivation pipelines. Disk-is-truth, stateless ticks, structured handoff, sandbox-optional.",
   "keywords": [
     "claude",
