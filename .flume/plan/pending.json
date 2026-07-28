@@ -1,5 +1,36 @@
 [
   {
+    "tag": "FRICTION-REVERT-NOTE-TESTS",
+    "summary": "Add missing test coverage for the shipped §5 revert-note write (FRICTION-REVERT-NOTE shipped src-only)",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "5. Revert note — the operator's copy of the verdict"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Cover writeRevertNote (src/Dispatcher.ts ~1451-1520, called from runFanoutEntry's afterCommit revert branch ~1033-1039) e2e via dispatcher.tick(): an entry-scope afterCommit revert with Chain.friction declared leaves a dated --tag--reverted.md note in the primary friction dir carrying the gate name/message/details (include a write-gate case so details carries the offending path list, per §5) and the reverted commit's subject+body; undeclared chain.friction is a no-op; a note-write failure (e.g. unwritable friction dir) logs and does not block the revert."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "an afterCommit gate revert with Chain.friction declared leaves a reverted.md note with the gate's name/message/details (incl. write-gate offending-path-list case) and the reverted commit's subject+body; undeclared chain.friction is a no-op; a note-write failure logs and the revert still proceeds."
+      }
+    ],
+    "acceptance": "tests/Dispatcher.test.ts asserts §5's revert-note write; FRICTION-REVERT-NOTE (b128717) ships with committed coverage instead of none.",
+    "notes": "Same defect shape as FRICTION-DECLARATION-TESTS/FRICTION-GITIGNORE-TESTS/TEARDOWN-HARDENING-TESTS: entry named tests[] but files.edit was src-only, so the writablePaths guard forced a src-only build (per the build commit's own body). Fourth recurrence — all four v0.6.2 sections were derived in one batch (443aa1a) sharing the same authoring gap."
+  },
+  {
     "tag": "FRICTION-SURFACING",
     "summary": "Surface friction counts on status/loop/job-status and switch job extract off the legacy friction.md guess per §6",
     "per": {

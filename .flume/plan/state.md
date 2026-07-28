@@ -2,71 +2,79 @@
 
 Phase: **v0.6.2 line in flight** — `spec/RELEASE-v0.6.2.md` (friction
 lifecycle + win32 teardown fallback). `pending.json` holds 3 entries:
-`FRICTION-REVERT-NOTE` (open, next) → `FRICTION-SURFACING` →
-`CHANGELOG-0-6-2` chained behind it in shipping order. Mode this tick:
-**audit** (commit-delta was the only live dimension; it came back clean
-— the debt filed last tick is now closed with no new gaps).
+`FRICTION-REVERT-NOTE-TESTS` (open, next) → `FRICTION-SURFACING` (open) →
+`CHANGELOG-0-6-2` (blockedBy `FRICTION-SURFACING`). Mode this tick:
+**audit** (commit-delta was the only live dimension; it surfaced a real
+gap — FRICTION-REVERT-NOTE shipped with no test coverage).
 
 ## This tick
 
-- `git log --grep='^plan:' -n 1` → `d6c9962` (prior plan tick). Two
-  commits since: `cbccc5a` (build: cover teardown harvest + win32
-  removal fallback, TEARDOWN-HARDENING-TESTS) and `a6d989c`
-  (chore(flume): ship TEARDOWN-HARDENING-TESTS — mechanical
-  pending.json entry removal, not plan-authored). **Audit**: triggered
-  on `cbccc5a`.
-- `git diff d6c9962..HEAD -- spec/` → empty. **Derive**: not triggered.
+- `git log --grep='^plan:' -n 1` → `5793b18` (prior plan tick). Two
+  commits since: `b128717` (build: write §5 revert notes to the
+  friction channel, FRICTION-REVERT-NOTE) and `a5de3d6`
+  (chore(flume): ship FRICTION-REVERT-NOTE — mechanical pending.json
+  entry removal, not plan-authored). **Audit**: triggered on `b128717`.
+- `git diff 5793b18..HEAD -- spec/` → empty. **Derive**: not triggered.
 - `.flume/inbox.md` → header-only. **Drain**: not triggered.
-- `pending.json`'s `blockedBy` chain: `TEARDOWN-HARDENING-TESTS` no
-  longer present in `pending-now` (shipped, removed by `a6d989c`).
-  `FRICTION-REVERT-NOTE` is `open` (was never blocked on it — see prior
-  tick's queue note: it could build in either order).
-  `FRICTION-SURFACING` → `FRICTION-REVERT-NOTE` and `CHANGELOG-0-6-2` →
-  `FRICTION-SURFACING` both still reference tags present in
-  `pending-now`. **Promote**: not triggered.
+- `pending.json`'s `blockedBy` chain: `FRICTION-REVERT-NOTE` no longer
+  present in `pending-now` (shipped, removed by `a5de3d6`, which also
+  already flipped `FRICTION-SURFACING`'s gate from `blockedBy` to
+  `open`). `CHANGELOG-0-6-2` → `FRICTION-SURFACING` still references a
+  tag present in `pending-now`. **Promote**: nothing left to flip.
 
-**Audit of `cbccc5a`** (TEARDOWN-HARDENING-TESTS): cross-checked the
-diff against §4 (harvest) and §7 (win32 removal fallback) and against
-the entry's own `files.edit`/`tests[]`/`acceptance`.
+**Audit of `b128717`** (FRICTION-REVERT-NOTE): cross-checked the diff
+against §5 and against the entry's own `files.edit`/`tests[]`/
+`acceptance`.
 
-- `git show cbccc5a --stat` → exactly the three declared paths
-  (`src/Dispatcher.ts`, `tests/Dispatcher.test.ts`, `tests/git.test.ts`)
-  — no scope creep past `files.edit`.
-- `tests/Dispatcher.test.ts` covers §4 e2e via `dispatcher.tick()`:
-  happy-path move (tag-prefixed, pre-removal), a per-file failure that
-  logs and still ships the wave, an unreadable mirror dir (logged, not
-  swallowed — closes last tick's second gap), undeclared
-  `chain.friction` no-op, relocated state root no-op. All five map
-  directly to the entry's `tests[]` asserts.
-- `tests/git.test.ts` covers §7's `removeWorktree`: bare remove
-  succeeds, prune+bounded-retry fallback clears a populated tree the
-  bare call refused, and a still-surviving path (forced via a partial
-  `fs/promises` mock on `rm`) throws naming the path — matches §7
-  bullets 1–2 and the entry's asserts exactly.
-- `src/Dispatcher.ts`'s `readdir` catch now distinguishes `ENOENT`
-  (silent) from anything else (logged) — the unreadable-dir gap from
-  last tick's audit is closed.
-- Ran the gates myself: `pnpm tsc --noEmit` clean;
-  `pnpm vitest run tests/git.test.ts tests/Dispatcher.test.ts` — 72/72
-  pass (3 new `removeWorktree` cases + 5 new harvest cases, plus the
-  full existing Dispatcher suite still green).
-- No new gap found. `TEARDOWN-HARDENING` (a94767e, src-only) now ships
-  with the coverage its own entry always promised; the
-  FRICTION-DECLARATION-TESTS/FRICTION-GITIGNORE-TESTS/
-  TEARDOWN-HARDENING-TESTS defect pattern (entry names `tests[]`, guard
-  only enforces `files.edit`) does not recur here — this entry listed
-  both test paths explicitly and the build tick honored them.
+- `git show b128717 --stat` → exactly the one declared path
+  (`src/Dispatcher.ts`, 85 insertions) — no scope creep past
+  `files.edit`.
+- `writeRevertNote`/`capturedCommitMessage` (src/Dispatcher.ts
+  ~1451-1520), called from `runFanoutEntry`'s afterCommit revert branch
+  (~1033-1039), match §5: runs *before* `git.dropLastCommit` (sha still
+  reachable), writes `<friction>/<ISO>--<tag>--reverted.md` with gate
+  name/message/details + reverted commit subject+body, no-ops when
+  `chain.friction` is undeclared, and a write failure logs without
+  blocking the revert.
+- Checked whether scoping this to `runFanoutEntry` only (not
+  `runSingleton`'s afterCommit revert branch at ~564-590, used by
+  singleton phases like this repo's own `plan`) is a missed case: it
+  isn't. §5's own framing ("today that evidence dies with the
+  worktree") and §1's blast radius are both about fanout worktree
+  teardown; `runSingleton` has no worktree to tear down and already has
+  its own unrelated durability mechanism (`snapshotRevertedFiles`, §8).
+  No open question filed.
+- **Gap found**: zero test coverage. `tests/Dispatcher.test.ts` has no
+  case exercising `writeRevertNote`/"reverted.md" for this feature —
+  confirmed by grep and by running the suite (64/64 pass, none of them
+  new for §5). The entry's own `tests[]` promised
+  `tests/Dispatcher.test.ts`, but `files.edit` was src-only, so the
+  fanout writablePaths guard would have reverted any same-tick test
+  addition — the build commit's own body says as much. This is the
+  fourth occurrence of the exact defect closed three times already this
+  line (`FRICTION-DECLARATION-TESTS`, `FRICTION-GITIGNORE-TESTS`,
+  `TEARDOWN-HARDENING-TESTS`): all four v0.6.2 sections were derived in
+  one batch (`443aa1a`) sharing the same authoring gap, and this was the
+  last of the four to come up in the build queue.
+- Ran the gates myself: `pnpm tsc --noEmit` clean; `pnpm vitest run
+  tests/Dispatcher.test.ts` — 64/64 pass (no regression; no new §5
+  coverage, consistent with the gap above).
+- Routed: filed `FRICTION-REVERT-NOTE-TESTS` in `pending.json`, same
+  shape as the three prior `*-TESTS` follow-ups, `files.edit` naming
+  `tests/Dispatcher.test.ts` explicitly this time. Placed at the head of
+  the queue (open, no blocker) — same precedent as
+  `TEARDOWN-HARDENING-TESTS`, which didn't block sibling feature work.
 
-`a6d989c` (the chore commit) is a mechanical pending.json diff (one
-entry removed) — internally consistent with the shipped work, nothing
-further to audit.
+`a5de3d6` (the chore commit) is a mechanical pending.json diff (one
+entry removed, one gate flipped open) — internally consistent with the
+shipped work, nothing further to audit.
 
 ## Queue (3)
 
-`FRICTION-REVERT-NOTE` (open, next) → `FRICTION-SURFACING` →
-`CHANGELOG-0-6-2`, chained behind it in shipping order. All prior
-teardown-hardening debt is now closed — this is a clean two-entry
-build-ready state plus its CHANGELOG follow-up.
+`FRICTION-REVERT-NOTE-TESTS` (open, next) → `FRICTION-SURFACING` (open)
+→ `CHANGELOG-0-6-2` (blockedBy `FRICTION-SURFACING`). The test-coverage
+follow-up leads; `FRICTION-SURFACING` remains independently buildable
+since it doesn't touch the revert-note code path.
 
 ## Open questions (3)
 
@@ -76,11 +84,12 @@ CLI-through-a-junction silent-exit, and the harness-block fence-mismatch.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/state.md` this tick (audit findings; no pending
-  entries added or changed). No spec change to derive, no inbox to
-  drain, no promote needed. `pending.json`, `open-questions.md`, and
-  `inbox.md` untouched (identical to `HEAD`).
-- Trunk: HEAD `a6d989c` at tick start, tree clean besides untracked
+- Wrote `.flume/plan/pending.json` (prepended `FRICTION-REVERT-NOTE-TESTS`,
+  removed the shipped `FRICTION-REVERT-NOTE`, left `FRICTION-SURFACING`
+  and `CHANGELOG-0-6-2` byte-identical) and `.flume/plan/state.md` this
+  tick. No spec change to derive, no inbox to drain. `open-questions.md`
+  and `inbox.md` untouched (identical to `HEAD`).
+- Trunk: HEAD `a5de3d6` at tick start, tree clean besides untracked
   `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
