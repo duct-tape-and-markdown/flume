@@ -1,36 +1,5 @@
 [
   {
-    "tag": "FRICTION-GITIGNORE",
-    "summary": "Fold declared friction dir into the runtime-owned .gitignore set per §3",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "3. Runtime ignore entry"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "Thread a declared Chain.friction dir into RUNTIME_IGNORES/ensureRuntimeIgnores (job.ts:45-109, call site ~223) per §3."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "a declared friction dir is gitignored in a fresh job's .gitignore; idempotent; template-authored lines/order preserved verbatim."
-      }
-    ],
-    "acceptance": "flume job new against a chain declaring Chain.friction gitignores that dir in the job's .gitignore; re-run adds nothing further; undeclared chains are unaffected.",
-    "notes": "job.ts:98 doc comment is the spec's own cite for the preserve-verbatim contract this must not break."
-  },
-  {
     "tag": "TEARDOWN-HARDENING",
     "summary": "Pre-removal friction harvest + win32 worktree-remove fallback in the wave-end teardown loop per §4/§7",
     "per": {
@@ -38,8 +7,7 @@
       "section": "4. Teardown harvest — the delivery guarantee"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "FRICTION-GITIGNORE"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
