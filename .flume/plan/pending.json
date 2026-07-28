@@ -1,5 +1,36 @@
 [
   {
+    "tag": "FRICTION-DECLARATION-TESTS",
+    "summary": "Add missing test coverage for Chain.friction load-time validation per §2",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "2. `Chain.friction?: string` — the declaration"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Cover validateFrictionDeclaration (Dispatcher.ts, loadChainModule's load-time check) per §2: absolute path rejected, outside-state-root path rejected, valid relative path accepted, undeclared friction is a no-op."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "chain load rejects an absolute or outside-state-root friction path with a usage-shaped error; accepts a valid relative path; undeclared chains unaffected."
+      }
+    ],
+    "acceptance": "tests/Dispatcher.test.ts asserts loadChainModule's Chain.friction validation (absolute rejected, escaping-root rejected, valid relative accepted, undeclared no-op); FRICTION-DECLARATION (d009f19) ships with committed coverage instead of manual-only verification.",
+    "notes": "Follow-up to FRICTION-DECLARATION (d009f19), which shipped src/Phase.ts+src/Dispatcher.ts only per entry.files; tests/Dispatcher.test.ts was named in entry.tests but not entry.files, so writablePathsGate's entry-scoped fence excluded it (see reverted 231440e). This entry lists the test path under files.edit explicitly to close that gap."
+  },
+  {
     "tag": "FRICTION-GITIGNORE",
     "summary": "Fold declared friction dir into the runtime-owned .gitignore set per §3",
     "per": {
