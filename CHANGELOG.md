@@ -11,6 +11,46 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+## [0.6.2]
+
+Patch: the friction channel's lifecycle, guaranteed by the engine without
+ever reading its content, plus win32 worktree-teardown integrity. See
+`spec/RELEASE-v0.6.2.md`.
+
+### Added
+
+- `Chain.friction?: string` — a state-root-relative directory declaring
+  the friction channel (loop-to-owner notes, gitignored, hand-routed by
+  the operator). Validated relative and inside the state root at chain
+  load; undeclared leaves every behavior below off.
+- Runtime ignore entries fold in the declared friction dir alongside the
+  existing template-authored lines, uniformly gitignored by machinery.
+- Teardown harvest: before a fanout worktree is removed, every file in
+  its worktree-local mirror of the declared friction dir is moved into
+  the primary `<flumeDir>/<friction>/`, prefixed `<tag>--` for
+  provenance. A locked or unreadable file is logged and skipped rather
+  than aborting the wave.
+- Revert notes: when an afterCommit gate reverts a build tick's commit
+  and `Chain.friction` is declared, the engine writes
+  `<friction>/<ISO-timestamp>--<tag>--reverted.md` with the gate name,
+  message/details, and the reverted commit's subject + body — the
+  operator's copy of the verdict, previously visible only in supervisor
+  stdout.
+- `flume status`, `flume job status`, and loop/job-run completion
+  summaries append a friction count line (e.g. `friction: 3 note(s)
+  await routing`) when the channel is declared and non-empty.
+- `job extract` prints the declared friction dir's files (path +
+  contents) in place of the legacy hardcoded `friction.md` guess;
+  undeclared chains keep the prior behavior unchanged.
+
+### Fixed
+
+- win32: `git worktree remove --force` failing with `Directory not
+  empty` (typically a pnpm-installed `node_modules`) now falls back to
+  `git worktree prune` plus a bounded-retry recursive removal instead of
+  leaving debris for a hand sweep; a surviving directory is reported
+  once per wave, not once per tick.
+
 ## [0.6.1]
 
 Patch: the Windows install surface. See `spec/RELEASE-v0.6.1.md`.
