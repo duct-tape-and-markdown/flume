@@ -127,7 +127,7 @@ const MINIMAL_CHAIN_SRC =
  */
 async function writeRepoChain(
   repoDir: string,
-  opts: { seedDir?: string; harvest?: string[] } = {},
+  opts: { seedDir?: string; harvest?: string[]; friction?: string } = {},
 ): Promise<void> {
   await mkdir(join(repoDir, ".flume"), { recursive: true });
   let src = MINIMAL_CHAIN_SRC;
@@ -141,6 +141,12 @@ async function writeRepoChain(
     src = src.replace(
       "humanOnly: [],",
       `humanOnly: [],\n  harvest: ${JSON.stringify(opts.harvest)},`,
+    );
+  }
+  if (opts.friction !== undefined) {
+    src = src.replace(
+      "humanOnly: [],",
+      `humanOnly: [],\n  friction: ${JSON.stringify(opts.friction)},`,
     );
   }
   await writeFile(join(repoDir, ".flume", "chain.ts"), src, "utf8");
@@ -202,6 +208,43 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
         expect(content).toContain(entry);
       }
       expect(content.match(/^node_modules\/$/gm)).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("folds caller-supplied extra entries (a declared friction dir, §3) alongside RUNTIME_IGNORES into a fresh .gitignore", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    try {
+      await ensureRuntimeIgnores(dir, ["friction/"]);
+      const content = await readFile(join(dir, ".gitignore"), "utf8");
+      expect(content).toBe([...RUNTIME_IGNORES, "friction/"].join("\n") + "\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is idempotent with extra entries: a second run with the same extra list leaves the file byte-identical", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    try {
+      await ensureRuntimeIgnores(dir, ["friction/"]);
+      const first = await readFile(join(dir, ".gitignore"), "utf8");
+      await ensureRuntimeIgnores(dir, ["friction/"]);
+      expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe(first);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not duplicate an extra entry already present in a template, and preserves the template verbatim", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    try {
+      const template = "# harness scratch\nfriction/\n";
+      await writeFile(join(dir, ".gitignore"), template, "utf8");
+      await ensureRuntimeIgnores(dir, ["friction/"]);
+      const content = await readFile(join(dir, ".gitignore"), "utf8");
+      expect(content.startsWith(template)).toBe(true);
+      expect(content.match(/^friction\/$/gm)).toHaveLength(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -493,6 +536,118 @@ describe("flume job new — real CLI on a scratch repo", () => {
       }
     },
     120_000,
+  );
+});
+
+describe("flume job new — Chain.friction pass-through (§3)", () => {
+  it(
+    "a declared friction dir lands in a fresh job's .gitignore, forward-slashed and single-trailing-slashed",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        // Backslash + trailing-slash-free in the declaration — the ignore
+        // line must normalize regardless of how the chain wrote it.
+        await writeRepoChain(repo.dir, { friction: "notes\\loop" });
+
+        const r = await runCli(repo.dir, ["job", "new", "f1"]);
+        expect(r.code).toBe(0);
+
+        const jobDir = join(repo.dir, ".flume", "jobs", "f1");
+        const ignores = await readFile(join(jobDir, ".gitignore"), "utf8");
+        expect(ignores.match(/^notes\/loop\/$/gm)).toHaveLength(1);
+        for (const entry of RUNTIME_IGNORES) {
+          expect(ignores).toContain(entry);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "re-run with an unchanged declared friction dir is idempotent: no duplicate line, no new commit",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        await writeRepoChain(repo.dir, { friction: "friction" });
+
+        const first = await runCli(repo.dir, ["job", "new", "f2"]);
+        expect(first.code).toBe(0);
+
+        const jobDir = join(repo.dir, ".flume", "jobs", "f2");
+        const before = await readFile(join(jobDir, ".gitignore"), "utf8");
+        const beforeRev = await gitOut(repo.dir, [
+          "rev-list",
+          "--count",
+          "HEAD",
+        ]);
+
+        const again = await runCli(repo.dir, ["job", "new", "f2"]);
+        expect(again.code).toBe(0);
+        expect(again.out).toContain("nothing to commit");
+
+        expect(await readFile(join(jobDir, ".gitignore"), "utf8")).toBe(
+          before,
+        );
+        expect(await gitOut(repo.dir, ["rev-list", "--count", "HEAD"])).toBe(
+          beforeRev,
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "preserves the seedDir's template-authored .gitignore lines and order when a friction dir is also declared",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        await mkdir(join(repo.dir, ".flume", "job-seed"), { recursive: true });
+        await writeFile(
+          join(repo.dir, ".flume", "job-seed", ".gitignore"),
+          "# operator note\nsessions/\n",
+          "utf8",
+        );
+        await writeRepoChain(repo.dir, {
+          seedDir: "job-seed",
+          friction: "friction",
+        });
+
+        const r = await runCli(repo.dir, ["job", "new", "f3"]);
+        expect(r.code).toBe(0);
+
+        const jobDir = join(repo.dir, ".flume", "jobs", "f3");
+        const ignores = await readFile(join(jobDir, ".gitignore"), "utf8");
+        expect(ignores.startsWith("# operator note\nsessions/\n")).toBe(true);
+        expect(ignores.match(/^friction\/$/gm)).toHaveLength(1);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "an undeclared friction field leaves a fresh job's .gitignore at exactly RUNTIME_IGNORES — no extra line",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        await writeRepoChain(repo.dir);
+
+        const r = await runCli(repo.dir, ["job", "new", "f4"]);
+        expect(r.code).toBe(0);
+
+        const jobDir = join(repo.dir, ".flume", "jobs", "f4");
+        const ignores = await readFile(join(jobDir, ".gitignore"), "utf8");
+        expect(ignores).toBe(RUNTIME_IGNORES.join("\n") + "\n");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
   );
 });
 
