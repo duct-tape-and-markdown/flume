@@ -1,72 +1,46 @@
 # State
 
 Phase: **v0.6.2 line in flight** — `spec/RELEASE-v0.6.2.md` (friction
-lifecycle + win32 teardown fallback). `pending.json` holds 2 entries:
-`FRICTION-SURFACING-TESTS` (open, next) → `CHANGELOG-0-6-2` (open,
-unblocked, unchanged). Mode this tick: **audit** (commit-delta was the
-only live dimension; real gap found and filed).
+lifecycle + win32 teardown fallback). `pending.json` holds 1 entry:
+`FRICTION-SURFACING-TESTS` (open, next). Mode this tick: **audit**
+(commit-delta was the only live dimension; clean — no defects found).
 
 ## This tick
 
-- `git log --grep='^plan:' -n 1` → `19acf24` (prior plan tick). Two
-  commits since: `eb6e076` (build: surface friction counts on
-  status/loop/job-status per §6) and `15a1d89` (chore(flume): ship
-  FRICTION-SURFACING — mechanical pending.json entry removal, not
-  plan-authored). **Audit**: triggered on `eb6e076`.
-- `git diff 19acf24..HEAD -- spec/` → empty (bootstrap script failed on
-  this shell but the commit list confirms no `spec/` path touched).
-  **Derive**: not triggered.
+- `git log --grep='^plan:' -n 1` → `cb18331` (prior plan tick). Two
+  commits since: `afbb053` (build: add 0.6.2 CHANGELOG section,
+  CHANGELOG-0-6-2) and `35de20d` (chore(flume): ship CHANGELOG-0-6-2 —
+  mechanical pending.json entry removal, not plan-authored). **Audit**:
+  triggered on `afbb053`.
+- `git diff cb18331..HEAD -- spec/` → empty. **Derive**: not triggered.
 - `.flume/inbox.md` → header-only. **Drain**: not triggered.
-- `pending.json`'s prior `blockedBy` chain had already resolved: the
-  chore commit flipped `CHANGELOG-0-6-2` from `blockedBy FRICTION-
-  SURFACING` to `open` when `FRICTION-SURFACING` shipped. **Promote**:
-  nothing left to flip this tick.
+- `pending.json` on disk has zero `blockedBy` entries (the prior
+  `CHANGELOG-0-6-2 blockedBy FRICTION-SURFACING` chain resolved and
+  shipped last tick). **Promote**: nothing to flip.
 
-**Audit of `eb6e076`** (FRICTION-SURFACING): cross-checked the diff
-against §6 directly and against the entry's own `files.edit`/`tests[]`/
-`acceptance`.
+**Audit of `afbb053`** (CHANGELOG-0-6-2): cross-checked the diff against
+§8 directly and against the entry's own `files.edit`/`acceptance`.
 
-- `git show eb6e076 --stat` → exactly the three declared `files.edit`
-  paths (`src/Dispatcher.ts`, `src/cli.ts`, `src/job.ts`) — no scope
-  creep.
-- Mechanics read correct against §6: `frictionCountLine` (Dispatcher.ts)
-  shared by `flume status` and the loop-end summary; `jobStatus`'s new
-  `frictionDir` param and per-job `frictionCount` for `job status`;
-  `jobExtract`'s `readFrictionFiles` reads the friction dir off the job
-  dir's *working tree* (not `git show` — friction is gitignored, never
-  reaches a commit) and appends `{path, content}` entries after the
-  chain-declared harvest, exactly the existing harvest shape. Also
-  fixed, correctly: the `loop` subcommand never threaded `configDir`
-  into `superviseLoop`, so a job run under `FLUME_CONFIG_DIR` would
-  have summarized the wrong chain's friction — now plumbed through.
-  `pnpm tsc --noEmit` clean.
-- **Real gap, same shape as the three prior recurrences**
-  (`FRICTION-DECLARATION-TESTS`, `FRICTION-GITIGNORE-TESTS`,
-  `FRICTION-REVERT-NOTE-TESTS`): the entry's `tests[]` named
-  `tests/cli.test.ts` and `tests/job.test.ts` but never listed them
-  under `files.edit`, so the entry-scoped write guard excluded them —
-  `eb6e076` touched only `src/`. Confirmed via grep: zero references to
-  `frictionCountLine`, `frictionCount`, `readFrictionFiles`, or
-  `countFrictionFiles` anywhere in `tests/*.ts`. This recurrence is
-  also wider than the prior three: the original entry's `tests[]` never
-  named `superviseLoop`'s loop-end summary or the `configDir` plumbing
-  fix at all, so that surface has no test path even in the drafted
-  intent — a missed case, not just an unlisted one.
-- **Filed `FRICTION-SURFACING-TESTS`** (open, head of queue) with all
-  three test paths explicit under `files.edit` this time:
-  `tests/cli.test.ts` (status/job-status friction line), `tests/job.test.ts`
-  (extract's fs-based friction harvest), `tests/Dispatcher.test.ts`
-  (`superviseLoop`'s loop-end summary at both stop paths, plus the
-  `configDir` regression case). `CHANGELOG-0-6-2` stays `open` and
-  second in the array (priority ordering, not a gate block) — the
-  CHANGELOG content itself is accurate regardless of test-coverage
-  debt on the feature it describes.
+- `git show afbb053 --stat` → exactly the one declared `files.edit` path
+  (`CHANGELOG.md`) — no scope creep.
+- Content matches §8 verbatim in substance: Added lists `Chain.friction`
+  declaration, runtime ignore fold-in, teardown harvest, revert notes,
+  and status/loop/extract friction counts; Fixed lists the win32
+  worktree-removal fallback. Both sections align with §§2–7's shipped
+  behavior, not just §8's summary bullet.
+- `git diff cb18331..HEAD -- package.json` → empty — version bump stays
+  human-performed at cut time, per §8's explicit carve-out. No drift.
+- `35de20d` (the ship chore) touched only `pending.json`, removing the
+  now-shipped `CHANGELOG-0-6-2` entry — mechanical, matches the
+  `FRICTION-SURFACING`/`15a1d89` precedent exactly.
+- **No findings.** This audit closes clean; nothing routed to pending,
+  open-questions, or accepted-debt.
 
-## Queue (2)
+## Queue (1)
 
-`FRICTION-SURFACING-TESTS` (open, next) → `CHANGELOG-0-6-2` (open,
-second by array order). No `blockedBy` between them; ordering reflects
-priority only.
+`FRICTION-SURFACING-TESTS` (open, next) — the only pending entry. Filed
+last tick to close the test-coverage gap on `eb6e076`'s friction
+surfacing (§6); unaffected by this tick's CHANGELOG-only commits.
 
 ## Open questions (3)
 
@@ -76,11 +50,10 @@ CLI-through-a-junction silent-exit, and the harness-block fence-mismatch.
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/pending.json` (filed `FRICTION-SURFACING-TESTS`,
-  reordered `CHANGELOG-0-6-2` second) and `.flume/plan/state.md` this
-  tick. No spec change to derive, no inbox to drain.
-  `open-questions.md` and `inbox.md` untouched (identical to `HEAD`).
-- Trunk: HEAD `15a1d89` at tick start, tree clean besides untracked
+- Wrote `.flume/plan/state.md` this tick. `pending.json` unchanged (no
+  audit findings, no derive/drain/promote triggers). `open-questions.md`
+  and `inbox.md` untouched (identical to `HEAD`).
+- Trunk: HEAD `35de20d` at tick start, tree clean besides untracked
   `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
