@@ -1,36 +1,5 @@
 [
   {
-    "tag": "FRICTION-GITIGNORE-TESTS",
-    "summary": "Add missing test coverage for the declared-friction-dir gitignore fold per §3",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "3. Runtime ignore entry"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/job.test.ts",
-          "description": "Cover ensureRuntimeIgnores' extra-entries param and jobNew's declared-friction pass-through (job.ts:102-116, ~245) per §3: a declared friction dir lands in a fresh job's .gitignore; idempotent re-run; template-authored lines/order preserved verbatim; undeclared chains unaffected. Extend writeRepoChain's opts with a friction pass-through to drive the CLI-level case."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "a declared friction dir is gitignored (forward-slashed, single-trailing-slash) in a fresh job's .gitignore; idempotent; template-authored lines/order preserved verbatim; undeclared chains unaffected."
-      }
-    ],
-    "acceptance": "tests/job.test.ts asserts ensureRuntimeIgnores' extra param and jobNew's Chain.friction pass-through; FRICTION-GITIGNORE (fa0fad4) ships with committed coverage instead of none.",
-    "notes": "Same defect shape as FRICTION-DECLARATION-TESTS/d009f19-231440e: the FRICTION-GITIGNORE entry named tests/job.test.ts under tests[] but never under files.edit, so the entry-scoped write guard excluded it and fa0fad4 shipped touching only src/job.ts, zero test coverage. This entry lists the test path explicitly."
-  },
-  {
     "tag": "TEARDOWN-HARDENING",
     "summary": "Pre-removal friction harvest + win32 worktree-remove fallback in the wave-end teardown loop per §4/§7",
     "per": {
