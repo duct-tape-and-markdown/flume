@@ -34,6 +34,7 @@ import {
 import {
   Dispatcher,
   diskChainLoader,
+  frictionCountLine,
   superviseLoop,
   EX_TERMINAL_MISCONFIG,
   type TickOutcome,
@@ -156,13 +157,15 @@ Commands:
                       job/<name>, untracked runtime swept, worktrees pruned.
                       Refuses on a live loop; the job branch survives.
   job status          List jobs under .flume/jobs/ — awake phases + pending
-                      count per job. Observational; no side effects.
+                      count, plus a friction count where declared and
+                      non-empty, per job. Observational; no side effects.
   job extract <name> --onto <base> [--intake <path>]...
                       Fork clean branch <name> off <base>: intake files first
                       as one commit, then non-harness commits cherry-picked
-                      oldest-first; harvest friction/open-questions to
-                      stdout; delete job/<name> + the job dir (extract
-                      consumes the job).
+                      oldest-first; harvest the chain-declared paths (and,
+                      when declared, the friction dir's files) to stdout;
+                      delete job/<name> + the job dir (extract consumes the
+                      job).
 
 Options:
   --job <name>        Resolve state to <repoRoot>/.flume/jobs/<name> and set
@@ -180,8 +183,9 @@ Run \`flume <command> --help\` for per-command usage and exit codes.
 const HELP_SUB: Record<Subcommand, string> = {
   status: `Usage: flume status
 
-Print baton state: awake phases (or "hibernating" if none). Observational —
-no side effects, no agent invocation.
+Print baton state: awake phases (or "hibernating" if none), then, when the
+chain declares Chain.friction and its dir holds notes, a friction count.
+Observational — no side effects, no agent invocation.
 
 Exit codes:
   0   Always.
@@ -283,10 +287,11 @@ Verbs:
 
   status
       Enumerate .flume/jobs/* in the working tree: one line per job with its
-      awake phases (or "hibernating") and pending count (entries in the
-      job's plan/pending.json; 0 when absent, "unparsable" when broken).
-      Observational — nothing on disk changes; prints "no jobs" when the
-      jobs dir is empty or missing.
+      awake phases (or "hibernating"), pending count (entries in the
+      job's plan/pending.json; 0 when absent, "unparsable" when broken), and,
+      when the repo chain declares Chain.friction and that job's dir holds
+      notes, a friction count. Observational — nothing on disk changes;
+      prints "no jobs" when the jobs dir is empty or missing.
 
   extract <name> --onto <base> [--intake <path>]...
       The clean-history ending: refuse if branch <name> already exists (no
@@ -296,9 +301,11 @@ Verbs:
       <base>..job/<name> touching any path outside .flume/jobs/<name> and
       outside the intake set. A cherry-pick failure aborts, unwinds to the
       job branch, and deletes the partial branch — retryable, nothing lost.
-      On success, print friction.md and plan/open-questions.md off the job
-      branch tip to stdout, then delete job/<name> and the harness dir:
-      extract consumes the job. --onto is required, never guessed.
+      On success, print the chain-declared harvest paths (git show, off the
+      job branch tip) and, when Chain.friction is declared, that dir's files
+      (path + content, off the job's working tree) to stdout, then delete
+      job/<name> and the harness dir: extract consumes the job. --onto is
+      required, never guessed.
 
 Exit codes:
   0   Success (run: hibernation reached, or --max ticks completed; rm on an
@@ -346,7 +353,22 @@ async function runJobVerb(
       return 2;
     }
     try {
-      const jobs = jobStatus(repoRoot);
+      // §6 (v0.6.2): the friction dir is job-dir-relative but declared once
+      // on the repo-resident chain — load it here, best-effort (a missing or
+      // broken chain must never fail `job status`, only silently withhold
+      // the friction counts).
+      const configDir = process.env.FLUME_CONFIG_DIR
+        ? resolve(process.env.FLUME_CONFIG_DIR)
+        : join(repoRoot, ".flume");
+      let frictionDir: string | undefined;
+      try {
+        const { default: chain } = await diskChainLoader(configDir)();
+        frictionDir = chain.friction;
+      } catch {
+        frictionDir = undefined;
+      }
+
+      const jobs = jobStatus(repoRoot, frictionDir);
       if (jobs.length === 0) {
         console.log("no jobs");
         return 0;
@@ -358,7 +380,11 @@ async function runJobVerb(
           : "hibernating";
         const pending =
           j.pending === null ? "pending: unparsable" : `pending: ${j.pending}`;
-        console.log(`${j.name.padEnd(width)}  ${state}  ${pending}`);
+        const friction =
+          j.frictionCount !== undefined && j.frictionCount > 0
+            ? `  friction: ${j.frictionCount} note(s) await routing`
+            : "";
+        console.log(`${j.name.padEnd(width)}  ${state}  ${pending}${friction}`);
       }
       return 0;
     } catch (err) {
@@ -631,6 +657,15 @@ async function main(): Promise<number> {
     const baton = new Baton(flumeDir);
     const awake = baton.awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
+    // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
+    // `status`, only silently withhold the friction line.
+    try {
+      const { default: chain } = await diskChainLoader(configDir)();
+      const line = await frictionCountLine(flumeDir, chain);
+      if (line) console.log(line);
+    } catch {
+      // no chain, or a chain that fails to load — nothing to report
+    }
     return 0;
   }
 
@@ -733,7 +768,12 @@ async function main(): Promise<number> {
     // stop (§3) propagates the child's 78 out of `flume loop` too: exiting
     // 0 here would re-mask the misconfiguration as clean at the next
     // process boundary up.
-    const supervised = await superviseLoop({ repoRoot, flumeDir, maxTicks: max });
+    const supervised = await superviseLoop({
+      repoRoot,
+      flumeDir,
+      configDir,
+      maxTicks: max,
+    });
     return supervised.terminal ? EX_TERMINAL_MISCONFIG : 0;
   }
 

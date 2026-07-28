@@ -205,6 +205,32 @@ function validateFrictionDeclaration(chain: Chain): void {
   }
 }
 
+/**
+ * The friction count line shared by `flume status`, `flume job status`, and
+ * the loop-end summary (§6, v0.6.2): count of files directly under the
+ * declared friction dir, resolved against `stateRoot` — whichever state
+ * root is in play for the caller (the repo's `flumeDir`, or a job's dir).
+ * `undefined` when `Chain.friction` is undeclared, the dir is absent, or it
+ * holds no files — callers print a line only when this resolves to a
+ * string (§6: "when declared and non-empty").
+ */
+export async function frictionCountLine(
+  stateRoot: string,
+  chain: Chain,
+): Promise<string | undefined> {
+  if (chain.friction === undefined) return undefined;
+  let entries: Dirent[];
+  try {
+    entries = await readdir(join(stateRoot, chain.friction), {
+      withFileTypes: true,
+    });
+  } catch {
+    return undefined;
+  }
+  const count = entries.filter((e) => e.isFile()).length;
+  return count > 0 ? `friction: ${count} note(s) await routing` : undefined;
+}
+
 export async function loadChainModule(path: string): Promise<ChainModule> {
   if (!existsSync(path)) {
     throw new Error(
@@ -1641,6 +1667,12 @@ export interface SuperviseLoopOptions {
    * inherit). Defaults to `<repoRoot>/.flume`.
    */
   flumeDir?: string;
+  /**
+   * Chain+prompts dir the supervisor loads the chain from for the loop-end
+   * friction summary (§6, v0.6.2) — repo-resident, never a job dir (mirrors
+   * every other `configDir` default). Defaults to `<repoRoot>/.flume`.
+   */
+  configDir?: string;
   /** Max child ticks before stopping (the `--max N` cap). Default 50. */
   maxTicks?: number;
   log?: Logger;
@@ -1688,8 +1720,22 @@ export async function superviseLoop(
 ): Promise<SuperviseResult> {
   const log = opts.log ?? consoleLogger;
   const maxTicks = opts.maxTicks ?? 50;
-  const baton = new Baton(opts.flumeDir ?? join(opts.repoRoot, ".flume"));
+  const flumeDir = opts.flumeDir ?? join(opts.repoRoot, ".flume");
+  const configDir = opts.configDir ?? join(opts.repoRoot, ".flume");
+  const baton = new Baton(flumeDir);
   const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
+
+  // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
+  // the loop-end summary, only silently withhold the friction line.
+  const logFrictionSummary = async (): Promise<void> => {
+    try {
+      const { default: chain } = await diskChainLoader(configDir)();
+      const line = await frictionCountLine(flumeDir, chain);
+      if (line) log.info(`[flume] ${line}`);
+    } catch {
+      // no chain, or a chain that fails to load — nothing to summarize
+    }
+  };
 
   let ticks = 0;
   for (let i = 0; i < maxTicks; i++) {
@@ -1728,10 +1774,12 @@ export async function superviseLoop(
     // loudly every iteration until restored or --max is hit.
     if (baton.hibernating()) {
       log.info(`[flume] hibernating after ${ticks} tick(s)`);
+      await logFrictionSummary();
       return { ticks, hibernated: true };
     }
   }
   log.info(`[flume] reached --max ${maxTicks}; stopping`);
+  await logFrictionSummary();
   return { ticks, hibernated: false };
 }
 

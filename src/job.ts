@@ -481,6 +481,24 @@ export interface JobStatus {
    * parse — surfaced, not thrown, so one broken plan never hides the others.
    */
   pending: number | null;
+  /**
+   * Files under the job's declared friction dir (§6, v0.6.2), counted when
+   * the caller supplies `frictionDir` (the repo chain's `Chain.friction`,
+   * job-dir-relative — `jobStatus` has no chain of its own to load, so the
+   * caller resolves it once and passes it in). `undefined` when no
+   * `frictionDir` is given.
+   */
+  frictionCount?: number;
+}
+
+/** Files (not subdirs) directly under `dir`; 0 when `dir` is absent or unreadable. */
+function countFrictionFiles(dir: string): number {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile())
+      .length;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -489,8 +507,12 @@ export interface JobStatus {
  * what exists and writes nothing. The Baton constructor mkdirs `awake/`, so
  * it is constructed only when that dir is already on disk (mkdir on an
  * existing dir is a no-op); non-directories under `jobs/` are skipped.
+ *
+ * `frictionDir` (§6, v0.6.2), when supplied, is the repo chain's declared
+ * `Chain.friction` — job-dir-relative, so the same string applies to every
+ * job. Omitted → every row's `frictionCount` is `undefined`.
  */
-export function jobStatus(repoRoot: string): JobStatus[] {
+export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
   const jobsRoot = join(repoRoot, ".flume", "jobs");
   if (!existsSync(jobsRoot)) return [];
   return readdirSync(jobsRoot, { withFileTypes: true })
@@ -508,7 +530,16 @@ export function jobStatus(repoRoot: string): JobStatus[] {
         const parsed = parsePending(readFileSync(pendingPath, "utf8"));
         pending = parsed.ok ? parsed.entries.length : null;
       }
-      return { name, awake, pending };
+      const frictionCount =
+        frictionDir !== undefined
+          ? countFrictionFiles(join(jobDir, frictionDir))
+          : undefined;
+      return {
+        name,
+        awake,
+        pending,
+        ...(frictionCount !== undefined ? { frictionCount } : {}),
+      };
     });
 }
 
@@ -525,6 +556,28 @@ async function gitShowBlob(cwd: string, spec: string): Promise<string | null> {
   }
 }
 
+/**
+ * Files directly under `dir`, name-sorted with content — off the working
+ * tree (§6, v0.6.2: friction is gitignored, so git show can never see it).
+ * `[]` when `dir` is absent or unreadable — a channel nothing has written to
+ * yet is not an error.
+ */
+function readFrictionFiles(dir: string): { name: string; content: string }[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+  return names.map((fname) => ({
+    name: fname,
+    content: readFileSync(join(dir, fname), "utf8"),
+  }));
+}
+
 export interface JobExtractOptions {
   repoRoot: string;
   name: string;
@@ -533,7 +586,7 @@ export interface JobExtractOptions {
   /**
    * Chain+prompts dir — repo-resident (v0.6 §2); defaults to
    * `<repoRoot>/.flume`. Extract loads the chain from here for its
-   * declared `harvest` list (§5).
+   * declared `harvest` list (§5) and `friction` dir (§6).
    */
   configDir?: string;
   /** Intake pass-through files, repo-relative (§5e-2). */
@@ -548,21 +601,29 @@ export interface JobExtractResult {
   /** True when the intake pass-through carried a real delta (one commit). */
   intakeCommitted: boolean;
   /**
-   * Harvested prose off the job branch tip (git show, not worktree —
-   * §5e-4): each chain-declared `harvest` (v0.6 §5) entry → content, `null`
-   * when absent. Empty when the chain declares no `harvest`.
+   * Harvested prose: each chain-declared `harvest` (v0.6 §5) entry → content
+   * off the job branch tip (git show, not worktree — §5e-4), `null` when
+   * absent, followed — when `Chain.friction` is declared (§6, v0.6.2) — by
+   * one entry per file in the declared friction dir, read off the job dir's
+   * *working tree* instead of git show: friction is gitignored by design and
+   * so never reaches a commit; git show can only ever see it as absent. This
+   * replaces the legacy per-chain convention of listing a fixed
+   * `"friction.md"` in `harvest`, which could only ever resolve to `null`.
+   * Empty when the chain declares neither `harvest` nor `friction`.
    */
   harvest: { path: string; content: string | null }[];
 }
 
 /**
  * `flume job extract <name> --onto <base> [--intake <path>]...` (v0.5 §5e,
- * harvest chain-declared per v0.6 §5) — the clean-history ending, for
- * deliverables where harness commits must never appear and squash rights are
- * absent. Load the chain's `harvest` list, fork `<name>` off `--onto`, ship
- * the intake pass-through as one commit, cherry-pick the non-harness commits
- * oldest-first, harvest the declared paths, then consume the job: branch
- * `job/<name>` and the harness dir both go.
+ * harvest chain-declared per v0.6 §5 and, for friction, v0.6.2 §6) — the
+ * clean-history ending, for deliverables where harness commits must never
+ * appear and squash rights are absent. Load the chain's `harvest` list and
+ * `friction` declaration, fork `<name>` off `--onto`, ship the intake
+ * pass-through as one commit, cherry-pick the non-harness commits
+ * oldest-first, harvest the declared `harvest` paths plus the declared
+ * friction dir's files, then consume the job: branch `job/<name>` and the
+ * harness dir both go.
  *
  * On any failure after the fork the partial branch is unwound (§5e-3):
  * in-flight pick aborted, checkout back on `job/<name>`, partial branch
@@ -755,6 +816,16 @@ export async function jobExtract(
       path: p,
       content: await gitShowBlob(repoRoot, `${jobBranch}:${relPosix}/${p}`),
     });
+  }
+  // Friction (§6, v0.6.2): gitignored, so it never reaches a commit — read
+  // it off jobDir's actual working tree instead, before step 5 removes it.
+  // The checkout in step 2 left jobDir's tracked files gone (the clean
+  // branch doesn't track them) but its gitignored friction/ subdirectory
+  // untouched, exactly as teardown harvest (§4) relies on for worktrees.
+  if (chain.friction !== undefined) {
+    for (const f of readFrictionFiles(join(jobDir, chain.friction))) {
+      harvest.push({ path: `${chain.friction}/${f.name}`, content: f.content });
+    }
   }
 
   // 5. Extract consumes the job (§5e-5). The harness dir now holds only
