@@ -1,5 +1,52 @@
 [
   {
+    "tag": "FRICTION-SURFACING-TESTS",
+    "summary": "Add missing test coverage for the friction surfacing (status/job-status/loop-end/extract) lines per §6",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "6. Surfacing — the routing trigger"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Cover frictionCountLine's two cli.ts call sites (src/cli.ts:660-667 status; :358-387 job status) per §6: friction line/column appears when Chain.friction is declared and the dir holds files, omitted when undeclared/empty."
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "Cover jobExtract's friction-dir fs harvest (src/job.ts:825-829) per §6: declared friction files appended to the harvest array as path+content off the job dir's working tree, after the chain-declared harvest entries; an undeclared chain's extract output is byte-for-byte unchanged."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Cover superviseLoop's logFrictionSummary (src/Dispatcher.ts:217-241 frictionCountLine; :1730-1740 logFrictionSummary) per §6: friction line logged at both the hibernation stop and the --max-reached stop when declared+non-empty, omitted otherwise; and the configDir plumbing fix (loop now loads the chain from opts.configDir, not always the repo default) with a case where configDir differs from repoRoot/.flume."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "status and job status print a friction count line when declared+non-empty, omit it otherwise."
+      },
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "job extract prints the declared friction dir's files (path+content) instead of the legacy friction.md guess; an undeclared chain's extract output is unchanged."
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "superviseLoop logs the friction count line at loop end (hibernation and --max paths) when declared+non-empty; a non-default configDir is honored for the chain the summary loads."
+      }
+    ],
+    "acceptance": "tests/cli.test.ts, tests/job.test.ts, and tests/Dispatcher.test.ts assert §6's surfacing behavior; FRICTION-SURFACING (eb6e076) ships with committed coverage instead of none.",
+    "notes": "Same defect shape as FRICTION-DECLARATION-TESTS/FRICTION-GITIGNORE-TESTS/FRICTION-REVERT-NOTE-TESTS: the original FRICTION-SURFACING entry named tests[] paths but never listed them under files.edit, so the entry-scoped write guard excluded them and eb6e076 shipped touching only src/. This entry also closes a case the original tests[] never named at all: superviseLoop's loop-end summary and its configDir plumbing fix, both currently untested."
+  },
+  {
     "tag": "CHANGELOG-0-6-2",
     "summary": "Add the 0.6.2 CHANGELOG section per §8",
     "per": {
