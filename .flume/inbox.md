@@ -34,24 +34,3 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
-
-## 2026-07-27 — the harness block misstates the fence on entry-scoped ticks (human, from the two-exemplars study)
-
-`prependHarnessBlock` (`src/Prompt.ts:218`) renders `phase.writablePaths`
-under "anything else you modify will revert the commit" — on EVERY tick,
-including fanout ticks with an `assignedEntry`, where the guard actually
-narrows to `entry.files ∪ entryChannelPaths`
-(`src/Dispatcher.ts:1056-1068`). The engine's one dispatcher-authoritative
-prompt surface ("your prompt states the task; the harness states what it
-will enforce" — CHAIN-AUTHORING §5) states the wrong fence on exactly the
-ticks where the fence is narrowest. Field consequences, all 2026-07-27:
-dev-9175-cim-usage agents got phase globs in-band while the entry fence
-reverted them; centercode-platform PR #672 had to hand-write fence clarity
-into a chain prompt that the engine should self-transmit; temper's build
-prompt still PROMISES "staying inside [phase paths] never reverts" —
-true on its 0.3.1-era engine, armed as a lie by its 0.6 bump. Fix shape:
-the harness block states the EFFECTIVE fence for this tick — on scoped
-ticks list `entry.files ∪ channelPaths` as the revert boundary and the
-phase globs as the outer ceiling. Chains stop hand-transmitting guard
-semantics; version bumps stop silently invalidating prompts — the engine
-speaks for itself, per tick, version-correct forever.

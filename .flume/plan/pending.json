@@ -1,1 +1,138 @@
-[]
+[
+  {
+    "tag": "FRICTION-DECLARATION",
+    "summary": "Add Chain.friction?: string declaration + load-time validation per §2",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "2. `Chain.friction?: string` — the declaration"
+    },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Phase.ts", "description": "Add friction?: string beside seedDir/harvest on Chain per §2." },
+        { "path": "src/Dispatcher.ts", "description": "Validate declared friction at chain load: relative, resolves inside state root, else usage-shaped error per §2." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "chain load rejects an absolute or outside-state-root friction path; accepts a valid relative one." }
+    ],
+    "acceptance": "A chain.ts declaring an invalid Chain.friction path fails chain load with a usage-shaped error; a valid relative path loads clean; undeclared is unaffected.",
+    "notes": "Foundational — every other §3-§6 entry in this line reads this field. Undeclared must remain a strict no-op per §2."
+  },
+  {
+    "tag": "FRICTION-GITIGNORE",
+    "summary": "Fold declared friction dir into the runtime-owned .gitignore set per §3",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "3. Runtime ignore entry"
+    },
+    "gate": { "kind": "blockedBy", "tag": "FRICTION-DECLARATION" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/job.ts", "description": "Thread a declared Chain.friction dir into RUNTIME_IGNORES/ensureRuntimeIgnores (job.ts:45-109, call site ~223) per §3." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/job.test.ts", "asserts": "a declared friction dir is gitignored in a fresh job's .gitignore; idempotent; template-authored lines/order preserved verbatim." }
+    ],
+    "acceptance": "flume job new against a chain declaring Chain.friction gitignores that dir in the job's .gitignore; re-run adds nothing further; undeclared chains are unaffected.",
+    "notes": "job.ts:98 doc comment is the spec's own cite for the preserve-verbatim contract this must not break."
+  },
+  {
+    "tag": "TEARDOWN-HARDENING",
+    "summary": "Pre-removal friction harvest + win32 worktree-remove fallback in the wave-end teardown loop per §4/§7",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "4. Teardown harvest — the delivery guarantee"
+    },
+    "gate": { "kind": "blockedBy", "tag": "FRICTION-GITIGNORE" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "Wave-end teardown loop (~815-853): harvest declared friction files from each worktree's mirror into the primary friction dir, tag-prefixed, before git.removeWorktree per §4; on removal failure, fall back per §7 and report the surviving path(s) once for the wave, not per-worktree." },
+        { "path": "src/git.ts", "description": "removeWorktree fallback: git worktree prune + bounded-retry recursive removal per §7." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "pre-removal harvest moves worktree-local friction files into the primary dir, tag-prefixed, and a per-file harvest failure logs and continues rather than aborting the wave." },
+      { "path": "tests/git.test.ts", "asserts": "a worktree whose tree survives a bare `worktree remove --force` (e.g. populated node_modules) is fully removed via the fallback." }
+    ],
+    "acceptance": "A fanout worktree with declared-friction files and a populated node_modules is torn down on win32: friction lands in the primary friction dir tag-prefixed, and the worktree directory is fully removed — the v0.6.1 three-waves-of-failure symptom does not reproduce.",
+    "notes": "§4 and §7 are bundled: operator's own addendum (a326c1c) and §4's text (\"leave what could not move for §7's sweep to surface\") both frame these as one code-path visit, and both edit the same teardown loop — splitting risks two entries colliding on the same function."
+  },
+  {
+    "tag": "FRICTION-REVERT-NOTE",
+    "summary": "Write the operator's copy of an afterCommit gate-revert verdict to the friction channel per §5",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "5. Revert note — the operator's copy of the verdict"
+    },
+    "gate": { "kind": "blockedBy", "tag": "TEARDOWN-HARDENING" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "runFanoutEntry's afterCommit gate-revert branch (~962-981): when Chain.friction is declared, write <friction>/<ISO>--<tag>--reverted.md (gate name, message, details, reverted commit subject+body) before git.dropLastCommit discards it, per §5." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "an afterCommit gate revert with Chain.friction declared leaves a note file with the gate's name/message/details and the reverted commit's subject+body; absent when undeclared." }
+    ],
+    "acceptance": "An entry-scope afterCommit revert, with Chain.friction declared, leaves a dated --tag--reverted.md note in the primary friction dir carrying the gate verdict and the discarded commit's message; undeclared chains are unaffected.",
+    "notes": "Only the plan-addressed half of the dev-9175-cim-usage finding (persisting the verdict where plan itself reads it) is explicitly out of scope per §5 — see open-questions.md."
+  },
+  {
+    "tag": "FRICTION-SURFACING",
+    "summary": "Surface friction counts on status/loop/job-status and switch job extract off the legacy friction.md guess per §6",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "6. Surfacing — the routing trigger"
+    },
+    "gate": { "kind": "blockedBy", "tag": "FRICTION-REVERT-NOTE" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "flume status (~630-635) and flume job status (~343-369): append a friction count line when declared and non-empty, per §6." },
+        { "path": "src/job.ts", "description": "jobStatus: expose friction count for cli.ts's job-status line. jobExtract (~727-736): when declared, read the friction dir off the job's working tree (fs, not git show — gitignored content was never committed) and print path+content per file, replacing the legacy hardcoded friction.md guess; undeclared keeps today's harvestPaths behavior exactly." },
+        { "path": "src/Dispatcher.ts", "description": "superviseLoop's end-of-run summary: append the same friction count line per §6." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/cli.test.ts", "asserts": "status and job-status print a friction count line when declared+non-empty, omit it otherwise." },
+      { "path": "tests/job.test.ts", "asserts": "job extract prints the declared friction dir's files (path+content) instead of the legacy friction.md guess; an undeclared chain's extract output is unchanged." }
+    ],
+    "acceptance": "status, job status, and loop-end summaries print `friction: N note(s) await routing` when Chain.friction is declared and non-empty; job extract prints the declared dir's files instead of guessing friction.md; undeclared chains are byte-for-byte unchanged.",
+    "notes": "Friction is gitignored by design (operator ruling, a326c1c) — job extract must read it from the working tree, not git history; the existing harvestPaths loop uses git show and cannot see it."
+  },
+  {
+    "tag": "CHANGELOG-0-6-2",
+    "summary": "Add the 0.6.2 CHANGELOG section per §8",
+    "per": {
+      "path": "spec/RELEASE-v0.6.2.md",
+      "section": "8. CHANGELOG"
+    },
+    "gate": { "kind": "blockedBy", "tag": "FRICTION-SURFACING" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "CHANGELOG.md", "description": "Add [0.6.2] section per §8 (Added: friction declaration/harvest/revert-notes/surfacing; Fixed: win32 worktree-removal fallback). No version bump." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "CHANGELOG.md gains a [0.6.2] section matching §8's Added/Fixed content; package.json version untouched (human-performed at cut time).",
+    "notes": "Mirrors the CHANGELOG-0-6-1 precedent: version bump + npm publish stay human actions, out of phase scope."
+  }
+]
