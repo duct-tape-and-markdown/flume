@@ -1,48 +1,5 @@
 [
   {
-    "tag": "TEARDOWN-HARDENING-TESTS",
-    "summary": "Add missing test coverage for the shipped teardown harvest + win32 removal fallback per §4/§7; log unreadable friction dirs",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "4. Teardown harvest — the delivery guarantee"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "harvestFriction's readdir catch (~1183-1189, currently one silent catch-all): distinguish absent dir (ENOENT, silent no-op — no friction written this tick) from an unreadable dir, which §4 names alongside 'locked file' as a failure class that must log-and-continue, not swallow silently."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Cover harvestFriction (~1168-1228) e2e via dispatcher.tick(): a fanout worktree's friction file moves into the primary dir tag-prefixed before worktree removal; a per-file move failure logs and the wave still ships; undeclared chain.friction and a relocated state root are no-ops. Prior attempt at this coverage (dangling commit 2135c50, reverted for touching out-of-scope paths) has a directly reusable shape."
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "Cover removeWorktree (git.ts:90) per §7: a worktree the bare `git worktree remove --force` clears cleanly still succeeds; a path that bare removal fails on is cleared via the prune+bounded-retry fallback; a path surviving even the fallback throws naming the path (Dispatcher aggregates and reports once per wave, not tested here). Note the reverted 2135c50 draft tested a since-abandoned `removeWorktreeWithFallback`-returns-boolean shape — adapt to the shipped throws-on-total-failure API, don't reapply verbatim."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "teardown harvest moves worktree-local friction files into the primary dir tag-prefixed before removal; a per-file harvest failure logs and the wave still ships; undeclared/relocated state root is a no-op."
-      },
-      {
-        "path": "tests/git.test.ts",
-        "asserts": "removeWorktree succeeds via the bare path when clean, succeeds via the prune+retry fallback when the bare call fails, and throws naming the path when even the fallback leaves it behind."
-      }
-    ],
-    "acceptance": "tests/Dispatcher.test.ts and tests/git.test.ts assert §4's harvest and §7's removal fallback; TEARDOWN-HARDENING (a94767e) ships with committed coverage instead of none; an unreadable friction dir logs instead of silently no-op'ing.",
-    "notes": "Same defect shape as FRICTION-GITIGNORE-TESTS/FRICTION-DECLARATION-TESTS: TEARDOWN-HARDENING's own entry named tests[] but a prior attempt with those tests (2135c50) was reverted for touching paths outside files.edit, and the shipped attempt (a94767e) went src-only. This entry lists the test paths explicitly under files.edit."
-  },
-  {
     "tag": "FRICTION-REVERT-NOTE",
     "summary": "Write the operator's copy of an afterCommit gate-revert verdict to the friction channel per §5",
     "per": {
