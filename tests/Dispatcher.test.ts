@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -3467,5 +3467,254 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
+  }, 20_000);
+});
+
+/**
+ * v0.6.2 §5 — revert note. Only the engine is present when an afterCommit
+ * gate discards a fanout entry's commit, so it must write the operator's
+ * copy of the verdict — the gate's own name/message/details plus the
+ * reverted commit's subject+body — to the primary friction dir before
+ * `dropLastCommit` erases the evidence. Undeclared `chain.friction` keeps
+ * §5 off per §2; a note-write failure must never block the revert itself.
+ */
+describe("Dispatcher fanout — revert note to the friction channel (§5)", () => {
+  it("an afterCommit gate revert with Chain.friction declared writes a dated note carrying the gate's verdict and the reverted commit's subject+body", async () => {
+    await writePending(fx.repo, [makeEntry("REVERT-NOTE-A", ["src/rna.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const failing: Gate = {
+      name: "boom-gate",
+      when: "afterCommit",
+      async run() {
+        return {
+          ok: false,
+          message: "boom said no",
+          details: "boom-details-123",
+        };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failing],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      friction: "friction",
+    };
+
+    const agent = fanoutAgent({
+      "revert-note-a": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/rna.ts",
+          "ok\n",
+          "build(REVERT-NOTE-A): ship\n\nThis is the body of the commit.",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Whole-commit revert: nothing shipped, the entry stays pending.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "REVERT-NOTE-A",
+    ]);
+
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    const files = await readdir(frictionDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(
+      /^\d{4}-\d{2}-\d{2}T.*--REVERT-NOTE-A--reverted\.md$/,
+    );
+
+    const note = await readFile(join(frictionDir, files[0]!), "utf8");
+    expect(note).toContain("boom-gate");
+    expect(note).toContain("boom said no");
+    expect(note).toContain("boom-details-123");
+    expect(note).toContain("build(REVERT-NOTE-A): ship");
+    expect(note).toContain("This is the body of the commit.");
+  }, 20_000);
+
+  it("a write-gate revert (entry-scope stray path) carries the offending path list in the note's details, per §5", async () => {
+    await writePending(fx.repo, [makeEntry("REVERT-NOTE-B", ["src/rnb.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      friction: "friction",
+    };
+
+    const agent = fanoutAgent({
+      "revert-note-b": async (cwd) => {
+        // A stray sibling inside the phase's writablePaths but outside the
+        // entry's declared files — the built-in writable-paths gate reverts
+        // this, and §5 calls out the write-gate's offending path list.
+        await writeFile(join(cwd, "src", "rnb.ts"), "ok\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(REVERT-NOTE-B): overreach"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual([]);
+
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    const files = await readdir(frictionDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/--REVERT-NOTE-B--reverted\.md$/);
+
+    const note = await readFile(join(frictionDir, files[0]!), "utf8");
+    expect(note).toContain("writable-paths");
+    expect(note).toContain(
+      "src/stray.ts (inside phase writablePaths but outside",
+    );
+    expect(note).not.toContain("- src/rnb.ts");
+    expect(note).toContain("build(REVERT-NOTE-B): overreach");
+  }, 20_000);
+
+  it("an undeclared Chain.friction is a no-op — no note is written on revert", async () => {
+    await writePending(fx.repo, [makeEntry("REVERT-NOTE-C", ["src/rnc.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const failing: Gate = {
+      name: "boom-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom said no", details: "d" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failing],
+    });
+    // No `friction` field on the chain — §5 is entirely off, per §2.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "revert-note-c": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/rnc.ts",
+          "ok\n",
+          "build(REVERT-NOTE-C): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
+  }, 20_000);
+
+  it("a note-write failure (unwritable friction dir) logs and does not block the revert", async () => {
+    await writePending(fx.repo, [makeEntry("REVERT-NOTE-D", ["src/rnd.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // Pre-seed a plain file at the exact primary friction dir path so the
+    // note write's `mkdir(primaryDir, { recursive: true })` fails —
+    // standing in for the locked-dir/permission class §5 calls out.
+    await mkdir(join(fx.repo, ".flume"), { recursive: true });
+    await writeFile(join(fx.repo, ".flume", "friction"), "not a directory\n");
+
+    const failing: Gate = {
+      name: "boom-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom said no", details: "d" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failing],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      friction: "friction",
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const agent = fanoutAgent({
+      "revert-note-d": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/rnd.ts",
+          "ok\n",
+          "build(REVERT-NOTE-D): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The revert still proceeds despite the note-write failure.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "REVERT-NOTE-D",
+    ]);
+    expect(
+      warnings.some(
+        (w) =>
+          w.includes("REVERT-NOTE-D") &&
+          w.includes("revert note write failed"),
+      ),
+    ).toBe(true);
   }, 20_000);
 });
