@@ -10,7 +10,7 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn, execFile } from "node:child_process";
-import { join, dirname, resolve, relative, isAbsolute } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -163,6 +163,39 @@ export interface ChainModule {
  * exactly once. A rewritten chain.ts governs the next tick because the next
  * tick is a new process — not because anything re-imports it in-process.
  */
+/**
+ * Validate a declared `Chain.friction` (§2, v0.6.2): must be relative and
+ * must resolve inside the state root, else a usage-shaped error. The check
+ * is base-independent — it resolves the declared path against an arbitrary
+ * sentinel root and asks whether the result still sits under that root —
+ * so it needs no actual `flumeDir` value. That value legitimately varies
+ * per call site (a job-scoped run's state root differs from `configDir`,
+ * where `chain.ts` itself lives), but "does this relative path escape
+ * whatever root it's joined to" is a property of the path string alone.
+ * Undeclared `friction` is a strict no-op, per §2.
+ */
+function validateFrictionDeclaration(chain: Chain): void {
+  if (chain.friction === undefined) return;
+  const friction = chain.friction;
+  if (isAbsolute(friction)) {
+    throw new Error(
+      `chain declares friction '${friction}' as an absolute path; ` +
+        `Chain.friction must be a state-root-relative directory path (e.g. "friction")`,
+    );
+  }
+  const sentinelRoot = resolve("__flume_state_root__");
+  const resolved = resolve(sentinelRoot, friction);
+  const rel = relative(sentinelRoot, resolved);
+  const escapesRoot =
+    rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (escapesRoot) {
+    throw new Error(
+      `chain declares friction '${friction}' which resolves outside the state root; ` +
+        `Chain.friction must be a state-root-relative directory path (e.g. "friction")`,
+    );
+  }
+}
+
 export async function loadChainModule(path: string): Promise<ChainModule> {
   if (!existsSync(path)) {
     throw new Error(
@@ -198,6 +231,7 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
       `${path} must default-export a Chain (an object with a phases[] array)`,
     );
   }
+  validateFrictionDeclaration(chain);
   const module: ChainModule = { default: chain };
   if (agent) module.agent = agent;
   if (forkResolver) module.forkResolver = forkResolver;

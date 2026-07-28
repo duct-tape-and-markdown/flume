@@ -226,4 +226,12 @@ export interface Chain {
    * would re-house the evicted domain opinion invisibly.
    */
   harvest?: string[];
+  /**
+   * State-root-relative directory path naming the friction channel (e.g.
+   * "friction") — loop-to-owner notes, gitignored, hand-routed by the
+   * operator, never in a commit diff. Resolved against the resolved
+   * `flumeDir` at load, same idiom as `seedDir` / `harvest`. Undeclared:
+   * every friction-lifecycle behavior stays off, no default channel.
+   */
+  friction?: string;
 }
