@@ -1,53 +1,5 @@
 [
   {
-    "tag": "FRICTION-SURFACING",
-    "summary": "Surface friction counts on status/loop/job-status and switch job extract off the legacy friction.md guess per §6",
-    "per": {
-      "path": "spec/RELEASE-v0.6.2.md",
-      "section": "6. Surfacing — the routing trigger"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "flume status (~630-635) and flume job status (~343-369): append a friction count line when declared and non-empty, per §6."
-        },
-        {
-          "path": "src/job.ts",
-          "description": "jobStatus: expose friction count for cli.ts's job-status line. jobExtract (~727-736): when declared, read the friction dir off the job's working tree (fs, not git show — gitignored content was never committed) and print path+content per file, replacing the legacy hardcoded friction.md guess; undeclared keeps today's harvestPaths behavior exactly."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "superviseLoop's end-of-run summary: append the same friction count line per §6."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "status and job-status print a friction count line when declared+non-empty, omit it otherwise."
-      },
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "job extract prints the declared friction dir's files (path+content) instead of the legacy friction.md guess; an undeclared chain's extract output is unchanged."
-      }
-    ],
-    "acceptance": "status, job status, and loop-end summaries print `friction: N note(s) await routing` when Chain.friction is declared and non-empty; job extract prints the declared dir's files instead of guessing friction.md; undeclared chains are byte-for-byte unchanged.",
-    "notes": "Friction is gitignored by design (operator ruling, a326c1c) — job extract must read it from the working tree, not git history; the existing harvestPaths loop uses git show and cannot see it.",
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "src/cli.ts",
-      "src/job.ts"
-    ]
-  },
-  {
     "tag": "CHANGELOG-0-6-2",
     "summary": "Add the 0.6.2 CHANGELOG section per §8",
     "per": {
@@ -55,8 +7,7 @@
       "section": "8. CHANGELOG"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "FRICTION-SURFACING"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
