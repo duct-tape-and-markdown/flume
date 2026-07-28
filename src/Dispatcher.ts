@@ -1182,9 +1182,15 @@ export class Dispatcher {
     let entries: Dirent[];
     try {
       entries = await readdir(mirrorDir, { withFileTypes: true });
-    } catch {
-      // Nothing to harvest — dir absent (no friction written this tick) or
-      // unreadable (§4: log-and-continue, not abort).
+    } catch (err) {
+      // Absent dir (no friction written this tick) is expected and silent.
+      // Anything else — unreadable dir, e.g. permissions — is §4's
+      // log-and-continue failure class, not a silent no-op.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.log.warn(
+          `[flume] friction harvest: could not read ${mirrorDir}: ${(err as Error).message}`,
+        );
+      }
       return;
     }
     const files = entries.filter((e) => e.isFile());

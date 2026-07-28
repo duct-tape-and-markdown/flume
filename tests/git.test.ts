@@ -1,12 +1,23 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { commitPaths, revParse } from "../src/git.ts";
+// Partial mock: everything passes through to the real implementation except
+// `rm`, which a single test below overrides once to simulate a removal
+// fallback that resolves without actually clearing the directory — the
+// deterministic, cross-platform stand-in for a locked-handle survivor that
+// even the bounded-retry fallback (§7) cannot clear.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, rm: vi.fn(actual.rm) };
+});
+
+import { addWorktree, commitPaths, removeWorktree, revParse } from "../src/git.ts";
 
 const exec = promisify(execFile);
 
@@ -90,5 +101,65 @@ describe("commitPaths", () => {
     await expect(
       commitPaths({ cwd: repo, message: "noop", paths: [] }),
     ).rejects.toThrow(/at least one path/);
+  });
+});
+
+/**
+ * v0.6.2 §7 — win32 worktree removal fallback. A bare `git worktree remove
+ * --force` can fail and leave the directory (and its content) behind, most
+ * commonly a pnpm-installed `node_modules` still held open. OS-level file
+ * locks aren't reproducible portably in CI, so the failure trigger here is a
+ * path git refuses for a different, deterministic reason (never registered
+ * as a worktree) — the same downstream shape as the real bug: the bare
+ * remove throws, real content survives, and the fallback must still clear
+ * it.
+ */
+describe("removeWorktree (§7)", () => {
+  afterEach(() => {
+    vi.mocked(rm).mockClear();
+  });
+
+  it("removes a worktree that the bare remove clears cleanly", async () => {
+    const wtPath = join(repo, "wt-clean");
+    await addWorktree({
+      repoRoot: repo,
+      path: wtPath,
+      branch: "flume/clean",
+      fromRef: "HEAD",
+    });
+
+    await expect(removeWorktree(repo, wtPath)).resolves.toBeUndefined();
+    expect(existsSync(wtPath)).toBe(false);
+  });
+
+  it("falls back to prune + recursive removal when the bare remove fails, clearing a populated tree", async () => {
+    const path = join(repo, "not-a-registered-worktree");
+    // Stand in for a populated node_modules survivor.
+    await mkdir(join(path, "node_modules", "some-pkg"), { recursive: true });
+    await writeFile(
+      join(path, "node_modules", "some-pkg", "index.js"),
+      "module.exports = {};\n",
+    );
+
+    // `git worktree remove --force` refuses a path it never registered —
+    // deterministic across platforms, unlike a real locked-handle failure.
+    await expect(removeWorktree(repo, path)).resolves.toBeUndefined();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("throws naming the path when even the fallback leaves it behind", async () => {
+    const path = join(repo, "not-a-registered-worktree-stuck");
+    await mkdir(path, { recursive: true });
+    await writeFile(join(path, "locked.txt"), "held open\n");
+
+    // Simulate a recursive removal that "succeeds" (no throw, e.g. the
+    // process gave up retrying without surfacing an error) yet leaves the
+    // directory behind — the locked-handle survivor §7 must still report.
+    vi.mocked(rm).mockImplementationOnce(async () => {});
+
+    await expect(removeWorktree(repo, path)).rejects.toThrow(
+      new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+    expect(existsSync(path)).toBe(true);
   });
 });

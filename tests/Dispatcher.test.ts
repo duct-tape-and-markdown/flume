@@ -3216,3 +3216,256 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 });
+
+/**
+ * v0.6.2 §4 — teardown harvest. Only the engine is present when a fanout
+ * worktree dies, so wave-end teardown must move a worktree-local friction
+ * note into the primary friction dir, tag-prefixed, before the worktree is
+ * removed. Content-opaque: files only, no read of contents.
+ */
+describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
+  it("moves worktree-local friction files into the primary dir, tag-prefixed, before worktree removal", async () => {
+    await writePending(fx.repo, [makeEntry("FRICTION-A", ["src/friction-a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+
+    const agent = fanoutAgent({
+      "friction-a": async (cwd) => {
+        await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+        await writeFile(
+          join(cwd, ".flume", "friction", "note.md"),
+          "the loop wants owner input\n",
+        );
+        await writeAndCommit(
+          cwd,
+          "src/friction-a.ts",
+          "ok\n",
+          "build(FRICTION-A): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["FRICTION-A"]);
+
+    const harvested = join(fx.repo, ".flume", "friction", "FRICTION-A--note.md");
+    expect(existsSync(harvested)).toBe(true);
+    expect(await readFile(harvested, "utf8")).toBe(
+      "the loop wants owner input\n",
+    );
+
+    // Harvested out before removal — the worktree itself is fully gone.
+    expect(
+      existsSync(join(fx.repo, ".flume", "worktrees", "friction-a")),
+    ).toBe(false);
+  }, 20_000);
+
+  it("a per-file harvest failure logs and continues rather than aborting the wave", async () => {
+    await writePending(fx.repo, [makeEntry("FRICTION-B", ["src/friction-b.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+
+    const primaryFrictionDir = join(fx.repo, ".flume", "friction");
+    // Pre-seed a directory at the exact destination the harvest would
+    // rename into — rename(file, existing-dir) fails deterministically,
+    // standing in for the locked-file / unreadable-dir class §4 calls out.
+    await mkdir(join(primaryFrictionDir, "FRICTION-B--note.md"), {
+      recursive: true,
+    });
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const agent = fanoutAgent({
+      "friction-b": async (cwd) => {
+        await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+        await writeFile(join(cwd, ".flume", "friction", "note.md"), "blocked\n");
+        await writeAndCommit(
+          cwd,
+          "src/friction-b.ts",
+          "ok\n",
+          "build(FRICTION-B): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The wave still ships despite the harvest failure.
+    expect(outcome.result?.shippedTags).toEqual(["FRICTION-B"]);
+    expect(warnings.some((w) => w.includes("note.md"))).toBe(true);
+    // The pre-seeded destination is untouched — the failed move left it as-is.
+    expect(
+      existsSync(join(primaryFrictionDir, "FRICTION-B--note.md")),
+    ).toBe(true);
+  }, 20_000);
+
+  it("an unreadable friction dir is logged, not silently swallowed", async () => {
+    await writePending(fx.repo, [makeEntry("FRICTION-C", ["src/friction-c.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const agent = fanoutAgent({
+      "friction-c": async (cwd) => {
+        // Stand in for an unreadable dir (permissions, mid-write race,
+        // etc.): a plain *file* at the mirror path means `readdir` on it
+        // rejects with ENOTDIR rather than the absent-dir ENOENT §4 treats
+        // as a silent no-op.
+        await mkdir(join(cwd, ".flume"), { recursive: true });
+        await writeFile(join(cwd, ".flume", "friction"), "not a directory\n");
+        await writeAndCommit(
+          cwd,
+          "src/friction-c.ts",
+          "ok\n",
+          "build(FRICTION-C): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The wave still ships — harvest failure must not abort it.
+    expect(outcome.result?.shippedTags).toEqual(["FRICTION-C"]);
+    expect(
+      warnings.some((w) => w.includes("friction harvest") && w.includes("could not read")),
+    ).toBe(true);
+    // Nothing landed in the primary dir — there was nothing readable to move.
+    expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
+  }, 20_000);
+
+  it("an undeclared chain.friction is a no-op — no primary friction dir is created", async () => {
+    await writePending(fx.repo, [makeEntry("FRICTION-D", ["src/friction-d.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    // No `friction` field on the chain — §4's harvest is entirely off.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "friction-d": async (cwd) => {
+        // Even if a worktree happens to hold a dir at the conventional
+        // path, an undeclared channel must not be harvested.
+        await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+        await writeFile(join(cwd, ".flume", "friction", "note.md"), "orphan\n");
+        await writeAndCommit(
+          cwd,
+          "src/friction-d.ts",
+          "ok\n",
+          "build(FRICTION-D): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["FRICTION-D"]);
+    expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
+  }, 20_000);
+
+  it("a relocated state root has no worktree-local mirror to harvest from — no-op", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-friction-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(
+        pendingPath,
+        JSON.stringify(
+          [makeEntry("FRICTION-E", ["src/friction-e.ts"])],
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+
+      const agent = fanoutAgent({
+        "friction-e": async (cwd) => {
+          // A worktree still has *a* `.flume/friction` under its own
+          // repo-relative path, but the state root itself resolves outside
+          // the repo tree — there is no mirror at the relocated dock path
+          // for the harvest to read.
+          await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+          await writeFile(
+            join(cwd, ".flume", "friction", "note.md"),
+            "unreachable\n",
+          );
+          await writeAndCommit(
+            cwd,
+            "src/friction-e.ts",
+            "ok\n",
+            "build(FRICTION-E): ship",
+          );
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.shippedTags).toEqual(["FRICTION-E"]);
+      expect(existsSync(join(dock, "friction"))).toBe(false);
+      expect(existsSync(join(fx.repo, ".flume"))).toBe(false);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
