@@ -93,19 +93,36 @@ async function branchExists(cwd: string, branch: string): Promise<boolean> {
 }
 
 /**
- * Merge {@link RUNTIME_IGNORES} into `<jobDir>/.gitignore` — create the file
- * if absent, append only the missing entries otherwise. Idempotent;
- * template-authored lines (and their order) are preserved verbatim.
+ * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries
+ * (a declared `Chain.friction` dir, per v0.6.2 §3) — into `<jobDir>/.gitignore`:
+ * create the file if absent, append only the missing entries otherwise.
+ * Idempotent; template-authored lines (and their order) are preserved
+ * verbatim.
  */
-export async function ensureRuntimeIgnores(jobDir: string): Promise<void> {
+export async function ensureRuntimeIgnores(
+  jobDir: string,
+  extra: readonly string[] = [],
+): Promise<void> {
   const path = join(jobDir, ".gitignore");
   const existing = existsSync(path) ? await readFile(path, "utf8") : "";
   const have = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
-  const missing = RUNTIME_IGNORES.filter((entry) => !have.has(entry));
+  const missing = [...RUNTIME_IGNORES, ...extra].filter(
+    (entry) => !have.has(entry),
+  );
   if (missing.length === 0) return;
   const base =
     existing.length === 0 || existing.endsWith("\n") ? existing : existing + "\n";
   await writeFile(path, base + missing.join("\n") + "\n", "utf8");
+}
+
+/**
+ * `<friction>/` as it belongs in `.gitignore` — forward-slashed and
+ * single-trailing-slashed regardless of how the chain wrote the declaration
+ * (`Chain.friction` is validated relative at load time; this only shapes it
+ * for the ignore line).
+ */
+function frictionIgnoreEntry(friction: string): string {
+  return `${friction.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
 }
 
 /**
@@ -219,8 +236,13 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   }
 
   // 5. Runtime ignores — written before the baseline add so runtime state
-  // and the link below never enter the commit.
-  await ensureRuntimeIgnores(jobDir);
+  // and the link below never enter the commit. A declared Chain.friction
+  // dir folds into the same set (§3): gitignored by machinery, not by
+  // per-repo habit.
+  await ensureRuntimeIgnores(
+    jobDir,
+    chain.friction !== undefined ? [frictionIgnoreEntry(chain.friction)] : [],
+  );
 
   // 6. Unconditional provisioning (§5a-4, resolved decision 5).
   await ensureFlumeLink(jobDir, opts.linkTarget ?? resolve(HERE, ".."));
