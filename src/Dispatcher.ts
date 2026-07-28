@@ -710,6 +710,7 @@ export class Dispatcher {
           entry,
           worktrees[i]!,
           agent,
+          chain,
           extraEnvByIndex[i],
         ),
       ),
@@ -962,6 +963,7 @@ export class Dispatcher {
     entry: PendingEntry,
     wt: { path: string; branch: string },
     agent: Agent,
+    chain: Chain,
     extraEnv?: Record<string, string>,
   ): Promise<{
     entry: PendingEntry;
@@ -1027,6 +1029,13 @@ export class Dispatcher {
         verdict.failure!,
         wt.path,
         postHead,
+      );
+      await this.writeRevertNote(
+        chain,
+        wt.path,
+        postHead,
+        entry,
+        verdict.failure!,
       );
       await git.dropLastCommit(wt.path);
       await this.writePriorAttempt(key, record);
@@ -1431,6 +1440,82 @@ export class Dispatcher {
       return bound(stdout.trimEnd(), MAX_PRIOR_DIFFSTAT);
     } catch {
       return "(diff stat unavailable)";
+    }
+  }
+
+  /**
+   * Subject + body of a commit, read while `sha` is still reachable (before
+   * the hard reset / commit drop). Best-effort: a failure here must not
+   * block the revert path.
+   */
+  private async capturedCommitMessage(
+    cwd: string,
+    sha: string,
+  ): Promise<{ subject: string; body: string }> {
+    try {
+      const { stdout: subject } = await execFileP(
+        "git",
+        ["show", "-s", "--format=%s", "--no-color", sha],
+        { cwd, maxBuffer: 4 * 1024 * 1024 },
+      );
+      const { stdout: body } = await execFileP(
+        "git",
+        ["show", "-s", "--format=%b", "--no-color", sha],
+        { cwd, maxBuffer: 4 * 1024 * 1024 },
+      );
+      return { subject: subject.trim(), body: body.trim() };
+    } catch {
+      return { subject: "(commit message unavailable)", body: "" };
+    }
+  }
+
+  /**
+   * §5 (RELEASE-v0.6.2): when an afterCommit gate reverts a fanout entry's
+   * commit and `Chain.friction` is declared, write the operator's copy of
+   * the verdict — the gate name/message/details plus the reverted commit's
+   * subject+body — to `<friction>/<ISO-timestamp>--<tag>--reverted.md`
+   * before `git.dropLastCommit` discards the evidence. Written straight to
+   * the primary friction dir (harness code reaching into `flumeDir`, the
+   * sessions/harvest precedent) rather than the worktree-local mirror —
+   * this runs mid-wave, well before that worktree's own teardown harvest.
+   *
+   * Undeclared `chain.friction` is a no-op, per §2. Best-effort: a
+   * note-write failure must never block the revert it is documenting.
+   */
+  private async writeRevertNote(
+    chain: Chain,
+    cwd: string,
+    sha: string,
+    entry: PendingEntry,
+    failure: { gate: string; message: string; details?: string },
+  ): Promise<void> {
+    if (chain.friction === undefined) return;
+    try {
+      const { subject, body } = await this.capturedCommitMessage(cwd, sha);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const primaryDir = join(this.flumeDir, chain.friction);
+      await mkdir(primaryDir, { recursive: true });
+      const lines = [
+        `# Gate revert: ${failure.gate}`,
+        "",
+        failure.message,
+        ...(failure.details ? ["", "## Details", "", failure.details] : []),
+        "",
+        "## Reverted commit",
+        "",
+        subject,
+        ...(body ? ["", body] : []),
+        "",
+      ];
+      await writeFile(
+        join(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
+        lines.join("\n"),
+        "utf8",
+      );
+    } catch (err) {
+      this.log.warn(
+        `[flume] ${entry.tag}: revert note write failed: ${(err as Error).message}`,
+      );
     }
   }
 
