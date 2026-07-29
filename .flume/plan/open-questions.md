@@ -53,6 +53,83 @@ Recommend folding both this and TAG-PATTERN-SLICE-CONSTRAINT into one
 spec entry once a human opens a home for `PendingSchema.ts`
 self-consistency fixes.
 
+## SUPERVISOR-PROVISION-FAILURE-QUARANTINE: pre-tick worktree-sweep EBUSY burns a whole `--max` batch, same shape as §4's mount-dead but out of its scope
+
+**PARKED** — two real options with a genuine tradeoff, not a clear
+single answer; also no spec section governs this class yet.
+
+Drained from inbox (jeff pass, live batch, M). Batch 3 of the v0.7 loop
+burned 12/16 ticks on one deterministic pre-tick `git worktree` sweep
+EBUSY (rmdir denied — a Windows external handle-holder, an editor's
+tsserver/watcher, on `.flume/worktrees/ship-detection-declared-files-diff`);
+every subsequent tick re-hit the identical wall, exited 1, and the
+supervisor logged "continuing" twelve times until `--max`. §4 names the
+don't-burn-remaining-ticks principle but scopes only the load/mount
+chain-failure class (`spec/RELEASE-v0.7.md` §4); a pre-tick
+provisioning failure is a distinct class with the same burn shape.
+Confirmed in the write-up: delete *and* rename of the held dir are both
+denied while a watcher holds it, so a rename-aside fallback would not
+have rescued this case — the dir ends up empty-but-held.
+
+Two options, no clear winner:
+1. Consecutive-identical-failure abort/backoff at the supervisor —
+   generalizes §4's abort principle past the mount-dead class.
+2. Per-entry provision-failure quarantine — skip that entry's slug for
+   the batch, keep working the rest (6 of 7 queue entries were
+   pickable the whole time this incident ran).
+
+Needs a human pick (throughput-preserving quarantine vs. simpler
+generalized abort) and a spec section to carry either — no shipped
+line owns "supervisor doesn't burn ticks on non-work failures" broadly
+enough to include the pre-tick provisioning class. Evidence:
+`.flume/loop-20260729.log` tail, 12x EBUSY traces.
+
+## SUPERVISOR-LIVENESS-VS-DROPLASTCOMMIT-OWNERSHIP: `status` can't see supervisor liveness; `dropLastCommit` doesn't check tip ownership before dropping
+
+**NEEDS AMENDMENT** for two of the three drained asks — direction is
+clear; blocked on a spec home. The third ask is already implemented,
+verified this tick — no gap, no action.
+
+Drained from inbox (jeff pass, incident, owned). Two loop supervisors
+ran against one tree at once — the operator relaunched a loop while the
+prior batch's supervisor was still alive (pid lived 10:55→12:2x)
+because `flume status` read "hibernating" (baton awake-markers only,
+not process liveness) and the operator deleted `loop.pid` on a "stale"
+assumption with no liveness check of their own. The stale supervisor's
+`dropLastCommit` then fired twice on commits it did not own —
+`19be056` (its own false ship, coincidentally harmless) and `279bd8b`
+(the operator's inbox commit, recovered by cherry-pick). Reflog is the
+evidence.
+
+Checked each of the three asks against current source before parking
+(per `.claude/rules/collaboration.md`, "inform before parking"):
+1. "Loop startup refuses when `loop.pid` names a LIVE process" —
+   **already implemented**, verified at `src/cli.ts:731-747`: the loop
+   lock probes `process.kill(prior, 0)` and refuses (exit 1) iff alive,
+   reclaiming only a dead/unparsable pid. No gap — this incident's root
+   cause was the operator deleting the pidfile *before* relaunching,
+   which no liveness check of that pidfile can prevent. No pending
+   entry needed for this ask.
+2. `flume status` should surface supervisor liveness beside awake
+   markers (e.g. "awake: build (supervisor pid N LIVE)" vs. "(no live
+   supervisor — stale)") so an operator's relaunch judgment reads truth
+   instead of inferring it from "hibernating". A `liveLoopPid`-shaped
+   probe already exists at `src/job.ts:355` for the job path — same
+   pattern applies to the top-level `loop.pid`.
+3. `dropLastCommit` (`src/git.ts:55`, called from `src/Dispatcher.ts:609`
+   and `:1091`) should verify the tip commit is the one *this*
+   supervisor created (sha remembered at its own commit time) before
+   dropping, and refuse otherwise instead of dropping blind.
+
+Needs a spec section before asks 2/3 can carry a `per` cite — same
+spec-home gap as TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-
+VISIBILITY above and SUPERVISOR-PROVISION-FAILURE-QUARANTINE above.
+Candidate: one v0.8 "supervisor operational safety" home could plausibly
+cover all three of this tick's parked questions — they share "supervisor
+robustness under concurrency/environment hazards," distinct from v0.7's
+"engine truth-telling" theme (§1's declared blast radius doesn't
+mention supervisor liveness or worktree provisioning) — human's call.
+
 <!-- none open this tick — all questions closed by spec/RELEASE-v0.7.md or by acting on the research the write-up itself already converged on:
 
 - "EXIT-CODE-CONTRACT: entry.files omits the test edits the spec-required
