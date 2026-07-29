@@ -1,48 +1,5 @@
 [
   {
-    "tag": "CJS-CONTEXT-REFUSAL",
-    "summary": "Detect CJS-context chain-load failure and refuse with usage-shaped message per spec/RELEASE-v0.7.md §5",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "5. CJS-context host: detect and refuse"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "loadChainModule (src/Dispatcher.ts:313-353): catch tsx module-context signature family (tsx 4.21 'Cannot use import statement outside a module'; tsx 4.23 ERR_MODULE_NOT_FOUND with tsImport '?namespace' percent-encoded) and rethrow a distinguishable usage-shaped error naming \"type\": \"module\" as the fix, per §5. Non-matching errors pass through unchanged (no false positives)."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "Surface the usage-shaped CJS-context refusal as exit 2, consistent with other usage errors and with the EXIT-CODE-CONTRACT taxonomy this entry rides on top of. Underlying loader error stays available as debug/verbose detail, not the headline."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under [Unreleased] Fixed."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "loadChainModule against the two known tsx CJS-context signatures (4.21 and 4.23 shape) throws the usage-shaped refusal naming \"type\": \"module\"; a genuinely missing dependency's error passes through unchanged."
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "chain load in a CJS-context fixture prints the usage-shaped refusal and exits 2."
-      }
-    ],
-    "acceptance": "Chain load in a CJS-context fixture (the npm init -y smoke shape, pre-fix) prints the usage-shaped refusal naming \"type\": \"module\" and exits 2; a genuinely missing dependency still surfaces as itself.",
-    "notes": "Exit 2 sits alongside EXIT-CODE-CONTRACT's mount-dead/errored-vs-shipped taxonomy (shipped). Detection signature is the empirical tsx 4.21/4.23 family from the inbox finding (c11d96b fixed the two known fixture instances by adding type:module; this entry makes the failure legible generically, not just those two fixtures)."
-  },
-  {
     "tag": "EXIT-CODE-CONTRACT-DOC-DRIFT",
     "summary": "Fix stale exit-code prose left behind by EXIT-CODE-CONTRACT and -COUNTS: a Dispatcher.ts comment and docs/CLI.md still describe the pre-§4(-amendment) contract",
     "per": {
