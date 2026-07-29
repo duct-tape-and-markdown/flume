@@ -1,5 +1,44 @@
 [
   {
+    "tag": "GATECONTEXT-REPOROOT-TESTS",
+    "summary": "Add test coverage for GateContext.repoRoot plumbing per spec/RELEASE-v0.7.md §6",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "6. `GateContext.repoRoot`"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "ctx() already takes Partial<GateContext> overrides (tests/Gate.test.ts:21) — add a case asserting repoRoot passes through when set and stays undefined when omitted."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Assert afterMerge gate ctx (src/Dispatcher.ts:799) gets repoRoot=trunk repoRoot; afterCommit gate ctx (src/Dispatcher.ts:1167) gets repoRoot=cwd (worktree path under fanout, repoRoot under singleton), per §6 acceptance."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "GateContext.repoRoot round-trips through ctx() overrides; omitted stays undefined."
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a gate run in a fanout worktree receives that worktree's repoRoot; an afterMerge gate receives the trunk repoRoot; existing gates keep passing."
+      }
+    ],
+    "acceptance": "tests/Gate.test.ts and tests/Dispatcher.test.ts exercise repoRoot per §6's acceptance line; both pass.",
+    "notes": "Closes the gap logged in open-questions.md by 94b0ec2: GATECONTEXT-REPOROOT shipped repoRoot as optional specifically to avoid touching these two test paths, which its declared files omitted. This entry declares them so the write guard allows the edit (per Derive dimension rule: tests[] paths belong in files[])."
+  },
+  {
     "tag": "PREPACK-BUILD",
     "summary": "Add prepack script per spec/RELEASE-v0.7.md §7",
     "per": {

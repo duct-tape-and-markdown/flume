@@ -1,59 +1,69 @@
 # State
 
-Phase: **v0.7 line queued** — `spec/RELEASE-v0.7.md` derived last tick into
-6 pending entries; none shipped yet (no commit-delta since). Mode this
-tick: **maintain** (verification only — every dimension came up empty).
+Phase: **v0.7 line in flight** — 1 of the original 6 queue entries shipped
+(`GATECONTEXT-REPOROOT`), 5 remain, 1 new entry filed this tick. Mode this
+tick: **audit** (commit-delta was the only non-empty dimension).
 
-## This tick (maintain — zero delta)
+## This tick (audit — 2 commits since a3acea8)
 
-- `git log --grep='^plan:' -n 1` → `a3acea8` (prior tick, this line's
-  derive). `git log a3acea8..HEAD` → empty; HEAD **is** `a3acea8`, tree
-  clean besides untracked `.flume/loop.pid`.
-- **Audit**: no commit-delta (0 commits since last `plan:`) — nothing to
-  cross-check.
-- **Derive**: no spec-delta (`git diff a3acea8..HEAD -- spec/` empty) —
-  nothing to decompose.
-- **Drain**: `.flume/inbox.md` already empty (header only, drained last
-  tick) — nothing to route.
-- **Promote**: one `blockedBy` entry in the queue, `CJS-CONTEXT-REFUSAL`
-  → `EXIT-CODE-CONTRACT`. `EXIT-CODE-CONTRACT` is still present and
-  `open` in `pending-now` (hasn't shipped), so the block doesn't lift —
-  mechanically checked, not promoted.
-- All four trigger conditions absent this tick. `pending.json`,
-  `open-questions.md`, `inbox.md` written back byte-identical; this file
-  is the only substantive change, logging the verification so the next
-  tick doesn't have to re-derive it from scratch.
-
-## Prior tick's derive (for continuity)
-
-Full narrative in commit `a3acea8` body and `git show a3acea8:.flume/plan/state.md`.
-Short version: `spec/RELEASE-v0.7.md` landed (8 sections), decomposed into
-the 6 queue entries below; inbox's one entry drained into
-CJS-CONTEXT-REFUSAL + PREPACK-BUILD; all 3 prior open questions closed by
-the spec itself.
+- `git log --grep='^plan:' -n 1` → `a3acea8` (last plan). `git log
+  a3acea8..HEAD` → `94b0ec2` (build ships `GATECONTEXT-REPOROOT`),
+  `8f4f4f9` (harness auto-commit dropping the shipped entry from
+  `pending.json`). No spec-delta (`git diff a3acea8..HEAD -- spec/`
+  empty), inbox already empty, one `blockedBy` entry unchanged — audit
+  was the only live dimension.
+- **Cross-checked `94b0ec2` against §6** (`GateContext.repoRoot`): field
+  added at both construction sites (`src/Dispatcher.ts:799` afterMerge,
+  `:1167` afterCommit), matches §6's fanout-worktree-root /
+  bare-primary-checkout split, CHANGELOG bullet accurate, stayed inside
+  declared `files`. Checked §1's "kills a helper every gate reinvents"
+  framing against `src/builtinGates.ts` — none of flume's own built-in
+  gates independently compute a repo root (they use `ctx.cwd`), so
+  nothing there needed touching; that framing targets external consumer
+  chains, out of this repo's blast radius. No spec drift found.
+- **Found the real gap**: build shipped `repoRoot` as optional
+  specifically to avoid touching `tests/Gate.test.ts` /
+  `tests/Dispatcher.test.ts`, which the entry's `files` had omitted even
+  though its `tests[]` cited them — an under-declaration in last tick's
+  derive (`a3acea8`), not a build defect. Build correctly refused to
+  reach outside its fence and logged the gap to `open-questions.md`
+  instead (the build→plan channel per
+  `.claude/rules/collaboration.md`).
+- **Inform-before-parking**: re-read §6 and this doc's own
+  Derive-dimension rule ("Tests ride the entry... test paths in files")
+  — the fix was already the standing convention, not a fresh decision.
+  Filed `GATECONTEXT-REPOROOT-TESTS` (`files` includes both test paths
+  this time) and closed the carried open question by routing rather than
+  parking it further.
+- **Promote**: `CJS-CONTEXT-REFUSAL` still `blockedBy EXIT-CODE-CONTRACT`;
+  `EXIT-CODE-CONTRACT` still present and `open` in the queue — block
+  doesn't lift, checked mechanically.
 
 ## Queue (6)
 
-1. `GATECONTEXT-REPOROOT` — open, no dependencies, smallest surface.
-2. `PREPACK-BUILD` — open, package.json only.
+1. `GATECONTEXT-REPOROOT-TESTS` — open, new this tick, closes last
+   tick's under-declaration debt.
+2. `PREPACK-BUILD` — open, `package.json` only.
 3. `CLI-JUNCTION-SAFE-ENTRY` — open, `src/cli.ts` only.
 4. `HARNESS-BLOCK-EFFECTIVE-FENCE` — open, `Prompt.ts` + `Dispatcher.ts`
-   (thread `assignedEntry`) + docs worked-example rewrite.
+   + docs worked-example rewrite.
 5. `EXIT-CODE-CONTRACT` — open, the largest entry (mount-dead
-   classification + loop/job-run shipped-vs-errored accounting across
-   `Dispatcher.ts` and `cli.ts`).
-6. `CJS-CONTEXT-REFUSAL` — blockedBy EXIT-CODE-CONTRACT.
+   classification + loop/job-run shipped-vs-errored accounting).
+6. `CJS-CONTEXT-REFUSAL` — blockedBy `EXIT-CODE-CONTRACT`.
 
 ## Open questions (0)
 
-None live; unchanged from prior tick's closure (see `open-questions.md`).
+None live — the one carried question closed this tick by routing to
+`GATECONTEXT-REPOROOT-TESTS`.
 
 ## Writable-paths / trunk
 
-- `pending.json`, `open-questions.md`, `inbox.md` written back
-  byte-identical this tick (verified, not touched) — only `state.md`
-  changed, to log the zero-delta verification.
-- Trunk: HEAD `a3acea8` at tick start and unchanged, tree clean besides
-  untracked `.flume/loop.pid` (unwritable runtime path, left alone).
+- `pending.json`: 1 entry added (`GATECONTEXT-REPOROOT-TESTS`), 5 written
+  back byte-identical.
+- `open-questions.md`: 1 question closed (moved into the closed-questions
+  comment), header/status-marker block unchanged.
+- `inbox.md`: already empty, written back byte-identical.
+- Trunk: HEAD `8f4f4f9` at tick start, tree clean besides untracked
+  `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
