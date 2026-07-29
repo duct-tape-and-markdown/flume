@@ -846,10 +846,33 @@ export class Dispatcher {
         continue;
       }
 
-      shipped.push(r.entry);
       this.log.info(
         `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
       );
+
+      // §12: landing on trunk isn't shipping — a commit that only touches
+      // phase.entryChannelPaths (a park note, no implementation) must not
+      // clear the entry from pending.json. Diff against the entry's
+      // *declared* files.{new,edit,retire}, not touchedPaths() — that
+      // folds in observedFiles, a downstream footprint signal, not proof
+      // this diff shipped real work.
+      const declaredFiles = [
+        ...r.entry.files.new.map((f) => f.path),
+        ...r.entry.files.edit.map((f) => f.path),
+        ...r.entry.files.retire,
+      ];
+      const mergedDiff = await git.showNameOnly(repoRoot, mergedSha);
+      const touchesDeclaredFile = mergedDiff.some((p) =>
+        declaredFiles.includes(p),
+      );
+      if (!touchesDeclaredFile) {
+        this.log.warn(
+          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} touches no declared file — entry stays pending (channel-only commit)`,
+        );
+        continue;
+      }
+
+      shipped.push(r.entry);
     }
 
     // Update pending.json — remove shipped entries, record merge-failure

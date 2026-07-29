@@ -33,6 +33,11 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   **realpath** of `process.argv[1]` instead of the raw path, so
   `dist/cli.js` reached through a directory junction or symlink (pnpm's
   linked store) still runs `main()` instead of silently exiting 0.
+- A cherry-picked commit that touches only a phase's declared channel
+  paths (a park note, no implementation) no longer classifies as
+  shipped — the diff is checked against the entry's declared
+  `files.{new,edit,retire}` before it's removed from `pending.json`, so
+  the entry stays pending for a real attempt.
 
 ## [0.6.2]
 

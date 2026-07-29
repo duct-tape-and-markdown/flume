@@ -1202,7 +1202,8 @@ describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
 
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
-    // Both fake agents write to the same baseline file with different
+    // Both fake agents write their declared file (so the §12 declared-files
+    // diff check is satisfied) plus a shared baseline file with different
     // content. Declared paths are disjoint so partition packs them together;
     // the shared file is an entryChannelPaths allowance — the §5-era conflict
     // vector, since disjoint declared files can no longer collide directly.
@@ -1230,10 +1231,20 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const agent = fanoutAgent({
-      "conflict-a": (cwd) =>
-        writeAndCommit(cwd, "src/shared.ts", "from-A\n", "build: A"),
-      "conflict-b": (cwd) =>
-        writeAndCommit(cwd, "src/shared.ts", "from-B\n", "build: B"),
+      "conflict-a": async (cwd) => {
+        await mkdir(join(cwd, "src"), { recursive: true });
+        await writeFile(join(cwd, "src", "decoy-a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "shared.ts"), "from-A\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", "build: A"], { cwd });
+      },
+      "conflict-b": async (cwd) => {
+        await mkdir(join(cwd, "src"), { recursive: true });
+        await writeFile(join(cwd, "src", "decoy-b.ts"), "b\n");
+        await writeFile(join(cwd, "src", "shared.ts"), "from-B\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", "build: B"], { cwd });
+      },
     });
 
     const dispatcher = new Dispatcher({
@@ -1615,6 +1626,111 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
         (g) => g.gate === "writable-paths" && g.ok,
       ),
     ).toBe(true);
+  }, 20_000);
+});
+
+describe("Dispatcher fanout — ship detection requires a declared-files diff (§12)", () => {
+  it("channel-only commit cherry-picks onto trunk but its entry stays pending, out of shippedTags", async () => {
+    await writePending(fx.repo, [makeEntry("CHANNEL-ONLY", ["src/ok.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "notes/**"],
+      entryChannelPaths: ["notes/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // Commit touches only the channel path — a park note, no implementation
+    // of the entry's declared src/ok.ts.
+    const agent = fanoutAgent({
+      "channel-only": async (cwd) => {
+        await mkdir(join(cwd, "notes"), { recursive: true });
+        await writeFile(join(cwd, "notes", "finding.md"), "parked\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(CHANNEL-ONLY): park note"],
+          { cwd },
+        );
+      },
+    });
+
+    const warnings: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Lands on trunk — cherry-pick is unconditional regardless of content.
+    expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
+      "parked\n",
+    );
+    // Not classified shipped: stays pending, out of shippedTags.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "CHANNEL-ONLY",
+    ]);
+    expect(
+      warnings.some(
+        (w) =>
+          w.includes("CHANNEL-ONLY") &&
+          w.includes("touches no declared file") &&
+          w.includes("channel-only commit"),
+      ),
+    ).toBe(true);
+  }, 20_000);
+
+  it("a normal ship that also touches channels/CHANGELOG is unaffected", async () => {
+    await writePending(fx.repo, [makeEntry("NORMAL-SHIP", ["src/ok.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "notes/**"],
+      entryChannelPaths: ["notes/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // Ships the declared file and also touches an undeclared channel path —
+    // any overlap with declared files still ships, per §12.
+    const agent = fanoutAgent({
+      "normal-ship": async (cwd) => {
+        await writeFile(join(cwd, "src", "ok.ts"), "ok\n");
+        await mkdir(join(cwd, "notes"), { recursive: true });
+        await writeFile(join(cwd, "notes", "finding.md"), "context\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(NORMAL-SHIP): ship"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["NORMAL-SHIP"]);
+    expect(await readFile(join(fx.repo, "src/ok.ts"), "utf8")).toBe("ok\n");
+    expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
+      "context\n",
+    );
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   }, 20_000);
 });
 
