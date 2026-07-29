@@ -1,85 +1,88 @@
 # State
 
-Phase: **v0.7 line in flight** — `SHIP-DETECTION-DECLARED-FILES-DIFF`
-shipped (`d043482`); 6 entries remain in `pending.json`. Mode this tick:
-**audit** (4 commits landed since the last `plan:` commit, `9473ef8`;
-heaviest dimension this pass).
+Phase: **v0.7 line in flight** — `EXIT-CODE-CONTRACT` shipped
+(`92f3e56`); 6 entries in `pending.json` (5 carried + 1 new this
+pass). Mode this tick: **audit** (2 commits since the last `plan:`
+commit `f2eeb55` — `3a8d75e` build + `92f3e56` chore-ship of
+`EXIT-CODE-CONTRACT` — the only non-empty dimension; inbox empty, no
+spec changes, promote already resolved mechanically by the ship
+commit).
 
-## This tick (audit + drain)
+## This tick (audit only)
 
-A prior attempt this same wake reported the delta as empty (commit-delta,
-spec-delta, inbox all empty) against `9473ef8` and exited without
-committing. That report doesn't match reality: `git log` shows 4 commits
-since `9473ef8`, and `inbox.md` held two entries on disk. Re-verified
-directly (`git log --oneline -8`, `git status`, file `wc -l`) before
-proceeding — the prior attempt's refusal was itself in error, not a
-constraint to honor. Processed the real delta:
+Verified the delta directly before trusting the harness's
+`<commit-delta>`/`<inbox>` blocks (per the prior tick's logged
+false-empty-delta incident): `git log --oneline -8`, `wc -l` on
+`inbox.md`/`pending.json` confirm 2 commits since `f2eeb55` and a
+truly empty inbox (header-only).
 
-**Audit** — `b350bb7` (build) + `d043482` (chore ship) implement
-`SHIP-DETECTION-DECLARED-FILES-DIFF` per v0.7 §12. Cross-checked the
-diff against §12 line by line: declared-files diff computed via the
-same `git.showNameOnly` helper already used for footprint capture, the
-zero-overlap predicate correctly gates `shipped.push` (not a new
-`TickOutcome` variant, per §12's explicit "no taxonomy growth"), the log
-line matches the spec's suggested wording, both acceptance shapes
-(channel-only stays pending; normal-ship incl. channel/CHANGELOG-touching
-is unaffected) are covered in `tests/Dispatcher.test.ts`. The
-pre-existing cherry-pick-conflict test's rewrite (fake agents now also
-write their declared file) is forced by the behavior change, not scope
-creep — under the old classification it passed by accident. No drift
-found; no new pending entry from this audit.
+**Audit** — cross-checked `3a8d75e` (build EXIT-CODE-CONTRACT) against
+§4 line by line:
+- `EX_MOUNT_DEAD` (69, sibling to `EX_TERMINAL_MISCONFIG`) is
+  correctly distinct from generic harness-error 1; `tickExitCode`'s
+  mapping is safe because `TickOutcome.failed` is set at only the one
+  chain-resolution-throw site (`Dispatcher.ts:512`), never for a
+  plain per-entry agent failure — ordinary tick failures are
+  unaffected, matching §4's "tick-level agent failures keep today's
+  semantics" clause.
+- `superviseLoop` fail-fasts on `EX_MOUNT_DEAD` exactly as on
+  `EX_TERMINAL_MISCONFIG`; `cli.ts`'s loop exit mapping and both
+  `--help` blocks (tick, loop) updated to match; three test files
+  (`Dispatcher.test.ts`, `cli.test.ts`, new integration case) cover
+  the abort-after-one-tick shape end-to-end. The two locked-assertion
+  rewrites match the amendment's explicit authorization.
+- **Found real drift**: the commit updated the `TickOutcome.failed`
+  JSDoc and the `superviseLoop` doc comment for the new abort
+  behavior, but missed a third spot — the inline comment at
+  `Dispatcher.ts:492-499` still reads "the supervisor logs and
+  proceeds… every subsequent tick fails the same way", exactly the
+  pre-§4 behavior this commit killed. Same gap in `docs/CLI.md`
+  (tick/loop/job-run sections, ~L30/38/96): still documents only exit
+  1 for chain/harness failure, no mention of 69. Neither file was in
+  the original `EXIT-CODE-CONTRACT` entry's declared `files` (an
+  under-declaration, not a build lapse — the fanout write guard would
+  have reverted the edit had build attempted it). Filed as
+  `EXIT-CODE-CONTRACT-DOC-DRIFT` (doc/comment-only, no behavior
+  change, no test needed).
+- `92f3e56` (ship) is mechanical and correct: only `pending.json`
+  touched, entry removed, both `blockedBy EXIT-CODE-CONTRACT` entries
+  already flipped to `open` in that same commit — nothing left for
+  this tick's promote pass.
 
-**Drain (inbox, 2 entries)** — neither routes to a pending entry (no
-spec section governs either class yet):
-- EBUSY worktree-sweep tick-burn — parked as
-  `SUPERVISOR-PROVISION-FAILURE-QUARANTINE` (two real options, human
-  pick needed, plus no spec home).
-- Concurrent-supervisor incident (3 asks) — checked each against source
-  before parking, per collaboration.md ("inform before parking"): ask 1
-  (loop-pid liveness refusal) is **already implemented**
-  (`src/cli.ts:731-747`, `process.kill(prior, 0)` probe) — no gap, no
-  entry needed. Asks 2 (`status` liveness surfacing) and 3
-  (`dropLastCommit` tip-ownership check) parked together as
-  `SUPERVISOR-LIVENESS-VS-DROPLASTCOMMIT-OWNERSHIP` — direction clear,
-  blocked on spec home.
-- Both new questions flag a plausible shared v0.8 "supervisor
-  operational safety" home, distinct from v0.7's truth-telling theme.
-- `inbox.md` drained to header-only; nothing left queued.
+**Derive** — no spec changes since `f2eeb55`; not triggered.
 
-**Promote** — checked both `blockedBy` entries
-(`EXIT-CODE-CONTRACT-COUNTS`, `CJS-CONTEXT-REFUSAL`) against
-`pending-now`: both still gate on `EXIT-CODE-CONTRACT`, which remains
-present and open. No-op, as before.
+**Drain** — `inbox.md` confirmed empty (header-only); not triggered.
 
-`pending.json` unchanged (6 entries, same shapes as the prior `plan:`
-commit) — audit found nothing to amend, drain produced no pending
-entries, promote had nothing to flip.
+**Promote** — checked: no entry in `pending-now` has
+`gate.kind: "blockedBy"` naming a tag absent from `pending-now`.
+No-op.
 
 ## Queue (6)
 
-1. `EXIT-CODE-CONTRACT` — open, design operator-ratified.
-2. `EXIT-CODE-CONTRACT-COUNTS` — blockedBy `EXIT-CODE-CONTRACT`.
-3. `CJS-CONTEXT-REFUSAL` — blockedBy `EXIT-CODE-CONTRACT`.
+1. `EXIT-CODE-CONTRACT-COUNTS` — open.
+2. `CJS-CONTEXT-REFUSAL` — open.
+3. `EXIT-CODE-CONTRACT-DOC-DRIFT` — open, new this pass.
 4. `BAY-DISCOVERY-WALKUP` — open.
 5. `ENGINE-PIN-HANDSHAKE` — open.
 6. `SETUP-WORKTREE-HELPER` — open.
 
 ## Open questions (4)
 
-- `TAG-PATTERN-SLICE-CONSTRAINT` — NEEDS AMENDMENT, unchanged this pass.
-- `PENDING-NOTES-CAP-VISIBILITY` — NEEDS AMENDMENT, unchanged this pass.
-- `SUPERVISOR-PROVISION-FAILURE-QUARANTINE` — PARKED, new this pass.
+Unchanged this pass — none touched:
+- `TAG-PATTERN-SLICE-CONSTRAINT` — NEEDS AMENDMENT.
+- `PENDING-NOTES-CAP-VISIBILITY` — NEEDS AMENDMENT.
+- `SUPERVISOR-PROVISION-FAILURE-QUARANTINE` — PARKED.
 - `SUPERVISOR-LIVENESS-VS-DROPLASTCOMMIT-OWNERSHIP` — NEEDS AMENDMENT
-  (2 of 3 asks), new this pass.
+  (2 of 3 asks).
 
 ## Writable-paths / trunk
 
-- `pending.json`: untouched this pass (audit and drain produced no
-  pending-entry writes).
-- `open-questions.md`: +2 new sections (see above); prior 2 unchanged.
-- `inbox.md`: both entries drained; header preserved, now empty below
-  the marker.
-- Trunk: HEAD `d043482` at this pass's start; tree clean besides
-  untracked `.flume/loop.pid`.
+- `pending.json`: +1 entry (`EXIT-CODE-CONTRACT-DOC-DRIFT`), inserted
+  third; all other entries unchanged.
+- `state.md`: rewritten this tick.
+- `open-questions.md`: untouched (no new questions, none resolved).
+- `inbox.md`: untouched (already empty).
+- Trunk: HEAD `92f3e56` at this pass's start; tree clean besides
+  untracked `.flume/loop.pid` (runtime artifact, not a plan concern).
 
 Plan continues: no
