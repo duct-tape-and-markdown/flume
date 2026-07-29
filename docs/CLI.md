@@ -27,7 +27,7 @@ flume status
 
 ## `flume tick`
 
-Runs one phase × one agent invocation. Loads `.flume/chain.ts`, selects whichever phase is awake (singleton phases run once; fanout phases dispatch one pending entry per worktree in a single wave), invokes the agent, and applies the phase's after-commit and after-merge gates. A gate failure reverts the offending commit; the entry stays in pending for the next tick. Side effects: zero or more commits on the current branch, possible worktree creation under `.flume/worktrees/`, session capture under `.flume/sessions/`, and baton edits under `.flume/awake/` when a phase hands off or hibernates. Exits `0` on success or when no phase is awake; exits `1` on harness error (chain load failure, unexpected exception).
+Runs one phase × one agent invocation. Loads `.flume/chain.ts`, selects whichever phase is awake (singleton phases run once; fanout phases dispatch one pending entry per worktree in a single wave), invokes the agent, and applies the phase's after-commit and after-merge gates. A gate failure reverts the offending commit; the entry stays in pending for the next tick. Side effects: zero or more commits on the current branch, possible worktree creation under `.flume/worktrees/`, session capture under `.flume/sessions/`, and baton edits under `.flume/awake/` when a phase hands off or hibernates. Exits `0` on success or when no phase is awake; exits `69` (`EX_MOUNT_DEAD`) when the chain fails to load — the mount-dead class (v0.7 §4): no agent ran, nothing here is retryable by waiting; exits `1` on other harness error (unexpected exception).
 
 ```sh
 flume tick
@@ -35,7 +35,7 @@ flume tick
 
 ## `flume loop [--max N]`
 
-Repeatedly invokes the tick logic until the baton hibernates (no phase awake) or `--max` ticks have elapsed. `--max` defaults to `50` and exists as a safety cap so a runaway chain doesn't loop forever in CI or unattended runs. Each iteration has the same side effects as `flume tick`. Exits `0` on hibernation or when the cap is hit; exits `1` on harness error. This is the standard autonomous-run entry point — wire it into a long-running shell, a `tmux` pane, or a scheduler.
+Repeatedly invokes the tick logic until the baton hibernates (no phase awake) or `--max` ticks have elapsed. `--max` defaults to `50` and exists as a safety cap so a runaway chain doesn't loop forever in CI or unattended runs. Each iteration has the same side effects as `flume tick`. A child tick that exits `69` (`EX_MOUNT_DEAD`, chain failed to load) halts the run immediately instead of burning the remaining ticks against the same failure, and the loop propagates that same exit code. Otherwise (v0.7 §4, amended): exits `0` on hibernation, on hitting the `--max` cap, or on partial success (some entries shipped despite other ticks erroring); exits `1` iff at least one tick errored **and** the run shipped nothing. Any errored ticks are named in the completion summary regardless of exit code — a partial-success `0` exit never hides them silently. This is the standard autonomous-run entry point — wire it into a long-running shell, a `tmux` pane, or a scheduler.
 
 ```sh
 flume loop --max 20
@@ -93,7 +93,7 @@ Runs a job. Three steps, the first two a preflight:
 2. **Wake the entry phase iff the baton is hibernating.** The entry phase is `chain.phases[0]` — a content-free convention, no hardcoded phase names. A non-hibernating baton is left untouched, so an interrupted job resumes mid-flight instead of being restarted from the top.
 3. **Run the standard loop under the job resolution.** From here this is exactly `flume --job <name> loop [--max N]`: same `loop.pid` lock in the job state root, same one-child-process-per-tick supervisor, same exit codes.
 
-Exits `0` on hibernation or when `--max` (default 50) is hit; `1` on git or harness failure, or while another live loop holds the job's lock; `2` on usage errors (missing `<name>`, or the job branch does not exist); `78` when a child tick reports terminal misconfiguration (see `flume tick`).
+Exits `0` on hibernation, when `--max` (default 50) is hit, or on partial success (some entries shipped despite other ticks erroring); `1` on git or harness failure, while another live loop holds the job's lock, or when at least one tick errored **and** the run shipped nothing (v0.7 §4, amended); `2` on usage errors (missing `<name>`, or the job branch does not exist); `69` (`EX_MOUNT_DEAD`) when a child tick's chain fails to load — halts the run immediately rather than continuing; `78` when a child tick reports terminal misconfiguration (see `flume tick`). Any errored ticks are named in the completion summary regardless of exit code.
 
 ```sh
 flume job new docs-refresh

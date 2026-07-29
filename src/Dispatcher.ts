@@ -636,9 +636,11 @@ export class Dispatcher {
     // chainLoadGate-guarded broken chain.ts is reverted by its producing
     // tick, so the next tick's fresh process reads the restored file. An
     // *unguarded* broken chain.ts has nothing to run: log loudly and return a
-    // no-work failed outcome. The `flume tick` process exits non-zero; the
-    // supervisor logs and proceeds (never crashes), and every subsequent tick
-    // fails the same way until a human or a §5-informed retry restores it.
+    // no-work failed outcome. The `flume tick` process exits {@link
+    // EX_MOUNT_DEAD} (v0.7 §4); the `flume loop` supervisor aborts the run on
+    // first occurrence rather than proceeding — a mount-dead chain is exactly
+    // as dead next tick as this one, so it does not burn the remaining
+    // `--max` ticks re-hitting the same wall.
     let chainModule: ChainModule;
     try {
       chainModule = await this.chainLoader();
