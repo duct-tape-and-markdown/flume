@@ -9,51 +9,49 @@ Status markers:
 
 <!-- questions below this line -->
 
-## HARNESS-BLOCK-EFFECTIVE-FENCE: shipping breaks an existing out-of-scope test, not just a coverage gap
+## SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS: a build commit touching only entryChannelPaths gets removed from pending.json as if shipped
 
-**PARTIALLY ADDRESSED** — implementation verified locally (tsc clean,
-spec-conformant per RELEASE-v0.7.md §2); not shipped. `files` needs to
-grow before this can land — this is not closeable by a follow-up
-coverage entry alone.
+**NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home
+before it can be a pending entry (no section currently governs this
+classification).
 
-`prependHarnessBlock` on a scoped tick must render `entry.files ∪
-phase.entryChannelPaths` as the effective fence (§2). But
-`tests/Dispatcher.test.ts:1442` ("reverts a path outside entry scope but
-inside phase globs; the retry prompt names it") asserts
-`expect(prompts[1]).not.toContain("- src/a.ts")` against the retry
-prompt for an entry whose `files.edit` is `["src/a.ts"]` — i.e. it
-encodes the *old* collapsed rendering (entry.files never named in the
-harness block) as a correctness invariant. Implementing §2 correctly
-makes that assertion false: the retry prompt's harness block now
-legitimately lists `src/a.ts` as part of the effective fence.
-`tests/Dispatcher.test.ts` is outside this entry's `files`.
+Caught by this tick's commit-delta audit: `8f11af9`
+(`build(HARNESS-BLOCK-EFFECTIVE-FENCE): park`) committed only
+`.flume/plan/open-questions.md` — the always-writable
+`entryChannelPaths` channel (RELEASE-v0.4.md §5) — no `entry.files`
+path touched, a spec-sanctioned park of a judgment call
+(`.claude/rules/collaboration.md`, *Inform before parking*). But
+`runFanoutEntry` (`src/Dispatcher.ts:1033`) classifies *any* commit
+(`postHead !== preHead`) as `committed: true` with no check on which
+paths changed; the wave loop (`~L849`) then cherry-picks it, the
+`afterMerge` gates pass trivially (nothing in it can break them), and
+`shipped.push(r.entry)` fires. `35f8f96` (`chore(flume): ship
+HARNESS-BLOCK-EFFECTIVE-FENCE`) removed the entry from `pending.json`
+even though no implementation landed — the entry silently vanished
+from the backlog. Re-filed this tick (caught only by manual audit).
 
-This is a harder version of the standing GATECONTEXT-REPOROOT-TESTS /
-CLI-JUNCTION-SAFE-ENTRY-TESTS shape (`entry.tests` naming paths outside
-`entry.files`): those precedents shipped `files`-only because the
-missing coverage didn't break anything already green. Here, shipping
-`files`-only still fails the `afterMerge` vitest gate outright — a
-regression in an unrelated existing assertion, not a coverage gap — so
-there is no partial-ship path; the whole commit reverts regardless of
-what accompanies it. This is the second attempt at this entry to reach
-this conclusion (first: voluntary-bail, unshipped, no commit).
+RELEASE-v0.2.md §6's no-commit taxonomy (`gate-revert` /
+`voluntary-bail` / `platform-preempt`) doesn't name this case — all
+three are *no-commit* outcomes; this is a commit that happened, passed
+every gate, and still shouldn't count as shipped.
 
-Options for closing, for plan to choose between:
-1. Fold `tests/Dispatcher.test.ts` into this entry's `files.edit`,
-   narrowing the `L1517` assertion to the substring it actually means to
-   pin (the `<prior-attempt>` / gate-detail line, e.g.
-   `"src/stray.ts (inside phase writablePaths but outside"`) rather than
-   a blanket `not.toContain` over the whole prompt — since the harness
-   block correctly naming entry-declared files is now intended behavior.
-   Bundle `tests/Prompt.test.ts` in the same `files.edit` for the new
-   coverage `entry.tests` already calls for.
-2. Split into two coupled entries landed in the same wave (impl +
-   existing-test fix as one; new coverage as a strict follow-up) — no
-   material difference from option 1 beyond bookkeeping.
+Options for a human/spec call:
+1. A commit whose cherry-picked diff touches zero of
+   `entry.files.{new,edit,retire}` (verified by diff, not just "a
+   commit exists") still cherry-picks onto trunk (the channel content
+   needs to land) but is excluded from `shippedTags` / does not remove
+   the entry from `pending.json`. No new `TickOutcome` variant — a diff
+   check gating the `shipped.push` line in `src/Dispatcher.ts`.
+2. Same effect, modeled as a fourth no-commit-adjacent classification
+   (`channel-only`) alongside RELEASE-v0.2.md §6's three, if the
+   taxonomy is judged the right layer to carry it.
+3. Do nothing, rely on plan's per-tick audit to catch every recurrence
+   — the cost just observed (a full audit pass, and a near-miss on
+   catching it at all).
 
-No third option observed: the `files.edit` fence and the `afterMerge`
-full-suite gate leave no way to land the §2 behavior change without
-touching the one test that encodes the pre-§2 invariant.
+Leaning option 1 (minimal, mechanical, no new taxonomy surface) but
+this changes `shippedTags`/`TickOutcome` semantics that RELEASE-v0.2
+§6 already owns — flagging rather than deciding unilaterally.
 
 <!-- none open this tick — the one carried question closed by routing, and all four prior questions closed by spec/RELEASE-v0.7.md or by filing a follow-up entry:
 
@@ -83,4 +81,9 @@ touching the one test that encodes the pre-§2 invariant.
 - "Harness block states the wrong (unnarrowed) revert fence on
   entry-scoped ticks" — v0.7 §2 confirms the effective-fence rendering;
   filed as HARNESS-BLOCK-EFFECTIVE-FENCE.
+- "HARNESS-BLOCK-EFFECTIVE-FENCE: shipping breaks an existing
+  out-of-scope test" — closed by applying option 1: re-filed the entry
+  with tests/Dispatcher.test.ts + tests/Prompt.test.ts folded into
+  files.edit (this tick, after the entry was found dropped from
+  pending.json — see SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS above).
 -->

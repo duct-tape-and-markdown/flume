@@ -1,5 +1,60 @@
 [
   {
+    "tag": "HARNESS-BLOCK-EFFECTIVE-FENCE",
+    "summary": "Harness block states effective (narrowed) fence on scoped ticks per spec/RELEASE-v0.7.md §2",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "2. Harness block states the effective fence"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "prependHarnessBlock (src/Prompt.ts:218) and RenderOptions: on a tick carrying assignedEntry, render entry.files ∪ phase.entryChannelPaths as the revert boundary and phase.writablePaths separately as the outer ceiling, per §2. Unscoped rendering stays byte-identical."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Thread assignedEntry: entry into the fanout renderPrompt call (~src/Dispatcher.ts:1014) so Prompt.ts can render the narrowed fence."
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Rewrite the §\"The <harness> block\" worked example (docs/CHAIN-AUTHORING.md:733-753) to show the narrowed scoped-tick rendering instead of the collapsed one."
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Add bullet under [Unreleased] Fixed."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Narrow L1517's blanket `not.toContain(\"- src/a.ts\")` (open-questions.md HARNESS-BLOCK-EFFECTIVE-FENCE, option 1) to the prior-attempt/gate-detail substring it actually pins — entry.files legitimately appearing in the harness block is correct behavior post-§2, not a leak."
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "New coverage per §2 acceptance."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "asserts": "a scoped tick's rendered <harness> block names entry.files ∪ entryChannelPaths as the commit-must-touch-exactly-these fence and phase.writablePaths as a separately-named outer ceiling; an unscoped tick's rendered prompt is byte-identical to today's collapsed rendering."
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "the retry prompt still fails when the out-of-scope path is genuinely foreign to entry.files (narrowed substring assertion), and no longer false-fails when an entry.files path legitimately appears in the harness block."
+      }
+    ],
+    "acceptance": "A scoped tick's rendered prompt names exactly the fence the write guard (src/Dispatcher.ts runAfterCommitGates, ~L1141-1160) will enforce; an unscoped tick's prompt is byte-identical to 0.6.2.",
+    "notes": "Re-filed: 35f8f96 removed this entry from pending.json on the strength of 8f11af9's park-only commit (channel-path-only, no entry.files touched) — see open-questions.md SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS. files now folds in tests/Dispatcher.test.ts + tests/Prompt.test.ts per the standing open question's option 1, closing it."
+  },
+  {
     "tag": "EXIT-CODE-CONTRACT",
     "summary": "Mount-dead aborts immediately; loop/job run exit non-zero iff errored-and-nothing-shipped, per spec/RELEASE-v0.7.md §4",
     "per": {
