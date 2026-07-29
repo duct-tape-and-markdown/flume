@@ -5,9 +5,20 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Partial mock: everything passes through to the real tsImport except in the
+// one test below that simulates tsx 4.23's ERR_MODULE_NOT_FOUND/namespace-
+// query signature (v0.7 §5) — a shape this installed tsx (4.21) never
+// produces on its own, so it can only be exercised by injection.
+vi.mock("tsx/esm/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("tsx/esm/api")>();
+  return { ...actual, tsImport: vi.fn(actual.tsImport) };
+});
+
+import { tsImport } from "tsx/esm/api";
 import {
+  CjsContextLoadError,
   Dispatcher,
   loadChainModule,
   superviseLoop,
@@ -3726,6 +3737,97 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
 
       expect(mod.default.friction).toBeUndefined();
       expect(mod.default.phases).toHaveLength(1);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * v0.7 §5 — a CJS-context host (package.json lacking `"type": "module"`)
+ * must refuse chain load with a usage-shaped `CjsContextLoadError`, not
+ * relay tsx's raw loader stack. Two empirical signatures (build's own
+ * `isCjsContextLoadFailure`, `Dispatcher.ts`): tsx 4.21's CJS-fallback parse
+ * failure ("Cannot use import statement outside a module") — real, this
+ * installed tsx (4.21.0) reproduces it directly — and tsx 4.23's
+ * `ERR_MODULE_NOT_FOUND` against a path carrying its percent-encoded
+ * `?namespace=` query, which this installed tsx never emits on its own and
+ * so is exercised via the `tsx/esm/api` partial mock declared at the top of
+ * this file. A third case proves the detector isn't trigger-happy: a
+ * genuinely missing dependency (plain `ERR_MODULE_NOT_FOUND`, no namespace
+ * artifact) must surface unshadowed.
+ */
+describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => {
+  async function writeCfg(cfg: string, chainSrc: string): Promise<void> {
+    await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
+  }
+
+  it("tsx 4.21 signature — a CJS-context package.json plus a real import statement throws CjsContextLoadError naming the fix", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-import-"));
+    try {
+      // Explicit "commonjs" (not merely absent "type") is what actually
+      // routes tsx into its CJS-fallback parse path — verified by hand
+      // against this installed tsx before locking the test.
+      await writeFile(
+        join(cfg, "package.json"),
+        JSON.stringify({ name: "cjs-host", type: "commonjs" }),
+        "utf8",
+      );
+      await writeCfg(
+        cfg,
+        `import { join as pathJoin } from "node:path";\nexport default { pathJoin };\n`,
+      );
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toMatchObject({
+        name: "CjsContextLoadError",
+        message: expect.stringContaining('"type": "module"'),
+      });
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("tsx 4.23 signature — ERR_MODULE_NOT_FOUND with a percent-encoded ?namespace= query throws CjsContextLoadError naming the fix", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-namespace-"));
+    try {
+      await writeCfg(cfg, `export default {};\n`);
+      const namespaceErr = Object.assign(
+        new Error(
+          `Cannot find module '${join(cfg, "chain.ts")}%3Fnamespace%3D1234567890' ` +
+            `imported from somewhere`,
+        ),
+        { code: "ERR_MODULE_NOT_FOUND" },
+      );
+      vi.mocked(tsImport).mockRejectedValueOnce(namespaceErr);
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toMatchObject({
+        name: "CjsContextLoadError",
+        message: expect.stringContaining('"type": "module"'),
+      });
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("a genuinely missing dependency (plain ERR_MODULE_NOT_FOUND, no namespace-query artifact) passes through unchanged", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-genuine-"));
+    try {
+      await writeCfg(
+        cfg,
+        `import { missing } from "./does-not-exist.js";\nexport default { missing };\n`,
+      );
+
+      let caught: unknown;
+      try {
+        await loadChainModule(join(cfg, "chain.ts"));
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(CjsContextLoadError);
+      expect((caught as NodeJS.ErrnoException).code).toBe("ERR_MODULE_NOT_FOUND");
+      expect((caught as Error).message).toContain("does-not-exist");
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }

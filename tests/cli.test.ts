@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   JobResolutionConflictError,
@@ -229,6 +229,22 @@ describe("tickExitCode — §3 axis classification", () => {
     };
     expect(tickExitCode(outcome)).toBe(0);
   });
+
+  it("CJS-context usage error (v0.7 §5) → 2, checked ahead of the mount-dead fallback", () => {
+    const outcome: TickOutcome = {
+      hibernated: false,
+      usageError: true,
+      awakeAfter: ["plan"],
+      summary: '.flume/chain.ts failed to load: ... add "type": "module" ...',
+    };
+    expect(tickExitCode(outcome)).toBe(2);
+
+    // usageError and failed are documented as mutually exclusive, but the
+    // mapping itself must still prefer 2 if both were ever set — the §5
+    // usage refusal is never allowed to collapse back into EX_MOUNT_DEAD.
+    const both: TickOutcome = { ...outcome, failed: true };
+    expect(tickExitCode(both)).toBe(2);
+  });
 });
 
 /**
@@ -405,6 +421,83 @@ async function runCli(
     return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
   }
 }
+
+/**
+ * v0.7 §5, render-command seam: `main()`'s `render` branch wraps
+ * `resolveChain()` in its own try/catch for `CjsContextLoadError`
+ * (`src/cli.ts:872-881`) — independent of, and exercised separately from,
+ * Dispatcher.tick()'s `usageError` path (`tickExitCode` above,
+ * `Dispatcher.test.ts`'s loadChainModule suite).
+ *
+ * `runCli` above cannot reproduce the bug: it boots the whole CLI through
+ * tsx's own CLI entry (`tsx/dist/cli.mjs`), which registers ESM loader
+ * hooks for the *entire* process, so the nested load of the fixture's
+ * `.flume/chain.ts` parses fine regardless of the host's package.json
+ * (verified by hand — same fixture, `runCli` exits 0). Production's real
+ * shape (`bin/flume.js`) is a plain, non-tsx-bootstrapped `node` process
+ * that calls `tsImport` only for that nested chain load — reproduced here
+ * by building `dist/` once and spawning the compiled `dist/cli.js`
+ * directly, matching `bin/flume.js`'s own invocation.
+ */
+describe("flume render — CJS-context host refusal via the real CLI (v0.7 §5)", () => {
+  const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+  const TSC_BIN = fileURLToPath(
+    new URL("../node_modules/typescript/bin/tsc", import.meta.url),
+  );
+  const DIST_CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+
+  beforeAll(async () => {
+    await exec(process.execPath, [TSC_BIN, "-p", "tsconfig.build.json"], {
+      cwd: REPO_ROOT,
+    });
+  }, 60_000);
+
+  async function runDistCli(
+    cwd: string,
+    args: string[],
+  ): Promise<{ out: string; code: number }> {
+    try {
+      const { stdout, stderr } = await exec(process.execPath, [DIST_CLI, ...args], {
+        cwd,
+        env: hermeticEnv(),
+      });
+      return { out: stdout + stderr, code: 0 };
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string; code?: number };
+      return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+    }
+  }
+
+  it(
+    'a CJS-context host (package.json missing "type": "module") refuses render\'s chain load, naming the fix, and exits 2',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-cjs-render-"));
+      try {
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({ name: "cjs-host", type: "commonjs" }),
+          "utf8",
+        );
+        await mkdir(join(dir, ".flume"), { recursive: true });
+        await writeFile(
+          join(dir, ".flume", "chain.ts"),
+          `import { join as pathJoin } from "node:path";\n` +
+            `export default { phases: [], humanOnly: [], _j: pathJoin };\n`,
+          "utf8",
+        );
+
+        const result = await runDistCli(dir, ["render", "probe"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).toContain("[flume]");
+        expect(result.out).toContain('"type": "module"');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});
 
 describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
   it(
