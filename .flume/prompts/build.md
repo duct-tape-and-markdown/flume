@@ -22,7 +22,8 @@ Find the section named `{{PER_SECTION}}` in the spec. The rest of the spec is co
 
 Execute the assigned entry. Implement completely — no placeholders, no stubs.
 
-- Touch only the files declared in `entry.files`. Anything else reverts the commit.
+- Touch only the files declared in `entry.files` ∪ the phase's `entryChannelPaths` (`.flume/chain.ts`) — the effective fence. Anything else reverts the commit.
+- If edits the work genuinely requires fall outside that fence, do not commit into a guaranteed revert. Park the conflict in `.flume/plan/open-questions.md` — the violating paths and why the entry cannot ship without them — and exit without committing. Plan widens the declaration or splits the entry next tick. (spec v0.7 §13)
 - If `entry.files` names paths outside the build phase's `writablePaths` in `.flume/chain.ts`, do not attempt to ship and do not pivot to a different path. Exit without committing; state the path / writablePaths gap in your final message. Plan re-derives next tick and routes it as an open question.
 - The acceptance criterion (`entry.acceptance`) must turn green.
 - Search before assuming "not implemented" (`rg`, `grep`).

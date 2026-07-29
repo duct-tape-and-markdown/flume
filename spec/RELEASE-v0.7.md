@@ -405,7 +405,12 @@ tick cost with zero learning per attempt.
   block states (§2), the tick parks the conflict in `open-questions.md`
   (naming the paths and why) and bails voluntarily — committing into a
   guaranteed revert is never the right move. This makes fence exceedance
-  a decision the plan can see, on either path.
+  a decision the plan can see, on either path. **Delivery note
+  (2026-07-29): applied by operator commit — prompts, like `chain.ts`,
+  sit outside every phase's fence (see park
+  PROMPTS-BUILD-FENCE-INSTRUCTION); this bullet is not loop-derivable
+  and no entry should carry it. The derivable remainder of this section
+  is the footprint machinery + its locked test.**
 - Orthogonal config note, not machinery: the dogfood chain's
   `entryChannelPaths` gains `tests/**` (operator commit, same day) —
   in this repo every behavior-changing entry forces test edits, so test
