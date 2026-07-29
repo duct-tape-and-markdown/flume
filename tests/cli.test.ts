@@ -26,7 +26,11 @@ import {
   tickExitCode,
 } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
-import { EX_TERMINAL_MISCONFIG, type TickOutcome } from "../src/Dispatcher.ts";
+import {
+  EX_TERMINAL_MISCONFIG,
+  EX_MOUNT_DEAD,
+  type TickOutcome,
+} from "../src/Dispatcher.ts";
 
 const exec = promisify(execFile);
 
@@ -174,11 +178,12 @@ describe("resolveStateDirs — §3 job resolution", () => {
 });
 
 /**
- * §3 — `flume tick` exit-code classification at the process boundary:
- * 78 (`EX_CONFIG`) terminal misconfiguration, 1 chain-resolution failure,
+ * §3 / v0.7 §4 — `flume tick` exit-code classification at the process
+ * boundary: 78 (`EX_CONFIG`) terminal misconfiguration, 69 (`EX_UNAVAILABLE`,
+ * `EX_MOUNT_DEAD`) the mount-dead failure class (chain never resolved),
  * 0 clean hibernate or ordinary work. Exercised at the mapping seam
  * (`tickExitCode`); the loop-process-boundary integration suite proves 78
- * end-to-end through a real subprocess.
+ * and 69 end-to-end through a real subprocess.
  */
 describe("tickExitCode — §3 axis classification", () => {
   it("terminal misconfiguration → 78 (EX_CONFIG)", () => {
@@ -201,14 +206,15 @@ describe("tickExitCode — §3 axis classification", () => {
     expect(tickExitCode(outcome)).toBe(0);
   });
 
-  it("chain resolution failure (§3, other Axis-C member) → 1", () => {
+  it("mount-dead: chain resolution failure (v0.7 §4) → 69 (EX_UNAVAILABLE)", () => {
     const outcome: TickOutcome = {
       hibernated: false,
       failed: true,
       awakeAfter: ["plan"],
       summary: "chain resolution failed: boom; no work",
     };
-    expect(tickExitCode(outcome)).toBe(1);
+    expect(EX_MOUNT_DEAD).toBe(69);
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
   });
 
   it("ordinary work tick → 0", () => {

@@ -301,3 +301,30 @@ describe("§3 Axis-C fail-fast — real `flume loop` over an orphaned awake flag
     30_000,
   );
 });
+
+describe("§4 mount-dead fail-fast — real `flume loop` over an unloadable chain.ts", () => {
+  it(
+    "supervisor aborts on the first mount-dead tick instead of burning to --max; loop exits 69 (EX_MOUNT_DEAD)",
+    async () => {
+      // chain.ts throws at module-evaluation time — every child tick's
+      // chainLoader would reject identically forever. Before v0.7 §4 this
+      // hot-spun to --max as a parade of exit-1 "failed" ticks that never
+      // surfaced non-zero to CI.
+      await writeFile(
+        join(repo.dir, ".flume", "chain.ts"),
+        `throw new Error("simulated broken chain.ts");\n` +
+          `export default { phases: [], humanOnly: [] };\n`,
+        "utf8",
+      );
+
+      const loop = await runLoop(repo.dir, hermeticEnv(), 3);
+
+      // Fail-fast: one child, then stop — never --max.
+      expect(loop.code).toBe(69);
+      expect(loop.out).toMatch(/mount-dead/);
+      expect(loop.out).not.toMatch(/reached --max/);
+      expect(loop.out.match(/tick exited 69/g)).toHaveLength(1);
+    },
+    30_000,
+  );
+});

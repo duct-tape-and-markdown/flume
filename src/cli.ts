@@ -38,6 +38,7 @@ import {
   frictionCountLine,
   superviseLoop,
   EX_TERMINAL_MISCONFIG,
+  EX_MOUNT_DEAD,
   type TickOutcome,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
@@ -123,14 +124,16 @@ export function resolveStateDirs(
 }
 
 /**
- * Map a tick outcome to the `flume tick` process exit code — the §3 axis
- * classification at the process boundary: 78 (`EX_CONFIG`) terminal
- * misconfiguration, 1 chain-resolution failure, 0 otherwise (work done or
- * clean hibernation). Exported for the exit-code seam tests.
+ * Map a tick outcome to the `flume tick` process exit code — the process
+ * boundary classification at the intersection of §3 and v0.7 §4: 78
+ * (`EX_CONFIG`) terminal misconfiguration (a chain that resolved but
+ * declares an inconsistent world), 69 (`EX_UNAVAILABLE`, {@link
+ * EX_MOUNT_DEAD}) the chain never resolved at all, 0 otherwise (work done
+ * or clean hibernation). Exported for the exit-code seam tests.
  */
 export function tickExitCode(outcome: TickOutcome): number {
   if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
-  return outcome.failed ? 1 : 0;
+  return outcome.failed ? EX_MOUNT_DEAD : 0;
 }
 
 const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
@@ -199,8 +202,11 @@ invokes the agent, and applies validation gates.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
-  1   Harness error (chain load failure, unexpected exception), or — under a
-      job resolution (--job/FLUME_JOB) — HEAD is not job/<name>.
+  1   Harness error (unexpected exception), or — under a job resolution
+      (--job/FLUME_JOB) — HEAD is not job/<name>.
+  69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
+      state root is missing, or its declaration is invalid. No agent ran —
+      fix the chain (or its state root) and re-run.
   78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
       the chain does not declare. The flags are left on disk — inspect, then
       \`flume sleep <phase>\` or fix the chain.
@@ -216,6 +222,10 @@ Exit codes:
   0   Hibernation reached, or --max ticks completed.
   1   Harness error, another live loop holds the lock, or — under a job
       resolution (--job/FLUME_JOB) — HEAD is not job/<name>.
+  69  Stopped on a child tick's mount-dead failure (see \`flume tick
+      --help\`): the chain never resolved. The run aborts after that one
+      tick instead of burning the remaining --max ticks against the same
+      wall.
   78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
       --help\`); the orphaned awake flags are left on disk.
 `,
@@ -766,16 +776,18 @@ async function main(): Promise<number> {
     // Supervisor: one fresh `flume tick` process per iteration (§2). The
     // dispatcher constructed above is unused on this path — each child
     // builds its own and resolves chain.ts in its own process. A terminal
-    // stop (§3) propagates the child's 78 out of `flume loop` too: exiting
-    // 0 here would re-mask the misconfiguration as clean at the next
-    // process boundary up.
+    // stop (§3) or a mount-dead abort (v0.7 §4) propagates the child's exit
+    // code out of `flume loop` too: exiting 0 here would re-mask either as
+    // clean at the next process boundary up.
     const supervised = await superviseLoop({
       repoRoot,
       flumeDir,
       configDir,
       maxTicks: max,
     });
-    return supervised.terminal ? EX_TERMINAL_MISCONFIG : 0;
+    if (supervised.terminal) return EX_TERMINAL_MISCONFIG;
+    if (supervised.mountDead) return EX_MOUNT_DEAD;
+    return 0;
   }
 
   if (cmd === "render") {

@@ -17,6 +17,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   gate is running in (worktree root under fanout, primary checkout under
   a bare tick), so gates stop reinventing the `git rev-parse
   --show-toplevel` + fallback helper themselves.
+- The mount-dead failure class (chain module cannot load, state root
+  missing, declaration invalid) now gets its own exit code, `EX_MOUNT_DEAD`
+  (69), sibling to the existing terminal-misconfiguration code (78) rather
+  than the generic `1`. `flume loop` aborts the run on a child's first
+  mount-dead tick instead of burning every remaining `--max` tick
+  re-hitting the same wall — an unloadable chain now surfaces non-zero to
+  CI after one tick's worth of work instead of silently exiting 0 at
+  `--max`.
 
 ### Fixed
 

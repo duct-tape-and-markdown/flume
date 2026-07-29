@@ -365,11 +365,26 @@ export interface DispatcherOptions {
 
 /**
  * `flume tick` exit code for an Axis-C terminal misconfiguration (§3):
- * sysexits.h `EX_CONFIG`. Distinct from 0 (clean hibernate) and 1 (chain
- * resolution failure) so the process boundary classifies the failure without
- * reading logs. `superviseLoop` fail-fasts on a child exiting with this code.
+ * sysexits.h `EX_CONFIG`. Distinct from 0 (clean hibernate), 1 (other
+ * harness errors), and {@link EX_MOUNT_DEAD} (the chain never resolved at
+ * all) so the process boundary classifies the failure without reading logs.
+ * `superviseLoop` fail-fasts on a child exiting with this code.
  */
 export const EX_TERMINAL_MISCONFIG = 78;
+
+/**
+ * `flume tick` exit code for the mount-dead failure class (v0.7 §4): the
+ * chain module cannot load, the state root is missing, or its declaration is
+ * invalid — no agent ran, nothing here is retryable by waiting. Sibling to
+ * {@link EX_TERMINAL_MISCONFIG}, not a variant of it: terminal misconfiguration
+ * is a chain that *did* resolve but declares an inconsistent world
+ * (orphaned awake flags); mount-dead is no resolved chain at all.
+ * sysexits.h `EX_UNAVAILABLE`. `superviseLoop` fail-fasts on a child exiting
+ * with this code exactly as it does on {@link EX_TERMINAL_MISCONFIG} — a
+ * mount-dead chain is exactly as dead next tick as this one, so continuing
+ * would only burn the remaining `--max` ticks re-hitting the same wall.
+ */
+export const EX_MOUNT_DEAD = 69;
 
 /**
  * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
@@ -394,9 +409,11 @@ export interface TickOutcome {
   result?: TickResult;
   /**
    * True when the tick could not run at all — chain resolution threw and no
-   * `chainLoadGate` reverted the producing commit (§3). The `flume tick`
-   * process exits non-zero; the `flume loop` supervisor logs it and proceeds
-   * to the next tick (a fresh process re-reads `chain.ts`). Distinct from
+   * `chainLoadGate` reverted the producing commit (§3): the mount-dead
+   * failure class (v0.7 §4). The `flume tick` process exits
+   * {@link EX_MOUNT_DEAD}; the `flume loop` supervisor fail-fasts on it
+   * (aborting the run) rather than proceeding to the next tick — a mount-dead
+   * chain is exactly as dead next tick as this one. Distinct from
    * `hibernated` (clean stop) and from a no-commit tick (the agent ran but
    * produced or kept no commit).
    */
@@ -1723,6 +1740,14 @@ export interface SuperviseResult {
    * code alone.
    */
   terminal?: TerminalMisconfiguration;
+  /**
+   * Set when the loop fail-fasted on a child exiting {@link EX_MOUNT_DEAD}
+   * (v0.7 §4): the mount-dead failure class (chain cannot load, state root
+   * missing, declaration invalid). Distinct from `terminal` — a
+   * mount-dead run never resolved a chain at all, so there is no phase list
+   * to name in the summary, only the fact of the abort.
+   */
+  mountDead?: boolean;
 }
 
 /**
@@ -1732,14 +1757,15 @@ export interface SuperviseResult {
  * so an in-process loop is pinned to chain.ts's first evaluation; see
  * `loadChainModule`). Between children it reads the on-disk baton
  * (disk-is-truth): no awake flags ⇒ hibernation ⇒ stop. A child that exits
- * non-zero (e.g. an ungated broken chain.ts: §3) is logged and the loop
+ * a plain tick failure (agent-level, per-entry) is logged and the loop
  * proceeds — the supervisor never crashes — except
- * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration), which
- * stops the loop immediately: the orphaned awake flags that produced it
- * defeat the hibernation check, so proceeding would hot-spin to `--max`
- * while masquerading each iteration as routine. Bounded by `maxTicks` (the
- * `--max N` cap); observable `--max`/hibernation behavior is unchanged from
- * the prior in-process loop.
+ * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration) and
+ * {@link EX_MOUNT_DEAD} (v0.7 §4 mount-dead: the chain never resolved),
+ * either of which stops the loop immediately: both defeat the hibernation
+ * check (nothing on disk changed to reflect them), so proceeding would
+ * hot-spin to `--max` while masquerading each iteration as routine. Bounded
+ * by `maxTicks` (the `--max N` cap); observable `--max`/hibernation behavior
+ * is unchanged from the prior in-process loop.
  */
 export async function superviseLoop(
   opts: SuperviseLoopOptions,
@@ -1787,6 +1813,20 @@ export async function superviseLoop(
         hibernated: false,
         terminal: { kind: "orphaned-awake", phases },
       };
+    }
+    if (exitCode === EX_MOUNT_DEAD) {
+      // Mount-dead fail-fast (v0.7 §4): the child could not resolve a chain
+      // at all — no agent ran, nothing here is retryable by waiting. A chain
+      // that fails to load now is exactly as unloadable next tick as this
+      // one, so continuing would only burn the remaining `--max` ticks
+      // re-hitting the same wall instead of surfacing the failure to CI.
+      log.error(
+        `[flume] tick exited ${exitCode} (mount-dead): the chain failed to ` +
+          `load; aborting after ${ticks} tick(s) instead of burning the ` +
+          `remaining ticks against the same failure. Inspect and restore ` +
+          `the chain (or its state root), then re-run.`,
+      );
+      return { ticks, hibernated: false, mountDead: true };
     }
     if (exitCode !== 0) {
       log.warn(

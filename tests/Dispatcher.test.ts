@@ -12,6 +12,7 @@ import {
   loadChainModule,
   superviseLoop,
   EX_TERMINAL_MISCONFIG,
+  EX_MOUNT_DEAD,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -3108,20 +3109,20 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.hibernated).toBe(false);
   });
 
-  it("ungated resolution failure: child exits non-zero → supervisor logs and proceeds, never crashes (§3)", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan"); // a failed tick does no baton work
+  it("mount-dead: child exits EX_MOUNT_DEAD → supervisor aborts on first occurrence, never burns to --max (v0.7 §4)", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan"); // an aborted tick does no baton work
 
-    const warns: string[] = [];
+    const errors: string[] = [];
     const rec: Logger = {
       info: () => {},
-      warn: (l) => warns.push(l),
-      error: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
     };
 
     let calls = 0;
     const runTick = (): Promise<{ exitCode: number | null }> => {
       calls++;
-      return Promise.resolve({ exitCode: 1 });
+      return Promise.resolve({ exitCode: EX_MOUNT_DEAD });
     };
 
     const res = await superviseLoop({
@@ -3131,11 +3132,13 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
       log: rec,
     });
 
-    // Never throws; proceeds every iteration; bounded only by --max.
-    expect(calls).toBe(3);
-    expect(res.ticks).toBe(3);
+    // Immediate stop: one tick's worth of work, never the remaining --max
+    // ticks re-hitting the same unloadable chain.
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
     expect(res.hibernated).toBe(false);
-    expect(warns.filter((w) => /exited with code 1/.test(w)).length).toBe(3);
+    expect(res.mountDead).toBe(true);
+    expect(errors.some((e) => /mount-dead/.test(e))).toBe(true);
   });
 
   it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
