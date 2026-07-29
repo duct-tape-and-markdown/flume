@@ -310,16 +310,70 @@ export async function frictionCountLine(
   return count > 0 ? `friction: ${count} note(s) await routing` : undefined;
 }
 
+/**
+ * tsx's ESM loader failing to recognize the chain as a module because the
+ * host repo's `package.json` (or one beside `.flume/chain.ts`) lacks
+ * `"type": "module"` (RELEASE-v0.7 §5) — two known empirical shapes:
+ * tsx 4.21 falls through to a CJS parse of the compiled output and Node's
+ * CJS loader rejects the `import`/`export` syntax outright; tsx 4.23
+ * instead fails resolution one step earlier, `ERR_MODULE_NOT_FOUND` against
+ * a path carrying its internal `tsImport` `?namespace=` query, percent-
+ * encoded because the failed resolution treated the query as part of a
+ * literal file path. Declining to support CJS-context hosts (§1); this
+ * class exists only so `loadChainModule`'s caller can refuse with a fix
+ * instead of relaying either raw shape as a stack trace.
+ */
+export class CjsContextLoadError extends Error {
+  constructor(chainPath: string, cause: Error) {
+    super(
+      `${chainPath} failed to load: tsx's ESM loader can't parse it as a ` +
+        `module. Fix: add "type": "module" to this repo's package.json ` +
+        `(or one beside .flume/chain.ts). Flume does not support a ` +
+        `CJS-context host otherwise. (raw loader error, for debugging: ` +
+        `${cause.message})`,
+    );
+    this.name = "CjsContextLoadError";
+  }
+}
+
+const CJS_CONTEXT_IMPORT_OUTSIDE_MODULE =
+  /Cannot use import statement outside a module/;
+const CJS_CONTEXT_NAMESPACE_QUERY = /%3Fnamespace%3D/i;
+
+/**
+ * Empirical match only (§5) — never a false positive at the cost of missing
+ * a shape: a genuinely missing dependency (a bare `ERR_MODULE_NOT_FOUND`
+ * with no `tsImport` namespace query in the path) must keep surfacing as
+ * itself, unshadowed by this refusal.
+ */
+function isCjsContextLoadFailure(err: unknown): err is Error {
+  if (!(err instanceof Error)) return false;
+  if (CJS_CONTEXT_IMPORT_OUTSIDE_MODULE.test(err.message)) return true;
+  const code = (err as NodeJS.ErrnoException).code;
+  return (
+    code === "ERR_MODULE_NOT_FOUND" &&
+    CJS_CONTEXT_NAMESPACE_QUERY.test(err.message)
+  );
+}
+
 export async function loadChainModule(path: string): Promise<ChainModule> {
   if (!existsSync(path)) {
     throw new Error(
       `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
     );
   }
-  const ns = (await tsImport(
-    pathToFileURL(path).href,
-    import.meta.url,
-  )) as Record<string, unknown>;
+  let ns: Record<string, unknown>;
+  try {
+    ns = (await tsImport(
+      pathToFileURL(path).href,
+      import.meta.url,
+    )) as Record<string, unknown>;
+  } catch (err) {
+    if (isCjsContextLoadFailure(err)) {
+      throw new CjsContextLoadError(path, err);
+    }
+    throw err;
+  }
 
   // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
   // is { default: { __esModule: true, default: <realDefault> } }. A module
@@ -498,6 +552,15 @@ export interface TickOutcome {
    */
   failed?: boolean;
   /**
+   * Set when chain resolution failed with the RELEASE-v0.7 §5 CJS-context
+   * signature — a usage error (the host repo's package.json is missing
+   * `"type": "module"`) with a concrete, nameable fix, not a mount-dead
+   * chain nothing can retry. `flume tick` exits 2 (usage), never
+   * {@link EX_MOUNT_DEAD}; sibling to `failed`, mutually exclusive with it —
+   * this is the one chain-resolution failure that isn't `failed`.
+   */
+  usageError?: boolean;
+  /**
    * For a no-commit tick where an agent ran (§6): which of the three
    * causally-distinct modes produced no usable commit —
    *  - `gate-revert`      a commit was made then a gate reverted it,
@@ -580,6 +643,17 @@ export class Dispatcher {
     try {
       chainModule = await this.chainLoader();
     } catch (err) {
+      if (err instanceof CjsContextLoadError) {
+        // §5: a nameable usage fix, not a dead chain — `flume tick` exits 2
+        // (usage), not EX_MOUNT_DEAD; distinct from `failed` below.
+        this.log.error(`[flume] ${err.message}`);
+        return {
+          hibernated: false,
+          usageError: true,
+          awakeAfter: this.baton.awake(),
+          summary: err.message,
+        };
+      }
       const msg = (err as Error).message;
       this.log.error(
         `[flume] chain resolution failed: ${msg}. This tick does no work. ` +

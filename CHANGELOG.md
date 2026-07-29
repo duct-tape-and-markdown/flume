@@ -53,6 +53,10 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   shipped — the diff is checked against the entry's declared
   `files.{new,edit,retire}` before it's removed from `pending.json`, so
   the entry stays pending for a real attempt.
+- A CJS-context host (its `package.json`, or one beside `.flume/chain.ts`,
+  lacks `"type": "module"`) now refuses chain load with a usage-shaped
+  message naming the fix and exits 2, instead of relaying tsx's raw
+  loader stack. A genuinely missing dependency still surfaces as itself.
 
 ## [0.6.2]
 

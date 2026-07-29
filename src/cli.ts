@@ -39,13 +39,14 @@ import {
   superviseLoop,
   clearTickCounts,
   writeTickCounts,
+  CjsContextLoadError,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
   type SuperviseResult,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
-import type { TickContext } from "./Phase.js";
+import type { TickContext, Chain } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import { parsePending } from "./PendingSchema.js";
 
@@ -128,14 +129,18 @@ export function resolveStateDirs(
 
 /**
  * Map a tick outcome to the `flume tick` process exit code — the process
- * boundary classification at the intersection of §3 and v0.7 §4: 78
- * (`EX_CONFIG`) terminal misconfiguration (a chain that resolved but
- * declares an inconsistent world), 69 (`EX_UNAVAILABLE`, {@link
- * EX_MOUNT_DEAD}) the chain never resolved at all, 0 otherwise (work done
- * or clean hibernation). Exported for the exit-code seam tests.
+ * boundary classification at the intersection of §3, v0.7 §4, and v0.7 §5:
+ * 78 (`EX_CONFIG`) terminal misconfiguration (a chain that resolved but
+ * declares an inconsistent world), 2 (usage) the RELEASE-v0.7 §5
+ * CJS-context refusal (a nameable fix, checked before `failed` since a
+ * chain-load failure sets at most one of the two), 69 (`EX_UNAVAILABLE`,
+ * {@link EX_MOUNT_DEAD}) the chain never resolved at all for any other
+ * reason, 0 otherwise (work done or clean hibernation). Exported for the
+ * exit-code seam tests.
  */
 export function tickExitCode(outcome: TickOutcome): number {
   if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
+  if (outcome.usageError) return 2;
   return outcome.failed ? EX_MOUNT_DEAD : 0;
 }
 
@@ -864,7 +869,16 @@ async function main(): Promise<number> {
       console.error("usage: flume render <phase> [--entry <tag>]");
       return 2;
     }
-    const { default: chain } = await resolveChain();
+    let chain: Chain;
+    try {
+      ({ default: chain } = await resolveChain());
+    } catch (err) {
+      if (err instanceof CjsContextLoadError) {
+        console.error(`[flume] ${err.message}`);
+        return 2;
+      }
+      throw err;
+    }
     const phase = chain.phases.find((p) => p.name === phaseName);
     if (!phase) {
       console.error(`unknown phase: ${phaseName}`);
