@@ -851,7 +851,7 @@ async function main(): Promise<number> {
 // string comparison, so resolve argv[1]'s realpath first (RELEASE-v0.7 §3).
 // realpathSync throws if argv[1] doesn't exist on disk — fall back to the raw
 // comparison rather than crash the import.
-function isInvokedDirectly(argv1: string | undefined): boolean {
+export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
   let argv1Url: string;
   try {

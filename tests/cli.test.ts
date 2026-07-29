@@ -10,10 +10,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   JobResolutionConflictError,
+  isInvokedDirectly,
   resolveStateDirs,
   tickExitCode,
 } from "../src/cli.ts";
@@ -241,6 +242,56 @@ const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 const TSX_CLI = fileURLToPath(
   new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
 );
+
+/**
+ * §3 — `isInvokedDirectly` (`src/cli.ts:854`), the seam gating `main()`.
+ * Unit-level rather than a subprocess: the seam takes `argv1` and answers
+ * against this module's own `import.meta.url`, so calling it directly with
+ * `CLI` (this file's own import of cli.ts) exercises the exact comparison
+ * `main()` gates on, without the overhead of spawning `tsx` per case.
+ */
+describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
+  it("argv[1] undefined is never direct (unchanged guard)", () => {
+    expect(isInvokedDirectly(undefined)).toBe(false);
+  });
+
+  it("a plain module import runs nothing: this test process's own argv[1] never matches cli.ts", () => {
+    // This suite imports cli.ts without ever invoking it as the entry
+    // script — process.argv[1] here is the test runner's own entry, not
+    // cli.ts's URL, so the seam must refuse it exactly as it would refuse
+    // any other importer (tests, embedding).
+    expect(isInvokedDirectly(process.argv[1])).toBe(false);
+  });
+
+  it("realpathSync throwing on a nonexistent argv[1] falls back to the raw comparison instead of crashing the import", () => {
+    const missing = join(tmpdir(), "flume-cli-junction-missing", "cli.js");
+    expect(() => isInvokedDirectly(missing)).not.toThrow();
+    expect(isInvokedDirectly(missing)).toBe(false);
+  });
+
+  it("a directory-junction-equivalent argv[1] — raw path differs from the realpath — still resolves as direct", async () => {
+    const linkParent = await mkdtemp(join(tmpdir(), "flume-cli-junction-"));
+    const linkDir = join(linkParent, "src-link");
+    try {
+      await symlink(
+        dirname(CLI),
+        linkDir,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const junctioned = join(linkDir, "cli.ts");
+
+      // The DEV-9191 shape: the raw invoked path differs from the file's
+      // realpath — exactly what a junction- or symlink-based install
+      // (pnpm's linked store, v0.5 §4) produces.
+      expect(junctioned).not.toBe(CLI);
+      expect(realpathSync(junctioned)).toBe(realpathSync(CLI));
+
+      expect(isInvokedDirectly(junctioned)).toBe(true);
+    } finally {
+      await rm(linkParent, { recursive: true, force: true });
+    }
+  });
+});
 
 /**
  * A copy of this process's env with the canonical FLUME_DIR /
