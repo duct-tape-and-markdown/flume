@@ -9,31 +9,14 @@ Status markers:
 
 <!-- questions below this line -->
 
-## CLI-JUNCTION-SAFE-ENTRY: entry.tests names a file outside entry.files scope
+<!-- none open this tick — the one carried question closed by routing, and all four prior questions closed by spec/RELEASE-v0.7.md or by filing a follow-up entry:
 
-**NEEDS AMENDMENT**
-
-Same shape as the GATECONTEXT-REPOROOT-TESTS precedent below: the
-CLI-JUNCTION-SAFE-ENTRY pending entry's `tests[]` names
-`tests/cli.test.ts`, but `files.edit` only lists `src/cli.ts` and
-`CHANGELOG.md`. The write-guard fence for a scoped tick is
-`entry.files ∪ entryChannelPaths` (`.flume/chain.ts` §build,
-`entryChannelPaths: [".flume/plan/open-questions.md"]`) — `tests/**` is
-in the phase's outer `writablePaths` ceiling but not in this entry's
-narrowed fence, so touching `tests/cli.test.ts` reverts the commit (this
-already happened once: `ae38b4a`, reverted for exactly this reason).
-
-This tick ships only `src/cli.ts` + `CHANGELOG.md` (the realpath fix
-itself, acceptance-green) and deliberately skips the test file to avoid
-repeating the revert. Applying the standing Derive-dimension rule from
-the GATECONTEXT-REPOROOT-TESTS precedent: file a follow-up entry (e.g.
-`CLI-JUNCTION-SAFE-ENTRY-TESTS`) whose `files.edit` declares
-`tests/cli.test.ts` explicitly, covering: dist/cli.js reached through a
-junction-equivalent path (realpath differs from argv[1]) still runs
-main(); a plain import runs nothing; `realpathSync` throwing falls back
-to the raw comparison without crashing the import.
-
-<!-- none open this tick — the one carried question closed by routing, and all three prior questions closed by spec/RELEASE-v0.7.md:
+- "CLI-JUNCTION-SAFE-ENTRY: entry.tests names a file outside entry.files
+  scope" — same shape as GATECONTEXT-REPOROOT-TESTS below: 08c2ace
+  shipped src/cli.ts + CHANGELOG.md only (tests/cli.test.ts would have
+  reverted the scoped commit). Routed to a filed follow-up
+  (CLI-JUNCTION-SAFE-ENTRY-TESTS, files declares tests/cli.test.ts so the
+  write guard allows the edit).
 
 - "GATECONTEXT-REPOROOT: entry.tests names files outside entry.files
   scope" — routed to a filed follow-up (GATECONTEXT-REPOROOT-TESTS,

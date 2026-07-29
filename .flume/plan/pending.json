@@ -1,5 +1,40 @@
 [
   {
+    "tag": "CLI-JUNCTION-SAFE-ENTRY-TESTS",
+    "summary": "Test coverage for the junction-safe CLI entry acceptance bar per spec/RELEASE-v0.7.md §3",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "3. CLI entry survives junctions"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "Export isInvokedDirectly (src/cli.ts:854) if the chosen test shape needs direct access; no behavior change."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Cover §3 acceptance: a junction-equivalent argv[1] (realpath differs from the invoked path) still runs main(); a plain module import runs nothing; realpathSync throwing falls back to the raw comparison without crashing the import."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "dist/cli.js (or the isInvokedDirectly seam) reached through a directory-junction-equivalent path runs main(); a plain import runs nothing; realpathSync throwing on a nonexistent argv[1] falls back to the raw comparison without throwing."
+      }
+    ],
+    "acceptance": "§3's three acceptance behaviors are each asserted green in tests/cli.test.ts.",
+    "notes": "08c2ace shipped the §3 fix but skipped tests/cli.test.ts to avoid the scoped write-guard revert (that file wasn't in CLI-JUNCTION-SAFE-ENTRY's files[]) — parked as NEEDS AMENDMENT in open-questions.md, now filed here per the GATECONTEXT-REPOROOT-TESTS Derive-dimension precedent."
+  },
+  {
     "tag": "HARNESS-BLOCK-EFFECTIVE-FENCE",
     "summary": "Harness block states effective (narrowed) fence on scoped ticks per spec/RELEASE-v0.7.md §2",
     "per": {
