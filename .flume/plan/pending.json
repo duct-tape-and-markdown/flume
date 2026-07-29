@@ -30,6 +30,84 @@
     "notes": "Audit finding from cross-checking 3a8d75e (EXIT-CODE-CONTRACT build) against §4: it updated the exported JSDoc and --help strings but missed this comment and docs/CLI.md. b37d172 (COUNTS) widened the same drift — folded in above rather than a second follow-up entry. Doc/comment-only, no behavior change."
   },
   {
+    "tag": "IN-WORKTREE-GATE-REVERT-FOOTPRINT",
+    "summary": "In-worktree afterCommit gate revert records the same per-entry trunk footprint the afterMerge path records, per spec/RELEASE-v0.7.md §13",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "13. In-worktree gate reverts leave a trunk footprint"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runFanoutEntry's afterCommit-fail branch (~L1247-1266) capture git.showNameOnly(wt.path, postHead) before dropLastCommit; wave loop's `if (!r.committed...) continue` (~L935-936) feed that footprint into `observed` (mirror afterMerge's observed.set ~L1010) so commitPendingUpdate (~L975-1002) commits it to trunk, not just the gitignored PriorAttempt record."
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Add Fixed bullet per §14."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "New locked test mirroring the existing afterMerge footprint assertion (~L1379): an in-worktree afterCommit gate revert leaves the touched paths in the entry's observedFiles via a trunk commit."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "an in-worktree afterCommit gate revert's touched paths land in the entry's observedFiles via a trunk commit, matching the existing afterMerge footprint assertion at ~L1379"
+      }
+    ],
+    "acceptance": "A fanout tick reverted by an in-worktree gate is followed by a trunk commit naming the violating paths (next plan tick's commit-delta is non-empty, not a 50cc3ac3-shaped blind maintain); afterMerge footprint behavior unchanged; locked test covers the in-worktree revert path.",
+    "notes": "Root cause read directly from source: wave loop's `if (!r.committed || !r.commitSha) continue` (Dispatcher.ts:936) skips observed-footprint capture entirely for in-worktree-reverted entries — only afterMerge-reverted entries reach it today. §13's third bullet (prompts/build.md fence-park instruction) is out of build's writablePaths (chain.ts excludes prompts/**) — routed to open-questions.md instead, not bundled here."
+  },
+  {
+    "tag": "CJS-CONTEXT-REFUSAL-TESTS",
+    "summary": "Add locked test coverage for the shipped CJS-context refusal — 2d7b9f5 shipped with zero tests, per spec/RELEASE-v0.7.md §5",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "5. CJS-context host: detect and refuse"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Cover isCjsContextLoadFailure/loadChainModule against both empirical signatures (tsx 4.21 import-outside-module; tsx 4.23 ERR_MODULE_NOT_FOUND + %3Fnamespace%3D) throwing CjsContextLoadError, and a genuine unrelated ERR_MODULE_NOT_FOUND passing through unchanged."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Cover a CJS-context fixture load exiting 2 with the usage-shaped message, via tickExitCode's usageError branch and the render command's CjsContextLoadError catch."
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "both known tsx signatures throw CjsContextLoadError naming \"type\": \"module\"; an unrelated ERR_MODULE_NOT_FOUND passes through unchanged"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "chain load in a CJS-context fixture prints the usage-shaped refusal and exits 2"
+      }
+    ],
+    "acceptance": "Locked tests cover §5's acceptance line directly: both empirical signatures refuse with exit 2 naming the fix; a genuinely missing dependency still surfaces as itself.",
+    "notes": "2d7b9f5 shipped Dispatcher.ts/cli.ts/CHANGELOG.md only, citing a prior tests/-outside-declared-files revert (4300b81) — but b578a41, which landed first in this same delta, already added tests/** to entryChannelPaths, so that risk no longer applies. Verified zero CjsContext/CJS matches in tests/ on disk."
+  },
+  {
     "tag": "BAY-DISCOVERY-WALKUP",
     "summary": "repoRoot walks up from cwd to the nearest .flume, mirroring git's .git resolution, per spec/RELEASE-v0.7.md §9",
     "per": {
@@ -49,7 +127,7 @@
         },
         {
           "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §13."
+          "description": "Add bullet under Added per §14."
         },
         {
           "path": "tests/cli.test.ts",
@@ -96,7 +174,7 @@
         },
         {
           "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §13."
+          "description": "Add bullet under Added per §14."
         },
         {
           "path": "tests/cli.test.ts",
@@ -152,7 +230,7 @@
         },
         {
           "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §13."
+          "description": "Add bullet under Added per §14."
         }
       ],
       "retire": []

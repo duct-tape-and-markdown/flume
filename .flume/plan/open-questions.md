@@ -9,6 +9,35 @@ Status markers:
 
 <!-- questions below this line -->
 
+## PROMPTS-BUILD-FENCE-INSTRUCTION: spec §13's `prompts/build.md` instruction has no phase writer
+
+**PARKED** — not a design fork, an execution gap: no autonomous phase can
+make this edit.
+
+`spec/RELEASE-v0.7.md` §13 ("In-worktree gate reverts leave a trunk
+footprint") asks `prompts/build.md` to gain an instruction — when edits
+the work genuinely requires fall outside the effective fence (§2), the
+tick parks the conflict in `open-questions.md` and bails voluntarily
+instead of committing into a guaranteed revert. `.flume/chain.ts`'s
+`writablePaths` comment (~L247) explicitly excludes
+`.flume/{chain.ts,prompts/**}` from build's fence, and plan's own
+writable set (`.flume/plan/{pending.json,state.md,open-questions.md}`,
+`.flume/inbox.md`) doesn't cover it either — same class as `chain.ts`
+itself.
+
+Filed the rest of §13 as `IN-WORKTREE-GATE-REVERT-FOOTPRINT` (the
+Dispatcher.ts footprint machinery + its test, fully build-writable);
+this one bullet is split out because no entry can carry it without
+declaring an off-fence path.
+
+Precedent: `b578a41` made an equivalent `chain.ts` edit directly, in an
+operator-directed interactive session (`chore(flume):` prefix, not a
+`plan:`/`build:` phase tick). Recommend the same path here — a human (or
+an interactive session under human direction) adds the instruction to
+`prompts/build.md` directly, folding it into whatever commit next
+touches that file, rather than widening any phase's `writablePaths` for
+a one-line prompt addition.
+
 ## TAG-PATTERN-SLICE-CONSTRAINT: rendered pending-entry schema omits the `[a-z0-9]+` slice constraint TAG_PATTERN enforces
 
 **NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home (no
