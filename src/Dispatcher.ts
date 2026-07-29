@@ -796,6 +796,7 @@ export class Dispatcher {
       for (const gate of afterMergeGates) {
         const gr = await gate.run({
           cwd: repoRoot,
+          repoRoot,
           flumeDir: this.flumeDir,
           phaseName: phase.name,
           commitSha: mergedSha,
@@ -1163,6 +1164,7 @@ export class Dispatcher {
     for (const gate of gates) {
       const r: GateResult = await gate.run({
         cwd,
+        repoRoot: cwd,
         flumeDir: this.flumeDir,
         phaseName: phase.name,
         commitSha,

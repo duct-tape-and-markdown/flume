@@ -11,6 +11,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Added
+
+- `GateContext.repoRoot` — the absolute path of the working-tree root a
+  gate is running in (worktree root under fanout, primary checkout under
+  a bare tick), so gates stop reinventing the `git rev-parse
+  --show-toplevel` + fallback helper themselves.
+
 ## [0.6.2]
 
 Patch: the friction channel's lifecycle, guaranteed by the engine without

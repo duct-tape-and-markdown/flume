@@ -42,6 +42,14 @@ export interface GateContext {
    * `.flume/` or reaching into `process.env` (RELEASE-v0.3 §16).
    */
   flumeDir: string;
+  /**
+   * Absolute path of the working-tree root the gate is running in — in a
+   * fanout tick, the worktree root; in a bare tick, the primary checkout
+   * (RELEASE-v0.7 §6). Optional so hand-built `GateContext` fixtures that
+   * predate this field keep compiling; every dispatcher-constructed context
+   * sets it.
+   */
+  repoRoot?: string;
   /** Phase the gate is running for. */
   phaseName: string;
   /** SHA of the commit under inspection. */
