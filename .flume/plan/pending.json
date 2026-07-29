@@ -15,7 +15,7 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "loadChainModule (src/Dispatcher.ts:234-274): catch tsx module-context signature family (tsx 4.21 'Cannot use import statement outside a module'; tsx 4.23 ERR_MODULE_NOT_FOUND with tsImport '?namespace' percent-encoded) and rethrow a distinguishable usage-shaped error naming \"type\": \"module\" as the fix, per §5. Non-matching errors pass through unchanged (no false positives)."
+          "description": "loadChainModule (src/Dispatcher.ts:313-353): catch tsx module-context signature family (tsx 4.21 'Cannot use import statement outside a module'; tsx 4.23 ERR_MODULE_NOT_FOUND with tsImport '?namespace' percent-encoded) and rethrow a distinguishable usage-shaped error naming \"type\": \"module\" as the fix, per §5. Non-matching errors pass through unchanged (no false positives)."
         },
         {
           "path": "src/cli.ts",
@@ -40,11 +40,11 @@
       }
     ],
     "acceptance": "Chain load in a CJS-context fixture (the npm init -y smoke shape, pre-fix) prints the usage-shaped refusal naming \"type\": \"module\" and exits 2; a genuinely missing dependency still surfaces as itself.",
-    "notes": "Blocked on EXIT-CODE-CONTRACT: exit 2 must sit consistently alongside that entry's mount-dead/errored-vs-shipped taxonomy rather than being designed twice. Detection signature is the empirical tsx 4.21/4.23 family from the inbox finding (c11d96b fixed the two known fixture instances by adding type:module; this entry makes the failure legible generically, not just those two fixtures)."
+    "notes": "Exit 2 sits alongside EXIT-CODE-CONTRACT's mount-dead/errored-vs-shipped taxonomy (shipped). Detection signature is the empirical tsx 4.21/4.23 family from the inbox finding (c11d96b fixed the two known fixture instances by adding type:module; this entry makes the failure legible generically, not just those two fixtures)."
   },
   {
     "tag": "EXIT-CODE-CONTRACT-DOC-DRIFT",
-    "summary": "Fix stale exit-code prose left behind by EXIT-CODE-CONTRACT: a Dispatcher.ts comment and docs/CLI.md still describe the pre-§4 contract",
+    "summary": "Fix stale exit-code prose left behind by EXIT-CODE-CONTRACT and -COUNTS: a Dispatcher.ts comment and docs/CLI.md still describe the pre-§4(-amendment) contract",
     "per": {
       "path": "spec/RELEASE-v0.7.md",
       "section": "4. Exit-code contract — the run never lies to CI"
@@ -58,11 +58,11 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "Inline comment ~L492-499 (above the chainLoader try/catch) still says the supervisor 'logs and proceeds' on chain-resolution failure and exits non-zero — stale since 3a8d75e made this an EX_MOUNT_DEAD abort. Reword to match."
+          "description": "Inline comment ~L577 (above the chainLoader try/catch; drifted from ~L492 via EXIT-CODE-CONTRACT-COUNTS's insertions) still says the supervisor 'logs and proceeds' on chain-resolution failure and exits non-zero — stale since 3a8d75e made this an EX_MOUNT_DEAD abort. Reword to match."
         },
         {
           "path": "docs/CLI.md",
-          "description": "tick (~L30), loop (~L38), and job run (~L96) sections still document only exit 1 for chain/harness failure — add EX_MOUNT_DEAD (69) alongside, per §4."
+          "description": "tick (~L30), loop (~L38), and job run (~L96) sections still document only exit 1 for chain/harness failure — add EX_MOUNT_DEAD (69) alongside, per §4. loop/job run sections also predate EXIT-CODE-CONTRACT-COUNTS (shipped): missing the errored-AND-nothing-shipped exit-1 condition, the partial-success stays-0 case, and the completion summary naming surfaced tick errors — cover the full amended §4 contract in one pass."
         }
       ],
       "retire": []
@@ -70,7 +70,7 @@
     "schemaDelta": "none",
     "tests": [],
     "acceptance": "Neither the Dispatcher.ts comment nor docs/CLI.md contradicts the shipped EX_MOUNT_DEAD (69) abort-on-first-occurrence contract.",
-    "notes": "Audit finding from this tick's cross-check of 3a8d75e (EXIT-CODE-CONTRACT build) against §4: the entry updated the exported JSDoc and the two --help strings in src/cli.ts but missed this comment and docs/CLI.md, neither of which was in its declared files. Doc/comment-only, no behavior change."
+    "notes": "Audit finding from cross-checking 3a8d75e (EXIT-CODE-CONTRACT build) against §4: it updated the exported JSDoc and --help strings but missed this comment and docs/CLI.md. b37d172 (COUNTS) widened the same drift — folded in above rather than a second follow-up entry. Doc/comment-only, no behavior change."
   },
   {
     "tag": "BAY-DISCOVERY-WALKUP",
@@ -88,7 +88,7 @@
       "edit": [
         {
           "path": "src/cli.ts",
-          "description": "Replace the literal repoRoot = process.cwd() (~L515) with a walk-up resolver per §9: cwd-is-.flume special case, no-.flume-found fallback to today's behavior, FLUME_DIR/FLUME_CONFIG_DIR overrides unchanged."
+          "description": "Replace the literal repoRoot = process.cwd() (~L570) with a walk-up resolver per §9: cwd-is-.flume special case, no-.flume-found fallback to today's behavior, FLUME_DIR/FLUME_CONFIG_DIR overrides unchanged."
         },
         {
           "path": "CHANGELOG.md",
