@@ -20,6 +20,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- An entry-scoped fanout tick's rendered `<harness>` block now states the
+  **effective** fence — `entry.files ∪ phase.entryChannelPaths` — that the
+  write guard actually enforces, naming `phase.writablePaths` separately as
+  the outer ceiling. Previously the block only ever showed the wider
+  `writablePaths`, misstating the guard's narrower revert boundary on
+  scoped ticks. Unscoped ticks render unchanged.
 - `"prepack": "pnpm build"` — `npm pack` (and `pnpm smoke:install`) now
   rebuilds `dist/` before packing instead of shipping whatever happens to
   be on disk.

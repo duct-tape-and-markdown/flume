@@ -1018,6 +1018,7 @@ export class Dispatcher {
       promptFile: join(this.opts.configDir, phase.promptPath),
       cwd: wt.path,
       args,
+      assignedEntry: entry,
       ...(prior ? { priorAttempt: prior } : {}),
     });
 

@@ -733,7 +733,30 @@ Notes:
 ### The `<harness>` block
 
 The renderer prepends a `<harness>` block to every prompt with the phase's
-declared capabilities:
+declared capabilities. On an entry-scoped fanout tick (one carrying an
+`assignedEntry`), it states the **effective** fence the write guard will
+actually enforce — `entry.files ∪ phase.entryChannelPaths` — separately
+from `phase.writablePaths`, the outer ceiling both checks must clear
+(RELEASE-v0.7 §2):
+
+```text
+<harness>
+Phase: build
+Concurrency: fanout
+Effective fence (your commit may touch exactly these; anything else reverts the commit whole):
+  - src/Foo.ts
+  - tests/Foo.test.ts
+Outer ceiling (also enforced, independently of the fence above — a path must clear both):
+  - src/**
+  - tests/**
+Gates (run automatically after your commit):
+  - tsc (afterCommit)
+  - vitest (afterCommit)
+</harness>
+```
+
+A singleton tick, or a fanout tick with no `assignedEntry`, gets the
+unscoped rendering instead — unchanged from before §2:
 
 ```text
 <harness>

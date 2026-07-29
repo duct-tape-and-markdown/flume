@@ -1514,7 +1514,12 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(prompts[1]).toContain(
       "src/stray.ts (inside phase writablePaths but outside",
     );
-    expect(prompts[1]).not.toContain("- src/a.ts");
+    // entry.files legitimately appearing in the harness block (RELEASE-v0.7
+    // §2 effective fence) is correct post-§2 behavior, not a leak — only pin
+    // that a.ts (in-scope) is never named as the out-of-scope offender.
+    expect(prompts[1]).not.toContain(
+      "src/a.ts (inside phase writablePaths but outside",
+    );
 
     // The in-scope retry ships.
     expect(second.result?.shippedTags).toEqual(["SCOPE-STRAY"]);

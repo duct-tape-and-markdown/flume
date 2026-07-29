@@ -31,6 +31,7 @@ import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import type { Phase } from "./Phase.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
 
@@ -133,6 +134,17 @@ export interface RenderOptions {
    * the block is then absent entirely.
    */
   priorAttempt?: PriorAttempt;
+  /**
+   * Pending entry assigned to this tick (fanout phases only), read from the
+   * same `TickContext` the dispatcher already threads through. When present,
+   * the `<harness>` block states the *effective* fence — `entry.files ∪
+   * phase.entryChannelPaths` — as what the write guard
+   * (`src/Dispatcher.ts` `runAfterCommitGates`) actually enforces on this
+   * tick, naming `phase.writablePaths` separately as the outer ceiling
+   * (RELEASE-v0.7 §2). Absent (singleton ticks, or a fanout tick with no
+   * assignment) renders the unscoped, byte-identical-to-0.6.2 block.
+   */
+  assignedEntry?: PendingEntry;
 }
 
 /**
@@ -152,7 +164,7 @@ export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const withArgs = substitutePlaceholders(raw, args);
   const withExec = await evaluateInlineExec(withArgs, opts.cwd);
   const withPrior = prependPriorAttemptBlock(opts.priorAttempt, withExec);
-  return prependHarnessBlock(opts.phase, withPrior);
+  return prependHarnessBlock(opts.phase, opts.assignedEntry, withPrior);
 }
 
 // ---------- transformations ----------
@@ -215,18 +227,22 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
   return out;
 }
 
-function prependHarnessBlock(phase: Phase, body: string): string {
+function prependHarnessBlock(
+  phase: Phase,
+  assignedEntry: PendingEntry | undefined,
+  body: string,
+): string {
   const gateLines = phase.gates
     .map((g) => `  - ${g.name} (${g.when})`)
     .join("\n");
-  const pathLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
 
   const harness = [
     `<harness>`,
     `Phase: ${phase.name}`,
     `Concurrency: ${phase.concurrency}`,
-    `Writable paths (anything else you modify will revert the commit):`,
-    pathLines,
+    ...(assignedEntry
+      ? effectiveFenceLines(phase, assignedEntry)
+      : unscopedFenceLines(phase)),
     `Gates (run automatically after your commit):`,
     gateLines || "  (none)",
     `</harness>`,
@@ -234,6 +250,40 @@ function prependHarnessBlock(phase: Phase, body: string): string {
   ].join("\n");
 
   return harness + body;
+}
+
+/** Unscoped rendering — byte-identical to the pre-§2 collapsed block. */
+function unscopedFenceLines(phase: Phase): string[] {
+  const pathLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
+  return [
+    `Writable paths (anything else you modify will revert the commit):`,
+    pathLines,
+  ];
+}
+
+/**
+ * Scoped rendering (RELEASE-v0.7 §2): states the fence the write guard
+ * actually enforces on this tick — `entry.files ∪ phase.entryChannelPaths` —
+ * separately from `phase.writablePaths`, the outer ceiling both this fence
+ * and the guard's ceiling check must clear. Mirrors the same union
+ * `runAfterCommitGates` (`src/Dispatcher.ts`) builds for the `writablePathsGate`
+ * entry-scope check, so the two can never state a different fence.
+ */
+function effectiveFenceLines(phase: Phase, entry: PendingEntry): string[] {
+  const entryPaths = [
+    ...entry.files.new.map((f) => f.path),
+    ...entry.files.edit.map((f) => f.path),
+    ...entry.files.retire,
+  ];
+  const fence = [...new Set([...entryPaths, ...(phase.entryChannelPaths ?? [])])];
+  const ceilingLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
+
+  return [
+    `Effective fence (your commit may touch exactly these; anything else reverts the commit whole):`,
+    fence.map((p) => `  - ${p}`).join("\n") || "  (none)",
+    `Outer ceiling (also enforced, independently of the fence above — a path must clear both):`,
+    ceilingLines,
+  ];
 }
 
 function indentBlock(s: string): string {
