@@ -1,55 +1,26 @@
 # State
 
-Phase: **v0.7 line in flight** — HARNESS-BLOCK-EFFECTIVE-FENCE now genuinely
-shipped (6 of the original 6 queue entries landed:
-`GATECONTEXT-REPOROOT`, `GATECONTEXT-REPOROOT-TESTS`, `PREPACK-BUILD`,
-`CLI-JUNCTION-SAFE-ENTRY`, `CLI-JUNCTION-SAFE-ENTRY-TESTS`,
-`HARNESS-BLOCK-EFFECTIVE-FENCE`), 2 entries in queue. Mode this tick:
-**audit** (commit-delta non-empty; spec-delta and inbox empty).
+Phase: **v0.7 line in flight** — HARNESS-BLOCK-EFFECTIVE-FENCE shipped
+(6 of 6 original queue entries landed), 2 entries in queue
+(`EXIT-CODE-CONTRACT` open, `CJS-CONTEXT-REFUSAL` blocked on it). Mode
+this tick: **maintain** (commit-delta, spec-delta, and inbox all
+empty — no movement since last plan commit).
 
-## This tick (audit — 2 commits since 90208af)
+## This tick (maintain — no-op)
 
-- Audited `c2a83e6` (`build(HARNESS-BLOCK-EFFECTIVE-FENCE): harness
-  block states the effective fence on scoped ticks`) + `eb631ec`
-  (`chore(flume): ship HARNESS-BLOCK-EFFECTIVE-FENCE`) against
-  `spec/RELEASE-v0.7.md` §2.
-- Cross-checked the fence construction on both sides of the boundary:
-  `src/Prompt.ts` `effectiveFenceLines` (`entry.files.{new,edit,retire}
-  ∪ phase.entryChannelPaths`) is the identical union
-  `src/Dispatcher.ts` `runAfterCommitGates` builds and passes to
-  `builtinGates.ts` `writablePathsGate`'s `entryScope` — the harness
-  block cannot state a different fence than the guard enforces. No
-  drift.
-- Verified scope discipline: `assignedEntry` is threaded only through
-  `runFanoutEntry` (the sole fanout render path); `runSingleton`
-  (~L574) still omits it, so unscoped rendering stays byte-identical
-  per §2's second bullet — confirmed against `tests/Prompt.test.ts`'s
-  byte-identical-rendering case.
-- Checked the `tests/Dispatcher.test.ts:1517` narrowing: the prior
-  blanket `not.toContain("- src/a.ts")` is now
-  `not.toContain("src/a.ts (inside phase writablePaths but outside")` —
-  correctly narrows to the gate-detail substring (in-scope file never
-  named as the offender) rather than gutting the invariant, since
-  `src/a.ts` legitimately appearing in the harness block's effective
-  fence is now correct post-§2 behavior.
-- `docs/CHAIN-AUTHORING.md`'s rewritten `<harness>` worked example
-  matches §2's acceptance exactly (effective fence + outer ceiling
-  shown separately; unscoped example unchanged).
-- Distinguished this ship from the prior `8f11af9` park-only misfire
-  (see standing open question below): `entry.files` (`src/Prompt.ts`,
-  `src/Dispatcher.ts`, `docs/CHAIN-AUTHORING.md`,
-  `tests/Dispatcher.test.ts`, `tests/Prompt.test.ts`) were actually
-  touched this time, plus `CHANGELOG.md`. `eb631ec` removing the entry
-  from `pending.json` is a correct ship, not a recurrence of the
-  harness bug. Logged the confirmation in open-questions.md's
-  resolved-history block; the open question itself stays open — no
-  new instance to feed it.
-- No spec drift, missed cases, undertested logic, or scope creep found.
-  Nothing new filed.
-- Promote dimension: `CJS-CONTEXT-REFUSAL` still `blockedBy
-  EXIT-CODE-CONTRACT`, which is still present in `pending-now` — no
-  flip.
-- Spec-delta: none. Inbox: empty — nothing to drain.
+- Confirmed HEAD (`dc29ca7`) equals the `<last-plan>` commit — zero
+  commits since the prior tick, so the audit dimension has nothing to
+  process.
+- `<spec-delta>`: none. `<inbox>`: empty. Neither drain nor derive
+  triggers.
+- Promote dimension (mechanical, checked every tick regardless):
+  `CJS-CONTEXT-REFUSAL`'s `blockedBy` tag is `EXIT-CODE-CONTRACT`,
+  which is still present in `pending-now` as `open` — condition for
+  flipping to `open` (blocking tag no longer present) is not met. No
+  promotion.
+- No writes needed to `pending.json` or `open-questions.md`; both
+  written back byte-identical. `inbox.md` byte-identical (header
+  only).
 
 ## Queue (2)
 
@@ -58,24 +29,19 @@ shipped (6 of the original 6 queue entries landed:
 
 ## Open questions (1)
 
-- `SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS` — NEEDS AMENDMENT, unchanged
-  this tick. Harness defect: a build commit touching only
-  `entryChannelPaths` gets counted as shipped and drops its entry from
-  `pending.json`. Still needs a human call on where the fix lands
-  (diff-check gating `shipped.push`, vs. a new `TickOutcome`
-  classification) before it can carry a `per` cite. Not triggered this
-  tick — this tick's audited ship genuinely touched `entry.files`.
+- `SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS` — NEEDS AMENDMENT,
+  unchanged this tick (no ship activity to re-trigger it). Still needs
+  a human call on where the fix lands (diff-check gating
+  `shipped.push` vs. a new `TickOutcome` classification) before it can
+  carry a `per` cite.
 
 ## Writable-paths / trunk
 
-- `pending.json`: unchanged content — `EXIT-CODE-CONTRACT` and
-  `CJS-CONTEXT-REFUSAL` re-verified, no edits needed.
-- `open-questions.md`: appended a confirmation note to the
-  resolved-history comment block closing out this tick's audit of
-  `HARNESS-BLOCK-EFFECTIVE-FENCE`'s ship; the standing
-  `SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS` question body is unchanged.
+- `pending.json`: unchanged content, no edits needed.
+- `open-questions.md`: unchanged content, written back byte-identical.
 - `inbox.md`: already empty, written back byte-identical.
-- Trunk: HEAD `eb631ec` at tick start, tree clean besides untracked
-  `.flume/loop.pid` (unwritable runtime path, left alone).
+- Trunk: HEAD `dc29ca7` at tick start (== last plan commit), tree
+  clean besides untracked `.flume/loop.pid` (unwritable runtime path,
+  left alone).
 
 Plan continues: no
