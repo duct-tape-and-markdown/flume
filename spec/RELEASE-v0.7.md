@@ -101,6 +101,28 @@ Acceptance: a run against an unloadable chain exits non-zero after one
 tick's worth of work; an empty-queue run exits 0; a run with one errored
 tick and one shipped entry exits 0 and its summary names the error.
 
+Amendment (operator, 2026-07-29 — resolves the EXIT-CODE-CONTRACT park;
+all three parts ruled):
+
+- **Distinct mount-dead exit constant.** The mount-dead class gets its
+  own exit code (sibling to `EX_TERMINAL_MISCONFIG`), so one integer
+  stops meaning both "chain resolution failed, exit 1" and "exit 1 is
+  abort-worthy". The supervisor aborts on the mount-dead code and
+  continues on a plain tick failure.
+- **The two locked assertions rewrite to this contract** — they lock the
+  superseded behavior this section exists to kill.
+  `tests/cli.test.ts:204-212` expects the new mount-dead constant;
+  `tests/Dispatcher.test.ts:2995-3023` flips to abort-on-mount-dead /
+  continue-on-plain-failure, scenario retitled to cite this section.
+  Semantics change, not additive coverage — authorized here.
+- **`shipped`/`errored` cross the process boundary by disk, not stdio.**
+  Each `tick` child writes a small per-tick outcome artifact the
+  supervisor reads between iterations (disk-is-truth applied to the
+  loop's own bookkeeping); exit codes carry class (settled / errored /
+  mount-dead — enough for continue-vs-abort), disk carries counts for
+  the summary. Child stdio stays `inherit` — live-streamed agent output
+  is operationally load-bearing; piped-and-parsed stdout is declined.
+
 ## 5. CJS-context host: detect and refuse
 
 A host repo whose own `package.json` lacks `"type": "module"` fails
