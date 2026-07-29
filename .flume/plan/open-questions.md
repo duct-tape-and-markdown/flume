@@ -86,4 +86,12 @@ this changes `shippedTags`/`TickOutcome` semantics that RELEASE-v0.2
   with tests/Dispatcher.test.ts + tests/Prompt.test.ts folded into
   files.edit (this tick, after the entry was found dropped from
   pending.json — see SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS above).
+- HARNESS-BLOCK-EFFECTIVE-FENCE itself: this tick's commit-delta audit
+  (c2a83e6 + eb631ec) traced the effective-fence union in
+  src/Prompt.ts's effectiveFenceLines against the enforcing union in
+  src/Dispatcher.ts's runAfterCommitGates (via builtinGates.ts's
+  writablePathsGate) — identical entryPaths ∪ channelPaths construction,
+  no drift possible. Docs example and both test files match §2's
+  acceptance. This ship is genuine (entry.files were actually touched,
+  unlike 8f11af9's park-only commit) — no reopening.
 -->
