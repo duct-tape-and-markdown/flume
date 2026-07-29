@@ -34,3 +34,26 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-07-29 — TAG_PATTERN rejects tag shapes the rendered schema permits (jeff pass, DAL job mining)
+
+`src/PendingSchema.ts:71,81` — the parenthesized slice of a tag must match
+`[a-z0-9]+`, but the prompt's rendered `"TAG-NAME(slice)"` schema never
+states that constraint. A `DAL-REWIRE(usp_Filter_Get)`-style tag (mixed
+case, underscores) passes the rendered shape and fails the real regex —
+burned a full tick revert on centercode-platform's DAL job (its commit
+`bb3ef7f2b2`). Same failure class as v0.7 §2 (harness misstates its own
+enforcement), here for tags. Fix direction either way: loosen the regex
+to what the `MAINTAIN-tsc-a31893e` precedent already tolerates, or render
+the real constraint into the prompt's schema block. S.
+
+## 2026-07-29 — pending.json notes cap invisible at derivation time (jeff pass, DAL job mining)
+
+The ~500-char notes field cap is enforced only by the commit-time
+validator; derivation-time guidance never states it. Two plan ticks on
+the DAL job reverted on field-length violations the prompt could not
+have warned about ("notes trimmed to fit the 500-char schema cap —
+prior attempt was reverted for exceeding it"). Surface the cap in the
+derivation-time prompt/schema rendering. Distinct from the deferred
+v0.8 structured-verdicts family — this is cap visibility, not semantic
+validation. S.
