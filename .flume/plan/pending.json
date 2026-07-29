@@ -1,64 +1,5 @@
 [
   {
-    "tag": "EXIT-CODE-CONTRACT",
-    "summary": "Mount-dead chain-load failure aborts the run immediately (non-zero) instead of burning to --max, per spec/RELEASE-v0.7.md §4",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "4. Exit-code contract — the run never lies to CI"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Per the operator's §4 amendment: the load/mount failure class (~L483-499) gets its own distinct exit constant (sibling to EX_TERMINAL_MISCONFIG at L372 — not a TickOutcome field); superviseLoop (~L1718-1784) aborts on that code and continues on a plain tick-failure code, mirroring the existing EX_TERMINAL_MISCONFIG fail-fast branch."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "tickExitCode (~L130-133) and loop's exit mapping (~L771-777) route the new signal to abort; HELP_SUB tick/loop prose (~L199-220) updated to match."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §13."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Rewrite the ungated-resolution-failure scenario (~L2995-3023, today asserts continue-not-abort) to assert abort-on-first-mount-dead-occurrence — a semantics change to an existing assertion, not new coverage, per §4."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Rewrite tickExitCode({failed:true}) expectation (~L204-212) to the new mount-dead exit value."
-        },
-        {
-          "path": "tests/loop-process-boundary.integration.test.ts",
-          "description": "Update hibernation/--max cases for the revised contract."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "superviseLoop aborts non-zero on first mount-dead tick instead of burning to maxTicks."
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "an unloadable chain exits non-zero after one tick's worth of work; an empty-queue run exits 0."
-      },
-      {
-        "path": "tests/loop-process-boundary.integration.test.ts",
-        "asserts": "loop process boundary exits correctly for hibernation and --max cases under the revised contract."
-      }
-    ],
-    "acceptance": "A run against an unloadable chain exits non-zero after one tick's worth of work; an empty-queue run exits 0.",
-    "notes": "Ratified by the operator's 2026-07-29 §4 amendment: distinct mount-dead exit constant, and cli.test.ts:211 / Dispatcher.test.ts:2995 rewrite is explicitly authorized (they lock behavior this section supersedes) — not build's call anymore, not scope creep. Shipped/errored counting split to EXIT-CODE-CONTRACT-COUNTS, blocked on this."
-  },
-  {
     "tag": "EXIT-CODE-CONTRACT-COUNTS",
     "summary": "loop/job run exits 0 with errors named when ≥1 tick errored but ≥1 entry shipped, per spec/RELEASE-v0.7.md §4",
     "per": {
@@ -66,8 +7,7 @@
       "section": "4. Exit-code contract — the run never lies to CI"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "EXIT-CODE-CONTRACT"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -118,8 +58,7 @@
       "section": "5. CJS-context host: detect and refuse"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "EXIT-CODE-CONTRACT"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
