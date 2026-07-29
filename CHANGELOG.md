@@ -23,6 +23,10 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 - `"prepack": "pnpm build"` — `npm pack` (and `pnpm smoke:install`) now
   rebuilds `dist/` before packing instead of shipping whatever happens to
   be on disk.
+- CLI's invoked-directly check now compares `import.meta.url` against the
+  **realpath** of `process.argv[1]` instead of the raw path, so
+  `dist/cli.js` reached through a directory junction or symlink (pnpm's
+  linked store) still runs `main()` instead of silently exiting 0.
 
 ## [0.6.2]
 

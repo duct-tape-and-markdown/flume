@@ -16,6 +16,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
   unlinkSync,
 } from "node:fs";
@@ -843,9 +844,25 @@ async function main(): Promise<number> {
 
 // Run only when invoked as the binary, not when imported (tests reach in for
 // `resolveStateDirs` at the resolution seam, §14).
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+//
+// import.meta.url resolves through junctions/symlinks to the file's realpath;
+// process.argv[1] keeps the invoked path verbatim. Through a junction- or
+// symlink-based install (pnpm's linked store) the two never match on a raw
+// string comparison, so resolve argv[1]'s realpath first (RELEASE-v0.7 §3).
+// realpathSync throws if argv[1] doesn't exist on disk — fall back to the raw
+// comparison rather than crash the import.
+function isInvokedDirectly(argv1: string | undefined): boolean {
+  if (argv1 === undefined) return false;
+  let argv1Url: string;
+  try {
+    argv1Url = pathToFileURL(realpathSync(argv1)).href;
+  } catch {
+    argv1Url = pathToFileURL(argv1).href;
+  }
+  return import.meta.url === argv1Url;
+}
+
+const invokedDirectly = isInvokedDirectly(process.argv[1]);
 
 if (invokedDirectly) {
   main()
