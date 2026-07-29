@@ -37,9 +37,12 @@ import {
   diskChainLoader,
   frictionCountLine,
   superviseLoop,
+  clearTickCounts,
+  writeTickCounts,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
+  type SuperviseResult,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { TickContext } from "./Phase.js";
@@ -136,6 +139,42 @@ export function tickExitCode(outcome: TickOutcome): number {
   return outcome.failed ? EX_MOUNT_DEAD : 0;
 }
 
+/**
+ * Map a whole `flume loop` / `job run` supervised run to its process exit
+ * code (v0.7 §4, amended): `terminal`/`mountDead` propagate the child's
+ * abort code unchanged (§3, v0.7 §4's mount-dead class). Otherwise non-zero
+ * iff at least one child tick errored AND the run shipped nothing — "settled
+ * with nothing to do" (no errors) and partial success (ships landed despite
+ * some tick errors) both stay 0. Exported for the exit-code seam tests.
+ */
+export function loopExitCode(result: SuperviseResult): number {
+  if (result.terminal) return EX_TERMINAL_MISCONFIG;
+  if (result.mountDead) return EX_MOUNT_DEAD;
+  return result.erroredTicks.length > 0 && result.shippedTags.length === 0
+    ? 1
+    : 0;
+}
+
+/**
+ * `flume loop` / `job run`'s completion summary line naming surfaced tick
+ * errors — undefined when the run had none. Printed even on a 0 exit
+ * (partial success): errors must not vanish into a green exit silently
+ * (v0.7 §4).
+ */
+export function loopCompletionSummary(
+  result: SuperviseResult,
+): string | undefined {
+  if (result.erroredTicks.length === 0) return undefined;
+  const shipped =
+    result.shippedTags.length > 0
+      ? `shipped ${result.shippedTags.join(", ")}; `
+      : "";
+  return (
+    `[flume] ${shipped}${result.erroredTicks.length} tick(s) errored: ` +
+    result.erroredTicks.join(" | ")
+  );
+}
+
 const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -219,9 +258,12 @@ Options:
   --max N    Maximum number of ticks before bailing (default 50).
 
 Exit codes:
-  0   Hibernation reached, or --max ticks completed.
+  0   Hibernation reached, or --max ticks completed — including partial
+      success (some ticks errored but at least one entry shipped; the
+      completion summary names the errors).
   1   Harness error, another live loop holds the lock, or — under a job
-      resolution (--job/FLUME_JOB) — HEAD is not job/<name>.
+      resolution (--job/FLUME_JOB) — HEAD is not job/<name>; also, at least
+      one tick errored and the run shipped nothing (v0.7 §4).
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same
@@ -319,14 +361,17 @@ Verbs:
       required, never guessed.
 
 Exit codes:
-  0   Success (run: hibernation reached, or --max ticks completed; rm on an
-      already-clean job is a no-op; status: always, including no jobs).
+  0   Success (run: hibernation reached, or --max ticks completed —
+      including partial success, some ticks errored but at least one entry
+      shipped; rm on an already-clean job is a no-op; status: always,
+      including no jobs).
   1   Git or filesystem failure (checkout, link provisioning, commit); for
-      run also: harness error, or another live loop holds the job's lock;
-      for rm also: the job's loop is still live; for extract also: branch
-      <name> already exists, uncommitted tracked changes, a live loop,
-      job/<name> checked out in another worktree, or a cherry-pick conflict
-      (unwound to job/<name>; retryable).
+      run also: harness error, another live loop holds the job's lock, or at
+      least one tick errored and the run shipped nothing (v0.7 §4); for rm
+      also: the job's loop is still live; for extract also: branch <name>
+      already exists, uncommitted tracked changes, a live loop, job/<name>
+      checked out in another worktree, or a cherry-pick conflict (unwound to
+      job/<name>; retryable).
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, run on a job whose branch does not
@@ -720,8 +765,29 @@ async function main(): Promise<number> {
   });
 
   if (cmd === "tick") {
+    // v0.7 §4 amendment: clear any stale shipped/errored record before this
+    // tick's own work — a tick that returns below without an agent having
+    // run (chain-load failure, hibernation, terminal misconfiguration) must
+    // leave no record for `flume loop`'s supervisor to misread as its own.
+    await clearTickCounts(flumeDir);
     const outcome = await dispatcher.tick();
     console.log(outcome.summary);
+    if (outcome.result) {
+      // v0.7 §4: "errored" is a real tick-level failure — bad work reverted
+      // by a gate, or the agent process itself failing — not a
+      // `voluntary-bail` (the agent correctly declining an out-of-scope
+      // task and naming the constraint; see collaboration.md's "park, don't
+      // decide silently"). A clean decline is not evidence anything went
+      // wrong, so it must not surface as a run-level error.
+      const errored =
+        outcome.noCommit === "gate-revert" ||
+        outcome.noCommit === "platform-preempt";
+      await writeTickCounts(flumeDir, {
+        shippedTags: [...outcome.result.shippedTags],
+        errored,
+        ...(errored ? { errorSummary: outcome.summary } : {}),
+      });
+    }
     // Fail loudly on the Axis-C exits (§3) so the supervisor — and any human
     // watching exit codes — classifies the failure without reading logs:
     // 78 terminal misconfiguration, 1 resolution failure, 0 otherwise.
@@ -785,9 +851,11 @@ async function main(): Promise<number> {
       configDir,
       maxTicks: max,
     });
-    if (supervised.terminal) return EX_TERMINAL_MISCONFIG;
-    if (supervised.mountDead) return EX_MOUNT_DEAD;
-    return 0;
+    // v0.7 §4 amendment: name surfaced tick errors in the completion summary
+    // even on a 0 exit (partial success) — they must not vanish silently.
+    const completion = loopCompletionSummary(supervised);
+    if (completion) console.log(completion);
+    return loopExitCode(supervised);
   }
 
   if (cmd === "render") {

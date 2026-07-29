@@ -25,6 +25,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   re-hitting the same wall — an unloadable chain now surfaces non-zero to
   CI after one tick's worth of work instead of silently exiting 0 at
   `--max`.
+- `flume loop` / `job run` now exit non-zero iff at least one tick errored
+  AND zero entries shipped this run — an empty-queue settle and a partial
+  success (ships landed despite some tick errors) both still exit 0, but
+  the completion summary now names every surfaced tick error so a partial
+  success no longer vanishes into a silent green exit. Each child `flume
+  tick` writes its shipped/errored counts to a small on-disk artifact the
+  supervisor reads between iterations — child stdio stays `inherit`.
 
 ### Fixed
 

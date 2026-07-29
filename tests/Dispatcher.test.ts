@@ -11,6 +11,8 @@ import {
   Dispatcher,
   loadChainModule,
   superviseLoop,
+  writeTickCounts,
+  clearTickCounts,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type ChainModule,
@@ -2707,6 +2709,65 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 });
 
+/**
+ * v0.7 §4 amendment — `writeTickCounts`/`clearTickCounts` are the primitives
+ * the CLI's `tick` command calls around `dispatcher.tick()` (never
+ * `Dispatcher.tick()` itself — a plain unit test constructing a `Dispatcher`
+ * directly, as every test above does, must not gain an untracked
+ * `<flumeDir>/last-tick.json` side effect underfoot; `superviseLoop`'s own
+ * accumulation from this same artifact is proved below, in the
+ * `superviseLoop` suite, via a stub `runTick` that writes it directly, the
+ * way a real `flume tick` child process would). This suite proves the
+ * primitives' own round-trip and clear behavior.
+ */
+describe("writeTickCounts / readTickCounts / clearTickCounts — the tick-counts artifact (v0.7 §4 amendment)", () => {
+  const countsPath = (): string => join(fx.repo, ".flume", "last-tick.json");
+
+  it("writes a record readable back verbatim, including an errorSummary", async () => {
+    await writeTickCounts(join(fx.repo, ".flume"), {
+      shippedTags: ["TEST-A"],
+      errored: true,
+      errorSummary: "build: no commit (gate-revert) → hibernate",
+    });
+
+    const onDisk = JSON.parse(await readFile(countsPath(), "utf8"));
+    expect(onDisk).toEqual({
+      shippedTags: ["TEST-A"],
+      errored: true,
+      errorSummary: "build: no commit (gate-revert) → hibernate",
+    });
+  });
+
+  it("a clean (non-errored) record omits errorSummary", async () => {
+    await writeTickCounts(join(fx.repo, ".flume"), {
+      shippedTags: ["TEST-A", "TEST-B"],
+      errored: false,
+    });
+
+    const onDisk = JSON.parse(await readFile(countsPath(), "utf8"));
+    expect(onDisk.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+    expect(onDisk.errored).toBe(false);
+    expect(onDisk.errorSummary).toBeUndefined();
+  });
+
+  it("clearTickCounts removes an existing record and no-ops when absent", async () => {
+    await writeTickCounts(join(fx.repo, ".flume"), {
+      shippedTags: [],
+      errored: true,
+      errorSummary: "boom",
+    });
+    expect(existsSync(countsPath())).toBe(true);
+
+    await clearTickCounts(join(fx.repo, ".flume"));
+    expect(existsSync(countsPath())).toBe(false);
+
+    // No pre-existing file (fresh flumeDir, never ticked) — still a no-op.
+    await expect(
+      clearTickCounts(join(fx.repo, ".flume", "never-created")),
+    ).resolves.not.toThrow();
+  });
+});
+
 // ---------- plan-tick prose durability (§8) ----------
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
@@ -3139,6 +3200,62 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.hibernated).toBe(false);
     expect(res.mountDead).toBe(true);
     expect(errors.some((e) => /mount-dead/.test(e))).toBe(true);
+  });
+
+  /**
+   * v0.7 §4 amendment — shipped/errored cross the child→supervisor boundary
+   * by disk (`<flumeDir>/last-tick.json`), not stdio: child stdio stays
+   * `inherit`, so the exit code alone can't carry a run-wide total. Two
+   * ticks in one run: the first ships an entry and writes a clean record,
+   * the second errors (no commit) and writes an errored record before
+   * sleeping the phase so the loop hibernates. `runTick` here plays the real
+   * child `flume tick` process — the CLI's `tick` command writes exactly
+   * this artifact around its own `dispatcher.tick()` call (the write/clear
+   * primitives' own round-trip is proved directly in the
+   * `writeTickCounts / readTickCounts / clearTickCounts` suite above) —
+   * this suite proves `superviseLoop` reads and accumulates it correctly.
+   */
+  it("a run with one errored tick and one shipped entry: SuperviseResult reports shipped>0 and errored>0, error named", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const countsPath = join(fx.repo, ".flume", "last-tick.json");
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1) {
+        await writeFile(
+          countsPath,
+          JSON.stringify({ shippedTags: ["SHIPPED-ENTRY"], errored: false }),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          countsPath,
+          JSON.stringify({
+            shippedTags: [],
+            errored: true,
+            errorSummary: "build: no commit (gate-revert) → hibernate",
+          }),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    expect(res.shippedTags).toEqual(["SHIPPED-ENTRY"]);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("gate-revert");
   });
 
   it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {

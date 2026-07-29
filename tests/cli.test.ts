@@ -24,12 +24,15 @@ import {
   isInvokedDirectly,
   resolveStateDirs,
   tickExitCode,
+  loopExitCode,
+  loopCompletionSummary,
 } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
+  type SuperviseResult,
 } from "../src/Dispatcher.ts";
 
 const exec = promisify(execFile);
@@ -225,6 +228,75 @@ describe("tickExitCode — §3 axis classification", () => {
       summary: "plan committed abcd1234 → build",
     };
     expect(tickExitCode(outcome)).toBe(0);
+  });
+});
+
+/**
+ * v0.7 §4 amendment — `flume loop` / `job run`'s own exit-code decision at
+ * the CLI/loop boundary: non-zero iff at least one child tick errored AND
+ * the run shipped nothing; `terminal`/`mountDead` still propagate their own
+ * distinct codes unchanged. The completion summary names surfaced tick
+ * errors even on a 0 exit (partial success) — they must not vanish
+ * silently. Exercised at the mapping seam (`loopExitCode` /
+ * `loopCompletionSummary`), mirroring `tickExitCode` above; the real
+ * process-boundary mechanics (child spawn, disk artifact) are proved in
+ * `Dispatcher.test.ts`'s `superviseLoop` suite.
+ */
+describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contract", () => {
+  it("a run with one errored tick and one shipped entry: exits 0, summary names the error", () => {
+    const result: SuperviseResult = {
+      ticks: 2,
+      hibernated: true,
+      shippedTags: ["SHIPPED-ENTRY"],
+      erroredTicks: ["build: no commit (gate-revert) → hibernate"],
+    };
+    expect(loopExitCode(result)).toBe(0);
+    expect(loopCompletionSummary(result)).toContain("SHIPPED-ENTRY");
+    expect(loopCompletionSummary(result)).toContain("gate-revert");
+  });
+
+  it("at least one errored tick AND nothing shipped → 1", () => {
+    const result: SuperviseResult = {
+      ticks: 1,
+      hibernated: true,
+      shippedTags: [],
+      erroredTicks: ["plan: no commit (voluntary-bail) → hibernate"],
+    };
+    expect(loopExitCode(result)).toBe(1);
+    expect(loopCompletionSummary(result)).toContain("voluntary-bail");
+  });
+
+  it("settled with nothing to do (no errors, nothing shipped) → 0, no completion summary", () => {
+    const result: SuperviseResult = {
+      ticks: 1,
+      hibernated: true,
+      shippedTags: [],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(0);
+    expect(loopCompletionSummary(result)).toBeUndefined();
+  });
+
+  it("terminal misconfiguration propagates 78 regardless of shipped/errored counts", () => {
+    const result: SuperviseResult = {
+      ticks: 1,
+      hibernated: false,
+      terminal: { kind: "orphaned-awake", phases: ["ghost"] },
+      shippedTags: [],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(EX_TERMINAL_MISCONFIG);
+  });
+
+  it("mount-dead propagates 69 regardless of shipped/errored counts", () => {
+    const result: SuperviseResult = {
+      ticks: 1,
+      hibernated: false,
+      mountDead: true,
+      shippedTags: [],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(EX_MOUNT_DEAD);
   });
 });
 

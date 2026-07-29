@@ -63,6 +63,85 @@ const execFileP = promisify(execFile);
  */
 const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
 
+/**
+ * v0.7 §4 amendment: `shipped`/`errored` cross the `flume tick` child →
+ * `superviseLoop` supervisor process boundary by disk, not stdio — child
+ * stdio stays `inherit` (live-streamed agent output is load-bearing), so
+ * the exit code alone (settled / errored / {@link EX_MOUNT_DEAD}) is the
+ * only signal that crosses today, and it can't carry a run-wide total. One
+ * JSON file at `<flumeDir>/last-tick.json`, overwritten every real `flume
+ * tick` process (the CLI's `tick` command writes it, from the
+ * `TickOutcome` its own `dispatcher.tick()` call returned — never
+ * `Dispatcher.tick()` itself, which plain unit tests call directly and
+ * must not gain an untracked side effect underfoot) — untracked,
+ * ungitignored (same tolerance as the loop lock's own
+ * `<flumeDir>/loop.pid`).
+ */
+const TICK_COUNTS_FILE = "last-tick.json";
+
+/** Per-tick shipped/errored record read by {@link superviseLoop} between iterations (v0.7 §4). */
+export interface TickCountsRecord {
+  /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
+  shippedTags: string[];
+  /**
+   * True iff this tick was a genuine tick-level failure — `gate-revert`
+   * (bad work reverted) or `platform-preempt` (the agent process itself
+   * failed) — NOT `voluntary-bail` (the agent correctly declined an
+   * out-of-scope task and named the constraint; a clean decline is not
+   * evidence anything went wrong, so it must not surface as a run-level
+   * error).
+   */
+  errored: boolean;
+  /** This tick's one-line summary, present only when `errored` — surfaced verbatim in the loop's completion summary. */
+  errorSummary?: string;
+}
+
+function tickCountsPath(flumeDir: string): string {
+  return join(flumeDir, TICK_COUNTS_FILE);
+}
+
+/** Write this tick's shipped/errored record. Called by the CLI's `tick` command, once per real process. */
+export async function writeTickCounts(
+  flumeDir: string,
+  rec: TickCountsRecord,
+): Promise<void> {
+  await mkdir(flumeDir, { recursive: true });
+  await writeFile(tickCountsPath(flumeDir), JSON.stringify(rec), "utf8");
+}
+
+/**
+ * Clear a stale record before a tick's own work — called by the CLI's
+ * `tick` command before invoking `dispatcher.tick()`. A tick that never
+ * reaches the corresponding `writeTickCounts` call (chain-load failure,
+ * hibernation, terminal misconfiguration — none of which ran an agent)
+ * must leave no record for the supervisor to misread as its own.
+ */
+export async function clearTickCounts(flumeDir: string): Promise<void> {
+  await rm(tickCountsPath(flumeDir), { force: true });
+}
+
+/**
+ * Read the last-written tick-counts record, if any. Corrupt or absent (the
+ * CLI clears it before every tick and writes it only once that tick's
+ * `dispatcher.tick()` call has returned) degrades to "nothing to report" —
+ * a missing record must never be misread as a prior tick's stale one.
+ */
+async function readTickCounts(
+  flumeDir: string,
+): Promise<TickCountsRecord | undefined> {
+  const p = tickCountsPath(flumeDir);
+  if (!existsSync(p)) return undefined;
+  try {
+    const rec = JSON.parse(await readFile(p, "utf8")) as Partial<TickCountsRecord>;
+    if (!Array.isArray(rec.shippedTags) || typeof rec.errored !== "boolean") {
+      return undefined;
+    }
+    return rec as TickCountsRecord;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
 const MAX_PRIOR_DETAILS = 8 * 1024;
 /** Bound on the persisted `git show --stat` digest. */
@@ -1748,6 +1827,23 @@ export interface SuperviseResult {
    * to name in the summary, only the fact of the abort.
    */
   mountDead?: boolean;
+  /**
+   * Every entry tag shipped by any child tick this run (v0.7 §4 amendment),
+   * accumulated across iterations from each child's on-disk tick-counts
+   * record — the run-level exit-code decision (§4: non-zero iff ≥1 tick
+   * errored AND zero entries shipped) needs the whole run's total, not just
+   * the last tick's.
+   */
+  shippedTags: string[];
+  /**
+   * One line per child tick that errored — a genuine tick-level failure
+   * (`gate-revert` or `platform-preempt`; see {@link TickCountsRecord.errored})
+   * — this run, in tick order, read alongside `shippedTags`. Non-empty even
+   * on a 0 exit (partial success: ships landed despite some tick errors) —
+   * `flume loop`'s completion summary names these so they never vanish into
+   * a silent green exit (§4).
+   */
+  erroredTicks: string[];
 }
 
 /**
@@ -1790,9 +1886,26 @@ export async function superviseLoop(
   };
 
   let ticks = 0;
+  const shippedTags = new Set<string>();
+  const erroredTicks: string[] = [];
   for (let i = 0; i < maxTicks; i++) {
     const { exitCode } = await runTick();
     ticks++;
+
+    // v0.7 §4 amendment: recover this tick's shipped/errored counts from its
+    // disk artifact — the exit code alone (settled/errored/mount-dead) is
+    // the only signal that crosses the child→supervisor boundary today
+    // (child stdio stays `inherit`), and it can't carry a run-wide total.
+    // Absent on a tick that returned before reaching the write (chain-load
+    // failure, hibernation, terminal misconfiguration) — nothing to add.
+    const counts = await readTickCounts(flumeDir);
+    if (counts) {
+      for (const tag of counts.shippedTags) shippedTags.add(tag);
+      if (counts.errored) {
+        erroredTicks.push(counts.errorSummary ?? "tick errored (no detail recorded)");
+      }
+    }
+
     if (exitCode === EX_TERMINAL_MISCONFIG) {
       // Axis-C fail-fast (§3): the child classified a terminal
       // misconfiguration (orphaned awake flags). The decision comes from the
@@ -1812,6 +1925,8 @@ export async function superviseLoop(
         ticks,
         hibernated: false,
         terminal: { kind: "orphaned-awake", phases },
+        shippedTags: [...shippedTags],
+        erroredTicks,
       };
     }
     if (exitCode === EX_MOUNT_DEAD) {
@@ -1826,7 +1941,13 @@ export async function superviseLoop(
           `remaining ticks against the same failure. Inspect and restore ` +
           `the chain (or its state root), then re-run.`,
       );
-      return { ticks, hibernated: false, mountDead: true };
+      return {
+        ticks,
+        hibernated: false,
+        mountDead: true,
+        shippedTags: [...shippedTags],
+        erroredTicks,
+      };
     }
     if (exitCode !== 0) {
       log.warn(
@@ -1841,12 +1962,22 @@ export async function superviseLoop(
     if (baton.hibernating()) {
       log.info(`[flume] hibernating after ${ticks} tick(s)`);
       await logFrictionSummary();
-      return { ticks, hibernated: true };
+      return {
+        ticks,
+        hibernated: true,
+        shippedTags: [...shippedTags],
+        erroredTicks,
+      };
     }
   }
   log.info(`[flume] reached --max ${maxTicks}; stopping`);
   await logFrictionSummary();
-  return { ticks, hibernated: false };
+  return {
+    ticks,
+    hibernated: false,
+    shippedTags: [...shippedTags],
+    erroredTicks,
+  };
 }
 
 /**
