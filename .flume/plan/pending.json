@@ -54,7 +54,7 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "Give the load/mount failure class (~L483-499) a distinguishable signal (exit-code constant sibling to EX_TERMINAL_MISCONFIG at L372, or a TickOutcome field); superviseLoop (~L1718-1784) aborts on first occurrence instead of continuing to --max, mirroring the existing EX_TERMINAL_MISCONFIG fail-fast branch."
+          "description": "Per the operator's §4 amendment: the load/mount failure class (~L483-499) gets its own distinct exit constant (sibling to EX_TERMINAL_MISCONFIG at L372 — not a TickOutcome field); superviseLoop (~L1718-1784) aborts on that code and continues on a plain tick-failure code, mirroring the existing EX_TERMINAL_MISCONFIG fail-fast branch."
         },
         {
           "path": "src/cli.ts",
@@ -95,7 +95,7 @@
       }
     ],
     "acceptance": "A run against an unloadable chain exits non-zero after one tick's worth of work; an empty-queue run exits 0.",
-    "notes": "Redesigned per the parked write-up's option 2 (smaller blast radius): this entry is abort-only; shipped/errored counting is EXIT-CODE-CONTRACT-COUNTS, blocked on this. Test edits folded into files per the write-up's blocker 1. cli.test.ts:211 and Dispatcher.test.ts:2995 must change semantics — expected, §4 forces it, not scope creep."
+    "notes": "Ratified by the operator's 2026-07-29 §4 amendment: distinct mount-dead exit constant, and cli.test.ts:211 / Dispatcher.test.ts:2995 rewrite is explicitly authorized (they lock behavior this section supersedes) — not build's call anymore, not scope creep. Shipped/errored counting split to EXIT-CODE-CONTRACT-COUNTS, blocked on this."
   },
   {
     "tag": "EXIT-CODE-CONTRACT-COUNTS",
@@ -147,7 +147,7 @@
       }
     ],
     "acceptance": "A run with one errored tick and one shipped entry exits 0 and its summary names the error.",
-    "notes": "Design committed here so build isn't deciding the API surface silently: a per-tick disk artifact, not a stdio-pipe change — reuses the loop's existing disk-is-truth model instead of switching child stdio from inherit to piped."
+    "notes": "Design ratified by the operator's 2026-07-29 §4 amendment: exit codes carry class only (settled/errored/mount-dead); a per-tick disk artifact carries counts. Child stdio stays inherit — piped-and-parsed stdout is explicitly declined (live-streamed agent output is load-bearing)."
   },
   {
     "tag": "CJS-CONTEXT-REFUSAL",
