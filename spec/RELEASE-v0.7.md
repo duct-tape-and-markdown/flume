@@ -376,7 +376,50 @@ touches at least one declared file, with or without also touching
 channels/`CHANGELOG`) is unaffected — shipped and removed from pending
 exactly as today.
 
-## 13. CHANGELOG
+## 13. In-worktree gate reverts leave a trunk footprint
+
+Incident, 2026-07-29, three ticks in one loop-day: CLI-JUNCTION-SAFE-ENTRY
+(reverted for `tests/cli.test.ts`), EXIT-CODE-CONTRACT (three paths
+including `tests/loop-process-boundary.integration.test.ts`),
+CJS-CONTEXT-REFUSAL (two paths, same class). The writable-paths gate
+(`builtinGates.ts:210`) runs `afterCommit` inside the fanout worktree; on
+failure the dispatcher drops the commit in the worktree
+(`Dispatcher.ts:1187`, `noCommit: "gate-revert"` at `:1192`) and the
+worktree is cleaned at wave end. Nothing reaches trunk. The `afterMerge`
+failure path records per-entry footprints and commits them
+(`Dispatcher.ts:975-1002`); the in-worktree revert path records nothing.
+Observed consequence: the follow-on plan tick committed `plan: maintain —
+empty delta, no dimension triggered` (`50cc3ac3`) and requeued the
+identical entry blind — the loop re-derives into the same fence at full
+tick cost with zero learning per attempt.
+
+- On an in-worktree `afterCommit` gate revert of a fanout tick, record
+  the same per-entry footprint shape the `afterMerge` path records:
+  entry tag, gate name, gate message, and the specific out-of-allowance
+  paths from the gate's `details`.
+- Ride the existing footprint-commit mechanism (`Dispatcher.ts:975-1002`)
+  so the record lands on trunk before the wave ends. No second
+  bookkeeping surface.
+- `prompts/build.md` gains the corresponding instruction: when edits the
+  work genuinely requires fall outside the effective fence the harness
+  block states (§2), the tick parks the conflict in `open-questions.md`
+  (naming the paths and why) and bails voluntarily — committing into a
+  guaranteed revert is never the right move. This makes fence exceedance
+  a decision the plan can see, on either path.
+- Orthogonal config note, not machinery: the dogfood chain's
+  `entryChannelPaths` gains `tests/**` (operator commit, same day) —
+  in this repo every behavior-changing entry forces test edits, so test
+  paths ride the channel rather than each entry re-declaring them. The
+  footprint requirement above stands regardless: any repo can still
+  under-declare, and the fence must never fail silently.
+
+Acceptance: a fanout tick reverted by an in-worktree gate is followed by
+a trunk state whose next plan tick's inputs contain the violating paths
+(a non-empty delta naming them) — the `50cc3ac3` empty-delta blindness
+does not reproduce; `afterMerge` footprint behavior unchanged; a locked
+test covers the footprint content for the in-worktree revert path.
+
+## 14. CHANGELOG
 
 - 0.7.0 section: Fixed — harness block states the effective (narrowed)
   fence on entry-scoped ticks; CLI entry runs through directory
@@ -395,5 +438,10 @@ exactly as today.
   a phase's declared channel paths (a park note, no implementation) no
   longer classifies as shipped — the entry stays in pending.json for a
   real attempt.
+- 0.7.0 section, add to Fixed: an in-worktree gate revert (writable-paths)
+  now leaves the same per-entry trunk footprint as afterMerge failures —
+  the next plan tick sees the violating paths instead of an empty delta,
+  and build ticks park fence conflicts instead of committing into a
+  guaranteed revert.
 - Version bump + `npm publish` stay human-performed at cut time; no phase
   writes the version field.

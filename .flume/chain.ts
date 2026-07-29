@@ -252,8 +252,13 @@ const build: Phase = {
   // v0.4 §5: on a fanout tick with an assignedEntry the write guard narrows
   // to the entry's declared files ∪ this channel (phase globs stay the outer
   // ceiling). open-questions.md is the parking lane a scoped tick may always
-  // write regardless of what its entry declared.
-  entryChannelPaths: [".flume/plan/open-questions.md"],
+  // write regardless of what its entry declared. tests/** rides the channel
+  // (operator, 2026-07-29): in this repo every behavior-changing entry
+  // forces test edits, and under-declared entries were fence-reverting
+  // whole ticks — three in one day, every violating path a test file.
+  // Collisions between parallel entries editing shared suites stay covered
+  // by per-entry afterMerge revert (§7b).
+  entryChannelPaths: [".flume/plan/open-questions.md", "tests/**"],
   // §7a (RELEASE-v0.2.md): vitest runs afterMerge, not afterCommit. Under
   // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
   // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
