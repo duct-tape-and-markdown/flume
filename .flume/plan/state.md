@@ -1,69 +1,64 @@
 # State
 
-Phase: **v0.7 line in flight** — 1 of the original 6 queue entries shipped
-(`GATECONTEXT-REPOROOT`), 5 remain, 1 new entry filed this tick. Mode this
-tick: **audit** (commit-delta was the only non-empty dimension).
+Phase: **v0.7 line in flight** — 3 of the original 6 queue entries shipped
+(`GATECONTEXT-REPOROOT`, `GATECONTEXT-REPOROOT-TESTS`, `PREPACK-BUILD`), 4
+remain. Mode this tick: **audit** (commit-delta was the only non-empty
+dimension; spec-delta empty, inbox empty, no blocks to promote).
 
-## This tick (audit — 2 commits since a3acea8)
+## This tick (audit — 3 commits since 314c2e3)
 
-- `git log --grep='^plan:' -n 1` → `a3acea8` (last plan). `git log
-  a3acea8..HEAD` → `94b0ec2` (build ships `GATECONTEXT-REPOROOT`),
-  `8f4f4f9` (harness auto-commit dropping the shipped entry from
-  `pending.json`). No spec-delta (`git diff a3acea8..HEAD -- spec/`
-  empty), inbox already empty, one `blockedBy` entry unchanged — audit
-  was the only live dimension.
-- **Cross-checked `94b0ec2` against §6** (`GateContext.repoRoot`): field
-  added at both construction sites (`src/Dispatcher.ts:799` afterMerge,
-  `:1167` afterCommit), matches §6's fanout-worktree-root /
-  bare-primary-checkout split, CHANGELOG bullet accurate, stayed inside
-  declared `files`. Checked §1's "kills a helper every gate reinvents"
-  framing against `src/builtinGates.ts` — none of flume's own built-in
-  gates independently compute a repo root (they use `ctx.cwd`), so
-  nothing there needed touching; that framing targets external consumer
-  chains, out of this repo's blast radius. No spec drift found.
-- **Found the real gap**: build shipped `repoRoot` as optional
-  specifically to avoid touching `tests/Gate.test.ts` /
-  `tests/Dispatcher.test.ts`, which the entry's `files` had omitted even
-  though its `tests[]` cited them — an under-declaration in last tick's
-  derive (`a3acea8`), not a build defect. Build correctly refused to
-  reach outside its fence and logged the gap to `open-questions.md`
-  instead (the build→plan channel per
-  `.claude/rules/collaboration.md`).
-- **Inform-before-parking**: re-read §6 and this doc's own
-  Derive-dimension rule ("Tests ride the entry... test paths in files")
-  — the fix was already the standing convention, not a fresh decision.
-  Filed `GATECONTEXT-REPOROOT-TESTS` (`files` includes both test paths
-  this time) and closed the carried open question by routing rather than
-  parking it further.
+- `git log --grep='^plan:' -n 1` → `314c2e3` (last plan). `git log
+  314c2e3..HEAD` → `7c6c2d6` (build ships `GATECONTEXT-REPOROOT-TESTS`),
+  `999eb5c` (build ships `PREPACK-BUILD`), `840586b` (harness auto-commit
+  dropping both shipped entries from `pending.json`). No spec-delta
+  (`git diff 314c2e3..HEAD -- spec/` empty), inbox already empty, the one
+  `blockedBy` entry (`CJS-CONTEXT-REFUSAL`) still blocked on
+  `EXIT-CODE-CONTRACT`, which is still present and `open` — audit was
+  the only live dimension.
+- **Cross-checked `7c6c2d6` against §6's acceptance line**
+  (`GateContext.repoRoot`): `Gate.test.ts` asserts `repoRoot` round-trips
+  through `ctx()` overrides and stays `undefined` when omitted;
+  `Dispatcher.test.ts` asserts a singleton tick's gate sees
+  `repoRoot === cwd === trunk`, and a fanout tick's `afterCommit` gate
+  sees the worktree root (`repoRoot === cwd`, `!== fx.repo`, contains the
+  worktree slug) while its `afterMerge` gate sees the trunk. Matches §6's
+  fanout-worktree-root / bare-primary-checkout split exactly; stayed
+  inside the entry's declared `files`. No drift.
+- **Cross-checked `999eb5c` against §7**: `"prepack": "pnpm build"` added
+  to `package.json`; `scripts/smoke-install.mjs` shells out via `npm
+  pack` (confirmed at `scripts/smoke-install.mjs:87-90`), so npm's own
+  lifecycle runs `prepack` on the *root* package (not a dependency) —
+  pnpm's dependency-script-blocking policy doesn't apply here, no
+  false-safety concern. CHANGELOG bullet (`CHANGELOG.md:19-22`) matches.
+  No drift.
+- **`840586b`**: harness auto-commit, correctly dropped exactly the two
+  shipped tags from `pending.json`, left the other four byte-identical.
+  No audit action needed beyond the mechanical check.
 - **Promote**: `CJS-CONTEXT-REFUSAL` still `blockedBy EXIT-CODE-CONTRACT`;
-  `EXIT-CODE-CONTRACT` still present and `open` in the queue — block
-  doesn't lift, checked mechanically.
+  `EXIT-CODE-CONTRACT` still present and `open` — block doesn't lift,
+  checked mechanically.
+- **Drain**: inbox empty, nothing to route.
 
-## Queue (6)
+## Queue (4)
 
-1. `GATECONTEXT-REPOROOT-TESTS` — open, new this tick, closes last
-   tick's under-declaration debt.
-2. `PREPACK-BUILD` — open, `package.json` only.
-3. `CLI-JUNCTION-SAFE-ENTRY` — open, `src/cli.ts` only.
-4. `HARNESS-BLOCK-EFFECTIVE-FENCE` — open, `Prompt.ts` + `Dispatcher.ts`
+1. `CLI-JUNCTION-SAFE-ENTRY` — open, `src/cli.ts` only.
+2. `HARNESS-BLOCK-EFFECTIVE-FENCE` — open, `Prompt.ts` + `Dispatcher.ts`
    + docs worked-example rewrite.
-5. `EXIT-CODE-CONTRACT` — open, the largest entry (mount-dead
+3. `EXIT-CODE-CONTRACT` — open, the largest entry (mount-dead
    classification + loop/job-run shipped-vs-errored accounting).
-6. `CJS-CONTEXT-REFUSAL` — blockedBy `EXIT-CODE-CONTRACT`.
+4. `CJS-CONTEXT-REFUSAL` — blockedBy `EXIT-CODE-CONTRACT`.
 
 ## Open questions (0)
 
-None live — the one carried question closed this tick by routing to
-`GATECONTEXT-REPOROOT-TESTS`.
+None live.
 
 ## Writable-paths / trunk
 
-- `pending.json`: 1 entry added (`GATECONTEXT-REPOROOT-TESTS`), 5 written
-  back byte-identical.
-- `open-questions.md`: 1 question closed (moved into the closed-questions
-  comment), header/status-marker block unchanged.
+- `pending.json`: unchanged (no drift found; written back byte-identical
+  — 4 entries).
+- `open-questions.md`: unchanged, byte-identical.
 - `inbox.md`: already empty, written back byte-identical.
-- Trunk: HEAD `8f4f4f9` at tick start, tree clean besides untracked
+- Trunk: HEAD `840586b` at tick start, tree clean besides untracked
   `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
