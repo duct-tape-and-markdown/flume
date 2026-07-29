@@ -1,67 +1,36 @@
 # State
 
-Phase: **v0.7 line derived** — `spec/RELEASE-v0.7.md` ("the truth line")
-landed since the last plan tick, authored specifically to answer all
-three questions this file had parked. Mode this tick: **derive** (spec-delta
-was the heaviest dimension by far; drain and a light audit rode alongside).
+Phase: **v0.7 line queued** — `spec/RELEASE-v0.7.md` derived last tick into
+6 pending entries; none shipped yet (no commit-delta since). Mode this
+tick: **maintain** (verification only — every dimension came up empty).
 
-## This tick
+## This tick (maintain — zero delta)
 
-- `git log --grep='^plan:' -n 1` → `23509eb0` (prior plan tick, audit-only,
-  clean). Five commits since: `30c5619` (chore(flume): tests-ride-the-entry
-  operator ruling), `e27638d` (chore(release): cut 0.6.2), `9b07c85`
-  (inbox: file CJS-context + stale-dist findings), `c11d96b` (chore(ci):
-  pnpm 10 pin + smoke consumer type:module — human-directed interactive
-  fix, reviewed inline this tick, matches its own commit message and the
-  inbox finding it closes; no drift), `fc5b79b` (spec: author
-  RELEASE-v0.7.md).
-- **Audit**: none of the five commits ship a pending entry (queue was
-  empty all tick), so there is no `per.section` to cross-check diffs
-  against in the usual sense. `c11d96b` was read in full and is coherent
-  with its own narrative — no findings. No entries filed as accepted-debt.
-- **Derive** (the heavy dimension): `git diff 23509eb..HEAD -- spec/` →
-  `spec/RELEASE-v0.7.md` added, 158 lines, 8 sections (no prior `plan:`
-  commit had touched it). Read the file in full, then read every cited
-  call site before decomposing:
-  - `src/Prompt.ts:218` (`prependHarnessBlock`) + the fanout `renderPrompt`
-    call site (`src/Dispatcher.ts:~1014`, `entry` already in scope) → §2 →
-    **HARNESS-BLOCK-EFFECTIVE-FENCE**.
-  - `src/cli.ts:846-848` (`invokedDirectly`) → §3 →
-    **CLI-JUNCTION-SAFE-ENTRY**.
-  - `src/Dispatcher.ts` chain-resolution-failure path (`tick()` ~L483-499,
-    already sets `TickOutcome.failed`), `superviseLoop` (~L1718-1784,
-    already has an `EX_TERMINAL_MISCONFIG` fail-fast precedent to mirror),
-    `src/cli.ts` `tickExitCode` (~L130) and the `loop`/`job run` exit
-    mapping (~L771-777) → §4 → **EXIT-CODE-CONTRACT**.
-  - `loadChainModule` (`src/Dispatcher.ts:234-274`, where `tsImport`
-    throws) → §5 → **CJS-CONTEXT-REFUSAL**, `blockedBy` EXIT-CODE-CONTRACT
-    (its exit-2 usage-error slot must sit inside that entry's taxonomy,
-    not be designed twice).
-  - `GateContext` (`src/Gate.ts:34`) + its two construction sites in
-    `Dispatcher.ts` (`~L797`, `~L1164`), both already holding
-    `this.opts.repoRoot` in scope → §6 → **GATECONTEXT-REPOROOT**.
-  - `package.json` scripts (only `prepublishOnly` exists today) → §7 →
-    **PREPACK-BUILD**.
-  - §8 (CHANGELOG) is not a standalone entry — per the tests-ride-the-entry
-    operator ruling's spirit, its bullets ride each shipping entry's own
-    `files.edit` rather than becoming a sixth follow-up.
-  - §1 is purpose/scope narrative only — no entry; its explicit declines
-    (structured-verdicts family, CJS-context support) are dispositions,
-    not deliverables.
-- **Drain**: `.flume/inbox.md` carried one entry (CJS-context product
-  question + stale-dist pack hazard). Both sub-items are now answered by
-  the spec that just landed — (a) routed to CJS-CONTEXT-REFUSAL (§5:
-  detect-and-refuse, not support), (b) routed to PREPACK-BUILD (§7).
-  Entry removed; header preserved.
-- **Promote**: `pending-now` was `[]` — nothing to flip.
-- **Open questions**: all three prior PARKED questions are now resolved by
-  `spec/RELEASE-v0.7.md` — the CLI-junction and harness-block questions
-  each got the exact fix section they were waiting on; the
-  engine-ownership question's items #3/#4 shipped into this line's entries
-  and items #1/#2/#5 (structured-verdicts family) were explicitly declined
-  for v0.8 by the operator ruling recorded in v0.7 §1 itself — that's a
-  disposition, not an open question anymore. File collapsed to a comment
-  noting the closures; no live questions remain.
+- `git log --grep='^plan:' -n 1` → `a3acea8` (prior tick, this line's
+  derive). `git log a3acea8..HEAD` → empty; HEAD **is** `a3acea8`, tree
+  clean besides untracked `.flume/loop.pid`.
+- **Audit**: no commit-delta (0 commits since last `plan:`) — nothing to
+  cross-check.
+- **Derive**: no spec-delta (`git diff a3acea8..HEAD -- spec/` empty) —
+  nothing to decompose.
+- **Drain**: `.flume/inbox.md` already empty (header only, drained last
+  tick) — nothing to route.
+- **Promote**: one `blockedBy` entry in the queue, `CJS-CONTEXT-REFUSAL`
+  → `EXIT-CODE-CONTRACT`. `EXIT-CODE-CONTRACT` is still present and
+  `open` in `pending-now` (hasn't shipped), so the block doesn't lift —
+  mechanically checked, not promoted.
+- All four trigger conditions absent this tick. `pending.json`,
+  `open-questions.md`, `inbox.md` written back byte-identical; this file
+  is the only substantive change, logging the verification so the next
+  tick doesn't have to re-derive it from scratch.
+
+## Prior tick's derive (for continuity)
+
+Full narrative in commit `a3acea8` body and `git show a3acea8:.flume/plan/state.md`.
+Short version: `spec/RELEASE-v0.7.md` landed (8 sections), decomposed into
+the 6 queue entries below; inbox's one entry drained into
+CJS-CONTEXT-REFUSAL + PREPACK-BUILD; all 3 prior open questions closed by
+the spec itself.
 
 ## Queue (6)
 
@@ -77,15 +46,14 @@ was the heaviest dimension by far; drain and a light audit rode alongside).
 
 ## Open questions (0)
 
-None live. See "This tick" above for how the prior three closed.
+None live; unchanged from prior tick's closure (see `open-questions.md`).
 
 ## Writable-paths / trunk
 
-- Wrote `.flume/plan/pending.json` (6 entries), `.flume/plan/state.md`,
-  `.flume/plan/open-questions.md` (collapsed to a closure note), and
-  `.flume/inbox.md` (one entry drained, header preserved) — all four are
-  this phase's writable paths, nothing else touched.
-- Trunk: HEAD `fc5b79b` at tick start, tree clean besides untracked
-  `.flume/loop.pid` (unwritable runtime path, left alone).
+- `pending.json`, `open-questions.md`, `inbox.md` written back
+  byte-identical this tick (verified, not touched) — only `state.md`
+  changed, to log the zero-delta verification.
+- Trunk: HEAD `a3acea8` at tick start and unchanged, tree clean besides
+  untracked `.flume/loop.pid` (unwritable runtime path, left alone).
 
 Plan continues: no
