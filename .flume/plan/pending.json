@@ -1,40 +1,5 @@
 [
   {
-    "tag": "CLI-JUNCTION-SAFE-ENTRY",
-    "summary": "Compare realpaths for invokedDirectly per spec/RELEASE-v0.7.md §3",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "3. CLI entry survives junctions"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "src/cli.ts:846-848 invokedDirectly check: resolve argv[1] via fs.realpathSync before comparing to import.meta.url, per §3 guards (argv[1] undefined -> not direct; realpathSync throws -> fall back to today's raw comparison)."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under [Unreleased] Fixed."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "dist/cli.js reached through a directory-junction-equivalent path (realpath differs from argv[1]) still runs main(); a plain module import runs nothing; realpathSync throwing (e.g. path doesn't exist) falls back to the raw comparison without crashing the import."
-      }
-    ],
-    "acceptance": "dist/cli.js reached through a directory junction executes the requested command; a plain module import runs nothing.",
-    "notes": "Node's require.main===module ESM equivalent; already researched and confirmed in open-questions.md (no competing idiom)."
-  },
-  {
     "tag": "HARNESS-BLOCK-EFFECTIVE-FENCE",
     "summary": "Harness block states effective (narrowed) fence on scoped ticks per spec/RELEASE-v0.7.md §2",
     "per": {
