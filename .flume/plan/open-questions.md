@@ -9,131 +9,71 @@ Status markers:
 
 <!-- questions below this line -->
 
-## EXIT-CODE-CONTRACT: entry.files omits the test edits the spec-required behavior change forces, and two locked existing assertions directly contradict the new contract
+## TAG-PATTERN-SLICE-CONSTRAINT: rendered pending-entry schema omits the `[a-z0-9]+` slice constraint TAG_PATTERN enforces
 
-**PARKED** — not a routine "tests[] belongs in files[]" gap (the standing
-rule already covers that shape); this one also needs a design call on how
-`shipped`/`errored` cross the loop's process boundary.
+**NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home (no
+shipped section governs `PendingSchema.ts`'s self-consistency — v0.7 §1
+is this same "engine misstates its own enforcement" theme, but its
+declared blast radius excludes `PendingSchema.ts`).
 
-Attempted this tick; did not ship (per the build prompt's own escape
-hatch: don't touch paths outside the entry's declared write fence). Two
-distinct blockers, both traced by reading the current implementation
-before writing anything:
+Drained from inbox (jeff pass, DAL job mining): `TAG_PATTERN`
+(`src/PendingSchema.ts:71`) requires a tag's parenthesized slice to match
+`[a-z0-9]+` — lowercase only, no underscores — but `renderSchemaForPrompt`
+never states that constraint. A `DAL-REWIRE(usp_Filter_Get)`-shaped tag
+(mixed case, underscore) passes the rendered schema and fails the real
+regex, burning a full tick revert (`bb3ef7f2b2`, centercode-platform).
 
-**1. The declared fence is insufficient (familiar shape).** `entry.files`
-(edit) = `src/Dispatcher.ts`, `src/cli.ts`, `CHANGELOG.md`. `entry.tests`
-names `tests/Dispatcher.test.ts`, `tests/cli.test.ts`,
-`tests/loop-process-boundary.integration.test.ts` — none folded into
-`files.edit`, so the write guard (`entryPaths ∪ entryChannelPaths`,
-`src/Dispatcher.ts:1152-1160`) reverts any commit touching them. A prior
-attempt this tick already hit exactly this (see `<prior-attempt>`
-digest: `5307975` reverted for touching all three). This half is the
-same shape as `CLI-JUNCTION-SAFE-ENTRY` / `GATECONTEXT-REPOROOT` below —
-this doc's standing rule (tests[] paths belong in files[]) applies.
+Two fix directions:
+1. Widen the paren-slice group (e.g. to `[A-Za-z0-9_]+`) to tolerate
+   real-world identifier-shaped slices like DB object names.
+2. Render the real constraint into the tag line instead.
 
-**2. Unlike those two precedents, this isn't just missing *new*
-coverage — existing assertions assert the literal opposite of the new
-contract, on the only channel that crosses the loop's process
-boundary.** `flume loop` re-execs `flume tick` per iteration (§2) and
-observes *only* the child's exit code + on-disk baton — no in-process
-`TickOutcome` survives the boundary. Two tests lock the two halves of
-that one integer today:
+Leaning option 1 — the DAL example is a legitimate tag a plan agent has
+no reason to reject; narrowing the prompt to match an arbitrarily strict
+regex is more churn than widening the regex. Needs a spec home (e.g. one
+short section covering both this and PENDING-NOTES-CAP-VISIBILITY below,
+since both are the same `renderSchemaForPrompt`-vs-`PendingSchema.ts`
+drift class) before it can carry a `per` cite.
 
-- `tests/cli.test.ts:204-212` ("chain resolution failure (§3, other
-  Axis-C member) → 1") locks `tickExitCode({failed: true})` to `1`.
-- `tests/Dispatcher.test.ts:2995-3023` ("ungated resolution failure:
-  child exits non-zero → supervisor logs and proceeds, never crashes
-  (§3)") locks `superviseLoop` to *continue* (not abort) when a child
-  exits `1` — and its own scenario name is literally the mount-dead
-  class v0.7 §4 now requires to abort-on-first-occurrence.
+## PENDING-NOTES-CAP-VISIBILITY: derivation-time prompt never states the notes ≤500-char cap the commit-time gate enforces
 
-The same integer cannot mean "chain resolution failed, exit 1" *and*
-"the loop should treat exit 1 as abort-worthy" without one of these two
-tests changing — there is no implementation of §4 that leaves both
-green. (A new exit-code constant sibling to `EX_TERMINAL_MISCONFIG`,
-sketched as one option in the entry's own notes, would still require
-rewriting `tests/cli.test.ts:211`'s expected value and
-`tests/Dispatcher.test.ts:2995`'s scenario/title to the new contract —
-not additive coverage, a semantics change to existing assertions.)
+**NEEDS AMENDMENT** — fix direction is clear (surface the cap in
+`renderSchemaForPrompt`'s notes line); blocked on the same spec-home gap
+as TAG-PATTERN-SLICE-CONSTRAINT above.
 
-**3. A real open design question rides along, not just a fence gap.**
-`entry.tests` (Dispatcher.test.ts) also wants: "a run with one errored
-tick and one shipped entry reports `shipped>0` and `errored>0`."
-`superviseLoop`'s only per-iteration signal is the child's exit code
-(`src/Dispatcher.ts:1795-1813`, `stdio: "inherit"` — no pipe, so
-`SuperviseResult` cannot recover a per-tick shipped/errored classification
-from stdout today without a stdio-capture change with its own tradeoffs
-against the agent's live-streamed output). Getting `shipped`/`errored`
-counts out of `SuperviseResult` needs one of: (a) more exit-code
-granularity than a single non-terminal/non-mount-dead bucket allows, (b)
-a small per-tick disk artifact the supervisor reads between iterations
-(disk-is-truth is already the loop's model), or (c) switching child
-stdio to piped + parsed. This is an API-surface call the collaboration
-rule says not to make silently.
+Drained from inbox (jeff pass, DAL job mining): the `notes` field's
+~500-char zod cap is enforced only by the commit-time validator;
+`renderSchemaForPrompt` never states it, so plan discovers the cap only
+by reverting — two DAL-job ticks did exactly that. Same drift class as
+TAG-PATTERN-SLICE-CONSTRAINT, narrower fix: add the cap to the rendered
+`notes` line (mirroring however `summary`'s ≤200 cap is already
+rendered, if it is — worth checking at fix time).
 
-Options for the re-filed entry:
-1. Fold `tests/Dispatcher.test.ts`, `tests/cli.test.ts`,
-   `tests/loop-process-boundary.integration.test.ts` into `files.edit`
-   (mechanical fix for blocker 1), **and** have the entry's notes commit
-   to one shape for blocker 3 up front (new exit-code constant + a
-   disk-read per iteration for shipped/errored counts is the cheapest
-   combination that reuses the existing process-per-tick model) so build
-   isn't the one deciding the API surface.
-2. Split into two entries: one for "mount-dead aborts immediately" (exit
-   code only, no shipped/errored counting) and a follow-up for the
-   shipped/errored summary reporting, so the harder design question
-   doesn't block the simpler fail-fast behavior.
+Recommend folding both this and TAG-PATTERN-SLICE-CONSTRAINT into one
+spec entry once a human opens a home for `PendingSchema.ts`
+self-consistency fixes.
 
-Leaning option 2 — smaller blast radius per entry, and the fail-fast half
-has a much more mechanical fix than the counting half — but this is an
-architecture/API-surface call, flagging rather than deciding unilaterally
-per `.claude/rules/collaboration.md`.
+<!-- none open this tick — all questions closed by spec/RELEASE-v0.7.md or by acting on the research the write-up itself already converged on:
 
-## SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS: a build commit touching only entryChannelPaths gets removed from pending.json as if shipped
+- "EXIT-CODE-CONTRACT: entry.files omits the test edits the spec-required
+  behavior change forces, and two locked existing assertions directly
+  contradict the new contract" — the write-up's own analysis already
+  converged on option 2 (split, smaller blast radius) with reasoning, so
+  per collaboration.md ("if research yields a clear answer... propose it
+  directly, skip the park") this tick acted on it directly instead of
+  re-parking: re-filed EXIT-CODE-CONTRACT as abort-only (test edits now
+  folded into files per blocker 1) and split the shipped/errored counting
+  into a new follow-up, EXIT-CODE-CONTRACT-COUNTS, blockedBy the first —
+  its notes commit to a per-tick disk artifact (disk-is-truth) rather
+  than a stdio-pipe change, so build isn't deciding that API surface.
+- "SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS: a build commit touching only
+  entryChannelPaths gets removed from pending.json as if shipped" — v0.7
+  §12 gives this its spec home; filed as SHIP-DETECTION-DECLARED-FILES-DIFF.
+  Near-miss confirming the urgency: 19be056 briefly shipped
+  EXIT-CODE-CONTRACT off f5b60e1's park-only commit; an operator caught
+  and reset it before this tick landed. Ship this one soon.
 
-**NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home
-before it can be a pending entry (no section currently governs this
-classification).
-
-Caught by this tick's commit-delta audit: `8f11af9`
-(`build(HARNESS-BLOCK-EFFECTIVE-FENCE): park`) committed only
-`.flume/plan/open-questions.md` — the always-writable
-`entryChannelPaths` channel (RELEASE-v0.4.md §5) — no `entry.files`
-path touched, a spec-sanctioned park of a judgment call
-(`.claude/rules/collaboration.md`, *Inform before parking*). But
-`runFanoutEntry` (`src/Dispatcher.ts:1033`) classifies *any* commit
-(`postHead !== preHead`) as `committed: true` with no check on which
-paths changed; the wave loop (`~L849`) then cherry-picks it, the
-`afterMerge` gates pass trivially (nothing in it can break them), and
-`shipped.push(r.entry)` fires. `35f8f96` (`chore(flume): ship
-HARNESS-BLOCK-EFFECTIVE-FENCE`) removed the entry from `pending.json`
-even though no implementation landed — the entry silently vanished
-from the backlog. Re-filed this tick (caught only by manual audit).
-
-RELEASE-v0.2.md §6's no-commit taxonomy (`gate-revert` /
-`voluntary-bail` / `platform-preempt`) doesn't name this case — all
-three are *no-commit* outcomes; this is a commit that happened, passed
-every gate, and still shouldn't count as shipped.
-
-Options for a human/spec call:
-1. A commit whose cherry-picked diff touches zero of
-   `entry.files.{new,edit,retire}` (verified by diff, not just "a
-   commit exists") still cherry-picks onto trunk (the channel content
-   needs to land) but is excluded from `shippedTags` / does not remove
-   the entry from `pending.json`. No new `TickOutcome` variant — a diff
-   check gating the `shipped.push` line in `src/Dispatcher.ts`.
-2. Same effect, modeled as a fourth no-commit-adjacent classification
-   (`channel-only`) alongside RELEASE-v0.2.md §6's three, if the
-   taxonomy is judged the right layer to carry it.
-3. Do nothing, rely on plan's per-tick audit to catch every recurrence
-   — the cost just observed (a full audit pass, and a near-miss on
-   catching it at all).
-
-Leaning option 1 (minimal, mechanical, no new taxonomy surface) but
-this changes `shippedTags`/`TickOutcome` semantics that RELEASE-v0.2
-§6 already owns — flagging rather than deciding unilaterally.
-
-<!-- none open this tick — the one carried question closed by routing, and all four prior questions closed by spec/RELEASE-v0.7.md or by filing a follow-up entry:
+- (earlier closures, unchanged from prior ticks:)
 
 - "CLI-JUNCTION-SAFE-ENTRY: entry.tests names a file outside entry.files
   scope" — same shape as GATECONTEXT-REPOROOT-TESTS below: 08c2ace
