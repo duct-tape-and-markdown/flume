@@ -1,48 +1,5 @@
 [
   {
-    "tag": "HARNESS-BLOCK-EFFECTIVE-FENCE",
-    "summary": "Harness block states effective (narrowed) fence on scoped ticks per spec/RELEASE-v0.7.md §2",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "2. Harness block states the effective fence"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "prependHarnessBlock (src/Prompt.ts:218) and RenderOptions: on a tick carrying assignedEntry, render entry.files ∪ phase.entryChannelPaths as the revert boundary and phase.writablePaths separately as the outer ceiling, per §2. Unscoped rendering stays byte-identical."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Thread assignedEntry: entry into the fanout renderPrompt call (~src/Dispatcher.ts:1014) so Prompt.ts can render the narrowed fence."
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "Rewrite the §\"The <harness> block\" worked example (docs/CHAIN-AUTHORING.md:733-753) to show the narrowed scoped-tick rendering instead of the collapsed one."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under [Unreleased] Fixed."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Prompt.test.ts",
-        "asserts": "a scoped tick's rendered <harness> block names entry.files ∪ entryChannelPaths as the commit-must-touch-exactly-these fence and phase.writablePaths as a separately-named outer ceiling; an unscoped tick's rendered prompt is byte-identical to today's collapsed rendering."
-      }
-    ],
-    "acceptance": "A scoped tick's rendered prompt names exactly the fence the write guard (src/Dispatcher.ts runAfterCommitGates, ~L1141-1160) will enforce; an unscoped tick's prompt is byte-identical to 0.6.2.",
-    "notes": "The write guard this must match is already implemented (spec/RELEASE-v0.4.md §5) — this entry only makes the pre-commit prompt truthful, no guard-logic change. <prior-attempt> retry feedback is unchanged."
-  },
-  {
     "tag": "EXIT-CODE-CONTRACT",
     "summary": "Mount-dead aborts immediately; loop/job run exit non-zero iff errored-and-nothing-shipped, per spec/RELEASE-v0.7.md §4",
     "per": {
