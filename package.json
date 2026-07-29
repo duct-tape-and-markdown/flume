@@ -45,6 +45,7 @@
     "test:integration": "VITEST_LANE=integration vitest run",
     "smoke:install": "node scripts/smoke-install.mjs",
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm build",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {

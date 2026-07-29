@@ -18,6 +18,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   a bare tick), so gates stop reinventing the `git rev-parse
   --show-toplevel` + fallback helper themselves.
 
+### Fixed
+
+- `"prepack": "pnpm build"` — `npm pack` (and `pnpm smoke:install`) now
+  rebuilds `dist/` before packing instead of shipping whatever happens to
+  be on disk.
+
 ## [0.6.2]
 
 Patch: the friction channel's lifecycle, guaranteed by the engine without
