@@ -48,7 +48,14 @@
       }
     ],
     "acceptance": "A run with one errored tick and one shipped entry exits 0 and its summary names the error.",
-    "notes": "Design ratified by the operator's 2026-07-29 §4 amendment: exit codes carry class only (settled/errored/mount-dead); a per-tick disk artifact carries counts. Child stdio stays inherit — piped-and-parsed stdout is explicitly declined (live-streamed agent output is load-bearing)."
+    "notes": "Design ratified by the operator's 2026-07-29 §4 amendment: exit codes carry class only (settled/errored/mount-dead); a per-tick disk artifact carries counts. Child stdio stays inherit — piped-and-parsed stdout is explicitly declined (live-streamed agent output is load-bearing).",
+    "observedFiles": [
+      "CHANGELOG.md",
+      "src/Dispatcher.ts",
+      "src/cli.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/cli.test.ts"
+    ]
   },
   {
     "tag": "CJS-CONTEXT-REFUSAL",
