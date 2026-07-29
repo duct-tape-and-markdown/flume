@@ -9,6 +9,52 @@ Status markers:
 
 <!-- questions below this line -->
 
+## HARNESS-BLOCK-EFFECTIVE-FENCE: shipping breaks an existing out-of-scope test, not just a coverage gap
+
+**PARTIALLY ADDRESSED** — implementation verified locally (tsc clean,
+spec-conformant per RELEASE-v0.7.md §2); not shipped. `files` needs to
+grow before this can land — this is not closeable by a follow-up
+coverage entry alone.
+
+`prependHarnessBlock` on a scoped tick must render `entry.files ∪
+phase.entryChannelPaths` as the effective fence (§2). But
+`tests/Dispatcher.test.ts:1442` ("reverts a path outside entry scope but
+inside phase globs; the retry prompt names it") asserts
+`expect(prompts[1]).not.toContain("- src/a.ts")` against the retry
+prompt for an entry whose `files.edit` is `["src/a.ts"]` — i.e. it
+encodes the *old* collapsed rendering (entry.files never named in the
+harness block) as a correctness invariant. Implementing §2 correctly
+makes that assertion false: the retry prompt's harness block now
+legitimately lists `src/a.ts` as part of the effective fence.
+`tests/Dispatcher.test.ts` is outside this entry's `files`.
+
+This is a harder version of the standing GATECONTEXT-REPOROOT-TESTS /
+CLI-JUNCTION-SAFE-ENTRY-TESTS shape (`entry.tests` naming paths outside
+`entry.files`): those precedents shipped `files`-only because the
+missing coverage didn't break anything already green. Here, shipping
+`files`-only still fails the `afterMerge` vitest gate outright — a
+regression in an unrelated existing assertion, not a coverage gap — so
+there is no partial-ship path; the whole commit reverts regardless of
+what accompanies it. This is the second attempt at this entry to reach
+this conclusion (first: voluntary-bail, unshipped, no commit).
+
+Options for closing, for plan to choose between:
+1. Fold `tests/Dispatcher.test.ts` into this entry's `files.edit`,
+   narrowing the `L1517` assertion to the substring it actually means to
+   pin (the `<prior-attempt>` / gate-detail line, e.g.
+   `"src/stray.ts (inside phase writablePaths but outside"`) rather than
+   a blanket `not.toContain` over the whole prompt — since the harness
+   block correctly naming entry-declared files is now intended behavior.
+   Bundle `tests/Prompt.test.ts` in the same `files.edit` for the new
+   coverage `entry.tests` already calls for.
+2. Split into two coupled entries landed in the same wave (impl +
+   existing-test fix as one; new coverage as a strict follow-up) — no
+   material difference from option 1 beyond bookkeeping.
+
+No third option observed: the `files.edit` fence and the `afterMerge`
+full-suite gate leave no way to land the §2 behavior change without
+touching the one test that encodes the pre-§2 invariant.
+
 <!-- none open this tick — the one carried question closed by routing, and all four prior questions closed by spec/RELEASE-v0.7.md or by filing a follow-up entry:
 
 - "CLI-JUNCTION-SAFE-ENTRY: entry.tests names a file outside entry.files
