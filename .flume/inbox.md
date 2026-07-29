@@ -34,10 +34,3 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
-
-## 2026-07-27 — chain load in a CJS-context consumer: product question + stale-dist pack hazard (human, via interactive cut session)
-
-Background (fixed same day, same session — kept here only as context for the open items): CI had been red at setup since 2026-07-22 (`pnpm/action-setup` pinned to 9 vs the packages-less `pnpm-workspace.yaml` from 28eb00f; pin bumped to 10), and both smoke consumers (`scripts/smoke-install.mjs` and the inline one in ci.yml) were CJS-context `npm init -y` fixtures that failed chain load against a provably good tarball (`"type": "module"` now set in both). Still open, to route:
-
-- (a) Product question — is a CJS-context consumer repo (no `"type": "module"` in the repo's own package.json) a supported host for `.flume/chain.ts`? Today the chain load dies with a raw tsx stack (tsx 4.21.0: `Cannot use import statement outside a module`; tsx 4.23.1: ERR_MODULE_NOT_FOUND with the tsImport `?namespace` query percent-encoded into the path). Verified against published 0.6.0 too — longstanding, not a 0.6.2 regression. Either support the context or detect it and fail with a usage-shaped message.
-- (b) Stale-dist pack hazard, lower severity — `npm pack` runs no build (only `prepublishOnly` exists), so a local `pnpm smoke:install` packs whatever `dist/` is on disk; a stale-dist run tests the wrong code silently. CI is unaffected (explicit `pnpm build` precedes both smoke steps). A `prepack: pnpm build` would close it.

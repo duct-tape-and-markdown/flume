@@ -1,1 +1,129 @@
-[]
+[
+  {
+    "tag": "GATECONTEXT-REPOROOT",
+    "summary": "Add GateContext.repoRoot per spec/RELEASE-v0.7.md §6",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "6. `GateContext.repoRoot`" },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Gate.ts", "description": "Add repoRoot field to GateContext interface, per §6." },
+        { "path": "src/Dispatcher.ts", "description": "Pass repoRoot: this.opts.repoRoot at both GateContext construction sites (afterMerge ~L797-802, afterCommit ~L1164-1170)." },
+        { "path": "CHANGELOG.md", "description": "Add bullet under [Unreleased] Added." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Gate.test.ts", "asserts": "GateContext carries repoRoot." },
+      { "path": "tests/Dispatcher.test.ts", "asserts": "a gate run in a fanout worktree receives that worktree's repoRoot per §6 acceptance; existing gates keep passing." }
+    ],
+    "acceptance": "A gate running in a fanout worktree receives that worktree's root; existing gates keep passing untouched.",
+    "notes": "Smallest of the line, no behavior change beyond the new field. Two call sites in Dispatcher.ts already hold this.opts.repoRoot in scope."
+  },
+  {
+    "tag": "PREPACK-BUILD",
+    "summary": "Add prepack script per spec/RELEASE-v0.7.md §7",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "7. `prepack` builds" },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "package.json", "description": "Add \"prepack\": \"pnpm build\" per §7." },
+        { "path": "CHANGELOG.md", "description": "Add bullet under [Unreleased] Fixed." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [],
+    "acceptance": "pnpm smoke:install from a dirty dist/ state exercises the current source (npm pack triggers prepack, rebuilding dist/ first).",
+    "notes": "No test file: acceptance is exercised by the existing scripts/smoke-install.mjs CI step already running pnpm build beforehand; this closes the local/uncontrolled-pack gap §7 names. CI unaffected."
+  },
+  {
+    "tag": "CLI-JUNCTION-SAFE-ENTRY",
+    "summary": "Compare realpaths for invokedDirectly per spec/RELEASE-v0.7.md §3",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "3. CLI entry survives junctions" },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "src/cli.ts:846-848 invokedDirectly check: resolve argv[1] via fs.realpathSync before comparing to import.meta.url, per §3 guards (argv[1] undefined -> not direct; realpathSync throws -> fall back to today's raw comparison)." },
+        { "path": "CHANGELOG.md", "description": "Add bullet under [Unreleased] Fixed." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/cli.test.ts", "asserts": "dist/cli.js reached through a directory-junction-equivalent path (realpath differs from argv[1]) still runs main(); a plain module import runs nothing; realpathSync throwing (e.g. path doesn't exist) falls back to the raw comparison without crashing the import." }
+    ],
+    "acceptance": "dist/cli.js reached through a directory junction executes the requested command; a plain module import runs nothing.",
+    "notes": "Node's require.main===module ESM equivalent; already researched and confirmed in open-questions.md (no competing idiom)."
+  },
+  {
+    "tag": "HARNESS-BLOCK-EFFECTIVE-FENCE",
+    "summary": "Harness block states effective (narrowed) fence on scoped ticks per spec/RELEASE-v0.7.md §2",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "2. Harness block states the effective fence" },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Prompt.ts", "description": "prependHarnessBlock (src/Prompt.ts:218) and RenderOptions: on a tick carrying assignedEntry, render entry.files ∪ phase.entryChannelPaths as the revert boundary and phase.writablePaths separately as the outer ceiling, per §2. Unscoped rendering stays byte-identical." },
+        { "path": "src/Dispatcher.ts", "description": "Thread assignedEntry: entry into the fanout renderPrompt call (~src/Dispatcher.ts:1014) so Prompt.ts can render the narrowed fence." },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "Rewrite the §\"The <harness> block\" worked example (docs/CHAIN-AUTHORING.md:733-753) to show the narrowed scoped-tick rendering instead of the collapsed one." },
+        { "path": "CHANGELOG.md", "description": "Add bullet under [Unreleased] Fixed." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Prompt.test.ts", "asserts": "a scoped tick's rendered <harness> block names entry.files ∪ entryChannelPaths as the commit-must-touch-exactly-these fence and phase.writablePaths as a separately-named outer ceiling; an unscoped tick's rendered prompt is byte-identical to today's collapsed rendering." }
+    ],
+    "acceptance": "A scoped tick's rendered prompt names exactly the fence the write guard (src/Dispatcher.ts runAfterCommitGates, ~L1141-1160) will enforce; an unscoped tick's prompt is byte-identical to 0.6.2.",
+    "notes": "The write guard this must match is already implemented (spec/RELEASE-v0.4.md §5) — this entry only makes the pre-commit prompt truthful, no guard-logic change. <prior-attempt> retry feedback is unchanged."
+  },
+  {
+    "tag": "EXIT-CODE-CONTRACT",
+    "summary": "Mount-dead aborts immediately; loop/job run exit non-zero iff errored-and-nothing-shipped, per spec/RELEASE-v0.7.md §4",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "4. Exit-code contract — the run never lies to CI" },
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "Dispatcher.tick() chain-resolution-failure path (~L483-499) already yields TickOutcome.failed=true for the load/mount class (chain module cannot load, state root missing, declaration invalid) — give this class a distinguishable signal (new exit-code constant sibling to EX_TERMINAL_MISCONFIG at L372, or a TickOutcome field) so superviseLoop can tell it apart from other tick outcomes. superviseLoop (~L1718-1784) must abort the run on first mount-dead occurrence instead of logging-and-continuing to --max, mirroring the existing EX_TERMINAL_MISCONFIG fail-fast branch (~L1744-1764). Track per-run whether any tick shipped a commit and whether any tick errored, so the run's own outcome can report both." },
+        { "path": "src/cli.ts", "description": "tickExitCode (~L130-133) and the loop command's exit mapping (~L771-777, also governs job run per docs/CLI.md L94): implement the exit non-zero iff (>=1 tick errored AND 0 entries shipped) rule; empty-queue settle and partial-success-with-surfaced-errors both stay 0, with tick errors named in the completion summary. Update HELP_SUB tick/loop exit-code prose (~L199-220) to match." },
+        { "path": "CHANGELOG.md", "description": "Add bullets under [Unreleased] Added (run exit-code contract)." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "superviseLoop aborts non-zero on first mount-dead tick instead of burning to maxTicks; a run with one errored tick and one shipped entry reports shipped>0 and errored>0." },
+      { "path": "tests/cli.test.ts", "asserts": "an unloadable chain exits non-zero after one tick's worth of work; an empty-queue run exits 0; a run with one errored tick and one shipped entry exits 0 with the error named in the summary." },
+      { "path": "tests/loop-process-boundary.integration.test.ts", "asserts": "loop process boundary still exits correctly for the hibernation and --max cases per the revised contract." }
+    ],
+    "acceptance": "A run against an unloadable chain exits non-zero after one tick's worth of work; an empty-queue run exits 0; a run with one errored tick and one shipped entry exits 0 and its summary names the error.",
+    "notes": "Tick-level agent failures (crash, gate revert) keep today's semantics — only the mount-dead class halts the run. Design of the new signal (exit code vs TickOutcome field) is build's call; must not collide with EX_TERMINAL_MISCONFIG=78 (Axis-C orphaned awake flags), a distinct failure class."
+  },
+  {
+    "tag": "CJS-CONTEXT-REFUSAL",
+    "summary": "Detect CJS-context chain-load failure and refuse with usage-shaped message per spec/RELEASE-v0.7.md §5",
+    "per": { "path": "spec/RELEASE-v0.7.md", "section": "5. CJS-context host: detect and refuse" },
+    "gate": { "kind": "blockedBy", "tag": "EXIT-CODE-CONTRACT" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "loadChainModule (src/Dispatcher.ts:234-274): catch tsx module-context signature family (tsx 4.21 'Cannot use import statement outside a module'; tsx 4.23 ERR_MODULE_NOT_FOUND with tsImport '?namespace' percent-encoded) and rethrow a distinguishable usage-shaped error naming \"type\": \"module\" as the fix, per §5. Non-matching errors pass through unchanged (no false positives)." },
+        { "path": "src/cli.ts", "description": "Surface the usage-shaped CJS-context refusal as exit 2, consistent with other usage errors and with the EXIT-CODE-CONTRACT taxonomy this entry rides on top of. Underlying loader error stays available as debug/verbose detail, not the headline." },
+        { "path": "CHANGELOG.md", "description": "Add bullet under [Unreleased] Fixed." }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "loadChainModule against the two known tsx CJS-context signatures (4.21 and 4.23 shape) throws the usage-shaped refusal naming \"type\": \"module\"; a genuinely missing dependency's error passes through unchanged." },
+      { "path": "tests/cli.test.ts", "asserts": "chain load in a CJS-context fixture prints the usage-shaped refusal and exits 2." }
+    ],
+    "acceptance": "Chain load in a CJS-context fixture (the npm init -y smoke shape, pre-fix) prints the usage-shaped refusal naming \"type\": \"module\" and exits 2; a genuinely missing dependency still surfaces as itself.",
+    "notes": "Blocked on EXIT-CODE-CONTRACT: exit 2 must sit consistently alongside that entry's mount-dead/errored-vs-shipped taxonomy rather than being designed twice. Detection signature is the empirical tsx 4.21/4.23 family from the inbox finding (c11d96b fixed the two known fixture instances by adding type:module; this entry makes the failure legible generically, not just those two fixtures)."
+  }
+]
