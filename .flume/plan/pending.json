@@ -1,44 +1,5 @@
 [
   {
-    "tag": "SHIP-DETECTION-DECLARED-FILES-DIFF",
-    "summary": "Gate shipped.push on a diff against entry.files before removing an entry from pending.json, per spec/RELEASE-v0.7.md §12",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "12. Ship detection requires a declared-files diff"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Before shipped.push(r.entry) (~L849): git.showNameOnly(repoRoot, mergedSha) against entry.files.{new,edit,retire} (not touchedPaths()) — zero overlap stays pending with a distinct log line paired with the existing cherry-pick log; any overlap ships unchanged, per §12."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under Fixed per §13."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Assert the channel-only vs. normal-ship predicate per §12 acceptance."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a channel-only commit (touches only phase.entryChannelPaths) cherry-picks onto trunk but its entry stays in pending.json and out of shippedTags; a normal ship (diff touches ≥1 declared file, with or without also touching channels/CHANGELOG) is unaffected."
-      }
-    ],
-    "acceptance": "A channel-only commit cherry-picks onto trunk but its entry stays pending and out of shippedTags; a normal ship is shipped and removed from pending exactly as today.",
-    "notes": "Closes SHIP-DETECTION-COUNTS-PARK-ONLY-COMMITS — spec now gives it a home. Near-miss since parking: 19be056 briefly shipped EXIT-CODE-CONTRACT off a park-only commit (f5b60e1 touched only open-questions.md); an operator caught it and reset HEAD before this tick. Same bug — would have deleted a real unshipped entry had it stuck. Ship soon."
-  },
-  {
     "tag": "EXIT-CODE-CONTRACT",
     "summary": "Mount-dead chain-load failure aborts the run immediately (non-zero) instead of burning to --max, per spec/RELEASE-v0.7.md §4",
     "per": {
