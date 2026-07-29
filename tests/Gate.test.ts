@@ -246,6 +246,18 @@ describe("writablePathsGate — git-backed checks", () => {
   });
 });
 
+describe("GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
+  it("passes through when set", () => {
+    const c = ctx(process.cwd(), { repoRoot: "/some/repo/root" });
+    expect(c.repoRoot).toBe("/some/repo/root");
+  });
+
+  it("stays undefined when omitted", () => {
+    const c = ctx(process.cwd());
+    expect(c.repoRoot).toBeUndefined();
+  });
+});
+
 describe("afterCommit vs afterMerge wiring", () => {
   it("shellGate carries the declared lifecycle phase", () => {
     const earlyGate = shellGate({

@@ -3305,6 +3305,118 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
   });
 });
 
+describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
+  it("singleton tick: gate's repoRoot equals the primary checkout (same as cwd)", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let gateRepoRoot: string | undefined;
+    let gateCwd: string | undefined;
+    const capturingGate: Gate = {
+      name: "capture-reporoot",
+      when: "afterCommit",
+      run(ctx) {
+        gateRepoRoot = ctx.repoRoot;
+        gateCwd = ctx.cwd;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [capturingGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(gateRepoRoot).toBe(fx.repo);
+    expect(gateRepoRoot).toBe(gateCwd);
+  });
+
+  it("fanout tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk", async () => {
+    await writePending(fx.repo, [makeEntry("RR-FANOUT", ["src/rr.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let commitRepoRoot: string | undefined;
+    let commitCwd: string | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-reporoot",
+      when: "afterCommit",
+      run(ctx) {
+        commitRepoRoot = ctx.repoRoot;
+        commitCwd = ctx.cwd;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    let mergeRepoRoot: string | undefined;
+    let mergeCwd: string | undefined;
+    const captureMerge: Gate = {
+      name: "capture-merge-reporoot",
+      when: "afterMerge",
+      run(ctx) {
+        mergeRepoRoot = ctx.repoRoot;
+        mergeCwd = ctx.cwd;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [captureCommit, captureMerge],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "rr-fanout": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/rr.ts",
+          "ok\n",
+          "build(RR-FANOUT): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["RR-FANOUT"]);
+
+    // afterCommit runs on the worktree branch, before cherry-pick: its
+    // repoRoot is that worktree's root, not the trunk repo.
+    expect(commitRepoRoot).toBeDefined();
+    expect(commitRepoRoot).toBe(commitCwd);
+    expect(commitRepoRoot).not.toBe(fx.repo);
+    expect(commitRepoRoot).toContain("rr-fanout");
+
+    // afterMerge runs on the trunk after the cherry-pick lands.
+    expect(mergeRepoRoot).toBe(fx.repo);
+    expect(mergeRepoRoot).toBe(mergeCwd);
+  }, 20_000);
+});
+
 describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   // A minimal, otherwise-valid chain.ts; only the `friction` field varies
   // per test. `frictionSource` is a raw TS expression (or "" to omit the
