@@ -23,6 +23,7 @@ import {
   parsePending,
   touchedPaths,
   type EntryExtension,
+  type PendingEntry,
 } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
@@ -217,6 +218,16 @@ export interface PendingGateOptions {
    * itself (`{ writablePaths, entryChannelPaths }` is all this gate reads).
    */
   targetFence: Pick<Phase, "writablePaths" | "entryChannelPaths">;
+  /**
+   * Which entries the fence pre-check applies to. Default `() => true` —
+   * every entry is fence-checked, matching pre-fenceWhen behavior exactly.
+   * A chain that exempts park-exempt `gate.kind` values (e.g. `"parked"`,
+   * `"deferred"`) from the build fence supplies a predicate here; the
+   * engine ships the injection point, the chain owns which `gate.kind`
+   * values count as park-exempt (engine-boundary.md's mechanism-vs-
+   * convention test).
+   */
+  fenceWhen?: (entry: PendingEntry) => boolean;
 }
 
 /**
@@ -235,6 +246,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     ...opts.targetFence.writablePaths,
     ...(opts.targetFence.entryChannelPaths ?? []),
   ];
+  const fenceWhen = opts.fenceWhen ?? (() => true);
   return {
     name: "pending-gate",
     when: "afterCommit",
@@ -259,6 +271,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
         };
       }
       const violations = parsed.entries
+        .filter((entry) => fenceWhen(entry))
         .map((entry) => ({
           tag: entry.tag,
           offending: touchedPaths(entry).filter((p) => !matchesAny(p, fence)),

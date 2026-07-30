@@ -537,4 +537,75 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     const result = await gate.run(ctx(dir));
     expect(result.ok).toBe(true);
   });
+
+  it("omitting fenceWhen fences every entry, matching current behavior", async () => {
+    await writePending([
+      {
+        ...validEntry,
+        gate: { kind: "parked", reason: "blocked on human decision" },
+        files: {
+          new: [],
+          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          retire: [],
+        },
+      },
+    ]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/outside the target fence/);
+  });
+
+  it("fenceWhen exempts an entry it returns false for", async () => {
+    await writePending([
+      {
+        ...validEntry,
+        gate: { kind: "parked", reason: "blocked on human decision" },
+        files: {
+          new: [],
+          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          retire: [],
+        },
+      },
+    ]);
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      fenceWhen: (entry) => entry.gate.kind !== "parked",
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("fenceWhen still checks entries it returns true for", async () => {
+    await writePending([
+      {
+        ...validEntry,
+        gate: { kind: "parked", reason: "blocked on human decision" },
+        files: {
+          new: [],
+          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          retire: [],
+        },
+      },
+      {
+        tag: "OTHER-TAG",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: {
+          new: [],
+          edit: [{ path: "docs/nope.md", description: "also nope" }],
+          retire: [],
+        },
+      },
+    ]);
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      fenceWhen: (entry) => entry.gate.kind !== "parked",
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.details ?? "").toContain("OTHER-TAG");
+    expect(result.details ?? "").not.toContain("SOME-TAG");
+  });
 });
