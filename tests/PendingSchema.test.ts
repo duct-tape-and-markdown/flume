@@ -105,16 +105,36 @@ describe("parsePending — rejects malformed entries", () => {
     expect(result.errors[0]!.message).toMatch(/invalid JSON/);
   });
 
-  it("rejects a tag that violates TAG_PATTERN", () => {
+  it("rejects a tag containing whitespace (v0.8 §3: mechanical safety only)", () => {
     const result = parsePending(
       JSON.stringify([
-        { ...baseEntry, gate: { kind: "open" }, tag: "lowercase-bad" },
+        { ...baseEntry, gate: { kind: "open" }, tag: "DAL REWIRE" },
       ]),
     );
     expect(result.ok).toBe(false);
     const tagErr = result.errors.find((e) => e.path === "tag");
     expect(tagErr).toBeDefined();
     expect(tagErr!.index).toBe(0);
+  });
+
+  it("rejects a tag containing a path separator", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "DAL/REWIRE" },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
+  });
+
+  it("rejects a tag past the derived length bound", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "A".repeat(217) },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 
   it("rejects an unknown gate.kind", () => {
@@ -219,9 +239,77 @@ describe("chain-declared extension (v0.8 §2)", () => {
 
   it("throws on an extension that shadows a core field — chain-config defect", () => {
     const shadowing = {
-      tag: { schema: z.string(), hint: `"..."` },
+      files: { schema: z.string(), hint: `"..."` },
     } satisfies EntryExtension;
     expect(() => composePendingList(shadowing)).toThrow(/shadows/);
+  });
+});
+
+describe("tag grammar reduces to mechanical safety (v0.8 §3)", () => {
+  it("DAL-REWIRE(usp_Filter_Get) validates against the bare core", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          ...baseEntry,
+          gate: { kind: "open" },
+          tag: "DAL-REWIRE(usp_Filter_Get)",
+        },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries[0]!.tag).toBe("DAL-REWIRE(usp_Filter_Get)");
+  });
+
+  it("accepts a lowercase tag under the bare core (grammar beyond mechanical safety is a chain's choice, not the engine's)", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  });
+
+  it("a chain-declared `tag` refinement composes as an intersection (rejects lowercase, accepts ALL-CAPS)", () => {
+    const allCapsRefinement = {
+      tag: {
+        schema: z.string().regex(/^[A-Z][A-Z0-9]*(?:[-.][A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/),
+        hint: `"ALL-CAPS-WITH-DASHES" | "TAG-NAME(slice)"`,
+      },
+    } satisfies EntryExtension;
+
+    const lowercase = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
+      ]),
+      allCapsRefinement,
+    );
+    expect(lowercase.ok).toBe(false);
+    expect(lowercase.errors.some((e) => e.path === "tag")).toBe(true);
+
+    const valid = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER-TRIAGE-MIG" },
+      ]),
+      allCapsRefinement,
+    );
+    expect(valid.ok, JSON.stringify(valid.errors)).toBe(true);
+  });
+
+  it("a permissive refinement still can't widen past the engine's mechanical floor", () => {
+    // A refinement that only checks the first character says nothing about
+    // whitespace — the core pattern still refuses it, because composition is
+    // an intersection: both must pass.
+    const startsWithLetter = {
+      tag: { schema: z.string().regex(/^[A-Z]/), hint: `"..."` },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER TRIAGE" },
+      ]),
+      startsWithLetter,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 });
 
@@ -363,7 +451,7 @@ describe("renderSchemaForPrompt", () => {
       "Each pending entry MUST conform to this shape (fields not listed here are rejected):
 
       {
-        "tag": "ALL-CAPS-WITH-DASHES" | "TAG-NAME(slice)",   // unique; appears in commit msg
+        "tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>",   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
         "gate": { "kind": "open" }                                  // ready to ship
               | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
               | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
@@ -405,6 +493,27 @@ describe("renderSchemaForPrompt", () => {
       testExtension,
     );
     expect(result.ok).toBe(false);
+  });
+
+  it("states the in-force tag constraint — core alone", () => {
+    const rendered = renderSchemaForPrompt();
+    expect(rendered).toContain(`"tag": "<letters/digits/._()- only`);
+    expect(rendered).not.toContain("AND");
+  });
+
+  it("states the in-force tag constraint — core plus the chain's refinement", () => {
+    const withTagRefinement = {
+      tag: {
+        schema: z.string().regex(/^[A-Z]/),
+        hint: `"ALL-CAPS-WITH-DASHES"`,
+      },
+    } satisfies EntryExtension;
+    const rendered = renderSchemaForPrompt(withTagRefinement);
+    expect(rendered).toContain(
+      `"tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>" AND "ALL-CAPS-WITH-DASHES"`,
+    );
+    // Not rendered a second time as a generic extension field line.
+    expect(rendered.match(/"tag":/g)).toHaveLength(2); // core "tag" line + gate.blockedBy's "tag" example
   });
 });
 

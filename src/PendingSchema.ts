@@ -54,20 +54,34 @@ const Gate = z.discriminatedUnion("kind", [
 // ---------- entry core ----------
 
 /**
- * Tag format: ALL-CAPS body, dot- or dash-separated segments, optional
- * (slice) suffix.
+ * Filesystem NAME_MAX (Linux ext4/APFS/NTFS, conservatively shared across
+ * platforms): the ceiling any single path component must clear. The
+ * tightest raw-tag consumer is the revert-note filename (Dispatcher.ts
+ * `writeRevertNote`, `<stamp>--<tag>--reverted.md`), whose fixed overhead is
+ * a 24-char ISO stamp + 2 + 2 + `reverted.md` (11) = 39 chars — every other
+ * consumer (worktree/branch slug, commit-message token) is looser, so this
+ * bound covers them too.
+ */
+const TAG_MAX_LENGTH = 255 - 39;
+
+/**
+ * Tag grammar reduces to mechanical safety only (v0.8 §3): the engine
+ * requires of a tag only what its mechanics need — non-empty, a charset
+ * safe everywhere the engine writes it (a commit-message token, a
+ * worktree/branch slug via `slugify`, a raw filename component), and a
+ * length bound derived from the tightest real consumer above. No
+ * whitespace, no path separators.
+ *
+ *   DAL-REWIRE(usp_Filter_Get)
  *   SURFACE-CTA-MIG
- *   ROSTER-TRIAGE-MIG(a)
  *   OBS4.2
- *   PT4.7(c)
- *   PT4.5c
  *   MAINTAIN-tsc-a31893e
  *
- * Dots support version-like cascade numbering (OBS4.2, PT4.7); dashes
- * support the canonical MIG / MAINTAIN / decision-name format. Lowercase
- * segments are allowed after the first dash for things like `tsc-a31893e`.
+ * A chain wanting stricter grammar (e.g. an ALL-CAPS convention) layers a
+ * refinement on `tag` via its declared extension (§2) — see
+ * `composePendingList`.
  */
-const TAG_PATTERN = /^[A-Z][A-Z0-9]*(?:[-.][A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/;
+const TAG_PATTERN = new RegExp(`^[A-Za-z0-9._()-]{1,${TAG_MAX_LENGTH}}$`);
 
 /**
  * The engine-core entry shape: one unit of build work, reduced to what the
@@ -146,7 +160,7 @@ export interface EntryExtensionField {
  */
 export type EntryExtension = Record<string, EntryExtensionField>;
 
-/** Core field names — an extension may not shadow them. */
+/** Core field names — an extension may not shadow them, except `tag` (refined, not replaced; see below). */
 const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
 
 /**
@@ -154,6 +168,13 @@ const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
  * the list validator. Strict: fields neither core nor declared fail.
  * Throws on an extension that shadows a core field — that is a chain-config
  * defect, not a pending.json defect.
+ *
+ * `tag` is the one core field an extension MAY declare (v0.8 §3): a chain
+ * wanting stricter grammar (e.g. an ALL-CAPS convention) than the engine's
+ * mechanical-safety charset layers a refinement there. It composes as an
+ * intersection — both the core pattern and the chain's schema must pass —
+ * so a chain declaring `tag` narrows the grammar, it can never widen past
+ * (or replace) the engine's mechanical floor.
  */
 export function composePendingList(
   extension?: EntryExtension,
@@ -162,15 +183,21 @@ export function composePendingList(
     return z.array(PendingEntryCore) as unknown as z.ZodType<PendingEntry[]>;
   }
   for (const name of Object.keys(extension)) {
-    if (CORE_FIELDS.has(name)) {
+    if (name !== "tag" && CORE_FIELDS.has(name)) {
       throw new Error(
         `entryExtension field "${name}" shadows an engine-core field`,
       );
     }
   }
   const shape = Object.fromEntries(
-    Object.entries(extension).map(([name, field]) => [name, field.schema]),
+    Object.entries(extension)
+      .filter(([name]) => name !== "tag")
+      .map(([name, field]) => [name, field.schema]),
   );
+  const tagRefinement = extension.tag;
+  if (tagRefinement) {
+    shape.tag = PendingEntryCore.shape.tag.and(tagRefinement.schema);
+  }
   // .extend on a strictObject stays strict: core + declared fields only.
   return z.array(PendingEntryCore.extend(shape)) as unknown as z.ZodType<
     PendingEntry[]
@@ -315,11 +342,18 @@ export function parsePendingLoose(raw: string): ParseResult {
  * facing, not a JSON Schema document. Brevity matters more than completeness.
  */
 export function renderSchemaForPrompt(extension?: EntryExtension): string {
+  const tagRefinement = extension?.tag;
+  const coreTagHint = `"<letters/digits/._()- only, no whitespace, ≤${TAG_MAX_LENGTH} chars>"`;
+  const tagHint = tagRefinement
+    ? `${coreTagHint} AND ${tagRefinement.hint}`
+    : coreTagHint;
+
   const extensionLines = Object.entries(extension ?? {})
+    .filter(([name]) => name !== "tag")
     .map(([name, field]) => `  "${name}": ${field.hint}`)
     .join(",\n");
 
-  const coreLines = `  "tag": "ALL-CAPS-WITH-DASHES" | "TAG-NAME(slice)",   // unique; appears in commit msg
+  const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship
         | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
         | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed

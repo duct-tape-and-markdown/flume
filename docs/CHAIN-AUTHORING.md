@@ -1071,6 +1071,38 @@ const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
 A chain that declares no `entryExtension` gets the bare core — entries
 carry only the mechanical fields, and anything extra is rejected.
 
+## 11. Refining the tag grammar
+
+The engine requires of `tag` only what its mechanics need: a conservative
+charset (letters, digits, `._()-`), no whitespace, and a length bound
+derived from the tightest place the engine writes a raw tag into a
+filename (a worktree/branch slug, a revert-note filename). That's
+mechanical safety, not house style — `DAL-REWIRE(usp_Filter_Get)` validates
+against the bare core.
+
+A chain wanting a stricter convention (an ALL-CAPS naming scheme, a
+required prefix, whatever your team's grammar is) declares it as a `tag`
+entry in `entryExtension` — the one core field name the extension is
+allowed to declare. It composes as an **intersection**, not a replacement:
+both the engine's mechanical floor and your schema must pass, so your
+refinement can only narrow the grammar, never widen past (or disable) the
+engine's own safety check.
+
+```ts
+const entryExtension = {
+  tag: {
+    schema: z.string().regex(/^[A-Z][A-Z0-9]*(?:[-.][A-Za-z0-9]+)*(?:\([a-z0-9]+\))?$/),
+    hint: `"ALL-CAPS-WITH-DASHES" | "TAG-NAME(slice)"`,
+  },
+  // ...your other declared fields
+} satisfies EntryExtension;
+```
+
+`renderSchemaForPrompt` renders whichever constraint is actually in force —
+the core hint alone with no `tag` entry declared, or the core hint plus
+your refinement's `hint` when one is — so the plan prompt and the parser
+never disagree about what a valid tag looks like.
+
 ## Putting it together
 
 ```ts

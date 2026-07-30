@@ -29,6 +29,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Changed
 
+- `tag`'s grammar reduces to mechanical safety only (v0.8 §3): the engine
+  requires a conservative charset (letters, digits, `._()-`), no
+  whitespace, and a length bound derived from the tightest place the
+  engine writes a raw tag into a filename — no longer the ALL-CAPS/dash
+  convention the engine used to enforce. `DAL-REWIRE(usp_Filter_Get)` now
+  validates against the bare core. A chain wanting stricter grammar
+  declares a `tag` refinement via `Chain.entryExtension` — the one core
+  field name the extension may declare — which composes as an
+  intersection with the engine's mechanical floor, never a replacement of
+  it; `renderSchemaForPrompt` states whichever constraint is actually in
+  force.
 - The gate kind `requiresDockerHost` generalizes to
   `requiresCapability(capability)` (v0.8 §4): a pending entry names any
   environment fact it needs (`gate: { kind: "requiresCapability", capability:

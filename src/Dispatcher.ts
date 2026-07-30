@@ -365,7 +365,20 @@ type AgentTermination =
   | { kind: "clean"; stdout: string }
   | { kind: "process-failure"; failureClass: string };
 
-/** Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt keying. */
+/**
+ * Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt
+ * keying. Never lengthens the input (runs of disallowed chars collapse to a
+ * single `-`), so anything bounding raw `tag` length also bounds this.
+ *
+ * `tag` itself is length-bounded at the schema gate (v0.8 §3,
+ * `PendingSchema.ts` `TAG_MAX_LENGTH`), derived from this module's own
+ * tightest raw-tag consumer — so every tag-derived path component here
+ * stays within filesystem NAME_MAX (255) by construction, no runtime check
+ * needed: this `slug`/`createWorktree`'s worktree-dir and branch-name path
+ * component, `writeRevertNote`'s `` `${stamp}--${entry.tag}--reverted.md` ``
+ * (the tightest fit, at 39 fixed chars of overhead), and
+ * `harvestFriction`'s `` `${tag}--${file.name}` ``.
+ */
 function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 }
