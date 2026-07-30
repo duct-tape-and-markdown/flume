@@ -387,10 +387,21 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
     ? `${coreTagHint} AND ${tagRefinement.hint}`
     : coreTagHint;
 
-  const extensionLines = Object.entries(extension ?? {})
-    .filter(([name]) => name !== "tag")
-    .map(([name, field]) => `  "${name}": ${field.hint}`)
-    .join(",\n");
+  const extensionEntries = Object.entries(extension ?? {}).filter(
+    ([name]) => name !== "tag",
+  );
+  const extensionLines = extensionEntries
+    .map(([name, field], i) => {
+      const line = `  "${name}": ${field.hint}`;
+      if (i === extensionEntries.length - 1) return line;
+      // The separator must land before a hint's trailing "// comment", not
+      // after it — appending "," past "//" gets swallowed into the comment
+      // text instead of delimiting the next field.
+      const commentIndex = line.indexOf("//");
+      if (commentIndex === -1) return `${line},`;
+      return `${line.slice(0, commentIndex).trimEnd()},  ${line.slice(commentIndex)}`;
+    })
+    .join("\n");
 
   const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship

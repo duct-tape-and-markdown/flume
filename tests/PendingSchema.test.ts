@@ -552,6 +552,23 @@ describe("renderSchemaForPrompt", () => {
     expect(rendered).toContain(`"notes": "≤500 chars"`);
   });
 
+  it("preserves the list separator when a hint ends in a trailing line comment", () => {
+    const withCommentedHint = {
+      summary: {
+        schema: z.string(),
+        hint: `"one-line what" // freeform`,
+      },
+      notes: {
+        schema: z.string().optional(),
+        hint: `"≤500 chars"`,
+      },
+    } satisfies EntryExtension;
+    const rendered = renderSchemaForPrompt(withCommentedHint);
+    expect(rendered).toContain(
+      `  "summary": "one-line what",  // freeform\n  "notes": "≤500 chars"`,
+    );
+  });
+
   it("no drift: exactly the fields the composed validator accepts are rendered", () => {
     // The rendered schema and the validator come from the same declaration —
     // every declared field name appears in the render, and a field absent
