@@ -9,6 +9,37 @@ Status markers:
 
 <!-- questions below this line -->
 
+## SETUP-WORKTREE-DOGFOOD-ADOPTION: §11's dogfood chain.ts adoption bullet shipped nothing — entry cleared from pending.json anyway
+
+**PARKED** — direction is fully mechanical; blocked purely on the
+writable-paths fence, not on any judgment call. Needs a direct operator
+`chore(flume):` commit, same shape as PROMPTS-BUILD-FENCE-INSTRUCTION.
+
+`spec/RELEASE-v0.7.md` §11 names three deliverables: (1) ship the
+`setupWorktree` helper, (2) rewrite the `CHAIN-AUTHORING.md` worked
+example, (3) "Flume's own dogfood chain (`.flume/chain.ts`) adopts the
+helper in place of `buildSetupWorktree` — dogfood discipline, flume ships
+flume." `5a56f7a` shipped (1) and (2) only — correctly, since the
+re-filed `SETUP-WORKTREE-HELPER` entry (prior tick) dropped
+`.flume/chain.ts` from `files.edit`, because build's `writablePaths`
+explicitly exclude it (`chain.ts:247` — "build does NOT touch
+`.flume/{chain.ts,prompts/**}`... edits flow through `chore(flume):`
+commits, not build ticks"). `ac8c973` then cleared the entry from
+`pending.json` entirely, as if §11 had fully landed. It hasn't: verified
+this tick that `.flume/chain.ts:95-103`'s `buildSetupWorktree` still
+hardcodes `pnpm install --frozen-lockfile` directly — no import of the
+new `../src/setupWorktree.ts` export, no call to it.
+
+Plan can't file this as a pending entry (build can't ship it — same
+fence) and plan's own `writablePaths` don't reach `.flume/chain.ts`
+either, so this tick can't apply it directly. Recommended: an operator
+session applies a small `chore(flume):` commit replacing
+`buildSetupWorktree`'s body (`.flume/chain.ts:95-103`) with a call to the
+exported `setupWorktree(ctx.worktreePath)`, then removes the now-dead
+`buildSetupWorktree` wrapper if nothing else references it. Precedent:
+PROMPTS-BUILD-FENCE-INSTRUCTION, closed the same way (operator commit
+`6005318`).
+
 ## HANDOFF-NOCOMMIT-BLIND: `TickResult` can't distinguish voluntary-bail from a genuine no-op, so no chain handoff can wake plan on bail
 
 **NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home (v0.7

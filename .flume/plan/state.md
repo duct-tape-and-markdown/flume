@@ -1,79 +1,62 @@
 # State
 
-Phase: **v0.7 line in flight** — 1 entry in `pending.json`, `gate.kind:
-"open"`. Mode this tick: **drain** (commit-delta since the last `plan:`
-commit is one `chore(flume)` inbox-only commit; no spec-delta; the
-meaningful dimension is inbox-drain, plus a fix surfaced while draining
-it).
+Phase: **v0.7 line in flight, queue empty**. Mode this tick: **audit**
+(commit-delta since the last `plan:` commit, `a8091ba`, is two commits —
+a `build:` ship and a `chore(flume):` clear — with no spec-delta and an
+empty inbox; audit is the only dimension carrying real content).
 
 ## This tick
 
-**Commit-delta** (1 commit, `16155cb`): a `chore(flume)` commit that only
-appended the inbox entry itself (`.flume/inbox.md`) — no `src/`, chain,
-or prompt changes to cross-check against a `per.section`. Audit
-dimension is a no-op this tick; nothing to route beyond the inbox drain
-below.
+**Commit-delta** (2 commits since `a8091ba`):
+- `5a56f7a` (`build:`) — ships the `setupWorktree` lockfile-aware helper
+  per `spec/RELEASE-v0.7.md` §11. Cross-checked the diff against §11's
+  three named deliverables: (1) helper ships at `src/setupWorktree.ts`,
+  re-exported from `src/index.ts` alongside `builtinGates`, matching the
+  spec's three branches (pnpm-lock.yaml → `pnpm install
+  --frozen-lockfile`; package-lock.json → `npm ci`; neither → clean
+  refusal) — verified `tests/setupWorktree.test.ts` covers all three plus
+  both-present (pnpm wins) and install-failure-propagates edge cases; (2)
+  `docs/CHAIN-AUTHORING.md`'s worked example rewritten to show the helper
+  as the recommended default; CHANGELOG bullet present. (1) and (2) are
+  genuinely shipped and correct. (3) — "Flume's own dogfood chain
+  (`.flume/chain.ts`) adopts the helper in place of `buildSetupWorktree`"
+  — was correctly *not* attempted by this commit, since the re-filed
+  entry (last tick) dropped `.flume/chain.ts` from `files.edit` as
+  off-fence for build.
+- `ac8c973` (`chore(flume):`) — clears `SETUP-WORKTREE-HELPER` from
+  `pending.json` (ship-detection: the commit's files matched the entry's
+  declaration exactly). But this leaves §11 dimension (3) permanently
+  unshipped with no queue entry tracking it — verified this tick via
+  `grep` that `.flume/chain.ts:95-103`'s `buildSetupWorktree` still
+  hand-rolls `pnpm install --frozen-lockfile` directly, no reference to
+  the new exported helper.
 
-**Spec-delta**: none (only a chore commit landed; no `spec/` changes).
+Routed as a new open question, **SETUP-WORKTREE-DOGFOOD-ADOPTION**
+(PARKED) — not NEEDS AMENDMENT, because no spec gap exists (§11 already
+names the deliverable); the blocker is purely the writable-paths fence
+(neither build's nor plan's `writablePaths` reach `.flume/chain.ts`).
+Same shape and same resolution path as the already-closed
+PROMPTS-BUILD-FENCE-INSTRUCTION: needs a direct operator `chore(flume):`
+commit, not a phase entry.
 
-**Drain** (`.flume/inbox.md`, 1 entry — "voluntary-bail waves carry no
-plan-wake signal"): researched before parking, per `collaboration.md`.
-Traced past the inbox's own framing ("chain handoff should treat
-voluntary-bail as wake-plan") to the actual mechanism:
+**Spec-delta**: none (`git diff a8091ba..HEAD -- spec/` empty).
 
-- `Dispatcher.tick` (`src/Dispatcher.ts:710-717`) destructures `{
-  result, noCommit }` from the wave runner but only ever passes `result`
-  into `phase.handoff(result)` — `noCommit` (the §6 classification:
-  `voluntary-bail` / `platform-preempt` / `gate-revert`) is discarded
-  before handoff ever sees it.
-- `TickResult` (`src/Phase.ts:52-75`) has no field carrying that
-  classification. On a pure-bail wave, `committed: false`, `shippedTags:
-  []`, `gateResults: []` — indistinguishable from a genuine "nothing
-  pickable" no-op wave.
-- Conclusion: no chain author's `handoff`, however written, can act on
-  bail today. This is an engine visibility gap, not a `.flume/chain.ts`
-  authoring mistake — routed as **NEEDS AMENDMENT**
-  (`HANDOFF-NOCOMMIT-BLIND`) in `open-questions.md` rather than filed as
-  a pending entry, because the fix touches `Phase.ts`/`Dispatcher.ts`
-  outside any shipped section's blast radius, and because step 3 of the
-  fix (updating build's `handoff`) edits `.flume/chain.ts`, which v0.7
-  §1 explicitly bars this line from touching ("No chain or prompt
-  content ships from this line"). Candidate home: a v0.8 continuation of
-  v0.7's "engine truth-telling" theme, or its own short section.
-- While tracing the bail, checked whether the underlying entry
-  (`SETUP-WORKTREE-HELPER`) that bailed twice had actually been fixed by
-  a prior tick — it had not: `pending.json` still declared
-  `.flume/chain.ts` under `files.edit`, which is structurally off-fence
-  for build (verified against `writablePaths` in `.flume/chain.ts:189-250`
-  — no `.flume/**` glob present beyond the one channel path). Per spec
-  §11's own text, flume's dogfood chain.ts adoption is a named
-  deliverable of that section, but the engine's phase fence makes it
-  undeliverable *by build* regardless of how the entry declares its
-  files — the same shape already closed once in this doc
-  (`PROMPTS-BUILD-FENCE-INSTRUCTION`: applied directly via an operator
-  chore commit, not routed through a phase). Acted on the clear answer
-  directly (collaboration.md — skip the park when research converges):
-  re-filed `SETUP-WORKTREE-HELPER` dropping `.flume/chain.ts` from
-  `files.edit`; the dogfood-adoption bullet now ships via a follow-up
-  `chore(flume)` commit once the helper entry lands, not folded into
-  build's own commit. This should stop the bail loop the inbox entry
-  described, independent of whether `HANDOFF-NOCOMMIT-BLIND` ever ships.
+**Drain**: `.flume/inbox.md` is header-only — nothing to route.
 
-**Promote**: no entry in `pending-now` carries `gate.kind: "blockedBy"`
-— nothing to flip.
+**Promote**: `pending-now` is `[]` — no entry carries `gate.kind:
+"blockedBy"` to flip.
 
-## Queue (1)
+## Queue (0)
 
-1. `SETUP-WORKTREE-HELPER` — open, re-filed this tick (files no longer
-   include `.flume/chain.ts`); should be pickable by build without
-   bailing now.
+`pending.json` stays `[]`. Nothing pickable for build this cycle; the
+only actionable item (dogfood adoption) is fence-blocked for every phase
+and now lives in open-questions.md awaiting an operator commit.
 
-Next tick's real work is a **build** tick picking off the queue head.
+## Open questions (7)
 
-## Open questions (6)
-
-- `HANDOFF-NOCOMMIT-BLIND` — NEEDS AMENDMENT (new this tick, see Drain
+- `SETUP-WORKTREE-DOGFOOD-ADOPTION` — PARKED (new this tick, see Drain
   above).
+- `HANDOFF-NOCOMMIT-BLIND` — NEEDS AMENDMENT, unchanged.
 - `ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH` — PARKED, unchanged.
 - `TAG-PATTERN-SLICE-CONSTRAINT` — NEEDS AMENDMENT, unchanged.
 - `PENDING-NOTES-CAP-VISIBILITY` — NEEDS AMENDMENT, unchanged.
@@ -83,16 +66,13 @@ Next tick's real work is a **build** tick picking off the queue head.
 
 ## Writable-paths / trunk
 
-- `pending.json`: rewritten this tick — `SETUP-WORKTREE-HELPER`'s
-  `files.edit` dropped `.flume/chain.ts` (off-fence for build); all
-  other fields unchanged. Verified parses (`node -e "JSON.parse(...)"`),
-  `summary` 147/200 chars, `notes` 305/500 chars.
+- `pending.json`: unchanged (`[]` at tick start and end — nothing to
+  add, nothing to promote).
 - `state.md`: rewritten this tick (this file).
-- `open-questions.md`: appended `HANDOFF-NOCOMMIT-BLIND`; all five prior
-  questions left byte-identical.
-- `inbox.md`: the one drained entry removed; header preserved; file is
-  now header-only again.
-- Trunk: HEAD `16155cb` at this pass's start; tree clean besides
+- `open-questions.md`: appended `SETUP-WORKTREE-DOGFOOD-ADOPTION`; all
+  six prior questions left byte-identical.
+- `inbox.md`: untouched — already header-only, nothing to drain.
+- Trunk: HEAD `ac8c973` at this pass's start; tree clean besides
   untracked `.flume/loop.pid` (live supervisor's runtime artifact, not a
   plan concern).
 
