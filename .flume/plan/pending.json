@@ -1,52 +1,5 @@
 [
   {
-    "tag": "ENGINE-PIN-HANDSHAKE",
-    "summary": "Global bin re-execs a bay's local install when present, refuses loudly when pinned-but-absent, per spec/RELEASE-v0.7.md §10",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "Before subcommand dispatch: three arms per §10 — local install at <bay>/.flume/node_modules/@dtmd/flume resolves → re-exec its CLI with the same argv/stdio; pinned in package.json but install absent → refuse exit 2 naming pin + readPackageVersion() (~L53-60); unpinned → unchanged."
-        },
-        {
-          "path": "bin/flume.js",
-          "description": "Adjust only if the arms can't live entirely inside src/cli.ts's entry — build's call which site hosts the re-exec."
-        },
-        {
-          "path": "bin/flume",
-          "description": "POSIX sibling; same caveat as bin/flume.js."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §14."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Version-stamped smoke fixtures distinguishing local vs global install per §10 acceptance."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "bay with local install present → any invocation re-execs it regardless of global version; local install removed on a pinned bay → refuses exit 2 naming pin + both versions; unpinned bay → byte-identical to today."
-      }
-    ],
-    "acceptance": "A bay with the local install present re-execs it regardless of the global engine's version; the same bay with the local install removed refuses (exit 2) naming the pin and both versions; an unpinned bay behaves byte-identical to today.",
-    "notes": "Reuses the existing win32-junction link machinery job new already provisions as the resolution signal — not redesigned. One hop only. Hosting site (cli.ts main() vs bin/ shims) is build's call; all candidate files declared so either choice stays in-fence."
-  },
-  {
     "tag": "SETUP-WORKTREE-HELPER",
     "summary": "Ship a pnpm/npm lockfile-aware setupWorktree helper; migrate the dogfood chain onto it, per spec/RELEASE-v0.7.md §11",
     "per": {
