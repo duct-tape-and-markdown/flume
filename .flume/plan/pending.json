@@ -1,47 +1,5 @@
 [
   {
-    "tag": "PENDING-GATE-BUILTIN",
-    "summary": "New pendingGate builtin: composed core+extension validation plus plan-time fence pre-check against the target phase's writablePaths, per v0.8 §6.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "6. `pendingGate`: composed validation and fence pre-check as a builtin"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "new pendingGate(opts) export validating pending.json against the composed core+extension schema (§2) at commit time; pre-checks each entry's files against the target phase's writablePaths ∪ entryChannelPaths, failing with offending paths named"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export pendingGate alongside the other builtinGates"
-        },
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "cover pendingGate: composed core+extension validation catches unknown fields; fence pre-check fails naming offending paths for a declared file outside the target phase's writablePaths; a valid queue passes"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Added bullet per §6"
-        }
-      ],
-      "retire": []
-    },
-    "tests": [
-      {
-        "path": "tests/Gate.test.ts",
-        "asserts": "a pending entry declaring a file outside the build fence fails the plan-side gate with the path named; a valid queue passes"
-      }
-    ],
-    "acceptance": "a pending entry declaring a file outside the build fence fails the plan-side gate with the path named; a valid queue passes; dogfood runs the builtin with its extension schema enforced.",
-    "notes": "Dogfood chain.ts replacing its hand-rolled pending-parse gate with this builtin is an operator leg (§6 dogfood adoption, same class as §2/§3) — not part of this entry's files. Extinguishes the GATECONTEXT-REPOROOT-TESTS/CLI-JUNCTION-SAFE-ENTRY-TESTS re-file class per §6's own text."
-  },
-  {
     "tag": "SECOND-REFERENCE-CHAIN",
     "summary": "Ship a single-phase reference chain (e.g. backlog-groomer) in examples/ with its own extension schema + tag refinement, exercising §§2–4 on the unpatched engine, per v0.8 §7.",
     "per": {
@@ -83,6 +41,7 @@
       ],
       "retire": []
     },
+    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
