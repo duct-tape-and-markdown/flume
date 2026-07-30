@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "tag": "CHANGELOG-UNRELEASED-POST-0.8.0-FIXES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "Re-open `## [Unreleased]` above `## [0.8.0]` (severed by a0e3236's release cut, which rolled the prior Unreleased straight into 0.8.0). Add two bullets for the commits landed since that cut: pin-handshake self-reference proceeds as authority (v0.7 §10 amendment, 21ff4e5) and pendingGate fenceWhen predicate (v0.8 §6, 11f2613). Match the bullet shape/detail level of existing 0.8.0-section entries (e.g. the pendingGate builtin bullet added in 26c0b06)."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Restore the every-shipped-change-gets-a-CHANGELOG-line convention: two post-0.8.0-cut build commits landed without one",
+    "per": {
+      "path": "spec/RELEASE-v0.8.md",
+      "section": "9. CHANGELOG"
+    },
+    "tests": [],
+    "acceptance": "CHANGELOG.md has an `## [Unreleased]` section documenting both post-0.8.0 fixes, ready for the next human-performed release cut",
+    "notes": "Audit finding, not spec drift: every prior build commit added its own CHANGELOG entry in-commit (e.g. 26c0b06, f55aa9a); 11f2613 and 21ff4e5 broke that pattern, and a0e3236's cut left no `[Unreleased]` header for them to land in. Doc-only; no test path."
+  }
+]
