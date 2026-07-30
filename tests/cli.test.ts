@@ -435,6 +435,26 @@ describe("engine↔pin handshake — v0.7 §10", () => {
     },
     30_000,
   );
+
+  it(
+    "a bay invoked via `job run <name>` (no --job flag) checks the same job-scoped install path the job-run rewrite would land on",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-jobrun-local-"));
+      try {
+        await writeLocalInstall(dir, "9.9.9-jobrun-fixture", "alpha");
+
+        const result = await runCli(dir, ["job", "run", "alpha"]);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain(
+          "LOCAL-INSTALL-RAN 9.9.9-jobrun-fixture job run alpha",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
 
 /**

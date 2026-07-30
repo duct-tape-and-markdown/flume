@@ -138,14 +138,34 @@ function readPin(repoRoot: string): string | undefined {
 }
 
 /**
- * Best-effort `--job`/`FLUME_JOB` peek for the handshake (v0.7 §10
- * amendment): `engineHandshake` runs ahead of every other line in `main()`,
- * before the real `--job` extraction below it, so it cannot reuse that
- * result. Re-derives just enough of `resolveStateDirs`'s own job resolution
- * — same precedence (`--job` flag over `FLUME_JOB` env), same default
- * shape (`<repoRoot>/.flume/jobs/<name>` when scoped) — to find the
- * `flumeDir` the real resolution will land on, without mutating `argv` or
- * `process.env` (a copy of `process.env` absorbs `resolveStateDirs`'s
+ * Best-effort peek at the `job run <name>` invocation form (v0.7 §10
+ * job-run-form amendment): mirrors main()'s own `cmd === "job" && rest[0]
+ * === "run"` rewrite (~line 791-808) just enough to recover `<name>` ahead
+ * of that rewrite — the handshake runs before it, so it can't reuse the
+ * result. Only the `--max N` shape is stripped (the one flag the real
+ * rewrite also strips before reading the name); anything else malformed is
+ * left for the real dispatch to reject with its own usage error.
+ */
+function handshakeJobRunName(argv: readonly string[]): string | undefined {
+  if (argv[0] !== "job" || argv[1] !== "run") return undefined;
+  const words = [...argv.slice(2)];
+  const maxIdx = words.indexOf("--max");
+  if (maxIdx >= 0) words.splice(maxIdx, 2);
+  const name = words[0];
+  return name && !name.startsWith("-") && words.length === 1 ? name : undefined;
+}
+
+/**
+ * Best-effort `--job`/`FLUME_JOB`/`job run <name>` peek for the handshake
+ * (v0.7 §10 amendment, extended for the job-run invocation form):
+ * `engineHandshake` runs ahead of every other line in `main()`, before the
+ * real `--job` extraction and before the `job run` rewrite below it, so it
+ * cannot reuse either result. Re-derives just enough of `resolveStateDirs`'s
+ * own job resolution — same precedence (`--job` flag over `FLUME_JOB` env),
+ * `job run <name>` (no `--job` flag) resolving the same as `--job <name>` —
+ * same default shape (`<repoRoot>/.flume/jobs/<name>` when scoped) — to find
+ * the `flumeDir` the real resolution will land on, without mutating `argv`
+ * or `process.env` (a copy of `process.env` absorbs `resolveStateDirs`'s
  * write-back). A `JobResolutionConflictError` here (both `--job` and an
  * explicit `FLUME_DIR` set) is swallowed: this is a read-only signal for
  * the handshake's own path check, not the authoritative resolution — that
@@ -154,7 +174,9 @@ function readPin(repoRoot: string): string | undefined {
 function handshakeFlumeDir(repoRoot: string, argv: readonly string[]): string {
   const jobIdx = argv.indexOf("--job");
   const jobValue = jobIdx >= 0 ? argv[jobIdx + 1] : undefined;
-  const jobFlag = jobValue && !jobValue.startsWith("-") ? jobValue : undefined;
+  const jobFlag =
+    (jobValue && !jobValue.startsWith("-") ? jobValue : undefined) ??
+    handshakeJobRunName(argv);
   try {
     return resolveStateDirs({ ...process.env }, repoRoot, jobFlag).flumeDir;
   } catch {

@@ -101,7 +101,10 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume` — the link
   `job new`'s `ensureFlumeLink` actually provisions — instead of a
   bare-bay path a job-scoped bay never populates. A bare bay's check is
-  unchanged.
+  unchanged. The handshake's job-scope peek now also recognizes the
+  `flume job run <name>` invocation form (previously only `--job`/
+  `FLUME_JOB`), so a job-run-driven bay checks the same job-scoped install
+  path instead of the bare-bay one.
 
 ## [0.6.2]
 
