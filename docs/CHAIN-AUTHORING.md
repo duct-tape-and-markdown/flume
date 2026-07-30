@@ -251,7 +251,7 @@ import {
 `pendingGate` replaces a hand-rolled "does `pending.json` parse" gate
 (below) with one that also catches a class of guaranteed-revert bug
 before it reaches build: it validates the queue against the composed
-core+extension schema (§10), then pre-checks every entry's declared
+core+extension schema (§2), then pre-checks every entry's declared
 `files` against `targetFence.writablePaths ∪ targetFence.entryChannelPaths`.
 An entry whose declaration can't survive that fence fails **here, at plan
 time, naming the offending paths** — instead of shipping through plan and
