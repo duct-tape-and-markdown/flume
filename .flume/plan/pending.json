@@ -76,53 +76,6 @@
     "notes": "Dogfood .flume/chain.ts's own extension declaration (summary/per/tests/acceptance/notes/schemaDelta fields) is operator-applied (§2/§3/§6 dogfood legs, chain.ts sits outside every phase's fence) — not part of this entry. This entry ships the engine mechanism plus internal call-site threading (Dispatcher/cli/job) so pre-adoption pending.json keeps parsing."
   },
   {
-    "tag": "TICK-VERDICT-ARTIFACT",
-    "summary": "One engine-written, chain-readable tick-verdict artifact (phase, tags, commit class, gate results, shipped tags, merge outcome), superseding last-tick.json, per v0.8 §5.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "5. Tick verdict: one facts artifact, engine-written, chain-read"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "new unified verdict-artifact write per tick at a stable state-dir path, superseding TickCountsRecord/writeTickCounts (lines 80-143); commitPendingUpdate's footprint generation (~1835-1885) sources from the same verdict record"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "loop/superviseLoop reads the verdict artifact instead of last-tick.json for counts/exit-code"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export a read accessor (last N verdicts) for chain use"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a committed tick, a gate-reverted tick, and a voluntary-bail tick each leave a verdict artifact carrying the facts; supervisor exit-code/count behavior is byte-identical to v0.7 §4"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Changed bullet per §5"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a chain reading last-N verdicts sees a reverted tick's violating paths; the artifact never carries interpretation fields, only facts"
-      }
-    ],
-    "acceptance": "a committed tick, a gate-reverted tick, and a voluntary-bail tick each leave a verdict artifact carrying the facts above; supervisor exit-code/count behavior is byte-identical to v0.7 §4, sourced from the verdict; a chain reading last-N verdicts sees a reverted tick's violating paths.",
-    "notes": "Supersedes three v0.7 partial channels: last-tick.json counts (Dispatcher.ts:80-143), §13 observedFiles footprints, and §15's in-process-only TickOutcome.noCommit (TICKRESULT-NOCOMMIT-CLASSIFICATION). No interpretation fields — facts only, per §5's own directive."
-  },
-  {
     "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY",
     "summary": "Widen TAG_PATTERN to mechanical safety only (charset, no whitespace, derived length bound); a chain refines further via its §2 extension, per v0.8 §3.",
     "per": {
