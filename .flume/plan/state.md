@@ -1,10 +1,9 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 §4 shipped (fb67f0b/90529d3);
-§5 shipped and audited clean; §8 shipped (fa59ab4/84747ff) and this
-tick's audit found a coverage gap (below); §§2,3,6,7 queued. Mode:
-**audit** (2 commits since last plan, no spec-delta, inbox empty, no
-promotions due).
+Phase: v0.7 fully shipped (§§1-17); v0.8 §§4,5,8 shipped; §§2,3,6,7
+queued. Mode: **maintain** (zero commits since last plan, no
+spec-delta, inbox empty, no promotions due — nothing to process this
+tick).
 
 ## Queue (5)
 
@@ -23,19 +22,10 @@ delta.
 
 ## Trunk
 
-HEAD `84747ff` at this pass's start, tree clean besides untracked
-`.flume/loop.pid` (live supervisor artifact). Audited `fa59ab4`
-(supervisorPolicy knobs) + `84747ff` (ship) against v0.8 §8: the
-Dispatcher-level mechanism and its `superviseLoop`-options test suite
-are sound and byte-identical-by-default as required, but the acceptance
-line ("a chain overriding the abort threshold changes supervisor
-behavior") was only proven at the options seam — `src/cli.ts`'s
-best-effort `resolveChain` + conditional-spread wiring that actually
-reads a chain's `supervisorPolicy` block has no test exercising the real
-CLI process, and `docs/CHAIN-AUTHORING.md` never gained a section for
-the field (unlike `capabilities`, §7). Filed as
-`SUPERVISOR-POLICY-CLI-COVERAGE`, open, no blockers. tsc clean;
-`pnpm test` 309 passed / 4 skipped.
+HEAD `0dec0a0` (last plan commit itself — no build tick landed since),
+tree clean besides untracked `.flume/loop.pid` (live supervisor
+artifact). No commit-delta, no spec-delta, inbox empty; all
+`blockedBy` tags in the queue still reference live entries, so no
+promotions fire.
 
-Plan continues: no — audit complete for this delta, inbox empty, no
-promotions due.
+Plan continues: no — nothing to process this tick.
