@@ -955,6 +955,25 @@ async function main(): Promise<number> {
       const { default: chain } = await diskChainLoader(configDir)();
       const line = await frictionCountLine(flumeDir, chain);
       if (line) console.log(line);
+      // v0.8 §4: name entries stuck on a capability this chain hasn't
+      // asserted — a `requiresCapability` skip must never be silent.
+      const capabilities = new Set(chain.capabilities ?? []);
+      const pendingPath = join(flumeDir, "plan", "pending.json");
+      if (existsSync(pendingPath)) {
+        const result = parsePending(readFileSync(pendingPath, "utf8"));
+        if (result.ok) {
+          for (const entry of result.entries) {
+            if (
+              entry.gate.kind === "requiresCapability" &&
+              !capabilities.has(entry.gate.capability)
+            ) {
+              console.log(
+                `${entry.tag}: skipped — missing capability "${entry.gate.capability}"`,
+              );
+            }
+          }
+        }
+      }
     } catch {
       // no chain, or a chain that fails to load — nothing to report
     }

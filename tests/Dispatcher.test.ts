@@ -2034,6 +2034,83 @@ describe("Dispatcher fanout — all entries fork-blocked", () => {
   });
 });
 
+describe("Dispatcher fanout — gate=requiresCapability (v0.8 §4)", () => {
+  it("builds an entry gated on a capability the chain asserts", async () => {
+    const entries: PendingEntry[] = [
+      {
+        ...makeEntry("GATED", ["src/gated.ts"]),
+        gate: { kind: "requiresCapability", capability: "docker-host" },
+      },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      capabilities: ["docker-host"],
+    };
+
+    const agent = fanoutAgent({
+      gated: (cwd) =>
+        writeAndCommit(cwd, "src/gated.ts", "ok\n", "build(GATED): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["GATED"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+
+  it("skips an entry gated on a capability the chain does not assert", async () => {
+    const entries: PendingEntry[] = [
+      {
+        ...makeEntry("GATED", ["src/gated.ts"]),
+        gate: { kind: "requiresCapability", capability: "docker-host" },
+      },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    // No `capabilities` declared — "docker-host" is not asserted.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const preHead = await head(fx.repo);
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({}), // never invoked — GATED must not be selected
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["GATED"]);
+  });
+});
+
 describe("Dispatcher fanout — chain.ts forkResolver export gates selection", () => {
   it("a chain-module forkResolver overrides the constructor default per tick", async () => {
     const entries = [

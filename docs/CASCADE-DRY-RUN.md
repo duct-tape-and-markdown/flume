@@ -122,16 +122,16 @@ acceptance that the agent does some disk-walking itself.
 Current posture leans accept-disk-walking: the rendered prompt's `<active-specs>`
 listing gives the agent the full corpus index.
 
-### 5. Schema-delta path lacks a Docker-host gate
+### 5. Schema-delta path lacks a docker-host capability assertion
 
 Cascade carries 7+ accumulated schema deltas pending `pnpm db:push
 --accept-data-loss` (per the Open Questions). The new schema has
-`gate: { kind: "requiresDockerHost" }` which the dispatcher treats as
-non-pickable by default. Wiring this requires:
+`gate: { kind: "requiresCapability", capability: "docker-host" }`, which the
+dispatcher treats as non-pickable unless the chain's declared `capabilities`
+(`Chain.capabilities`, v0.8 §4) asserts `"docker-host"`. Wiring this requires:
 
-- A way for the dispatcher to opt into `requiresDockerHost` (env flag /
-  CLI flag).
-- A pre-check that `docker info` succeeds before fanning out.
+- `chain.ts` probing `docker info` at load time and asserting
+  `capabilities: ["docker-host"]` when it succeeds.
 
 Deferred to v1 alongside the Docker sandbox provider.
 

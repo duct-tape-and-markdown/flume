@@ -889,6 +889,48 @@ no commit and the phase advances — a loud, visible signal (in `flume status`)
 that the next move needs a human decision, which is strictly safer than shipping
 onto sand. A fork-blocked entry is never marked failed and never reverted.
 
+## 7. Capability gating (`requiresCapability`)
+
+A `gate: { kind: "requiresCapability", capability: "docker-host" }` entry is
+pickable only when the chain has asserted that capability. Unlike the
+foundations governor (§6), which cross-cuts every gate kind, this is a gate
+kind itself — mutually exclusive with `open`, `blockedBy`, `parked`,
+`deferred`.
+
+Two pieces wire it up:
+
+1. **Plan declares the gate.** An entry whose work needs an environment fact
+   the runtime cannot assume — a running daemon, a bound port, a mounted
+   volume — carries `gate: { kind: "requiresCapability", capability: "..." }`
+   instead of `open`.
+2. **The chain asserts what's available.** `Chain.capabilities?: string[]` —
+   the environment facts this chain has verified. `chain.ts` is TypeScript,
+   so it may probe the environment at load time:
+
+```ts
+import { execFileSync } from "node:child_process";
+
+function dockerHostAvailable(): boolean {
+  try {
+    execFileSync("docker", ["info"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const chain: Chain = {
+  phases: [plan, build],
+  humanOnly: [],
+  capabilities: dockerHostAvailable() ? ["docker-host"] : [],
+};
+```
+
+An entry gated on an unasserted capability is skipped, never silently —
+`flume status` names the missing capability so a human sees why the queue is
+stuck on it, rather than reading a bare `hibernating`/`awake` line and
+guessing.
+
 ## Putting it together
 
 ```ts

@@ -37,14 +37,20 @@ const PerCitation = z.object({
  * - parked:             human action required (workshop, design call) before
  *                       the entry can be refined enough to ship.
  * - deferred:           carried indefinitely; no consumer surface yet.
- * - requiresDockerHost: env gate; dispatcher opts in at runtime (v1).
+ * - requiresCapability: pickable iff the named capability is asserted in the
+ *                       chain's declared `capabilities` (Chain.capabilities,
+ *                       src/Phase.ts) — generic environment-gated
+ *                       pickability (v0.8 §4).
  */
 const Gate = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("open") }),
   z.object({ kind: z.literal("blockedBy"), tag: z.string().min(1) }),
   z.object({ kind: z.literal("parked"), reason: z.string().min(1) }),
   z.object({ kind: z.literal("deferred"), reason: z.string().min(1) }),
-  z.object({ kind: z.literal("requiresDockerHost") }),
+  z.object({
+    kind: z.literal("requiresCapability"),
+    capability: z.string().min(1),
+  }),
 ]);
 
 const TestAssertion = z.object({
@@ -225,7 +231,7 @@ export function renderSchemaForPrompt(): string {
         | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
         | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
-        | { "kind": "requiresDockerHost" },                     // env gate (v1)
+        | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
   "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
   "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
     "new":  [ { "path": "...", "description": "..." } ],
@@ -246,19 +252,25 @@ Empty array is valid (means nothing pending).`;
 
 /**
  * An entry is pickable when every foundational fork it declares is resolved
- * AND its gate is open AND it is not waiting on environment capabilities the
- * dispatcher hasn't asserted. The dispatcher filters this further by checking
+ * AND its gate is open AND it is not waiting on a capability the chain
+ * hasn't asserted. The dispatcher filters this further by checking
  * `blockedBy` tags against shipped entries.
  *
  * `isForkResolved` is the foundations governor's injected predicate (§3): it
  * answers "is this open-question fork resolved?" for the consuming project.
  * It defaults to always-resolved, so a caller that supplies none — or an entry
  * that declares no `dependsOnForks` — behaves exactly as before.
+ *
+ * `capabilities` is the chain's declared `Chain.capabilities` (v0.8 §4) — the
+ * environment facts it asserts. Defaults to empty, so a `requiresCapability`
+ * gate is opt-in: unasserted by default, exactly as the env-gate variant it
+ * generalized defaulted to non-pickable.
  */
 export function isPickableNow(
   entry: PendingEntry,
   shippedTags: ReadonlySet<string>,
   isForkResolved: (slug: string) => boolean = () => true,
+  capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
   // Foundations governor: a settled gate is not enough — every declared fork
   // must resolve. Cross-cuts every gate kind, so it precedes the switch.
@@ -271,9 +283,8 @@ export function isPickableNow(
     case "parked":
     case "deferred":
       return false;
-    case "requiresDockerHost":
-      // The dispatcher decides at runtime; default false so it's opt-in.
-      return false;
+    case "requiresCapability":
+      return capabilities.has(entry.gate.capability);
   }
 }
 

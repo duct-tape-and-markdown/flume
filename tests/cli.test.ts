@@ -1104,6 +1104,98 @@ describe("flume status — friction line (§6)", () => {
 });
 
 /**
+ * A minimal chain declaring `capabilities` (or omitting it) — same shape as
+ * `minimalChainSrc`, varied for the v0.8 §4 capability-skip status tests
+ * below.
+ */
+function capabilityChainSrc(capabilities?: string[]): string {
+  return (
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    (capabilities !== undefined
+      ? `  capabilities: ${JSON.stringify(capabilities)},\n`
+      : ``) +
+    `};\n`
+  );
+}
+
+async function writeCapabilityGatedPending(
+  root: string,
+  capability: string,
+): Promise<void> {
+  await mkdir(join(root, ".flume", "plan"), { recursive: true });
+  await writeFile(
+    join(root, ".flume", "plan", "pending.json"),
+    JSON.stringify(
+      [
+        {
+          tag: "GATED",
+          summary: "needs a capability",
+          per: { path: "spec/RELEASE-v0.8.md", section: "4." },
+          gate: { kind: "requiresCapability", capability },
+          dependsOnForks: [],
+          files: { new: [], edit: [], retire: [] },
+          schemaDelta: "none",
+          tests: [],
+          acceptance: "green",
+        },
+      ],
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+}
+
+/**
+ * v0.8 §4 — `requiresDockerHost` generalized to `requiresCapability`: an
+ * entry skipped because the chain hasn't asserted its capability must never
+ * be a silent skip. `flume status` names the missing capability alongside
+ * the tag so the operator sees why the queue is stuck, without reading logs.
+ */
+describe("flume status — names the missing capability on a requiresCapability skip (v0.8 §4)", () => {
+  it("names the tag and the missing capability when the chain asserts nothing", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, capabilityChainSrc());
+      await writeCapabilityGatedPending(repo.dir, "docker-host");
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).toContain("GATED");
+      expect(r.out).toContain("docker-host");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omits the line once the chain asserts the capability", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, capabilityChainSrc(["docker-host"]));
+      await writeCapabilityGatedPending(repo.dir, "docker-host");
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).not.toContain("GATED");
+      expect(r.out).not.toContain("missing capability");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
  * §6 (v0.6.2) — `flume job status`'s per-job friction count
  * (`src/cli.ts:356-387`, `runJobVerb`'s `status` branch): the repo chain's
  * declared friction dir, resolved job-dir-relative per job. Jobs are built

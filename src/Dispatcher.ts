@@ -913,9 +913,12 @@ export class Dispatcher {
     // provisioning failed on a prior tick) is skipped here — `pending.json`
     // itself is untouched, so a fresh run/process retries it from scratch.
     const quarantinedSlugs = this.opts.quarantinedSlugs;
+    // v0.8 §4: the environment facts this chain asserts, matched against
+    // each entry's `requiresCapability` gate.
+    const capabilities = new Set(chain.capabilities ?? []);
     const pickable = pending.filter(
       (e) =>
-        isPickable(e, pending, isForkResolved) &&
+        isPickable(e, pending, isForkResolved, capabilities) &&
         !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
     );
 
@@ -2441,7 +2444,8 @@ function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
 /**
  * Pickability in the fanout context. The dispatcher's model: a dep is
  * satisfied iff it is no longer in pending (we remove entries on ship).
- * `requiresDockerHost` is opt-in and deferred to v1.
+ * `requiresCapability` is pickable iff the chain's declared `capabilities`
+ * (v0.8 §4) asserts the entry's named capability.
  *
  * The foundations governor (§v0.3) runs first: an entry whose `dependsOnForks`
  * contains any unresolved slug is not pickable, regardless of gate kind.
@@ -2452,6 +2456,7 @@ function isPickable(
   entry: PendingEntry,
   pending: readonly PendingEntry[],
   isForkResolved: (slug: string) => boolean = () => true,
+  capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
   if (!entry.dependsOnForks.every(isForkResolved)) return false;
   switch (entry.gate.kind) {
@@ -2464,7 +2469,8 @@ function isPickable(
     }
     case "parked":
     case "deferred":
-    case "requiresDockerHost":
       return false;
+    case "requiresCapability":
+      return capabilities.has(entry.gate.capability);
   }
 }

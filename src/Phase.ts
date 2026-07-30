@@ -243,4 +243,14 @@ export interface Chain {
    * every friction-lifecycle behavior stays off, no default channel.
    */
   friction?: string;
+  /**
+   * Environment facts this chain asserts (v0.8 §4) — the strings a pending
+   * entry's `gate: { kind: "requiresCapability", capability }` is matched
+   * against. `chain.ts` is TypeScript, so this may probe the environment at
+   * load time (e.g. a daemon health check succeeding asserts its name here).
+   * Undeclared or omitted means no capability is asserted: a
+   * `requiresCapability` entry stays non-pickable until the chain names it
+   * here.
+   */
+  capabilities?: string[];
 }

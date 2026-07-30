@@ -11,6 +11,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Changed
+
+- The gate kind `requiresDockerHost` generalizes to
+  `requiresCapability(capability)` (v0.8 §4): a pending entry names any
+  environment fact it needs (`gate: { kind: "requiresCapability", capability:
+  "docker-host" }`), and the chain declaration gains an optional
+  `capabilities?: string[]` — the facts it asserts, since `chain.ts` is
+  TypeScript and may probe the environment at load time. An entry gated on
+  an unasserted capability is skipped, never silently: `flume status` names
+  the missing capability alongside the entry's tag.
+
 ### Added
 
 - `GateContext.repoRoot` — the absolute path of the working-tree root a

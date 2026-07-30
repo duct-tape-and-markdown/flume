@@ -64,12 +64,15 @@ describe("parsePending — round-trip per gate.kind", () => {
     });
   });
 
-  it("parses gate=requiresDockerHost", () => {
+  it("parses gate=requiresCapability", () => {
     const parsed = roundTrip({
       ...baseEntry,
-      gate: { kind: "requiresDockerHost" },
+      gate: { kind: "requiresCapability", capability: "docker-host" },
     });
-    expect(parsed.gate).toEqual({ kind: "requiresDockerHost" });
+    expect(parsed.gate).toEqual({
+      kind: "requiresCapability",
+      capability: "docker-host",
+    });
   });
 });
 
@@ -115,6 +118,22 @@ describe("parsePending — rejects malformed entries", () => {
   it("rejects gate=blockedBy missing `tag`", () => {
     const result = parsePending(
       JSON.stringify([{ ...baseEntry, gate: { kind: "blockedBy" } }]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
+  });
+
+  it("rejects gate=requiresCapability missing `capability`", () => {
+    const result = parsePending(
+      JSON.stringify([{ ...baseEntry, gate: { kind: "requiresCapability" } }]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
+  });
+
+  it("rejects the retired gate=requiresDockerHost variant (v0.8 §4)", () => {
+    const result = parsePending(
+      JSON.stringify([{ ...baseEntry, gate: { kind: "requiresDockerHost" } }]),
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
@@ -218,6 +237,36 @@ describe("dependsOnForks — foundations governor", () => {
   });
 });
 
+describe("gate=requiresCapability — pickability (v0.8 §4)", () => {
+  const noForks = new Set<string>();
+
+  it("is pickable when the capability is asserted", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "requiresCapability", capability: "docker-host" },
+    });
+    expect(
+      isPickableNow(entry, noForks, () => true, new Set(["docker-host"])),
+    ).toBe(true);
+  });
+
+  it("is skipped when the capability is not asserted", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "requiresCapability", capability: "docker-host" },
+    });
+    expect(isPickableNow(entry, noForks, () => true, new Set())).toBe(false);
+  });
+
+  it("defaults to non-pickable when no capabilities set is supplied", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "requiresCapability", capability: "docker-host" },
+    });
+    expect(isPickableNow(entry, noForks)).toBe(false);
+  });
+});
+
 describe("renderSchemaForPrompt", () => {
   it("matches the documented prompt shape", () => {
     expect(renderSchemaForPrompt()).toMatchInlineSnapshot(`
@@ -234,7 +283,7 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
               | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
-              | { "kind": "requiresDockerHost" },                     // env gate (v1)
+              | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
           "new":  [ { "path": "...", "description": "..." } ],
