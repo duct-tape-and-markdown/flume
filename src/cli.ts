@@ -55,6 +55,16 @@ import { parsePending } from "./PendingSchema.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
+ * The running engine's own package root, real-path resolved once at load —
+ * `ensureFlumeLink`'s default link target (`src/job.ts:133-150,163-169`) is
+ * this exact path, so a job provisioned by *this* running CLI (flume ticking
+ * flume, e.g. this repo's own dogfood chain from a source checkout) links
+ * straight back to itself. `readLocalInstall` compares against this to catch
+ * that case before re-exec'ing to it.
+ */
+const OWN_PACKAGE_ROOT = realpathSync(resolve(HERE, ".."));
+
+/**
  * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
  * dist/ in the published tarball — both layouts put it at `../package.json`).
  */
@@ -77,7 +87,13 @@ function readPackageVersion(): string {
  * "Resolves" means its `package.json` is readable and names an executable
  * `flume` bin; anything short of that (missing, unreadable, unparsable, no
  * usable bin entry) is "does not resolve" — the handshake falls through
- * rather than crashing on a malformed link target.
+ * rather than crashing on a malformed link target. A link that real-path
+ * resolves to {@link OWN_PACKAGE_ROOT} — the running engine linking back to
+ * itself, e.g. this repo's own dogfood chain provisioning a job from a
+ * source checkout with no built `dist/` — also "does not resolve": re-exec'd
+ * self-reference is at best a no-op and at worst an unbounded spawn loop
+ * (the re-exec'd copy resolves the same link and re-execs again), never the
+ * "defer to a copy" case the handshake exists for.
  */
 function readLocalInstall(
   flumeDir: string,
@@ -86,6 +102,11 @@ function readLocalInstall(
   let raw: string;
   try {
     raw = readFileSync(join(root, "package.json"), "utf8");
+  } catch {
+    return undefined;
+  }
+  try {
+    if (realpathSync(root) === OWN_PACKAGE_ROOT) return undefined;
   } catch {
     return undefined;
   }
