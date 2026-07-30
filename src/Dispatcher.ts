@@ -2262,6 +2262,28 @@ export interface SuperviseLoopOptions {
   maxTicks?: number;
   log?: Logger;
   /**
+   * §8 (v0.8, RELEASE-v0.8): chain-declared override for §16's run-scoped
+   * quarantine (RELEASE-v0.7). `"none"` disables per-entry quarantine
+   * outright — a tagged provisioning failure is never withheld from later
+   * ticks this run — while the consecutive-identical-failure backstop
+   * (`abortThreshold` below) still applies. Default `"run"` is
+   * byte-identical to v0.7 §16: quarantine a tagged failure's slug for the
+   * rest of the run. The CLI forwards this from the resolved chain's
+   * `supervisorPolicy.quarantineScope` (`src/Phase.ts`); undeclared falls
+   * through to the default here.
+   */
+  quarantineScope?: "run" | "none";
+  /**
+   * §8: chain-declared override for §16's consecutive-identical-failure
+   * abort threshold (RELEASE-v0.7) — the number of consecutive ticks the
+   * same provisioning-failure signature must repeat, with no successful
+   * tick between them, before the run aborts. Default 3 is byte-identical
+   * to v0.7 §16. The CLI forwards this from the resolved chain's
+   * `supervisorPolicy.abortThreshold`; undeclared falls through to the
+   * default here.
+   */
+  abortThreshold?: number;
+  /**
    * Run one `flume tick` as a fresh child process; resolves with its exit
    * code when it exits. Defaults to re-execing the running flume entrypoint
    * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
@@ -2314,8 +2336,9 @@ export interface SuperviseResult {
   erroredTicks: string[];
   /**
    * §16 (RELEASE-v0.7): set when the run aborted because the same
-   * provisioning-failure signature repeated on three consecutive ticks with
-   * no successful tick between them — the consecutive-failure backstop for
+   * provisioning-failure signature repeated on `abortThreshold` (default 3,
+   * v0.8 §8) consecutive ticks with no successful tick between them — the
+   * consecutive-failure backstop for
    * non-entry-scoped provisioning walls the run-scoped quarantine can't
    * isolate (generalizes §4's mount-dead abort past its class without
    * touching §4's own semantics). Distinct from `mountDead` — the chain
@@ -2363,6 +2386,10 @@ export async function superviseLoop(
       // no chain, or a chain that fails to load — nothing to summarize
     }
   };
+
+  // §8: engine defaults, overridable per opts above.
+  const quarantineScope = opts.quarantineScope ?? "run";
+  const abortThreshold = opts.abortThreshold ?? 3;
 
   let ticks = 0;
   const shippedTags = new Set<string>();
@@ -2417,17 +2444,20 @@ export async function superviseLoop(
     // non-entry-scoped class quarantine can't isolate, e.g. a repo-level
     // `git worktree prune` failure). A tick with no provisioning failure at
     // all clears the streak — only an unbroken run of the identical wall
-    // counts.
+    // counts. §8: a chain declaring `quarantineScope: "none"` opts out of
+    // this leg entirely — the backstop below still fires.
     const provisionFailures = verdict?.provisionFailures ?? [];
-    for (const f of provisionFailures) {
-      if (!f.tag) continue;
-      const slug = slugify(f.tag);
-      if (!quarantinedSlugs.has(slug)) {
-        quarantinedSlugs.add(slug);
-        log.warn(
-          `[flume] quarantining ${f.tag} for the rest of this run: pre-tick ` +
-            `worktree provisioning failed (${f.signature})`,
-        );
+    if (quarantineScope !== "none") {
+      for (const f of provisionFailures) {
+        if (!f.tag) continue;
+        const slug = slugify(f.tag);
+        if (!quarantinedSlugs.has(slug)) {
+          quarantinedSlugs.add(slug);
+          log.warn(
+            `[flume] quarantining ${f.tag} for the rest of this run: pre-tick ` +
+              `worktree provisioning failed (${f.signature})`,
+          );
+        }
       }
     }
     const thisSignature = provisionFailures[0]?.signature;
@@ -2437,7 +2467,7 @@ export async function superviseLoop(
       provisionFailureStreak = thisSignature ? 1 : 0;
       lastProvisionSignature = thisSignature;
     }
-    if (provisionFailureStreak >= 3) {
+    if (provisionFailureStreak >= abortThreshold) {
       log.error(
         `[flume] worktree provisioning failed with an identical signature ` +
           `${provisionFailureStreak} consecutive ticks (${lastProvisionSignature}); ` +

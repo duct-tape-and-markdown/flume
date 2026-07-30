@@ -1095,11 +1095,28 @@ async function main(): Promise<number> {
     // stop (§3) or a mount-dead abort (v0.7 §4) propagates the child's exit
     // code out of `flume loop` too: exiting 0 here would re-mask either as
     // clean at the next process boundary up.
+    //
+    // v0.8 §8: best-effort read of the chain's `supervisorPolicy` override —
+    // a chain that fails to load here surfaces nothing new; the first child
+    // tick still reports mount-dead exactly as it does today, and
+    // `superviseLoop` falls through to the v0.7 §16 defaults meanwhile.
+    let supervisorPolicy: Chain["supervisorPolicy"];
+    try {
+      ({ default: { supervisorPolicy } } = await resolveChain());
+    } catch {
+      // unresolved chain — defaults apply; the child tick names the failure
+    }
     const supervised = await superviseLoop({
       repoRoot,
       flumeDir,
       configDir,
       maxTicks: max,
+      ...(supervisorPolicy?.quarantineScope !== undefined
+        ? { quarantineScope: supervisorPolicy.quarantineScope }
+        : {}),
+      ...(supervisorPolicy?.abortThreshold !== undefined
+        ? { abortThreshold: supervisorPolicy.abortThreshold }
+        : {}),
     });
     // v0.7 §4 amendment: name surfaced tick errors in the completion summary
     // even on a 0 exit (partial success) — they must not vanish silently.

@@ -21,6 +21,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   TypeScript and may probe the environment at load time. An entry gated on
   an unasserted capability is skipped, never silently: `flume status` names
   the missing capability alongside the entry's tag.
+- `flume loop`'s supervisor policy (v0.7 §16: run-scoped provisioning-
+  failure quarantine, three-consecutive-identical-failure abort threshold)
+  becomes chain-overridable (v0.8 §8): the chain declaration gains an
+  optional `supervisorPolicy?: { quarantineScope?: "run" | "none";
+  abortThreshold?: number }`. `quarantineScope: "none"` disables per-entry
+  quarantine outright (the abort backstop still applies); `abortThreshold`
+  sets how many consecutive identical-signature failures trip it. A chain
+  declaring neither field gets the v0.7 §16 defaults, byte-identical.
 - Every tick that runs a phase now writes one unified verdict — phase,
   entry tag(s), committed/no-commit class, gate results (including any
   captured `details`, e.g. a writable-paths gate's violating paths),

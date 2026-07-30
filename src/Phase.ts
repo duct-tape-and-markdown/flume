@@ -253,4 +253,28 @@ export interface Chain {
    * here.
    */
   capabilities?: string[];
+  /**
+   * Override for the `flume loop` supervisor's provisioning-failure policy
+   * (v0.7 §16, opened v0.8 §8) — the run-scoped quarantine and the
+   * consecutive-identical-failure abort threshold ship as engine defaults;
+   * this block lets a chain choose otherwise. Undeclared or omitted fields
+   * fall through to the v0.7 §16 defaults, byte-identical.
+   */
+  supervisorPolicy?: {
+    /**
+     * `"run"` (default): a tagged pre-tick worktree-provisioning failure
+     * quarantines that entry's slug for the rest of the run. `"none"`:
+     * quarantine never engages — every entry stays pickable every tick
+     * regardless of an earlier provisioning failure. The
+     * consecutive-identical-failure backstop (`abortThreshold`) applies
+     * either way.
+     */
+    quarantineScope?: "run" | "none";
+    /**
+     * Number of consecutive ticks the same provisioning-failure signature
+     * must repeat, with no successful tick between them, before the
+     * supervisor aborts the run. Default 3.
+     */
+    abortThreshold?: number;
+  };
 }

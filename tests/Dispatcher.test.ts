@@ -3954,6 +3954,147 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 });
 
 /**
+ * v0.8 §8 — `SuperviseLoopOptions.quarantineScope` /
+ * `abortThreshold` open the two constants the suite above exercises at
+ * their v0.7 §16 defaults (run-scoped quarantine; three-failure abort) as
+ * chain-overridable config. The CLI forwards a resolved chain's
+ * `supervisorPolicy` block into these same options (`src/cli.ts`); this
+ * suite proves `superviseLoop` itself, the same seam the prior suite
+ * already proves defaults through when neither option is passed.
+ */
+describe("superviseLoop — supervisor policy knobs override the §16 defaults (v0.8 §8)", () => {
+  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+
+  it("abortThreshold: 2 aborts on the second consecutive identical signature, not the third", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const SIGNATURE = "git worktree prune: fatal: not a git repository";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — worktree provisioning failed",
+            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: silent,
+      abortThreshold: 2,
+    });
+
+    expect(calls).toBe(2);
+    expect(res.ticks).toBe(2);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+  });
+
+  it("quarantineScope: \"none\" never quarantines a tagged failure — later ticks still see the empty set", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls < 3) {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              provisionFailures: [
+                {
+                  tag: "HELD-ENTRY",
+                  signature: "EBUSY: resource busy or locked",
+                  message: "EBUSY: resource busy or locked, rmdir '...'",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+      quarantineScope: "none",
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(3);
+    // Every tick sees an empty quarantine set — the same tagged slug that
+    // §16's default suite proves gets quarantined after tick 1 here never
+    // does, because the identical signature repeats only twice before the
+    // baton sleeps (never reaching the untouched abortThreshold default).
+    expect(receivedSlugs).toEqual([[], [], []]);
+  });
+
+  it("a chain declaring neither knob gets the v0.7 §16 defaults, byte-identical", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const SIGNATURE = "git worktree prune: fatal: not a git repository";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — worktree provisioning failed",
+            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: silent,
+    });
+
+    // Undeclared abortThreshold still aborts on the 3rd consecutive tick —
+    // the v0.7 §16 default, not the 2 the suite above overrides to.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+  });
+});
+
+/**
  * §6 (v0.6.2) — `superviseLoop`'s loop-end friction summary
  * (`logFrictionSummary`, `src/Dispatcher.ts:1730-1740`), and the fix it rode
  * in on: the chain it loads comes from `opts.configDir`, not always
