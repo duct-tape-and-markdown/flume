@@ -34,3 +34,13 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-07-29 (pass, operator) — voluntary-bail waves carry no plan-wake signal
+SETUP-WORKTREE-HELPER bailed twice (declared `.flume/chain.ts` is off-fence
+for build ticks; the refusal is correct per prompts/build.md). But the
+build phase's handoff wakes plan only on ships/gateResults, so a pure-bail
+wave hibernates instead — the prompt's promise ("plan re-derives next tick
+and routes it as an open question") never fires, and the queue stalls
+silently until an operator wakes plan by hand. A bail is plan-worthy
+signal: route-the-gap is exactly plan's job. Chain handoff (or an engine
+default) should treat voluntary-bail > 0 as wake-plan. Size S.
