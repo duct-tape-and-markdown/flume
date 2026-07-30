@@ -22,6 +22,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   JobResolutionConflictError,
   isInvokedDirectly,
+  resolveRepoRoot,
   resolveStateDirs,
   tickExitCode,
   loopExitCode,
@@ -177,6 +178,57 @@ describe("resolveStateDirs — §3 job resolution", () => {
     expect(configDir).toBe(inherited);
     expect(job).toBe("alpha");
     expect(env.FLUME_JOB).toBe("alpha");
+  });
+});
+
+/**
+ * v0.7 §9 — bay discovery walk-up. `repoRoot` used to be a literal
+ * `process.cwd()`; it now walks up looking for the nearest `.flume`,
+ * mirroring git's `.git` resolution. `cwd` itself counts as inside the bay
+ * (the `.flume`-resident-cwd special case skips the walk entirely); no
+ * `.flume` anywhere up to the filesystem root falls back to `cwd` unchanged
+ * so bootstrapping a fresh, undocked repo is unaffected.
+ */
+describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
+  it("cwd itself holds .flume: returns cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-"));
+    try {
+      await mkdir(join(dir, ".flume"), { recursive: true });
+      expect(resolveRepoRoot(dir)).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cwd nested several levels below the bay: walks up to the nearest .flume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-"));
+    try {
+      await mkdir(join(dir, ".flume"), { recursive: true });
+      const nested = join(dir, "src", "deep", "here");
+      await mkdir(nested, { recursive: true });
+      expect(resolveRepoRoot(nested)).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cwd's basename is .flume: returns dirname(cwd) directly, no filesystem walk needed", () => {
+    // A path that does not exist on disk at all — proves the special case
+    // short-circuits on the basename check rather than falling into the
+    // existsSync walk (which would otherwise fall back to cwd itself).
+    const fake = join(resolve("/nonexistent-flume-fixture-root"), ".flume");
+    expect(resolveRepoRoot(fake)).toBe(dirname(fake));
+  });
+
+  it("no .flume anywhere above cwd: falls back to cwd unchanged", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-nodock-"));
+    try {
+      const nested = join(dir, "sub");
+      await mkdir(nested, { recursive: true });
+      expect(resolveRepoRoot(nested)).toBe(nested);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -752,6 +804,62 @@ describe("flume job status — friction line (§6)", () => {
       await repo.cleanup();
     }
   }, 60_000);
+});
+
+/**
+ * v0.7 §9, real CLI — the acceptance-level claim: `cd .flume && flume job
+ * status` resolves the same bay as running from the repo root (no false
+ * "no jobs" lie), and so does invocation from any subdirectory below the
+ * bay. A tree with no `.flume` anywhere above cwd keeps today's
+ * cwd-as-root default, so bootstrapping a fresh bay is unaffected.
+ */
+describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
+  it("invocation from inside .flume resolves the same bay as the repo root", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      await mkdir(join(repo.dir, ".flume", "jobs", "j1"), { recursive: true });
+
+      const fromRoot = await runCli(repo.dir, ["job", "status"]);
+      const fromDotFlume = await runCli(join(repo.dir, ".flume"), ["job", "status"]);
+
+      expect(fromRoot.code).toBe(0);
+      expect(fromRoot.out).toContain("j1");
+      expect(fromDotFlume.code).toBe(0);
+      expect(fromDotFlume.out).toBe(fromRoot.out);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("invocation from a subdirectory below the bay resolves the same bay as the repo root", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      await mkdir(join(repo.dir, ".flume", "jobs", "j1"), { recursive: true });
+      const nested = join(repo.dir, "src", "deep");
+      await mkdir(nested, { recursive: true });
+
+      const fromRoot = await runCli(repo.dir, ["job", "status"]);
+      const fromNested = await runCli(nested, ["job", "status"]);
+
+      expect(fromNested.code).toBe(0);
+      expect(fromNested.out).toBe(fromRoot.out);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("no .flume anywhere above cwd: keeps cwd-as-root, a fresh undocked repo prints 'no jobs' rather than erroring", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-undocked-"));
+    try {
+      const r = await runCli(dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("no jobs");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 /**

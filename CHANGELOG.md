@@ -32,6 +32,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   success no longer vanishes into a silent green exit. Each child `flume
   tick` writes its shipped/errored counts to a small on-disk artifact the
   supervisor reads between iterations — child stdio stays `inherit`.
+- `repoRoot` now walks up from `cwd` looking for the nearest `.flume`,
+  mirroring git's `.git` resolution, instead of taking `cwd` itself
+  literally. Running any subcommand from a subdirectory below the bay, or
+  from inside `.flume` itself (`cd .flume && pnpm flume job status` — the
+  operator's own habit), now resolves the same bay as running from the
+  repo root instead of silently looking at the wrong (or a nonexistent)
+  `.flume`. A tree with no `.flume` anywhere above `cwd` keeps `cwd` as
+  `repoRoot`, unchanged, so a first `flume job new` in a fresh, undocked
+  repo still creates `.flume` at `cwd`.
 
 ### Fixed
 
