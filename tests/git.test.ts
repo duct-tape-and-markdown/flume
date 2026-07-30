@@ -17,7 +17,13 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, rm: vi.fn(actual.rm) };
 });
 
-import { addWorktree, commitPaths, removeWorktree, revParse } from "../src/git.ts";
+import {
+  addWorktree,
+  commitPaths,
+  dropLastCommit,
+  removeWorktree,
+  revParse,
+} from "../src/git.ts";
 
 const exec = promisify(execFile);
 
@@ -101,6 +107,40 @@ describe("commitPaths", () => {
     await expect(
       commitPaths({ cwd: repo, message: "noop", paths: [] }),
     ).rejects.toThrow(/at least one path/);
+  });
+});
+
+describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
+  it("refuses, naming both shas, when the current tip does not match the expected sha", async () => {
+    const seedSha = await revParse(repo);
+    await writeFile(join(repo, "extra.txt"), "unrelated work");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "someone else's commit"], {
+      cwd: repo,
+    });
+    const currentTip = await revParse(repo);
+    expect(currentTip).not.toBe(seedSha);
+
+    await expect(dropLastCommit(repo, seedSha)).rejects.toThrow(
+      new RegExp(`${currentTip}.*${seedSha}|${seedSha}.*${currentTip}`, "s"),
+    );
+
+    // Refusal leaves the tip in place.
+    expect(await revParse(repo)).toBe(currentTip);
+    expect(existsSync(join(repo, "extra.txt"))).toBe(true);
+  });
+
+  it("drops the commit when the current tip matches the expected sha", async () => {
+    const seedSha = await revParse(repo);
+    await writeFile(join(repo, "own.txt"), "this call's own commit");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "own commit"], { cwd: repo });
+    const ownSha = await revParse(repo);
+
+    await dropLastCommit(repo, ownSha);
+
+    expect(await revParse(repo)).toBe(seedSha);
+    expect(existsSync(join(repo, "own.txt"))).toBe(false);
   });
 });
 

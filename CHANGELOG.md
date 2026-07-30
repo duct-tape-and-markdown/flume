@@ -121,6 +121,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   supervisor at all — the gap behind the 2026-07-29 incident where an
   operator relaunched over a still-live supervisor after misreading
   "hibernating".
+- `git.dropLastCommit` now takes the sha the caller itself just committed
+  and refuses — naming both the current tip and the expected sha, leaving
+  the tip in place — if the current tip has moved on since. Previously it
+  blindly hard-reset whatever commit happened to be at `HEAD~1`, so a
+  stale supervisor sharing a tree with a live one could drop a commit it
+  never created.
 
 ## [0.6.2]
 

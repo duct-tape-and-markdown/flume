@@ -785,7 +785,7 @@ export class Dispatcher {
           postHead,
         );
         await this.snapshotRevertedFiles(cwd, postHead, key);
-        await git.dropLastCommit(cwd);
+        await git.dropLastCommit(cwd, postHead);
         committed = false;
         noCommit = "gate-revert";
         await this.writePriorAttempt(key, record);
@@ -1294,7 +1294,7 @@ export class Dispatcher {
         // Best-effort, as elsewhere — the retry just partitions on declared
         // files as before if this fails.
       }
-      await git.dropLastCommit(wt.path);
+      await git.dropLastCommit(wt.path, postHead);
       await this.writePriorAttempt(key, record);
       this.log.warn(
         `[flume] ${entry.tag}: commit reverted (${verdict.failure?.message})`,

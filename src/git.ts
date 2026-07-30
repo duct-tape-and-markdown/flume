@@ -51,8 +51,27 @@ export async function hardResetTo(cwd: string, sha: string): Promise<void> {
   await run(cwd, ["reset", "--hard", sha]);
 }
 
-/** Drop the most recent commit and its working-tree changes. */
-export async function dropLastCommit(cwd: string): Promise<void> {
+/**
+ * Drop the most recent commit and its working-tree changes.
+ *
+ * `expectedSha` names the commit this call itself created — the caller's
+ * own `postHead`, still in scope from the commit it just made. Refuses
+ * (§17, RELEASE-v0.7) rather than reset when the current tip has moved
+ * on: two supervisors on one tree means a stale caller could otherwise
+ * drop a commit it never created.
+ */
+export async function dropLastCommit(
+  cwd: string,
+  expectedSha: string,
+): Promise<void> {
+  const currentTip = await revParse(cwd);
+  if (currentTip !== expectedSha) {
+    throw new Error(
+      `dropLastCommit refused: current tip ${currentTip} does not match ` +
+        `expected ${expectedSha} — this call did not create the commit at ` +
+        `the current tip, refusing to reset --hard`,
+    );
+  }
   await run(cwd, ["reset", "--hard", "HEAD~1"]);
 }
 
