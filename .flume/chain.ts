@@ -17,7 +17,6 @@
  * in the same commit.
  */
 
-import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,11 +39,10 @@ import {
 } from "../src/Agent.ts";
 import { z } from "zod";
 import {
-  parsePending,
   renderSchemaForPrompt,
   type EntryExtension,
 } from "../src/PendingSchema.ts";
-import { tscGate, shellGate } from "../src/builtinGates.ts";
+import { tscGate, shellGate, pendingGate } from "../src/builtinGates.ts";
 import { setupWorktree as installWorktreeDeps } from "../src/setupWorktree.ts";
 
 // ---------- entry extension (v0.8 §2) ----------
@@ -88,140 +86,15 @@ const entryExtension = {
   },
 } satisfies EntryExtension;
 
-// ---------- project-specific gates ----------
-
-/** pending.json conforms to the schema. Reverts plan's commit on violation. */
-const pendingParseGate: Gate = {
-  name: "pending.json parses",
-  when: "afterCommit",
-  async run(ctx) {
-    let raw: string;
-    try {
-      // §16 reference use: read pending from the resolved state root the
-      // dispatcher hands in, not a hardcoded `.flume/` — so this gate is
-      // correct under a relocated flumeDir.
-      raw = await readFile(join(ctx.flumeDir, "plan", "pending.json"), "utf8");
-    } catch {
-      return { ok: false, message: "pending.json missing after plan commit" };
-    }
-    const result = parsePending(raw, entryExtension);
-    if (result.ok) {
-      return {
-        ok: true,
-        message: `pending.json parsed (${result.entries.length} entries)`,
-      };
-    }
-    return {
-      ok: false,
-      message: `pending.json has ${result.errors.length} schema violations`,
-      details: result.errors
-        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-        .join("\n"),
-    };
-  },
-};
+// ---------- build fence ----------
 
 /**
- * Materialize node_modules in a fresh build worktree.
- *
- * `git worktree add` shares .git and the tracked tree but not gitignored
- * files; node_modules is gitignored and tsc/vitest need it. We do NOT
- * symlink repoRoot/node_modules: pnpm deletes a symlinked node_modules on
- * install (pnpm/pnpm#9973). Dogfood discipline (spec §11): the chain uses
- * the engine's own lockfile-aware helper — this repo's pnpm-lock.yaml
- * selects `pnpm install --frozen-lockfile`, hardlinked from pnpm's global
- * store, so this is seconds, not a refetch.
+ * Build's fence, hoisted so plan's `pendingGate` (v0.8 §6) can pre-check
+ * every derived entry's declared files against the fence build will
+ * actually enforce — an entry that can't survive it fails at plan time,
+ * naming the paths, instead of burning a build tick into a revert.
  */
-const buildSetupWorktree = async (
-  ctx: WorktreeSetupContext,
-): Promise<void> => {
-  await installWorktreeDeps(ctx.worktreePath);
-};
-
-/**
- * Defense-in-depth (spec §6): a worktree with un-materialized deps makes
- * tscGate/vitestGate fail with confusing "cannot find module" noise. Fail
- * loud and specific instead. Strategy-agnostic — asserts the outcome (a
- * sentinel dep resolves from the worktree root), not the mechanism, so it
- * stays valid if setupWorktree's strategy changes.
- */
-const worktreeDepsGate: Gate = {
-  name: "worktree deps resolve",
-  when: "afterCommit",
-  async run(ctx) {
-    const sentinel = join(ctx.cwd, "node_modules", "zod", "package.json");
-    if (existsSync(sentinel)) {
-      return { ok: true, message: "worktree node_modules resolves (zod sentinel)" };
-    }
-    return {
-      ok: false,
-      message:
-        "worktree node_modules missing sentinel 'zod' — setupWorktree dependency materialization failed",
-    };
-  },
-};
-
-// ---------- phases ----------
-
-const plan: Phase = {
-  name: "plan",
-  description:
-    "Re-derive .flume/plan/{pending.json,state.md,open-questions.md} from spec/ + current src state; drain .flume/inbox.md.",
-  promptPath: "prompts/plan.md",
-  concurrency: "singleton",
-  writablePaths: [
-    ".flume/plan/pending.json",
-    ".flume/plan/state.md",
-    ".flume/plan/open-questions.md",
-    ".flume/inbox.md",
-    // NOTE: plan does NOT touch spec/. The spec corpus
-    // (spec/RELEASE-*.md) is human-directed, edited in-session not by a phase;
-    // if plan discovers ambiguity, it surfaces it via open-questions.md
-    // for a human to fold back into the spec.
-    //
-    // .flume/inbox.md IS writable: plan drains it each tick by routing
-    // each entry into pending.json, open-questions.md, or accepted-debt
-    // (recorded in the commit body). External writers (humans, future
-    // review skills) append; plan removes after routing. Plan's own audit
-    // findings do NOT pass through inbox — they're written directly to
-    // pending.json / open-questions.md, with narrative in the commit body.
-  ],
-  gates: [pendingParseGate],
-  promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
-  },
-  handoff(result) {
-    // Plan re-wakes itself when state.md ends with `Plan continues: yes`.
-    // This is the vertical-slice signal: plan does one focused mode per tick
-    // (audit / derive / maintain) and tells the harness whether more plan
-    // work remains. If yes, the harness keeps the baton on plan; if no, hand
-    // off to build (if pickable) or hibernate. The prompt mandates the final
-    // state.md line, so absence here = stable.
-    let planContinues = false;
-    try {
-      const stateText = readFileSync(
-        resolve(CHAIN_DIR, "plan", "state.md"),
-        "utf8",
-      );
-      planContinues = /^Plan continues:\s*yes\b/im.test(stateText);
-    } catch {
-      // state.md missing — treat as stable; build (if pickable) or hibernate.
-    }
-
-    if (planContinues) return ["plan"];
-
-    const hasPickable = result.pendingAfter.some(
-      (e) => e.gate.kind === "open",
-    );
-    return hasPickable ? ["build"] : [];
-  },
-};
-
-const build: Phase = {
-  name: "build",
-  description: "Ship one (or N disjoint) pending entries to the trunk.",
-  promptPath: "prompts/build.md",
-  concurrency: "fanout",
+const buildFence = {
   writablePaths: [
     // Source, tests, bin, examples, docs, ad-hoc scripts
     "src/**",
@@ -295,6 +168,116 @@ const build: Phase = {
   // Collisions between parallel entries editing shared suites stay covered
   // by per-entry afterMerge revert (§7b).
   entryChannelPaths: [".flume/plan/open-questions.md", "tests/**"],
+};
+
+/**
+ * Materialize node_modules in a fresh build worktree.
+ *
+ * `git worktree add` shares .git and the tracked tree but not gitignored
+ * files; node_modules is gitignored and tsc/vitest need it. We do NOT
+ * symlink repoRoot/node_modules: pnpm deletes a symlinked node_modules on
+ * install (pnpm/pnpm#9973). Dogfood discipline (spec §11): the chain uses
+ * the engine's own lockfile-aware helper — this repo's pnpm-lock.yaml
+ * selects `pnpm install --frozen-lockfile`, hardlinked from pnpm's global
+ * store, so this is seconds, not a refetch.
+ */
+const buildSetupWorktree = async (
+  ctx: WorktreeSetupContext,
+): Promise<void> => {
+  await installWorktreeDeps(ctx.worktreePath);
+};
+
+/**
+ * Defense-in-depth (spec §6): a worktree with un-materialized deps makes
+ * tscGate/vitestGate fail with confusing "cannot find module" noise. Fail
+ * loud and specific instead. Strategy-agnostic — asserts the outcome (a
+ * sentinel dep resolves from the worktree root), not the mechanism, so it
+ * stays valid if setupWorktree's strategy changes.
+ */
+const worktreeDepsGate: Gate = {
+  name: "worktree deps resolve",
+  when: "afterCommit",
+  async run(ctx) {
+    const sentinel = join(ctx.cwd, "node_modules", "zod", "package.json");
+    if (existsSync(sentinel)) {
+      return { ok: true, message: "worktree node_modules resolves (zod sentinel)" };
+    }
+    return {
+      ok: false,
+      message:
+        "worktree node_modules missing sentinel 'zod' — setupWorktree dependency materialization failed",
+    };
+  },
+};
+
+// ---------- phases ----------
+
+const plan: Phase = {
+  name: "plan",
+  description:
+    "Re-derive .flume/plan/{pending.json,state.md,open-questions.md} from spec/ + current src state; drain .flume/inbox.md.",
+  promptPath: "prompts/plan.md",
+  concurrency: "singleton",
+  writablePaths: [
+    ".flume/plan/pending.json",
+    ".flume/plan/state.md",
+    ".flume/plan/open-questions.md",
+    ".flume/inbox.md",
+    // NOTE: plan does NOT touch spec/. The spec corpus
+    // (spec/RELEASE-*.md) is human-directed, edited in-session not by a phase;
+    // if plan discovers ambiguity, it surfaces it via open-questions.md
+    // for a human to fold back into the spec.
+    //
+    // .flume/inbox.md IS writable: plan drains it each tick by routing
+    // each entry into pending.json, open-questions.md, or accepted-debt
+    // (recorded in the commit body). External writers (humans, future
+    // review skills) append; plan removes after routing. Plan's own audit
+    // findings do NOT pass through inbox — they're written directly to
+    // pending.json / open-questions.md, with narrative in the commit body.
+  ],
+  // v0.8 §6 dogfood adoption: the builtin composes core + this chain's
+  // extension for validation AND pre-checks every entry's declared files
+  // against build's fence — replaces the hand-rolled pendingParseGate.
+  gates: [pendingGate({ extension: entryExtension, targetFence: buildFence })],
+  promptArgs() {
+    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
+  },
+  handoff(result) {
+    // Plan re-wakes itself when state.md ends with `Plan continues: yes`.
+    // This is the vertical-slice signal: plan does one focused mode per tick
+    // (audit / derive / maintain) and tells the harness whether more plan
+    // work remains. If yes, the harness keeps the baton on plan; if no, hand
+    // off to build (if pickable) or hibernate. The prompt mandates the final
+    // state.md line, so absence here = stable.
+    let planContinues = false;
+    try {
+      const stateText = readFileSync(
+        resolve(CHAIN_DIR, "plan", "state.md"),
+        "utf8",
+      );
+      planContinues = /^Plan continues:\s*yes\b/im.test(stateText);
+    } catch {
+      // state.md missing — treat as stable; build (if pickable) or hibernate.
+    }
+
+    if (planContinues) return ["plan"];
+
+    const hasPickable = result.pendingAfter.some(
+      (e) => e.gate.kind === "open",
+    );
+    return hasPickable ? ["build"] : [];
+  },
+};
+
+const build: Phase = {
+  name: "build",
+  description: "Ship one (or N disjoint) pending entries to the trunk.",
+  promptPath: "prompts/build.md",
+  concurrency: "fanout",
+  // Fence hoisted to `buildFence` above so plan's pendingGate pre-checks
+  // against the same object build enforces — one declaration, no drift.
+  writablePaths: buildFence.writablePaths,
+  entryChannelPaths: buildFence.entryChannelPaths,
   // §7a (RELEASE-v0.2.md): vitest runs afterMerge, not afterCommit. Under
   // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
   // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
