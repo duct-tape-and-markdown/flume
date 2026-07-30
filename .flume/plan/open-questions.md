@@ -9,6 +9,47 @@ Status markers:
 
 <!-- questions below this line -->
 
+## HANDOFF-NOCOMMIT-BLIND: `TickResult` can't distinguish voluntary-bail from a genuine no-op, so no chain handoff can wake plan on bail
+
+**NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home (v0.7
+§1 is the same "engine misstates itself" theme but its declared blast
+radius names `src/` Prompt/cli/Dispatcher-exit-paths/GateContext only and
+explicitly excludes chain content — "No chain or prompt content ships
+from this line" — so a `.flume/chain.ts` handoff edit can't ride it).
+
+Drained from inbox (operator pass): SETUP-WORKTREE-HELPER bailed twice
+(declared `.flume/chain.ts` off-fence for build, correct refusal per
+`prompts/build.md:27` — "Plan re-derives next tick and routes it as an
+open question"). That promise never fires: build's `handoff` in
+`.flume/chain.ts:289-299` wakes plan only when `shippedTags.length > 0 ||
+gateResults.length > 0`. Traced deeper than the inbox report guessed —
+this isn't a chain-config oversight, it's an engine one. `Dispatcher.tick`
+(`src/Dispatcher.ts:710-717`) destructures `{ result, noCommit }` from the
+wave runner but only ever passes `result` into `phase.handoff(result)`;
+`noCommit` (the §6 `voluntary-bail`/`platform-preempt`/`gate-revert`
+classification) is discarded before handoff ever sees it. `TickResult`
+(`src/Phase.ts:52-75`) has no field carrying it. On a pure-bail wave,
+`committed: false`, `shippedTags: []`, `gateResults: []` — identical to a
+genuine "nothing pickable" no-op. No chain author, however written, can
+tell the two apart today; this isn't a matter of `.flume/chain.ts`'s
+build `handoff` making the wrong call, it structurally cannot see the
+right one.
+
+Fix direction (mechanical, once a spec section exists):
+1. Add `noCommit?: NoCommitMode` to `TickResult` (`src/Phase.ts`),
+   reusing the type already defined in `src/Dispatcher.ts`.
+2. `Dispatcher.tick` folds the already-computed `noCommit` into `result`
+   before calling `phase.handoff(result)`.
+3. `.flume/chain.ts`'s build `handoff` adds `result.noCommit ===
+   "voluntary-bail"` to its wake condition.
+
+No tradeoff to weigh — this is a straight visibility gap, not a design
+choice. Needs a spec line because (a) it's a `Phase.ts`/`Dispatcher.ts`
+API-surface change outside any shipped section's blast radius, and (b)
+step 3 edits `.flume/chain.ts`, which v0.7 §1 explicitly bars this line
+from touching. Candidate home: a v0.8 continuation of v0.7's "engine
+truth-telling" theme, or its own short section — human's call.
+
 ## ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH: the local-install check path never matches what `job new` actually provisions
 
 **PARKED** — shipped per the spec's literal (twice-repeated) path text and

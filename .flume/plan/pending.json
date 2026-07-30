@@ -1,7 +1,7 @@
 [
   {
     "tag": "SETUP-WORKTREE-HELPER",
-    "summary": "Ship a pnpm/npm lockfile-aware setupWorktree helper; migrate the dogfood chain onto it, per spec/RELEASE-v0.7.md §11",
+    "summary": "Ship a pnpm/npm lockfile-aware setupWorktree helper per spec/RELEASE-v0.7.md §11 (dogfood chain.ts adoption ships separately — off-fence for build)",
     "per": {
       "path": "spec/RELEASE-v0.7.md",
       "section": "11. `setupWorktree` package-manager-aware helper"
@@ -27,10 +27,6 @@
           "description": "Re-export the new helper alongside the existing builtinGates re-exports (~L30-37)."
         },
         {
-          "path": ".flume/chain.ts",
-          "description": "Replace buildSetupWorktree (~L95-103) with the new helper — dogfood discipline."
-        },
-        {
           "path": "docs/CHAIN-AUTHORING.md",
           "description": "Rewrite the setupWorktree worked example (~L418-458), currently teaching hardcoded pnpm install, to show the new helper as the recommended default."
         },
@@ -49,6 +45,6 @@
       }
     ],
     "acceptance": "The helper runs pnpm install --frozen-lockfile against a pnpm-lock.yaml fixture, npm ci against a package-lock.json fixture, and refuses cleanly against neither.",
-    "notes": "Non-goals per spec: yarn/bun lockfile support; migrating connect's own chain.ts (that repo's own follow-up, outside this entry's blast radius)."
+    "notes": "Re-filed: dropped .flume/chain.ts from files (not in build's writablePaths — confirmed, 2 prior bails). §11's dogfood-adoption bullet ships via a follow-up chore(flume) commit once this lands, same pattern as PROMPTS-BUILD-FENCE-INSTRUCTION. Non-goals per spec: yarn/bun; migrating connect's own chain.ts."
   }
 ]
