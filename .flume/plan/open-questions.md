@@ -9,6 +9,19 @@ Status markers:
 
 <!-- questions below this line -->
 
+## STALE-GLOBAL-FLUME-LOOP — live loop/tick processes execute a stale published package, not this repo's src
+
+**PARKED — urgent: actively corrupting data every ship, right now**
+
+Context: root-caused why `SHIP-PENDING-CLOBBER-BUG` recurred immediately after its own fix shipped. `6203ee5` fixed `commitPendingUpdate` to re-read `pending.json` fresh from disk; the very next commit, `38ea981` (`chore(flume): ship SHIP-PENDING-CLOBBER-BUG`), reintroduced the retired `schemaDelta` field into the 2 untouched entries — the identical corruption, one commit later. Checked live: `pnpm exec which flume` resolves to a **globally npm-installed** `@dtmd/flume@0.5.0` (`~/.nvm/.../lib/node_modules/@dtmd/flume`, `dist/` built 2026-07-30 09:30 — before today's fix landed), not this repo's own build. That global `dist/Dispatcher.js` still has the exact pre-fix signature, `commitPendingUpdate(before, shippedTags, observed)` — a stale snapshot, no fresh re-read. `.flume/loop.pid`'s processes (confirmed via `ps`: loop PIDs 307306/307326/307344, tick PID 385416) are that global binary. Every `chore(flume): ship` commit executes pre-fix code no matter what lands in `src/Dispatcher.ts` — the fix is correct but inert until the running process is the local build. Published npm latest is 0.6.2 (matches local `package.json`), so even the global install is stale against the registry, let alone against trunk's unpublished HEAD.
+
+Options:
+1. **Stop the stale loop now; restart pointed at local (recommended).** Kill the current loop/tick processes; invoke via this repo's own `bin/flume.js` (package.json already has a `"flume"` script pointing there) instead of relying on `pnpm exec flume`, which falls through to whatever `flume` is on `$PATH`. Closes the active-corruption window immediately.
+2. **`npm install -g @dtmd/flume@latest`.** Only brings the global install to 0.6.2 — still not trunk's unpublished HEAD, so still not guaranteed current with in-flight `src/` fixes. Stopgap at best.
+3. **Leave as-is.** Not viable — `pending.json` will keep corrupting on every ship, and no `src/` fix can close the gap since the fix is never executed.
+
+Recommendation: option 1, a human action (process control + global npm state, outside plan's writable paths). This tick repaired the symptom again (stripped `schemaDelta` from the 2 entries in the `pending.json` rewrite) — that's cosmetic until the loop itself is repointed; expect recurrence on the next ship otherwise.
+
 ## BUILD-PARK-COMMIT-BEFORE-BAIL — voluntary-bail park notes die with the worktree
 
 **PARKED**
