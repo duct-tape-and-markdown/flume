@@ -1,48 +1,5 @@
 [
   {
-    "tag": "SUPERVISOR-PROVISION-QUARANTINE",
-    "summary": "Per-entry quarantine on a pre-tick worktree-provisioning failure, plus a 3-consecutive-identical-failure abort backstop, per v0.7 §16.",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "16. Supervisor provisioning failures: quarantine, then abort"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "detect pre-tick worktree provisioning failure (sweep/create) per entry slug; carry a failure signature the supervisor can read and compare across ticks"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "loop command / superviseLoop caller wires quarantine (skip quarantined slugs for the run) and the 3-consecutive-identical-failure abort"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "replay the incident shape: held slug quarantines after first failure, other entries ship to batch completion; a repo-level failure aborts on the third identical consecutive occurrence; a failure that clears next tick trips neither"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Fixed bullet per §16"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "one entry's worktree dir held + other entries pickable → held slug quarantined after its first failure, remaining entries work to batch completion; identical failure signature 3x consecutive with no success between → run aborts non-zero naming the signature; a failure that clears next tick neither quarantines beyond the run nor trips the backstop"
-      }
-    ],
-    "acceptance": "replaying the incident shape quarantines the held slug and works the rest to batch completion; a repo-level deterministic failure aborts on the third identical consecutive failure instead of burning to --max; a transient failure that clears trips neither mechanism.",
-    "notes": "Both constants (run-scoped quarantine; 3-failure threshold) ship as engine defaults here per the spec — v0.8 §8 opens them as chain-overridable config later; do not design that config surface in this entry (engine-boundary.md)."
-  },
-  {
     "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT",
     "summary": "Shrink core PendingEntry schema to tag/files/gate/dependsOnForks; add chain-declared extension mechanism composing validator + renderSchemaForPrompt, per v0.8 §2.",
     "per": {
@@ -333,8 +290,7 @@
       "section": "8. Supervisor policy knobs ride the boundary"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "SUPERVISOR-PROVISION-QUARANTINE"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
