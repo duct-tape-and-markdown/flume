@@ -164,8 +164,6 @@ async function readPendingFromDisk(repo: string): Promise<PendingEntry[]> {
 function makeEntry(tag: string, editPaths: string[]): PendingEntry {
   return {
     tag,
-    summary: `${tag} entry`,
-    per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
     gate: { kind: "open" },
     dependsOnForks: [],
     files: {
@@ -173,9 +171,6 @@ function makeEntry(tag: string, editPaths: string[]): PendingEntry {
       edit: editPaths.map((p) => ({ path: p, description: "edit" })),
       retire: [],
     },
-    schemaDelta: "none",
-    tests: [],
-    acceptance: "green",
   };
 }
 

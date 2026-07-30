@@ -961,7 +961,10 @@ async function main(): Promise<number> {
       const capabilities = new Set(chain.capabilities ?? []);
       const pendingPath = join(flumeDir, "plan", "pending.json");
       if (existsSync(pendingPath)) {
-        const result = parsePending(readFileSync(pendingPath, "utf8"));
+        const result = parsePending(
+          readFileSync(pendingPath, "utf8"),
+          chain.entryExtension,
+        );
         if (result.ok) {
           for (const entry of result.entries) {
             if (
@@ -1154,7 +1157,10 @@ async function main(): Promise<number> {
     const pendingPath = join(flumeDir, "plan", "pending.json");
     const pending = existsSync(pendingPath)
       ? (() => {
-          const r = parsePending(readFileSync(pendingPath, "utf8"));
+          const r = parsePending(
+            readFileSync(pendingPath, "utf8"),
+            chain.entryExtension,
+          );
           if (!r.ok) {
             console.error(`pending.json invalid (${r.errors.length} errors):`);
             for (const e of r.errors) {

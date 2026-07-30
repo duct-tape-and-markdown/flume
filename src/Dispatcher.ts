@@ -31,7 +31,7 @@ import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { parsePending } from "./PendingSchema.js";
-import type { PendingEntry } from "./PendingSchema.js";
+import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 
 /**
  * Local-mutable shape for accumulating gate results before they widen to
@@ -841,6 +841,8 @@ export class Dispatcher {
   private readonly flumeDir: string;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
+  /** Set when tick() loads the chain; composes pending parses (v0.8 §2). */
+  private entryExtension: EntryExtension | undefined;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
@@ -901,6 +903,10 @@ export class Dispatcher {
       };
     }
     const chain = chainModule.default;
+    // Pending parses compose core + the chain's declared entry extension
+    // (v0.8 §2); remembered here because readPending runs downstream of the
+    // one place the chain is loaded.
+    this.entryExtension = chain.entryExtension;
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -2168,7 +2174,7 @@ export class Dispatcher {
   private async readPending(): Promise<PendingEntry[]> {
     if (!existsSync(this.pendingPath)) return [];
     const raw = await readFile(this.pendingPath, "utf8");
-    const r = parsePending(raw);
+    const r = parsePending(raw, this.entryExtension);
     if (!r.ok) {
       this.log.warn(
         `[flume] pending.json failed to parse (${r.errors.length} errors); treating as empty`,

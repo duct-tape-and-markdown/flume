@@ -39,12 +39,16 @@ export {
 export { setupWorktree } from "./setupWorktree.js";
 
 export {
-  PendingEntry,
-  PendingList,
+  composePendingList,
   parsePending,
+  parsePendingLoose,
   renderSchemaForPrompt,
   touchedPaths,
   isPickableNow,
+  type PendingEntry,
+  type PendingList,
+  type EntryExtension,
+  type EntryExtensionField,
   type ParseError,
   type ParseResult,
 } from "./PendingSchema.js";

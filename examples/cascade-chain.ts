@@ -19,8 +19,10 @@
  * `flume`. See the trailing block.
  */
 
+import { z } from "zod";
 import type {
   Chain,
+  EntryExtension,
   Gate,
   Phase,
   TickContext,
@@ -33,6 +35,49 @@ import {
   vitestGate,
   eslintGate,
 } from "../src/index.ts";
+
+// ---------- entry extension (v0.8 §2) ----------
+
+/**
+ * This project's pending-entry fields beyond the engine core
+ * (tag/gate/dependsOnForks/files). Declared once — the same record drives
+ * the parse-gate validator (`parsePending(raw, entryExtension)`) and the
+ * prompt schema (`renderSchemaForPrompt(entryExtension)`), so the prompt and
+ * the parser cannot drift. The engine consumes none of these fields; they
+ * are this chain's spec→plan→build workflow.
+ */
+const entryExtension = {
+  summary: {
+    schema: z.string().min(1).max(200),
+    hint: `"one-line what (≤200 chars)"`,
+  },
+  per: {
+    schema: z.strictObject({
+      path: z.string().min(1),
+      section: z.string().min(1),
+    }),
+    hint: `{ "path": "specs/.../foo.md (the spec or rule that justifies this work)", "section": "Section heading text, no leading '## '" }`,
+  },
+  tests: {
+    schema: z
+      .array(
+        z.strictObject({
+          path: z.string().min(1),
+          asserts: z.string().min(1),
+        }),
+      )
+      .default([]),
+    hint: `[ { "path": "...", "asserts": "behavior" } ]`,
+  },
+  acceptance: {
+    schema: z.string().min(1),
+    hint: `"what turns green when this is done"`,
+  },
+  notes: {
+    schema: z.string().max(500).optional(),
+    hint: `"≤500 chars; optional context not in the spec"`,
+  },
+} satisfies EntryExtension;
 
 // ---------- project-specific gates ----------
 
@@ -58,7 +103,7 @@ const pendingParseGate: Gate = {
     } catch {
       return { ok: false, message: "pending.json missing after plan commit" };
     }
-    const result = parsePending(raw);
+    const result = parsePending(raw, entryExtension);
     if (result.ok) {
       return {
         ok: true,
@@ -150,7 +195,7 @@ const plan: Phase = {
   ],
   gates: [pendingParseGate],
   promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt() };
+    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
   },
   handoff(result) {
     const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
@@ -197,11 +242,14 @@ const build: Phase = {
     if (!ctx.assignedEntry) {
       throw new Error("build phase requires an assignedEntry in TickContext");
     }
+    // `per` is this chain's declared extension field — narrow it through the
+    // same schema the parse gate validated it with.
+    const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
     return {
       ENTRY_JSON: JSON.stringify(ctx.assignedEntry, null, 2),
       TAG: ctx.assignedEntry.tag,
-      PER_PATH: ctx.assignedEntry.per.path,
-      PER_SECTION: ctx.assignedEntry.per.section,
+      PER_PATH: per.path,
+      PER_SECTION: per.section,
     };
   },
   handoff() {
@@ -213,6 +261,7 @@ const build: Phase = {
 
 export const cascadeChain: Chain = {
   phases: [spec, plan, build],
+  entryExtension,
   humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
 };
 

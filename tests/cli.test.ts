@@ -904,8 +904,6 @@ async function writeStuckEntryPending(root: string): Promise<void> {
       [
         {
           tag: "STUCK-ENTRY",
-          summary: "worktree provisioning always fails (fixture)",
-          per: { path: "spec/RELEASE-v0.8.md", section: "8." },
           gate: { kind: "open" },
           dependsOnForks: [],
           files: {
@@ -913,9 +911,6 @@ async function writeStuckEntryPending(root: string): Promise<void> {
             edit: [{ path: "src/stuck.ts", description: "never reached" }],
             retire: [],
           },
-          schemaDelta: "none",
-          tests: [],
-          acceptance: "n/a — provisioning never succeeds",
         },
       ],
       null,
@@ -1303,14 +1298,9 @@ async function writeCapabilityGatedPending(
       [
         {
           tag: "GATED",
-          summary: "needs a capability",
-          per: { path: "spec/RELEASE-v0.8.md", section: "4." },
           gate: { kind: "requiresCapability", capability },
           dependsOnForks: [],
           files: { new: [], edit: [], retire: [] },
-          schemaDelta: "none",
-          tests: [],
-          acceptance: "green",
         },
       ],
       null,
@@ -1752,8 +1742,6 @@ describe("§3 job resolution — real CLI", () => {
             [
               {
                 tag: "NS-PROBE",
-                summary: "namespace probe entry",
-                per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
                 gate: { kind: "open" },
                 dependsOnForks: [],
                 files: {
@@ -1761,9 +1749,6 @@ describe("§3 job resolution — real CLI", () => {
                   edit: [{ path: "src/ns-probe.ts", description: "edit" }],
                   retire: [],
                 },
-                schemaDelta: "none",
-                tests: [],
-                acceptance: "green",
               },
             ],
             null,

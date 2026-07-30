@@ -8,7 +8,7 @@
 
 import type { Agent } from "./Agent.js";
 import type { Gate } from "./Gate.js";
-import type { PendingEntry } from "./PendingSchema.js";
+import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { NoCommitMode } from "./Prompt.js";
 
 /**
@@ -213,6 +213,14 @@ export interface WorktreeSetupResult {
  */
 export interface Chain {
   phases: Phase[];
+  /**
+   * Chain-declared pending-entry extension (v0.8 §2): fields beyond the
+   * engine core (tag/gate/dependsOnForks/files), each declared once with
+   * its zod schema and prompt hint. The dispatcher composes the merged
+   * validator from it; `renderSchemaForPrompt(extension)` composes the
+   * rendered schema from the same declaration. Absent means bare core.
+   */
+  entryExtension?: EntryExtension;
   /**
    * Phases the dispatcher is forbidden to wake via another phase's handoff.
    * Humans can still wake them by touching `.flume/awake/<name>`. The

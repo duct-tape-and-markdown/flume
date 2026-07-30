@@ -1012,6 +1012,64 @@ v0.7 §16 defaults, byte-identical. `flume loop` reads this block from the
 resolved chain once at supervisor start — a chain that fails to load there
 surfaces nothing new; the defaults apply for that run and the first child
 tick still reports the load failure exactly as it does today.
+## 10. Declaring an entry extension (`entryExtension`)
+
+The engine's pending-entry schema is deliberately small: `tag` (identity),
+`files` (the fence declaration), `gate` + `blockedBy` + `dependsOnForks`
+(pickability), and the dispatcher-maintained `observedFiles`. That is
+everything the engine mechanically consumes; it validates nothing else and
+it renders nothing else. Whatever additional fields your workflow wants on
+an entry — a summary, a spec citation, acceptance criteria — are yours to
+declare.
+
+Declare each field **once**, with both its zod schema and its prompt hint:
+
+```ts
+import { z } from "zod";
+import type { EntryExtension } from "@dtmd/flume";
+
+const entryExtension = {
+  summary: {
+    schema: z.string().min(1).max(200),
+    hint: `"one-line what (≤200 chars)"`,
+  },
+  per: {
+    schema: z.strictObject({
+      path: z.string().min(1),
+      section: z.string().min(1),
+    }),
+    hint: `{ "path": "specs/.../foo.md (the spec that justifies this work)", "section": "Section heading text" }`,
+  },
+} satisfies EntryExtension;
+
+const myChain: Chain = {
+  phases: [plan, build],
+  entryExtension,
+};
+```
+
+The single declaration drives both enforcement surfaces, so the prompt and
+the parser cannot drift:
+
+- **Validation** — the dispatcher composes the core schema with your
+  declared fields; `parsePending(raw, entryExtension)` does the same in
+  your own gates. The composed schema is strict: a field that is neither
+  core nor declared fails loudly. (Silent stripping is how plan-authored
+  fields would get destroyed when the dispatcher rewrites `pending.json`
+  on ship.)
+- **Rendering** — `renderSchemaForPrompt(entryExtension)` renders the core
+  shape followed by each declared field as `"<name>": <hint>`, verbatim.
+  Pass it through your plan phase's `promptArgs` exactly as before.
+
+To read a declared field with types in your chain code, narrow it through
+the same schema you declared:
+
+```ts
+const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
+```
+
+A chain that declares no `entryExtension` gets the bare core — entries
+carry only the mechanical fields, and anything extra is rejected.
 
 ## Putting it together
 

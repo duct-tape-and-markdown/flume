@@ -38,12 +38,55 @@ import {
   withSessionCapture,
   withTerminalRenderer,
 } from "../src/Agent.ts";
+import { z } from "zod";
 import {
   parsePending,
   renderSchemaForPrompt,
+  type EntryExtension,
 } from "../src/PendingSchema.ts";
 import { tscGate, shellGate } from "../src/builtinGates.ts";
 import { setupWorktree as installWorktreeDeps } from "../src/setupWorktree.ts";
+
+// ---------- entry extension (v0.8 §2) ----------
+
+/**
+ * Dogfood pending-entry fields beyond the engine core. Declared once: the
+ * `schema` side validates at parse/gate time, the `hint` side renders into
+ * the plan prompt via renderSchemaForPrompt — no drift possible. The engine
+ * consumes none of these; they are this chain's workflow (spec→plan→build).
+ */
+const entryExtension = {
+  summary: {
+    schema: z.string().min(1).max(200),
+    hint: `"one-line what (≤200 chars)"`,
+  },
+  per: {
+    schema: z.strictObject({
+      path: z.string().min(1),
+      section: z.string().min(1),
+    }),
+    hint: `{ "path": "spec/RELEASE-*.md (the spec or rule that justifies this work)", "section": "exact heading, no leading '## '" }`,
+  },
+  tests: {
+    schema: z
+      .array(
+        z.strictObject({
+          path: z.string().min(1),
+          asserts: z.string().min(1),
+        }),
+      )
+      .default([]),
+    hint: `[ { "path": "...", "asserts": "behavior" } ]`,
+  },
+  acceptance: {
+    schema: z.string().min(1),
+    hint: `"what turns green when this is done"`,
+  },
+  notes: {
+    schema: z.string().max(500).optional(),
+    hint: `"≤500 chars; optional context not in the spec"`,
+  },
+} satisfies EntryExtension;
 
 // ---------- project-specific gates ----------
 
@@ -61,7 +104,7 @@ const pendingParseGate: Gate = {
     } catch {
       return { ok: false, message: "pending.json missing after plan commit" };
     }
-    const result = parsePending(raw);
+    const result = parsePending(raw, entryExtension);
     if (result.ok) {
       return {
         ok: true,
@@ -145,7 +188,7 @@ const plan: Phase = {
   ],
   gates: [pendingParseGate],
   promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt() };
+    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
   },
   handoff(result) {
     // Plan re-wakes itself when state.md ends with `Plan continues: yes`.
@@ -272,11 +315,14 @@ const build: Phase = {
     if (!ctx.assignedEntry) {
       throw new Error("build phase requires an assignedEntry");
     }
+    // `per` is this chain's own declared extension field — narrow it through
+    // the same schema the parse gate validated it with.
+    const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
     return {
       ENTRY_JSON: JSON.stringify(ctx.assignedEntry, null, 2),
       TAG: ctx.assignedEntry.tag,
-      PER_PATH: ctx.assignedEntry.per.path,
-      PER_SECTION: ctx.assignedEntry.per.section,
+      PER_PATH: per.path,
+      PER_SECTION: per.section,
     };
   },
   handoff(result) {
@@ -299,6 +345,7 @@ const build: Phase = {
 
 const flumeChain: Chain = {
   phases: [plan, build],
+  entryExtension,
   humanOnly: [], // no spec phase; spec corpus (spec/RELEASE-*.md) edited in-session, never by a phase
 };
 

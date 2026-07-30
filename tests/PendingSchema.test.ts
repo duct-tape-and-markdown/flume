@@ -1,25 +1,44 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
+  composePendingList,
   isPickableNow,
   parsePending,
+  parsePendingLoose,
   renderSchemaForPrompt,
+  type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
 
+/** Engine-core entry (v0.8 §2): tag, gate, dependsOnForks, files — nothing else. */
 const baseEntry = {
   tag: "EXAMPLE-TAG",
-  summary: "do the thing",
-  per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
   files: {
     new: [{ path: "src/foo.ts", description: "the foo" }],
     edit: [{ path: "src/bar.ts", description: "tweak bar" }],
     retire: ["src/baz.ts"],
   },
-  schemaDelta: "none",
-  tests: [{ path: "tests/foo.test.ts", asserts: "foo holds" }],
-  acceptance: "pnpm test green",
 };
+
+/** A representative chain-declared extension (the derivation-chain shape). */
+const testExtension = {
+  summary: {
+    schema: z.string().min(1).max(200),
+    hint: `"one-line what (≤200 chars)"`,
+  },
+  per: {
+    schema: z.strictObject({
+      path: z.string().min(1),
+      section: z.string().min(1),
+    }),
+    hint: `{ "path": "...", "section": "..." }`,
+  },
+  notes: {
+    schema: z.string().max(500).optional(),
+    hint: `"≤500 chars"`,
+  },
+} satisfies EntryExtension;
 
 function roundTrip(entry: unknown): PendingEntry {
   const result = parsePending(JSON.stringify([entry]));
@@ -98,15 +117,6 @@ describe("parsePending — rejects malformed entries", () => {
     expect(tagErr!.index).toBe(0);
   });
 
-  it("rejects an entry missing required `acceptance`", () => {
-    const { acceptance: _drop, ...withoutAcceptance } = baseEntry;
-    const result = parsePending(
-      JSON.stringify([{ ...withoutAcceptance, gate: { kind: "open" } }]),
-    );
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.path === "acceptance")).toBe(true);
-  });
-
   it("rejects an unknown gate.kind", () => {
     const result = parsePending(
       JSON.stringify([{ ...baseEntry, gate: { kind: "wat" } }]),
@@ -139,24 +149,104 @@ describe("parsePending — rejects malformed entries", () => {
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
-  it("rejects a summary over 200 chars", () => {
+  it("rejects a field that is neither core nor declared (bare core)", () => {
+    // Silent stripping would destroy plan-authored fields on the
+    // dispatcher's pending.json rewrite — unknown fields fail loudly.
     const result = parsePending(
       JSON.stringify([
-        {
-          ...baseEntry,
-          gate: { kind: "open" },
-          summary: "x".repeat(201),
-        },
+        { ...baseEntry, gate: { kind: "open" }, summary: "undeclared" },
       ]),
     );
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.path === "summary")).toBe(true);
+    expect(result.errors[0]!.message).toMatch(/summary/);
   });
 
   it("rejects a non-array root", () => {
     const result = parsePending(JSON.stringify({ not: "an array" }));
     expect(result.ok).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("chain-declared extension (v0.8 §2)", () => {
+  const extended = {
+    ...baseEntry,
+    gate: { kind: "open" },
+    summary: "do the thing",
+    per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+  };
+
+  it("accepts declared fields and round-trips their values", () => {
+    const result = parsePending(JSON.stringify([extended]), testExtension);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    const entry = result.entries[0]!;
+    expect(entry.summary).toBe("do the thing");
+    expect(entry.per).toEqual({
+      path: "spec/RELEASE-v0.1.md",
+      section: "5. Tests",
+    });
+  });
+
+  it("enforces the declared field's own constraints (extension cap)", () => {
+    const result = parsePending(
+      JSON.stringify([{ ...extended, summary: "x".repeat(201) }]),
+      testExtension,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "summary")).toBe(true);
+  });
+
+  it("rejects a field the extension did not declare", () => {
+    const result = parsePending(
+      JSON.stringify([{ ...extended, schemaDelta: "none" }]),
+      testExtension,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.message).toMatch(/schemaDelta/);
+  });
+
+  it("applies extension defaults at parse time", () => {
+    const ext = {
+      tests: {
+        schema: z.array(z.string()).default([]),
+        hint: `[ "..." ]`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(JSON.stringify([{ ...baseEntry, gate: { kind: "open" } }]), ext);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries[0]!.tests).toEqual([]);
+  });
+
+  it("throws on an extension that shadows a core field — chain-config defect", () => {
+    const shadowing = {
+      tag: { schema: z.string(), hint: `"..."` },
+    } satisfies EntryExtension;
+    expect(() => composePendingList(shadowing)).toThrow(/shadows/);
+  });
+});
+
+describe("parsePendingLoose — chain-less informational reads", () => {
+  it("passes undeclared fields through unvalidated", () => {
+    const result = parsePendingLoose(
+      JSON.stringify([
+        {
+          ...baseEntry,
+          gate: { kind: "open" },
+          summary: "kept as-is",
+          anything: { nested: true },
+        },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries[0]!.summary).toBe("kept as-is");
+    expect(result.entries[0]!.anything).toEqual({ nested: true });
+  });
+
+  it("still rejects a malformed core", () => {
+    const result = parsePendingLoose(
+      JSON.stringify([{ ...baseEntry, gate: { kind: "wat" } }]),
+    );
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -268,17 +358,12 @@ describe("gate=requiresCapability — pickability (v0.8 §4)", () => {
 });
 
 describe("renderSchemaForPrompt", () => {
-  it("matches the documented prompt shape", () => {
+  it("bare core matches the documented prompt shape", () => {
     expect(renderSchemaForPrompt()).toMatchInlineSnapshot(`
-      "Each pending entry MUST conform to this shape:
+      "Each pending entry MUST conform to this shape (fields not listed here are rejected):
 
       {
         "tag": "ALL-CAPS-WITH-DASHES" | "TAG-NAME(slice)",   // unique; appears in commit msg
-        "summary": "one-line what (≤200 chars)",
-        "per": {
-          "path": "specs/.../foo.md",                         // the spec or rule that justifies this work
-          "section": "Section heading text"                   // exact section, no leading '## '
-        },
         "gate": { "kind": "open" }                                  // ready to ship
               | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
               | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
@@ -289,16 +374,37 @@ describe("renderSchemaForPrompt", () => {
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
           "retire": [ "path or symbol", ... ]
-        },
-        "schemaDelta": "none" | "human-readable prisma diff summary",
-        "tests": [ { "path": "...", "asserts": "behavior" } ],
-        "acceptance": "what turns green when this is done",
-        "notes": "≤500 chars; optional context not in the spec"
+        }
       }
 
       Output is a JSON array of these entries, ordered by execution priority (top = next).
       Empty array is valid (means nothing pending)."
     `);
+  });
+
+  it("renders every declared extension field with its hint, after the core", () => {
+    const rendered = renderSchemaForPrompt(testExtension);
+    expect(rendered).toContain(`"summary": "one-line what (≤200 chars)"`);
+    expect(rendered).toContain(`"per": { "path": "...", "section": "..." }`);
+    expect(rendered).toContain(`"notes": "≤500 chars"`);
+  });
+
+  it("no drift: exactly the fields the composed validator accepts are rendered", () => {
+    // The rendered schema and the validator come from the same declaration —
+    // every declared field name appears in the render, and a field absent
+    // from the declaration is both unrendered and rejected.
+    const rendered = renderSchemaForPrompt(testExtension);
+    for (const name of Object.keys(testExtension)) {
+      expect(rendered).toContain(`"${name}":`);
+    }
+    expect(rendered).not.toContain(`"schemaDelta":`);
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, schemaDelta: "none" },
+      ]),
+      testExtension,
+    );
+    expect(result.ok).toBe(false);
   });
 });
 

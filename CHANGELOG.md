@@ -11,6 +11,22 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Breaking
+
+- The pending-entry schema splits into an engine core and a chain-declared
+  extension (v0.8 §2). The core keeps only what the engine mechanically
+  consumes — `tag`, `files`, `gate`, `dependsOnForks`, `observedFiles` —
+  and is strict: fields neither core nor declared by the chain fail
+  validation. `summary`, `per`, `tests`, `acceptance`, `notes`, and
+  `schemaDelta` are no longer engine fields; chains that want them declare
+  them via `Chain.entryExtension`, each field carrying its zod schema and
+  its prompt hint in one declaration, from which the engine composes both
+  the validator (`parsePending(raw, extension)`) and the rendered prompt
+  schema (`renderSchemaForPrompt(extension)`) — no drift possible.
+  `PendingEntry`/`PendingList` are now type-only exports;
+  `composePendingList` and `parsePendingLoose` (core-only, passthrough, for
+  chain-less informational reads) are new.
+
 ### Changed
 
 - The gate kind `requiresDockerHost` generalizes to

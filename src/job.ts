@@ -28,7 +28,7 @@ import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
-import { parsePending } from "./PendingSchema.js";
+import { parsePendingLoose } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
 
@@ -529,7 +529,9 @@ export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
       const pendingPath = join(jobDir, "plan", "pending.json");
       let pending: number | null = 0;
       if (existsSync(pendingPath)) {
-        const parsed = parsePending(readFileSync(pendingPath, "utf8"));
+        // Chain-less informational read: count entries without composing
+        // the chain's extension (v0.8 §2) — loose parse, never rewritten.
+        const parsed = parsePendingLoose(readFileSync(pendingPath, "utf8"));
         pending = parsed.ok ? parsed.entries.length : null;
       }
       const frictionCount =

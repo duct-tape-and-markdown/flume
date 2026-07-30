@@ -65,7 +65,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/PendingSchema.test.ts",
@@ -113,7 +112,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/PendingSchema.test.ts",
@@ -157,7 +155,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/Gate.test.ts",
@@ -210,7 +207,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
