@@ -281,11 +281,16 @@ const build: Phase = {
   },
   handoff(result) {
     // Wake plan when the wave actually produced signal for it to audit:
-    // shipped commits to reconcile, or gate fires that imply MAINTAIN
-    // entries. A true no-op wave (nothing pickable, or all picked entries
-    // exited cleanly per the writablePaths directive) carries no signal —
-    // hibernate. Operator can `flume wake plan` to force a tick.
-    if (result.shippedTags.length === 0 && result.gateResults.length === 0) {
+    // shipped commits to reconcile, gate fires that imply MAINTAIN
+    // entries, or a voluntary bail (v0.7 §15) — the build prompt promises
+    // "plan re-derives next tick" on a park-and-bail, so plan must see it.
+    // A true no-op wave (nothing pickable) carries no signal — hibernate.
+    // Operator can `flume wake plan` to force a tick.
+    if (
+      result.shippedTags.length === 0 &&
+      result.gateResults.length === 0 &&
+      result.noCommit !== "voluntary-bail"
+    ) {
       return [];
     }
     return ["plan"];
