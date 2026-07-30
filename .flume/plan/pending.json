@@ -168,53 +168,6 @@
     "notes": "Dogfood chain.ts replacing its hand-rolled pending-parse gate with this builtin is an operator leg (§6 dogfood adoption, same class as §2/§3) — not part of this entry's files. Extinguishes the GATECONTEXT-REPOROOT-TESTS/CLI-JUNCTION-SAFE-ENTRY-TESTS re-file class per §6's own text."
   },
   {
-    "tag": "SUPERVISOR-POLICY-KNOBS",
-    "summary": "Open v0.7 §16's quarantine-scope + abort-threshold constants as an optional chain-declared supervisor-policy block; engine values become defaults, per v0.8 §8.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "8. Supervisor policy knobs ride the boundary"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "quarantine-scope/abort-threshold constants from SUPERVISOR-PROVISION-QUARANTINE (§16) become chain-overridable, read from an optional supervisorPolicy block"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "loop/superviseLoop wiring reads the chain's supervisorPolicy override, falling back to the §16 defaults"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "Chain interface gains optional supervisorPolicy?: { quarantineScope?, abortThreshold? } (shape mirrors §16's constants)"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a chain overriding abortThreshold changes supervisor behavior; a chain declaring nothing gets v0.7 §16's defaults byte-identical"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Changed bullet per §8"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a chain overriding the abort threshold changes supervisor behavior accordingly; a chain declaring nothing gets the defaults, byte-identical to v0.7 §16"
-      }
-    ],
-    "acceptance": "a chain overriding the abort threshold changes supervisor behavior accordingly; a chain declaring nothing gets the defaults, byte-identical to v0.7 §16.",
-    "notes": "blockedBy SUPERVISOR-PROVISION-QUARANTINE: §16's mechanism (constants + quarantine/abort logic) must ship first — this entry only opens the values as chain-overridable config, no new behavior."
-  },
-  {
     "tag": "SECOND-REFERENCE-CHAIN",
     "summary": "Ship a single-phase reference chain (e.g. backlog-groomer) in examples/ with its own extension schema + tag refinement, exercising §§2–4 on the unpatched engine, per v0.8 §7.",
     "per": {
