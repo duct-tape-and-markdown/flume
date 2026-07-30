@@ -164,6 +164,43 @@ export type EntryExtension = Record<string, EntryExtensionField>;
 const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
 
 /**
+ * Reject a duplicate `tag` value within the queue (v0.8 §3: tag identity
+ * must be unique — cli's find-by-tag and Dispatcher's blockedBy/shippedTags
+ * lookups key on it, so a duplicate silently resolves to the wrong entry).
+ * Every index sharing a tag gets its own issue naming the others, so a
+ * three-way collision is fully attributed rather than only the second
+ * occurrence being flagged.
+ */
+function withUniqueTagCheck<T extends z.ZodTypeAny>(
+  arraySchema: T,
+): z.ZodType<PendingEntry[]> {
+  return (arraySchema as unknown as z.ZodArray<z.ZodTypeAny>).superRefine(
+    (entries, ctx) => {
+      const indicesByTag = new Map<string, number[]>();
+      entries.forEach((entry, index) => {
+        const tag = (entry as { tag: string }).tag;
+        const indices = indicesByTag.get(tag) ?? [];
+        indices.push(index);
+        indicesByTag.set(tag, indices);
+      });
+      for (const [tag, indices] of indicesByTag) {
+        if (indices.length < 2) continue;
+        for (const index of indices) {
+          const others = indices.filter((i) => i !== index);
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "tag"],
+            message: `tag "${tag}" duplicates entr${
+              others.length === 1 ? "y" : "ies"
+            } at index ${others.join(", ")}`,
+          });
+        }
+      }
+    },
+  ) as unknown as z.ZodType<PendingEntry[]>;
+}
+
+/**
  * Compose the core entry schema with a chain's extension declaration into
  * the list validator. Strict: fields neither core nor declared fail.
  * Throws on an extension that shadows a core field — that is a chain-config
@@ -175,12 +212,16 @@ const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
  * intersection — both the core pattern and the chain's schema must pass —
  * so a chain declaring `tag` narrows the grammar, it can never widen past
  * (or replace) the engine's mechanical floor.
+ *
+ * The composed list schema also enforces tag uniqueness across the queue —
+ * mechanical safety (§3), not convention: the engine's own tag-keyed lookups
+ * (cli find-by-tag, Dispatcher blockedBy/shippedTags) require it.
  */
 export function composePendingList(
   extension?: EntryExtension,
 ): z.ZodType<PendingEntry[]> {
   if (!extension || Object.keys(extension).length === 0) {
-    return z.array(PendingEntryCore) as unknown as z.ZodType<PendingEntry[]>;
+    return withUniqueTagCheck(z.array(PendingEntryCore));
   }
   for (const name of Object.keys(extension)) {
     if (name !== "tag" && CORE_FIELDS.has(name)) {
@@ -199,9 +240,7 @@ export function composePendingList(
     shape.tag = PendingEntryCore.shape.tag.and(tagRefinement.schema);
   }
   // .extend on a strictObject stays strict: core + declared fields only.
-  return z.array(PendingEntryCore.extend(shape)) as unknown as z.ZodType<
-    PendingEntry[]
-  >;
+  return withUniqueTagCheck(z.array(PendingEntryCore.extend(shape)));
 }
 
 /**

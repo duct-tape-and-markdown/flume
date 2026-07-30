@@ -313,6 +313,81 @@ describe("tag grammar reduces to mechanical safety (v0.8 §3)", () => {
   });
 });
 
+describe("tag uniqueness within the queue (v0.8 §3)", () => {
+  it("rejects two entries sharing a tag, naming both offending indices (bare core)", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, tag: "DUP-TAG", gate: { kind: "open" } },
+        { ...baseEntry, tag: "DUP-TAG", gate: { kind: "open" } },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+    const tagErrors = result.errors.filter((e) => e.path === "tag");
+    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
+    expect(tagErrors[0]!.message).toMatch(/DUP-TAG/);
+  });
+
+  it("rejects a duplicate tag through the extension-composed path", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          ...baseEntry,
+          tag: "DUP-TAG",
+          gate: { kind: "open" },
+          summary: "first",
+          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+        },
+        {
+          ...baseEntry,
+          tag: "DUP-TAG",
+          gate: { kind: "open" },
+          summary: "second",
+          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+        },
+      ]),
+      testExtension,
+    );
+    expect(result.ok).toBe(false);
+    const tagErrors = result.errors.filter((e) => e.path === "tag");
+    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
+  });
+
+  it("a queue with distinct tags parses clean (bare core)", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, tag: "TAG-ONE", gate: { kind: "open" } },
+        { ...baseEntry, tag: "TAG-TWO", gate: { kind: "open" } },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries).toHaveLength(2);
+  });
+
+  it("a queue with distinct tags parses clean through the extension-composed path", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          ...baseEntry,
+          tag: "TAG-ONE",
+          gate: { kind: "open" },
+          summary: "first",
+          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+        },
+        {
+          ...baseEntry,
+          tag: "TAG-TWO",
+          gate: { kind: "open" },
+          summary: "second",
+          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+        },
+      ]),
+      testExtension,
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries).toHaveLength(2);
+  });
+});
+
 describe("parsePendingLoose — chain-less informational reads", () => {
   it("passes undeclared fields through unvalidated", () => {
     const result = parsePendingLoose(

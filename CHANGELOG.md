@@ -39,7 +39,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   field name the extension may declare — which composes as an
   intersection with the engine's mechanical floor, never a replacement of
   it; `renderSchemaForPrompt` states whichever constraint is actually in
-  force.
+  force. `composePendingList`'s array schema now also rejects a duplicate
+  `tag` within the queue, naming every offending index — mechanical
+  safety, since the engine's own lookups (cli find-by-tag, Dispatcher
+  `blockedBy`/`shippedTags`) key on tag identity and a duplicate would
+  silently resolve to the wrong entry. `parsePendingLoose` stays
+  passthrough; nothing on that read-only path keys by tag.
 - The gate kind `requiresDockerHost` generalizes to
   `requiresCapability(capability)` (v0.8 §4): a pending entry names any
   environment fact it needs (`gate: { kind: "requiresCapability", capability:
