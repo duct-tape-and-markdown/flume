@@ -20,17 +20,3 @@ Options:
 2. **Engine salvage.** Dispatcher detects channel-path edits in a worktree on voluntary-bail and lands them as a park commit itself. More machinery than the gap needs; `.claude/rules/collaboration.md`'s complexity-is-a-signal rule favors option 1 unless prompt-level discipline can't be trusted to fire every time.
 
 Recommendation: option 1, applied directly to `prompts/build.md` via `chore(flume):` commit — no pending entry, same class as `PROMPTS-BUILD-FENCE-INSTRUCTION`.
-
-## LOOP-SUMMARY-HARDCODED-ABORT-THRESHOLD — completion summary always says "3 consecutive ticks" regardless of the chain's declared abortThreshold
-
-**NEEDS AMENDMENT**
-
-Context: building SUPERVISOR-POLICY-CLI-COVERAGE (v0.8 §8), a real `flume loop` run against a fixture chain declaring `supervisorPolicy.abortThreshold: 2` aborted correctly after 2 ticks (`superviseLoop`'s own `log.error` in `src/Dispatcher.ts` names the real count). But `loopCompletionSummary` (`src/cli.ts:364-386`) hardcodes the count in its own line:
-
-```
-`aborted: identical worktree provisioning failure repeated 3 consecutive ticks — ${result.repeatedFailure.signature}`
-```
-
-— literal `3`, not the threshold actually in force. Pre-v0.8 this was always true (3 was the only value); §8 makes it a chain-overridable knob without updating this string, so a chain that lowers or raises `abortThreshold` gets a misleading completion line. `SuperviseResult.repeatedFailure` (`src/Dispatcher.ts:2348`) carries only `{ signature }` — the actual streak count isn't threaded out to where the summary is built, so the fix needs either that field to grow a count, or the abort message to move from `superviseLoop`'s own `log.error` (which already has the real number) rather than being reconstructed at the CLI layer.
-
-Not filed as a pending entry here — build's fence for this entry was tests+docs only (`entry.files`), and this is a `src/Dispatcher.ts`/`src/cli.ts` fix outside that scope. Straightforward once scoped: no product judgment call, just a plan entry.
