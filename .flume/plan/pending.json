@@ -1,44 +1,5 @@
 [
   {
-    "tag": "IN-WORKTREE-GATE-REVERT-FOOTPRINT",
-    "summary": "In-worktree afterCommit gate revert records the same per-entry trunk footprint the afterMerge path records, per spec/RELEASE-v0.7.md §13",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "13. In-worktree gate reverts leave a trunk footprint"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runFanoutEntry's afterCommit-fail branch (~L1247-1266) capture git.showNameOnly(wt.path, postHead) before dropLastCommit; wave loop's `if (!r.committed...) continue` (~L935-936) feed that footprint into `observed` (mirror afterMerge's observed.set ~L1010) so commitPendingUpdate (~L975-1002) commits it to trunk, not just the gitignored PriorAttempt record."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add Fixed bullet per §14."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "New locked test mirroring the existing afterMerge footprint assertion (~L1379): an in-worktree afterCommit gate revert leaves the touched paths in the entry's observedFiles via a trunk commit."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "an in-worktree afterCommit gate revert's touched paths land in the entry's observedFiles via a trunk commit, matching the existing afterMerge footprint assertion at ~L1379"
-      }
-    ],
-    "acceptance": "A fanout tick reverted by an in-worktree gate is followed by a trunk commit naming the violating paths (next plan tick's commit-delta is non-empty, not a 50cc3ac3-shaped blind maintain); afterMerge footprint behavior unchanged; locked test covers the in-worktree revert path.",
-    "notes": "Root cause read directly from source: wave loop's `if (!r.committed || !r.commitSha) continue` (Dispatcher.ts:936) skips observed-footprint capture entirely for in-worktree-reverted entries — only afterMerge-reverted entries reach it today. §13's third bullet (prompts/build.md fence-park instruction) is out of build's writablePaths (chain.ts excludes prompts/**) — routed to open-questions.md instead, not bundled here."
-  },
-  {
     "tag": "BAY-DISCOVERY-WALKUP",
     "summary": "repoRoot walks up from cwd to the nearest .flume, mirroring git's .git resolution, per spec/RELEASE-v0.7.md §9",
     "per": {
