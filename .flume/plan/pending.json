@@ -1,5 +1,44 @@
 [
   {
+    "tag": "ENGINE-PIN-HANDSHAKE-JOBRUN-MAX-VALIDATION",
+    "summary": "handshakeJobRunName splices --max without validating its value like main()'s job-run rewrite does, so a malformed --max can still misresolve a job-scoped path, per v0.7 §10.",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "handshakeJobRunName validates the --max value (present, not dash-prefixed) before splicing, mirroring main()'s own job-run rewrite (~line 813-825); bails to undefined on the same malformed shapes it rejects"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "new fixture: `job run --max <bad-value> <name>` against a bay with a local install at <name>'s job-scoped path does not re-exec into it"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet noting the --max validation gap in the job-run-form peek"
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "a `job run --max` invocation with a missing or dash-prefixed value does not resolve to the trailing word's job-scoped install path; existing valid --max fixtures unaffected"
+      }
+    ],
+    "acceptance": "`job run --max <missing-or-dash-value> <name>` no longer misresolves the handshake to <name>'s job-scoped path; existing --job/FLUME_JOB/job-run fixtures unaffected.",
+    "notes": "handshakeJobRunName (src/cli.ts ~149-155) splices maxIdx unconditionally, unlike main()'s own rewrite (~813-825) which requires the --max value present and non-dash before splicing. A malformed --max can still yield a name the real dispatch would reject with usage error 2, misrouting arm 1 into that job's local install instead of leaving it to the real dispatch, contra the function's own doc comment."
+  },
+  {
     "tag": "STATUS-SUPERVISOR-LIVENESS",
     "summary": "flume status probes loop.pid for process liveness (live pid / stale pidfile / no pidfile) alongside the awake markers, per v0.7 §17.",
     "per": {
