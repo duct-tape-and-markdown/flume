@@ -1,34 +1,36 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 §§2,3,4,5,8 shipped; §§6,7
-queued. Mode: **audit** (commit-delta: build fix + ship of
-SHIP-PENDING-CLOBBER-BUG, checked against v0.8 §2; ship commit itself
-reproduced the exact corruption it was meant to close — root-caused).
+Phase: v0.7 fully shipped (§§1-17); v0.8 §§2,3,4,5,6,8 shipped (§6's
+engine mechanism only — dogfood adoption still open); §7 queued.
 
-## Queue (2)
+Mode: **audit** (commit-delta: PENDING-GATE-BUILTIN ship, checked
+against v0.8 §6).
 
-1. `PENDING-GATE-BUILTIN` — open (v0.8 §6)
-2. `SECOND-REFERENCE-CHAIN` — open (v0.8 §7; unblocked, §§2-4 live)
+## Queue (1)
 
-## Open questions (2)
+1. `SECOND-REFERENCE-CHAIN` — open (v0.8 §7; unblocked, §§2-4 live)
 
-- `STALE-GLOBAL-FLUME-LOOP` — **new, urgent**: `.flume/loop.pid`'s live
-  loop/tick processes execute a globally npm-installed `@dtmd/flume@0.5.0`
-  (pre-fix `commitPendingUpdate`), not this repo's `src/` — confirmed
-  root cause of the recurring `pending.json` corruption; needs human
-  process/env action, not a code fix.
+## Open questions (3)
+
+- `STALE-GLOBAL-FLUME-LOOP` — **urgent, still active**: the
+  PENDING-GATE-BUILTIN ship (`119a4f1`) reintroduced the retired
+  `schemaDelta` field into the untouched SECOND-REFERENCE-CHAIN entry —
+  identical corruption, confirms the stale global loop is still running.
+  Repaired again this tick; needs human process action.
+- `PENDING-GATE-DOGFOOD-ADOPTION` — **new**: chain.ts still hand-rolls
+  `pendingParseGate` instead of the shipped `pendingGate` builtin; v0.8
+  §6 acceptance not fully closed. Operator leg, outside any phase's
+  fence.
 - `BUILD-PARK-COMMIT-BEFORE-BAIL` — unchanged.
 
 ## Trunk
 
-HEAD `38ea981` (ship SHIP-PENDING-CLOBBER-BUG). That ship commit itself
-reintroduced the retired `schemaDelta` field into the 2 untouched
-entries — same corruption as before, one commit after the fix landed.
-Root cause found this tick (see open question): live loop runs a stale
-global install, so `6203ee5`'s fix never executes. `6203ee5` itself
-audits clean against §2 within its own file scope. Repaired
-`pending.json` (stripped `schemaDelta`) again this tick — symptomatic
-only, will recur on next ship until the loop is repointed. No
-spec-delta, inbox empty, nothing to promote.
+HEAD `119a4f1` (ship PENDING-GATE-BUILTIN). Engine mechanism audited
+clean against §6: composed core+extension validation + fence
+pre-check correct, test coverage solid (schema violation, fence
+violation naming paths, entryChannelPaths inclusion, custom path,
+missing file). Ship's own pending.json rewrite reintroduced
+`schemaDelta` corruption again (repaired). No spec-delta, inbox empty,
+no blockedBy entries to promote.
 
 Plan continues: no

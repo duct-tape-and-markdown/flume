@@ -20,7 +20,19 @@ Options:
 2. **`npm install -g @dtmd/flume@latest`.** Only brings the global install to 0.6.2 — still not trunk's unpublished HEAD, so still not guaranteed current with in-flight `src/` fixes. Stopgap at best.
 3. **Leave as-is.** Not viable — `pending.json` will keep corrupting on every ship, and no `src/` fix can close the gap since the fix is never executed.
 
-Recommendation: option 1, a human action (process control + global npm state, outside plan's writable paths). This tick repaired the symptom again (stripped `schemaDelta` from the 2 entries in the `pending.json` rewrite) — that's cosmetic until the loop itself is repointed; expect recurrence on the next ship otherwise.
+Recommendation: option 1, a human action (process control + global npm state, outside plan's writable paths). Confirmed still active this tick: `119a4f1` (`chore(flume): ship PENDING-GATE-BUILTIN`) reintroduced `schemaDelta` into the untouched `SECOND-REFERENCE-CHAIN` entry — identical corruption, one ship-cycle later. Repaired again (stripped); expect recurrence on every future ship until the loop is repointed.
+
+## PENDING-GATE-DOGFOOD-ADOPTION — chain.ts still hand-rolls pendingParseGate; v0.8 §6 acceptance not fully closed
+
+**PARKED**
+
+Context: `PENDING-GATE-BUILTIN` shipped `pendingGate` (`src/builtinGates.ts`) per v0.8 §6, but the entry's own notes carved dogfood adoption out as an "operator leg." `.flume/chain.ts`'s `plan.gates` (line 189) still wires the hand-rolled `pendingParseGate` (lines 94-122) instead of the new builtin. `chain.ts` sits outside both phases' `writablePaths` (plan: `.flume/plan/*`, `.flume/inbox.md`; build: `src/`,`tests/`,`docs/`, etc — no `.flume/*`), so neither phase can make this swap itself. §6's acceptance line — "dogfood runs the builtin with its extension schema enforced" — remains open.
+
+Options:
+1. **Direct operator commit (recommended).** Replace `pendingParseGate` in `plan.gates` with `pendingGate({ extension: entryExtension, targetFence: build })`, delete the now-dead hand-rolled gate — same class as `PROMPTS-BUILD-FENCE-INSTRUCTION`'s direct `chore(flume):` commit.
+2. **Leave as-is.** §6 stays "shipped but unproven" — the builtin exists but nothing dogfoods it, against the spec's own stated proof requirement.
+
+Recommendation: option 1, a small mechanical `chore(flume):` commit, outside any phase's fence by design.
 
 ## BUILD-PARK-COMMIT-BEFORE-BAIL — voluntary-bail park notes die with the worktree
 

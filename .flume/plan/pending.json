@@ -41,7 +41,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
