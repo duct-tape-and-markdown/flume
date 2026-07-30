@@ -1,5 +1,43 @@
 [
   {
+    "tag": "TAG-UNIQUENESS-GATE",
+    "summary": "Enforce tag uniqueness within the pending queue at parse time — the mechanical-safety leg §3 names but TAG-GRAMMAR-MECHANICAL-SAFETY didn't add.",
+    "per": {
+      "path": "spec/RELEASE-v0.8.md",
+      "section": "3. Tag grammar reduces to mechanical safety"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "composePendingList's returned array schema gets a superRefine rejecting a duplicate tag value, naming both offending indices; parsePending only — parsePendingLoose stays passthrough (read-only, nothing keys by tag there)"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "two entries sharing a tag fail with both indices named; distinct tags still parse clean; covers both the bare-core and extension-composed paths"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §3"
+        }
+      ],
+      "retire": []
+    },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "a duplicate tag in the queue fails parsePending naming both offending indices; a queue with distinct tags parses clean"
+      }
+    ],
+    "acceptance": "two pending entries sharing a tag fail parsePending with both indices named in the error; a queue with distinct tags parses clean.",
+    "notes": "§3's tag requirement is 'non-empty, unique within the queue, and safe everywhere the engine writes it' — TAG-GRAMMAR-MECHANICAL-SAFETY (658dd64) shipped charset/whitespace/length only. cli.ts's find-by-tag and Dispatcher's blockedBy/shippedTags lookups key on tag identity — a duplicate silently resolves to the wrong entry. Engine mechanism, not convention."
+  },
+  {
     "tag": "PENDING-GATE-BUILTIN",
     "summary": "New pendingGate builtin: composed core+extension validation plus plan-time fence pre-check against the target phase's writablePaths, per v0.8 §6.",
     "per": {
@@ -32,7 +70,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/Gate.test.ts",
@@ -84,7 +121,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
@@ -92,6 +128,6 @@
       }
     ],
     "acceptance": "the example chain completes a tick cycle in CI against a fixture repo with zero src/ changes attributable to it; docs present both chains as peers on one engine.",
-    "notes": "blockedBy TAG-GRAMMAR-MECHANICAL-SAFETY (transitively needs §2's extension mechanism too). REQUIRES-CAPABILITY-GENERALIZATION shipped 90529d3 — §§2–4 coverage now clear once the blockedBy chain resolves."
+    "notes": "Unblocked: TAG-GRAMMAR-MECHANICAL-SAFETY and REQUIRES-CAPABILITY-GENERALIZATION both shipped — §§2–4 mechanism is live on trunk, ready to build."
   }
 ]
