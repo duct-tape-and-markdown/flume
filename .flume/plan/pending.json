@@ -1,40 +1,5 @@
 [
   {
-    "tag": "SUPERVISOR-POLICY-CLI-COVERAGE",
-    "summary": "Cover SUPERVISOR-POLICY-KNOBS's CLI seam with a real-process test and document supervisorPolicy in CHAIN-AUTHORING.md, per v0.8 §8.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "8. Supervisor policy knobs ride the boundary"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "extend the §2a loop-lock describe's runCli fixtures: a real `flume loop --max N` against a fixture chain.ts declaring supervisorPolicy.abortThreshold/quarantineScope changes observed behavior; a chain declaring neither is byte-identical to today"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "new section documenting supervisorPolicy, mirroring §7's capabilities section shape"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "a fixture chain.ts declaring supervisorPolicy.abortThreshold changes the real CLI's abort tick count; a chain declaring nothing behaves byte-identically to the v0.7 §16 default"
-      }
-    ],
-    "acceptance": "a real `flume loop` run against a fixture chain declaring supervisorPolicy overrides supervisor behavior end-to-end (not just at the superviseLoop-options seam); CHAIN-AUTHORING.md documents the field.",
-    "notes": "Audit finding (fa59ab4/84747ff): src/cli.ts's best-effort resolveChain + conditional-spread wiring (~line 1103) that forwards a chain's supervisorPolicy into superviseLoop has zero direct test coverage — only the Dispatcher-level options seam is proven. CHAIN-AUTHORING.md also never gained a section for the new field, unlike capabilities (§7)."
-  },
-  {
     "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT",
     "summary": "Shrink core PendingEntry schema to tag/files/gate/dependsOnForks; add chain-declared extension mechanism composing validator + renderSchemaForPrompt, per v0.8 §2.",
     "per": {
