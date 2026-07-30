@@ -20,7 +20,7 @@ Options:
 2. **`npm install -g @dtmd/flume@latest`.** Only brings the global install to 0.6.2 — still not trunk's unpublished HEAD, so still not guaranteed current with in-flight `src/` fixes. Stopgap at best.
 3. **Leave as-is.** Not viable — `pending.json` will keep corrupting on every ship, and no `src/` fix can close the gap since the fix is never executed.
 
-Recommendation: option 1, a human action (process control + global npm state, outside plan's writable paths). Confirmed still active this tick: `119a4f1` (`chore(flume): ship PENDING-GATE-BUILTIN`) reintroduced `schemaDelta` into the untouched `SECOND-REFERENCE-CHAIN` entry — identical corruption, one ship-cycle later. Repaired again (stripped); expect recurrence on every future ship until the loop is repointed.
+Recommendation: option 1, a human action (process control + global npm state, outside plan's writable paths). Confirmed still active this tick, directly: this plan session's own process tree resolves to the stale global loop — `.flume/loop.pid` → pid 307344 (`.../lib/node_modules/@dtmd/flume/dist/cli.js loop`) → child 439347 (`... cli.js tick`) → child 439428, the `claude -p ... --model sonnet` process running this very tick. The SECOND-REFERENCE-CHAIN ship (`546d572`) happened not to reintroduce `schemaDelta` this cycle only because its pending.json edit emptied the array outright (nothing partial to corrupt) — the stale code path is still live and will corrupt the next partial edit.
 
 ## PENDING-GATE-DOGFOOD-ADOPTION — chain.ts still hand-rolls pendingParseGate; v0.8 §6 acceptance not fully closed
 
@@ -59,3 +59,17 @@ Options:
 2. **Leave it and let CI prove/disprove this live.** If this write-up is wrong (something about the real GitHub Actions npm resolves differently than local repro), a real run settles it for free. Risk: if it's actually broken, `main`'s CI stays red on this step until someone notices.
 
 Recommendation: option 1 — file as its own entry (not a `SECOND-REFERENCE-CHAIN` scope-creep) so build can land the one-line `--no-save` fix directly.
+
+## INTEGRATION-LANE-NEVER-RUNS-IN-CI — v0.3 §17's integration lane has no CI wiring, and `job.integration.test.ts` hangs
+
+**PARKED**
+
+Context: auditing `SECOND-REFERENCE-CHAIN`'s new `tests/examples.integration.test.ts` against v0.8 §7 ("smoke test drives one full tick cycle ... the existing smoke posture") led to checking whether the integration lane actually runs anywhere. v0.3 §17 excludes `*.integration.test.ts` from the in-worktree gate specifically so it can run "at the host ... pre-merge / CI, not the autonomous gate" via `pnpm test:integration` — but `.github/workflows/ci.yml` never invokes that script (zero hits). Pre-existing gap (the lane already held `job.integration.test.ts` and `loop-process-boundary.integration.test.ts` before this delta); the new file lands into the same never-run lane.
+
+Checked whether it's safe to just add the CI step: ran `pnpm test:integration` locally. `examples.integration.test.ts` (2 tests, 149ms) and `loop-process-boundary.integration.test.ts` (4 tests, ~3s) pass clean. `job.integration.test.ts`'s second case — "§5b ... run refuses while another live loop holds the job's loop.pid" (line 209) — hangs indefinitely (reproduced twice, 120s+, no output past the first test in the file). Repro: `VITEST_LANE=integration pnpm exec vitest run tests/job.integration.test.ts --reporter=verbose`. Not root-caused — plausibly in `jobRun()`'s preflight (`src/job.ts` checkout/wake) before execution ever reaches the `loop` lock-check it's supposed to fall through to (`src/cli.ts` ~1059), but that's a guess, not a diagnosis.
+
+Options:
+1. **Root-cause the hang first, then wire CI (recommended).** Two units: the hang is an engine or test defect (unknown which yet); the CI wiring is mechanical once the suite is green. File the investigation as its own build entry once scoped, `blockedBy` on nothing but gating the CI-wiring entry.
+2. **Wire CI now with a short per-step timeout.** Fails loudly instead of burning runner quota silently, but papers over the bug — §17 wanted this lane to actually gate merges, not best-effort pass.
+
+Recommendation: option 1.

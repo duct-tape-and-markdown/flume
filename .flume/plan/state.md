@@ -1,36 +1,36 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 §§2,3,4,5,6,8 shipped (§6's
-engine mechanism only — dogfood adoption still open); §7 queued.
+Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-8 —
+§7 landed this delta via SECOND-REFERENCE-CHAIN). No v0.9 spec yet.
 
-Mode: **audit** (commit-delta: PENDING-GATE-BUILTIN ship, checked
-against v0.8 §6).
+Mode: **audit** (commit-delta: SECOND-REFERENCE-CHAIN build + ship,
+checked against v0.8 §7).
 
-## Queue (1)
+## Queue (0)
 
-1. `SECOND-REFERENCE-CHAIN` — open (v0.8 §7; unblocked, §§2-4 live)
+Empty — no spec-delta, nothing pending.
 
-## Open questions (3)
+## Open questions (5)
 
-- `STALE-GLOBAL-FLUME-LOOP` — **urgent, still active**: the
-  PENDING-GATE-BUILTIN ship (`119a4f1`) reintroduced the retired
-  `schemaDelta` field into the untouched SECOND-REFERENCE-CHAIN entry —
-  identical corruption, confirms the stale global loop is still running.
-  Repaired again this tick; needs human process action.
-- `PENDING-GATE-DOGFOOD-ADOPTION` — **new**: chain.ts still hand-rolls
-  `pendingParseGate` instead of the shipped `pendingGate` builtin; v0.8
-  §6 acceptance not fully closed. Operator leg, outside any phase's
-  fence.
+- `STALE-GLOBAL-FLUME-LOOP` — **urgent, confirmed active**: this plan
+  session's own process tree resolves to the stale global
+  `@dtmd/flume@0.5.0` loop. Needs human process action.
+- `INTEGRATION-LANE-NEVER-RUNS-IN-CI` — **new**: v0.3 §17's integration
+  lane (`pnpm test:integration`) has no CI wiring, and
+  `job.integration.test.ts` hangs on its §5b lock-refusal test — needs
+  root-cause before CI wiring is safe.
+- `PENDING-GATE-DOGFOOD-ADOPTION` — unchanged, operator leg.
 - `BUILD-PARK-COMMIT-BEFORE-BAIL` — unchanged.
+- `CONSUMER-SMOKE-PIN-HANDSHAKE-BREAK` — unchanged, operator leg.
 
 ## Trunk
 
-HEAD `119a4f1` (ship PENDING-GATE-BUILTIN). Engine mechanism audited
-clean against §6: composed core+extension validation + fence
-pre-check correct, test coverage solid (schema violation, fence
-violation naming paths, entryChannelPaths inclusion, custom path,
-missing file). Ship's own pending.json rewrite reintroduced
-`schemaDelta` corruption again (repaired). No spec-delta, inbox empty,
-no blockedBy entries to promote.
+HEAD `546d572` (ship SECOND-REFERENCE-CHAIN). Audited clean against
+§7: entry extension + lowercase-kebab tag refinement compose correctly,
+deterministic groom agent keeps the example dependency-free, docs carry
+the two-chains framing throughout, CI smoke step and vitest integration
+test both cover the acceptance line, `entry.files` scope respected (no
+creep), zero `src/` changes. No spec-delta, inbox empty, pending-now
+empty (nothing to promote).
 
 Plan continues: no
