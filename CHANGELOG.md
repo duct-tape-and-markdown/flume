@@ -32,6 +32,11 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   field — the artifact itself carries no interpretation, only what
   happened. A new `readTickVerdicts` accessor exposes the last N verdicts
   so a chain can render recent tick history into a prompt.
+- Fanout footprint commits (v0.7 §13: the actual touched paths of a
+  merge-failed or gate-reverted attempt, recorded onto the entry's
+  `observedFiles`) now source their content from the same per-entry
+  `mergeOutcomes` records the tick's verdict carries, instead of a second,
+  independently-maintained observed-files map — one capture, not two.
 
 ### Added
 

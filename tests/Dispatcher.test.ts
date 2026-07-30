@@ -1428,7 +1428,11 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       ),
     ).toEqual([
       { tag: "CONFLICT-A", outcome: "merged" },
-      { tag: "CONFLICT-B", outcome: "cherry-pick-conflict" },
+      {
+        tag: "CONFLICT-B",
+        outcome: "cherry-pick-conflict",
+        footprint: ["src/decoy-b.ts", "src/shared.ts"],
+      },
     ]);
 
     // No lingering cherry-pick state in the worktree — the dispatcher
@@ -1551,7 +1555,11 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
         a.tag.localeCompare(b.tag),
       ),
     ).toEqual([
-      { tag: "ISO-FAIL", outcome: "afterMerge-reverted" },
+      {
+        tag: "ISO-FAIL",
+        outcome: "afterMerge-reverted",
+        footprint: ["src/iso-fail.ts"],
+      },
       { tag: "ISO-PASS", outcome: "merged" },
     ]);
     const verdictVeto = first.verdict?.gateResults.find(
@@ -1839,6 +1847,21 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     const onDisk = await readPendingFromDisk(fx.repo);
     expect(onDisk[0]!.observedFiles).toEqual(
       expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+    );
+
+    // v0.8 §5: the footprint commit's file list is not a second, independent
+    // capture — it traces straight back to this tick's own TickVerdict
+    // record (mergeOutcomes), the same one `commitPendingUpdate` read to
+    // build the footprint commit above.
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      {
+        tag: "FOOT-STRAY",
+        outcome: "afterCommit-reverted",
+        footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+      },
+    ]);
+    expect(onDisk[0]!.observedFiles!.sort()).toEqual(
+      [...outcome.verdict!.mergeOutcomes[0]!.footprint!].sort(),
     );
   }, 20_000);
 

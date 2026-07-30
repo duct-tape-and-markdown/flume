@@ -118,26 +118,42 @@ export interface TickVerdictGateResult {
 /**
  * How a fanout entry's landed worktree commit fared once the wave tried to
  * put it on trunk (v0.8 §5's "cherry-pick/merge outcome"):
- *  - `merged`               cherry-picked, passed every afterMerge gate,
- *                           touched a declared file — counted shipped.
- *  - `cherry-pick-conflict` the cherry-pick itself failed; entry stays
- *                           pending, no commit reached trunk.
- *  - `afterMerge-reverted`  landed, then an afterMerge gate failed; that
- *                           entry's commit alone was reset back off trunk.
- *  - `channel-only`         landed and passed every gate, but touched no
- *                           file the entry declared (§12) — stays on trunk,
- *                           entry stays pending (not a ship).
+ *  - `merged`                cherry-picked, passed every afterMerge gate,
+ *                            touched a declared file — counted shipped.
+ *  - `cherry-pick-conflict`  the cherry-pick itself failed; entry stays
+ *                            pending, no commit reached trunk.
+ *  - `afterMerge-reverted`   landed, then an afterMerge gate failed; that
+ *                            entry's commit alone was reset back off trunk.
+ *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
+ *                            gate (§13, RELEASE-v0.7); never reached
+ *                            cherry-pick, so it never touched trunk on its
+ *                            own.
+ *  - `channel-only`          landed and passed every gate, but touched no
+ *                            file the entry declared (§12) — stays on
+ *                            trunk, entry stays pending (not a ship).
  */
 export type MergeOutcome =
   | "merged"
   | "cherry-pick-conflict"
   | "afterMerge-reverted"
+  | "afterCommit-reverted"
   | "channel-only";
 
-/** One fanout entry's {@link MergeOutcome}, as recorded in a {@link TickVerdict}. */
+/**
+ * One fanout entry's {@link MergeOutcome}, as recorded in a {@link
+ * TickVerdict}. `footprint` is the entry's actual touched paths — present
+ * on the outcomes that never landed cleanly on trunk (`cherry-pick-conflict`,
+ * `afterMerge-reverted`, `afterCommit-reverted`) where a captured diff
+ * exists; absent when the outcome carries no footprint of its own (`merged`,
+ * `channel-only`, or a best-effort capture that failed). `commitPendingUpdate`
+ * sources a wave's footprint commit from this same field (v0.8 §5: "now
+ * generated from the same verdict record rather than separate capture") —
+ * no independently-maintained observed-files map.
+ */
 export interface TickVerdictMergeOutcome {
   tag: string;
   outcome: MergeOutcome;
+  footprint?: string[];
 }
 
 /**
@@ -1220,26 +1236,31 @@ export class Dispatcher {
     const shipped: PendingEntry[] = [];
     const mergeReverted: PendingEntry[] = [];
     const mergeGateResults: GateResultEntry[] = [];
-    // Actual footprints of merge-failed attempts, keyed by tag. Persisted
-    // onto the entry (observedFiles) so the next partition separates the
-    // retry from whatever it collided with — declared `files` is a plan
-    // estimate, and an agent legitimately reaches beyond it.
-    const observed = new Map<string, string[]>();
     // v0.8 §5: each provisioned entry's cherry-pick/merge fate, for this
-    // wave's TickVerdict. Only entries whose worktree commit reached the
-    // merge step get an outcome here — an afterCommit gate-revert or a
-    // no-commit entry never reaches cherry-pick, so it has none.
+    // wave's TickVerdict — the sole capture of what happened to each entry,
+    // footprint included. `commitPendingUpdate` below reads a wave's
+    // merge-failure footprints straight off these records (the same ones
+    // `tick()` persists as `verdict.mergeOutcomes`) rather than a second,
+    // independently-maintained observed-files map — "now generated from the
+    // same verdict record rather than separate capture" (§5). An
+    // afterCommit gate-revert or a plain no-commit entry never reaches
+    // cherry-pick, so it gets an outcome here only when it carried a
+    // captured footprint (§13).
     const mergeOutcomes: TickVerdictMergeOutcome[] = [];
 
     for (const r of perEntry) {
       if (!r.committed || !r.commitSha) {
         // §13: an in-worktree afterCommit gate revert never reaches
-        // cherry-pick, so it never touches trunk on its own — feed its
-        // captured footprint into the same `observed` map an afterMerge
-        // failure uses, so commitPendingUpdate below lands it on trunk
-        // instead of it living only in the gitignored prior-attempt record.
+        // cherry-pick, so it never touches trunk on its own — record its
+        // captured footprint here so commitPendingUpdate below lands it on
+        // trunk instead of it living only in the gitignored prior-attempt
+        // record.
         if (r.footprint && r.footprint.length > 0) {
-          observed.set(r.entry.tag, r.footprint);
+          mergeOutcomes.push({
+            tag: r.entry.tag,
+            outcome: "afterCommit-reverted",
+            footprint: r.footprint,
+          });
         }
         continue;
       }
@@ -1251,8 +1272,9 @@ export class Dispatcher {
         this.log.warn(
           `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
         );
+        let footprint: string[] | undefined;
         try {
-          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, r.commitSha));
+          footprint = await git.showNameOnly(repoRoot, r.commitSha);
         } catch {
           // Footprint capture is best-effort; the retry just partitions on
           // declared files as before.
@@ -1262,7 +1284,11 @@ export class Dispatcher {
         // the next plan tick (which can't run `pnpm install` etc. against a
         // dirty trunk) and require manual `git restore` intervention.
         await git.cherryPickAbort(repoRoot);
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "cherry-pick-conflict" });
+        mergeOutcomes.push({
+          tag: r.entry.tag,
+          outcome: "cherry-pick-conflict",
+          ...(footprint ? { footprint } : {}),
+        });
         continue;
       }
       const mergedSha = await git.revParse(repoRoot);
@@ -1317,14 +1343,19 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
+        let footprint: string[] | undefined;
         try {
-          observed.set(r.entry.tag, await git.showNameOnly(repoRoot, mergedSha));
+          footprint = await git.showNameOnly(repoRoot, mergedSha);
         } catch {
           // Best-effort, as above.
         }
         await git.hardResetTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "afterMerge-reverted" });
+        mergeOutcomes.push({
+          tag: r.entry.tag,
+          outcome: "afterMerge-reverted",
+          ...(footprint ? { footprint } : {}),
+        });
         continue;
       }
 
@@ -1360,9 +1391,14 @@ export class Dispatcher {
     }
 
     // Update pending.json — remove shipped entries, record merge-failure
-    // footprints — as one harness commit.
+    // footprints — as one harness commit. `commitPendingUpdate` derives the
+    // footprints straight off `mergeOutcomes`, the same records this wave's
+    // TickVerdict carries — no separate observed-files bookkeeping here.
+    const footprintTags = mergeOutcomes
+      .filter((m) => m.footprint && m.footprint.length > 0)
+      .map((m) => m.tag);
     let chorSha: string | undefined;
-    if (shipped.length > 0 || observed.size > 0) {
+    if (shipped.length > 0 || footprintTags.length > 0) {
       // Each shipped entry committed clean *and* passed its afterMerge gate
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
@@ -1377,7 +1413,7 @@ export class Dispatcher {
       const updSha = await this.commitPendingUpdate(
         pending,
         shippedTags,
-        observed,
+        mergeOutcomes,
       );
       if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
@@ -1386,8 +1422,8 @@ export class Dispatcher {
             ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
             : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
           : updSha === preUpdate
-            ? `[flume] footprint already recorded, no commit: ${[...observed.keys()].join(", ")}`
-            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${[...observed.keys()].join(", ")}`,
+            ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
+            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
       );
     }
 
@@ -2145,8 +2181,16 @@ export class Dispatcher {
   private async commitPendingUpdate(
     before: PendingEntry[],
     shippedTags: string[],
-    observed: ReadonlyMap<string, string[]> = new Map(),
+    mergeOutcomes: readonly TickVerdictMergeOutcome[] = [],
   ): Promise<string> {
+    // v0.8 §5: footprint content sources from the wave's own TickVerdict
+    // record (mergeOutcomes) rather than a separately maintained map — a
+    // view over the same facts `tick()` persists, not a second capture.
+    const observed = new Map(
+      mergeOutcomes
+        .filter((m) => m.footprint && m.footprint.length > 0)
+        .map((m) => [m.tag, m.footprint!] as const),
+    );
     const shipped = new Set(shippedTags);
     // A blockedBy gate naming a tag this wave shipped is resolved HERE,
     // mechanically: the dispatcher just merged and gated that tag, so

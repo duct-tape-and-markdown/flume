@@ -931,6 +931,48 @@ An entry gated on an unasserted capability is skipped, never silently —
 stuck on it, rather than reading a bare `hibernating`/`awake` line and
 guessing.
 
+## 8. Reading tick history: `readTickVerdicts`
+
+Every tick that actually runs a phase writes one **verdict** — a facts-only
+record of what happened: phase name, entry tags, committed/no-commit class,
+every gate that ran (name, ok/fail, message, and for a failing gate its
+`details` — e.g. a writable-paths violation's offending paths), shipped
+tags, and (fanout) each provisioned entry's cherry-pick/merge fate. The
+engine writes it; nothing in the shape says what the facts *mean* — no
+`park`, no `bail worth waking for`. That interpretation is the chain's job.
+
+`readTickVerdicts(flumeDir, n?)` (exported from `flume`, alongside the
+`TickVerdict` / `TickVerdictGateResult` / `TickVerdictMergeOutcome` /
+`MergeOutcome` types it returns) reads the last `n` verdicts, oldest first,
+from the bounded on-disk history log — default `n` is the log's own cap
+(200). Absent or corrupt history reads as `[]`, never a thrown error.
+
+A chain that wants a phase's prompt to carry recent tick history renders it
+itself, from `promptArgs`:
+
+```ts
+import { readTickVerdicts } from "flume";
+
+const plan: Phase = {
+  name: "plan",
+  // ...
+  async promptArgs(ctx) {
+    const recent = await readTickVerdicts(ctx.flumeDir, 5);
+    const lines = recent.map(
+      (v) =>
+        `${v.phaseName}: ${v.committed ? "committed" : (v.noCommit ?? "no-op")}` +
+        (v.shippedTags.length ? ` (shipped ${v.shippedTags.join(", ")})` : ""),
+    );
+    return { RECENT_TICKS: lines.join("\n") || "(no prior ticks)" };
+  },
+};
+```
+
+Whether to render history at all, how far back, and what to do with a
+reverted tick's `gateResults[].details` (surface it verbatim? summarize it?
+ignore it?) are the chain's calls, not the engine's — same split as every
+other prompt-args decision (§1).
+
 ## Putting it together
 
 ```ts
