@@ -1,5 +1,43 @@
 [
   {
+    "tag": "SHIP-PENDING-CLOBBER-BUG",
+    "summary": "Ship commits keep reintroducing the retired schemaDelta field into pending.json entries they never shipped -- trunk's queue is corrupt again right now.",
+    "per": {
+      "path": "spec/RELEASE-v0.8.md",
+      "section": "2. Entry schema splits: engine core + chain-declared extension"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "find & fix why commitPendingUpdate's rewrite reintroduces a retired field into entries it didn't ship; prime suspect is overlapping-tick staleness -- see notes"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "regression pinning the mechanism found: a wave shipping one entry must leave untouched entries' field sets byte-identical apart from gate/observedFiles"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Fixed bullet once root cause identified"
+        }
+      ],
+      "retire": []
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "after commitPendingUpdate ships one entry, remaining entries serialize with exactly their pre-wave key set -- no reintroduced or foreign keys"
+      }
+    ],
+    "acceptance": "pending.json on trunk parses clean against the dogfood extension after a ship commit; a regression test pins the mechanism found; two consecutive ship waves leave untouched entries byte-identical apart from gate/observedFiles.",
+    "notes": "Repro: 52596fb clean; 669790e (build, never touches pending.json) unchanged; 4c27476 (chore ship, sole writer) re-adds schemaDelta to the 2 untouched entries. src/+dist/ grep clean, so it's raced/stale data, not hardcoded. Same corruption recurred once before (4ac18d6, hand-fixed by 52596fb) -- fix didn't address the mechanism. Untracked .flume/loop.pid suggests a live supervisor; check overlapping ticks racing a stale in-memory pending snapshot onto disk (last-writer-wins) first."
+  },
+  {
     "tag": "PENDING-GATE-BUILTIN",
     "summary": "New pendingGate builtin: composed core+extension validation plus plan-time fence pre-check against the target phase's writablePaths, per v0.8 §6.",
     "per": {
@@ -32,7 +70,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/Gate.test.ts",
@@ -84,7 +121,6 @@
       ],
       "retire": []
     },
-    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
