@@ -1,1 +1,68 @@
-[]
+[
+  {
+    "tag": "CONSUMER-SMOKE-PIN-HANDSHAKE-BREAK",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "Add --no-save to the 'Consumer-install smoke' step's npm install line (~line 95) so the consumer stays unpinned, same fix already applied to the newer backlog-groomer smoke step."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Consumer-install smoke npm installs without --no-save, so the pin trips engine handshake arm 2 (§10) and every step command refuses.",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
+    },
+    "tests": [],
+    "acceptance": "Consumer-install smoke CI step's npm install records no @dtmd/flume pin in the consumer's package.json; the step's flume status/render commands run under handshake arm 3 (unpinned), matching the sibling backlog-groomer step's shape.",
+    "notes": "Found auditing SECOND-REFERENCE-CHAIN's own CI step against this one. Reproduced locally (hermetic env): pin recorded + no provisioned install → engineHandshake refuses exit 2 on the step's own flume status/render calls. cli.test.ts's handshake suite confirms arm-2 is intended; this step just predates it."
+  },
+  {
+    "tag": "JOB-RUN-LOCK-REFUSAL-HANG",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/job.ts", "description": "jobRun preflight (§5b steps 1-2) — likely culprit, runs before the loop lock check." },
+        { "path": "src/cli.ts", "description": "job-run→loop cmd rewrite and dispatch (~lines 840-1078) — the path between jobRun preflight and the loop.pid lock check at ~line 1059." }
+      ],
+      "retire": []
+    },
+    "summary": "job.integration.test.ts's lock-refusal case hangs indefinitely instead of exercising §5b step 3's unchanged loop lock.",
+    "per": {
+      "path": "spec/RELEASE-v0.5.md",
+      "section": "5. Lifecycle verbs — `flume job <verb>`"
+    },
+    "tests": [
+      {
+        "path": "tests/job.integration.test.ts",
+        "asserts": "'run refuses while another live loop holds the job's loop.pid' — job run exits 1, names the holder pid, leaves the holder's pidfile untouched (§5b step 3, no hang)"
+      }
+    ],
+    "acceptance": "VITEST_LANE=integration pnpm exec vitest run tests/job.integration.test.ts completes (no hang, was 120s+ with no output past the prior test); full pnpm test:integration green.",
+    "notes": "Repro: VITEST_LANE=integration pnpm exec vitest run tests/job.integration.test.ts --reporter=verbose, second case in the §5b describe block. Not root-caused — the lock check itself (cli.ts ~1059-1078) is a fast synchronous existsSync+kill(pid,0), so the hang is plausibly upstream in jobRun's preflight (branch checkout / baton hibernating / chain load) before dispatch ever reaches it. Blocks JOB-INTEGRATION-LANE-CI-WIRING."
+  },
+  {
+    "tag": "JOB-INTEGRATION-LANE-CI-WIRING",
+    "gate": { "kind": "blockedBy", "tag": "JOB-RUN-LOCK-REFUSAL-HANG" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": ".github/workflows/ci.yml", "description": "Add a step running `pnpm test:integration` per §17's pre-merge/CI intent." }
+      ],
+      "retire": []
+    },
+    "summary": "The integration lane (`pnpm test:integration`) has no CI wiring; §17 names CI as its run site and it never runs anywhere.",
+    "per": {
+      "path": "spec/RELEASE-v0.3.md",
+      "section": "17. Test-suite lanes — integration tests off the in-worktree gate"
+    },
+    "tests": [],
+    "acceptance": "CI workflow runs `pnpm test:integration` as its own step, green.",
+    "notes": "Blocked on JOB-RUN-LOCK-REFUSAL-HANG: examples.integration.test.ts and loop-process-boundary.integration.test.ts already pass clean locally, but job.integration.test.ts hangs — wiring CI before that's fixed just turns the hang into a stuck/timed-out runner."
+  }
+]
