@@ -1,79 +1,121 @@
 # State
 
-Phase: **v0.7 line in flight, queue empty**. Mode this tick: **audit**
-(commit-delta since the last `plan:` commit, `a8091ba`, is two commits —
-a `build:` ship and a `chore(flume):` clear — with no spec-delta and an
-empty inbox; audit is the only dimension carrying real content).
+Phase: **v0.7 line closing out, v0.8 line freshly authored**. Mode this
+tick: **audit + derive** (commit-delta since the last `plan:` commit,
+`cb695d6`, is three commits — two rule/spec commits and one operator
+dogfood ship — with a substantial spec-delta and an empty inbox; derive
+carries the heaviest weight this tick).
 
 ## This tick
 
-**Commit-delta** (2 commits since `a8091ba`):
-- `5a56f7a` (`build:`) — ships the `setupWorktree` lockfile-aware helper
-  per `spec/RELEASE-v0.7.md` §11. Cross-checked the diff against §11's
-  three named deliverables: (1) helper ships at `src/setupWorktree.ts`,
-  re-exported from `src/index.ts` alongside `builtinGates`, matching the
-  spec's three branches (pnpm-lock.yaml → `pnpm install
-  --frozen-lockfile`; package-lock.json → `npm ci`; neither → clean
-  refusal) — verified `tests/setupWorktree.test.ts` covers all three plus
-  both-present (pnpm wins) and install-failure-propagates edge cases; (2)
-  `docs/CHAIN-AUTHORING.md`'s worked example rewritten to show the helper
-  as the recommended default; CHANGELOG bullet present. (1) and (2) are
-  genuinely shipped and correct. (3) — "Flume's own dogfood chain
-  (`.flume/chain.ts`) adopts the helper in place of `buildSetupWorktree`"
-  — was correctly *not* attempted by this commit, since the re-filed
-  entry (last tick) dropped `.flume/chain.ts` from `files.edit` as
-  off-fence for build.
-- `ac8c973` (`chore(flume):`) — clears `SETUP-WORKTREE-HELPER` from
-  `pending.json` (ship-detection: the commit's files matched the entry's
-  declaration exactly). But this leaves §11 dimension (3) permanently
-  unshipped with no queue entry tracking it — verified this tick via
-  `grep` that `.flume/chain.ts:95-103`'s `buildSetupWorktree` still
-  hand-rolls `pnpm install --frozen-lockfile` directly, no reference to
-  the new exported helper.
+**Commit-delta** (3 commits since `cb695d6`):
+- `b327db3` (`chore(flume):`) — operator commit closing
+  `SETUP-WORKTREE-DOGFOOD-ADOPTION`. Verified the diff directly:
+  `.flume/chain.ts`'s `buildSetupWorktree` now calls the exported
+  `setupWorktree(ctx.worktreePath)` helper; the hand-rolled `execFile`
+  pnpm spawn and its now-unused `execFile`/`promisify` imports are gone.
+  §11 dimension (3) genuinely lands. Open question closed.
+- `b42468c` (`rules:`) — operator commit adding
+  `.claude/rules/engine-boundary.md` and collaboration.md's "complexity
+  is a signal" section, both cited as `CLAUDE.md` Non-Negotiables. Rules
+  layer, human-authored per `spec-plan-build.md`'s table — no plan
+  action; scoped correctly (rules + CLAUDE.md pointer only, no `src/`
+  touched).
+- `5c67ee0` (`spec:`) — v0.7 drain amendment (§10 amendment, §§15-17
+  new) plus authoring `spec/RELEASE-v0.8.md` (the boundary line, §§1-9)
+  from scratch. This is the tick's real work — see Spec-delta below.
 
-Routed as a new open question, **SETUP-WORKTREE-DOGFOOD-ADOPTION**
-(PARKED) — not NEEDS AMENDMENT, because no spec gap exists (§11 already
-names the deliverable); the blocker is purely the writable-paths fence
-(neither build's nor plan's `writablePaths` reach `.flume/chain.ts`).
-Same shape and same resolution path as the already-closed
-PROMPTS-BUILD-FENCE-INSTRUCTION: needs a direct operator `chore(flume):`
-commit, not a phase entry.
+**Spec-delta**: both `spec/RELEASE-v0.7.md` (amended) and
+`spec/RELEASE-v0.8.md` (new file) changed since `cb695d6` — full derive
+dimension triggered on both. Processed v0.7's amendment in full this
+tick (4 sections, all mechanical, no open design calls left after the
+operator's own rulings); v0.8 not started — see Cut below.
 
-**Spec-delta**: none (`git diff a8091ba..HEAD -- spec/` empty).
+**Derive — v0.7 amendment, filed as 5 entries** (queue order below is
+priority; none blockedBy any other, all independently shippable):
+1. `TICKRESULT-NOCOMMIT-CLASSIFICATION` (§15) — `TickResult.noCommit`
+   field + `Dispatcher.tick` folds it in. Dogfood chain wake-condition
+   edit stays operator-applied per the section's own note — not filed.
+2. `ENGINE-PIN-HANDSHAKE-JOB-SCOPE` (§10 amendment) — resolves
+   `ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH`: swap the fixed bay-root
+   check path for the `resolveStateDirs`-derived one. Flagged a real
+   ordering wrinkle in the entry's `notes` (handshake runs before `--job`
+   extraction in `main()`) rather than resolving it myself — mechanical
+   either way, build's call.
+3. `STATUS-SUPERVISOR-LIVENESS` (§17, ask 2) — `status` probes
+   `loop.pid` liveness.
+4. `DROPLASTCOMMIT-TIP-OWNERSHIP` (§17, ask 3) — `dropLastCommit` checks
+   current tip against the sha it itself just created before resetting.
+   Traced both callsites (`src/Dispatcher.ts`, ~lines 781 and 1290):
+   each already holds its own `postHead` in scope, so this is a
+   same-call check, no cross-process state needed — simpler than the
+   spec's "supervisor remembers" phrasing implies.
+5. `SUPERVISOR-PROVISION-QUARANTINE` (§16) — per-entry quarantine +
+   3-consecutive-identical-failure abort, ruled as both legs together.
+   Largest of the five; filed as one entry since the ruling explicitly
+   rejects either leg alone.
+
+Split §17's two asks into separate entries (`STATUS-SUPERVISOR-LIVENESS`
+/ `DROPLASTCOMMIT-TIP-OWNERSHIP`) since they touch disjoint code paths
+(`cli.ts` status vs. `git.ts`+`Dispatcher.ts`) and ship independently —
+one spec section, two shippable units. §17 ask 1 (loop-lock liveness
+probe) stays unfiled: already verified implemented, no gap, no entry.
+
+**Cut — v0.8 not derived this tick.** `spec/RELEASE-v0.8.md` is a fresh
+8-section line (schema core/extension split, tag grammar, capability
+gate, tick-verdict artifact, `pendingGate` builtin, second reference
+chain, supervisor policy knobs) — a full pass would dilute quality
+against the v0.7 amendment work above, which had operator rulings ready
+to act on mechanically. Three of the seven closed open questions
+(`TAG-PATTERN-SLICE-CONSTRAINT`, and implicitly `PENDING-NOTES-CAP-
+VISIBILITY`) now point at v0.8 §§2-3 rather than carrying their own
+entries — no entry filed for either this tick; they'll be picked up
+naturally when v0.8 §2-3 are derived.
+
+Ordering note for next tick: §2 (core/extension schema split) is the
+dependency root — §3 (tag grammar refinement) and §6 (`pendingGate`
+composed validation) both build on its extension-declaration mechanism.
+§4 (`requiresCapability`) and §5 (tick-verdict artifact) read as
+independent of §2 and could go in parallel/first. §7 (second reference
+chain) and §8 (policy knobs) are last — §7 needs §§2-4 landed to exercise
+them from a second angle, §8 builds on this tick's own
+`SUPERVISOR-PROVISION-QUARANTINE` (§16) shipping first.
 
 **Drain**: `.flume/inbox.md` is header-only — nothing to route.
 
-**Promote**: `pending-now` is `[]` — no entry carries `gate.kind:
-"blockedBy"` to flip.
+**Promote**: `pending-now` was `[]` at tick start — no entry carried
+`gate.kind: "blockedBy"` to flip. All 5 new entries filed this tick are
+`gate.kind: "open"` (none blocks another).
 
-## Queue (0)
+## Queue (5)
 
-`pending.json` stays `[]`. Nothing pickable for build this cycle; the
-only actionable item (dogfood adoption) is fence-blocked for every phase
-and now lives in open-questions.md awaiting an operator commit.
+1. `TICKRESULT-NOCOMMIT-CLASSIFICATION` — open
+2. `ENGINE-PIN-HANDSHAKE-JOB-SCOPE` — open
+3. `STATUS-SUPERVISOR-LIVENESS` — open
+4. `DROPLASTCOMMIT-TIP-OWNERSHIP` — open
+5. `SUPERVISOR-PROVISION-QUARANTINE` — open
 
-## Open questions (7)
+All five pickable for build immediately; none blocked.
 
-- `SETUP-WORKTREE-DOGFOOD-ADOPTION` — PARKED (new this tick, see Drain
-  above).
-- `HANDOFF-NOCOMMIT-BLIND` — NEEDS AMENDMENT, unchanged.
-- `ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH` — PARKED, unchanged.
-- `TAG-PATTERN-SLICE-CONSTRAINT` — NEEDS AMENDMENT, unchanged.
-- `PENDING-NOTES-CAP-VISIBILITY` — NEEDS AMENDMENT, unchanged.
-- `SUPERVISOR-PROVISION-FAILURE-QUARANTINE` — PARKED, unchanged.
-- `SUPERVISOR-LIVENESS-VS-DROPLASTCOMMIT-OWNERSHIP` — NEEDS AMENDMENT (2
-  of 3 asks), unchanged.
+## Open questions (0)
+
+All seven prior questions closed this tick — see open-questions.md's
+closed-comment block for per-question disposition. Two
+(`TAG-PATTERN-SLICE-CONSTRAINT`, `PENDING-NOTES-CAP-VISIBILITY`) close
+into v0.8 §§2-3 without a pending entry yet (v0.8 not derived this
+tick, see Cut above); the other five close into filed entries or
+verified-already-implemented, no residual action.
 
 ## Writable-paths / trunk
 
-- `pending.json`: unchanged (`[]` at tick start and end — nothing to
-  add, nothing to promote).
+- `pending.json`: `[]` → 5 entries (this tick's derive output).
 - `state.md`: rewritten this tick (this file).
-- `open-questions.md`: appended `SETUP-WORKTREE-DOGFOOD-ADOPTION`; all
-  six prior questions left byte-identical.
+- `open-questions.md`: rewritten — all seven prior questions moved to
+  the closed-comment block with disposition notes; file is otherwise
+  empty (no open questions).
 - `inbox.md`: untouched — already header-only, nothing to drain.
-- Trunk: HEAD `ac8c973` at this pass's start; tree clean besides
+- Trunk: HEAD `5c67ee0` at this pass's start; tree clean besides
   untracked `.flume/loop.pid` (live supervisor's runtime artifact, not a
   plan concern).
 
-Plan continues: no
+Plan continues: yes — v0.8 derive dimension not started (`spec/RELEASE-v0.8.md` §§2-9); next tick begins there per the ordering note above.
