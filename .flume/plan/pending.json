@@ -1,48 +1,5 @@
 [
   {
-    "tag": "STATUS-SUPERVISOR-LIVENESS",
-    "summary": "flume status probes loop.pid for process liveness (live pid / stale pidfile / no pidfile) alongside the awake markers, per v0.7 §17.",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "17. `status` shows supervisor liveness; `dropLastCommit` checks tip ownership"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "status command probes flumeDir/loop.pid for liveness beside the awake markers"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "optionally export the liveLoopPid probe shape (src/job.ts:355) for reuse rather than duplicating it"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "cover live-pid / stale-pidfile / no-pidfile status output"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Fixed bullet per §17 (liveness leg)"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "status with a live supervisor pid names it; with a stale (dead-process) pidfile says so; with no pidfile is unchanged from today"
-      }
-    ],
-    "acceptance": "status with a live supervisor names its pid; with a stale pidfile says so; with no pidfile is unchanged.",
-    "notes": "Root cause of the 2026-07-29 incident was the operator deleting loop.pid before relaunching — the loop-lock liveness probe itself (src/cli.ts:731-747) already refuses relaunch on a live pidfile, verified, no gap there."
-  },
-  {
     "tag": "DROPLASTCOMMIT-TIP-OWNERSHIP",
     "summary": "dropLastCommit verifies current tip matches the sha it's dropping before reset --hard; refuses naming both shas on mismatch, per v0.7 §17.",
     "per": {
