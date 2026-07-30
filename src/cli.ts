@@ -90,14 +90,18 @@ function readPackageVersion(): string {
  * rather than crashing on a malformed link target. A link that real-path
  * resolves to {@link OWN_PACKAGE_ROOT} — the running engine linking back to
  * itself, e.g. this repo's own dogfood chain provisioning a job from a
- * source checkout with no built `dist/` — also "does not resolve": re-exec'd
- * self-reference is at best a no-op and at worst an unbounded spawn loop
- * (the re-exec'd copy resolves the same link and re-execs again), never the
- * "defer to a copy" case the handshake exists for.
+ * source checkout with no built `dist/` — is a distinct third outcome,
+ * `"self"`: this invocation *is* the provisioned install, not a copy of it
+ * and not an absent one. Re-exec'ing it would be at best a no-op and at
+ * worst an unbounded spawn loop (the re-exec'd copy resolves the same link
+ * and re-execs again); but collapsing it into "absent" wrongly hands a
+ * pinned bay to arm 2's refusal even though the running engine already is
+ * the pinned install. Callers proceed as authority on `"self"` — same as
+ * arm 3 — rather than treating it as no local install at all.
  */
 function readLocalInstall(
   flumeDir: string,
-): { version: string; bin: string } | undefined {
+): { version: string; bin: string } | "self" | undefined {
   const root = join(flumeDir, "node_modules", "@dtmd", "flume");
   let raw: string;
   try {
@@ -106,7 +110,7 @@ function readLocalInstall(
     return undefined;
   }
   try {
-    if (realpathSync(root) === OWN_PACKAGE_ROOT) return undefined;
+    if (realpathSync(root) === OWN_PACKAGE_ROOT) return "self";
   } catch {
     return undefined;
   }
@@ -224,6 +228,10 @@ function handshakeFlumeDir(repoRoot: string, argv: readonly string[]): string {
  *    re-exec its bin with this process's own argv, inheriting stdio, and
  *    return its exit code. No version comparison: the local install is the
  *    authority once a bay is provisioned, not a copy to check against it.
+ *    A self-referential install (`readLocalInstall` returns `"self"`) skips
+ *    this re-exec — this process already *is* the install — and returns
+ *    `undefined` to proceed, same as arm 3, regardless of pin state: it is
+ *    the authority, never a stale-install refusal target.
  * 2. No local install, but the bay's `package.json` pins `@dtmd/flume` —
  *    refuse (exit 2), naming the pin and this running engine's own version
  *    (`readPackageVersion()`, compared only to shape the message).
@@ -232,6 +240,7 @@ function handshakeFlumeDir(repoRoot: string, argv: readonly string[]): string {
 function engineHandshake(repoRoot: string, argv: readonly string[]): number | undefined {
   const flumeDir = handshakeFlumeDir(repoRoot, argv);
   const local = readLocalInstall(flumeDir);
+  if (local === "self") return undefined;
   if (local) {
     const result = spawnSync(process.execPath, [local.bin, ...argv], {
       stdio: "inherit",

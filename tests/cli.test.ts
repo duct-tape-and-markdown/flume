@@ -505,15 +505,17 @@ describe("engine↔pin handshake — v0.7 §10", () => {
 
   /**
    * `readLocalInstall`'s self-referential-install guard (`src/cli.ts:65,
-   * 91-96,109`, commit 54d0d70): a bay whose local-install link real-path
-   * resolves back to *this running engine's own package root* — the shape
-   * this repo's own dogfood chain produces provisioning a job from a source
-   * checkout with no built `dist/` — must be treated as absent, never
-   * re-exec'd into. `runCli` spawns `src/cli.ts` straight through `tsx`
-   * (`TSX_CLI`/`CLI` above), so that running module's own package root is
-   * this checkout's repo root; symlinking the bay's install path directly at
-   * `REPO_ROOT` reproduces the self-reference without a second fixture
-   * process.
+   * 91-96,109`): a bay whose local-install link real-path resolves back to
+   * *this running engine's own package root* — the shape this repo's own
+   * dogfood chain produces provisioning a job from a source checkout with
+   * no built `dist/` — is this invocation *being* the provisioned install,
+   * not a copy of it and not an absent one. It must proceed as authority
+   * (skip both the arm-1 re-exec and the arm-2 pin refusal), never
+   * re-exec'd into and never refused against. `runCli` spawns `src/cli.ts`
+   * straight through `tsx` (`TSX_CLI`/`CLI` above), so that running
+   * module's own package root is this checkout's repo root; symlinking the
+   * bay's install path directly at `REPO_ROOT` reproduces the
+   * self-reference without a second fixture process.
    */
   async function writeSelfReferentialInstall(dir: string): Promise<void> {
     const root = join(dir, ".flume", "node_modules", "@dtmd", "flume");
@@ -526,7 +528,7 @@ describe("engine↔pin handshake — v0.7 §10", () => {
   }
 
   it(
-    "a self-referential local-install link (real-path resolves to the running engine's own package root) is treated as absent — a pinned bay refuses (arm 2) instead of re-execing into itself (54d0d70)",
+    "a self-referential local-install link (real-path resolves to the running engine's own package root) on a pinned bay proceeds as authority — runs normally instead of refusing (arm 2) or re-execing into itself",
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "flume-pin-selfref-pinned-"));
       try {
@@ -542,13 +544,10 @@ describe("engine↔pin handshake — v0.7 §10", () => {
 
         const result = await runCli(dir, ["status"]);
 
-        expect(result.code).toBe(2);
+        expect(result.code).toBe(0);
+        expect(result.out).toContain("hibernating");
         expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
-        expect(result.out).toContain("9.9.9-pinned");
-        expect(result.out).toContain(await engineVersion());
-        expect(result.out).toContain(
-          join(dir, ".flume", "node_modules", "@dtmd", "flume"),
-        );
+        expect(result.out).not.toContain("pins @dtmd/flume");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

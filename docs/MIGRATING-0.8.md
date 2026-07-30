@@ -116,7 +116,12 @@ first time alongside the v0.8 schema split:
   `flume job new <name>` (which links the local install into the job-scoped
   state root), or dropping the pin from `package.json` to run unpinned as
   the escape hatch. A pinned bay with no provisioned install is a hard stop,
-  not a silent fallback to whatever `flume` is on `PATH`.
+  not a silent fallback to whatever `flume` is on `PATH`. One exception: if
+  the resolved local install real-path-resolves back to the running engine
+  itself (a self-referential provisioned install — e.g. a dogfood chain
+  provisioning a job from a source checkout), this invocation *is* the
+  provisioned install, so it proceeds as authority instead of refusing —
+  it is never re-exec'd into and never treated as absent.
 - **The exit-code contract.** `flume tick` returns `0` on a committed or
   cleanly-hibernating tick, `2` on a usage error (including the handshake
   refusal above), `69` when the chain never resolved at all, `78` on a
