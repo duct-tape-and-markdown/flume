@@ -116,12 +116,24 @@ first time alongside the v0.8 schema split:
   `flume job new <name>` (which links the local install into the job-scoped
   state root), or dropping the pin from `package.json` to run unpinned as
   the escape hatch. A pinned bay with no provisioned install is a hard stop,
-  not a silent fallback to whatever `flume` is on `PATH`. One exception: if
-  the resolved local install real-path-resolves back to the running engine
-  itself (a self-referential provisioned install — e.g. a dogfood chain
-  provisioning a job from a source checkout), this invocation *is* the
-  provisioned install, so it proceeds as authority instead of refusing —
-  it is never re-exec'd into and never treated as absent.
+  not a silent fallback to whatever `flume` is on `PATH` — **but only once
+  the binary that gets invoked already contains this check.** The handshake
+  is code inside the engine (`engineHandshake`, `src/cli.ts`); it is not
+  retroactive. If the global `flume` your shell resolves is still a 0.6.x
+  install — the exact case this guide's audience is upgrading from — that
+  binary predates the handshake entirely and has no way to refuse anything:
+  it runs straight through using its own pre-0.7 code, against whatever
+  pending.json/chain.ts is on disk, with no version check and no error. The
+  hard stop only protects a bay once the *invoking* global binary is itself
+  >=0.7; until you've upgraded that global install, there is no guard rail
+  here — treat "upgrade the global `flume` first" as step zero, before
+  §1's pre-upgrade checklist. One exception to the refusal itself, once
+  the handshake is running at all: if the resolved local install
+  real-path-resolves back to the running engine itself (a self-referential
+  provisioned install — e.g. a dogfood chain provisioning a job from a
+  source checkout), this invocation *is* the provisioned install, so it
+  proceeds as authority instead of refusing — it is never re-exec'd into
+  and never treated as absent.
 - **The exit-code contract.** `flume tick` returns `0` on a committed or
   cleanly-hibernating tick, `2` on a usage error (including the handshake
   refusal above), `69` when the chain never resolved at all, `78` on a
