@@ -36,6 +36,7 @@ import { chainLoadGate } from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { Chain, Phase, TickResult } from "../src/Phase.ts";
 import { parsePending, type PendingEntry } from "../src/PendingSchema.ts";
+import * as git from "../src/git.ts";
 
 const exec = promisify(execFile);
 
@@ -870,6 +871,94 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "race-b"))).toBe(
       false,
     );
+  }, 30_000);
+});
+
+/**
+ * v0.7 §16 — replays the incident shape (`.flume/loop-20260729.log`, batch
+ * 3): a deterministic pre-tick worktree provisioning failure on ONE entry's
+ * slug must not crash the whole fanout wave when its siblings are perfectly
+ * pickable. `git.addWorktree` is spied to fail for exactly one slug — the
+ * dispatcher never distinguishes *which* git call inside `createWorktree`
+ * threw, so this stands in for the incident's `git worktree remove`/`rm`
+ * EBUSY wall without depending on genuine OS-level file locking.
+ */
+describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates one entry (§16)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("the held slug's entry stays pending with a signature; siblings still ship to batch completion", async () => {
+    const entries = [
+      makeEntry("HELD-ENTRY", ["src/held.ts"]),
+      makeEntry("OK-A", ["src/ok-a.ts"]),
+      makeEntry("OK-B", ["src/ok-b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const realAddWorktree = git.addWorktree;
+    vi.spyOn(git, "addWorktree").mockImplementation(async (opts) => {
+      if (opts.path.includes("held-entry")) {
+        throw new Error(
+          "worktree directory survived removal fallback: " + opts.path,
+        );
+      }
+      return realAddWorktree(opts);
+    });
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "ok-a": (cwd) =>
+        writeAndCommit(cwd, "src/ok-a.ts", "A\n", "build(OK-A): ship"),
+      "ok-b": (cwd) =>
+        writeAndCommit(cwd, "src/ok-b.ts", "B\n", "build(OK-B): ship"),
+    });
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The other two entries batch-completed this same tick — the held
+    // entry's failure never reached them.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags?.slice().sort()).toEqual([
+      "OK-A",
+      "OK-B",
+    ]);
+
+    // The held entry carries a comparable signature and stays pending —
+    // pending.json itself is never touched for a provisioning failure.
+    expect(outcome.provisionFailures).toEqual([
+      expect.objectContaining({
+        tag: "HELD-ENTRY",
+        signature: expect.stringContaining("worktree directory survived"),
+      }),
+    ]);
+    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+      (e) => e.tag,
+    );
+    expect(pendingTags).toEqual(["HELD-ENTRY"]);
+
+    expect(
+      warnings.some(
+        (w) => w.includes("HELD-ENTRY") && w.includes("provisioning failed"),
+      ),
+    ).toBe(true);
   }, 30_000);
 });
 
@@ -3453,6 +3542,182 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     ).toBe(true);
     // The supervisor never clears the flag either — diagnosability over tidiness.
     expect(baton.isAwake("ghost")).toBe(true);
+  });
+});
+
+/**
+ * v0.7 §16 — the supervisor-level legs `superviseLoop` owns: a tagged
+ * provisioning failure quarantines its slug for the rest of the run (and
+ * that quarantine crosses to the next child tick via `runTick`'s
+ * `quarantinedSlugs` argument, mirroring how the real CLI carries it over
+ * `FLUME_QUARANTINED_SLUGS`); the same failure signature repeating on three
+ * consecutive ticks with no successful tick between them aborts the run; a
+ * signature that stops repeating resets the streak. `runTick` here plays the
+ * real child `flume tick` process exactly as the §4-amendment suite above
+ * does — it writes `last-tick.json` directly rather than exercising a real
+ * fanout wave (that mechanism is proved in the `Dispatcher fanout —
+ * pre-tick worktree provisioning failure isolates one entry (§16)` suite).
+ */
+describe("superviseLoop — provisioning-failure quarantine & consecutive-failure abort backstop (§16)", () => {
+  const countsPath = (): string => join(fx.repo, ".flume", "last-tick.json");
+
+  it("quarantines a tagged failure after its first tick and carries it to the next child tick", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        await writeFile(
+          countsPath(),
+          JSON.stringify({
+            shippedTags: ["OK-A"],
+            errored: false,
+            provisionFailures: [
+              {
+                tag: "HELD-ENTRY",
+                signature: "EBUSY: resource busy or locked",
+                message: "EBUSY: resource busy or locked, rmdir '...'",
+              },
+            ],
+          }),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          countsPath(),
+          JSON.stringify({ shippedTags: [], errored: false }),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    expect(res.shippedTags).toEqual(["OK-A"]);
+    // Nothing quarantined yet going into the first tick; the slug the first
+    // tick's failure names is quarantined going into the second.
+    expect(receivedSlugs[0]).toEqual([]);
+    expect(receivedSlugs[1]).toEqual(["held-entry"]);
+    expect(
+      warnings.some(
+        (w) => w.includes("HELD-ENTRY") && w.includes("EBUSY"),
+      ),
+    ).toBe(true);
+  });
+
+  it("aborts after the same untagged signature fails 3 consecutive ticks with no successful tick between", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    const SIGNATURE = "git worktree prune: fatal: not a git repository";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        countsPath(),
+        JSON.stringify({
+          shippedTags: [],
+          errored: true,
+          errorSummary: "build: no commit — worktree provisioning failed",
+          provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+        }),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log,
+    });
+
+    // Aborted on the 3rd consecutive occurrence, never burning to --max 10.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+    expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
+  });
+
+  it("a failure that clears on the next tick resets the streak — the backstop never trips", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const SIGNATURE = "git worktree prune: fatal: not a git repository";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1 || calls === 3) {
+        await writeFile(
+          countsPath(),
+          JSON.stringify({
+            shippedTags: [],
+            errored: true,
+            errorSummary: "build: no commit — worktree provisioning failed",
+            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+          }),
+          "utf8",
+        );
+      } else if (calls === 2) {
+        // Transient — the wall didn't recur this tick.
+        await writeFile(
+          countsPath(),
+          JSON.stringify({ shippedTags: [], errored: false }),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          countsPath(),
+          JSON.stringify({ shippedTags: [], errored: false }),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(4);
+    expect(res.ticks).toBe(4);
+    expect(res.hibernated).toBe(true);
+    expect(res.repeatedFailure).toBeUndefined();
   });
 });
 

@@ -94,7 +94,51 @@ export interface TickCountsRecord {
   errored: boolean;
   /** This tick's one-line summary, present only when `errored` — surfaced verbatim in the loop's completion summary. */
   errorSummary?: string;
+  /**
+   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
+   * create) this tick recorded, before any agent ran for the affected
+   * entries. `superviseLoop` folds a tagged failure into a run-scoped
+   * quarantine and every failure into the consecutive-identical-signature
+   * abort backstop. Absent/empty when the tick hit none.
+   */
+  provisionFailures?: ProvisionFailure[];
 }
+
+/**
+ * §16 (RELEASE-v0.7): one pre-tick worktree provisioning failure — the
+ * dispatcher never reached the agent for the affected entry (or, for a
+ * repo-level failure, for any entry this tick).
+ */
+export interface ProvisionFailure {
+  /**
+   * The entry tag this failure is scoped to (a `createWorktree` failure for
+   * that specific slug). Absent for a repo-level failure (e.g. `git
+   * worktree prune`) no single entry can be blamed for — the run-scoped
+   * quarantine only ever isolates a *tagged* failure; an untagged one is
+   * exactly the "non-entry-scoped" class the consecutive-failure backstop
+   * exists for.
+   */
+  tag?: string;
+  /**
+   * Comparable signature — the same deterministic wall (e.g. the same held
+   * directory) yields the same signature tick over tick, letting the
+   * consecutive-failure backstop recognize a repeat without diffing full
+   * error text.
+   */
+  signature: string;
+  /** Full error message, for the quarantine/abort log lines. */
+  message: string;
+}
+
+/** Bound on a persisted {@link ProvisionFailure.signature} — a comparison key, not a transcript. */
+const MAX_PROVISION_SIGNATURE = 500;
+
+/** Shared return shape for {@link Dispatcher.runSingleton} and {@link Dispatcher.runFanout}. */
+type PhaseTickOutcome = {
+  result: TickResult;
+  noCommit?: NoCommitMode;
+  provisionFailures?: ProvisionFailure[];
+};
 
 function tickCountsPath(flumeDir: string): string {
   return join(flumeDir, TICK_COUNTS_FILE);
@@ -135,6 +179,9 @@ async function readTickCounts(
     const rec = JSON.parse(await readFile(p, "utf8")) as Partial<TickCountsRecord>;
     if (!Array.isArray(rec.shippedTags) || typeof rec.errored !== "boolean") {
       return undefined;
+    }
+    if (rec.provisionFailures !== undefined && !Array.isArray(rec.provisionFailures)) {
+      delete rec.provisionFailures;
     }
     return rec as TickCountsRecord;
   } catch {
@@ -494,6 +541,16 @@ export interface DispatcherOptions {
    * unset — a hung agent will block the tick indefinitely.
    */
   tickTimeoutMs?: number;
+  /**
+   * §16 (RELEASE-v0.7): entry-tag slugs excluded from this tick's fanout
+   * pick even though `pending.json` still lists them as pickable —
+   * `pending.json` itself is untouched. The `flume loop` supervisor
+   * populates this (via the `tick` command's `FLUME_QUARANTINED_SLUGS` env
+   * var) from entries whose pre-tick worktree provisioning failed earlier
+   * in the run; the exclusion is run-scoped only — a fresh run/process
+   * always starts with nothing quarantined. Default: nothing quarantined.
+   */
+  quarantinedSlugs?: ReadonlySet<string>;
 }
 
 /**
@@ -589,6 +646,18 @@ export interface TickOutcome {
    * exits {@link EX_TERMINAL_MISCONFIG} when this is set.
    */
   terminal?: TerminalMisconfiguration;
+  /**
+   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
+   * create) this fanout tick recorded, before any agent ran for the
+   * affected entries. Distinct from `noCommit` — a provisioning failure
+   * never reaches agent invocation, so it is not a §6 no-commit mode; a
+   * tick can carry both (this entry's provisioning failed while its
+   * siblings ran and shipped) or `provisionFailures` alone with
+   * `noCommit` unset (every other entry shipped, so the wave itself
+   * committed). Present only when the tick hit at least one; absent on a
+   * singleton tick or a clean fanout wave.
+   */
+  provisionFailures?: ProvisionFailure[];
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -707,7 +776,7 @@ export class Dispatcher {
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
-    const { result, noCommit } =
+    const { result, noCommit, provisionFailures } =
       phase.concurrency === "singleton"
         ? await this.runSingleton(phase, agent)
         : await this.runFanout(phase, agent, chain, forkResolver);
@@ -730,6 +799,9 @@ export class Dispatcher {
       phaseName: phase.name,
       result: resultForHandoff,
       ...(noCommit ? { noCommit } : {}),
+      ...(provisionFailures && provisionFailures.length > 0
+        ? { provisionFailures }
+        : {}),
       awakeAfter: this.baton.awake(),
       summary: summarize(phase.name, result, allowed, noCommit),
     };
@@ -740,7 +812,7 @@ export class Dispatcher {
   private async runSingleton(
     phase: Phase,
     agent: Agent,
-  ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
+  ): Promise<PhaseTickOutcome> {
     const cwd = this.opts.repoRoot;
     const preHead = await git.revParse(cwd);
     const pending = await this.readPending();
@@ -829,7 +901,7 @@ export class Dispatcher {
     agent: Agent,
     chain: Chain,
     forkResolver?: (repoRoot: string) => (slug: string) => boolean,
-  ): Promise<{ result: TickResult; noCommit?: NoCommitMode }> {
+  ): Promise<PhaseTickOutcome> {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
@@ -837,8 +909,14 @@ export class Dispatcher {
     // Foundations governor: resolve the per-tick fork predicate once, then let
     // it gate selection alongside `blockedBy`. Default: every fork resolved.
     const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
-    const pickable = pending.filter((e) =>
-      isPickable(e, pending, isForkResolved),
+    // §16: a slug the supervisor quarantined earlier this run (its worktree
+    // provisioning failed on a prior tick) is skipped here — `pending.json`
+    // itself is untouched, so a fresh run/process retries it from scratch.
+    const quarantinedSlugs = this.opts.quarantinedSlugs;
+    const pickable = pending.filter(
+      (e) =>
+        isPickable(e, pending, isForkResolved) &&
+        !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
     );
 
     if (pickable.length === 0) {
@@ -865,12 +943,28 @@ export class Dispatcher {
       `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,
     );
 
-    // Recover from prior crashes / partial fanout failures: prune any
-    // .git/worktrees/<slug>/ entries whose working directory has vanished.
-    // Without this, half-broken metadata from one slug blocks `git worktree
-    // add` for ALL subsequent slugs — git scans every worktree's metadata
-    // during validation.
-    await git.pruneWorktrees(repoRoot);
+    // §16: a repo-level provisioning wall (prune itself fails — no single
+    // entry to blame) is recorded, not thrown — the per-entry loop below
+    // still gets a chance per slug (prune's own purpose is defensive: most
+    // slugs are unaffected by one stale metadata entry), and the
+    // consecutive-failure backstop is exactly the net for this "quarantine
+    // can't isolate it" class.
+    const provisionFailures: ProvisionFailure[] = [];
+    try {
+      // Recover from prior crashes / partial fanout failures: prune any
+      // .git/worktrees/<slug>/ entries whose working directory has vanished.
+      // Without this, half-broken metadata from one slug blocks `git worktree
+      // add` for ALL subsequent slugs — git scans every worktree's metadata
+      // during validation.
+      await git.pruneWorktrees(repoRoot);
+    } catch (err) {
+      const message = (err as Error).message;
+      const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+      provisionFailures.push({ signature, message });
+      this.log.warn(
+        `[flume] ${phase.name}: worktree prune failed (${signature}); continuing — per-entry provisioning may still fail`,
+      );
+    }
 
     // Serialize worktree creation (§4). `createWorktree` internally does
     // `git worktree remove` (stale-slug cleanup) then `git worktree add`,
@@ -880,9 +974,28 @@ export class Dispatcher {
     // already-serialized pre-wave `pruneWorktrees` above. The per-entry
     // agent fanout below stays parallel — that is the expensive work, and
     // it does not touch `.git/worktrees/`.
+    //
+    // §16: a provisioning failure (sweep or create) is isolated to the
+    // entry whose slug hit it — a held/EBUSY worktree dir on one entry must
+    // not crash the whole batch when its siblings are perfectly pickable
+    // (the ship-detection-declared-files-diff incident: 12/16 ticks burned
+    // on one held slug while 6/7 other entries sat pickable). The failed
+    // entry stays pending; `provisioned`/`worktrees` stay index-aligned for
+    // everything downstream.
     const worktrees: Array<{ path: string; branch: string }> = [];
+    const provisioned: PendingEntry[] = [];
     for (const entry of batch) {
-      worktrees.push(await this.createWorktree(entry, preHead));
+      try {
+        worktrees.push(await this.createWorktree(entry, preHead));
+        provisioned.push(entry);
+      } catch (err) {
+        const message = (err as Error).message;
+        const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+        provisionFailures.push({ tag: entry.tag, signature, message });
+        this.log.warn(
+          `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+        );
+      }
     }
 
     // Optional per-phase setup (e.g. symlink node_modules / .env so gates
@@ -893,7 +1006,7 @@ export class Dispatcher {
       worktrees.map(() => undefined);
     if (phase.setupWorktree) {
       const setupResults = await Promise.all(
-        batch.map((entry, i) =>
+        provisioned.map((entry, i) =>
           phase.setupWorktree!({
             worktreePath: worktrees[i]!.path,
             repoRoot,
@@ -909,7 +1022,7 @@ export class Dispatcher {
 
     // Run agent in each worktree concurrently.
     const perEntry = await Promise.all(
-      batch.map((entry, i) =>
+      provisioned.map((entry, i) =>
         this.runFanoutEntry(
           phase,
           entry,
@@ -1115,7 +1228,7 @@ export class Dispatcher {
     // sequential walk beats interleaving the git-mutating step out alone.
     for (let i = 0; i < worktrees.length; i++) {
       const wt = worktrees[i]!;
-      const tag = batch[i]!.tag;
+      const tag = provisioned[i]!.tag;
       if (phase.teardownWorktree) {
         try {
           await phase.teardownWorktree({
@@ -1192,6 +1305,7 @@ export class Dispatcher {
         revertedTags: mergeReverted.map((e) => e.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
+      ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     };
   }
 
@@ -1919,9 +2033,14 @@ export interface SuperviseLoopOptions {
    * code when it exits. Defaults to re-execing the running flume entrypoint
    * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
    * the built `dist/cli.js` or `tsx src/cli.ts`). Injected by tests — the
-   * stubbed-spawn seam.
+   * stubbed-spawn seam. `quarantinedSlugs` (§16, RELEASE-v0.7) is this run's
+   * accumulated run-scoped quarantine so far — the default runner carries it
+   * to the child via the `FLUME_QUARANTINED_SLUGS` env var; a test stub may
+   * ignore it.
    */
-  runTick?: () => Promise<{ exitCode: number | null }>;
+  runTick?: (
+    quarantinedSlugs: ReadonlySet<string>,
+  ) => Promise<{ exitCode: number | null }>;
 }
 
 /** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
@@ -1960,6 +2079,17 @@ export interface SuperviseResult {
    * a silent green exit (§4).
    */
   erroredTicks: string[];
+  /**
+   * §16 (RELEASE-v0.7): set when the run aborted because the same
+   * provisioning-failure signature repeated on three consecutive ticks with
+   * no successful tick between them — the consecutive-failure backstop for
+   * non-entry-scoped provisioning walls the run-scoped quarantine can't
+   * isolate (generalizes §4's mount-dead abort past its class without
+   * touching §4's own semantics). Distinct from `mountDead` — the chain
+   * resolved and ran fine; only pre-tick worktree provisioning kept hitting
+   * the identical wall.
+   */
+  repeatedFailure?: { signature: string };
 }
 
 /**
@@ -2004,8 +2134,15 @@ export async function superviseLoop(
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
+  // §16: run-scoped quarantine (entry-tag slugs whose worktree provisioning
+  // failed on some earlier tick this run) plus the consecutive-identical-
+  // signature streak for the abort backstop. Both reset to empty on every
+  // fresh `superviseLoop` call — quarantine never outlives the run.
+  const quarantinedSlugs = new Set<string>();
+  let lastProvisionSignature: string | undefined;
+  let provisionFailureStreak = 0;
   for (let i = 0; i < maxTicks; i++) {
-    const { exitCode } = await runTick();
+    const { exitCode } = await runTick(quarantinedSlugs);
     ticks++;
 
     // v0.7 §4 amendment: recover this tick's shipped/errored counts from its
@@ -2020,6 +2157,49 @@ export async function superviseLoop(
       if (counts.errored) {
         erroredTicks.push(counts.errorSummary ?? "tick errored (no detail recorded)");
       }
+    }
+
+    // §16: quarantine every tagged provisioning failure this tick named —
+    // isolating the slug so the rest of the run stops re-attempting a wall
+    // it already hit once — then fold the tick's failure(s) into the
+    // consecutive-identical-signature streak (the backstop for the
+    // non-entry-scoped class quarantine can't isolate, e.g. a repo-level
+    // `git worktree prune` failure). A tick with no provisioning failure at
+    // all clears the streak — only an unbroken run of the identical wall
+    // counts.
+    const provisionFailures = counts?.provisionFailures ?? [];
+    for (const f of provisionFailures) {
+      if (!f.tag) continue;
+      const slug = slugify(f.tag);
+      if (!quarantinedSlugs.has(slug)) {
+        quarantinedSlugs.add(slug);
+        log.warn(
+          `[flume] quarantining ${f.tag} for the rest of this run: pre-tick ` +
+            `worktree provisioning failed (${f.signature})`,
+        );
+      }
+    }
+    const thisSignature = provisionFailures[0]?.signature;
+    if (thisSignature && thisSignature === lastProvisionSignature) {
+      provisionFailureStreak++;
+    } else {
+      provisionFailureStreak = thisSignature ? 1 : 0;
+      lastProvisionSignature = thisSignature;
+    }
+    if (provisionFailureStreak >= 3) {
+      log.error(
+        `[flume] worktree provisioning failed with an identical signature ` +
+          `${provisionFailureStreak} consecutive ticks (${lastProvisionSignature}); ` +
+          `aborting after ${ticks} tick(s) instead of burning the remaining ` +
+          `ticks against the same wall.`,
+      );
+      return {
+        ticks,
+        hibernated: false,
+        repeatedFailure: { signature: lastProvisionSignature! },
+        shippedTags: [...shippedTags],
+        erroredTicks,
+      };
     }
 
     if (exitCode === EX_TERMINAL_MISCONFIG) {
@@ -2101,16 +2281,25 @@ export async function superviseLoop(
  * process mirroring however the supervisor itself was launched. `execArgv`
  * carries node flags (e.g. `--import tsx` when run from source); `argv[1]` is
  * the cli entrypoint (`dist/cli.js` built, `src/cli.ts` from source).
+ * `quarantinedSlugs` (§16, RELEASE-v0.7) crosses the process boundary via the
+ * `FLUME_QUARANTINED_SLUGS` env var — the CLI's `tick` command reads it back
+ * into `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty.
  */
 function defaultTickRunner(
   repoRoot: string,
-): () => Promise<{ exitCode: number | null }> {
-  return () =>
+): (
+  quarantinedSlugs: ReadonlySet<string>,
+) => Promise<{ exitCode: number | null }> {
+  return (quarantinedSlugs) =>
     new Promise((resolveExit) => {
+      const env = { ...process.env };
+      if (quarantinedSlugs.size > 0) {
+        env.FLUME_QUARANTINED_SLUGS = [...quarantinedSlugs].join(",");
+      }
       const child = spawn(
         process.execPath,
         [...process.execArgv, process.argv[1]!, "tick"],
-        { cwd: repoRoot, stdio: "inherit" },
+        { cwd: repoRoot, stdio: "inherit", env },
       );
       child.on("exit", (code) => resolveExit({ exitCode: code }));
       child.on("error", (err) => {

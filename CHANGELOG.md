@@ -127,6 +127,16 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   blindly hard-reset whatever commit happened to be at `HEAD~1`, so a
   stale supervisor sharing a tree with a live one could drop a commit it
   never created.
+- A pre-tick worktree provisioning failure (sweep or create) on one entry's
+  slug no longer crashes the whole fanout wave: the entry stays pending and
+  the `flume loop` supervisor quarantines its slug for the rest of the run
+  while the other pickable entries keep dispatching, same tick included.
+  Any failure signature (entry-scoped or repo-level) that repeats three
+  consecutive ticks with no successful tick between them now aborts the
+  run non-zero naming the signature, instead of burning every remaining
+  `--max` tick re-hitting the same wall — the `ship-detection-declared-
+  files-diff` incident (12 of 16 ticks lost to one held worktree dir) does
+  not reproduce.
 
 ## [0.6.2]
 

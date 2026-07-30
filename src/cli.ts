@@ -338,14 +338,18 @@ export function tickExitCode(outcome: TickOutcome): number {
 /**
  * Map a whole `flume loop` / `job run` supervised run to its process exit
  * code (v0.7 §4, amended): `terminal`/`mountDead` propagate the child's
- * abort code unchanged (§3, v0.7 §4's mount-dead class). Otherwise non-zero
- * iff at least one child tick errored AND the run shipped nothing — "settled
- * with nothing to do" (no errors) and partial success (ships landed despite
- * some tick errors) both stay 0. Exported for the exit-code seam tests.
+ * abort code unchanged (§3, v0.7 §4's mount-dead class). `repeatedFailure`
+ * (§16) is unconditionally non-zero — the consecutive-failure backstop
+ * fired regardless of how much the run shipped before hitting the wall.
+ * Otherwise non-zero iff at least one child tick errored AND the run shipped
+ * nothing — "settled with nothing to do" (no errors) and partial success
+ * (ships landed despite some tick errors) both stay 0. Exported for the
+ * exit-code seam tests.
  */
 export function loopExitCode(result: SuperviseResult): number {
   if (result.terminal) return EX_TERMINAL_MISCONFIG;
   if (result.mountDead) return EX_MOUNT_DEAD;
+  if (result.repeatedFailure) return 1;
   return result.erroredTicks.length > 0 && result.shippedTags.length === 0
     ? 1
     : 0;
@@ -353,22 +357,32 @@ export function loopExitCode(result: SuperviseResult): number {
 
 /**
  * `flume loop` / `job run`'s completion summary line naming surfaced tick
- * errors — undefined when the run had none. Printed even on a 0 exit
- * (partial success): errors must not vanish into a green exit silently
- * (v0.7 §4).
+ * errors, and (§16) an abort on the consecutive-failure backstop — undefined
+ * when the run had neither. Printed even on a 0 exit (partial success):
+ * errors must not vanish into a green exit silently (v0.7 §4).
  */
 export function loopCompletionSummary(
   result: SuperviseResult,
 ): string | undefined {
-  if (result.erroredTicks.length === 0) return undefined;
-  const shipped =
-    result.shippedTags.length > 0
-      ? `shipped ${result.shippedTags.join(", ")}; `
-      : "";
-  return (
-    `[flume] ${shipped}${result.erroredTicks.length} tick(s) errored: ` +
-    result.erroredTicks.join(" | ")
-  );
+  const parts: string[] = [];
+  if (result.repeatedFailure) {
+    parts.push(
+      `aborted: identical worktree provisioning failure repeated 3 ` +
+        `consecutive ticks — ${result.repeatedFailure.signature}`,
+    );
+  }
+  if (result.erroredTicks.length > 0) {
+    const shipped =
+      result.shippedTags.length > 0
+        ? `shipped ${result.shippedTags.join(", ")}; `
+        : "";
+    parts.push(
+      `${shipped}${result.erroredTicks.length} tick(s) errored: ` +
+        result.erroredTicks.join(" | "),
+    );
+  }
+  if (parts.length === 0) return undefined;
+  return `[flume] ${parts.join(" | ")}`;
 }
 
 const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
@@ -461,7 +475,12 @@ Exit codes:
       completion summary names the errors).
   1   Harness error, another live loop holds the lock, or — under a job
       resolution (--job/FLUME_JOB) — HEAD is not job/<name>; also, at least
-      one tick errored and the run shipped nothing (v0.7 §4).
+      one tick errored and the run shipped nothing (v0.7 §4); also, an
+      identical pre-tick worktree provisioning failure repeated 3
+      consecutive ticks with no successful tick between them (v0.7 §16) —
+      the completion summary names the repeated signature. A single
+      entry's provisioning failure alone does not abort: it quarantines
+      that entry for the rest of the run while the others keep dispatching.
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same
@@ -564,12 +583,13 @@ Exit codes:
       shipped; rm on an already-clean job is a no-op; status: always,
       including no jobs).
   1   Git or filesystem failure (checkout, link provisioning, commit); for
-      run also: harness error, another live loop holds the job's lock, or at
-      least one tick errored and the run shipped nothing (v0.7 §4); for rm
-      also: the job's loop is still live; for extract also: branch <name>
-      already exists, uncommitted tracked changes, a live loop, job/<name>
-      checked out in another worktree, or a cherry-pick conflict (unwound to
-      job/<name>; retryable).
+      run also: harness error, another live loop holds the job's lock, at
+      least one tick errored and the run shipped nothing (v0.7 §4), or an
+      identical pre-tick worktree provisioning failure repeated 3
+      consecutive ticks (v0.7 §16); for rm also: the job's loop is still
+      live; for extract also: branch <name> already exists, uncommitted
+      tracked changes, a live loop, job/<name> checked out in another
+      worktree, or a cherry-pick conflict (unwound to job/<name>; retryable).
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, run on a job whose branch does not
@@ -969,6 +989,13 @@ async function main(): Promise<number> {
   // overrides the default agent per tick. `render` resolves the chain
   // directly (it inspects phases without invoking the agent).
   const resolveChain = diskChainLoader(configDir);
+  // §16 (RELEASE-v0.7): the `flume loop` supervisor's run-scoped quarantine
+  // crosses the process boundary via this env var (set by
+  // `defaultTickRunner`, `src/Dispatcher.ts`) — a slug named here is skipped
+  // by this tick's fanout pick without touching pending.json.
+  const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
+    ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
+    : undefined;
   const dispatcher = new Dispatcher({
     repoRoot,
     configDir,
@@ -978,6 +1005,7 @@ async function main(): Promise<number> {
     // authority; the dispatcher receives it as an option, never re-derives it
     // from flumeDir.
     ...(job !== undefined ? { namespace: job } : {}),
+    ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });
 
   if (cmd === "tick") {
@@ -994,14 +1022,29 @@ async function main(): Promise<number> {
       // `voluntary-bail` (the agent correctly declining an out-of-scope
       // task and naming the constraint; see collaboration.md's "park, don't
       // decide silently"). A clean decline is not evidence anything went
-      // wrong, so it must not surface as a run-level error.
+      // wrong, so it must not surface as a run-level error. §16: a
+      // provisioning failure that left nothing shipped this tick is also a
+      // genuine tick-level failure, even though no agent ran to produce a
+      // `noCommit` classification — one that DID ship (siblings succeeded)
+      // is not.
+      const provisionFailures = outcome.provisionFailures ?? [];
       const errored =
         outcome.noCommit === "gate-revert" ||
-        outcome.noCommit === "platform-preempt";
+        outcome.noCommit === "platform-preempt" ||
+        (provisionFailures.length > 0 &&
+          outcome.result.shippedTags.length === 0);
+      const errorSummary = errored
+        ? provisionFailures.length > 0
+          ? `${outcome.summary} — worktree provisioning failed: ${provisionFailures
+              .map((f) => (f.tag ? `${f.tag} (${f.signature})` : f.signature))
+              .join("; ")}`
+          : outcome.summary
+        : undefined;
       await writeTickCounts(flumeDir, {
         shippedTags: [...outcome.result.shippedTags],
         errored,
-        ...(errored ? { errorSummary: outcome.summary } : {}),
+        ...(errorSummary ? { errorSummary } : {}),
+        ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       });
     }
     // Fail loudly on the Axis-C exits (§3) so the supervisor — and any human

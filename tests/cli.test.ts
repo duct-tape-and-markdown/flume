@@ -638,6 +638,23 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     };
     expect(loopExitCode(result)).toBe(EX_MOUNT_DEAD);
   });
+
+  // v0.7 §16 — the consecutive-provisioning-failure abort backstop: non-zero
+  // and named in the summary regardless of how much the run shipped before
+  // hitting the wall (unlike the plain errored/nothing-shipped rule above).
+  it("repeatedFailure aborts non-zero and names the signature, even with entries shipped", () => {
+    const result: SuperviseResult = {
+      ticks: 3,
+      hibernated: false,
+      repeatedFailure: { signature: "EBUSY: resource busy or locked" },
+      shippedTags: ["SHIPPED-BEFORE-THE-WALL"],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(1);
+    expect(loopCompletionSummary(result)).toContain(
+      "EBUSY: resource busy or locked",
+    );
+  });
 });
 
 /**
