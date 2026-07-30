@@ -50,6 +50,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   (exit 2) naming the pin and both versions instead of silently running a
   possibly-mismatched engine. An unpinned bay runs the invoked engine
   unchanged.
+- `setupWorktree` — a lockfile-aware fanout worktree provisioning helper,
+  re-exported from `flume`'s top level alongside `builtinGates`: a
+  `pnpm-lock.yaml` runs `pnpm install --frozen-lockfile`, a
+  `package-lock.json` runs `npm ci`, and a directory with neither refuses
+  cleanly instead of guessing a package manager. Each consuming chain
+  previously hand-rolled a single-package-manager hardcode for this; the
+  worked example in `docs/CHAIN-AUTHORING.md` now shows the helper as the
+  recommended default.
 
 ### Fixed
 

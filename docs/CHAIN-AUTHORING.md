@@ -418,10 +418,29 @@ pickable without waiting for an interim plan tick.
 ### `setupWorktree` for fanout
 
 A fresh worktree holds only tracked files; provision the gitignored deps
-the gates need first. **Default:** run `pnpm install --frozen-lockfile` in
-the worktree (`promisify(execFile)("pnpm", ["install", "--frozen-lockfile"], { cwd: worktreePath })`);
-pnpm hardlinks from its global store, so it costs seconds, not a
-re-download. Copy plain files (`.env`) directly.
+the gates need first. **Default:** the exported `setupWorktree` helper —
+sibling to the `builtinGates` precedent (`shellGate`, `tscGate`, …),
+re-exported from `flume`'s top level — inspects the worktree for a
+lockfile and runs the install it implies: `pnpm-lock.yaml` →
+`pnpm install --frozen-lockfile` (pnpm hardlinks from its global store,
+so it costs seconds, not a re-download); `package-lock.json` → `npm ci`;
+neither → rejects instead of guessing a package manager.
+
+```ts
+import { setupWorktree } from "flume";
+
+const chain: Chain = {
+  // ...
+  build: {
+    // ...
+    async setupWorktree({ worktreePath }) {
+      await setupWorktree(worktreePath);
+    },
+  },
+};
+```
+
+Copy plain files (`.env`) directly, alongside the helper call.
 
 **Never symlink `node_modules` in** — pnpm deletes a symlinked
 `node_modules` on install
@@ -449,9 +468,7 @@ that shouldn't be baked into the worktree's tracked filesystem.
 
 ```ts
 async setupWorktree({ worktreePath, entryTag }) {
-  await execFileP("pnpm", ["install", "--frozen-lockfile"], {
-    cwd: worktreePath,
-  });
+  await setupWorktree(worktreePath);
   const dbUrl = await provisionScratchDb(entryTag);
   return { extraEnv: { DATABASE_URL: dbUrl } };
 },

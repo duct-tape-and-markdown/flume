@@ -36,6 +36,8 @@ export {
   writablePathsGate,
 } from "./builtinGates.js";
 
+export { setupWorktree } from "./setupWorktree.js";
+
 export {
   PendingEntry,
   PendingList,
