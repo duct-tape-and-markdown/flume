@@ -34,6 +34,19 @@ GateContext), `tests/`, `docs/CHAIN-AUTHORING.md` (§5 worked example),
 `package.json` scripts, CHANGELOG. No chain or prompt content ships from
 this line.
 
+Amendment (operator, 2026-07-30 — drain pass): the operational
+questions parked by this line's own loop audits resolve into v0.7 —
+§§15–17 below carry them; §10 gains an amendment. Blast radius grows
+accordingly: `src/Phase.ts` (`TickResult`), `src/git.ts`,
+supervisor/`status` paths in `src/cli.ts` and `src/job.ts`. The "no
+chain or prompt content" sentence stands for loop-shipped content —
+§15's dogfood wake-condition edit is an operator-applied leg, same
+class as §13's prompt bullet. The boundary-shaped findings route to
+`spec/RELEASE-v0.8.md` instead (the tag-grammar burn among them):
+under `.claude/rules/engine-boundary.md` those are extractions, not
+engine patches. The structured-verdicts family stays out of this line
+and lands there, reconceived.
+
 ## 2. Harness block states the effective fence
 
 On a tick carrying an `assignedEntry`, `prependHarnessBlock`
@@ -263,6 +276,21 @@ link machinery `job new` already provisions (reused as the resolution
 signal, not redesigned); multi-hop deferral (a local install that
 itself defers further) — one hop only.
 
+Amendment (operator, 2026-07-30 — resolves the
+ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH park): the twice-stated literal
+check path was a wording gap, not a deliberate bay-root resolution
+point. Arm 1's check path derives from `resolveStateDirs` — the same
+`flumeDir` every other state consumer uses — so a bare bay still checks
+`<bay>/.flume/node_modules/@dtmd/flume` (unchanged, reduces to the
+literal path above) and a `--job`/`FLUME_JOB`-scoped invocation checks
+`<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume`, the link
+`ensureFlumeLink` (`src/job.ts:133-150`) actually provisions. Swap the
+fixed path in `readLocalInstall`/`engineHandshake` for the derived one;
+no `job.ts` change either way; re-point the three handshake test
+fixtures at the job-scoped path. Acceptance addendum: a bay provisioned
+by the real `job new`/`job run` workflow re-execs its local install
+through arm 1; the bare-bay acceptance above is unchanged.
+
 ## 11. `setupWorktree` package-manager-aware helper
 
 Corrected premise: flume's
@@ -448,5 +476,116 @@ test covers the footprint content for the in-worktree revert path.
   the next plan tick sees the violating paths instead of an empty delta,
   and build ticks park fence conflicts instead of committing into a
   guaranteed revert.
+- 0.7.0 section, add (2026-07-30 amendment drain): Fixed — chain
+  handoffs see the no-commit classification (`TickResult.noCommit`), so
+  a voluntary-bail wave can wake plan; the engine↔pin handshake
+  checks the job-scoped install path `job new` actually provisions; a
+  pre-tick provisioning failure quarantines the affected entry instead
+  of burning the batch, and an identically-repeating failure aborts the
+  run; `status` reports supervisor liveness; `dropLastCommit` refuses
+  to drop a commit the supervisor didn't create.
 - Version bump + `npm publish` stay human-performed at cut time; no phase
   writes the version field.
+
+## 15. `TickResult` carries the no-commit classification
+
+SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan
+tick woke: `prompts/build.md:27` promises "plan re-derives next tick",
+but the dogfood build `handoff` (`.flume/chain.ts:289-299`) wakes plan
+only on `shippedTags.length > 0 || gateResults.length > 0`. The gap is
+structural, not chain-authored: `Dispatcher.tick`
+(`src/Dispatcher.ts:710-717`) computes the RELEASE-v0.2 §6 no-commit
+classification (`voluntary-bail` / `platform-preempt` / `gate-revert`)
+and discards it before `phase.handoff(result)`; `TickResult`
+(`src/Phase.ts:52-75`) has no field for it. A pure-bail wave is
+byte-identical to a genuine nothing-pickable no-op from where any
+handoff sits — no chain, however written, can wake on bail today.
+
+- `TickResult` gains `noCommit?: NoCommitMode`, reusing the type
+  already defined in `src/Dispatcher.ts`. Present iff the wave produced
+  no usable commit, carrying the classification already computed;
+  absent on committed ticks.
+- `Dispatcher.tick` folds the already-computed `noCommit` into `result`
+  before calling `phase.handoff(result)`. No new computation — the
+  value exists today and is dropped.
+- Dogfood chain leg (operator-applied, same class as §13's prompt
+  bullet — not loop-derivable, no entry carries it): the build
+  `handoff` in `.flume/chain.ts` adds `result.noCommit ===
+  "voluntary-bail"` to its wake condition, so the build prompt's
+  park-and-bail promise actually fires.
+
+Acceptance: a voluntary-bail wave's handoff receives `noCommit:
+"voluntary-bail"`; a committed wave's handoff receives no `noCommit`
+field; existing handoffs that ignore the field behave byte-identically.
+
+## 16. Supervisor provisioning failures: quarantine, then abort
+
+Incident (batch 3, v0.7 loop, 2026-07-29 — `.flume/loop-20260729.log`):
+a deterministic pre-tick worktree-sweep EBUSY (an external handle-holder
+on `.flume/worktrees/ship-detection-declared-files-diff`) burned 12 of
+16 ticks — every tick re-hit the identical wall, exited 1, and the
+supervisor logged "continuing" until `--max`, while 6 of 7 queue
+entries stayed pickable. §4 names the don't-burn principle but scopes
+only the load/mount class; pre-tick provisioning is a distinct class
+with the same burn shape. (Rename-aside is no rescue: delete and rename
+of a held dir are both denied; it ends empty-but-held.)
+
+Ruled (operator, 2026-07-30) — both legs, not either alone:
+
+- **Per-entry quarantine.** When a tick fails in pre-tick worktree
+  provisioning (sweep or create) for a specific entry's slug, the
+  supervisor quarantines that slug for the remainder of the run: the
+  entry stays in `pending.json` untouched, other entries keep
+  dispatching. Quarantine is run-scoped — a fresh run retries the slug,
+  so a transient hold costs at most the rest of one batch. Log the
+  quarantine distinctly (entry tag, failure signature) so the skip is
+  visible, never silent.
+- **Consecutive-identical-failure backstop.** If the same failure
+  signature fails three consecutive ticks with no successful tick
+  between them — any class, covering non-entry-scoped deterministic
+  failures the quarantine can't isolate — the run aborts non-zero with
+  a summary naming the repeated signature. Generalizes §4's mount-dead
+  abort past its class without touching §4's own semantics.
+
+Both constants (run-scoped quarantine; the three-failure threshold)
+ship here as engine defaults; `spec/RELEASE-v0.8.md` §8 opens them as
+chain-overridable configuration. This section deliberately does not
+design that config surface (per `.claude/rules/engine-boundary.md`).
+
+Acceptance: replaying the incident shape (one entry's worktree dir
+held, other entries pickable) quarantines the held slug after its first
+failure and works the remaining entries to batch completion; a
+repo-level deterministic failure aborts on the third identical
+consecutive failure instead of burning to `--max`; a failure that
+clears on the next tick neither quarantines beyond the run nor trips
+the backstop.
+
+## 17. `status` shows supervisor liveness; `dropLastCommit` checks tip ownership
+
+Incident (2026-07-29, reflog evidence): two supervisors ran one tree.
+The operator relaunched while a prior batch's supervisor was still
+alive, because `flume status` reads baton awake-markers only and
+printed "hibernating", and the operator deleted `loop.pid` on a stale
+assumption. The stale supervisor's `dropLastCommit` then dropped two
+commits it did not own (`19be056` — coincidentally harmless; `279bd8b`
+— recovered by cherry-pick). The loop-lock liveness probe
+(`src/cli.ts:731-747`) already refuses relaunch on a live pidfile —
+verified, no gap there. The two real gaps:
+
+- **`status` surfaces supervisor liveness.** Beside the awake markers:
+  probe the top-level `loop.pid` for process liveness ("supervisor pid
+  N live" vs "loop.pid present, process dead — stale"; no pidfile →
+  unchanged output), reusing the `liveLoopPid` probe shape
+  (`src/job.ts:355`) the job path already has. An operator's relaunch
+  judgment reads truth instead of inferring it from "hibernating".
+- **`dropLastCommit` verifies tip ownership.** The supervisor remembers
+  the sha of each commit it creates; `dropLastCommit` (`src/git.ts:55`,
+  callsites `src/Dispatcher.ts:609`, `:1091`) refuses — loudly, naming
+  both shas — unless the current tip is a sha this supervisor itself
+  created. Dropping another writer's commit blind is the defect; a
+  refusal leaves recovery to the operator with the evidence in hand.
+
+Acceptance: `status` with a live supervisor names its pid; with a stale
+pidfile says so; with no pidfile is unchanged. A `dropLastCommit`
+attempt against a tip this supervisor didn't create refuses, names both
+shas, and leaves the tip in place.
