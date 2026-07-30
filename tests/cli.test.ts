@@ -502,6 +502,79 @@ describe("engine↔pin handshake — v0.7 §10", () => {
     },
     30_000,
   );
+
+  /**
+   * `readLocalInstall`'s self-referential-install guard (`src/cli.ts:65,
+   * 91-96,109`, commit 54d0d70): a bay whose local-install link real-path
+   * resolves back to *this running engine's own package root* — the shape
+   * this repo's own dogfood chain produces provisioning a job from a source
+   * checkout with no built `dist/` — must be treated as absent, never
+   * re-exec'd into. `runCli` spawns `src/cli.ts` straight through `tsx`
+   * (`TSX_CLI`/`CLI` above), so that running module's own package root is
+   * this checkout's repo root; symlinking the bay's install path directly at
+   * `REPO_ROOT` reproduces the self-reference without a second fixture
+   * process.
+   */
+  async function writeSelfReferentialInstall(dir: string): Promise<void> {
+    const root = join(dir, ".flume", "node_modules", "@dtmd", "flume");
+    await mkdir(dirname(root), { recursive: true });
+    await symlink(
+      REPO_ROOT,
+      root,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  }
+
+  it(
+    "a self-referential local-install link (real-path resolves to the running engine's own package root) is treated as absent — a pinned bay refuses (arm 2) instead of re-execing into itself (54d0d70)",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-selfref-pinned-"));
+      try {
+        await writeSelfReferentialInstall(dir);
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({
+            name: "host",
+            dependencies: { "@dtmd/flume": "9.9.9-pinned" },
+          }),
+          "utf8",
+        );
+
+        const result = await runCli(dir, ["status"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).toContain("9.9.9-pinned");
+        expect(result.out).toContain(await engineVersion());
+        expect(result.out).toContain(
+          join(dir, ".flume", "node_modules", "@dtmd", "flume"),
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "the same self-referential link on an unpinned bay is a no-op (arm 3) — never re-execs into itself, runs the invoked engine unchanged",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-selfref-unpinned-"));
+      try {
+        await writeSelfReferentialInstall(dir);
+
+        const result = await runCli(dir, ["job", "status"]);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain("no jobs");
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).not.toContain("pins @dtmd/flume");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
 
 /**
