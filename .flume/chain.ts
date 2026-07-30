@@ -17,14 +17,11 @@
  * in the same commit.
  */
 
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-const execFileP = promisify(execFile);
 
 /** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
 const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +43,7 @@ import {
   renderSchemaForPrompt,
 } from "../src/PendingSchema.ts";
 import { tscGate, shellGate } from "../src/builtinGates.ts";
+import { setupWorktree as installWorktreeDeps } from "../src/setupWorktree.ts";
 
 // ---------- project-specific gates ----------
 
@@ -86,20 +84,15 @@ const pendingParseGate: Gate = {
  * `git worktree add` shares .git and the tracked tree but not gitignored
  * files; node_modules is gitignored and tsc/vitest need it. We do NOT
  * symlink repoRoot/node_modules: pnpm deletes a symlinked node_modules on
- * install (pnpm/pnpm#9973). Instead we install fresh — pnpm hardlinks from
- * its global content-addressable store, so this is seconds, not a refetch.
- * `enableGlobalVirtualStore` (pnpm-workspace.yaml, https://pnpm.io/git-worktrees)
- * is the experimental opt-in optimization; the dogfood chain uses the
- * robust default flume's docs teach (docs/CHAIN-AUTHORING.md, spec §6/§11).
+ * install (pnpm/pnpm#9973). Dogfood discipline (spec §11): the chain uses
+ * the engine's own lockfile-aware helper — this repo's pnpm-lock.yaml
+ * selects `pnpm install --frozen-lockfile`, hardlinked from pnpm's global
+ * store, so this is seconds, not a refetch.
  */
 const buildSetupWorktree = async (
   ctx: WorktreeSetupContext,
 ): Promise<void> => {
-  // shell: pnpm is a .cmd shim on Windows; Node can't spawn those bare.
-  await execFileP("pnpm", ["install", "--frozen-lockfile"], {
-    cwd: ctx.worktreePath,
-    shell: process.platform === "win32",
-  });
+  await installWorktreeDeps(ctx.worktreePath);
 };
 
 /**
