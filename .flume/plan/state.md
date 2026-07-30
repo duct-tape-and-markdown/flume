@@ -1,45 +1,47 @@
 # State
 
-Phase: **v0.7 line in flight** — 3 entries in `pending.json`, all
+Phase: **v0.7 line in flight** — 2 entries in `pending.json`, both
 `gate.kind: "open"`. Mode this tick: **audit** (commit-delta since the
-last `plan:` commit, `db645f5`, is 2 commits; no spec-delta, empty
+last `plan:` commit, `c83aa64`, is 2 commits; no spec-delta, empty
 inbox, nothing to promote).
 
 ## This tick
 
-**Commit-delta** (`db645f5..HEAD`, 2 commits): `ac678ce` (build,
-`IN-WORKTREE-GATE-REVERT-FOOTPRINT`), `14501f9` (chore, ship — entry
+**Commit-delta** (`c83aa64..HEAD`, 2 commits): `98c109f` (build,
+`BAY-DISCOVERY-WALKUP`, v0.7 §9), `7b8cb5a` (chore, ship — entry
 removed from `pending.json`).
 
-- `ac678ce` cross-checked against §13 directly in source, not just the
-  diff: `Dispatcher.ts`'s wave loop (`~L937-947`) now feeds a captured
-  footprint into the same `observed` map the `afterMerge` path uses
-  (`~L1022`), so `commitPendingUpdate` (`~L1075`) rides it onto trunk as
-  `observedFiles` — verified the merge is literally the same map, not a
-  parallel bookkeeping surface. `runFanoutEntry`'s gate-revert branch
-  (`~L1277-1296`) captures `git.showNameOnly` before `dropLastCommit`
-  discards the commit, mirroring the `afterMerge` capture technique
-  exactly (full commit diff, not gate-details-filtered — same precedent,
-  no new invariant invented). §13's parenthetical ("entry tag, gate
-  name, gate message, and paths") reads as the full incident record
-  (tag = map key, gate/message already lived in the pre-existing
-  gitignored prior-attempt record); the acceptance line is scoped to
-  paths reaching trunk, which this delivers — not drift, just a loosely
-  worded spec gloss.
-- Ran the new locked test directly (`vitest run tests/Dispatcher.test.ts
-  -t "in-worktree afterCommit gate revert leaves the same trunk
-  footprint"`) — passes. `CHANGELOG.md` bullet present and accurate.
-  Diffstat matches declared files exactly (`src/Dispatcher.ts`,
-  `CHANGELOG.md`, `tests/Dispatcher.test.ts`) — no scope creep.
-  §13's orthogonal `entryChannelPaths` note (`tests/**`) already present
-  in `.flume/chain.ts:261` from the prior operator commit — confirmed,
-  no residual action.
-- `14501f9`'s ship (declared-files diff touched, correctly cleared from
-  `pending.json`) — no drift. §13 is now fully closed: both its
-  derivable bullet (footprint machinery) and its operator-applied bullet
-  (`prompts/build.md`, closed last tick) are shipped.
+- `98c109f` cross-checked against §9 directly in source, not just the
+  diff. `resolveRepoRoot` (`src/cli.ts:114`) matches the spec's walk-up
+  precisely: `cwd`'s basename `.flume` short-circuits to `dirname(cwd)`
+  with no filesystem check (spec: "no further walk needed"); otherwise
+  walks up from `cwd` checking `join(dir, ".flume")` at each level,
+  first hit wins; hitting the filesystem root (`parent === dir`) falls
+  back to `cwd` unchanged, matching the "fresh, undocked repo" clause.
+  `main()` calls it once (`src/cli.ts:595`, `resolveRepoRoot(process.cwd())`)
+  replacing the prior literal — grepped `process.cwd()` across
+  `src/`: this is the only call site, confirming no other repoRoot
+  derivation was left on the old literal (§9's declared blast radius,
+  `src/cli.ts:514`, fully covered, nothing missed). `FLUME_DIR` /
+  `FLUME_CONFIG_DIR` override logic (`~L130-145`) is untouched — reads
+  `env.FLUME_DIR`/`env.FLUME_CONFIG_DIR` independent of `repoRoot`,
+  exactly as §9 requires ("nothing else in `resolveStateDirs`
+  changes").
+- Ran the new tests directly: `vitest run tests/cli.test.ts -t
+  "resolveRepoRoot"` (4 unit tests: cwd-holds-.flume, nested walk-up,
+  cwd-basename-is-.flume short-circuit, no-.flume-fallback) and `-t
+  "bay discovery walk-up"` (3 real-CLI tests covering the acceptance
+  line verbatim: invocation from inside `.flume`, from a nested
+  subdirectory, and from an undocked tree) — all 7 pass. `CHANGELOG.md`
+  bullet (`~L35-43`) present and accurate, matches spec language.
+  Diffstat matches declared files exactly (`src/cli.ts`, `CHANGELOG.md`,
+  `tests/cli.test.ts`) — no scope creep.
+- `7b8cb5a`'s ship (declared-files diff touched, correctly cleared from
+  `pending.json`) — no drift. §9 is fully closed: acceptance line
+  covered by the real-CLI test trio, non-goal (nested-bay
+  disambiguation) correctly left unaddressed.
 
-**Spec-delta**: none (`git diff db645f5..HEAD -- spec/` empty).
+**Spec-delta**: none (`git diff c83aa64..HEAD -- spec/` empty).
 
 **Drain**: `.flume/inbox.md` confirmed header-only on disk — nothing to
 route.
@@ -47,11 +49,10 @@ route.
 **Promote**: no entry in `pending-now` carries `gate.kind: "blockedBy"`
 — nothing to flip.
 
-## Queue (3)
+## Queue (2)
 
-1. `BAY-DISCOVERY-WALKUP` — open.
-2. `ENGINE-PIN-HANDSHAKE` — open.
-3. `SETUP-WORKTREE-HELPER` — open.
+1. `ENGINE-PIN-HANDSHAKE` — open.
+2. `SETUP-WORKTREE-HELPER` — open.
 
 Next tick's real work is a **build** tick picking off the queue head.
 
@@ -67,13 +68,13 @@ Unchanged from prior ticks (none closed or opened this pass):
 ## Writable-paths / trunk
 
 - `pending.json`: untouched this tick — verified against disk, already
-  matches the 3-entry state left by `14501f9`'s ship; no drift found
+  matches the 2-entry state left by `7b8cb5a`'s ship; no drift found
   warranting a change.
 - `state.md`: rewritten this tick (this file).
 - `open-questions.md`: untouched — verified against disk, matches
   content already current.
 - `inbox.md`: untouched (already empty, header-only).
-- Trunk: HEAD `14501f9` at this pass's start; tree clean besides
+- Trunk: HEAD `7b8cb5a` at this pass's start; tree clean besides
   untracked `.flume/loop.pid` (live supervisor's runtime artifact, not
   a plan concern).
 
