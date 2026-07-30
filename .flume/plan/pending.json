@@ -1,1 +1,68 @@
-[]
+[
+  {
+    "tag": "PIN-HANDSHAKE-SELFREF-AUTHORITY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "readLocalInstall/engineHandshake (~L98-258, self-ref guard from 54d0d70): self-reference becomes a distinct outcome — this invocation IS the provisioned install, proceed as authority (skip spawnSync re-exec, skip arm-2 pin refusal) — not indistinguishable from absent."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Retarget ~L506-577: pinned self-ref case now proceeds (no exit-2 refusal); unpinned self-ref case unchanged (still a no-op, no re-exec)."
+        },
+        {
+          "path": "docs/MIGRATING-0.8.md",
+          "description": "§4 handshake bullet: a self-referential provisioned install (e.g. a dogfood chain from a source checkout) proceeds as authority, not a refusal."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Fix pin-handshake self-reference guard (54d0d70): proceed as authority instead of falling through to arm-2 refusal, unwedging every repo-root-pinned bay",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "self-referential local install on a pinned bay proceeds (no re-exec spawn, no exit-2 refusal) instead of hitting arm 2"
+      }
+    ],
+    "acceptance": "pinned bay whose provisioned install real-path-resolves to the running engine itself runs normally (previously exit 2); unpinned self-ref case still a no-op; full handshake suite green",
+    "notes": "Routed from inbox 2026-07-30 (temper 0.6->0.8 migration friction, finding 1). Self-ref guard (54d0d70) prevents an infinite re-exec loop but conflates 'this IS the install' with 'nothing provisioned', so a pinned+provisioned dogfood-shaped bay always refuses -- no pinned layout can run. Consider a 0.8.1 patch cut once shipped."
+  },
+  {
+    "tag": "PENDING-GATE-FENCE-WHEN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "PendingGateOptions gains optional fenceWhen?: (entry: PendingEntry) => boolean (default () => true, preserves current behavior); only entries where fenceWhen(entry) is true are fence-checked (~L199-266)."
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "Add pendingGate fenceWhen cases: default fences every entry (current behavior unchanged); a supplied predicate exempts e.g. parked/deferred entries from the fence check."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Add a fenceWhen predicate to pendingGate so chains can exempt park-exempt entries from the fence pre-check, retiring hand-rolled forks",
+    "per": {
+      "path": "spec/RELEASE-v0.8.md",
+      "section": "6. `pendingGate`: composed validation and fence pre-check as a builtin"
+    },
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "an entry excluded by fenceWhen ships even when its files fall outside targetFence; an included entry is still checked"
+      }
+    ],
+    "acceptance": "pendingGate({ ..., fenceWhen }) skips the fence check for entries fenceWhen returns false for; omitting fenceWhen behaves exactly as today",
+    "notes": "Routed from inbox 2026-07-30 (temper migration friction, finding 2). A predicate, not a pickableOnly boolean (per engine-boundary.md's mechanism-vs-convention test): the engine ships the injection point, the chain owns which gate.kind values count as park-exempt."
+  }
+]
