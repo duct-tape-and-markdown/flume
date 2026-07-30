@@ -1,51 +1,5 @@
 [
   {
-    "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY",
-    "summary": "Widen TAG_PATTERN to mechanical safety only (charset, no whitespace, derived length bound); a chain refines further via its §2 extension, per v0.8 §3.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "3. Tag grammar reduces to mechanical safety"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "widen TAG_PATTERN (line 71) to conservative charset (letters, digits, ._()-), no whitespace, length bound derived from real consumers (branch/slug/path limits); refinement composes via the §2 extension mechanism"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "verify tag-derived worktree/branch/filename slugs stay within the derived length bound"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "DAL-REWIRE(usp_Filter_Get) validates against bare core; a tag with whitespace or a path separator fails"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "document declaring a tag refinement via the entry extension"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Changed bullet per §3"
-        }
-      ],
-      "retire": []
-    },
-    "tests": [
-      {
-        "path": "tests/PendingSchema.test.ts",
-        "asserts": "DAL-REWIRE(usp_Filter_Get) validates against the bare core; the rendered tag line states whatever constraint is in force"
-      }
-    ],
-    "acceptance": "DAL-REWIRE(usp_Filter_Get) validates against the bare core; a tag containing whitespace or a path separator fails; the dogfood chain's declared refinement still rejects lowercase top-level tags in dogfood runs; the rendered tag line states the in-force constraint.",
-    "notes": "Dogfood chain.ts's ALL-CAPS refinement declaration is operator-applied (§3 dogfood leg, same class as §2/§6) — not part of this entry's files."
-  },
-  {
     "tag": "PENDING-GATE-BUILTIN",
     "summary": "New pendingGate builtin: composed core+extension validation plus plan-time fence pre-check against the target phase's writablePaths, per v0.8 §6.",
     "per": {
@@ -78,6 +32,7 @@
       ],
       "retire": []
     },
+    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/Gate.test.ts",
@@ -95,8 +50,7 @@
       "section": "7. Second reference chain — the boundary's proof"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -130,6 +84,7 @@
       ],
       "retire": []
     },
+    "schemaDelta": "none",
     "tests": [
       {
         "path": "tests/examples.integration.test.ts",
