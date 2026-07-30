@@ -312,6 +312,6 @@
       }
     ],
     "acceptance": "the example chain completes a tick cycle in CI against a fixture repo with zero src/ changes attributable to it; docs present both chains as peers on one engine.",
-    "notes": "blockedBy TAG-GRAMMAR-MECHANICAL-SAFETY (transitively needs §2's extension mechanism too); also wants REQUIRES-CAPABILITY-GENERALIZATION landed for full §§2–4 coverage — single-tag blockedBy can't express both, verify before picking if that lags."
+    "notes": "blockedBy TAG-GRAMMAR-MECHANICAL-SAFETY (transitively needs §2's extension mechanism too). REQUIRES-CAPABILITY-GENERALIZATION shipped 90529d3 — §§2–4 coverage now clear once the blockedBy chain resolves."
   }
 ]
