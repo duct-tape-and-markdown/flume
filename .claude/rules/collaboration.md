@@ -40,7 +40,7 @@ Different artifacts ask for different registers. Wrong register makes the artifa
 
 **Dialogic — for the human reading.** This-conversation responses, Open Questions in `.flume/plan/open-questions.md`, PR descriptions, commit message bodies. Understandable, reasonably scoped, frame options + tradeoffs, ask. The human is the audience; clarity for them is the bar.
 
-**Telegraphic — for the agent reading itself across ticks.** Pending entries in `.flume/plan/pending.json`, state.md lines, exit log lines. Concise, clear, actionable. Dense with refs the next tick can follow. No ceremony. **You are writing for yourself — write what next-tick-you needs to act, nothing more.**
+**Telegraphic — for the agent reading itself across ticks.** Pending entries in `.flume/plan/pending.json`, state.md lines, exit log lines. Concise, clear, actionable. Dense with refs the next tick can follow. No ceremony. **You are writing for yourself — write what next-tick-you needs to act, nothing more.** These surfaces are re-read every tick: done items leave the file — git is the log; the file carries only present state.
 
 **Rules** (`.claude/rules/*.md`). Systematic directives declared once. No past-incident anecdotes, no SHA cites. Reasoning condenses to a one-line `**Why:**` when needed; the longer context belongs in the commit message that introduced the directive. A rule says what to do, not what happened.
 

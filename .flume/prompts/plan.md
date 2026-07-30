@@ -67,6 +67,15 @@ Telegraphic: short enough that build can act on the entry without re-reading the
 
 **Hard caps (zod-enforced; over-cap reverts the whole tick via `pendingParseGate`, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
 
+## Artifact discipline
+
+Every file you write is re-injected verbatim into future ticks — size is a per-tick token tax, paid every tick until the content leaves. **Git is the log; the files are the present.** A done item leaves the file; its narrative lives in the `plan:` commit body.
+
+- `open-questions.md` — open questions only. Closing a question means **deleting its section**; the disposition goes in the commit body. No closure ledgers, no "closed this tick" comment blocks, no history — delete any you find. Steady state with nothing open: the header alone.
+- `state.md` — a snapshot, not a tick report: phase, mode, queue head, open-question count, trunk status, `Plan continues:` line. Aim for ≲30 lines. Audit reasoning and evidence chains belong in the commit body.
+- `inbox.md` — drained means deleted (already the contract).
+- `pending.json` — entries only; shipped entries are removed by the harness.
+
 A cap overrun almost always means the entry is **restating the spec instead of pointing at it**. The spec holds intent and mechanics; a plan entry points into it — `do X per §N`, `widen Y per §N` — sized so build acts without the entry re-explaining the spec. The fix is to **point harder, not shrink the spec**: cut restated mechanics, trust the `per` cite. Decompose into more entries only when one genuinely bundles several independent shippable units. A spec-split open-question is a last resort — for a section enumerating many unrelated deliverables, never for a section whose intent is merely rich; the spec is sized for intent, not for plan's character budget. Downstream cost is real: every build tick re-reads the full entry JSON; bloated fields tax every tick until the entry ships.
 
 # OUTPUT
