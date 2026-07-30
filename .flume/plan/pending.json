@@ -1,44 +1,5 @@
 [
   {
-    "tag": "ENGINE-PIN-HANDSHAKE-JOB-SCOPE",
-    "summary": "Derive the engine-pin handshake's local-install check path from resolveStateDirs (job-scoped) instead of the fixed bay-root literal, per v0.7 §10 amendment.",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "readLocalInstall/engineHandshake check the resolveStateDirs-derived flumeDir path, not the fixed bay-root literal"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "re-point the handshake fixtures at the job-scoped path per the amendment; bare-bay case stays byte-identical"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Fixed bullet per §10 amendment"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "a --job/FLUME_JOB-scoped bay's handshake checks <repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume; a bare bay's check reduces to the unchanged literal path"
-      }
-    ],
-    "acceptance": "a bay provisioned by the real job new/job run workflow re-execs its local install through arm 1; the bare-bay acceptance (v0.7 §10 main text) is unchanged.",
-    "notes": "engineHandshake runs before --job extraction in main() (ordering note in §10's own text). If deriving flumeDir there conflicts with that ordering, engineHandshake may need its own light --job/FLUME_JOB read — mechanical either way, no job.ts change per the amendment."
-  },
-  {
     "tag": "STATUS-SUPERVISOR-LIVENESS",
     "summary": "flume status probes loop.pid for process liveness (live pid / stale pidfile / no pidfile) alongside the awake markers, per v0.7 §17.",
     "per": {
