@@ -7,16 +7,23 @@
  */
 
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
+import type { Phase } from "./Phase.js";
 // Intentional cycle: Dispatcher imports `writablePathsGate` from here.
 // Both sides reference the imported symbol only inside function bodies, never
 // at module top-level, so ESM live bindings resolve cleanly. `chainLoadGate`
 // validates through the exact load path the runtime uses so the gate's
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
+import {
+  parsePending,
+  touchedPaths,
+  type EntryExtension,
+} from "./PendingSchema.js";
 
 const exec = promisify(execFile);
 
@@ -185,6 +192,99 @@ export const chainLoadGate: Gate = {
     }
   },
 };
+
+/**
+ * Inputs for `pendingGate` (v0.8 §6).
+ */
+export interface PendingGateOptions {
+  /**
+   * Chain-declared entry extension (§2) — the same declaration passed to
+   * `renderSchemaForPrompt` for the plan prompt, so this gate's validation
+   * and the prompt's schema block cannot drift. Omitted validates the bare
+   * engine core.
+   */
+  extension?: EntryExtension;
+  /**
+   * flumeDir-relative path to the pending list. Default `plan/pending.json`
+   * — the universal plan/build convention (mirrors `CHAIN_REL_PATH` above).
+   * Override for a chain that attaches this gate to a differently-shaped
+   * producer phase.
+   */
+  pendingPath?: string;
+  /**
+   * The fence every entry's declared `files` must survive: the downstream
+   * phase that will build this queue, typically passed as the phase value
+   * itself (`{ writablePaths, entryChannelPaths }` is all this gate reads).
+   */
+  targetFence: Pick<Phase, "writablePaths" | "entryChannelPaths">;
+}
+
+/**
+ * Builtin opt-in gate (v0.8 §6): validates the pending list against the
+ * composed core+extension schema (§2) at commit time of whichever phase the
+ * chain attaches it to, then pre-checks every entry's declared `files`
+ * against `targetFence.writablePaths ∪ targetFence.entryChannelPaths`. An
+ * entry whose declaration cannot survive that fence fails here, naming the
+ * offending paths, instead of shipping through plan and burning a build
+ * tick on a guaranteed revert — the GATECONTEXT-REPOROOT-TESTS /
+ * CLI-JUNCTION-SAFE-ENTRY-TESTS re-file class this extinguishes.
+ */
+export function pendingGate(opts: PendingGateOptions): Gate {
+  const pendingPath = opts.pendingPath ?? join("plan", "pending.json");
+  const fence = [
+    ...opts.targetFence.writablePaths,
+    ...(opts.targetFence.entryChannelPaths ?? []),
+  ];
+  return {
+    name: "pending-gate",
+    when: "afterCommit",
+    async run(ctx: GateContext): Promise<GateResult> {
+      let raw: string;
+      try {
+        raw = await readFile(join(ctx.flumeDir, pendingPath), "utf8");
+      } catch {
+        return {
+          ok: false,
+          message: `${pendingPath} missing after commit`,
+        };
+      }
+      const parsed = parsePending(raw, opts.extension);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          message: `${pendingPath} has ${parsed.errors.length} schema violation(s)`,
+          details: parsed.errors
+            .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+            .join("\n"),
+        };
+      }
+      const violations = parsed.entries
+        .map((entry) => ({
+          tag: entry.tag,
+          offending: touchedPaths(entry).filter((p) => !matchesAny(p, fence)),
+        }))
+        .filter((v) => v.offending.length > 0);
+      if (violations.length > 0) {
+        return {
+          ok: false,
+          message: `${violations.length} pending entr${
+            violations.length === 1 ? "y" : "ies"
+          } declare files outside the target fence`,
+          details: violations
+            .map(
+              (v) =>
+                `  [${v.tag}] ${v.offending.join(", ")} (outside targetFence writablePaths ∪ entryChannelPaths)`,
+            )
+            .join("\n"),
+        };
+      }
+      return {
+        ok: true,
+        message: `${pendingPath} valid (${parsed.entries.length} entries), fence pre-check passed`,
+      };
+    },
+  };
+}
 
 /**
  * Entry scope for a fanout tick carrying an assignedEntry (RELEASE-v0.4 §5).

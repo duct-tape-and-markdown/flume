@@ -125,6 +125,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   previously hand-rolled a single-package-manager hardcode for this; the
   worked example in `docs/CHAIN-AUTHORING.md` now shows the helper as the
   recommended default.
+- `pendingGate` (v0.8 §6) — an opt-in builtin gate composing the pending
+  list's core+extension schema validation (§2) with a plan-time fence
+  pre-check: every entry's declared `files` must survive the target
+  phase's `writablePaths ∪ entryChannelPaths`, or the gate fails naming
+  the offending paths at commit time of whichever phase produced the
+  queue — instead of the entry shipping through to a build tick that is
+  guaranteed to revert on the writable-paths gate.
 
 ### Fixed
 

@@ -34,6 +34,8 @@ export {
   eslintGate,
   chainLoadGate,
   writablePathsGate,
+  pendingGate,
+  type PendingGateOptions,
 } from "./builtinGates.js";
 
 export { setupWorktree } from "./setupWorktree.js";

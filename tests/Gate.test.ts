@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   shellGate,
@@ -13,6 +14,7 @@ import {
   eslintGate,
   chainLoadGate,
   writablePathsGate,
+  pendingGate,
 } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 
@@ -405,5 +407,134 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     const result = await chainLoadGate.run(ctx(repo));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/requires commitSha/);
+  });
+});
+
+// ---------- pendingGate (RELEASE-v0.8 §6) ----------
+
+describe("pendingGate — composed validation + fence pre-check", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function writePending(entries: unknown): Promise<void> {
+    const pendingDir = join(dir, ".flume", "plan");
+    await mkdir(pendingDir, { recursive: true });
+    await writeFile(
+      join(pendingDir, "pending.json"),
+      JSON.stringify(entries),
+      "utf8",
+    );
+  }
+
+  const validEntry = {
+    tag: "SOME-TAG",
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: {
+      new: [],
+      edit: [{ path: "src/foo.ts", description: "edit" }],
+      retire: [],
+    },
+  };
+
+  it("passes a valid queue whose declared files sit inside the target fence", async () => {
+    await writePending([validEntry]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("fails composed validation on an unknown field with no declared extension", async () => {
+    await writePending([{ ...validEntry, mystery: "field" }]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/schema violation/);
+  });
+
+  it("validates against a chain-declared extension", async () => {
+    const extension = {
+      summary: { schema: z.string().min(1), hint: '"one-line"' },
+    };
+    await writePending([{ ...validEntry, summary: "does a thing" }]);
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      extension,
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails the fence pre-check naming the offending path", async () => {
+    await writePending([
+      {
+        ...validEntry,
+        files: {
+          new: [],
+          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          retire: [],
+        },
+      },
+    ]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/outside the target fence/);
+    expect(result.details ?? "").toContain("spec/RELEASE-v0.8.md");
+    expect(result.details ?? "").toContain("SOME-TAG");
+  });
+
+  it("includes entryChannelPaths in the fence alongside writablePaths", async () => {
+    await writePending([
+      validEntry,
+      {
+        tag: "OTHER-TAG",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: {
+          new: [{ path: "tests/foo.test.ts", description: "test" }],
+          edit: [],
+          retire: [],
+        },
+      },
+    ]);
+    const gate = pendingGate({
+      targetFence: {
+        writablePaths: ["src/**"],
+        entryChannelPaths: ["tests/**"],
+      },
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+  });
+
+  it("reports pending.json missing after commit", async () => {
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/missing after commit/);
+  });
+
+  it("reads pending.json from a custom pendingPath", async () => {
+    await mkdir(join(dir, ".flume", "custom"), { recursive: true });
+    await writeFile(
+      join(dir, ".flume", "custom", "queue.json"),
+      JSON.stringify([validEntry]),
+      "utf8",
+    );
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      pendingPath: join("custom", "queue.json"),
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
   });
 });
