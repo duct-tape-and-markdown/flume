@@ -9,6 +9,7 @@
 import type { Agent } from "./Agent.js";
 import type { Gate } from "./Gate.js";
 import type { PendingEntry } from "./PendingSchema.js";
+import type { NoCommitMode } from "./Prompt.js";
 
 /**
  * Concurrency model for a phase:
@@ -72,6 +73,14 @@ export interface TickResult {
    * retry in downstream telemetry.
    */
   revertedTags: readonly string[];
+  /**
+   * RELEASE-v0.2 §6 no-commit classification, present iff the tick (or, for
+   * a fanout wave, the whole wave) produced no usable commit. Absent on a
+   * committed tick. A chain's `handoff` reads this to wake a sibling phase
+   * on a voluntary-bail that `shippedTags`/`gateResults` alone can't
+   * distinguish from a genuine nothing-pickable no-op.
+   */
+  noCommit?: NoCommitMode;
 }
 
 /**

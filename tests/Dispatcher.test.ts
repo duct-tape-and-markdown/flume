@@ -34,7 +34,7 @@ import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import { chainLoadGate } from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
-import type { Chain, Phase } from "../src/Phase.ts";
+import type { Chain, Phase, TickResult } from "../src/Phase.ts";
 import { parsePending, type PendingEntry } from "../src/PendingSchema.ts";
 
 const exec = promisify(execFile);
@@ -2953,6 +2953,92 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
     expect(second.result?.committed).toBe(true);
     expect(existsSync(snapDir)).toBe(false);
   }, 20_000);
+});
+
+// ---------- TickResult carries the no-commit classification (§15) ----------
+
+// SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan
+// tick woke: `Dispatcher.tick` computed the §6 classification but discarded
+// it before calling `phase.handoff(result)`, so no chain's handoff could
+// ever distinguish a voluntary-bail from a genuine nothing-pickable no-op.
+// These assert the fix at the one seam that matters: what `handoff` itself
+// receives.
+
+describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () => {
+  it("voluntary-bail: the TickResult handed to handoff carries noCommit: 'voluntary-bail'", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const handoffResults: TickResult[] = [];
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handoffResults.push(r);
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent: Agent = {
+      name: "bailing-singleton",
+      async invoke() {
+        // Clean exit, no commit — a voluntary bail per §6.
+        return { exitCode: 0, stdout: "BAILED: no path forward\n", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("voluntary-bail");
+    expect(handoffResults).toHaveLength(1);
+    expect(handoffResults[0]?.noCommit).toBe("voluntary-bail");
+  }, 20_000);
+
+  it("committed tick: the TickResult handed to handoff has no noCommit field", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const handoffResults: TickResult[] = [];
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handoffResults.push(r);
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/derived.ts", "y\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(handoffResults).toHaveLength(1);
+    expect(handoffResults[0]?.noCommit).toBeUndefined();
+    expect("noCommit" in handoffResults[0]!).toBe(false);
+  });
 });
 
 // ---------- per-tick chain re-resolution (§2) ----------

@@ -89,6 +89,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   via the existing footprint-commit mechanism, instead of only the
   gitignored prior-attempt record. The next plan tick's inputs now carry
   the violating paths instead of an empty delta.
+- `TickResult` now carries the RELEASE-v0.2 §6 no-commit classification
+  (`noCommit?: "gate-revert" | "voluntary-bail" | "platform-preempt"`),
+  present iff the tick produced no usable commit. `Dispatcher.tick`
+  previously computed this classification and discarded it before calling
+  `phase.handoff(result)`, so no chain's `handoff` could ever distinguish
+  a voluntary bail from a genuine nothing-pickable no-op.
 
 ## [0.6.2]
 

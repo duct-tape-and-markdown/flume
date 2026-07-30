@@ -712,16 +712,23 @@ export class Dispatcher {
         ? await this.runSingleton(phase, agent)
         : await this.runFanout(phase, agent, chain, forkResolver);
 
+    // §15: fold the already-computed no-commit classification into the
+    // TickResult before handoff — a chain's `handoff` is the only place a
+    // voluntary-bail wave can be distinguished from a genuine no-op.
+    const resultForHandoff: TickResult = noCommit
+      ? { ...result, noCommit }
+      : result;
+
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
-    const handoff = phase.handoff(result);
+    const handoff = phase.handoff(resultForHandoff);
     const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
     return {
       hibernated: false,
       phaseName: phase.name,
-      result,
+      result: resultForHandoff,
       ...(noCommit ? { noCommit } : {}),
       awakeAfter: this.baton.awake(),
       summary: summarize(phase.name, result, allowed, noCommit),
