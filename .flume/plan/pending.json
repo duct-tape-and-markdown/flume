@@ -1,1 +1,49 @@
-[]
+[
+  {
+    "tag": "SCHEMA-HINT-FALSE-COMMENT-SPLIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "renderSchemaForPrompt: extensionLines separator uses indexOf('//') — first '//' anywhere in the line, not a real trailing comment marker; corrupts a hint whose own text contains '//' (e.g. a URL)"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "add a renderSchemaForPrompt case for a hint containing '//' as content with no trailing comment, and one with both a URL and a genuine trailing comment"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "9f4e62f's separator fix matches the first '//' in the line; a hint containing '//' as content (e.g. a URL) gets its comma spliced mid-string and the remainder misread as a comment",
+    "per": { "path": "spec/RELEASE-v0.8.md", "section": "2. Entry schema splits: engine core + chain-declared extension" },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "a hint like '\"https://example.com/hooks\"' (no trailing comment) renders intact with its separator appended after the full hint, not spliced at the URL's '//'; a hint with both a URL and a genuine trailing ' // comment' still splits at the real comment"
+      }
+    ],
+    "acceptance": "renderSchemaForPrompt distinguishes a genuine trailing line comment from '//' occurring inside a hint's own text; reproduced today via a webhook-style hint — 'https:,  //example.com/hooks' — must no longer occur",
+    "notes": "Repro: render({webhook:{hint:'\"https://example.com/hooks/notify\"'}, notes:{hint:'\"...\"'}}) currently yields '\"webhook\": \"https:,  //example.com/hooks/notify\"'. A last-index-of-' // ' (space-slash-slash-space) heuristic would distinguish real trailing comments from in-string '//' without a leading space."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-PENDINGGATE-SECTION-CITE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "pendingGate blurb cites the composed core+extension schema as '(§10)'; §10 is the migration guide — the schema split is §2. Fix the cross-reference."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "CHAIN-AUTHORING.md's pendingGate section mis-cites the composed core+extension schema as v0.8 §10 (migration guide) instead of §2 (the schema-split section)",
+    "per": { "path": "spec/RELEASE-v0.8.md", "section": "6. `pendingGate`: composed validation and fence pre-check as a builtin" },
+    "tests": [],
+    "acceptance": "docs/CHAIN-AUTHORING.md's pendingGate paragraph cites §2 for the composed core+extension schema, not §10",
+    "notes": "Mis-cite introduced in 480b81c. Wording-only, low-risk."
+  }
+]
