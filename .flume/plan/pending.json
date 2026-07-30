@@ -1,44 +1,5 @@
 [
   {
-    "tag": "BAY-DISCOVERY-WALKUP",
-    "summary": "repoRoot walks up from cwd to the nearest .flume, mirroring git's .git resolution, per spec/RELEASE-v0.7.md §9",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "9. Bay discovery walk-up"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "Replace the literal repoRoot = process.cwd() (~L570) with a walk-up resolver per §9: cwd-is-.flume special case, no-.flume-found fallback to today's behavior, FLUME_DIR/FLUME_CONFIG_DIR overrides unchanged."
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Add bullet under Added per §14."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Cover: subdirectory-below-bay invocation resolves the same repoRoot as bay root; invocation from inside .flume; no .flume anywhere above cwd keeps cwd-as-root."
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "cd .flume && flume job status resolves the same bay as running from repo root (no false 'no jobs'); a tree with no .flume anywhere above keeps today's cwd-as-root default."
-      }
-    ],
-    "acceptance": "cd .flume && pnpm flume job status (or any subcommand) resolves the same bay as running from the repo root; a tree with no .flume anywhere above it keeps today's cwd-as-root default.",
-    "notes": ""
-  },
-  {
     "tag": "ENGINE-PIN-HANDSHAKE",
     "summary": "Global bin re-execs a bay's local install when present, refuses loudly when pinned-but-absent, per spec/RELEASE-v0.7.md §10",
     "per": {
