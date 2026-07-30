@@ -57,6 +57,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   lacks `"type": "module"`) now refuses chain load with a usage-shaped
   message naming the fix and exits 2, instead of relaying tsx's raw
   loader stack. A genuinely missing dependency still surfaces as itself.
+- An in-worktree `afterCommit` gate revert on a fanout tick now leaves the
+  same per-entry trunk footprint an `afterMerge` failure does — the
+  reverted commit's touched paths land in `pending.json`'s `observedFiles`
+  via the existing footprint-commit mechanism, instead of only the
+  gitignored prior-attempt record. The next plan tick's inputs now carry
+  the violating paths instead of an empty delta.
 
 ## [0.6.2]
 

@@ -935,7 +935,17 @@ export class Dispatcher {
     const observed = new Map<string, string[]>();
 
     for (const r of perEntry) {
-      if (!r.committed || !r.commitSha) continue;
+      if (!r.committed || !r.commitSha) {
+        // §13: an in-worktree afterCommit gate revert never reaches
+        // cherry-pick, so it never touches trunk on its own — feed its
+        // captured footprint into the same `observed` map an afterMerge
+        // failure uses, so commitPendingUpdate below lands it on trunk
+        // instead of it living only in the gitignored prior-attempt record.
+        if (r.footprint && r.footprint.length > 0) {
+          observed.set(r.entry.tag, r.footprint);
+        }
+        continue;
+      }
 
       const preCherry = await git.revParse(repoRoot);
       try {
@@ -1194,6 +1204,13 @@ export class Dispatcher {
     gateResults: GateResultEntry[];
     /** §6 mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
+    /**
+     * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
+     * before `dropLastCommit` discards it — set only on an in-worktree
+     * `afterCommit` gate revert, so the wave loop can feed it into `observed`
+     * the same way an `afterMerge` failure's footprint is fed in.
+     */
+    footprint?: string[];
   }> {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
@@ -1260,12 +1277,28 @@ export class Dispatcher {
         entry,
         verdict.failure!,
       );
+      // §13: this revert never reaches cherry-pick, so it's the only chance
+      // to capture what the commit actually touched — grab it before
+      // dropLastCommit discards the evidence.
+      let footprint: string[] | undefined;
+      try {
+        footprint = await git.showNameOnly(wt.path, postHead);
+      } catch {
+        // Best-effort, as elsewhere — the retry just partitions on declared
+        // files as before if this fails.
+      }
       await git.dropLastCommit(wt.path);
       await this.writePriorAttempt(key, record);
       this.log.warn(
         `[flume] ${entry.tag}: commit reverted (${verdict.failure?.message})`,
       );
-      return { entry, committed: false, gateResults, noCommit: "gate-revert" };
+      return {
+        entry,
+        committed: false,
+        gateResults,
+        noCommit: "gate-revert",
+        ...(footprint ? { footprint } : {}),
+      };
     }
 
     return {

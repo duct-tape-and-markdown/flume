@@ -1605,6 +1605,68 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(record.details).toContain("outside phase writablePaths");
   }, 20_000);
 
+  it("an in-worktree afterCommit gate revert leaves the same trunk footprint an afterMerge revert does (§13, RELEASE-v0.7)", async () => {
+    // Same shape as "reverts a path outside entry scope but inside phase
+    // globs" above — a writable-paths gate revert that never reaches
+    // cherry-pick — but this asserts the §13 footprint, not just the revert
+    // itself.
+    await writePending(fx.repo, [makeEntry("FOOT-STRAY", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const preHead = await head(fx.repo);
+
+    const agent = fanoutAgent({
+      "foot-stray": async (cwd) => {
+        await writeFile(join(cwd, "src", "a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(FOOT-STRAY): overreach"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Whole-commit revert: nothing shipped, neither file reached trunk via
+    // the entry's own commit, entry stays pending.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
+    expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "FOOT-STRAY",
+    ]);
+
+    // Unlike a bare in-worktree revert, trunk still advances: the footprint
+    // rides the existing footprint-commit mechanism (commitPendingUpdate),
+    // the same one afterMerge failures use — this is the trunk footprint
+    // the next plan tick's commit-delta needs, not just the gitignored
+    // prior-attempt record.
+    expect(await head(fx.repo)).not.toBe(preHead);
+
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk[0]!.observedFiles).toEqual(
+      expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+    );
+  }, 20_000);
+
   it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
     // Pending declares a different file; a singleton tick is not entry-scoped,
     // so writing elsewhere inside writablePaths ships. entryChannelPaths on a
