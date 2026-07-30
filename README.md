@@ -310,6 +310,8 @@ follows enough usage signal to commit under semver.
 
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
+- [`docs/MIGRATING-0.8.md`](docs/MIGRATING-0.8.md) — upgrade checklist for a
+  pre-0.8 chain moving onto `@dtmd/flume@0.8.0`.
 - [`examples/minimal-chain.ts`](examples/minimal-chain.ts) — single-phase
   starter.
 - [`examples/cascade-chain.ts`](examples/cascade-chain.ts) — multi-phase
