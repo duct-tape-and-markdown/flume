@@ -22,13 +22,15 @@ import {
   Dispatcher,
   loadChainModule,
   superviseLoop,
-  writeTickCounts,
-  clearTickCounts,
+  writeTickVerdict,
+  clearTickVerdict,
+  readTickVerdicts,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
+  type TickVerdict,
 } from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
@@ -45,6 +47,26 @@ const silent: Logger = {
   warn: () => {},
   error: () => {},
 };
+
+/**
+ * A minimally-valid {@link TickVerdict} — every field `readTickVerdicts`'s
+ * structural check requires, defaulted to a clean committed tick. Tests that
+ * stub a real `flume tick` child process (writing `tick-verdict.json`
+ * directly, as `superviseLoop`'s own suites do) build off this so a stub
+ * missing a required field doesn't silently read back as "no verdict".
+ */
+function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
+  return {
+    phaseName: "build",
+    tags: [],
+    committed: true,
+    gateResults: [],
+    shippedTags: [],
+    mergeOutcomes: [],
+    summary: "build shipped nothing → hibernate",
+    ...over,
+  };
+}
 
 /**
  * Inject a fixed chain as the per-tick resolver — the `chainLoader` test
@@ -242,6 +264,19 @@ describe("Dispatcher singleton — commit detected", () => {
     expect(
       outcome.result?.gateResults.some((g) => g.gate === "writable-paths"),
     ).toBe(true);
+
+    // v0.8 §5: a committed tick's verdict carries the same facts — no
+    // interpretation, and `tags` is empty (a singleton phase has no entries).
+    expect(outcome.verdict).toBeDefined();
+    expect(outcome.verdict?.phaseName).toBe("plan");
+    expect(outcome.verdict?.tags).toEqual([]);
+    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+    expect(
+      outcome.verdict?.gateResults.some((g) => g.gate === "writable-paths"),
+    ).toBe(true);
   });
 
   it("reports committed=false (no commit) when the agent does nothing", async () => {
@@ -326,6 +361,15 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
     });
     // Loop short-circuits on first failure — writable-paths never ran.
     expect(reported.some((g) => g.gate === "writable-paths")).toBe(false);
+
+    // v0.8 §5: the verdict carries the same gate-revert facts, `details`
+    // included verbatim — a chain reading history sees exactly what the
+    // gate reported, not a re-derived summary.
+    expect(outcome.verdict?.committed).toBe(false);
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    expect(outcome.verdict?.gateResults).toEqual([
+      { gate: "intentional-fail", ok: false, message: "boom", details: "stderr-context" },
+    ]);
   });
 });
 
@@ -1375,6 +1419,18 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       "CONFLICT-B",
     ]);
 
+    // v0.8 §5: the verdict's per-entry merge outcomes distinguish the two
+    // fates — A merged cleanly, B's cherry-pick itself failed.
+    expect(outcome.verdict?.tags.sort()).toEqual(["CONFLICT-A", "CONFLICT-B"]);
+    expect(
+      [...(outcome.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
+        a.tag.localeCompare(b.tag),
+      ),
+    ).toEqual([
+      { tag: "CONFLICT-A", outcome: "merged" },
+      { tag: "CONFLICT-B", outcome: "cherry-pick-conflict" },
+    ]);
+
     // No lingering cherry-pick state in the worktree — the dispatcher
     // aborted it so the next tick starts clean.
     const { stdout: status } = await exec("git", ["status", "--porcelain"], {
@@ -1486,6 +1542,22 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     const gr = first.result?.gateResults ?? [];
     expect(gr.some((g) => g.gate === "iso-veto" && !g.ok)).toBe(true);
     expect(gr.some((g) => g.gate === "iso-veto" && g.ok)).toBe(true);
+
+    // v0.8 §5: the verdict's merge outcomes distinguish "merged" from
+    // "afterMerge-reverted" per entry, and the failing gate's own detail
+    // (the fact behind the revert) rides along verbatim.
+    expect(
+      [...(first.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
+        a.tag.localeCompare(b.tag),
+      ),
+    ).toEqual([
+      { tag: "ISO-FAIL", outcome: "afterMerge-reverted" },
+      { tag: "ISO-PASS", outcome: "merged" },
+    ]);
+    const verdictVeto = first.verdict?.gateResults.find(
+      (g) => g.gate === "iso-veto" && !g.ok,
+    );
+    expect(verdictVeto?.details).toBe("ISO-FAIL-DETAIL-QQQ");
 
     // Retry wave: only ISO-FAIL is still pickable. Its prompt carries the
     // §5 gate-revert block (afterMerge); ISO-PASS never runs again.
@@ -1614,6 +1686,20 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     ]);
     const gr = first.result?.gateResults ?? [];
     expect(gr.some((g) => g.gate === "writable-paths" && !g.ok)).toBe(true);
+
+    // v0.8 §5: the wave's verdict carries this entry's tag and the
+    // writable-paths gate's own violating-path detail — a chain reading
+    // last-N verdicts sees `src/stray.ts` named, verbatim, no re-derivation.
+    expect(first.verdict?.tags).toEqual(["SCOPE-STRAY"]);
+    expect(first.verdict?.committed).toBe(false);
+    expect(first.verdict?.noCommit).toBe("gate-revert");
+    const verdictGate = first.verdict?.gateResults.find(
+      (g) => g.gate === "writable-paths",
+    );
+    expect(verdictGate?.ok).toBe(false);
+    expect(verdictGate?.details).toContain(
+      "src/stray.ts (inside phase writablePaths but outside",
+    );
 
     // Retry: the §5 prior-attempt block names the out-of-scope path.
     baton.wake("build");
@@ -2733,6 +2819,14 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     const first = await dispatcher.tick();
     expect(first.result?.committed).toBe(false);
     expect(first.noCommit).toBe("voluntary-bail");
+    // v0.8 §5: the verdict carries the same no-commit fact — no shipped
+    // tags, no gates ran (the agent never committed), nothing to
+    // cherry-pick/merge.
+    expect(first.verdict?.committed).toBe(false);
+    expect(first.verdict?.noCommit).toBe("voluntary-bail");
+    expect(first.verdict?.shippedTags).toEqual([]);
+    expect(first.verdict?.gateResults).toEqual([]);
+    expect(first.verdict?.mergeOutcomes).toEqual([]);
 
     baton.wake("plan");
     await dispatcher.tick();
@@ -2949,61 +3043,89 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 });
 
 /**
- * v0.7 §4 amendment — `writeTickCounts`/`clearTickCounts` are the primitives
- * the CLI's `tick` command calls around `dispatcher.tick()` (never
- * `Dispatcher.tick()` itself — a plain unit test constructing a `Dispatcher`
- * directly, as every test above does, must not gain an untracked
- * `<flumeDir>/last-tick.json` side effect underfoot; `superviseLoop`'s own
- * accumulation from this same artifact is proved below, in the
- * `superviseLoop` suite, via a stub `runTick` that writes it directly, the
- * way a real `flume tick` child process would). This suite proves the
- * primitives' own round-trip and clear behavior.
+ * v0.8 §5 — `writeTickVerdict`/`clearTickVerdict`/`readTickVerdicts` are the
+ * primitives the CLI's `tick` command calls around `dispatcher.tick()`
+ * (never `Dispatcher.tick()` itself — a plain unit test constructing a
+ * `Dispatcher` directly, as every test above does, must not gain an
+ * untracked `<flumeDir>/tick-verdict.json` side effect underfoot;
+ * `superviseLoop`'s own accumulation from this same artifact is proved
+ * below, in the `superviseLoop` suite, via a stub `runTick` that writes it
+ * directly, the way a real `flume tick` child process would). This suite
+ * proves the primitives' own round-trip, clear behavior, and bounded
+ * history — and that the shape carries no interpretation field (no
+ * `errored`; §5 derives that at the read site instead).
  */
-describe("writeTickCounts / readTickCounts / clearTickCounts — the tick-counts artifact (v0.7 §4 amendment)", () => {
-  const countsPath = (): string => join(fx.repo, ".flume", "last-tick.json");
+describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact (v0.8 §5)", () => {
+  const latestPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const historyPath = (): string =>
+    join(fx.repo, ".flume", "tick-verdicts.jsonl");
 
-  it("writes a record readable back verbatim, including an errorSummary", async () => {
-    await writeTickCounts(join(fx.repo, ".flume"), {
-      shippedTags: ["TEST-A"],
-      errored: true,
-      errorSummary: "build: no commit (gate-revert) → hibernate",
-    });
+  it("writes a record readable back verbatim, appends it to the bounded history log", async () => {
+    const v = verdictFixture({ shippedTags: ["TEST-A"] });
+    await writeTickVerdict(join(fx.repo, ".flume"), v);
 
-    const onDisk = JSON.parse(await readFile(countsPath(), "utf8"));
-    expect(onDisk).toEqual({
-      shippedTags: ["TEST-A"],
-      errored: true,
-      errorSummary: "build: no commit (gate-revert) → hibernate",
-    });
+    const onDisk = JSON.parse(await readFile(latestPath(), "utf8"));
+    expect(onDisk).toEqual(v);
+    expect(existsSync(historyPath())).toBe(true);
+    expect(await readTickVerdicts(join(fx.repo, ".flume"))).toEqual([v]);
   });
 
-  it("a clean (non-errored) record omits errorSummary", async () => {
-    await writeTickCounts(join(fx.repo, ".flume"), {
-      shippedTags: ["TEST-A", "TEST-B"],
-      errored: false,
+  it("carries only fact fields — no `errored`/interpretation field on the shape", async () => {
+    const v = verdictFixture({
+      committed: false,
+      noCommit: "gate-revert",
+      gateResults: [
+        {
+          gate: "writable-paths",
+          ok: false,
+          message: "commit touched 1 path(s) outside writablePaths",
+          details: "  - src/Phase.ts (outside phase writablePaths)",
+        },
+      ],
     });
+    await writeTickVerdict(join(fx.repo, ".flume"), v);
+    const onDisk = JSON.parse(await readFile(latestPath(), "utf8"));
 
-    const onDisk = JSON.parse(await readFile(countsPath(), "utf8"));
-    expect(onDisk.shippedTags).toEqual(["TEST-A", "TEST-B"]);
-    expect(onDisk.errored).toBe(false);
-    expect(onDisk.errorSummary).toBeUndefined();
+    expect(Object.keys(onDisk).sort()).toEqual(
+      [
+        "phaseName",
+        "tags",
+        "committed",
+        "noCommit",
+        "gateResults",
+        "shippedTags",
+        "mergeOutcomes",
+        "summary",
+      ].sort(),
+    );
+    // The violating path is a fact in the gate's own captured `details`, not
+    // a re-derived summary — a chain reading history sees it verbatim.
+    expect(onDisk.gateResults[0].details).toContain("src/Phase.ts");
   });
 
-  it("clearTickCounts removes an existing record and no-ops when absent", async () => {
-    await writeTickCounts(join(fx.repo, ".flume"), {
-      shippedTags: [],
-      errored: true,
-      errorSummary: "boom",
-    });
-    expect(existsSync(countsPath())).toBe(true);
+  it("clearTickVerdict removes the latest record without touching history; no-ops when absent", async () => {
+    await writeTickVerdict(join(fx.repo, ".flume"), verdictFixture());
+    expect(existsSync(latestPath())).toBe(true);
 
-    await clearTickCounts(join(fx.repo, ".flume"));
-    expect(existsSync(countsPath())).toBe(false);
+    await clearTickVerdict(join(fx.repo, ".flume"));
+    expect(existsSync(latestPath())).toBe(false);
+    expect(await readTickVerdicts(join(fx.repo, ".flume"))).toHaveLength(1);
 
     // No pre-existing file (fresh flumeDir, never ticked) — still a no-op.
     await expect(
-      clearTickCounts(join(fx.repo, ".flume", "never-created")),
+      clearTickVerdict(join(fx.repo, ".flume", "never-created")),
     ).resolves.not.toThrow();
+  });
+
+  it("readTickVerdicts serves the last N, oldest first, for a chain to render recent history", async () => {
+    for (let i = 0; i < 5; i++) {
+      await writeTickVerdict(
+        join(fx.repo, ".flume"),
+        verdictFixture({ summary: `tick ${i}` }),
+      );
+    }
+    const last2 = await readTickVerdicts(join(fx.repo, ".flume"), 2);
+    expect(last2.map((v) => v.summary)).toEqual(["tick 3", "tick 4"]);
   });
 });
 
@@ -3528,40 +3650,46 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   });
 
   /**
-   * v0.7 §4 amendment — shipped/errored cross the child→supervisor boundary
-   * by disk (`<flumeDir>/last-tick.json`), not stdio: child stdio stays
+   * v0.8 §5 — shipped/errored cross the child→supervisor boundary by disk
+   * (`<flumeDir>/tick-verdict.json`), not stdio: child stdio stays
    * `inherit`, so the exit code alone can't carry a run-wide total. Two
-   * ticks in one run: the first ships an entry and writes a clean record,
-   * the second errors (no commit) and writes an errored record before
+   * ticks in one run: the first ships an entry and writes a clean verdict,
+   * the second is a gate-revert (errored) and writes that verdict before
    * sleeping the phase so the loop hibernates. `runTick` here plays the real
    * child `flume tick` process — the CLI's `tick` command writes exactly
    * this artifact around its own `dispatcher.tick()` call (the write/clear
    * primitives' own round-trip is proved directly in the
-   * `writeTickCounts / readTickCounts / clearTickCounts` suite above) —
-   * this suite proves `superviseLoop` reads and accumulates it correctly.
+   * `writeTickVerdict / clearTickVerdict / readTickVerdicts` suite above);
+   * `errored` itself is derived from `noCommit`/`shippedTags` at the read
+   * site, not stored on the verdict — this suite proves `superviseLoop`
+   * derives and accumulates it correctly.
    */
   it("a run with one errored tick and one shipped entry: SuperviseResult reports shipped>0 and errored>0, error named", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
-    const countsPath = join(fx.repo, ".flume", "last-tick.json");
+    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
 
     let calls = 0;
     const runTick = async (): Promise<{ exitCode: number | null }> => {
       calls++;
       if (calls === 1) {
         await writeFile(
-          countsPath,
-          JSON.stringify({ shippedTags: ["SHIPPED-ENTRY"], errored: false }),
+          verdictPath,
+          JSON.stringify(
+            verdictFixture({ committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
+          ),
           "utf8",
         );
       } else {
         await writeFile(
-          countsPath,
-          JSON.stringify({
-            shippedTags: [],
-            errored: true,
-            errorSummary: "build: no commit (gate-revert) → hibernate",
-          }),
+          verdictPath,
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              noCommit: "gate-revert",
+              summary: "build: no commit (gate-revert) → hibernate",
+            }),
+          ),
           "utf8",
         );
         baton.sleep("build");
@@ -3630,13 +3758,13 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
  * `FLUME_QUARANTINED_SLUGS`); the same failure signature repeating on three
  * consecutive ticks with no successful tick between them aborts the run; a
  * signature that stops repeating resets the streak. `runTick` here plays the
- * real child `flume tick` process exactly as the §4-amendment suite above
- * does — it writes `last-tick.json` directly rather than exercising a real
- * fanout wave (that mechanism is proved in the `Dispatcher fanout —
- * pre-tick worktree provisioning failure isolates one entry (§16)` suite).
+ * real child `flume tick` process exactly as the §5 suite above does — it
+ * writes `tick-verdict.json` directly rather than exercising a real fanout
+ * wave (that mechanism is proved in the `Dispatcher fanout — pre-tick
+ * worktree provisioning failure isolates one entry (§16)` suite).
  */
 describe("superviseLoop — provisioning-failure quarantine & consecutive-failure abort backstop (§16)", () => {
-  const countsPath = (): string => join(fx.repo, ".flume", "last-tick.json");
+  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
 
   it("quarantines a tagged failure after its first tick and carries it to the next child tick", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -3651,24 +3779,26 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
       receivedSlugs.push([...quarantinedSlugs].sort());
       if (calls === 1) {
         await writeFile(
-          countsPath(),
-          JSON.stringify({
-            shippedTags: ["OK-A"],
-            errored: false,
-            provisionFailures: [
-              {
-                tag: "HELD-ENTRY",
-                signature: "EBUSY: resource busy or locked",
-                message: "EBUSY: resource busy or locked, rmdir '...'",
-              },
-            ],
-          }),
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              shippedTags: ["OK-A"],
+              provisionFailures: [
+                {
+                  tag: "HELD-ENTRY",
+                  signature: "EBUSY: resource busy or locked",
+                  message: "EBUSY: resource busy or locked, rmdir '...'",
+                },
+              ],
+            }),
+          ),
           "utf8",
         );
       } else {
         await writeFile(
-          countsPath(),
-          JSON.stringify({ shippedTags: [], errored: false }),
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -3713,13 +3843,14 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     const runTick = async (): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
-        countsPath(),
-        JSON.stringify({
-          shippedTags: [],
-          errored: true,
-          errorSummary: "build: no commit — worktree provisioning failed",
-          provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
-        }),
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — worktree provisioning failed",
+            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+          }),
+        ),
         "utf8",
       );
       return { exitCode: 0 };
@@ -3757,26 +3888,27 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
       calls++;
       if (calls === 1 || calls === 3) {
         await writeFile(
-          countsPath(),
-          JSON.stringify({
-            shippedTags: [],
-            errored: true,
-            errorSummary: "build: no commit — worktree provisioning failed",
-            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
-          }),
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              summary: "build: no commit — worktree provisioning failed",
+              provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+            }),
+          ),
           "utf8",
         );
       } else if (calls === 2) {
         // Transient — the wall didn't recur this tick.
         await writeFile(
-          countsPath(),
-          JSON.stringify({ shippedTags: [], errored: false }),
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
           "utf8",
         );
       } else {
         await writeFile(
-          countsPath(),
-          JSON.stringify({ shippedTags: [], errored: false }),
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
           "utf8",
         );
         baton.sleep("build");

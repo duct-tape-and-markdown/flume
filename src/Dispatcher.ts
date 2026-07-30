@@ -33,8 +33,18 @@ import { partitionByFileOverlap } from "./partition.js";
 import { parsePending } from "./PendingSchema.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
-/** Local-mutable shape for accumulating gate results before they widen to TickResult.gateResults. */
-type GateResultEntry = { gate: string; ok: boolean; message: string };
+/**
+ * Local-mutable shape for accumulating gate results before they widen to
+ * TickResult.gateResults (which erases `details`) or a {@link TickVerdict}'s
+ * `gateResults` (which keeps it) — `details` is where a failing
+ * writable-paths gate lists the actual violating paths (v0.8 §5).
+ */
+type GateResultEntry = {
+  gate: string;
+  ok: boolean;
+  message: string;
+  details?: string;
+};
 import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import type {
@@ -62,47 +72,6 @@ const execFileP = promisify(execFile);
  * `process.env.FLUME_DIR` so the whole footprint tears down in one `rm`.
  */
 const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
-
-/**
- * v0.7 §4 amendment: `shipped`/`errored` cross the `flume tick` child →
- * `superviseLoop` supervisor process boundary by disk, not stdio — child
- * stdio stays `inherit` (live-streamed agent output is load-bearing), so
- * the exit code alone (settled / errored / {@link EX_MOUNT_DEAD}) is the
- * only signal that crosses today, and it can't carry a run-wide total. One
- * JSON file at `<flumeDir>/last-tick.json`, overwritten every real `flume
- * tick` process (the CLI's `tick` command writes it, from the
- * `TickOutcome` its own `dispatcher.tick()` call returned — never
- * `Dispatcher.tick()` itself, which plain unit tests call directly and
- * must not gain an untracked side effect underfoot) — untracked,
- * ungitignored (same tolerance as the loop lock's own
- * `<flumeDir>/loop.pid`).
- */
-const TICK_COUNTS_FILE = "last-tick.json";
-
-/** Per-tick shipped/errored record read by {@link superviseLoop} between iterations (v0.7 §4). */
-export interface TickCountsRecord {
-  /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
-  shippedTags: string[];
-  /**
-   * True iff this tick was a genuine tick-level failure — `gate-revert`
-   * (bad work reverted) or `platform-preempt` (the agent process itself
-   * failed) — NOT `voluntary-bail` (the agent correctly declined an
-   * out-of-scope task and named the constraint; a clean decline is not
-   * evidence anything went wrong, so it must not surface as a run-level
-   * error).
-   */
-  errored: boolean;
-  /** This tick's one-line summary, present only when `errored` — surfaced verbatim in the loop's completion summary. */
-  errorSummary?: string;
-  /**
-   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
-   * create) this tick recorded, before any agent ran for the affected
-   * entries. `superviseLoop` folds a tagged failure into a run-scoped
-   * quarantine and every failure into the consecutive-identical-signature
-   * abort backstop. Absent/empty when the tick hit none.
-   */
-  provisionFailures?: ProvisionFailure[];
-}
 
 /**
  * §16 (RELEASE-v0.7): one pre-tick worktree provisioning failure — the
@@ -133,60 +102,228 @@ export interface ProvisionFailure {
 /** Bound on a persisted {@link ProvisionFailure.signature} — a comparison key, not a transcript. */
 const MAX_PROVISION_SIGNATURE = 500;
 
+/**
+ * One gate's result as recorded in a {@link TickVerdict} — unlike
+ * `TickResult.gateResults` (`./Phase.js`), this keeps `details`: for a
+ * failing writable-paths gate that is the actual list of violating paths
+ * (v0.8 §5's "gate results ... violating paths"), not a re-derived summary.
+ */
+export interface TickVerdictGateResult {
+  gate: string;
+  ok: boolean;
+  message: string;
+  details?: string;
+}
+
+/**
+ * How a fanout entry's landed worktree commit fared once the wave tried to
+ * put it on trunk (v0.8 §5's "cherry-pick/merge outcome"):
+ *  - `merged`               cherry-picked, passed every afterMerge gate,
+ *                           touched a declared file — counted shipped.
+ *  - `cherry-pick-conflict` the cherry-pick itself failed; entry stays
+ *                           pending, no commit reached trunk.
+ *  - `afterMerge-reverted`  landed, then an afterMerge gate failed; that
+ *                           entry's commit alone was reset back off trunk.
+ *  - `channel-only`         landed and passed every gate, but touched no
+ *                           file the entry declared (§12) — stays on trunk,
+ *                           entry stays pending (not a ship).
+ */
+export type MergeOutcome =
+  | "merged"
+  | "cherry-pick-conflict"
+  | "afterMerge-reverted"
+  | "channel-only";
+
+/** One fanout entry's {@link MergeOutcome}, as recorded in a {@link TickVerdict}. */
+export interface TickVerdictMergeOutcome {
+  tag: string;
+  outcome: MergeOutcome;
+}
+
+/**
+ * v0.8 §5: the one facts artifact every tick that actually runs a phase
+ * writes — phase, entry tag(s), committed/no-commit class, gate results,
+ * shipped tags, and (fanout) each provisioned entry's cherry-pick/merge
+ * fate. Supersedes three v0.7 partial channels: the §4-amendment
+ * `last-tick.json` counts file, §13's footprint-only capture, and §15's
+ * in-process-only `TickResult.noCommit`.
+ *
+ * No interpretation fields: this is what happened, never what it means —
+ * "park", "bail worth waking for" are a chain's own readings, not engine
+ * vocabulary. `errored` (v0.7 §4's run-level failure classification) is
+ * deliberately absent from this shape for the same reason: `superviseLoop`
+ * derives it from the facts below at the read site (see its call to {@link
+ * readTickVerdict}) rather than storing a precomputed judgment on disk.
+ */
+export interface TickVerdict {
+  phaseName: string;
+  /**
+   * Entry tags this tick provisioned a worktree/agent for; empty for a
+   * singleton phase or a fanout wave with nothing pickable.
+   */
+  tags: string[];
+  committed: boolean;
+  /**
+   * RELEASE-v0.2 §6 no-commit classification, present iff the tick (or, for
+   * a fanout wave, the whole wave) produced no usable commit. Absent on a
+   * committed tick or a nothing-pickable no-op (no agent ran).
+   */
+  noCommit?: NoCommitMode;
+  /** Every gate that ran this tick, in run order, across every entry. */
+  gateResults: TickVerdictGateResult[];
+  /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
+  shippedTags: string[];
+  /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
+  mergeOutcomes: TickVerdictMergeOutcome[];
+  /**
+   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
+   * create) this tick recorded, before any agent ran for the affected
+   * entries. Absent/empty when the tick hit none.
+   */
+  provisionFailures?: ProvisionFailure[];
+  /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
+  summary: string;
+}
+
 /** Shared return shape for {@link Dispatcher.runSingleton} and {@link Dispatcher.runFanout}. */
 type PhaseTickOutcome = {
   result: TickResult;
   noCommit?: NoCommitMode;
   provisionFailures?: ProvisionFailure[];
+  /** Entry tags this wave provisioned a worktree/agent for (fanout only; §5); absent for a singleton phase. */
+  tags?: string[];
+  /** Fanout only (§5): each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
+  mergeOutcomes?: TickVerdictMergeOutcome[];
 };
 
-function tickCountsPath(flumeDir: string): string {
-  return join(flumeDir, TICK_COUNTS_FILE);
+/**
+ * v0.8 §5: two files under the state dir, both stable paths, neither a
+ * dogfood convention:
+ *  - {@link TICK_VERDICT_FILE} — this tick's verdict alone, overwritten
+ *    every real `flume tick` process (the CLI's `tick` command writes it,
+ *    from the `TickVerdict` its own `dispatcher.tick()` call returned —
+ *    never `Dispatcher.tick()` itself, which plain unit tests call directly
+ *    and must not gain an untracked side effect underfoot). `clearTickVerdict`
+ *    removes it before that same tick's own work begins, so a tick that
+ *    never reaches the write (chain-load failure, hibernation, terminal
+ *    misconfiguration) leaves nothing for `superviseLoop` to misread as its
+ *    own. Untracked, ungitignored (same tolerance as the loop lock's own
+ *    `<flumeDir>/loop.pid`).
+ *  - {@link TICK_VERDICTS_LOG_FILE} — every verdict ever written, appended
+ *    and bounded to {@link MAX_TICK_VERDICTS}, read back by the exported
+ *    `readTickVerdicts` accessor so a chain can render recent tick history
+ *    into a prompt. Never cleared — it is history, not a per-tick signal.
+ */
+const TICK_VERDICT_FILE = "tick-verdict.json";
+const TICK_VERDICTS_LOG_FILE = "tick-verdicts.jsonl";
+/** Bound on {@link TICK_VERDICTS_LOG_FILE} — a rolling window, not an unbounded log. */
+const MAX_TICK_VERDICTS = 200;
+
+function tickVerdictPath(flumeDir: string): string {
+  return join(flumeDir, TICK_VERDICT_FILE);
 }
 
-/** Write this tick's shipped/errored record. Called by the CLI's `tick` command, once per real process. */
-export async function writeTickCounts(
+function tickVerdictsLogPath(flumeDir: string): string {
+  return join(flumeDir, TICK_VERDICTS_LOG_FILE);
+}
+
+/** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
+function isTickVerdict(rec: unknown): rec is TickVerdict {
+  if (!rec || typeof rec !== "object") return false;
+  const r = rec as Partial<TickVerdict>;
+  return (
+    typeof r.phaseName === "string" &&
+    typeof r.committed === "boolean" &&
+    Array.isArray(r.tags) &&
+    Array.isArray(r.gateResults) &&
+    Array.isArray(r.shippedTags) &&
+    Array.isArray(r.mergeOutcomes) &&
+    typeof r.summary === "string"
+  );
+}
+
+/**
+ * Write this tick's verdict: overwrite the latest-tick file `superviseLoop`
+ * reads between iterations, and append the same record to the bounded
+ * history log the exported `readTickVerdicts` accessor serves. Called by
+ * the CLI's `tick` command, once per real process, from the `TickVerdict`
+ * its own `dispatcher.tick()` call returned.
+ */
+export async function writeTickVerdict(
   flumeDir: string,
-  rec: TickCountsRecord,
+  verdict: TickVerdict,
 ): Promise<void> {
   await mkdir(flumeDir, { recursive: true });
-  await writeFile(tickCountsPath(flumeDir), JSON.stringify(rec), "utf8");
+  await writeFile(tickVerdictPath(flumeDir), JSON.stringify(verdict), "utf8");
+  const history = await readTickVerdicts(flumeDir);
+  const bounded = [...history, verdict].slice(-MAX_TICK_VERDICTS);
+  await writeFile(
+    tickVerdictsLogPath(flumeDir),
+    bounded.map((v) => JSON.stringify(v)).join("\n") + "\n",
+    "utf8",
+  );
 }
 
 /**
- * Clear a stale record before a tick's own work — called by the CLI's
- * `tick` command before invoking `dispatcher.tick()`. A tick that never
- * reaches the corresponding `writeTickCounts` call (chain-load failure,
- * hibernation, terminal misconfiguration — none of which ran an agent)
- * must leave no record for the supervisor to misread as its own.
+ * Clear a stale latest-tick verdict before a tick's own work — called by
+ * the CLI's `tick` command before invoking `dispatcher.tick()`. Leaves the
+ * history log untouched: clearing is a per-tick-signal concern, not a
+ * history one.
  */
-export async function clearTickCounts(flumeDir: string): Promise<void> {
-  await rm(tickCountsPath(flumeDir), { force: true });
+export async function clearTickVerdict(flumeDir: string): Promise<void> {
+  await rm(tickVerdictPath(flumeDir), { force: true });
 }
 
 /**
- * Read the last-written tick-counts record, if any. Corrupt or absent (the
- * CLI clears it before every tick and writes it only once that tick's
- * `dispatcher.tick()` call has returned) degrades to "nothing to report" —
- * a missing record must never be misread as a prior tick's stale one.
+ * Read the last-written verdict, if any — consulted by `superviseLoop`
+ * between child ticks. Corrupt or absent (the CLI clears it before every
+ * tick and writes it only once that tick's `dispatcher.tick()` call has
+ * returned) degrades to "nothing to report" — a missing record must never
+ * be misread as a prior tick's stale one.
  */
-async function readTickCounts(
+async function readTickVerdict(
   flumeDir: string,
-): Promise<TickCountsRecord | undefined> {
-  const p = tickCountsPath(flumeDir);
+): Promise<TickVerdict | undefined> {
+  const p = tickVerdictPath(flumeDir);
   if (!existsSync(p)) return undefined;
   try {
-    const rec = JSON.parse(await readFile(p, "utf8")) as Partial<TickCountsRecord>;
-    if (!Array.isArray(rec.shippedTags) || typeof rec.errored !== "boolean") {
-      return undefined;
-    }
-    if (rec.provisionFailures !== undefined && !Array.isArray(rec.provisionFailures)) {
-      delete rec.provisionFailures;
-    }
-    return rec as TickCountsRecord;
+    const rec: unknown = JSON.parse(await readFile(p, "utf8"));
+    return isTickVerdict(rec) ? rec : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Read up to the last `n` verdicts (oldest first), for a chain to render
+ * recent tick history into a prompt (v0.8 §5). Corrupt lines are skipped,
+ * never thrown; an absent log reads as empty history — same no-false-signal
+ * posture as every other artifact this dispatcher persists.
+ */
+export async function readTickVerdicts(
+  flumeDir: string,
+  n: number = MAX_TICK_VERDICTS,
+): Promise<TickVerdict[]> {
+  const p = tickVerdictsLogPath(flumeDir);
+  if (!existsSync(p)) return [];
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch {
+    return [];
+  }
+  const verdicts: TickVerdict[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const rec: unknown = JSON.parse(trimmed);
+      if (isTickVerdict(rec)) verdicts.push(rec);
+    } catch {
+      // a corrupt line is skipped, not fatal to the rest of the history
+    }
+  }
+  return verdicts.slice(-n);
 }
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
@@ -658,6 +795,15 @@ export interface TickOutcome {
    * singleton tick or a clean fanout wave.
    */
   provisionFailures?: ProvisionFailure[];
+  /**
+   * v0.8 §5: this tick's unified facts artifact, present iff a phase
+   * actually ran (same condition as `result`) — absent on `hibernated`,
+   * `failed`, `usageError`, or `terminal`. The CLI's `tick` command persists
+   * this via `writeTickVerdict`; `Dispatcher.tick()` itself never writes to
+   * disk, so a plain unit test calling it directly gains no untracked side
+   * effect.
+   */
+  verdict?: TickVerdict;
   /** Phase names awake after this tick. */
   awakeAfter: string[];
   /** One-line summary suitable for log output. */
@@ -776,7 +922,7 @@ export class Dispatcher {
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
-    const { result, noCommit, provisionFailures } =
+    const { result, noCommit, provisionFailures, tags, mergeOutcomes } =
       phase.concurrency === "singleton"
         ? await this.runSingleton(phase, agent)
         : await this.runFanout(phase, agent, chain, forkResolver);
@@ -794,16 +940,39 @@ export class Dispatcher {
     const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
+    const summary = summarize(phase.name, result, allowed, noCommit);
+
+    // v0.8 §5: the unified facts artifact — a pure value, built here so
+    // `TickOutcome` carries everything the CLI's `tick` command needs to
+    // persist it verbatim via `writeTickVerdict`. Building it is not itself
+    // a disk write (the concern `writeTickVerdict`'s own doc names for
+    // `Dispatcher.tick()` unit tests), so it costs the existing computed
+    // fields (`summary` et al.) nothing extra.
+    const verdict: TickVerdict = {
+      phaseName: phase.name,
+      tags: tags ?? [],
+      committed: result.committed,
+      ...(noCommit ? { noCommit } : {}),
+      gateResults: [...result.gateResults] as TickVerdictGateResult[],
+      shippedTags: [...result.shippedTags],
+      mergeOutcomes: mergeOutcomes ?? [],
+      ...(provisionFailures && provisionFailures.length > 0
+        ? { provisionFailures }
+        : {}),
+      summary,
+    };
+
     return {
       hibernated: false,
       phaseName: phase.name,
       result: resultForHandoff,
+      verdict,
       ...(noCommit ? { noCommit } : {}),
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
       awakeAfter: this.baton.awake(),
-      summary: summarize(phase.name, result, allowed, noCommit),
+      summary,
     };
   }
 
@@ -1056,6 +1225,11 @@ export class Dispatcher {
     // retry from whatever it collided with — declared `files` is a plan
     // estimate, and an agent legitimately reaches beyond it.
     const observed = new Map<string, string[]>();
+    // v0.8 §5: each provisioned entry's cherry-pick/merge fate, for this
+    // wave's TickVerdict. Only entries whose worktree commit reached the
+    // merge step get an outcome here — an afterCommit gate-revert or a
+    // no-commit entry never reaches cherry-pick, so it has none.
+    const mergeOutcomes: TickVerdictMergeOutcome[] = [];
 
     for (const r of perEntry) {
       if (!r.committed || !r.commitSha) {
@@ -1088,6 +1262,7 @@ export class Dispatcher {
         // the next plan tick (which can't run `pnpm install` etc. against a
         // dirty trunk) and require manual `git restore` intervention.
         await git.cherryPickAbort(repoRoot);
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "cherry-pick-conflict" });
         continue;
       }
       const mergedSha = await git.revParse(repoRoot);
@@ -1111,6 +1286,7 @@ export class Dispatcher {
           gate: gate.name,
           ok: gr.ok,
           message: gr.message,
+          ...(gr.details ? { details: gr.details } : {}),
         });
         if (!gr.ok) {
           entryFailure = {
@@ -1148,6 +1324,7 @@ export class Dispatcher {
         }
         await git.hardResetTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "afterMerge-reverted" });
         continue;
       }
 
@@ -1174,10 +1351,12 @@ export class Dispatcher {
         this.log.warn(
           `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} touches no declared file — entry stays pending (channel-only commit)`,
         );
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "channel-only" });
         continue;
       }
 
       shipped.push(r.entry);
+      mergeOutcomes.push({ tag: r.entry.tag, outcome: "merged" });
     }
 
     // Update pending.json — remove shipped entries, record merge-failure
@@ -1309,6 +1488,8 @@ export class Dispatcher {
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+      tags: provisioned.map((e) => e.tag),
+      mergeOutcomes,
     };
   }
 
@@ -1523,7 +1704,12 @@ export class Dispatcher {
         commitSha,
         log: (l) => this.log.info(l),
       });
-      results.push({ gate: gate.name, ok: r.ok, message: r.message });
+      results.push({
+        gate: gate.name,
+        ok: r.ok,
+        message: r.message,
+        ...(r.details ? { details: r.details } : {}),
+      });
       if (!r.ok) {
         if (r.details) this.log.warn(r.details);
         return {
@@ -2067,19 +2253,19 @@ export interface SuperviseResult {
   mountDead?: boolean;
   /**
    * Every entry tag shipped by any child tick this run (v0.7 §4 amendment),
-   * accumulated across iterations from each child's on-disk tick-counts
-   * record — the run-level exit-code decision (§4: non-zero iff ≥1 tick
-   * errored AND zero entries shipped) needs the whole run's total, not just
-   * the last tick's.
+   * accumulated across iterations from each child's on-disk {@link
+   * TickVerdict} — the run-level exit-code decision (§4: non-zero iff ≥1
+   * tick errored AND zero entries shipped) needs the whole run's total, not
+   * just the last tick's.
    */
   shippedTags: string[];
   /**
    * One line per child tick that errored — a genuine tick-level failure
-   * (`gate-revert` or `platform-preempt`; see {@link TickCountsRecord.errored})
-   * — this run, in tick order, read alongside `shippedTags`. Non-empty even
-   * on a 0 exit (partial success: ships landed despite some tick errors) —
-   * `flume loop`'s completion summary names these so they never vanish into
-   * a silent green exit (§4).
+   * (`gate-revert` or `platform-preempt`, derived from the tick's {@link
+   * TickVerdict} at the read site; v0.8 §5) — this run, in tick order, read
+   * alongside `shippedTags`. Non-empty even on a 0 exit (partial success:
+   * ships landed despite some tick errors) — `flume loop`'s completion
+   * summary names these so they never vanish into a silent green exit (§4).
    */
   erroredTicks: string[];
   /**
@@ -2148,17 +2334,35 @@ export async function superviseLoop(
     const { exitCode } = await runTick(quarantinedSlugs);
     ticks++;
 
-    // v0.7 §4 amendment: recover this tick's shipped/errored counts from its
-    // disk artifact — the exit code alone (settled/errored/mount-dead) is
-    // the only signal that crosses the child→supervisor boundary today
-    // (child stdio stays `inherit`), and it can't carry a run-wide total.
-    // Absent on a tick that returned before reaching the write (chain-load
-    // failure, hibernation, terminal misconfiguration) — nothing to add.
-    const counts = await readTickCounts(flumeDir);
-    if (counts) {
-      for (const tag of counts.shippedTags) shippedTags.add(tag);
-      if (counts.errored) {
-        erroredTicks.push(counts.errorSummary ?? "tick errored (no detail recorded)");
+    // v0.8 §5: recover this tick's facts from its verdict artifact — the
+    // exit code alone (settled/errored/mount-dead) is the only signal that
+    // crosses the child→supervisor boundary today (child stdio stays
+    // `inherit`), and it can't carry a run-wide total. Absent on a tick that
+    // returned before reaching the write (chain-load failure, hibernation,
+    // terminal misconfiguration) — nothing to add. `errored` is not a stored
+    // field on the verdict (v0.8 §5: facts only) — derived here, at the read
+    // site, from the same formula v0.7 §4 used: a genuine tick-level failure
+    // is `gate-revert`/`platform-preempt`, or a provisioning failure that
+    // left nothing shipped — never a `voluntary-bail` (the agent correctly
+    // declining and naming the constraint is not evidence anything went
+    // wrong).
+    const verdict = await readTickVerdict(flumeDir);
+    if (verdict) {
+      for (const tag of verdict.shippedTags) shippedTags.add(tag);
+      const verdictProvisionFailures = verdict.provisionFailures ?? [];
+      const errored =
+        verdict.noCommit === "gate-revert" ||
+        verdict.noCommit === "platform-preempt" ||
+        (verdictProvisionFailures.length > 0 &&
+          verdict.shippedTags.length === 0);
+      if (errored) {
+        erroredTicks.push(
+          verdictProvisionFailures.length > 0
+            ? `${verdict.summary} — worktree provisioning failed: ${verdictProvisionFailures
+                .map((f) => (f.tag ? `${f.tag} (${f.signature})` : f.signature))
+                .join("; ")}`
+            : verdict.summary,
+        );
       }
     }
 
@@ -2170,7 +2374,7 @@ export async function superviseLoop(
     // `git worktree prune` failure). A tick with no provisioning failure at
     // all clears the streak — only an unbroken run of the identical wall
     // counts.
-    const provisionFailures = counts?.provisionFailures ?? [];
+    const provisionFailures = verdict?.provisionFailures ?? [];
     for (const f of provisionFailures) {
       if (!f.tag) continue;
       const slug = slugify(f.tag);

@@ -39,8 +39,8 @@ import {
   diskChainLoader,
   frictionCountLine,
   superviseLoop,
-  clearTickCounts,
-  writeTickCounts,
+  clearTickVerdict,
+  writeTickVerdict,
   CjsContextLoadError,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
@@ -1028,43 +1028,15 @@ async function main(): Promise<number> {
   });
 
   if (cmd === "tick") {
-    // v0.7 §4 amendment: clear any stale shipped/errored record before this
-    // tick's own work — a tick that returns below without an agent having
-    // run (chain-load failure, hibernation, terminal misconfiguration) must
-    // leave no record for `flume loop`'s supervisor to misread as its own.
-    await clearTickCounts(flumeDir);
+    // v0.8 §5: clear any stale verdict before this tick's own work — a tick
+    // that returns below without an agent having run (chain-load failure,
+    // hibernation, terminal misconfiguration) must leave no record for
+    // `flume loop`'s supervisor to misread as its own.
+    await clearTickVerdict(flumeDir);
     const outcome = await dispatcher.tick();
     console.log(outcome.summary);
-    if (outcome.result) {
-      // v0.7 §4: "errored" is a real tick-level failure — bad work reverted
-      // by a gate, or the agent process itself failing — not a
-      // `voluntary-bail` (the agent correctly declining an out-of-scope
-      // task and naming the constraint; see collaboration.md's "park, don't
-      // decide silently"). A clean decline is not evidence anything went
-      // wrong, so it must not surface as a run-level error. §16: a
-      // provisioning failure that left nothing shipped this tick is also a
-      // genuine tick-level failure, even though no agent ran to produce a
-      // `noCommit` classification — one that DID ship (siblings succeeded)
-      // is not.
-      const provisionFailures = outcome.provisionFailures ?? [];
-      const errored =
-        outcome.noCommit === "gate-revert" ||
-        outcome.noCommit === "platform-preempt" ||
-        (provisionFailures.length > 0 &&
-          outcome.result.shippedTags.length === 0);
-      const errorSummary = errored
-        ? provisionFailures.length > 0
-          ? `${outcome.summary} — worktree provisioning failed: ${provisionFailures
-              .map((f) => (f.tag ? `${f.tag} (${f.signature})` : f.signature))
-              .join("; ")}`
-          : outcome.summary
-        : undefined;
-      await writeTickCounts(flumeDir, {
-        shippedTags: [...outcome.result.shippedTags],
-        errored,
-        ...(errorSummary ? { errorSummary } : {}),
-        ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
-      });
+    if (outcome.verdict) {
+      await writeTickVerdict(flumeDir, outcome.verdict);
     }
     // Fail loudly on the Axis-C exits (§3) so the supervisor — and any human
     // watching exit codes — classifies the failure without reading logs:

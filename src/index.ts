@@ -56,8 +56,13 @@ export { renderPrompt } from "./Prompt.js";
 export {
   Dispatcher,
   consoleLogger,
+  readTickVerdicts,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
   type TickOutcome,
+  type TickVerdict,
+  type TickVerdictGateResult,
+  type TickVerdictMergeOutcome,
+  type MergeOutcome,
 } from "./Dispatcher.js";

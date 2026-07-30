@@ -21,6 +21,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   TypeScript and may probe the environment at load time. An entry gated on
   an unasserted capability is skipped, never silently: `flume status` names
   the missing capability alongside the entry's tag.
+- Every tick that runs a phase now writes one unified verdict — phase,
+  entry tag(s), committed/no-commit class, gate results (including any
+  captured `details`, e.g. a writable-paths gate's violating paths),
+  shipped tags, and each fanout entry's cherry-pick/merge outcome (v0.8
+  §5) — superseding the v0.7 §4-amendment `last-tick.json` counts file.
+  `flume loop`'s supervisor reads the same artifact for its exit-code/count
+  contract (unchanged behavior, now sourced from the unified verdict) and
+  derives "errored" from the facts at the read site rather than a stored
+  field — the artifact itself carries no interpretation, only what
+  happened. A new `readTickVerdicts` accessor exposes the last N verdicts
+  so a chain can render recent tick history into a prompt.
 
 ### Added
 
