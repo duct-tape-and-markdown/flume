@@ -1,5 +1,44 @@
 [
   {
+    "tag": "ENGINE-PIN-HANDSHAKE-JOB-RUN-FORM",
+    "summary": "handshakeFlumeDir's --job/FLUME_JOB peek misses the `job run <name>` invocation form, so job-run-driven bays check the bare-bay path instead of the job-scoped one, per v0.7 §10 amendment.",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "handshakeFlumeDir also recognizes the `job run <name>` argv shape (mirrors main()'s own job-run rewrite, ~line 786-799), not just --job/FLUME_JOB"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "new fixture: `flume job run <name>` (no --job flag) against a job-scoped local install re-execs it, same shape as the existing --job/FLUME_JOB fixtures"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet noting the job-run form gap in the §10 amendment"
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "a bay provisioned by `job new <name>`, invoked via `flume job run <name>` (no --job flag), re-execs the job-scoped local install through arm 1"
+      }
+    ],
+    "acceptance": "`flume job run <name>` against a job-scoped local install re-execs it through arm 1; existing --job/FLUME_JOB fixtures unaffected.",
+    "notes": "851425a's handshakeFlumeDir only scans argv for a literal --job flag or FLUME_JOB env; `job run <name>` sets jobFlag via an in-main() rewrite (src/cli.ts ~786-799) the handshake runs ahead of, so job-run-driven bays check the wrong path. Confirmed by code reading; the amendment's own test fixtures only cover --job/FLUME_JOB, none exercise job run."
+  },
+  {
     "tag": "STATUS-SUPERVISOR-LIVENESS",
     "summary": "flume status probes loop.pid for process liveness (live pid / stale pidfile / no pidfile) alongside the awake markers, per v0.7 §17.",
     "per": {

@@ -1,12 +1,13 @@
 # State
 
-Phase: v0.7 fully shipped (§15 landed this delta); v0.8 boundary line
-(§§2-8) still queued. Mode: **audit** (commit-delta only; no spec-delta,
-empty inbox, no promotable blockedBy entries this tick).
+Phase: v0.7 mostly shipped (§10 amendment landed this delta, with a
+gap found on audit); v0.8 boundary line (§§2-8) still queued. Mode:
+**audit** (commit-delta only; no spec-delta, empty inbox, no
+promotable blockedBy entries this tick).
 
-## Queue (11)
+## Queue (12)
 
-1. `ENGINE-PIN-HANDSHAKE-JOB-SCOPE` — open (v0.7 §10 amendment)
+1. `ENGINE-PIN-HANDSHAKE-JOB-RUN-FORM` — open (v0.7 §10, audit finding)
 2. `STATUS-SUPERVISOR-LIVENESS` — open (v0.7 §17)
 3. `DROPLASTCOMMIT-TIP-OWNERSHIP` — open (v0.7 §17)
 4. `SUPERVISOR-PROVISION-QUARANTINE` — open (v0.7 §16)
@@ -24,19 +25,22 @@ empty inbox, no promotable blockedBy entries this tick).
 
 ## Trunk
 
-HEAD `2f7cf1a` at this pass's start; tree otherwise clean besides
+HEAD `c66dfc5` at this pass's start; tree otherwise clean besides
 untracked `.flume/loop.pid` (live supervisor artifact, not a plan
 concern). `.claude/rules/collaboration.md` and `.flume/prompts/plan.md`
 still carry uncommitted operator edits outside plan's writable paths —
 not this tick's to commit.
 
-Audited `bf2ced1` (§15) against v0.7 §15: `TickResult.noCommit` folds
-before `phase.handoff` in both the singleton and fanout paths (shared
-fold site, `src/Dispatcher.ts:710-720`), matches acceptance verbatim,
-files match the shipped entry's declared scope, no drift. Dogfood
-`.flume/chain.ts` build `handoff` (line 282) has not yet picked up the
-`noCommit === "voluntary-bail"` wake leg — spec marks that
-operator-applied, not a plan-derivable entry; noting only.
+Audited `851425a` (§10 amendment) against v0.7 §10: `handshakeFlumeDir`
+correctly mirrors `resolveStateDirs`'s `--job`/`FLUME_JOB` precedence,
+but misses the third job-scoping path — `flume job run <name>` rewrites
+`jobFlag` in `main()` (src/cli.ts ~786-799) *after* the handshake has
+already run, so a bay driven via `job new`+`job run` (the documented
+standard workflow, no `--job` flag needed) has its handshake check the
+bare-bay path instead of the job-scoped one. Filed as
+`ENGINE-PIN-HANDSHAKE-JOB-RUN-FORM`. Files/scope of `851425a` otherwise
+match its shipped entry's declared paths, no other drift.
 
-Plan continues: no — commit-delta audited clean, no spec-delta, inbox
-empty, no blockedBy entries unblocked this pass.
+Plan continues: no — commit-delta audited clean apart from the one
+finding filed; no spec-delta, inbox empty, no blockedBy entries
+unblocked this pass.
