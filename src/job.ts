@@ -348,12 +348,14 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
 }
 
 /**
- * The pid recorded in `<jobDir>/loop.pid`, when it names a live process —
+ * The pid recorded in `<dir>/loop.pid`, when it names a live process —
  * `null` for no pidfile, an unparsable one, or a dead/not-ours pid (stale;
- * callers reclaim silently). Same liveness probe as the loop lock.
+ * callers reclaim silently). Same liveness probe as the loop lock. Exported
+ * for reuse (`flume status`'s supervisor-liveness probe, v0.7 §17) rather
+ * than a second implementation of the same pid-liveness check.
  */
-async function liveLoopPid(jobDir: string): Promise<number | null> {
-  const pidPath = join(jobDir, "loop.pid");
+export async function liveLoopPid(dir: string): Promise<number | null> {
+  const pidPath = join(dir, "loop.pid");
   if (!existsSync(pidPath)) return null;
   const pid = Number((await readFile(pidPath, "utf8")).trim());
   if (!Number.isFinite(pid) || pid <= 0) return null;

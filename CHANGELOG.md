@@ -113,6 +113,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   dispatch would go on to reject the same invocation with its own usage
   error — a well-formed-looking peek papering over a shape the real
   command never accepts.
+- `flume status` now probes the top-level `loop.pid` for process liveness
+  beside the awake markers: a live supervisor is named by pid, a stale
+  pidfile (recorded pid no longer running) is reported as such, and no
+  pidfile prints unchanged from before. Previously `status` read baton
+  markers only, so a live supervisor between waves read identically to no
+  supervisor at all — the gap behind the 2026-07-29 incident where an
+  operator relaunched over a still-live supervisor after misreading
+  "hibernating".
 
 ## [0.6.2]
 

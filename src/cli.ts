@@ -32,6 +32,7 @@ import {
   jobRun,
   jobStatus,
   JobUsageError,
+  liveLoopPid,
 } from "./job.js";
 import {
   Dispatcher,
@@ -421,9 +422,11 @@ Run \`flume <command> --help\` for per-command usage and exit codes.
 const HELP_SUB: Record<Subcommand, string> = {
   status: `Usage: flume status
 
-Print baton state: awake phases (or "hibernating" if none), then, when the
-chain declares Chain.friction and its dir holds notes, a friction count.
-Observational — no side effects, no agent invocation.
+Print baton state: awake phases (or "hibernating" if none), then, when
+.flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
+"loop.pid present, process dead — stale"; no pidfile prints nothing extra),
+then, when the chain declares Chain.friction and its dir holds notes, a
+friction count. Observational — no side effects, no agent invocation.
 
 Exit codes:
   0   Always.
@@ -914,6 +917,18 @@ async function main(): Promise<number> {
     const baton = new Baton(flumeDir);
     const awake = baton.awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
+    // §17: surface supervisor liveness beside the awake markers — the
+    // 2026-07-29 incident's "hibernating" reading left the operator to
+    // infer relaunch-safety instead of being told it. No pidfile: silent,
+    // unchanged from pre-§17 output.
+    if (existsSync(join(flumeDir, "loop.pid"))) {
+      const pid = await liveLoopPid(flumeDir);
+      console.log(
+        pid !== null
+          ? `supervisor pid ${pid} live`
+          : "loop.pid present, process dead — stale",
+      );
+    }
     // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
     // `status`, only silently withhold the friction line.
     try {

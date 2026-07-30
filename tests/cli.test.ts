@@ -889,6 +889,73 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   );
 });
 
+/**
+ * v0.7 §17 — `flume status` surfaces supervisor liveness beside the awake
+ * markers. Incident (2026-07-29): `status` read baton markers only and
+ * printed "hibernating" while a prior supervisor was still alive, so the
+ * operator deleted `loop.pid` on a stale assumption. Same pid-liveness
+ * shape as the loop-lock tests above (`liveLoopPid`, `src/job.ts`), applied
+ * to a bare `.flume/loop.pid` rather than a job dir's.
+ */
+describe("flume status — supervisor liveness (v0.7 §17)", () => {
+  it("names the pid of a live supervisor", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-live-"));
+    try {
+      const flumeDir = join(dir, ".flume");
+      await mkdir(flumeDir, { recursive: true });
+      // The vitest worker itself plays the live supervisor — its own pid is
+      // guaranteed alive for the duration of this test.
+      await writeFile(join(flumeDir, "loop.pid"), String(process.pid), "utf8");
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).toContain(`supervisor pid ${process.pid} live`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("reports a stale pidfile when the recorded pid is dead", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-stale-"));
+    try {
+      const flumeDir = join(dir, ".flume");
+      await mkdir(flumeDir, { recursive: true });
+      // Harvest a genuinely dead pid: spawn a no-op node child and wait for
+      // it to exit before recording its pid as the stale holder.
+      const probe = exec(process.execPath, ["-e", ""]);
+      const deadPid = probe.child.pid;
+      await probe;
+      expect(deadPid).toBeDefined();
+      await writeFile(join(flumeDir, "loop.pid"), String(deadPid), "utf8");
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).toContain("loop.pid present, process dead — stale");
+      expect(r.out).not.toContain("supervisor pid");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("is unchanged from today when no pidfile exists", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-nopid-"));
+    try {
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).not.toContain("supervisor pid");
+      expect(r.out).not.toContain("stale");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
 // ---------- v0.6 §2/§3 — job resolution through the real CLI ----------
 
 /**
