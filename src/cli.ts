@@ -67,18 +67,21 @@ function readPackageVersion(): string {
 }
 
 /**
- * `<repoRoot>/.flume/node_modules/@dtmd/flume` — the bay's local install
- * (v0.7 §10), the same junction/symlink shape `job new`'s `ensureFlumeLink`
- * (`src/job.ts:133-150`) provisions, reused here purely as a read-time
- * resolution signal. "Resolves" means its `package.json` is readable and
- * names an executable `flume` bin; anything short of that (missing,
- * unreadable, unparsable, no usable bin entry) is "does not resolve" — the
- * handshake falls through rather than crashing on a malformed link target.
+ * `<flumeDir>/node_modules/@dtmd/flume` — the bay's local install (v0.7 §10,
+ * amended 2026-07-30), the same junction/symlink shape `job new`'s
+ * `ensureFlumeLink` (`src/job.ts:133-150`) provisions under the job-scoped
+ * `flumeDir` (`<repoRoot>/.flume/jobs/<name>`), reused here purely as a
+ * read-time resolution signal. A bare bay's `flumeDir` is
+ * `<repoRoot>/.flume`, reducing to the pre-amendment literal path.
+ * "Resolves" means its `package.json` is readable and names an executable
+ * `flume` bin; anything short of that (missing, unreadable, unparsable, no
+ * usable bin entry) is "does not resolve" — the handshake falls through
+ * rather than crashing on a malformed link target.
  */
 function readLocalInstall(
-  repoRoot: string,
+  flumeDir: string,
 ): { version: string; bin: string } | undefined {
-  const root = join(repoRoot, ".flume", "node_modules", "@dtmd", "flume");
+  const root = join(flumeDir, "node_modules", "@dtmd", "flume");
   let raw: string;
   try {
     raw = readFileSync(join(root, "package.json"), "utf8");
@@ -135,20 +138,47 @@ function readPin(repoRoot: string): string | undefined {
 }
 
 /**
- * Engine↔pin handshake (v0.7 §10) — three arms, run before any subcommand
- * dispatch:
+ * Best-effort `--job`/`FLUME_JOB` peek for the handshake (v0.7 §10
+ * amendment): `engineHandshake` runs ahead of every other line in `main()`,
+ * before the real `--job` extraction below it, so it cannot reuse that
+ * result. Re-derives just enough of `resolveStateDirs`'s own job resolution
+ * — same precedence (`--job` flag over `FLUME_JOB` env), same default
+ * shape (`<repoRoot>/.flume/jobs/<name>` when scoped) — to find the
+ * `flumeDir` the real resolution will land on, without mutating `argv` or
+ * `process.env` (a copy of `process.env` absorbs `resolveStateDirs`'s
+ * write-back). A `JobResolutionConflictError` here (both `--job` and an
+ * explicit `FLUME_DIR` set) is swallowed: this is a read-only signal for
+ * the handshake's own path check, not the authoritative resolution — that
+ * one runs later in `main()` and reports the conflict properly.
+ */
+function handshakeFlumeDir(repoRoot: string, argv: readonly string[]): string {
+  const jobIdx = argv.indexOf("--job");
+  const jobValue = jobIdx >= 0 ? argv[jobIdx + 1] : undefined;
+  const jobFlag = jobValue && !jobValue.startsWith("-") ? jobValue : undefined;
+  try {
+    return resolveStateDirs({ ...process.env }, repoRoot, jobFlag).flumeDir;
+  } catch {
+    return join(repoRoot, ".flume");
+  }
+}
+
+/**
+ * Engine↔pin handshake (v0.7 §10, amended 2026-07-30) — three arms, run
+ * before any subcommand dispatch:
  *
- * 1. A local install resolves — re-exec its bin with this process's own
- *    argv, inheriting stdio, and return its exit code. No version
- *    comparison: the local install is the authority once a bay is
- *    provisioned, not a copy to check against it.
+ * 1. A local install resolves at the resolveStateDirs-derived `flumeDir`
+ *    (job-scoped when `--job`/`FLUME_JOB` applies, bare-bay otherwise) —
+ *    re-exec its bin with this process's own argv, inheriting stdio, and
+ *    return its exit code. No version comparison: the local install is the
+ *    authority once a bay is provisioned, not a copy to check against it.
  * 2. No local install, but the bay's `package.json` pins `@dtmd/flume` —
  *    refuse (exit 2), naming the pin and this running engine's own version
  *    (`readPackageVersion()`, compared only to shape the message).
  * 3. Unpinned — returns `undefined`; the caller proceeds exactly as today.
  */
 function engineHandshake(repoRoot: string, argv: readonly string[]): number | undefined {
-  const local = readLocalInstall(repoRoot);
+  const flumeDir = handshakeFlumeDir(repoRoot, argv);
+  const local = readLocalInstall(flumeDir);
   if (local) {
     const result = spawnSync(process.execPath, [local.bin, ...argv], {
       stdio: "inherit",
@@ -164,7 +194,7 @@ function engineHandshake(repoRoot: string, argv: readonly string[]): number | un
   const pin = readPin(repoRoot);
   if (pin === undefined) return undefined;
 
-  const linkPath = join(repoRoot, ".flume", "node_modules", "@dtmd", "flume");
+  const linkPath = join(flumeDir, "node_modules", "@dtmd", "flume");
   console.error(
     `[flume] ${repoRoot}'s package.json pins @dtmd/flume@${pin}, but no ` +
       `install resolves at ${linkPath} (this running engine is ` +

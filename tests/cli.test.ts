@@ -233,14 +233,23 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
 });
 
 /**
- * v0.7 §10 — engine↔pin handshake via launcher-defers-to-pin (the gradlew
- * pattern). The handshake sits ahead of every other line in `main()`
- * (`src/cli.ts`), before `--job` extraction, before `--help`/`--version`,
- * before state-dir resolution — a subprocess is the only way to prove it
- * actually fires there rather than somewhere downstream. `runCli` (defined
- * below, hoisted for use here) spawns the real CLI through tsx; each fixture
- * distinguishes a fabricated local install from the real running engine by
- * version-stamping it well outside the real engine's own version range.
+ * v0.7 §10 (amended 2026-07-30) — engine↔pin handshake via
+ * launcher-defers-to-pin (the gradlew pattern). The handshake sits ahead of
+ * every other line in `main()` (`src/cli.ts`), before `--job` extraction,
+ * before `--help`/`--version`, before state-dir resolution — a subprocess is
+ * the only way to prove it actually fires there rather than somewhere
+ * downstream. `runCli` (defined below, hoisted for use here) spawns the real
+ * CLI through tsx; each fixture distinguishes a fabricated local install
+ * from the real running engine by version-stamping it well outside the real
+ * engine's own version range.
+ *
+ * The amendment moved the check path from a fixed bay-root literal to the
+ * `resolveStateDirs`-derived `flumeDir` — job-scoped
+ * (`<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume`) under
+ * `--job`/`FLUME_JOB`, the same link `job new`'s `ensureFlumeLink`
+ * (`src/job.ts:133-150`) actually provisions; unscoped, it reduces to the
+ * pre-amendment bare-bay literal. `writeLocalInstall` takes the job name so
+ * both shapes share one fixture.
  */
 describe("engine↔pin handshake — v0.7 §10", () => {
   const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -253,13 +262,20 @@ describe("engine↔pin handshake — v0.7 §10", () => {
   }
 
   /**
-   * `<dir>/.flume/node_modules/@dtmd/flume` as a runnable stand-in for a
-   * provisioned local install — the same junction target shape `job new`
-   * links to (`src/job.ts:133-150`), fabricated directly here rather than
-   * through `job new` since the handshake only ever reads it.
+   * A runnable stand-in for a provisioned local install — the same junction
+   * target shape `job new` links to (`src/job.ts:133-150`), fabricated
+   * directly here rather than through `job new` since the handshake only
+   * ever reads it. Bare bay (no `job`): `<dir>/.flume/node_modules/@dtmd/flume`.
+   * Job-scoped: `<dir>/.flume/jobs/<job>/node_modules/@dtmd/flume`.
    */
-  async function writeLocalInstall(dir: string, version: string): Promise<void> {
-    const root = join(dir, ".flume", "node_modules", "@dtmd", "flume");
+  async function writeLocalInstall(
+    dir: string,
+    version: string,
+    job?: string,
+  ): Promise<void> {
+    const root = job
+      ? join(dir, ".flume", "jobs", job, "node_modules", "@dtmd", "flume")
+      : join(dir, ".flume", "node_modules", "@dtmd", "flume");
     await mkdir(join(root, "bin"), { recursive: true });
     await writeFile(
       join(root, "package.json"),
@@ -278,7 +294,7 @@ describe("engine↔pin handshake — v0.7 §10", () => {
   }
 
   it(
-    "a bay with the local install present re-execs it regardless of the global engine's own version",
+    "a bare bay with the local install present re-execs it regardless of the global engine's own version",
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "flume-pin-local-"));
       try {
@@ -298,7 +314,7 @@ describe("engine↔pin handshake — v0.7 §10", () => {
   );
 
   it(
-    "the same bay with the local install removed refuses (exit 2), naming the pin and both versions",
+    "the same bare bay with the local install removed refuses (exit 2), naming the pin, both versions, and the bare-bay literal path — unchanged by the amendment",
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "flume-pin-absent-"));
       try {
@@ -338,6 +354,81 @@ describe("engine↔pin handshake — v0.7 §10", () => {
         expect(result.out).toContain("no jobs");
         expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
         expect(result.out).not.toContain("pins @dtmd/flume");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a --job-scoped bay checks the job-scoped install path (v0.7 §10 amendment): re-execs the install at <repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume, not the bare-bay literal",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-job-local-"));
+      try {
+        await writeLocalInstall(dir, "9.9.9-job-fixture", "alpha");
+
+        const result = await runCli(dir, ["--job", "alpha", "status"]);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain(
+          "LOCAL-INSTALL-RAN 9.9.9-job-fixture --job alpha status",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a FLUME_JOB-scoped bay (env instead of --job) checks the same job-scoped install path",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-flumejob-local-"));
+      try {
+        await writeLocalInstall(dir, "9.9.9-envjob-fixture", "alpha");
+
+        const result = await runCli(dir, ["status"], {
+          ...hermeticEnv(),
+          FLUME_JOB: "alpha",
+        });
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain(
+          "LOCAL-INSTALL-RAN 9.9.9-envjob-fixture status",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a --job-scoped bay pinned but not provisioned at the job-scoped path refuses (exit 2) naming the job-scoped path, even if a bare-bay install exists",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-job-absent-"));
+      try {
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({
+            name: "host",
+            dependencies: { "@dtmd/flume": "9.9.9-pinned" },
+          }),
+          "utf8",
+        );
+        // A bare-bay install exists but must not satisfy a job-scoped check.
+        await writeLocalInstall(dir, "9.9.9-bare-fixture");
+
+        const result = await runCli(dir, ["--job", "alpha", "status"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).toContain("9.9.9-pinned");
+        expect(result.out).toContain(await engineVersion());
+        expect(result.out).toContain(
+          join(dir, ".flume", "jobs", "alpha", "node_modules", "@dtmd", "flume"),
+        );
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

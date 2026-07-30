@@ -95,6 +95,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   previously computed this classification and discarded it before calling
   `phase.handoff(result)`, so no chain's `handoff` could ever distinguish
   a voluntary bail from a genuine nothing-pickable no-op.
+- The engine↔pin handshake's local-install check (v0.7 §10) now derives its
+  check path from `resolveStateDirs`'s `flumeDir` instead of a fixed
+  bay-root literal: a `--job`/`FLUME_JOB`-scoped invocation checks
+  `<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume` — the link
+  `job new`'s `ensureFlumeLink` actually provisions — instead of a
+  bare-bay path a job-scoped bay never populates. A bare bay's check is
+  unchanged.
 
 ## [0.6.2]
 
