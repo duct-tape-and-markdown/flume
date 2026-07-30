@@ -82,7 +82,10 @@ required, but each removes maintenance surface `src/` now owns generically.
   paths named — instead of a plan commit shipping an entry that is
   guaranteed to revert build's next tick. Attach it to your plan phase's
   `gates`, passing your `entryExtension` and the build phase's fence as
-  `targetFence`.
+  `targetFence`. If your bay parks entries off-fence pending a ruling
+  (`gate.kind: "parked"`/`"deferred"`), pass `fenceWhen` to exempt them
+  from the pre-check the same way your build fence already does — see
+  `CHAIN-AUTHORING.md`'s `pendingGate` section for the option's shape.
 - **The `setupWorktree` helper** (`@dtmd/flume`) replaces a per-repo
   `npm ci`/`pnpm install` hardcode in a fanout phase's worktree-setup hook.
   It inspects the target directory's lockfile (`pnpm-lock.yaml` wins over
