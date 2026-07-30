@@ -2345,7 +2345,7 @@ export interface SuperviseResult {
    * resolved and ran fine; only pre-tick worktree provisioning kept hitting
    * the identical wall.
    */
-  repeatedFailure?: { signature: string };
+  repeatedFailure?: { signature: string; count: number };
 }
 
 /**
@@ -2477,7 +2477,10 @@ export async function superviseLoop(
       return {
         ticks,
         hibernated: false,
-        repeatedFailure: { signature: lastProvisionSignature! },
+        repeatedFailure: {
+          signature: lastProvisionSignature!,
+          count: provisionFailureStreak,
+        },
         shippedTags: [...shippedTags],
         erroredTicks,
       };

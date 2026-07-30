@@ -3897,7 +3897,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
@@ -3998,7 +3998,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     expect(calls).toBe(2);
     expect(res.ticks).toBe(2);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 2 });
   });
 
   it("quarantineScope: \"none\" never quarantines a tagged failure — later ticks still see the empty set", async () => {
@@ -4090,7 +4090,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     // the v0.7 §16 default, not the 2 the suite above overrides to.
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE });
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
   });
 });
 

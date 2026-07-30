@@ -646,7 +646,7 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     const result: SuperviseResult = {
       ticks: 3,
       hibernated: false,
-      repeatedFailure: { signature: "EBUSY: resource busy or locked" },
+      repeatedFailure: { signature: "EBUSY: resource busy or locked", count: 3 },
       shippedTags: ["SHIPPED-BEFORE-THE-WALL"],
       erroredTicks: [],
     };
@@ -654,6 +654,20 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     expect(loopCompletionSummary(result)).toContain(
       "EBUSY: resource busy or locked",
     );
+  });
+
+  // v0.8 §8 — the abort threshold is chain-overridable, so the completion
+  // summary must name the real streak count, not the v0.7 §16 literal 3.
+  it("names the real repeatedFailure.count, not a hardcoded 3", () => {
+    const result: SuperviseResult = {
+      ticks: 2,
+      hibernated: false,
+      repeatedFailure: { signature: "EBUSY: resource busy or locked", count: 2 },
+      shippedTags: [],
+      erroredTicks: [],
+    };
+    expect(loopCompletionSummary(result)).toContain("2 consecutive ticks");
+    expect(loopCompletionSummary(result)).not.toContain("3 consecutive ticks");
   });
 });
 

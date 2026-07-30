@@ -367,8 +367,9 @@ export function loopCompletionSummary(
   const parts: string[] = [];
   if (result.repeatedFailure) {
     parts.push(
-      `aborted: identical worktree provisioning failure repeated 3 ` +
-        `consecutive ticks — ${result.repeatedFailure.signature}`,
+      `aborted: identical worktree provisioning failure repeated ` +
+        `${result.repeatedFailure.count} consecutive ticks — ` +
+        `${result.repeatedFailure.signature}`,
     );
   }
   if (result.erroredTicks.length > 0) {
