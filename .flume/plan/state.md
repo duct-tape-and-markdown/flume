@@ -1,46 +1,45 @@
 # State
 
-Phase: **v0.7 line in flight** — 4 entries in `pending.json`, all
+Phase: **v0.7 line in flight** — 3 entries in `pending.json`, all
 `gate.kind: "open"`. Mode this tick: **audit** (commit-delta since the
-last `plan:` commit, `bca5930`, is 4 commits; the accompanying
-spec-delta only closes an existing open question, no new derivation).
+last `plan:` commit, `db645f5`, is 2 commits; no spec-delta, empty
+inbox, nothing to promote).
 
 ## This tick
 
-**Commit-delta** (`bca5930..HEAD`, 4 commits): `090a903` (ship,
-`EXIT-CODE-CONTRACT-DOC-DRIFT` + `CJS-CONTEXT-REFUSAL-TESTS` removed
-from pending), `41d8557` (build, `CJS-CONTEXT-REFUSAL-TESTS`), `c769e30`
-(build, `EXIT-CODE-CONTRACT-DOC-DRIFT`), `6005318` (chore, operator
-commit resolving the `PROMPTS-BUILD-FENCE-INSTRUCTION` park).
+**Commit-delta** (`db645f5..HEAD`, 2 commits): `ac678ce` (build,
+`IN-WORKTREE-GATE-REVERT-FOOTPRINT`), `14501f9` (chore, ship — entry
+removed from `pending.json`).
 
-- `c769e30` cross-checked against §4: `docs/CLI.md`'s tick/loop/job run
-  sections and the `Dispatcher.ts` comment now name `EX_MOUNT_DEAD`
-  (confirmed `= 69` at `src/Dispatcher.ts:520`) instead of the stale
-  "logs and proceeds" prose, and pick up `EXIT-CODE-CONTRACT-COUNTS`'s
-  errored-and-nothing-shipped / partial-success-stays-0 / summary-names-
-  errors conditions. Matches §4's ruled contract and its 2026-07-29
-  amendment verbatim. Doc/comment-only, declared files unchanged. No
-  drift.
-- `41d8557` cross-checked against §5: `tests/Dispatcher.test.ts` proves
-  both empirical signatures (tsx 4.21 import-outside-module; tsx 4.23
-  `ERR_MODULE_NOT_FOUND` + `%3Fnamespace%3D`) throw `CjsContextLoadError`
-  naming `"type": "module"`, plus the false-positive guard (genuine
-  missing-dependency `ERR_MODULE_NOT_FOUND` passes through unshadowed).
-  `tests/cli.test.ts` locks `tickExitCode`'s usageError→2 branch and the
-  render command's independent catch. Matches §5's acceptance line
-  directly; only the two declared test paths touched. No drift.
-- `090a903`'s ship (declared-files diff touched for both entries,
-  correctly cleared from `pending.json`) — no drift.
-- `6005318` is an operator-directed interactive-session commit (`chore`
-  prefix), same class as `b578a41` — outside plan's audit concern as a
-  phase tick, but it resolves a standing open question (below).
+- `ac678ce` cross-checked against §13 directly in source, not just the
+  diff: `Dispatcher.ts`'s wave loop (`~L937-947`) now feeds a captured
+  footprint into the same `observed` map the `afterMerge` path uses
+  (`~L1022`), so `commitPendingUpdate` (`~L1075`) rides it onto trunk as
+  `observedFiles` — verified the merge is literally the same map, not a
+  parallel bookkeeping surface. `runFanoutEntry`'s gate-revert branch
+  (`~L1277-1296`) captures `git.showNameOnly` before `dropLastCommit`
+  discards the commit, mirroring the `afterMerge` capture technique
+  exactly (full commit diff, not gate-details-filtered — same precedent,
+  no new invariant invented). §13's parenthetical ("entry tag, gate
+  name, gate message, and paths") reads as the full incident record
+  (tag = map key, gate/message already lived in the pre-existing
+  gitignored prior-attempt record); the acceptance line is scoped to
+  paths reaching trunk, which this delivers — not drift, just a loosely
+  worded spec gloss.
+- Ran the new locked test directly (`vitest run tests/Dispatcher.test.ts
+  -t "in-worktree afterCommit gate revert leaves the same trunk
+  footprint"`) — passes. `CHANGELOG.md` bullet present and accurate.
+  Diffstat matches declared files exactly (`src/Dispatcher.ts`,
+  `CHANGELOG.md`, `tests/Dispatcher.test.ts`) — no scope creep.
+  §13's orthogonal `entryChannelPaths` note (`tests/**`) already present
+  in `.flume/chain.ts:261` from the prior operator commit — confirmed,
+  no residual action.
+- `14501f9`'s ship (declared-files diff touched, correctly cleared from
+  `pending.json`) — no drift. §13 is now fully closed: both its
+  derivable bullet (footprint machinery) and its operator-applied bullet
+  (`prompts/build.md`, closed last tick) are shipped.
 
-**Spec-delta** (`spec/RELEASE-v0.7.md` diff, via `6005318`): §13 gains a
-2026-07-29 delivery note stating the `prompts/build.md` bullet was
-applied by operator commit, is not loop-derivable, and no entry should
-carry it — confirms the disposition plan already took last tick
-verbatim. No new derivable work; closes `PROMPTS-BUILD-FENCE-INSTRUCTION`
-(moved to the closed-questions log in `open-questions.md`).
+**Spec-delta**: none (`git diff db645f5..HEAD -- spec/` empty).
 
 **Drain**: `.flume/inbox.md` confirmed header-only on disk — nothing to
 route.
@@ -48,23 +47,17 @@ route.
 **Promote**: no entry in `pending-now` carries `gate.kind: "blockedBy"`
 — nothing to flip.
 
-## Queue (4)
+## Queue (3)
 
-1. `IN-WORKTREE-GATE-REVERT-FOOTPRINT` — open (closes the exact
-   blindness that produced `50cc3ac3`'s empty-delta maintain tick).
-2. `BAY-DISCOVERY-WALKUP` — open.
-3. `ENGINE-PIN-HANDSHAKE` — open.
-4. `SETUP-WORKTREE-HELPER` — open.
+1. `BAY-DISCOVERY-WALKUP` — open.
+2. `ENGINE-PIN-HANDSHAKE` — open.
+3. `SETUP-WORKTREE-HELPER` — open.
 
 Next tick's real work is a **build** tick picking off the queue head.
 
 ## Open questions (4)
 
-Closed this pass:
-- `PROMPTS-BUILD-FENCE-INSTRUCTION` — resolved by `6005318` + the §13
-  delivery note; moved to the closed-questions log.
-
-Unchanged from prior ticks:
+Unchanged from prior ticks (none closed or opened this pass):
 - `TAG-PATTERN-SLICE-CONSTRAINT` — NEEDS AMENDMENT.
 - `PENDING-NOTES-CAP-VISIBILITY` — NEEDS AMENDMENT.
 - `SUPERVISOR-PROVISION-FAILURE-QUARANTINE` — PARKED.
@@ -73,15 +66,14 @@ Unchanged from prior ticks:
 
 ## Writable-paths / trunk
 
-- `pending.json`: untouched this tick — no commit in the delta warranted
-  a pending-entry change; all 4 existing entries verified still accurate
-  against current source.
+- `pending.json`: untouched this tick — verified against disk, already
+  matches the 3-entry state left by `14501f9`'s ship; no drift found
+  warranting a change.
 - `state.md`: rewritten this tick (this file).
-- `open-questions.md`: `PROMPTS-BUILD-FENCE-INSTRUCTION` moved from the
-  open list to the closed-questions comment block; the other four
-  entries untouched.
+- `open-questions.md`: untouched — verified against disk, matches
+  content already current.
 - `inbox.md`: untouched (already empty, header-only).
-- Trunk: HEAD `090a903` at this pass's start; tree clean besides
+- Trunk: HEAD `14501f9` at this pass's start; tree clean besides
   untracked `.flume/loop.pid` (live supervisor's runtime artifact, not
   a plan concern).
 
