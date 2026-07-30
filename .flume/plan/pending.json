@@ -1,49 +1,39 @@
 [
   {
-    "tag": "TICKRESULT-NOCOMMIT-CLASSIFICATION",
-    "summary": "Add TickResult.noCommit?: NoCommitMode; Dispatcher.tick folds the already-computed classification in before phase.handoff, per v0.7 §15.",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "15. `TickResult` carries the no-commit classification"
-    },
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/Phase.ts", "description": "TickResult gains noCommit?: NoCommitMode (reuse Dispatcher's type)" },
-        { "path": "src/Dispatcher.ts", "description": "Dispatcher.tick folds the already-computed noCommit into result before phase.handoff(result)" },
-        { "path": "tests/Dispatcher.test.ts", "description": "cover voluntary-bail sets noCommit on the handoff result; committed tick omits the field" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Fixed bullet per §15" }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "a voluntary-bail wave's handoff result carries noCommit: 'voluntary-bail'; a committed wave's result has no noCommit field" }
-    ],
-    "acceptance": "voluntary-bail wave's handoff receives noCommit: \"voluntary-bail\"; committed wave's handoff receives no noCommit field; existing handoffs ignoring the field behave byte-identically.",
-    "notes": "Dogfood chain.ts build-handoff wake-condition edit is operator-applied (§15, same class as §13's prompt bullet) — not part of this entry."
-  },
-  {
     "tag": "ENGINE-PIN-HANDSHAKE-JOB-SCOPE",
     "summary": "Derive the engine-pin handshake's local-install check path from resolveStateDirs (job-scoped) instead of the fixed bay-root literal, per v0.7 §10 amendment.",
     "per": {
       "path": "spec/RELEASE-v0.7.md",
       "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "readLocalInstall/engineHandshake check the resolveStateDirs-derived flumeDir path, not the fixed bay-root literal" },
-        { "path": "tests/cli.test.ts", "description": "re-point the handshake fixtures at the job-scoped path per the amendment; bare-bay case stays byte-identical" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Fixed bullet per §10 amendment" }
+        {
+          "path": "src/cli.ts",
+          "description": "readLocalInstall/engineHandshake check the resolveStateDirs-derived flumeDir path, not the fixed bay-root literal"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "re-point the handshake fixtures at the job-scoped path per the amendment; bare-bay case stays byte-identical"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet per §10 amendment"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/cli.test.ts", "asserts": "a --job/FLUME_JOB-scoped bay's handshake checks <repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume; a bare bay's check reduces to the unchanged literal path" }
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "a --job/FLUME_JOB-scoped bay's handshake checks <repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume; a bare bay's check reduces to the unchanged literal path"
+      }
     ],
     "acceptance": "a bay provisioned by the real job new/job run workflow re-execs its local install through arm 1; the bare-bay acceptance (v0.7 §10 main text) is unchanged.",
     "notes": "engineHandshake runs before --job extraction in main() (ordering note in §10's own text). If deriving flumeDir there conflicts with that ordering, engineHandshake may need its own light --job/FLUME_JOB read — mechanical either way, no job.ts change per the amendment."
@@ -55,20 +45,38 @@
       "path": "spec/RELEASE-v0.7.md",
       "section": "17. `status` shows supervisor liveness; `dropLastCommit` checks tip ownership"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "status command probes flumeDir/loop.pid for liveness beside the awake markers" },
-        { "path": "src/job.ts", "description": "optionally export the liveLoopPid probe shape (src/job.ts:355) for reuse rather than duplicating it" },
-        { "path": "tests/cli.test.ts", "description": "cover live-pid / stale-pidfile / no-pidfile status output" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Fixed bullet per §17 (liveness leg)" }
+        {
+          "path": "src/cli.ts",
+          "description": "status command probes flumeDir/loop.pid for liveness beside the awake markers"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "optionally export the liveLoopPid probe shape (src/job.ts:355) for reuse rather than duplicating it"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "cover live-pid / stale-pidfile / no-pidfile status output"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet per §17 (liveness leg)"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/cli.test.ts", "asserts": "status with a live supervisor pid names it; with a stale (dead-process) pidfile says so; with no pidfile is unchanged from today" }
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "status with a live supervisor pid names it; with a stale (dead-process) pidfile says so; with no pidfile is unchanged from today"
+      }
     ],
     "acceptance": "status with a live supervisor names its pid; with a stale pidfile says so; with no pidfile is unchanged.",
     "notes": "Root cause of the 2026-07-29 incident was the operator deleting loop.pid before relaunching — the loop-lock liveness probe itself (src/cli.ts:731-747) already refuses relaunch on a live pidfile, verified, no gap there."
@@ -80,21 +88,42 @@
       "path": "spec/RELEASE-v0.7.md",
       "section": "17. `status` shows supervisor liveness; `dropLastCommit` checks tip ownership"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/git.ts", "description": "dropLastCommit takes the expected (this-call-created) sha, checks current HEAD before reset --hard, refuses on mismatch" },
-        { "path": "src/Dispatcher.ts", "description": "both dropLastCommit callsites pass their own just-created postHead as the expected sha" },
-        { "path": "tests/git.test.ts", "description": "new describe block: refuses on tip mismatch naming both shas; succeeds and drops when the tip matches" },
-        { "path": "tests/Dispatcher.test.ts", "description": "existing revert-path tests still pass with matching-sha calls" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Fixed bullet per §17 (ownership leg)" }
+        {
+          "path": "src/git.ts",
+          "description": "dropLastCommit takes the expected (this-call-created) sha, checks current HEAD before reset --hard, refuses on mismatch"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "both dropLastCommit callsites pass their own just-created postHead as the expected sha"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "new describe block: refuses on tip mismatch naming both shas; succeeds and drops when the tip matches"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "existing revert-path tests still pass with matching-sha calls"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet per §17 (ownership leg)"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/git.test.ts", "asserts": "dropLastCommit refuses (leaving the tip in place) when current HEAD != the expected sha, naming both; proceeds normally when they match" }
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "dropLastCommit refuses (leaving the tip in place) when current HEAD != the expected sha, naming both; proceeds normally when they match"
+      }
     ],
     "acceptance": "a dropLastCommit attempt against a tip this call didn't create refuses, names both shas, and leaves the tip in place; matching-tip drops proceed exactly as today.",
     "notes": "Both existing callsites (src/Dispatcher.ts, currently ~lines 781 and 1290) already hold the postHead they themselves just committed in scope — no cross-process state needed, this is a same-call check."
@@ -106,20 +135,38 @@
       "path": "spec/RELEASE-v0.7.md",
       "section": "16. Supervisor provisioning failures: quarantine, then abort"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "detect pre-tick worktree provisioning failure (sweep/create) per entry slug; carry a failure signature the supervisor can read and compare across ticks" },
-        { "path": "src/cli.ts", "description": "loop command / superviseLoop caller wires quarantine (skip quarantined slugs for the run) and the 3-consecutive-identical-failure abort" },
-        { "path": "tests/Dispatcher.test.ts", "description": "replay the incident shape: held slug quarantines after first failure, other entries ship to batch completion; a repo-level failure aborts on the third identical consecutive occurrence; a failure that clears next tick trips neither" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Fixed bullet per §16" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "detect pre-tick worktree provisioning failure (sweep/create) per entry slug; carry a failure signature the supervisor can read and compare across ticks"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "loop command / superviseLoop caller wires quarantine (skip quarantined slugs for the run) and the 3-consecutive-identical-failure abort"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "replay the incident shape: held slug quarantines after first failure, other entries ship to batch completion; a repo-level failure aborts on the third identical consecutive occurrence; a failure that clears next tick trips neither"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Fixed bullet per §16"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "one entry's worktree dir held + other entries pickable → held slug quarantined after its first failure, remaining entries work to batch completion; identical failure signature 3x consecutive with no success between → run aborts non-zero naming the signature; a failure that clears next tick neither quarantines beyond the run nor trips the backstop" }
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "one entry's worktree dir held + other entries pickable → held slug quarantined after its first failure, remaining entries work to batch completion; identical failure signature 3x consecutive with no success between → run aborts non-zero naming the signature; a failure that clears next tick neither quarantines beyond the run nor trips the backstop"
+      }
     ],
     "acceptance": "replaying the incident shape quarantines the held slug and works the rest to batch completion; a repo-level deterministic failure aborts on the third identical consecutive failure instead of burning to --max; a transient failure that clears trips neither mechanism.",
     "notes": "Both constants (run-scoped quarantine; 3-failure threshold) ship as engine defaults here per the spec — v0.8 §8 opens them as chain-overridable config later; do not design that config surface in this entry (engine-boundary.md)."
@@ -131,28 +178,70 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "2. Entry schema splits: engine core + chain-declared extension"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/PendingSchema.ts", "description": "shrink PendingEntry core to tag/files/gate/dependsOnForks; add extension-declaration composition (merged zod validator + renderSchemaForPrompt renders core+extension), per §2" },
-        { "path": "src/Phase.ts", "description": "Chain interface gains an optional entry-extension declaration field (per-field zod schema + prompt hint)" },
-        { "path": "src/Dispatcher.ts", "description": "loadChainModule reads the chain's extension declaration; internal parsePending call (~1825) composes core+extension so today's dogfood-shaped entries still parse" },
-        { "path": "src/cli.ts", "description": "parsePending call (~1029) composes core+extension from the loaded chain" },
-        { "path": "src/job.ts", "description": "parsePending call (~530) composes core+extension from the loaded chain" },
-        { "path": "src/index.ts", "description": "export the new extension-declaration type alongside existing PendingSchema/Phase exports" },
-        { "path": "tests/PendingSchema.test.ts", "description": "core-only validation rejects unknown fields; extension composition accepts declared fields, rejects undeclared; renderSchemaForPrompt renders core+extension" },
-        { "path": "tests/Dispatcher.test.ts", "description": "fanout/pending-read paths still parse dogfood-shaped entries once the chain's extension is threaded through" },
-        { "path": "tests/cli.test.ts", "description": "cli's parsePending callsite still parses extension-shaped entries" },
-        { "path": "tests/job.test.ts", "description": "job's parsePending callsite still parses extension-shaped entries" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "new section: declaring an entry extension" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Changed bullet per §2" }
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "shrink PendingEntry core to tag/files/gate/dependsOnForks; add extension-declaration composition (merged zod validator + renderSchemaForPrompt renders core+extension), per §2"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "Chain interface gains an optional entry-extension declaration field (per-field zod schema + prompt hint)"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "loadChainModule reads the chain's extension declaration; internal parsePending call (~1825) composes core+extension so today's dogfood-shaped entries still parse"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "parsePending call (~1029) composes core+extension from the loaded chain"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "parsePending call (~530) composes core+extension from the loaded chain"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export the new extension-declaration type alongside existing PendingSchema/Phase exports"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "core-only validation rejects unknown fields; extension composition accepts declared fields, rejects undeclared; renderSchemaForPrompt renders core+extension"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "fanout/pending-read paths still parse dogfood-shaped entries once the chain's extension is threaded through"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "cli's parsePending callsite still parses extension-shaped entries"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "job's parsePending callsite still parses extension-shaped entries"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "new section: declaring an entry extension"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §2"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/PendingSchema.test.ts", "asserts": "a chain with no extension validates and renders the bare core; a chain's declared extension composes into the merged validator and the rendered prompt schema with no drift between them" }
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "a chain with no extension validates and renders the bare core; a chain's declared extension composes into the merged validator and the rendered prompt schema with no drift between them"
+      }
     ],
     "acceptance": "dogfood plan/build ticks run green with the dogfood extension declared in chain.ts and zero dogfood-specific fields in src/; a chain with no extension validates and renders the bare core; grep -ri 'prisma\\|schemaDelta' src/ is empty.",
     "notes": "Dogfood .flume/chain.ts's own extension declaration (summary/per/tests/acceptance/notes/schemaDelta fields) is operator-applied (§2/§3/§6 dogfood legs, chain.ts sits outside every phase's fence) — not part of this entry. This entry ships the engine mechanism plus internal call-site threading (Dispatcher/cli/job) so pre-adoption pending.json keeps parsing."
@@ -164,26 +253,64 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "4. `requiresDockerHost` generalizes to `requiresCapability`"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/PendingSchema.ts", "description": "Gate union: replace requiresDockerHost variant with { kind: \"requiresCapability\", capability: string }" },
-        { "path": "src/Dispatcher.ts", "description": "isPickable switch (~2255-2274) matches requiresCapability against chain-asserted capabilities; unasserted → skipped, never silent" },
-        { "path": "src/Phase.ts", "description": "Chain interface gains optional capabilities?: string[] (chain may probe environment at load time)" },
-        { "path": "src/cli.ts", "description": "status names the missing capability for entries skipped on an unasserted requiresCapability gate" },
-        { "path": "docs/CASCADE-DRY-RUN.md", "description": "update requiresDockerHost mentions (~lines 129, 132) to the requiresCapability(\"docker-host\") worked example" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "update if it references requiresDockerHost anywhere; add if it doesn't cover capability gating yet" },
-        { "path": "tests/PendingSchema.test.ts", "description": "requiresCapability gate parses; requiresDockerHost no longer a valid variant" },
-        { "path": "tests/Dispatcher.test.ts", "description": "entry gated on an asserted capability is picked; on an unasserted capability is skipped" },
-        { "path": "tests/cli.test.ts", "description": "status names the missing capability for a skipped entry" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Changed bullet per §4" }
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "Gate union: replace requiresDockerHost variant with { kind: \"requiresCapability\", capability: string }"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "isPickable switch (~2255-2274) matches requiresCapability against chain-asserted capabilities; unasserted → skipped, never silent"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "Chain interface gains optional capabilities?: string[] (chain may probe environment at load time)"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "status names the missing capability for entries skipped on an unasserted requiresCapability gate"
+        },
+        {
+          "path": "docs/CASCADE-DRY-RUN.md",
+          "description": "update requiresDockerHost mentions (~lines 129, 132) to the requiresCapability(\"docker-host\") worked example"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "update if it references requiresDockerHost anywhere; add if it doesn't cover capability gating yet"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "requiresCapability gate parses; requiresDockerHost no longer a valid variant"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "entry gated on an asserted capability is picked; on an unasserted capability is skipped"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "status names the missing capability for a skipped entry"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §4"
+        }
       ],
-      "retire": ["requiresDockerHost gate variant"]
+      "retire": [
+        "requiresDockerHost gate variant"
+      ]
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "an entry gated on an asserted capability is picked; on an unasserted one it is skipped and status names it" }
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "an entry gated on an asserted capability is picked; on an unasserted one it is skipped and status names it"
+      }
     ],
     "acceptance": "an entry gated on an asserted capability is picked; on an unasserted one it is skipped and status names it; grep -ri docker src/ is empty.",
     "notes": "Clean-slate delete of requiresDockerHost (pre-1.0, no compat shim, per spec-plan-build.md). Independent of PENDING-SCHEMA-CORE-EXTENSION-SPLIT — touches the Gate union, not the extension mechanism."
@@ -195,21 +322,42 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "5. Tick verdict: one facts artifact, engine-written, chain-read"
     },
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "new unified verdict-artifact write per tick at a stable state-dir path, superseding TickCountsRecord/writeTickCounts (lines 80-143); commitPendingUpdate's footprint generation (~1835-1885) sources from the same verdict record" },
-        { "path": "src/cli.ts", "description": "loop/superviseLoop reads the verdict artifact instead of last-tick.json for counts/exit-code" },
-        { "path": "src/index.ts", "description": "export a read accessor (last N verdicts) for chain use" },
-        { "path": "tests/Dispatcher.test.ts", "description": "a committed tick, a gate-reverted tick, and a voluntary-bail tick each leave a verdict artifact carrying the facts; supervisor exit-code/count behavior is byte-identical to v0.7 §4" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Changed bullet per §5" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "new unified verdict-artifact write per tick at a stable state-dir path, superseding TickCountsRecord/writeTickCounts (lines 80-143); commitPendingUpdate's footprint generation (~1835-1885) sources from the same verdict record"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "loop/superviseLoop reads the verdict artifact instead of last-tick.json for counts/exit-code"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export a read accessor (last N verdicts) for chain use"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a committed tick, a gate-reverted tick, and a voluntary-bail tick each leave a verdict artifact carrying the facts; supervisor exit-code/count behavior is byte-identical to v0.7 §4"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §5"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "a chain reading last-N verdicts sees a reverted tick's violating paths; the artifact never carries interpretation fields, only facts" }
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a chain reading last-N verdicts sees a reverted tick's violating paths; the artifact never carries interpretation fields, only facts"
+      }
     ],
     "acceptance": "a committed tick, a gate-reverted tick, and a voluntary-bail tick each leave a verdict artifact carrying the facts above; supervisor exit-code/count behavior is byte-identical to v0.7 §4, sourced from the verdict; a chain reading last-N verdicts sees a reverted tick's violating paths.",
     "notes": "Supersedes three v0.7 partial channels: last-tick.json counts (Dispatcher.ts:80-143), §13 observedFiles footprints, and §15's in-process-only TickOutcome.noCommit (TICKRESULT-NOCOMMIT-CLASSIFICATION). No interpretation fields — facts only, per §5's own directive."
@@ -221,21 +369,43 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "3. Tag grammar reduces to mechanical safety"
     },
-    "gate": { "kind": "blockedBy", "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/PendingSchema.ts", "description": "widen TAG_PATTERN (line 71) to conservative charset (letters, digits, ._()-), no whitespace, length bound derived from real consumers (branch/slug/path limits); refinement composes via the §2 extension mechanism" },
-        { "path": "src/Dispatcher.ts", "description": "verify tag-derived worktree/branch/filename slugs stay within the derived length bound" },
-        { "path": "tests/PendingSchema.test.ts", "description": "DAL-REWIRE(usp_Filter_Get) validates against bare core; a tag with whitespace or a path separator fails" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "document declaring a tag refinement via the entry extension" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Changed bullet per §3" }
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "widen TAG_PATTERN (line 71) to conservative charset (letters, digits, ._()-), no whitespace, length bound derived from real consumers (branch/slug/path limits); refinement composes via the §2 extension mechanism"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "verify tag-derived worktree/branch/filename slugs stay within the derived length bound"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "DAL-REWIRE(usp_Filter_Get) validates against bare core; a tag with whitespace or a path separator fails"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "document declaring a tag refinement via the entry extension"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §3"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/PendingSchema.test.ts", "asserts": "DAL-REWIRE(usp_Filter_Get) validates against the bare core; the rendered tag line states whatever constraint is in force" }
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "DAL-REWIRE(usp_Filter_Get) validates against the bare core; the rendered tag line states whatever constraint is in force"
+      }
     ],
     "acceptance": "DAL-REWIRE(usp_Filter_Get) validates against the bare core; a tag containing whitespace or a path separator fails; the dogfood chain's declared refinement still rejects lowercase top-level tags in dogfood runs; the rendered tag line states the in-force constraint.",
     "notes": "Dogfood chain.ts's ALL-CAPS refinement declaration is operator-applied (§3 dogfood leg, same class as §2/§6) — not part of this entry's files."
@@ -247,20 +417,39 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "6. `pendingGate`: composed validation and fence pre-check as a builtin"
     },
-    "gate": { "kind": "blockedBy", "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/builtinGates.ts", "description": "new pendingGate(opts) export validating pending.json against the composed core+extension schema (§2) at commit time; pre-checks each entry's files against the target phase's writablePaths ∪ entryChannelPaths, failing with offending paths named" },
-        { "path": "src/index.ts", "description": "export pendingGate alongside the other builtinGates" },
-        { "path": "tests/Gate.test.ts", "description": "cover pendingGate: composed core+extension validation catches unknown fields; fence pre-check fails naming offending paths for a declared file outside the target phase's writablePaths; a valid queue passes" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Added bullet per §6" }
+        {
+          "path": "src/builtinGates.ts",
+          "description": "new pendingGate(opts) export validating pending.json against the composed core+extension schema (§2) at commit time; pre-checks each entry's files against the target phase's writablePaths ∪ entryChannelPaths, failing with offending paths named"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export pendingGate alongside the other builtinGates"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "cover pendingGate: composed core+extension validation catches unknown fields; fence pre-check fails naming offending paths for a declared file outside the target phase's writablePaths; a valid queue passes"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Added bullet per §6"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Gate.test.ts", "asserts": "a pending entry declaring a file outside the build fence fails the plan-side gate with the path named; a valid queue passes" }
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "a pending entry declaring a file outside the build fence fails the plan-side gate with the path named; a valid queue passes"
+      }
     ],
     "acceptance": "a pending entry declaring a file outside the build fence fails the plan-side gate with the path named; a valid queue passes; dogfood runs the builtin with its extension schema enforced.",
     "notes": "Dogfood chain.ts replacing its hand-rolled pending-parse gate with this builtin is an operator leg (§6 dogfood adoption, same class as §2/§3) — not part of this entry's files. Extinguishes the GATECONTEXT-REPOROOT-TESTS/CLI-JUNCTION-SAFE-ENTRY-TESTS re-file class per §6's own text."
@@ -272,21 +461,43 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "8. Supervisor policy knobs ride the boundary"
     },
-    "gate": { "kind": "blockedBy", "tag": "SUPERVISOR-PROVISION-QUARANTINE" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "SUPERVISOR-PROVISION-QUARANTINE"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "quarantine-scope/abort-threshold constants from SUPERVISOR-PROVISION-QUARANTINE (§16) become chain-overridable, read from an optional supervisorPolicy block" },
-        { "path": "src/cli.ts", "description": "loop/superviseLoop wiring reads the chain's supervisorPolicy override, falling back to the §16 defaults" },
-        { "path": "src/Phase.ts", "description": "Chain interface gains optional supervisorPolicy?: { quarantineScope?, abortThreshold? } (shape mirrors §16's constants)" },
-        { "path": "tests/Dispatcher.test.ts", "description": "a chain overriding abortThreshold changes supervisor behavior; a chain declaring nothing gets v0.7 §16's defaults byte-identical" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Changed bullet per §8" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "quarantine-scope/abort-threshold constants from SUPERVISOR-PROVISION-QUARANTINE (§16) become chain-overridable, read from an optional supervisorPolicy block"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "loop/superviseLoop wiring reads the chain's supervisorPolicy override, falling back to the §16 defaults"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "Chain interface gains optional supervisorPolicy?: { quarantineScope?, abortThreshold? } (shape mirrors §16's constants)"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a chain overriding abortThreshold changes supervisor behavior; a chain declaring nothing gets v0.7 §16's defaults byte-identical"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet per §8"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/Dispatcher.test.ts", "asserts": "a chain overriding the abort threshold changes supervisor behavior accordingly; a chain declaring nothing gets the defaults, byte-identical to v0.7 §16" }
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a chain overriding the abort threshold changes supervisor behavior accordingly; a chain declaring nothing gets the defaults, byte-identical to v0.7 §16"
+      }
     ],
     "acceptance": "a chain overriding the abort threshold changes supervisor behavior accordingly; a chain declaring nothing gets the defaults, byte-identical to v0.7 §16.",
     "notes": "blockedBy SUPERVISOR-PROVISION-QUARANTINE: §16's mechanism (constants + quarantine/abort logic) must ship first — this entry only opens the values as chain-overridable config, no new behavior."
@@ -298,23 +509,48 @@
       "path": "spec/RELEASE-v0.8.md",
       "section": "7. Second reference chain — the boundary's proof"
     },
-    "gate": { "kind": "blockedBy", "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "examples/backlog-groomer-chain.ts", "description": "single-phase reference chain: reads a TODO file, picks an item, ships it — own extension schema + tag refinement, no plan/build split" },
-        { "path": "examples/prompts/backlog-groomer.md", "description": "prompt template for the single phase" },
-        { "path": "tests/examples.integration.test.ts", "description": "smoke test driving one full tick cycle of the new example against a fixture repo" }
+        {
+          "path": "examples/backlog-groomer-chain.ts",
+          "description": "single-phase reference chain: reads a TODO file, picks an item, ships it — own extension schema + tag refinement, no plan/build split"
+        },
+        {
+          "path": "examples/prompts/backlog-groomer.md",
+          "description": "prompt template for the single phase"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "smoke test driving one full tick cycle of the new example against a fixture repo"
+        }
       ],
       "edit": [
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "two-chains framing: cascade-chain.ts as the flagship derivation-chain example, backlog-groomer-chain.ts as the peer proving the engine isn't chain-shaped" },
-        { "path": ".github/workflows/ci.yml", "description": "add a step driving the new example's tick cycle against a fixture repo (mirrors the existing consumer-install smoke shape)" },
-        { "path": "CHANGELOG.md", "description": "Unreleased/Added bullet per §7" }
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "two-chains framing: cascade-chain.ts as the flagship derivation-chain example, backlog-groomer-chain.ts as the peer proving the engine isn't chain-shaped"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "add a step driving the new example's tick cycle against a fixture repo (mirrors the existing consumer-install smoke shape)"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Added bullet per §7"
+        }
       ],
       "retire": []
     },
     "schemaDelta": "none",
     "tests": [
-      { "path": "tests/examples.integration.test.ts", "asserts": "the example chain completes a tick cycle against a fixture repo with zero src/ changes attributable to it" }
+      {
+        "path": "tests/examples.integration.test.ts",
+        "asserts": "the example chain completes a tick cycle against a fixture repo with zero src/ changes attributable to it"
+      }
     ],
     "acceptance": "the example chain completes a tick cycle in CI against a fixture repo with zero src/ changes attributable to it; docs present both chains as peers on one engine.",
     "notes": "blockedBy TAG-GRAMMAR-MECHANICAL-SAFETY (transitively needs §2's extension mechanism too); also wants REQUIRES-CAPABILITY-GENERALIZATION landed for full §§2–4 coverage — single-tag blockedBy can't express both, verify before picking if that lags."
