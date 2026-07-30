@@ -3,16 +3,13 @@
 Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-8). No
 v0.9 spec yet.
 
-Mode: audit (3 operator-leg commits since last plan, cross-checked
-against v0.7 §10) + maintain (promote already applied by the ship
-commit; inbox empty).
+Mode: audit (3 commits since last plan: the two builds that shipped
+last tick's queue, plus the ship commit) + maintain (inbox empty,
+nothing to promote).
 
-## Queue (2)
+## Queue (0)
 
-1. JOB-INTEGRATION-LANE-CI-WIRING — open; unblocker shipped, full
-   `pnpm test:integration` re-verified green this tick
-2. ENGINE-HANDSHAKE-SELF-REF-UNIT-GAP — open; audit finding, missing
-   direct unit coverage for 54d0d70's self-reference guard
+Empty — both prior entries shipped clean.
 
 ## Open questions (0)
 
@@ -20,13 +17,16 @@ None.
 
 ## Trunk
 
-HEAD `6db8155`. Audited 7ee70ed (Consumer-install smoke `--no-save`,
-v0.7 §10) — clean, matches the sibling backlog-groomer step, no
-drift. Audited 54d0d70 (self-referential-install guard) — logic
-correct and spec-consistent, but its new fork is undertested; filed
-ENGINE-HANDSHAKE-SELF-REF-UNIT-GAP. Audited 6db8155 (ship commit) —
-correctly promoted JOB-INTEGRATION-LANE-CI-WIRING to open in the same
-commit (mechanical, already reflected). Verified locally this tick:
-`tsc --noEmit` clean, full `pnpm test:integration` 12/12 green.
+HEAD `346a27e`. Audited 88fa714 (CI wiring, v0.3 §17) — `pnpm
+test:integration` step added to the `ci` (ubuntu) job only; windows
+job stays fast-lane + smoke:install, consistent with §17 (POSIX
+primary target) and out of scope for this entry. Audited 5308e3f
+(handshake unit gap, v0.7 §10) — two new cli.test.ts cases symlink a
+bare bay's `.flume/node_modules/@dtmd/flume` at REPO_ROOT, exercising
+arm 2 (pinned, refuses) and arm 3 (unpinned, no-op) directly; matches
+the resolveStateDirs-derived path from the 2026-07-30 amendment.
+Audited 346a27e (ship commit) — pending.json correctly cleared, no
+scope creep. Verified locally: `tsc --noEmit` clean, `pnpm test`
+343/343 green. No findings.
 
 Plan continues: no
