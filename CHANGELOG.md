@@ -105,6 +105,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `flume job run <name>` invocation form (previously only `--job`/
   `FLUME_JOB`), so a job-run-driven bay checks the same job-scoped install
   path instead of the bare-bay one.
+- The handshake's `job run <name>` peek now validates a `--max` flag's
+  value (present, not dash-prefixed) before splicing it out, mirroring the
+  real `job run` rewrite's own check. Previously a malformed `--max` (e.g.
+  `job run --max -3 alpha`) still spliced cleanly and let the handshake
+  resolve `<name>`'s job-scoped install path, even though the real
+  dispatch would go on to reject the same invocation with its own usage
+  error — a well-formed-looking peek papering over a shape the real
+  command never accepts.
 
 ## [0.6.2]
 

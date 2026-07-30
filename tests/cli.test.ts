@@ -455,6 +455,53 @@ describe("engine↔pin handshake — v0.7 §10", () => {
     },
     30_000,
   );
+
+  it(
+    "a `job run --max <dash-value> <name>` invocation does not misresolve the handshake to <name>'s job-scoped install: the malformed --max leaves the handshake unscoped, and the real dispatch's own usage check rejects it",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-jobrun-badmax-"));
+      try {
+        // Only the job-scoped path is provisioned; if the handshake
+        // mis-parses `--max -3` as stripped and reads `alpha` as the name
+        // anyway, it would find and re-exec this install.
+        await writeLocalInstall(dir, "9.9.9-jobrun-badmax-fixture", "alpha");
+
+        const result = await runCli(dir, [
+          "job",
+          "run",
+          "--max",
+          "-3",
+          "alpha",
+        ]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).toContain("usage: flume job run <name> [--max N]");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a `job run <name> --max` invocation (--max with no trailing value) does not misresolve the handshake to <name>'s job-scoped install either",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-jobrun-nomax-"));
+      try {
+        await writeLocalInstall(dir, "9.9.9-jobrun-nomax-fixture", "alpha");
+
+        const result = await runCli(dir, ["job", "run", "alpha", "--max"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).toContain("usage: flume job run <name> [--max N]");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
 
 /**

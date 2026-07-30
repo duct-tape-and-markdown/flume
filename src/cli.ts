@@ -140,17 +140,26 @@ function readPin(repoRoot: string): string | undefined {
 /**
  * Best-effort peek at the `job run <name>` invocation form (v0.7 §10
  * job-run-form amendment): mirrors main()'s own `cmd === "job" && rest[0]
- * === "run"` rewrite (~line 791-808) just enough to recover `<name>` ahead
+ * === "run"` rewrite (~line 791-825) just enough to recover `<name>` ahead
  * of that rewrite — the handshake runs before it, so it can't reuse the
  * result. Only the `--max N` shape is stripped (the one flag the real
- * rewrite also strips before reading the name); anything else malformed is
- * left for the real dispatch to reject with its own usage error.
+ * rewrite also strips before reading the name), and only once it passes the
+ * same validation the real rewrite applies (value present, not
+ * dash-prefixed) — a malformed `--max` bails to `undefined` here exactly as
+ * it would fail the real rewrite's own usage check, rather than splicing it
+ * out anyway and risking a false-positive job-scoped resolution; anything
+ * else malformed is left for the real dispatch to reject with its own usage
+ * error.
  */
 function handshakeJobRunName(argv: readonly string[]): string | undefined {
   if (argv[0] !== "job" || argv[1] !== "run") return undefined;
   const words = [...argv.slice(2)];
   const maxIdx = words.indexOf("--max");
-  if (maxIdx >= 0) words.splice(maxIdx, 2);
+  if (maxIdx >= 0) {
+    const value = words[maxIdx + 1];
+    if (!value || value.startsWith("-")) return undefined;
+    words.splice(maxIdx, 2);
+  }
   const name = words[0];
   return name && !name.startsWith("-") && words.length === 1 ? name : undefined;
 }
