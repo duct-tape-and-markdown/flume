@@ -242,15 +242,21 @@ export interface PendingGateOptions {
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
   const pendingPath = opts.pendingPath ?? join("plan", "pending.json");
-  const fence = [
-    ...opts.targetFence.writablePaths,
-    ...(opts.targetFence.entryChannelPaths ?? []),
-  ];
   const fenceWhen = opts.fenceWhen ?? (() => true);
   return {
     name: "pending-gate",
     when: "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
+      // Read fresh on every run — not hoisted to construction — so a
+      // declaration-driven fence (e.g. a Phase whose writablePaths/
+      // entryChannelPaths are populated after pendingGate(...) is called,
+      // such as a getter backed by a per-job declaration.json) is
+      // pre-checked against its current value, not a stale snapshot from
+      // module load.
+      const fence = [
+        ...opts.targetFence.writablePaths,
+        ...(opts.targetFence.entryChannelPaths ?? []),
+      ];
       let raw: string;
       try {
         raw = await readFile(join(ctx.flumeDir, pendingPath), "utf8");

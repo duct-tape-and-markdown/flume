@@ -225,7 +225,13 @@ phases never run `afterMerge` (they commit straight to the trunk).
 ### Use the built-ins first
 
 ```ts
-import { shellGate, tscGate, vitestGate, eslintGate } from "@dtmd/flume";
+import {
+  shellGate,
+  tscGate,
+  vitestGate,
+  eslintGate,
+  pendingGate,
+} from "@dtmd/flume";
 ```
 
 - `tscGate` — `pnpm tsc --noEmit`.
@@ -233,15 +239,85 @@ import { shellGate, tscGate, vitestGate, eslintGate } from "@dtmd/flume";
 - `eslintGate` — `pnpm lint`. Opt-in.
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
+- `pendingGate({ targetFence, extension?, pendingPath?, fenceWhen? })` —
+  composed `pending.json` validation plus a plan-time fence pre-check
+  against the target phase. See below.
 - `shellGate({ name, when, cmd, args, failHint? })` — escape hatch for "run
   a command, fail on non-zero". The four built-ins above are all
   `shellGate` instances.
 
+### `pendingGate`: composed validation + fence pre-check (v0.8 §6)
+
+`pendingGate` replaces a hand-rolled "does `pending.json` parse" gate
+(below) with one that also catches a class of guaranteed-revert bug
+before it reaches build: it validates the queue against the composed
+core+extension schema (§10), then pre-checks every entry's declared
+`files` against `targetFence.writablePaths ∪ targetFence.entryChannelPaths`.
+An entry whose declaration can't survive that fence fails **here, at plan
+time, naming the offending paths** — instead of shipping through plan and
+burning a whole build tick on a commit that was always going to revert.
+
+```ts
+const build: Phase = {
+  name: "build",
+  writablePaths: ["src/**", "tests/**"],
+  // ...
+};
+
+const plan: Phase = {
+  name: "plan",
+  gates: [pendingGate({ targetFence: build })],
+  // ...
+};
+```
+
+Pass the target `Phase` itself as `targetFence` — not a spread of its
+`writablePaths`/`entryChannelPaths` into a fresh array. `pendingGate` reads
+those two fields **inside `run()`, on every invocation**, not once at
+construction, so it always fence-checks against the target's current
+value.
+
+That matters for a declaration-driven chain, where a phase's fence isn't a
+static array literal but resolved lazily — e.g. from a per-job
+`declaration.json` the chain doesn't read until the phase is actually
+used. Combine a getter-backed fence with a `get gates()` accessor on the
+phase that calls `pendingGate(...)` so construction itself is deferred:
+
+```ts
+const build: Phase = {
+  name: "build",
+  get writablePaths() {
+    return readJobDeclaration().writablePaths; // resolved per job, not at chain load
+  },
+  // ...
+};
+
+const plan: Phase = {
+  name: "plan",
+  // Deferred: the dispatcher doesn't read `plan.gates` until the tick
+  // needs it, well after the whole chain module — including `build` — has
+  // finished evaluating. A plain `gates: [pendingGate({ targetFence: build })]`
+  // array literal here would call `pendingGate(...)` at module-load time,
+  // before `build`'s declaration-driven writablePaths has anything to read.
+  get gates() {
+    return [pendingGate({ targetFence: build })];
+  },
+  // ...
+};
+```
+
+`fenceWhen` narrows which entries the pre-check applies to (default:
+every entry) — supply it to exempt park-exempt `gate.kind` values (e.g.
+`"parked"`, `"deferred"`) the same way the build fence itself does.
+
 ### When to write a bespoke Gate
 
 Reach for one when the check needs structured logic (read a file, parse
-JSON, summarize N issues) rather than just an exit code. Cascade uses one
-to validate `pending.json`:
+JSON, summarize N issues) rather than just an exit code. The example
+below predates the `pendingGate` builtin above (v0.8 §6) — reach for that
+first; it composes this exact parse check with a fence pre-check the
+hand-rolled version doesn't have. Write a bespoke gate when the built-ins
+genuinely don't fit:
 
 ```ts
 const pendingParseGate: Gate = {
