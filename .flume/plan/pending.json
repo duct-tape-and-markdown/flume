@@ -1,52 +1,5 @@
 [
   {
-    "tag": "DROPLASTCOMMIT-TIP-OWNERSHIP",
-    "summary": "dropLastCommit verifies current tip matches the sha it's dropping before reset --hard; refuses naming both shas on mismatch, per v0.7 §17.",
-    "per": {
-      "path": "spec/RELEASE-v0.7.md",
-      "section": "17. `status` shows supervisor liveness; `dropLastCommit` checks tip ownership"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "dropLastCommit takes the expected (this-call-created) sha, checks current HEAD before reset --hard, refuses on mismatch"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "both dropLastCommit callsites pass their own just-created postHead as the expected sha"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "new describe block: refuses on tip mismatch naming both shas; succeeds and drops when the tip matches"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "existing revert-path tests still pass with matching-sha calls"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Fixed bullet per §17 (ownership leg)"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/git.test.ts",
-        "asserts": "dropLastCommit refuses (leaving the tip in place) when current HEAD != the expected sha, naming both; proceeds normally when they match"
-      }
-    ],
-    "acceptance": "a dropLastCommit attempt against a tip this call didn't create refuses, names both shas, and leaves the tip in place; matching-tip drops proceed exactly as today.",
-    "notes": "Both existing callsites (src/Dispatcher.ts, currently ~lines 781 and 1290) already hold the postHead they themselves just committed in scope — no cross-process state needed, this is a same-call check."
-  },
-  {
     "tag": "SUPERVISOR-PROVISION-QUARANTINE",
     "summary": "Per-entry quarantine on a pre-tick worktree-provisioning failure, plus a 3-consecutive-identical-failure abort backstop, per v0.7 §16.",
     "per": {
