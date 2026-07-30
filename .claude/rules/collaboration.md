@@ -24,6 +24,16 @@ If the research yields a clear answer — one option is unambiguously better, or
 
 **Caveat — architectural missteps.** "Choose the best from the web" only applies when the question is downstream of a sound architectural choice. If the question itself implies an earlier decision was wrong, flag *that* — don't paper over it with a plausible solution.
 
+## Complexity is a signal, not a challenge
+
+A complicated solution is likely chasing a tail — patching downstream of the real defect, or encoding a special case (see engine-boundary.md).
+
+- Prefer the simple solution. When one exists, ship it without ceremony.
+- When every solution on the table is complicated, that is a finding, not an invitation to build the least-bad one. The complexity usually means an upstream decision needs revisiting. Raise a flag — park it in `open-questions.md` (autonomous ticks) or name it out loud (interactive) — with the upstream suspect identified.
+- The bar scales with the layer: engine internals may be intricate, but a spec section, a chain config, or a fix that takes many moving parts to explain is suspect on its face.
+
+**Why:** solution complexity is the cheapest early detector of a wrong turn upstream; building through it converts a signal into debt.
+
 ## Match prose to the medium
 
 Different artifacts ask for different registers. Wrong register makes the artifact harder to use.

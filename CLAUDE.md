@@ -40,6 +40,8 @@ Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, 
 
 ## Non-Negotiables
 
+- **Engine ships mechanism, never convention.** Every `src/` change passes the second-implementation test; the engine validates only what its mechanics consume. See @.claude/rules/engine-boundary.md.
+- **A complicated solution is likely chasing a tail.** Go with the simple solution; if there is none, raise a flag (park/open question) instead of building the complicated one.
 - Build phase commits per pending entry directly to `main` after green validation.
 - NEVER force-push, amend pushed commits, or `--no-verify`.
 - NEVER modify files when asked to investigate — investigate and report.
