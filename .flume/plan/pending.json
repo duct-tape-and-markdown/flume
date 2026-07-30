@@ -1,52 +1,5 @@
 [
   {
-    "tag": "LOOP-SUMMARY-ABORT-THRESHOLD-COUNT",
-    "summary": "Thread the real consecutive-failure streak count through SuperviseResult.repeatedFailure so cli.ts's completion summary stops hardcoding \"3\", per v0.8 §8.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "8. Supervisor policy knobs ride the boundary"
-    },
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "SuperviseResult.repeatedFailure (~line 2348) gains a count field; the abort-return site (~2480) sets it from provisionFailureStreak"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "loopCompletionSummary (~line 368) reads result.repeatedFailure.count instead of the literal 3"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "repeatedFailure assertions (~3900, 4001, 4093) include the new count field"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "repeatedFailure fixture (~645) gains count; assert the summary names the real count, not a hardcoded 3"
-        }
-      ],
-      "retire": []
-    },
-    "schemaDelta": "none",
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "loopCompletionSummary with repeatedFailure.count: 2 names '2 consecutive ticks', not the literal 3"
-      },
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "superviseLoop's returned repeatedFailure carries the real streak count alongside signature"
-      }
-    ],
-    "acceptance": "a fixture chain declaring abortThreshold: 2 that aborts after 2 ticks gets a completion summary naming '2 consecutive ticks'; a chain declaring nothing still reads '3 consecutive ticks' (default unchanged).",
-    "notes": "Filed from open-questions.md's LOOP-SUMMARY-HARDCODED-ABORT-THRESHOLD (surfaced building SUPERVISOR-POLICY-CLI-COVERAGE, v0.8 §8): no product judgment call, a straightforward count-threading fix scoped by that finding."
-  },
-  {
     "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT",
     "summary": "Shrink core PendingEntry schema to tag/files/gate/dependsOnForks; add chain-declared extension mechanism composing validator + renderSchemaForPrompt, per v0.8 §2.",
     "per": {
