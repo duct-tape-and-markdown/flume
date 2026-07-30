@@ -1,15 +1,13 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-8) plus
-the 2026-07-30 §10 migration-guide amendment now queued. No v0.9 spec
-yet.
+Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-10,
+including the §10 migration-guide amendment). No v0.9 spec yet.
 
-Mode: derive (spec-delta — v0.8 §10 added since last plan commit).
+Mode: audit (commit-delta — DOCS-MIGRATION-GUIDE-V0.8 build + ship).
 
-## Queue (1)
+## Queue (0)
 
-1. `DOCS-MIGRATION-GUIDE-V0.8` — docs/MIGRATING-0.8.md + README link,
-   per §10. Open, no blockers.
+Empty. Nothing pending.
 
 ## Open questions (0)
 
@@ -17,11 +15,13 @@ None.
 
 ## Trunk
 
-HEAD `972a863` (the §10 amendment itself; no build commits since last
-plan). Derived one entry: §10 is a single cohesive deliverable (one
-doc file + one README link), not several independent shippable units,
-so no split. Cited 8c52c92 (PENDING-SCHEMA-CORE-EXTENSION-SPLIT) in
-the entry's notes as the real migration source material the spec
-points at.
+HEAD `88b2f65`. Audited the §10 build (3484e6d) against
+spec/RELEASE-v0.8.md §10: spot-checked every named API/gate/helper
+(composePendingList, requiresCapability + Chain.capabilities,
+pendingGate/PendingGateOptions, setupWorktree lockfile precedence,
+supervisorPolicy defaults, TickResult.noCommit, exit-code contract,
+CHAIN-AUTHORING.md §7/§10/§11 anchors) against current src/ — all
+resolve cleanly, no drift. File scope matched declared entry.files
+exactly. No findings; nothing to route.
 
 Plan continues: no
