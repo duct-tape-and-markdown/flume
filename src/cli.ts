@@ -20,6 +20,7 @@ import {
   writeFileSync,
   unlinkSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
@@ -63,6 +64,114 @@ function readPackageVersion(): string {
     throw new Error(`package.json at ${pkgPath} has no string "version"`);
   }
   return pkg.version;
+}
+
+/**
+ * `<repoRoot>/.flume/node_modules/@dtmd/flume` — the bay's local install
+ * (v0.7 §10), the same junction/symlink shape `job new`'s `ensureFlumeLink`
+ * (`src/job.ts:133-150`) provisions, reused here purely as a read-time
+ * resolution signal. "Resolves" means its `package.json` is readable and
+ * names an executable `flume` bin; anything short of that (missing,
+ * unreadable, unparsable, no usable bin entry) is "does not resolve" — the
+ * handshake falls through rather than crashing on a malformed link target.
+ */
+function readLocalInstall(
+  repoRoot: string,
+): { version: string; bin: string } | undefined {
+  const root = join(repoRoot, ".flume", "node_modules", "@dtmd", "flume");
+  let raw: string;
+  try {
+    raw = readFileSync(join(root, "package.json"), "utf8");
+  } catch {
+    return undefined;
+  }
+  let pkg: { version?: unknown; bin?: unknown };
+  try {
+    pkg = JSON.parse(raw) as { version?: unknown; bin?: unknown };
+  } catch {
+    return undefined;
+  }
+  const rel =
+    typeof pkg.bin === "string"
+      ? pkg.bin
+      : pkg.bin && typeof pkg.bin === "object"
+        ? (pkg.bin as Record<string, unknown>).flume
+        : undefined;
+  if (typeof rel !== "string") return undefined;
+  return {
+    bin: resolve(root, rel),
+    version: typeof pkg.version === "string" ? pkg.version : "unknown",
+  };
+}
+
+/**
+ * The bay's own declared `@dtmd/flume` version, read from
+ * `<repoRoot>/package.json` — undefined when the bay has no package.json, it
+ * doesn't parse, or it never names the dependency (v0.7 §10 arm 3: an
+ * unpinned bay).
+ */
+function readPin(repoRoot: string): string | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(join(repoRoot, "package.json"), "utf8");
+  } catch {
+    return undefined;
+  }
+  let pkg: {
+    dependencies?: Record<string, unknown>;
+    devDependencies?: Record<string, unknown>;
+    peerDependencies?: Record<string, unknown>;
+  };
+  try {
+    pkg = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const spec =
+    pkg.dependencies?.["@dtmd/flume"] ??
+    pkg.devDependencies?.["@dtmd/flume"] ??
+    pkg.peerDependencies?.["@dtmd/flume"];
+  return typeof spec === "string" ? spec : undefined;
+}
+
+/**
+ * Engine↔pin handshake (v0.7 §10) — three arms, run before any subcommand
+ * dispatch:
+ *
+ * 1. A local install resolves — re-exec its bin with this process's own
+ *    argv, inheriting stdio, and return its exit code. No version
+ *    comparison: the local install is the authority once a bay is
+ *    provisioned, not a copy to check against it.
+ * 2. No local install, but the bay's `package.json` pins `@dtmd/flume` —
+ *    refuse (exit 2), naming the pin and this running engine's own version
+ *    (`readPackageVersion()`, compared only to shape the message).
+ * 3. Unpinned — returns `undefined`; the caller proceeds exactly as today.
+ */
+function engineHandshake(repoRoot: string, argv: readonly string[]): number | undefined {
+  const local = readLocalInstall(repoRoot);
+  if (local) {
+    const result = spawnSync(process.execPath, [local.bin, ...argv], {
+      stdio: "inherit",
+    });
+    if (result.error) throw result.error;
+    if (result.signal) {
+      process.kill(process.pid, result.signal);
+      return 1;
+    }
+    return result.status ?? 1;
+  }
+
+  const pin = readPin(repoRoot);
+  if (pin === undefined) return undefined;
+
+  const linkPath = join(repoRoot, ".flume", "node_modules", "@dtmd", "flume");
+  console.error(
+    `[flume] ${repoRoot}'s package.json pins @dtmd/flume@${pin}, but no ` +
+      `install resolves at ${linkPath} (this running engine is ` +
+      `@dtmd/flume@${readPackageVersion()}); provision the pinned install ` +
+      `(e.g. \`flume job new\`) or drop the pin to run unpinned`,
+  );
+  return 2;
 }
 
 /**
@@ -593,6 +702,12 @@ async function runJobVerb(
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const repoRoot = resolveRepoRoot(process.cwd());
+
+  // Engine↔pin handshake (v0.7 §10) — ahead of every other line in main():
+  // a local install, once present, is the authority for this invocation's
+  // argv verbatim, not just the state-root-scoped subcommands below.
+  const handshake = engineHandshake(repoRoot, argv);
+  if (handshake !== undefined) return handshake;
 
   // Global `--job <name>` (v0.5 §3): extract it wherever it appears so it
   // composes with every subcommand, before any dispatch.

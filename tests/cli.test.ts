@@ -233,6 +233,120 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
 });
 
 /**
+ * v0.7 §10 — engine↔pin handshake via launcher-defers-to-pin (the gradlew
+ * pattern). The handshake sits ahead of every other line in `main()`
+ * (`src/cli.ts`), before `--job` extraction, before `--help`/`--version`,
+ * before state-dir resolution — a subprocess is the only way to prove it
+ * actually fires there rather than somewhere downstream. `runCli` (defined
+ * below, hoisted for use here) spawns the real CLI through tsx; each fixture
+ * distinguishes a fabricated local install from the real running engine by
+ * version-stamping it well outside the real engine's own version range.
+ */
+describe("engine↔pin handshake — v0.7 §10", () => {
+  const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+  async function engineVersion(): Promise<string> {
+    const pkg = JSON.parse(
+      await readFile(join(REPO_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    return pkg.version;
+  }
+
+  /**
+   * `<dir>/.flume/node_modules/@dtmd/flume` as a runnable stand-in for a
+   * provisioned local install — the same junction target shape `job new`
+   * links to (`src/job.ts:133-150`), fabricated directly here rather than
+   * through `job new` since the handshake only ever reads it.
+   */
+  async function writeLocalInstall(dir: string, version: string): Promise<void> {
+    const root = join(dir, ".flume", "node_modules", "@dtmd", "flume");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "@dtmd/flume",
+        version,
+        bin: { flume: "./bin/fake.js" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(root, "bin", "fake.js"),
+      `console.log("LOCAL-INSTALL-RAN ${version} " + process.argv.slice(2).join(" "));\n`,
+      "utf8",
+    );
+  }
+
+  it(
+    "a bay with the local install present re-execs it regardless of the global engine's own version",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-local-"));
+      try {
+        await writeLocalInstall(dir, "9.9.9-local-fixture");
+
+        const result = await runCli(dir, ["status"]);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain(
+          "LOCAL-INSTALL-RAN 9.9.9-local-fixture status",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "the same bay with the local install removed refuses (exit 2), naming the pin and both versions",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-absent-"));
+      try {
+        await mkdir(join(dir, ".flume"), { recursive: true });
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({
+            name: "host",
+            dependencies: { "@dtmd/flume": "9.9.9-pinned" },
+          }),
+          "utf8",
+        );
+
+        const result = await runCli(dir, ["status"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).toContain("9.9.9-pinned");
+        expect(result.out).toContain(await engineVersion());
+        expect(result.out).toContain(
+          join(dir, ".flume", "node_modules", "@dtmd", "flume"),
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "an unpinned bay behaves byte-identical to today: no local install, no pin, the handshake is a no-op",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-pin-unpinned-"));
+      try {
+        const result = await runCli(dir, ["job", "status"]);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain("no jobs");
+        expect(result.out).not.toContain("LOCAL-INSTALL-RAN");
+        expect(result.out).not.toContain("pins @dtmd/flume");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});
+
+/**
  * §3 / v0.7 §4 — `flume tick` exit-code classification at the process
  * boundary: 78 (`EX_CONFIG`) terminal misconfiguration, 69 (`EX_UNAVAILABLE`,
  * `EX_MOUNT_DEAD`) the mount-dead failure class (chain never resolved),

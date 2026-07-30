@@ -41,6 +41,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `.flume`. A tree with no `.flume` anywhere above `cwd` keeps `cwd` as
   `repoRoot`, unchanged, so a first `flume job new` in a fresh, undocked
   repo still creates `.flume` at `cwd`.
+- The engine now defers to a bay's local install: before any subcommand
+  dispatch, a running `flume` checks `<repoRoot>/.flume/node_modules/@dtmd/flume`
+  and, when it resolves, re-execs it with the same argv and inherited
+  stdio — silent, version-proof by construction, no comparison against the
+  invoked engine's own version. When the bay's own `package.json` pins
+  `@dtmd/flume` but no local install resolves, `flume` refuses loudly
+  (exit 2) naming the pin and both versions instead of silently running a
+  possibly-mismatched engine. An unpinned bay runs the invoked engine
+  unchanged.
 
 ### Fixed
 

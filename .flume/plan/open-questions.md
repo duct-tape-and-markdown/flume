@@ -9,6 +9,49 @@ Status markers:
 
 <!-- questions below this line -->
 
+## ENGINE-PIN-HANDSHAKE-JOB-DIR-MISMATCH: the local-install check path never matches what `job new` actually provisions
+
+**PARKED** — shipped per the spec's literal (twice-repeated) path text and
+matching acceptance criteria exactly; flagging because the one existing
+provisioning mechanism in the codebase never creates a link there.
+
+`spec/RELEASE-v0.7.md` §10 states the local-install check path twice,
+verbatim, as `<bay>/.flume/node_modules/@dtmd/flume`. ENGINE-PIN-HANDSHAKE
+(this tick) implements `readLocalInstall`/`engineHandshake` in `src/cli.ts`
+against exactly that bay-root path, independent of `--job`/`FLUME_JOB`
+scoping. But `ensureFlumeLink` (`src/job.ts:133-150`, called from `jobNew`)
+never provisions a link there — it always nests one level deeper, at
+`<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume`. As shipped, arm
+1 ("local install exists" → re-exec) can never fire for a bay reached
+through the real `job new`/`job run` workflow; it only fires against a
+link fabricated by some other means (this entry's own test fixtures do
+exactly that, by hand, since the handshake only ever reads the link).
+
+Two readings were live going in:
+1. **Literal** (shipped): check the exact bay-root path §10 states,
+   independent of job scoping. Matches spec text and acceptance verbatim;
+   simplest; "one hop only." Doesn't compose with the job workflow's real
+   provisioning — dead on arrival for every existing job-based bay.
+2. **Job-scoped**: check `<flumeDir>/node_modules/@dtmd/flume`, where
+   `flumeDir` is the same value `resolveStateDirs` already computes (a
+   bare bay reduces to exactly reading (1); a `--job`/`FLUME_JOB`-scoped
+   invocation resolves to `<repoRoot>/.flume/jobs/<name>/node_modules/@dtmd/flume`
+   — what `ensureFlumeLink` actually provisions). Composes with the real
+   workflow; not what the spec's literal text says.
+
+Went with (1): the spec states the check path twice, verbatim, and the
+acceptance criteria never mention job-scoping — a build tick shouldn't
+quietly reinterpret a doubly-explicit literal path on its own judgment.
+But (2) is the only reading under which arm 1 ever fires against real
+production provisioning, which makes me suspect (1) is a spec wording
+gap rather than a deliberate bay-wide (non-job) resolution point. If the
+intent was (2), needs a small follow-up: swap the fixed path in
+`readLocalInstall`/`engineHandshake` for a `resolveStateDirs`-derived one
+(no `job.ts` change needed either way), and re-point this tick's three
+test fixtures at the job-scoped path. Needs a human call — this is "does
+the spec's literal wording match the intended machinery," not a UX taste
+call.
+
 ## TAG-PATTERN-SLICE-CONSTRAINT: rendered pending-entry schema omits the `[a-z0-9]+` slice constraint TAG_PATTERN enforces
 
 **NEEDS AMENDMENT** — fix direction is clear; blocked on a spec home (no
