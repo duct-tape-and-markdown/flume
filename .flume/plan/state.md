@@ -1,32 +1,32 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-8 —
-§6's dogfood-adoption acceptance leg closed this tick). No v0.9 spec
-yet.
+Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-8). No
+v0.9 spec yet.
 
-Mode: audit (commit-delta: 3 operator-leg commits since last plan,
-cross-checked against v0.7 §13, v0.7 §15's operator-leg bullet, v0.8
-§6) + drain (5-item inbox entry routed to closure/entries).
+Mode: audit (3 operator-leg commits since last plan, cross-checked
+against v0.7 §10) + maintain (promote already applied by the ship
+commit; inbox empty).
 
-## Queue (3)
+## Queue (2)
 
-1. CONSUMER-SMOKE-PIN-HANDSHAKE-BREAK — open
-2. JOB-RUN-LOCK-REFUSAL-HANG — open
-3. JOB-INTEGRATION-LANE-CI-WIRING — blockedBy JOB-RUN-LOCK-REFUSAL-HANG
+1. JOB-INTEGRATION-LANE-CI-WIRING — open; unblocker shipped, full
+   `pnpm test:integration` re-verified green this tick
+2. ENGINE-HANDSHAKE-SELF-REF-UNIT-GAP — open; audit finding, missing
+   direct unit coverage for 54d0d70's self-reference guard
 
 ## Open questions (0)
 
-None — all five prior questions routed this tick: STALE-GLOBAL-FLUME-LOOP
-verified remediated by live process inspection (loop/tick pids resolve
-to this repo's own `dist/cli.js`, not the global install); two closed
-by verifying their cited operator commits landed as specced; two filed
-as pending entries above.
+None.
 
 ## Trunk
 
-HEAD `5f0cfae`. Audited `eda59b0` (build.md park-before-bail) against
-v0.7 §13's operator-leg bullet and `2e8ccf7` (pendingGate dogfood
-adoption) against v0.8 §6 — both match spec intent, no drift, correctly
-scoped as direct `chore(flume):` commits outside phase fences.
+HEAD `6db8155`. Audited 7ee70ed (Consumer-install smoke `--no-save`,
+v0.7 §10) — clean, matches the sibling backlog-groomer step, no
+drift. Audited 54d0d70 (self-referential-install guard) — logic
+correct and spec-consistent, but its new fork is undertested; filed
+ENGINE-HANDSHAKE-SELF-REF-UNIT-GAP. Audited 6db8155 (ship commit) —
+correctly promoted JOB-INTEGRATION-LANE-CI-WIRING to open in the same
+commit (mechanical, already reflected). Verified locally this tick:
+`tsc --noEmit` clean, full `pnpm test:integration` 12/12 green.
 
 Plan continues: no

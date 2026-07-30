@@ -22,6 +22,36 @@
     },
     "tests": [],
     "acceptance": "CI workflow runs `pnpm test:integration` as its own step, green.",
-    "notes": "Blocked on JOB-RUN-LOCK-REFUSAL-HANG: examples.integration.test.ts and loop-process-boundary.integration.test.ts already pass clean locally, but job.integration.test.ts hangs — wiring CI before that's fixed just turns the hang into a stuck/timed-out runner."
+    "notes": "Unblocker JOB-RUN-LOCK-REFUSAL-HANG shipped in 54d0d70. Re-verified this tick: full `pnpm test:integration` green (3 files, 12/12) — clear to wire, no hang."
+  },
+  {
+    "tag": "ENGINE-HANDSHAKE-SELF-REF-UNIT-GAP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Add a case to the \"engine↔pin handshake — v0.7 §10\" describe block for the self-referential-install fork 54d0d70 added to readLocalInstall (src/cli.ts:65,91-96,109)."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "54d0d70's self-referential-install guard in readLocalInstall has no direct handshake-suite case — only indirect coverage via job.integration.test.ts.",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "10. Engine↔pin handshake via launcher-defers-to-pin (the gradlew pattern)"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "a local-install link whose realpath resolves to the running engine's own package root is treated as absent: pinned + self-ref refuses (arm 2), unpinned + self-ref is a no-op (arm 3) — never re-execs into itself"
+      }
+    ],
+    "acceptance": "The handshake suite in tests/cli.test.ts has a passing case exercising the self-referential-install fork directly, independent of job.integration.test.ts.",
+    "notes": "Audit finding on 54d0d70. Logic reads correct and spec-consistent (one-hop-only non-goal) — this is a test-coverage gap, not a behavior defect."
   }
 ]
