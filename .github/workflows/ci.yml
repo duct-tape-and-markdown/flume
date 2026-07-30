@@ -92,7 +92,7 @@ jobs:
           # without type:module the chain.ts load fails as CJS before it can
           # exercise the package's exports map.
           npm pkg set type=module
-          npm install --no-audit --no-fund "$REPO/$TARBALL"
+          npm install --no-audit --no-fund --no-save "$REPO/$TARBALL"
 
           # Realistic consumer chain.ts: bare-specifier import of the published
           # package (NOT ../src/ — that's the in-repo dogfood path). The value
