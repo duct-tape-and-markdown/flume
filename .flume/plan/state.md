@@ -1,24 +1,21 @@
 # State
 
 Phase: v0.7 fully shipped (§§1-17); v0.8 §4 shipped (fb67f0b/90529d3),
-§§2,3,5,6,7,8 queued. Mode: **audit** (2 commits since last plan:
-REQUIRES-CAPABILITY-GENERALIZATION build + ship, both clean). No
-spec-delta, inbox empty, no promotions due this tick.
+§5 shipped (78d8e23/e288a97) with one gap found this tick; §§2,3,6,7,8
+queued. Mode: **audit** (2 commits since last plan: TICK-VERDICT-ARTIFACT
+build + ship). No spec-delta, inbox empty, no promotions due this tick.
 
 ## Queue (6)
 
 1. `PENDING-SCHEMA-CORE-EXTENSION-SPLIT` — **parked** (v0.8 §2; operator
    must land chain.ts's extension declaration in lockstep with the
    build commit — core-shrink breaks pendingParseGate otherwise)
-2. `TICK-VERDICT-ARTIFACT` — open (v0.8 §5)
-3. `TAG-GRAMMAR-MECHANICAL-SAFETY` — blockedBy #1 (v0.8 §3; widening,
-   not shrinking — does not inherit #1's atomicity hazard)
-4. `PENDING-GATE-BUILTIN` — blockedBy #1 (v0.8 §6; new unused export
-   until chain adopts it — does not inherit #1's hazard either)
+2. `TICK-VERDICT-FOOTPRINT-AND-DOCS` — open (v0.8 §5 follow-up; this
+   tick's audit finding, see commit body)
+3. `TAG-GRAMMAR-MECHANICAL-SAFETY` — blockedBy #1 (v0.8 §3)
+4. `PENDING-GATE-BUILTIN` — blockedBy #1 (v0.8 §6)
 5. `SUPERVISOR-POLICY-KNOBS` — open (v0.8 §8)
-6. `SECOND-REFERENCE-CHAIN` — blockedBy #3 (v0.8 §7; its
-   REQUIRES-CAPABILITY-GENERALIZATION half of the §§2–4 dependency is
-   now satisfied — only #3's blockedBy remains)
+6. `SECOND-REFERENCE-CHAIN` — blockedBy #3 (v0.8 §7)
 
 ## Open questions (1)
 
@@ -29,13 +26,19 @@ delta, unchanged.
 
 ## Trunk
 
-HEAD `90529d3` at this pass's start, tree otherwise clean besides
-untracked `.flume/loop.pid` (live supervisor artifact). Audited
-`fb67f0b` (build: requiresDockerHost → requiresCapability) and
-`90529d3` (ship, pending.json entry removal) against v0.8 §4: gate
-union, chain-asserted capabilities, isPickable, status naming the
-missing capability, docs, and test coverage (PendingSchema/Dispatcher/
-cli, both picked and skipped paths) all match spec intent; `grep -ri
-docker src/` empty; tsc clean. No drift found.
+HEAD `e288a97` at this pass's start, tree clean besides untracked
+`.flume/loop.pid` (live supervisor artifact). Audited `78d8e23` (build:
+unify tick outcomes into TickVerdict) + `e288a97` (ship) against v0.8
+§5: verdict shape, byte-identical errored-derivation (traced against
+prior cli.ts logic), writeTickVerdict/clearTickVerdict/readTickVerdicts,
+and test coverage (committed/gate-revert/voluntary-bail/cherry-pick-
+conflict/afterMerge-reverted, violating-path detail preserved) all
+match; tsc clean, `pnpm test` 306 passed. One gap: the shipped entry's
+own notes claimed superseding §13 footprint capture, but
+commitPendingUpdate's observed/footprint map is untouched and fully
+separate from TickVerdict, and the new readTickVerdicts/TickVerdict
+export gained no CHAIN-AUTHORING.md coverage — filed as
+`TICK-VERDICT-FOOTPRINT-AND-DOCS`.
 
-Plan continues: no — audit clean, inbox empty, no promotions due.
+Plan continues: no — audit complete for this delta, inbox empty, no
+promotions due.

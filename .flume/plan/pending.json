@@ -76,6 +76,49 @@
     "notes": "Dogfood .flume/chain.ts's own extension declaration (summary/per/tests/acceptance/notes/schemaDelta fields) is operator-applied (§2/§3/§6 dogfood legs, chain.ts sits outside every phase's fence) — not part of this entry. This entry ships the engine mechanism plus internal call-site threading (Dispatcher/cli/job) so pre-adoption pending.json keeps parsing."
   },
   {
+    "tag": "TICK-VERDICT-FOOTPRINT-AND-DOCS",
+    "summary": "Close two gaps TICK-VERDICT-ARTIFACT left open: footprint commits still capture separately from TickVerdict, and readTickVerdicts has no chain-authoring docs, per v0.8 §5.",
+    "per": {
+      "path": "spec/RELEASE-v0.8.md",
+      "section": "5. Tick verdict: one facts artifact, engine-written, chain-read"
+    },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runFanout's observed/footprint map (~1220-1330) and commitPendingUpdate (~2145) still capture footprints on a path fully separate from TickVerdict; unify so the footprint commit sources from data already gathered for the verdict, per §5's 'now generated from the same verdict record rather than separate capture'"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "assert a merge-failure footprint commit's file list traces to the same capture used for that tick's TickVerdict; existing footprint/afterMerge-isolation tests stay green"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "new section documenting readTickVerdicts/TickVerdict as the chain-facing accessor for rendering recent tick history into a prompt — currently undocumented despite being an index.ts export"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased/Changed bullet noting the footprint-capture unification"
+        }
+      ],
+      "retire": []
+    },
+    "schemaDelta": "none",
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a merge-failure footprint commit's recorded file list traces to the same capture the tick's TickVerdict used, not a second independent capture"
+      }
+    ],
+    "acceptance": "commitPendingUpdate's footprint commit content sources from the tick's TickVerdict record rather than a separately maintained observed map; docs/CHAIN-AUTHORING.md documents readTickVerdicts for chain authors; existing footprint and afterMerge-isolation tests stay green.",
+    "notes": "TICK-VERDICT-ARTIFACT (shipped 78d8e23) claimed to supersede three v0.7 channels including §13 footprint capture, but shipped code left footprint/observedFiles fully separate from TickVerdict, and added zero docs for the new readTickVerdicts export. Audit finding, not new scope."
+  },
+  {
     "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY",
     "summary": "Widen TAG_PATTERN to mechanical safety only (charset, no whitespace, derived length bound); a chain refines further via its §2 extension, per v0.8 §3.",
     "per": {
