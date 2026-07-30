@@ -132,6 +132,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   the offending paths at commit time of whichever phase produced the
   queue — instead of the entry shipping through to a build tick that is
   guaranteed to revert on the writable-paths gate.
+- Second reference chain (v0.8 §7): `examples/backlog-groomer-chain.ts`, a
+  single-phase chain (no spec corpus, no plan/build split) that reads a
+  `BACKLOG.json`, ships the top pickable item, and commits — its own small
+  `entryExtension` and a lowercase-kebab `tag` refinement, exercising §§2-4
+  on the unpatched engine from a second angle. `docs/CHAIN-AUTHORING.md`
+  presents it alongside `cascade-chain.ts` as a peer, not a variant.
 
 ### Fixed
 

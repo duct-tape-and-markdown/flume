@@ -7,6 +7,20 @@ spec → plan → build pipeline this repo dogfoods — every section quotes a
 slice, so open it in a second pane. For the bare-minimum shape (no fanout,
 no spec separation), see [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
+**Two reference chains, one engine.** Cascade is the flagship: multi-phase,
+fanout, `pending.json`, the full derivation pipeline — but it is *an*
+example, not the engine's assumption. The engine ships mechanism, never
+convention (`.claude/rules/engine-boundary.md`), and the second reference
+chain is the proof:
+[`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts)
+is single-phase, has no spec corpus and no plan/build split, and reads a
+plain `BACKLOG.json` instead of `pending.json` — yet it composes the same
+entry-schema, tag-refinement, and capability-gating machinery cascade uses
+(§§10-11 below), declared as its own small extension and its own tag
+convention. Where a section below quotes cascade, skim the groomer file
+too; the two disagree on shape everywhere the engine lets them, and agree
+on nothing the engine doesn't enforce.
+
 ## Where the chain lives
 
 The harness re-resolves `.flume/chain.ts` (relative to your repo root) at
@@ -381,6 +395,11 @@ spec derives a corpus. Two parallel ticks would step on each other.
 
 Singleton phases run in the main repo (not a worktree) and commit directly
 to the trunk. Their `afterCommit` gates run on the trunk.
+
+`backlog-groomer-chain.ts`'s single `groom` phase is singleton for the same
+reason plan is: it derives `BACKLOG.json` from disk each tick. It just
+never grows a fanout sibling — nothing here requires one, so nothing forces
+a plan/build split. Not every chain needs both concurrency models.
 
 ### Fanout
 
@@ -931,6 +950,11 @@ An entry gated on an unasserted capability is skipped, never silently —
 stuck on it, rather than reading a bare `hibernating`/`awake` line and
 guessing.
 
+`backlog-groomer-chain.ts` uses the same gate kind for a non-infrastructure
+capability — a backlog item can require `"ops-access"` just as easily as a
+docker host; the engine's mechanism doesn't care what the string names, only
+whether the declaring chain asserts it.
+
 ## 8. Reading tick history: `readTickVerdicts`
 
 Every tick that actually runs a phase writes one **verdict** — a facts-only
@@ -1071,6 +1095,12 @@ const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
 A chain that declares no `entryExtension` gets the bare core — entries
 carry only the mechanical fields, and anything extra is rejected.
 
+The extension isn't cascade-specific machinery — `backlog-groomer-chain.ts`
+declares its own, one field (`reason`), and validates a completely
+different queue (`BACKLOG.json`, not `pending.json`) against
+`composePendingList`/`parsePending` the same way. Same composition, no
+plan/build split in sight.
+
 ## 11. Refining the tag grammar
 
 The engine requires of `tag` only what its mechanics need: a conservative
@@ -1103,6 +1133,11 @@ the core hint alone with no `tag` entry declared, or the core hint plus
 your refinement's `hint` when one is — so the plan prompt and the parser
 never disagree about what a valid tag looks like.
 
+`backlog-groomer-chain.ts` refines `tag` the opposite direction from
+cascade's ALL-CAPS convention above — lowercase-kebab
+(`/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/`). Both refinements compose against the
+identical mechanical floor; the engine has no opinion on case.
+
 ## Putting it together
 
 ```ts
@@ -1128,7 +1163,12 @@ human-only because it derives from human-authored workshop content.
 ## Where to look next
 
 - [`examples/cascade-chain.ts`](../examples/cascade-chain.ts) — the
-  example this walkthrough quotes from.
+  flagship spec → plan → build derivation chain this walkthrough quotes
+  from.
+- [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts) —
+  the peer reference chain: single-phase, no plan/build split, its own
+  entry extension and tag refinement on the same engine. See the intro
+  above for the framing.
 - [`examples/minimal-chain.ts`](../examples/minimal-chain.ts) — the
   single-phase starter.
 - [`docs/INTENT.md`](INTENT.md) — design rationale.

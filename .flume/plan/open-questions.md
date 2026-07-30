@@ -45,3 +45,17 @@ Options:
 2. **Engine salvage.** Dispatcher detects channel-path edits in a worktree on voluntary-bail and lands them as a park commit itself. More machinery than the gap needs; `.claude/rules/collaboration.md`'s complexity-is-a-signal rule favors option 1 unless prompt-level discipline can't be trusted to fire every time.
 
 Recommendation: option 1, applied directly to `prompts/build.md` via `chore(flume):` commit — no pending entry, same class as `PROMPTS-BUILD-FENCE-INSTRUCTION`.
+
+## CONSUMER-SMOKE-PIN-HANDSHAKE-BREAK — existing "Consumer-install smoke" CI step likely broken by the v0.7 §10 engine↔pin handshake
+
+**PARKED**
+
+Context: found while building `SECOND-REFERENCE-CHAIN`'s own CI step (mirroring "Consumer-install smoke"'s shape). `ci.yml`'s existing "Consumer-install smoke" step runs `npm install --no-audit --no-fund "$REPO/$TARBALL"` (a local tarball path, no `--no-save`), which makes npm record `"@dtmd/flume": "file:<path>"` in the consumer's `package.json`. Reproduced locally (hermetic env, no ambient `FLUME_*`): with that pin recorded and no install provisioned at `<flumeDir>/node_modules/@dtmd/flume`, `engineHandshake` (`src/cli.ts:210`, v0.7 §10 arm 2) refuses every subcommand — including the step's own `flume status` and `flume render notes` — exit 2, "provision the pinned install ... or drop the pin to run unpinned". `cli.test.ts`'s handshake suite confirms this is intended arm-2 behavior, not a fluke. The handshake is dated the same day as this line (2026-07-30 amendment) — plausible this landed after the smoke step was last green, or CI hasn't run since.
+
+Not fixed here: out of `SECOND-REFERENCE-CHAIN`'s declared `files` (that entry may only add a *new* CI step, not touch the pre-existing one), and a `src/` behavior change is out of scope regardless — `.claude/rules/spec-plan-build.md` routes cross-cutting fixes through their own entry. The new backlog-groomer CI step sidesteps the same trap with `--no-save` (an unpinned consumer install, which is what an unpinned bare bay is supposed to look like).
+
+Options:
+1. **Add `--no-save` to the existing step's `npm install` line (recommended).** One-line fix, same rationale as the new step: a consumer-install smoke test is exercising "works when installed," not "works when pinned" — pinning is its own tested path (`cli.test.ts`'s handshake suite) and doesn't need re-proving here.
+2. **Leave it and let CI prove/disprove this live.** If this write-up is wrong (something about the real GitHub Actions npm resolves differently than local repro), a real run settles it for free. Risk: if it's actually broken, `main`'s CI stays red on this step until someone notices.
+
+Recommendation: option 1 — file as its own entry (not a `SECOND-REFERENCE-CHAIN` scope-creep) so build can land the one-line `--no-save` fix directly.

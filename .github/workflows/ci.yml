@@ -177,6 +177,137 @@ jobs:
           EOF
           npx tsc --noEmit -p tsconfig.json
 
+      - name: Second reference chain smoke (backlog-groomer)
+        # v0.8 §7: the second reference chain is the boundary's proof — a
+        # single-phase chain, no plan/build split, driven through the
+        # *published* package (same rationale as "Consumer-install smoke"
+        # above, self-contained per step since `run:` blocks don't share
+        # shell state). Exercises §§2-4 from a second angle: its own small
+        # entry extension + lowercase-kebab tag refinement (composed against
+        # the same engine core cascade's ALL-CAPS convention uses), and a
+        # requiresCapability-gated backlog item that must stay parked while
+        # the top open item ships — one real tick, one real commit.
+        run: |
+          set -euo pipefail
+          REPO="$PWD"
+          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
+          npm pack
+          GROOMER="$RUNNER_TEMP/flume-groomer-consumer"
+          rm -rf "$GROOMER"
+          mkdir -p "$GROOMER/.flume/prompts"
+          cd "$GROOMER"
+          npm init -y >/dev/null
+          npm pkg set type=module
+          # --no-save: a recorded `@dtmd/flume` dependency pins the engine
+          # (v0.7 §10 amendment) and this consumer never provisions
+          # `.flume/node_modules/@dtmd/flume` — an unpinned install is what
+          # every other bare-bay chain (including the reference examples)
+          # runs unpinned too.
+          npm install --no-audit --no-fund --no-save "$REPO/$TARBALL"
+          git init -q -b main
+          git config user.email "ci@example.com"
+          git config user.name "CI"
+          git config commit.gpgsign false
+
+          # Same shape as examples/backlog-groomer-chain.ts, condensed: a
+          # deterministic (non-LLM) groom agent, so this needs no API key.
+          cat > .flume/chain.ts <<'EOF'
+          import { execFileSync } from "node:child_process";
+          import { existsSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { z } from "zod";
+          import { isPickableNow, parsePending, renderSchemaForPrompt } from "@dtmd/flume";
+
+          const BACKLOG_PATH = "BACKLOG.json";
+          const SHIPPED_PATH = "SHIPPED.md";
+
+          const entryExtension = {
+            reason: { schema: z.string().min(1).max(280), hint: `"why this item ships next"` },
+            tag: {
+              schema: z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, "lowercase-kebab"),
+              hint: `"lowercase-kebab"`,
+            },
+          };
+
+          function readShippedTags(cwd) {
+            const path = join(cwd, SHIPPED_PATH);
+            if (!existsSync(path)) return new Set();
+            const tags = new Set();
+            for (const line of readFileSync(path, "utf8").split("\n")) {
+              const m = /^- ([a-z0-9-]+):/.exec(line);
+              if (m) tags.add(m[1]);
+            }
+            return tags;
+          }
+
+          const groomAgent = {
+            name: "backlog-groomer",
+            async invoke({ cwd }) {
+              const backlogPath = join(cwd, BACKLOG_PATH);
+              const parsed = parsePending(readFileSync(backlogPath, "utf8"), entryExtension);
+              if (!parsed.ok) return { exitCode: 1, stdout: "", stderr: "BACKLOG.json invalid" };
+              const shippedTags = readShippedTags(cwd);
+              const pick = parsed.entries.find((e) => isPickableNow(e, shippedTags, undefined, new Set()));
+              if (!pick) return { exitCode: 0, stdout: "nothing pickable", stderr: "" };
+              const remaining = parsed.entries.filter((e) => e !== pick);
+              writeFileSync(backlogPath, JSON.stringify(remaining, null, 2) + "\n");
+              const shippedPath = join(cwd, SHIPPED_PATH);
+              const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
+              writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${pick.reason}\n`);
+              execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
+              execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
+              return { exitCode: 0, stdout: `shipped ${pick.tag}`, stderr: "" };
+            },
+          };
+
+          const groom = {
+            name: "groom",
+            description: "Read BACKLOG.json, ship the top pickable item, commit.",
+            promptPath: "prompts/backlog-groomer.md",
+            concurrency: "singleton",
+            agent: groomAgent,
+            writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
+            gates: [],
+            promptArgs() {
+              return { BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension) };
+            },
+            handoff: () => [],
+          };
+
+          const chain = { phases: [groom], entryExtension, humanOnly: [], capabilities: [] };
+          export default chain;
+          EOF
+          printf 'Groom BACKLOG.json: ship the top pickable item.\n{{BACKLOG_SCHEMA}}\n' > .flume/prompts/backlog-groomer.md
+
+          cat > BACKLOG.json <<'EOF'
+          [
+            {
+              "tag": "rotate-secrets",
+              "gate": { "kind": "requiresCapability", "capability": "ops-access" },
+              "dependsOnForks": [],
+              "files": {},
+              "reason": "needs ops access this chain does not assert"
+            },
+            {
+              "tag": "trim-notes-intro",
+              "gate": { "kind": "open" },
+              "dependsOnForks": [],
+              "files": {},
+              "reason": "intro paragraph restates the title"
+            }
+          ]
+          EOF
+          git add -A
+          git commit -q -m seed
+
+          npx --no-install flume wake groom
+          npx --no-install flume tick
+
+          grep -q '^- trim-notes-intro:' SHIPPED.md
+          ! grep -q 'rotate-secrets' SHIPPED.md
+          test "$(node -p "require('./BACKLOG.json').length")" = "1"
+          test "$(git log -1 --pretty=%s)" = "groom: ship trim-notes-intro"
+
       - name: npm pack file-set guard
         # The packed tarball must contain exactly the package.json "files"
         # allowlist (plus package.json, which npm packs unconditionally).

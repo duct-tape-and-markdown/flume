@@ -1,0 +1,198 @@
+/**
+ * v0.8 §7 — second reference chain smoke test.
+ *
+ * Drives `examples/backlog-groomer-chain.ts` through one full tick cycle on
+ * the unpatched engine: fixture repo, real chain + real prompt file (loaded
+ * unmodified — no rewritten fixture chain source, unlike the job.*.test.ts
+ * stub-chain pattern), `Dispatcher` wired in-process via the documented
+ * `chainLoader` test-injection seam (`src/Dispatcher.ts` `DispatcherOptions
+ * .chainLoader`). The chain's own `groom.agent` is deterministic (no LLM),
+ * which is what makes this runnable in CI at all — see the chain file's
+ * header for why that's in-scope for a reference example, not a test-only
+ * shortcut.
+ *
+ * Asserts the acceptance in spec/RELEASE-v0.8.md §7: the example completes
+ * a tick cycle against a fixture repo with zero `src/` changes attributable
+ * to it.
+ */
+
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+import { describe, expect, it } from "vitest";
+
+import type { Agent } from "../src/Agent.ts";
+import { Baton } from "../src/Baton.ts";
+import { Dispatcher } from "../src/Dispatcher.ts";
+import backlogGroomerChain from "../examples/backlog-groomer-chain.ts";
+
+const exec = promisify(execFile);
+
+/**
+ * `examples/`, resolved from this test file's own URL — `configDir` for the
+ * dispatcher below, so `Phase.promptPath` ("prompts/backlog-groomer.md")
+ * resolves to the real, committed prompt file rather than a copy.
+ */
+const EXAMPLES_DIR = fileURLToPath(new URL("../examples", import.meta.url));
+
+/** Scratch git repo on `main` with one seed commit. */
+async function makeRepo(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), "flume-examples-"));
+  const opts = { cwd: dir };
+  await exec("git", ["init", "-q", "-b", "main"], opts);
+  await exec("git", ["config", "user.email", "test@example.com"], opts);
+  await exec("git", ["config", "user.name", "Test User"], opts);
+  await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  await writeFile(join(dir, "README.md"), "seed\n");
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * `phase.agent` (the chain's deterministic groomer) must win the resolution
+ * order (`phase.agent ?? chainModule.agent ?? DispatcherOptions.agent`) —
+ * this stands in for the dispatcher default and throws if it's ever reached,
+ * so a resolution regression fails loudly instead of silently invoking a
+ * real `claude` binary.
+ */
+const neverAgent: Agent = {
+  name: "never",
+  async invoke() {
+    throw new Error(
+      "DispatcherOptions.agent invoked; Phase.agent should have taken precedence",
+    );
+  },
+};
+
+describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () => {
+  it(
+    "completes one tick cycle: skips a capability-gated item, ships the top open one, commits, hibernates",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        const backlog = [
+          {
+            tag: "rotate-secrets",
+            gate: { kind: "requiresCapability", capability: "ops-access" },
+            dependsOnForks: [],
+            files: {},
+            reason: "needs ops access this chain does not assert",
+          },
+          {
+            tag: "trim-notes-intro",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {},
+            reason: "intro paragraph restates the title",
+          },
+        ];
+        await writeFile(
+          join(repo.dir, "BACKLOG.json"),
+          `${JSON.stringify(backlog, null, 2)}\n`,
+        );
+        await exec("git", ["add", "BACKLOG.json"], { cwd: repo.dir });
+        await exec("git", ["commit", "-q", "-m", "seed backlog"], {
+          cwd: repo.dir,
+        });
+        const preHead = (
+          await exec("git", ["rev-parse", "HEAD"], { cwd: repo.dir })
+        ).stdout.trim();
+
+        const flumeDir = join(repo.dir, ".flume");
+        new Baton(flumeDir).wake("groom");
+
+        const dispatcher = new Dispatcher({
+          repoRoot: repo.dir,
+          configDir: EXAMPLES_DIR,
+          flumeDir,
+          agent: neverAgent,
+          chainLoader: async () => ({ default: backlogGroomerChain }),
+        });
+
+        const outcome = await dispatcher.tick();
+
+        expect(outcome.hibernated).toBe(false);
+        expect(outcome.failed).toBeUndefined();
+        expect(outcome.result?.committed).toBe(true);
+        expect(outcome.result?.gateResults.every((g) => g.ok)).toBe(true);
+        // handoff() => [] and nothing re-woke `groom`: the system hibernates
+        // after this one tick — no plan/build split, single phase.
+        expect(outcome.awakeAfter).toEqual([]);
+
+        const shipped = await readFile(join(repo.dir, "SHIPPED.md"), "utf8");
+        expect(shipped).toContain("trim-notes-intro");
+        expect(shipped).not.toContain("rotate-secrets");
+
+        const remaining = JSON.parse(
+          await readFile(join(repo.dir, "BACKLOG.json"), "utf8"),
+        );
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0].tag).toBe("rotate-secrets");
+
+        const log = await exec("git", ["log", "-1", "--pretty=%s"], {
+          cwd: repo.dir,
+        });
+        expect(log.stdout.trim()).toBe("groom: ship trim-notes-intro");
+
+        // §7 acceptance: zero src/ changes attributable to this example.
+        const diff = await exec(
+          "git",
+          ["diff", "--name-only", preHead, "HEAD"],
+          { cwd: repo.dir },
+        );
+        const touched = diff.stdout.split("\n").filter(Boolean);
+        expect(touched.sort()).toEqual(["BACKLOG.json", "SHIPPED.md"]);
+        expect(touched.some((p) => p.startsWith("src/"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it("leaves the backlog untouched and reports no commit when nothing is pickable", async () => {
+    const repo = await makeRepo();
+    try {
+      const backlog = [
+        {
+          tag: "rotate-secrets",
+          gate: { kind: "requiresCapability", capability: "ops-access" },
+          dependsOnForks: [],
+          files: {},
+          reason: "needs ops access this chain does not assert",
+        },
+      ];
+      await writeFile(
+        join(repo.dir, "BACKLOG.json"),
+        `${JSON.stringify(backlog, null, 2)}\n`,
+      );
+      await exec("git", ["add", "BACKLOG.json"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "seed backlog"], {
+        cwd: repo.dir,
+      });
+
+      const flumeDir = join(repo.dir, ".flume");
+      new Baton(flumeDir).wake("groom");
+
+      const dispatcher = new Dispatcher({
+        repoRoot: repo.dir,
+        configDir: EXAMPLES_DIR,
+        flumeDir,
+        agent: neverAgent,
+        chainLoader: async () => ({ default: backlogGroomerChain }),
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(false);
+      expect(outcome.noCommit).toBe("voluntary-bail");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+});
