@@ -214,6 +214,8 @@ byte-identical to v0.7 §16.
 
 ## 9. CHANGELOG
 
+- 0.8.0 section, add to Added (2026-07-30 amendment): migration guide
+  for 0.6.x chains, `docs/MIGRATING-0.8.md` (§10).
 - 0.8.0 section: Changed — pending-entry schema splits into an engine
   core (tag, files, gate, dependsOnForks) plus chain-declared
   extension fields, one declaration driving both validation and prompt
@@ -229,3 +231,55 @@ byte-identical to v0.7 §16.
   on prose fields the engine never reads.
 - Version bump + `npm publish` stay human-performed at cut time; no
   phase writes the version field.
+
+## 10. Migration guide — existing chains onto 0.8.0
+
+Amendment (operator, 2026-07-30): the line shipped reference docs
+(`CHAIN-AUTHORING.md` §§7–10 teach the new surfaces from scratch;
+CHANGELOG's Breaking section describes the delta) but no upgrade path
+for an *existing* chain. The gap has teeth: §2's strict schema means a
+0.6.x-era chain hard-fails its first pending.json parse after a pin
+bump unless its extension is declared **before** upgrading — and since
+no 0.7.0 was ever published, a real bay (connect, temper, the DAL-class
+jobs) crosses both lines in one jump.
+
+Ship `docs/MIGRATING-0.8.md`, an ordered checklist written for the
+person (or agent) upgrading a bay from 0.6.x. Every code claim verified
+against current `src/` at build time — the guide teaches what the
+engine does, not what the spec hoped. Source material: the dogfood
+chain's own migration (the schema-split landing commit) is the one real
+migration performed; mine it for the actual steps and failure modes.
+
+- **Pre-upgrade, in pin order**: inventory every non-core field the
+  bay's `pending.json` entries carry; author the chain's
+  `entryExtension` declaration (per-field zod schema + prompt hint, one
+  declaration) so it lands before or with the pin bump; strip retired
+  fields (`schemaDelta`) from `pending.json` or declare them.
+- **Mechanical renames**: `requiresDockerHost` →
+  `{ kind: "requiresCapability", capability }` plus
+  `Chain.capabilities`; `PendingEntry`/`PendingList` become type-only
+  imports; extension-field reads narrow through the declared schema
+  (`entryExtension.per.schema.parse(...)` — the chain.ts pattern).
+- **Recommended adoptions, each with its one-line why**: the
+  `pendingGate` builtin (composed validation + plan-time fence
+  pre-check) replacing hand-rolled parse gates; the `setupWorktree`
+  helper replacing per-repo `npm ci`/`pnpm install` hardcodes (v0.7
+  §11 — connect's chain is the named consumer); `supervisorPolicy`
+  knobs; wake-on-bail via `TickResult.noCommit` in build handoffs.
+- **v0.7 operational deltas the bay will feel on the same jump**: the
+  engine↔pin handshake arms (a pinned bay must have its local install
+  provisioned or the CLI refuses — name the `job new` provisioning path
+  and the unpinned escape hatch); the exit-code contract; bay-discovery
+  walk-up.
+- **Symptom → cause table** for the failure modes the migration class
+  hits: "Unrecognized keys" at the parse gate → undeclared extension
+  field; handshake refusal naming a pin → unprovisioned local install;
+  tag rejection → chain-declared refinement vs the new mechanical core.
+
+Acceptance: `docs/MIGRATING-0.8.md` exists and README links it; every
+API name, gate kind, and code snippet in it resolves against current
+`src/` (spot-checked by the build tick, cited in its commit body); the
+checklist's pre-upgrade section is explicit that the extension
+declaration precedes the pin bump. Non-goals: performing any downstream
+bay's migration (each is its own repo's work); duplicating
+CHAIN-AUTHORING.md's reference material — the guide links into it.
