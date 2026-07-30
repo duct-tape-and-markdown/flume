@@ -1,80 +1,5 @@
 [
   {
-    "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT",
-    "summary": "Shrink core PendingEntry schema to tag/files/gate/dependsOnForks; add chain-declared extension mechanism composing validator + renderSchemaForPrompt, per v0.8 §2.",
-    "per": {
-      "path": "spec/RELEASE-v0.8.md",
-      "section": "2. Entry schema splits: engine core + chain-declared extension"
-    },
-    "gate": {
-      "kind": "parked",
-      "reason": "Core-shrink invalidates today's extension-shaped pending.json at pendingParseGate unless chain.ts declares its extension in the same landing (CLAUDE.md atomicity) — but chain.ts sits outside build's fence. Confirmed live: 17-tick wave bailed voluntarily on exactly this gap (plan: commit 2026-07-30 drains the inbox report). Needs operator to land chain.ts's extension declaration in lockstep with this entry's build commit, not as an independent trailing leg."
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "shrink PendingEntry core to tag/files/gate/dependsOnForks; add extension-declaration composition (merged zod validator + renderSchemaForPrompt renders core+extension), per §2"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "Chain interface gains an optional entry-extension declaration field (per-field zod schema + prompt hint)"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "loadChainModule reads the chain's extension declaration; internal parsePending call (~1825) composes core+extension so today's dogfood-shaped entries still parse"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "parsePending call (~1029) composes core+extension from the loaded chain"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "parsePending call (~530) composes core+extension from the loaded chain"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export the new extension-declaration type alongside existing PendingSchema/Phase exports"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "core-only validation rejects unknown fields; extension composition accepts declared fields, rejects undeclared; renderSchemaForPrompt renders core+extension"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "fanout/pending-read paths still parse dogfood-shaped entries once the chain's extension is threaded through"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "cli's parsePending callsite still parses extension-shaped entries"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "job's parsePending callsite still parses extension-shaped entries"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "new section: declaring an entry extension"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Unreleased/Changed bullet per §2"
-        }
-      ],
-      "retire": []
-    },
-    "tests": [
-      {
-        "path": "tests/PendingSchema.test.ts",
-        "asserts": "a chain with no extension validates and renders the bare core; a chain's declared extension composes into the merged validator and the rendered prompt schema with no drift between them"
-      }
-    ],
-    "acceptance": "dogfood plan/build ticks run green with the dogfood extension declared in chain.ts and zero dogfood-specific fields in src/; a chain with no extension validates and renders the bare core; grep -ri 'prisma\\|schemaDelta' src/ is empty.",
-    "notes": "Dogfood .flume/chain.ts's own extension declaration (summary/per/tests/acceptance/notes/schemaDelta fields) is operator-applied (§2/§3/§6 dogfood legs, chain.ts sits outside every phase's fence) — not part of this entry. This entry ships the engine mechanism plus internal call-site threading (Dispatcher/cli/job) so pre-adoption pending.json keeps parsing."
-  },
-  {
     "tag": "TAG-GRAMMAR-MECHANICAL-SAFETY",
     "summary": "Widen TAG_PATTERN to mechanical safety only (charset, no whitespace, derived length bound); a chain refines further via its §2 extension, per v0.8 §3.",
     "per": {
@@ -82,8 +7,7 @@
       "section": "3. Tag grammar reduces to mechanical safety"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -129,8 +53,7 @@
       "section": "6. `pendingGate`: composed validation and fence pre-check as a builtin"
     },
     "gate": {
-      "kind": "blockedBy",
-      "tag": "PENDING-SCHEMA-CORE-EXTENSION-SPLIT"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
