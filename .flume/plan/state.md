@@ -1,21 +1,20 @@
 # State
 
 Phase: v0.7 fully shipped (§§1-17); v0.8 §4 shipped (fb67f0b/90529d3);
-§5 shipped and now audited clean end-to-end (78d8e23/e288a97 verdict
-artifact; 1f445b0/9ae3571 footprint-unification+docs follow-up — this
-tick's audit found no further drift); §§2,3,6,7,8 queued. Mode:
+§5 shipped and audited clean; §8 shipped (fa59ab4/84747ff) and this
+tick's audit found a coverage gap (below); §§2,3,6,7 queued. Mode:
 **audit** (2 commits since last plan, no spec-delta, inbox empty, no
 promotions due).
 
 ## Queue (5)
 
-1. `PENDING-SCHEMA-CORE-EXTENSION-SPLIT` — **parked** (v0.8 §2; operator
+1. `SUPERVISOR-POLICY-CLI-COVERAGE` — open (v0.8 §8 audit follow-up)
+2. `PENDING-SCHEMA-CORE-EXTENSION-SPLIT` — **parked** (v0.8 §2; operator
    must land chain.ts's extension declaration in lockstep with the
    build commit)
-2. `TAG-GRAMMAR-MECHANICAL-SAFETY` — blockedBy #1 (v0.8 §3)
-3. `PENDING-GATE-BUILTIN` — blockedBy #1 (v0.8 §6)
-4. `SUPERVISOR-POLICY-KNOBS` — open (v0.8 §8)
-5. `SECOND-REFERENCE-CHAIN` — blockedBy #2 (v0.8 §7)
+3. `TAG-GRAMMAR-MECHANICAL-SAFETY` — blockedBy #2 (v0.8 §3)
+4. `PENDING-GATE-BUILTIN` — blockedBy #2 (v0.8 §6)
+5. `SECOND-REFERENCE-CHAIN` — blockedBy #3 (v0.8 §7)
 
 ## Open questions (1)
 
@@ -24,18 +23,19 @@ delta.
 
 ## Trunk
 
-HEAD `9ae3571` at this pass's start, tree clean besides untracked
-`.flume/loop.pid` (live supervisor artifact). Audited `1f445b0`
-(footprint→mergeOutcomes unification + readTickVerdicts docs) +
-`9ae3571` (ship) against v0.8 §5: runFanout's per-entry footprint
-(cherry-pick-conflict/afterMerge-reverted/afterCommit-reverted) now
-sources solely from `mergeOutcomes`, `commitPendingUpdate` derives its
-footprint map from that same array, and the new `afterCommit-reverted`
-variant covers the one case that previously fed the old `observed` map
-without a merge-outcome record. Singleton tick's `snapshotRevertedFiles`
-(§8 prose-recovery mechanism) is a distinct, orthogonal path — correctly
-untouched. CHAIN-AUTHORING.md §8 documents `readTickVerdicts`. tsc
-clean; `pnpm test` 306 passed / 4 skipped. No drift found this pass.
+HEAD `84747ff` at this pass's start, tree clean besides untracked
+`.flume/loop.pid` (live supervisor artifact). Audited `fa59ab4`
+(supervisorPolicy knobs) + `84747ff` (ship) against v0.8 §8: the
+Dispatcher-level mechanism and its `superviseLoop`-options test suite
+are sound and byte-identical-by-default as required, but the acceptance
+line ("a chain overriding the abort threshold changes supervisor
+behavior") was only proven at the options seam — `src/cli.ts`'s
+best-effort `resolveChain` + conditional-spread wiring that actually
+reads a chain's `supervisorPolicy` block has no test exercising the real
+CLI process, and `docs/CHAIN-AUTHORING.md` never gained a section for
+the field (unlike `capabilities`, §7). Filed as
+`SUPERVISOR-POLICY-CLI-COVERAGE`, open, no blockers. tsc clean;
+`pnpm test` 309 passed / 4 skipped.
 
 Plan continues: no — audit complete for this delta, inbox empty, no
 promotions due.
