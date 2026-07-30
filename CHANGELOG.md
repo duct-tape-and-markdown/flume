@@ -9,7 +9,14 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 (see `spec/RELEASE-v0.1.md` §2). Breaking changes land under a `### Breaking`
 subheading per `spec/RELEASE-v0.1.md` §9.
 
-## [Unreleased]
+## [0.8.0] - 2026-07-30
+
+Two lines cut together (0.7.0 was never published): **v0.7 "the truth
+line"** — the engine never misstates what it will do or did — and
+**v0.8 "the boundary line"** — the engine ships mechanism, never
+convention. Upgrading an existing chain: read
+[`docs/MIGRATING-0.8.md`](docs/MIGRATING-0.8.md) **before** bumping the
+pin — the schema split is breaking-first.
 
 ### Breaking
 
