@@ -396,10 +396,13 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
       if (i === extensionEntries.length - 1) return line;
       // The separator must land before a hint's trailing "// comment", not
       // after it — appending "," past "//" gets swallowed into the comment
-      // text instead of delimiting the next field.
-      const commentIndex = line.indexOf("//");
+      // text instead of delimiting the next field. A bare `indexOf("//")`
+      // also matches "//" occurring inside the hint's own text (e.g. a URL
+      // like "https://..."), so require the whitespace that only a real
+      // trailing comment marker carries.
+      const commentIndex = line.lastIndexOf(" // ");
       if (commentIndex === -1) return `${line},`;
-      return `${line.slice(0, commentIndex).trimEnd()},  ${line.slice(commentIndex)}`;
+      return `${line.slice(0, commentIndex).trimEnd()},  ${line.slice(commentIndex + 1)}`;
     })
     .join("\n");
 

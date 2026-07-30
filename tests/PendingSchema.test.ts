@@ -569,6 +569,41 @@ describe("renderSchemaForPrompt", () => {
     );
   });
 
+  it("does not split a hint on '//' occurring inside its own text (e.g. a URL)", () => {
+    const withUrlHint = {
+      webhook: {
+        schema: z.string(),
+        hint: `"https://example.com/hooks/notify"`,
+      },
+      notes: {
+        schema: z.string().optional(),
+        hint: `"≤500 chars"`,
+      },
+    } satisfies EntryExtension;
+    const rendered = renderSchemaForPrompt(withUrlHint);
+    expect(rendered).toContain(
+      `  "webhook": "https://example.com/hooks/notify",\n  "notes": "≤500 chars"`,
+    );
+    expect(rendered).not.toContain("https:,");
+  });
+
+  it("still splits at a genuine trailing comment when the hint also contains a URL", () => {
+    const withUrlAndComment = {
+      webhook: {
+        schema: z.string(),
+        hint: `"https://example.com/hooks/notify"  // called on submit`,
+      },
+      notes: {
+        schema: z.string().optional(),
+        hint: `"≤500 chars"`,
+      },
+    } satisfies EntryExtension;
+    const rendered = renderSchemaForPrompt(withUrlAndComment);
+    expect(rendered).toContain(
+      `  "webhook": "https://example.com/hooks/notify",  // called on submit\n  "notes": "≤500 chars"`,
+    );
+  });
+
   it("no drift: exactly the fields the composed validator accepts are rendered", () => {
     // The rendered schema and the validator come from the same declaration —
     // every declared field name appears in the render, and a field absent
