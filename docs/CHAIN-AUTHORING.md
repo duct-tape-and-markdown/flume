@@ -973,6 +973,46 @@ reverted tick's `gateResults[].details` (surface it verbatim? summarize it?
 ignore it?) are the chain's calls, not the engine's — same split as every
 other prompt-args decision (§1).
 
+## 9. Supervisor policy (`supervisorPolicy`)
+
+`flume loop`'s supervisor runs a pre-tick worktree-provisioning safety net
+around every fanout wave (§3, "Fanout"): a tagged entry whose worktree fails
+to provision is quarantined for the rest of the run so the supervisor stops
+re-attempting a wall it already hit, and a consecutive-identical-failure
+backstop aborts the run outright when the same signature repeats with no
+successful tick in between — the non-entry-scoped class quarantine can't
+isolate (e.g. a repo-level `git worktree prune` failure). Both knobs ship as
+engine defaults; `Chain.supervisorPolicy` lets a chain choose otherwise:
+
+```ts
+const chain: Chain = {
+  phases: [plan, build],
+  humanOnly: [],
+  supervisorPolicy: {
+    quarantineScope: "none",
+    abortThreshold: 5,
+  },
+};
+```
+
+- **`quarantineScope`** — `"run"` (default): a tagged provisioning failure
+  quarantines that entry's slug for the rest of the run — later ticks skip
+  it without touching `pending.json`, so a fresh run retries it from
+  scratch. `"none"` disables quarantine outright: every entry stays
+  pickable every tick regardless of an earlier provisioning failure. The
+  consecutive-failure backstop below still applies either way — `"none"`
+  only removes the per-entry isolation, not the run-level safety net.
+- **`abortThreshold`** — the number of consecutive ticks the same
+  provisioning-failure signature must repeat, with no successful tick
+  between them, before the supervisor aborts the run rather than burning
+  the remaining `--max` ticks against the same wall. Default 3.
+
+Both fields are optional and independent; a chain declaring neither gets the
+v0.7 §16 defaults, byte-identical. `flume loop` reads this block from the
+resolved chain once at supervisor start — a chain that fails to load there
+surfaces nothing new; the defaults apply for that run and the first child
+tick still reports the load failure exactly as it does today.
+
 ## Putting it together
 
 ```ts

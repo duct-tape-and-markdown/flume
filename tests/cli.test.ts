@@ -840,6 +840,77 @@ describe("flume render — CJS-context host refusal via the real CLI (v0.7 §5)"
   );
 });
 
+/**
+ * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
+ * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
+ * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
+ * policy knobs" suite already proves the quarantine/abort-backstop
+ * mechanics themselves at the `superviseLoop` options seam with a stubbed
+ * `runTick`; this suite proves only that the CLI's real chain-load-and-
+ * forward wiring carries the declared block there at all — nothing
+ * upstream of that seam is re-tested here.
+ *
+ * `writeStuckEntryPending` below manufactures a genuine, deterministic
+ * pre-tick worktree-provisioning failure without mocking `git`: with
+ * `FLUME_WORKTREES_DIR` pointed at a path this suite pre-creates as a
+ * plain FILE, `createWorktree`'s `mkdir(dirname(path), { recursive: true
+ * })` throws the identical Node `EEXIST` every attempt.
+ */
+function supervisorPolicyChainSrc(policy?: {
+  quarantineScope?: "run" | "none";
+  abortThreshold?: number;
+}): string {
+  return (
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: "build",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "fanout",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    // Re-wakes unconditionally so a real multi-tick loop is observable
+    // through --max/the abort backstop alone, independent of any
+    // pending-work-aware handoff convention a real chain might add.
+    `    handoff: () => ["build"],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    (policy !== undefined
+      ? `  supervisorPolicy: ${JSON.stringify(policy)},\n`
+      : ``) +
+    `};\n`
+  );
+}
+
+async function writeStuckEntryPending(root: string): Promise<void> {
+  await mkdir(join(root, ".flume", "plan"), { recursive: true });
+  await writeFile(
+    join(root, ".flume", "plan", "pending.json"),
+    JSON.stringify(
+      [
+        {
+          tag: "STUCK-ENTRY",
+          summary: "worktree provisioning always fails (fixture)",
+          per: { path: "spec/RELEASE-v0.8.md", section: "8." },
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [{ path: "src/stuck.ts", description: "never reached" }],
+            retire: [],
+          },
+          schemaDelta: "none",
+          tests: [],
+          acceptance: "n/a — provisioning never succeeds",
+        },
+      ],
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+}
+
 describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
   it(
     "refuses a second loop while the recorded pid is alive, leaving the pidfile untouched",
@@ -903,6 +974,85 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
       }
     },
     30_000,
+  );
+
+  it(
+    "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (v0.8 §8 default)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
+      try {
+        await writeRepoConfig(repo.dir, supervisorPolicyChainSrc(undefined));
+        await writeStuckEntryPending(repo.dir);
+        new Baton(join(repo.dir, ".flume")).wake("build");
+
+        const collision = join(wtDir, "wt-collision");
+        await writeFile(collision, "not a directory\n", "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "5"], {
+          ...hermeticEnv(),
+          FLUME_WORKTREES_DIR: collision,
+        });
+
+        // One tick errored (the provisioning failure) and nothing ever
+        // shipped — the v0.7 §4 exit-code contract.
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("reached --max 5");
+        expect(r.out).not.toContain("aborting after");
+        // Quarantined exactly once — the default "run" scope removes
+        // STUCK-ENTRY from picking after its first failure, so ticks 2-5
+        // see nothing pickable rather than re-attempting the same wall.
+        const quarantineMentions = (
+          r.out.match(/quarantining STUCK-ENTRY/g) ?? []
+        ).length;
+        expect(quarantineMentions).toBe(1);
+      } finally {
+        await repo.cleanup();
+        await rm(wtDir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  it(
+    'a chain declaring supervisorPolicy: { quarantineScope: "none", abortThreshold: 2 } aborts on the 2nd consecutive identical failure — the override reaches the real supervisor (v0.8 §8)',
+    async () => {
+      const repo = await makeJobRepo("main");
+      const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
+      try {
+        await writeRepoConfig(
+          repo.dir,
+          supervisorPolicyChainSrc({
+            quarantineScope: "none",
+            abortThreshold: 2,
+          }),
+        );
+        await writeStuckEntryPending(repo.dir);
+        new Baton(join(repo.dir, ".flume")).wake("build");
+
+        const collision = join(wtDir, "wt-collision");
+        await writeFile(collision, "not a directory\n", "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "10"], {
+          ...hermeticEnv(),
+          FLUME_WORKTREES_DIR: collision,
+        });
+
+        // "none" keeps STUCK-ENTRY pickable every tick (never quarantined),
+        // so the identical signature repeats and the backstop trips at the
+        // declared threshold of 2 — never burning to --max 10, and never
+        // falling through to the untouched v0.7 §16 default of 3.
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("aborting after 2 tick(s)");
+        expect(r.out).toContain("2 consecutive ticks");
+        expect(r.out).not.toContain("reached --max 10");
+        expect(r.out).not.toContain("quarantining STUCK-ENTRY");
+      } finally {
+        await repo.cleanup();
+        await rm(wtDir, { recursive: true, force: true });
+      }
+    },
+    60_000,
   );
 });
 
