@@ -9,6 +9,27 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 (see `spec/RELEASE-v0.1.md` §2). Breaking changes land under a `### Breaking`
 subheading per `spec/RELEASE-v0.1.md` §9.
 
+## [Unreleased]
+
+### Fixed
+
+- The engine↔pin handshake's self-referential local-install check (v0.7 §10
+  amendment) now returns a distinct `"self"` outcome and proceeds as
+  authority, instead of collapsing a provisioned install that real-path-
+  resolves back to the running engine itself (e.g. this repo's own dogfood
+  chain provisioning a job from a source checkout) into "absent" and
+  routing a pinned bay through arm 2's refusal — no pinned,
+  self-referentially-provisioned bay could previously run at all.
+
+### Added
+
+- `pendingGate`'s (v0.8 §6) `fenceWhen?: (entry: PendingEntry) => boolean` —
+  a predicate selecting which entries the build-fence pre-check applies to,
+  so a chain carrying park-exempt `gate.kind` values (e.g. `"parked"`,
+  `"deferred"`) can exempt those entries without hand-rolling a fork of the
+  gate. Default `() => true` fences every entry, matching prior behavior
+  exactly.
+
 ## [0.8.0] - 2026-07-30
 
 Two lines cut together (0.7.0 was never published): **v0.7 "the truth
