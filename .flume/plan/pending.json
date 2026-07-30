@@ -1,1 +1,77 @@
-[]
+[
+  {
+    "tag": "WIN32-INLINE-EXEC-SHELL-FALLBACK",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "evaluateInlineExec's spawn — apply win32-ENOENT→shell-retry fallback per §6, mirroring execGate."
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "export execGate (or equivalent) if Prompt.ts reuses it rather than duplicating the fallback."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "evaluateInlineExec hardcodes exec(\"sh\",...) with no win32 fallback; apply execGate's direct-spawn→ENOENT→shell-retry pattern (§6 spawn discipline).",
+    "per": { "path": "spec/RELEASE-v0.4.md", "section": "6. win32 portability" },
+    "tests": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "asserts": "inline-exec spawn retries through the shell on simulated win32 ENOENT instead of producing <exec-failed>; POSIX path unchanged."
+      }
+    ],
+    "acceptance": "inline-exec on win32 (or ENOENT-simulated) retries via shell instead of failing every tick; existing POSIX behavior byte-identical.",
+    "notes": "Confirmed live: src/Prompt.ts:199 bare execFile(\"sh\",...) is exactly the defect §6 names — win32 bays get <exec-failed> digests every tick, masking real failures downstream. execGate (src/builtinGates.ts:38-54) is the existing precedent. Placeholder→inline-exec quoting is secondary and shell-choice-dependent; verify FLUME_DIR-style paths survive, but full cross-shell syntax portability is out of scope."
+  },
+  {
+    "tag": "SHELLGATE-ENV-OPTION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "ShellGateOptions gains env?: Record<string,string>; execGate/shellGate merge it over process.env."
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "cover shellGate's new env option."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "shellGate gains optional env?: Record<string,string> merged over process.env — chains stop hand-forking shellGate to scrub or inject secrets.",
+    "per": { "path": "spec/RELEASE-v0.1.md", "section": "2. Public API surface" },
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "shellGate with env sees the merged var in the spawned command; without env, behavior is byte-identical to today."
+      }
+    ],
+    "acceptance": "a shellGate declaring env: { FOO: 'bar' } observes FOO in the spawned process; omitting env is unchanged from current behavior.",
+    "notes": "Additive optional field, pre-1.0 in-place edit per spec-plan-build.md. Precedent: fenceWhen was added to pendingGate the same way under v0.8 §6 without a new spec section."
+  },
+  {
+    "tag": "MIGRATING-0.8-FENCEWHEN-MENTION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.8.md",
+          "description": "§3's pendingGate bullet — add a fenceWhen mention + cross-ref to CHAIN-AUTHORING.md's gate section."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "MIGRATING-0.8 §3's pendingGate bullet omits fenceWhen; CHAIN-AUTHORING.md:309 already documents it — add one line so migrating chains discover it.",
+    "per": { "path": "spec/RELEASE-v0.8.md", "section": "10. Migration guide — existing chains onto 0.8.0" },
+    "tests": [],
+    "acceptance": "MIGRATING-0.8.md §3's pendingGate bullet mentions fenceWhen and points at CHAIN-AUTHORING.md's gate section.",
+    "notes": "Verified this tick: asp-lens's 'parked entries sit off-fence pending a ruling' semantics is already covered by fenceWhen's gate-kind predicate form (src/builtinGates.ts:230). Doc gap only, no code change."
+  }
+]

@@ -1,34 +1,43 @@
 # State
 
-Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-10,
-including the §10 migration-guide amendment). No v0.9 spec yet.
+Phase: v0.7 fully shipped (§§1-17); v0.8 fully shipped (§§2-10). No v0.9
+spec yet.
 
-Mode: audit (commit-delta: three commits since last plan — one ship
-chore, two build commits closing last tick's queue; no spec-delta,
-empty inbox, empty pending-now).
+Mode: maintain (drain — inbox's 7-item second 0.8-migration-friction
+batch was the only meaningful dimension this tick; commit-delta was the
+inbox-append chore itself, nothing to audit; pending-now was empty, no
+promote work).
 
-## Queue (0)
+## Queue (3)
 
-Empty — nothing pending.
+WIN32-INLINE-EXEC-SHELL-FALLBACK (open, top) — evaluateInlineExec's bare
+`exec("sh",...)` has no win32 fallback, violates v0.4 §6 spawn discipline;
+win32 bays get `<exec-failed>` digests every tick.
+SHELLGATE-ENV-OPTION (open) — additive `env?` option, v0.1 §2.
+MIGRATING-0.8-FENCEWHEN-MENTION (open) — doc-only, one line.
 
-## Open questions (1)
+## Open questions (4)
 
-Old-engine blind spot in the pin handshake — unchanged this tick,
-still PARKED for human disposition.
+Old-engine blind spot in the pin handshake — unchanged, still PARKED.
+Bay-manifest pin placement — new, PARKED (carto residual).
+pendingGate dual-violation report — new, PARKED (recommend leave-as-is
+unless proven costly).
+setupWorktree/gate manager-detection sharing — new, PARKED (needs a spec
+touch either way).
 
 ## Trunk
 
-HEAD `f0710bb`. Audited both build commits since last plan against
-their `per` cites: `9b0be4e` (pendingGate doc cite, v0.8 §6/§2) —
-CHAIN-AUTHORING.md now correctly cites §2 for the composed
-core+extension schema, verified against spec text — clean. `1a67d1c`
-(schema-hint separator, v0.8 §2) — `lastIndexOf(" // ")` correctly
-distinguishes a genuine trailing comment from in-string `//` (e.g. a
-URL); tests cover both the URL-only and URL-plus-comment cases;
-current `.flume/chain.ts` extension hints carry no `//` at all, so the
-fix is dormant but correct. Both stayed within their declared `files`.
-`tsc --noEmit` clean; `pnpm test` 353/357 passing (4 skipped,
-pre-existing). `f0710bb` is the mechanical ship commit, nothing to
-audit.
+HEAD `6790487` (inbox-append chore, no code diff to audit). Drained the
+second 0.8-migration-friction batch (7 items, operator pre-triaged against
+HEAD): fenceWhen scope (1) verified clean, only a doc gap remained;
+carto's pin/refusal-text defect (2) verified clean at HEAD (self-reference
+fix covers it, refusal text already correct), pin-placement residual
+parked; pendingGate dual-violation (3) parked, no clean mechanical fix
+exists; setupWorktree/gate options (4) split — `shellGate` env filed,
+the other two sub-asks parked (spec-locked); h2-env-pool needs-rescope (5)
+verified no gap — §12's guard correctly gates `blockedBy` promotion on the
+declared-files diff, both riders declined at the engine boundary; Windows
+inline-exec (6) confirmed real, filed; brief.md (7) declined at the
+engine boundary, not flume's concern.
 
 Plan continues: no
