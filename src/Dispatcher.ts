@@ -1429,11 +1429,7 @@ export class Dispatcher {
       // commitPendingUpdate then returns the pre-existing HEAD, which must
       // not be reported as this wave's commit.
       const preUpdate = await git.revParse(repoRoot);
-      const updSha = await this.commitPendingUpdate(
-        pending,
-        shippedTags,
-        mergeOutcomes,
-      );
+      const updSha = await this.commitPendingUpdate(shippedTags, mergeOutcomes);
       if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
         shippedTags.length > 0
@@ -2198,7 +2194,6 @@ export class Dispatcher {
   }
 
   private async commitPendingUpdate(
-    before: PendingEntry[],
     shippedTags: string[],
     mergeOutcomes: readonly TickVerdictMergeOutcome[] = [],
   ): Promise<string> {
@@ -2211,11 +2206,24 @@ export class Dispatcher {
         .map((m) => [m.tag, m.footprint!] as const),
     );
     const shipped = new Set(shippedTags);
+    // Re-read pending.json fresh, right before deriving the rewrite —
+    // NOT the tick-start snapshot the caller read before provisioning
+    // worktrees and running agents. A fanout wave's fanned-out agent runs
+    // and serial cherry-picks can take long enough for another process
+    // (a concurrent tick, a hand fix) to land its own commit to
+    // pending.json on trunk in the meantime; deriving from the stale
+    // snapshot would blindly overwrite that concurrent write with
+    // whatever this wave saw at tick start — silently resurrecting
+    // retired fields or reverting fixes in entries this wave never
+    // touched. Sourcing the rewrite from the current on-disk state at
+    // write time means this wave only ever removes the tags it shipped
+    // and touches observedFiles/blockedBy for tags it knows about.
+    const current = await this.readPending();
     // A blockedBy gate naming a tag this wave shipped is resolved HERE,
     // mechanically: the dispatcher just merged and gated that tag, so
     // "did the blocker land" needs no plan tick — the next wave forms
     // without a plan interim. Judgment gates (parked) stay plan's.
-    const after = before
+    const after = current
       .filter((e) => !shipped.has(e.tag))
       .map((e) =>
         e.gate.kind === "blockedBy" && shipped.has(e.gate.tag)

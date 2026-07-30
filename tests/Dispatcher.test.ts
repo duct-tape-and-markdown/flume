@@ -584,6 +584,124 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a tick-start snapshot (regression)", () => {
+  it("ships one entry without clobbering a concurrent edit landed on an untouched entry mid-wave", async () => {
+    // SHIP-PENDING-CLOBBER-BUG repro: a ship commit reintroduced a retired
+    // field into entries it never shipped. Root cause was commitPendingUpdate
+    // deriving its rewrite from the `pending` snapshot the dispatcher read at
+    // tick start, before the wave's (possibly long-running) worktree/agent
+    // work — so any write another process landed on trunk's pending.json in
+    // that window got silently overwritten by the stale snapshot once this
+    // wave finally wrote back. KEEP-B is parked (never picked this wave) so
+    // it stands in for "an entry this wave doesn't touch"; the fanout
+    // agent's action mutates pending.json on disk mid-wave, standing in for
+    // that concurrent write.
+    const keepB: PendingEntry = {
+      ...makeEntry("KEEP-B", ["src/b.ts"]),
+      gate: { kind: "parked", reason: "not picked this wave" },
+    };
+    await writePending(fx.repo, [makeEntry("SHIP-A", ["src/a.ts"]), keepB]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+
+    const concurrentKeepB: PendingEntry = {
+      ...keepB,
+      observedFiles: ["src/concurrent-marker.ts"],
+    };
+
+    const agent = fanoutAgent({
+      "ship-a": async (cwd) => {
+        const concurrent = [makeEntry("SHIP-A", ["src/a.ts"]), concurrentKeepB];
+        await writeFile(
+          pendingPath,
+          JSON.stringify(concurrent, null, 2) + "\n",
+          "utf8",
+        );
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-A"]);
+
+    const after = await readPendingFromDisk(fx.repo);
+    // The concurrent write's field survived, byte-for-byte — proof the
+    // rewrite was derived from pending.json's state at write time, not the
+    // stale pre-wave snapshot that never saw it. No reintroduced or
+    // foreign keys, no lost edits.
+    expect(after).toEqual([concurrentKeepB]);
+  }, 20_000);
+});
+
+describe("Dispatcher fanout — two consecutive ship waves leave an untouched entry byte-identical", () => {
+  it("KEEP survives two ship waves with exactly its pre-wave field set", async () => {
+    const keep: PendingEntry = {
+      ...makeEntry("KEEP", ["src/keep.ts"]),
+      gate: { kind: "parked", reason: "not picked this run" },
+    };
+    await writePending(fx.repo, [makeEntry("SHIP-1", ["src/one.ts"]), keep]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "ship-1": (cwd) =>
+        writeAndCommit(cwd, "src/one.ts", "one\n", "build(SHIP-1): ship"),
+      "ship-2": (cwd) =>
+        writeAndCommit(cwd, "src/two.ts", "two\n", "build(SHIP-2): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const first = await dispatcher.tick();
+    expect(first.result?.shippedTags).toEqual(["SHIP-1"]);
+    const afterFirst = await readPendingFromDisk(fx.repo);
+    expect(afterFirst).toEqual([keep]);
+
+    // A second entry lands between waves, as a plan tick would — committed,
+    // not left dirty, so wave 2's rewrite (which reverts pending.json back
+    // to just `keep`, byte-identical to wave 1's commit) has a real diff
+    // against HEAD for git to commit.
+    await writePending(fx.repo, [
+      ...afterFirst,
+      makeEntry("SHIP-2", ["src/two.ts"]),
+    ]);
+    await exec("git", ["add", "--", ".flume/plan/pending.json"], {
+      cwd: fx.repo,
+    });
+    await exec("git", ["commit", "-q", "-m", "plan: add SHIP-2"], {
+      cwd: fx.repo,
+    });
+    baton.wake("build");
+    const second = await dispatcher.tick();
+    expect(second.result?.shippedTags).toEqual(["SHIP-2"]);
+
+    const afterSecond = await readPendingFromDisk(fx.repo);
+    expect(afterSecond).toEqual([keep]);
+  }, 20_000);
+});
+
 // ---------- trunk contract (v0.5 §2) ----------
 
 describe("Trunk contract — HEAD-is-truth, trunkBranch purged (v0.5 §2)", () => {

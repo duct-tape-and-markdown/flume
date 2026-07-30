@@ -128,6 +128,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- A fanout wave's ship commit (`commitPendingUpdate`) now derives its
+  `pending.json` rewrite from a fresh disk read taken immediately before
+  writing, instead of the snapshot the dispatcher read at tick start.
+  Fanout waves provision worktrees and run agents before shipping, a
+  window long enough for another process's write to trunk's
+  `pending.json` to land in the meantime; rewriting from the stale
+  tick-start snapshot silently overwrote that write — observed as a ship
+  commit reintroducing a retired field into entries the wave never
+  touched. The rewrite now only ever removes the tags it shipped and
+  touches `observedFiles`/`blockedBy` for tags it knows about, leaving
+  every other entry exactly as it stood on disk at write time.
 - An entry-scoped fanout tick's rendered `<harness>` block now states the
   **effective** fence — `entry.files ∪ phase.entryChannelPaths` — that the
   write guard actually enforces, naming `phase.writablePaths` separately as
