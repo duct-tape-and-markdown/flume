@@ -7,7 +7,8 @@
       "section": "2. Entry schema splits: engine core + chain-declared extension"
     },
     "gate": {
-      "kind": "open"
+      "kind": "parked",
+      "reason": "Core-shrink invalidates today's extension-shaped pending.json at pendingParseGate unless chain.ts declares its extension in the same landing (CLAUDE.md atomicity) — but chain.ts sits outside build's fence. Confirmed live: 17-tick wave bailed voluntarily on exactly this gap (plan: commit 2026-07-30 drains the inbox report). Needs operator to land chain.ts's extension declaration in lockstep with this entry's build commit, not as an independent trailing leg."
     },
     "dependsOnForks": [],
     "files": {

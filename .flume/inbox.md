@@ -34,11 +34,3 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
-
-## 2026-07-30 — bail park notes die with the worktree; SPLIT entry needs an operator-coordinated ship (operator)
-
-Two findings from the v0.8 wave's final tick (PENDING-SCHEMA-CORE-EXTENSION-SPLIT, voluntary-bail, no commit — session log, 17-tick run ending eae4182):
-
-1. **Park notes are lost on voluntary bail.** The tick wrote its park into `open-questions.md` inside the fanout worktree, bailed without committing, and worktree cleanup destroyed the note. v0.7 §13's footprint machinery covers gate-reverts only; a voluntary bail with uncommitted channel edits leaves zero trace on trunk. The §15 wake is now wired (c8ccfd2), so plan wakes on bail — but still cannot see *why*. Candidate directions: dispatcher salvages channel-path edits from the worktree on voluntary-bail (landing them as the park commit §12 already declines to classify as shipped), or the build prompt instructs committing the park before bailing. Apply the engine-boundary lens when routing.
-
-2. **Reconstructed bail reason:** the schema split cannot ship from a build tick at all — the dogfood `.flume/chain.ts` must declare its entry extension in the same commit (CLAUDE.md: breaking runtime changes update chain.ts atomically; without the declaration, existing `pending.json` fails the core-only schema at `pendingParseGate` and the tick reverts). chain.ts is off-fence for build ⇒ v0.8 §2 is an **operator-coordinated ship**: the whole entry, not a trailing leg — larger than the §11/§13/§15 class. Route PENDING-SCHEMA-CORE-EXTENSION-SPLIT to an operator disposition, and check whether TAG-GRAMMAR-MECHANICAL-SAFETY and PENDING-GATE-BUILTIN (blockedBy it) inherit the same coordination need for their dogfood-refinement legs.
