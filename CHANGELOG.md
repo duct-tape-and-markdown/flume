@@ -39,6 +39,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   package-manager binaries, wrong for `sh -c` payloads written in a
   language cmd.exe doesn't speak (v0.10 §4). `execGate` drops its export —
   `shellGate` is its sole caller now.
+- `builtinGates.ts`'s `ShellGateOptions` and `EntryWriteScope` drop their
+  export: each resolves only to its own declaration plus the one in-module
+  signature that uses it, and neither is re-exported via `src/index.ts`
+  (`.claude/rules/engineering.md`, "An export earns its consumer").
+  `shellGate` and `writablePathsGate` stay callable with an inline object
+  literal exactly as before.
 
 ## [0.9.0] - 2026-07-31
 

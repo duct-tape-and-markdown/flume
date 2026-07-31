@@ -59,7 +59,7 @@ async function execGate(
  * to the dispatcher on failure (and embedded in the next agent prompt's
  * gate-failure context).
  */
-export interface ShellGateOptions {
+interface ShellGateOptions {
   name: string;
   when: GatePhase;
   cmd: string;
@@ -318,7 +318,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
  * When present, the write allowance narrows to `entryPaths ∪ channelPaths`;
  * the phase globs remain the outer ceiling — both checks apply.
  */
-export interface EntryWriteScope {
+interface EntryWriteScope {
   /** Literal paths the assigned entry declares (`files.{new,edit,retire}`). */
   entryPaths: string[];
   /** `Phase.entryChannelPaths` globs — always in scope on a scoped tick. */
