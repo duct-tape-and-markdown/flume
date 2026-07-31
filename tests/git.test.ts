@@ -168,8 +168,17 @@ describe("removeWorktree (§7)", () => {
       fromRef: "HEAD",
     });
 
+    // Clear immediately before the act: the outer afterEach's own
+    // `rm(repo)` from the previous test runs after this describe's
+    // mockClear (hooks run inner-then-outer), so it would otherwise leak
+    // a stray call into this test's count.
+    vi.mocked(rm).mockClear();
     await expect(removeWorktree(repo, wtPath)).resolves.toBeUndefined();
     expect(existsSync(wtPath)).toBe(false);
+    // The bare `git worktree remove` cleared the directory itself — the
+    // fallback's `rm` must never run, or this test can't tell the bare
+    // path apart from the fallback path below.
+    expect(rm).not.toHaveBeenCalled();
   });
 
   it("falls back to prune + recursive removal when the bare remove fails, clearing a populated tree", async () => {
@@ -181,10 +190,20 @@ describe("removeWorktree (§7)", () => {
       "module.exports = {};\n",
     );
 
+    // Clear immediately before the act — see the note in the preceding
+    // test.
+    vi.mocked(rm).mockClear();
     // `git worktree remove --force` refuses a path it never registered —
     // deterministic across platforms, unlike a real locked-handle failure.
     await expect(removeWorktree(repo, path)).resolves.toBeUndefined();
     expect(existsSync(path)).toBe(false);
+    // Clearing only happened because the fallback's recursive `rm` ran on
+    // this exact path — proof the bare-remove failure actually fell
+    // through to §7's fallback rather than clearing on its own.
+    expect(rm).toHaveBeenCalledWith(
+      path,
+      expect.objectContaining({ recursive: true }),
+    );
   });
 
   it("throws naming the path when even the fallback leaves it behind", async () => {
