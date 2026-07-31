@@ -26,14 +26,21 @@
  * attempt ships.
  */
 
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
-import { execGate } from "./builtinGates.js";
 import type { Phase } from "./Phase.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
+
+/**
+ * Output cap for one inline-exec span (RELEASE-v0.10 §2). `spawn` has no
+ * `maxBuffer` (unlike `execFile`), so the cap is enforced by hand: overrun
+ * kills the child and rejects rather than truncating silently.
+ */
+const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
 
 /**
  * The three causally-distinct ways a tick produces no usable commit (§6).
@@ -193,10 +200,7 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
     matches.map(async (m) => {
       const cmd = m[1]!.trim();
       try {
-        const { stdout } = await execGate("sh", ["-c", cmd], {
-          cwd,
-          maxBuffer: 4 * 1024 * 1024,
-        });
+        const { stdout } = await runInlineExec(cmd, cwd);
         return { match: m[0], replacement: stdout.trimEnd() };
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; message: string };
@@ -222,6 +226,73 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
   }
   out += raw.slice(cursor);
   return out;
+}
+
+/**
+ * Evaluate one inline-exec command: spawn `sh` with no command argv and
+ * write `cmd` to its stdin as UTF-8, then close it (RELEASE-v0.10 §2).
+ * Measured (spec §1): `["-c", cmd]` corrupts any non-ASCII byte on win32
+ * under MSYS2's re-parsing of the Windows command line — stdin transport
+ * does not. `sh` consumes stdin, so a span whose command itself reads
+ * stdin sees EOF; no span in this repo's prompts does.
+ */
+function runInlineExec(
+  cmd: string,
+  cwd: string,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("sh", [], { cwd });
+    let stdout = Buffer.alloc(0);
+    let stderr = Buffer.alloc(0);
+    let settled = false;
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(err);
+    };
+
+    const capture =
+      (target: "stdout" | "stderr") => (chunk: Buffer): void => {
+        if (settled) return;
+        const prior = target === "stdout" ? stdout : stderr;
+        const next = Buffer.concat([prior, chunk]);
+        if (next.length > INLINE_EXEC_MAX_BUFFER) {
+          fail(
+            new Error(
+              `inline-exec output exceeded ${INLINE_EXEC_MAX_BUFFER} bytes: ${cmd}`,
+            ),
+          );
+          return;
+        }
+        if (target === "stdout") stdout = next;
+        else stderr = next;
+      };
+
+    child.stdout.on("data", capture("stdout"));
+    child.stderr.on("data", capture("stderr"));
+    child.on("error", fail);
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) {
+        resolve({
+          stdout: stdout.toString("utf8"),
+          stderr: stderr.toString("utf8"),
+        });
+      } else {
+        reject(
+          Object.assign(new Error(`sh exited ${code}`), {
+            stdout: stdout.toString("utf8"),
+            stderr: stderr.toString("utf8"),
+          }),
+        );
+      }
+    });
+
+    child.stdin.end(cmd, "utf8");
+  });
 }
 
 function prependHarnessBlock(

@@ -9,6 +9,26 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 (see `spec/RELEASE-v0.1.md` §2). Breaking changes land under a `### Breaking`
 subheading per `spec/RELEASE-v0.1.md` §9.
 
+## [Unreleased]
+
+### Fixed
+
+- Inline-exec (`` !`cmd` ``) spans now reach `sh` through stdin instead of
+  argv (`["-c", cmd]`), fixing corruption of any non-ASCII byte anywhere in
+  the command on win32 — measured under MSYS2 `sh.exe`: quoting was not
+  implicated, `é` corrupted as readily as `—`, and neither
+  `windowsVerbatimArguments` nor `shell: true` surfaced the failure (both
+  exited 0 with empty stdout). `spawn` has no `maxBuffer`, so the existing
+  4 MiB output cap is now enforced by hand (v0.10 §2). Declared consequence:
+  `sh` now consumes stdin, so a span whose command itself reads stdin sees
+  EOF instead of inherited input — no span in this repo's prompts or either
+  example chain does.
+- `Prompt.ts` no longer shares `execGate`'s win32 `.cmd`-shim shell-retry
+  fallback for inline-exec spans: that fallback is correct for
+  package-manager binaries, wrong for `sh -c` payloads written in a
+  language cmd.exe doesn't speak (v0.10 §4). `execGate` drops its export —
+  `shellGate` is its sole caller now.
+
 ## [0.9.0] - 2026-07-31
 
 The doctrine line: one engine per bay, resolved by the package manager
