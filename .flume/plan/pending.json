@@ -1,7 +1,9 @@
 [
   {
     "tag": "INLINE-EXEC-STDIN-TRANSPORT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -48,7 +50,10 @@
   },
   {
     "tag": "INLINE-EXEC-RENDER-REFUSES",
-    "gate": { "kind": "blockedBy", "tag": "INLINE-EXEC-STDIN-TRANSPORT" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "INLINE-EXEC-STDIN-TRANSPORT"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -99,7 +104,9 @@
   },
   {
     "tag": "PENDING-RETIRE-HINT-PATH-ONLY",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -134,7 +141,9 @@
   },
   {
     "tag": "PENDING-PARSE-FAILURE-REFUSES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -181,7 +190,9 @@
   },
   {
     "tag": "LOOP-MAX-NONNUMERIC-ACCEPTED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -216,7 +227,9 @@
   },
   {
     "tag": "STATUS-PENDING-COUNT-UNSHIPPED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -244,7 +257,10 @@
       "retire": []
     },
     "summary": "`flume status` never prints the pending entry count §3 requires, and drops an unparsable pending.json silently - `flume job status` reports both.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "3. CLI surface" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "3. CLI surface"
+    },
     "tests": [
       {
         "path": "tests/cli.test.ts",
@@ -256,7 +272,9 @@
   },
   {
     "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -268,14 +286,19 @@
       "retire": []
     },
     "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl - untracked noise every tick.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
     "tests": [],
     "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, or .flume/tick-verdicts.jsonl in git status.",
     "notes": "last-tick.json is dead - v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs; this repo's root .flume/ isn't a job dir so it never got the entry. tick-verdicts.jsonl (Dispatcher.ts:234, bounded history log) is the file actually untracked in git status this tick."
   },
   {
     "tag": "CHANGELOG-0.9.0-BACKFILL",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -287,14 +310,19 @@
       "retire": []
     },
     "summary": "Published [0.9.0] section omits 5 post-0.8.0 fixes that never got a changelog line: 480b81c, 9f4e62f, 1a67d1c, 58be15d, 3170113.",
-    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "8. Repository hygiene"
+    },
     "tests": [],
     "acceptance": "[0.9.0] section carries one line per commit below; retroactively satisfies the every-ship-gets-a-line convention for the published section.",
     "notes": "480b81c pendingGate lazy targetFence read; 9f4e62f+1a67d1c renderSchemaForPrompt separator-swallowed-by-comment fix; 58be15d win32 inline-exec ENOENT shell-retry fallback; 3170113 shellGate optional env. Pre-1.0: published npm tarball's copy stays stale, acceptable. changelogGate (chain.ts) prevents recurrence going forward; this is the one-time backfill only."
   },
   {
     "tag": "SCHEMA-PROMPT-AGREEMENT-GATE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -321,7 +349,9 @@
   },
   {
     "tag": "TAG-LENGTH-BOUND-AGREEMENT-PIN",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -360,7 +390,9 @@
   },
   {
     "tag": "PARSEPENDINGLOOSE-WRITE-PATH-PIN",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -387,7 +419,9 @@
   },
   {
     "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -422,7 +456,9 @@
   },
   {
     "tag": "RENDER-RELATIVIZE-SEPARATOR-BLIND",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -457,7 +493,9 @@
   },
   {
     "tag": "PENDING-GATE-HINT-OPTION",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -492,7 +530,9 @@
   },
   {
     "tag": "GIT-DEAD-EXPORTS-RETIRE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -518,7 +558,10 @@
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
-    "gate": { "kind": "blockedBy", "tag": "INLINE-EXEC-RENDER-REFUSES" },
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "INLINE-EXEC-RENDER-REFUSES"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -548,7 +591,9 @@
   },
   {
     "tag": "ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -578,7 +623,9 @@
   },
   {
     "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -617,7 +664,9 @@
   },
   {
     "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -643,7 +692,9 @@
   },
   {
     "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -666,5 +717,78 @@
     "tests": [],
     "acceptance": "Hover on resolveStateDirs shows the job-resolution semantics; hover on resolveRepoRoot is unchanged.",
     "notes": "LSP hover this tick: resolveStateDirs (126) returns the signature alone, no docs; resolveRepoRoot (115) returns only its own block. The 77-105 text sits between JobResolutionConflictError (75) and resolveRepoRoot's docstring, separated by a blank line, so TS attaches it to nothing - the conflict rule, the write-back rationale, and the FLUME_JOB composition case all read as current while reaching no consumer. Prose-only."
+  },
+  {
+    "tag": "GATECONTEXT-REPOROOT-REQUIRED",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "repoRoot (52) becomes required; the 45-51 docstring drops the fixture-compat clause and states the field's meaning alone"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "the ctx helper (23-31) sets repoRoot; delete the 294-304 describe, which asserts only that object spread works"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "same one-line ctx helper change (21)"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit; Breaking - a hand-built GateContext must now set repoRoot"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "GateContext.repoRoot is optional only so pre-v0.7 fixtures compile - the engine always sets it, so the type advertises a state no producer creates.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "the existing gate suites keep passing over a repoRoot-bearing ctx; no assertion remains whose only subject is the local fixture builder"
+      }
+    ],
+    "acceptance": "GateContext.repoRoot is non-optional, tsc and vitest are green, and no docstring scopes the field to a closed fixture-migration window.",
+    "notes": "Verified this tick: every dispatcher-constructed context sets repoRoot (Dispatcher.ts:1219, 1324, 1358, 1752, 1900); the only undefined producers are the two test ctx helpers. v0.7 §6 mandates the field, not its optionality. tsc's required-field check is the pin - no runtime test fails pre-fix (the named exception); the real §6 behavior stays pinned at tests/Dispatcher.test.ts:4459. Chain gates currently branch on a state the engine never emits."
+  },
+  {
+    "tag": "ERA-SCOPED-NARRATION-BARREL-NEIGHBORHOOD",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/index.ts",
+          "description": "line 3 - the exports map exists and does enforce; state the condition or drop the clause"
+        },
+        {
+          "path": "src/setupWorktree.ts",
+          "description": "lines 4-10 - drop the pre-adoption 'has been hand-rolling' rationale for what the helper does"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "index.ts and setupWorktree.ts carry expired narration: a 'no exports map yet' claim package.json contradicts, and a hand-rolling rationale the dogfood chain retired.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "Neither site claims a condition the tree contradicts; no behavior moves.",
+    "notes": "Fourth sibling of the ERA-SCOPED-NARRATION-* family. Verified this tick: package.json:26-31 declares an exports map exposing '.' alone, so index.ts:3's 'not enforced - there's no exports map yet' fired its own trigger. setupWorktree.ts:5-7 names flume's dogfood buildSetupWorktree as a hand-rolled hardcode; chain.ts:50 imports the engine helper, :197-201 delegates to it, and :192-193 says so outright. Prose-only."
   }
 ]
