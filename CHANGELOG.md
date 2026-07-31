@@ -11,6 +11,30 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Breaking
+
+- The engine↔pin handshake (v0.7 §10, shipped 0.8.0) and job-dir engine
+  link provisioning (v0.5 §5a step 4, shipped 0.5.0) are removed (v0.9
+  §§1-3, "the doctrine line"). Invocation is exec-local: a bay declares
+  `@dtmd/flume` as its own dependency and invokes it via the package
+  manager (`pnpm exec flume`, an npm script, `npx`) — the binary that
+  runs is the bay's pinned copy, and the chain's `import "@dtmd/flume"`
+  resolves that same copy natively, no version-coordination machinery
+  required. A stray global engine on PATH is unsupported and undetected;
+  a version mismatch against a bay's pin fails however it fails.
+
+### Removed
+
+- `engineHandshake` and its apparatus — `readLocalInstall` (including
+  the `"self"` outcome), `readPin`, `OWN_PACKAGE_ROOT`, the three arms,
+  the re-exec — and the job-run-form/`--max` validation legs that
+  existed only to feed it (v0.9 §2).
+- `ensureFlumeLink`; `flume job new` no longer plants a job dir's
+  `node_modules/@dtmd/flume` link (v0.9 §3). Existing job dirs' links go
+  inert (Node resolution finds them first if present, harmlessly
+  pointing at whichever engine once ran there) — delete them at leisure;
+  no sweeper or migration ships.
+
 ### Fixed
 
 - The engine↔pin handshake's self-referential local-install check (v0.7 §10
