@@ -722,6 +722,85 @@
     "notes": "Sweep finding, tests/git.test.ts neighborhood. Both assertions hold today, so neither fails pre-fix (the named exception) - what they catch is a bare-remove regression silently covered by the fallback, invisible on the non-win32 CI where §7's trigger never fires. No new machinery: rm is already partially mocked at :15-18 and mockClear'd in the describe's afterEach."
   },
   {
+    "tag": "TEST-CLI-SUBPROCESS-HARNESS-SHARED",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "one home for the CLI-subprocess harness: the tsx/dist/cli.mjs + src/cli.ts entry paths, hermeticEnv over all three canonical vars, runCli with the optional env param cli.test.ts already takes. Not *.test.ts, so neither vitest lane collects it"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "import the helper, dropping the drifted copy (25-33, 134-139); runTick/runLoop keep their local shape over it. The §14 hand-built env (247-251) spreads hermeticEnv() rather than process.env - same leak by a second route. Add the FLUME_JOB repro"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "import the helper; the 414-421 + 473-506 blocks go. Add the hermeticEnv pin"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "import the helper; the 46-78 block goes"
+        },
+        {
+          "path": "tests/job.integration.test.ts",
+          "description": "import the helper; the 26-58 block goes"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "loop-process-boundary's hermeticEnv omits FLUME_JOB - one of four hand-rolled copies of the CLI-subprocess harness, drifted; the integration lane goes red under a job resolution.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/loop-process-boundary.integration.test.ts",
+        "asserts": "with FLUME_JOB stubbed on the vitest process, a real `flume tick` still resolves the temp repo's own .flume - fails on the pre-fix tree, where the leaked var retargets the child's state root to .flume/jobs/<outer> and the branch guard exits 1 instead of 78"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "hermeticEnv() returns an env carrying none of FLUME_DIR, FLUME_CONFIG_DIR, FLUME_JOB when all three are set - the fast-lane pin, so a future partial copy cannot ship green through build's afterMerge gate"
+      }
+    ],
+    "acceptance": "One module states tsx's dist layout and builds the hermetic env; all four suites import it; the integration lane is green when run under a job resolution.",
+    "notes": "Verified this tick: loop-process-boundary.integration.test.ts:134-139 deletes FLUME_DIR + FLUME_CONFIG_DIR only, while cli.test.ts:481, job.test.ts:55 and job.integration.test.ts:35 also delete FLUME_JOB. cli.ts:136-140 then resolves the child's flumeDir to <tempRepo>/.flume/jobs/<outer>. Integration lane only (vitest.config.ts), so build's gate never sees it - the host lane is where it goes red. tsx's dist path is a literal in all four."
+  },
+  {
+    "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/job.test.ts",
+          "description": "the three `for (const entry of RUNTIME_IGNORES)` verdicts (205-207, 287-289, 552-554) show the judged set populated before reading it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Three .gitignore-merge tests read their verdict off a loop over RUNTIME_IGNORES - an emptied constant leaves each one green over zero assertions.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "each RUNTIME_IGNORES loop is preceded by a populated-set assertion, so an emptied constant fails the merge tests themselves instead of passing over nothing"
+      }
+    ],
+    "acceptance": "No assertion in tests/job.test.ts reads a verdict off a set it has not shown to be populated.",
+    "notes": "Sweep finding, tests/job.test.ts neighborhood. job.ts:34 owns the constant; :177, :219 and :639 assert the exact join, so an emptied RUNTIME_IGNORES does fail the suite today - these three do not fail pre-fix (the named exception). What the pin catches is the merge path's own claim ('appending only the missing entries', :195) going green over an empty judged set."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "blockedBy",

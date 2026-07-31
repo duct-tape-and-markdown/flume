@@ -12,7 +12,8 @@ Covered this rotation: `src/Baton.ts`, `src/Prompt.ts`, `src/builtinGates.ts`,
 `src/setupWorktree.ts`, `tests/examples.integration.test.ts`,
 `examples/backlog-groomer-chain.ts`, `examples/cascade-chain.ts`,
 `examples/minimal-chain.ts`, `tests/Gate.test.ts`, `tests/git.test.ts`,
-`tests/builtinGates.test.ts`, `tests/PendingSchema.test.ts`.
+`tests/builtinGates.test.ts`, `tests/PendingSchema.test.ts`,
+`tests/job.test.ts`.
 
 ## Operator leg (not an entry)
 
