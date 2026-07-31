@@ -4,7 +4,7 @@
 
 Posture swept through: `9894f64ae1cb85eb8f7e59b9e07ef81eed395dde`
 
-Covered this rotation: src/builtinGates.ts
+Covered this rotation: src/builtinGates.ts, src/Dispatcher.ts, src/Prompt.ts
 
 ## Operator leg (not an entry)
 

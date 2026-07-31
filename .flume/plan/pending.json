@@ -978,6 +978,44 @@
     "notes": "Pinned already: tests/Dispatcher.test.ts:4202 (undeclared abortThreshold still aborts on the 3rd consecutive tick), :4117 (quarantineScope default). Dispatcher.ts:626-632 narrates a deleted content-hash cache; 2392-2393 compares against the removed in-process loop. Phase.ts:169-170 'existing void-returning implementations are unaffected' is migration-era under the pre-1.0 clean-slate posture. Prose-only; no behavior moves."
   },
   {
+    "tag": "DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "extract the render-refused catch bodies (1048-1053 singleton, 1629-1634 fanout) into one shared private method beside classifyNoCommit (2213) that persists the §5 record and logs; each call site keeps constructing its own return shape, matching how classifyNoCommit's two callers already differ"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "add the agreement pin - singleton and fanout render-refused paths persist byte-identical §5 record content and emit the same-shaped log line for equivalent InlineExecRenderError input, driven through the one shared method"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Dispatcher's render-refused catch (persist §5 record + log) is duplicated inline at both singleton (1038) and fanout (1617) callsites, instead of routing through classifyNoCommit's shared shape.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "singleton and fanout render-refused catches persist byte-identical mode+failures text and the same-shaped log line for equivalent input - a one-sided edit to either site's persisted record or log text breaks the pin"
+      }
+    ],
+    "acceptance": "One shared private method persists the render-refused record and logs it; both singleton and fanout callsites call it instead of re-deriving the write+log inline; tsc/vitest green.",
+    "notes": "Verified this tick: classifyNoCommit (2213) is the shared method both runSingleton (1112) and the fanout path (1654) call for voluntary-bail/platform-preempt persist+log. render-refused (9dffc51) skips this precedent - duplicated inline at 1038-1065 (singleton) and 1617-1635 (fanout), each re-deriving writePriorAttempt+log.warn+return. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift."
+  },
+  {
     "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
     "gate": {
       "kind": "open"
