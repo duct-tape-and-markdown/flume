@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -10,6 +13,39 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
+
+const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
+
+/** Every `.ts` file under `src/`, recursively. */
+function listSrcFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return listSrcFiles(full);
+    return entry.name.endsWith(".ts") ? [full] : [];
+  });
+}
+
+/**
+ * The source span of the function named `fnName` in `src`, found by
+ * balancing braces from its opening `{` — not a fixed-line regex, so
+ * reformatting the function body can't silently widen or shrink the span.
+ */
+function extractFunctionBody(src: string, fnName: string): string {
+  const start = src.indexOf(`function ${fnName}(`);
+  if (start === -1) {
+    throw new Error(`function ${fnName} not found`);
+  }
+  const openBrace = src.indexOf("{", start);
+  let depth = 0;
+  for (let i = openBrace; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  throw new Error(`unbalanced braces scanning function ${fnName}`);
+}
 
 /** Engine-core entry (v0.8 §2): tag, gate, dependsOnForks, files — nothing else. */
 const baseEntry = {
@@ -410,6 +446,31 @@ describe("parsePendingLoose — chain-less informational reads", () => {
       JSON.stringify([{ ...baseEntry, gate: { kind: "wat" } }]),
     );
     expect(result.ok).toBe(false);
+  });
+
+  it("has exactly one production call site — job.ts's read-only job-listing (PendingSchema.ts:324-329)", () => {
+    const callSites = listSrcFiles(SRC_DIR)
+      .filter((file) => !file.endsWith("/PendingSchema.ts")) // the declaration, not a call
+      .flatMap((file) => {
+        const src = readFileSync(file, "utf8");
+        const count = (src.match(/\bparsePendingLoose\(/g) ?? []).length;
+        return count > 0 ? [{ file, count }] : [];
+      });
+
+    expect(callSites).toHaveLength(1);
+    expect(callSites[0]!.file).toMatch(/\/job\.ts$/);
+    expect(callSites[0]!.count).toBe(1);
+  });
+
+  it("its one call site never rewrites pending.json — jobStatus is read-only", () => {
+    const jobSrc = readFileSync(`${SRC_DIR}/job.ts`, "utf8");
+    const jobStatusBody = extractFunctionBody(jobSrc, "jobStatus");
+
+    expect(jobStatusBody).toContain("parsePendingLoose(");
+    // No write/delete call anywhere in the function that reads pending.json.
+    expect(jobStatusBody).not.toMatch(
+      /\b(writeFileSync|writeFile|appendFileSync|appendFile|rmSync|rm|unlinkSync|unlink)\s*\(/,
+    );
   });
 });
 
