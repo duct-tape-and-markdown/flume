@@ -13,15 +13,11 @@
         },
         {
           "path": "src/builtinGates.ts",
-          "description": "execGate docstring (30-38) stops naming Prompt.ts as a second consumer; the helper itself is unchanged per §4"
+          "description": "execGate drops its `export` and the Prompt.ts-consumer clause from its docstring (30-38) - shellGate is its only caller once §4 removes the sharing; behavior unchanged per §4"
         },
         {
           "path": "tests/Prompt.test.ts",
           "description": "retire the execFile-mock argv assertions; assert stdin transport and the U+2014 repro"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "hold execGate's win32 ENOENT shim retry unchanged per §4"
         },
         {
           "path": "CHANGELOG.md",
@@ -39,14 +35,10 @@
       {
         "path": "tests/Prompt.test.ts",
         "asserts": "sh is spawned with no command argument and the command text arrives on stdin - fails on the pre-fix tree, which passes ['-c', cmd], on every platform. The U+2014 span rendering its real output rides this as the end-to-end case."
-      },
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "execGate still retries a win32 ENOENT through the shell for pnpm/npm shim args - §4's 'unchanged and still covered' leg"
       }
     ],
     "acceptance": "A span whose command contains U+2014 renders its real output on win32; no inline-exec path constructs ['-c', cmd] or reaches cmd.exe; execGate's shim behavior is untouched.",
-    "notes": "Supersedes INLINE-EXEC-NO-WIN32-SHELL-RETRY (retired this tick): §4 removes the sharing outright rather than making the retry caller-declared. §2 wants an assertion the pre-fix tree fails - the transport-shape assert does that on every platform; the U+2014 end-to-end case only fails pre-fix on win32, so it rides rather than carries. spawn has no maxBuffer, hence the hand-rolled cap. CHANGELOG.md declared because changelogGate fires on any src/ commit."
+    "notes": "§4 removes the sharing outright (supersedes INLINE-EXEC-NO-WIN32-SHELL-RETRY). §2 wants a pre-fix failure - the transport-shape assert does that on every platform; the U+2014 case only fails pre-fix on win32, so it rides. spawn has no maxBuffer, hence the hand-rolled cap. Verified this tick: execGate is absent from index.ts and Prompt.ts is its only outside caller, so §4 strands the export. §4's still-covered leg is pinned via shellGate at tests/Gate.test.ts:147 (win32-gated) - no test write."
   },
   {
     "tag": "INLINE-EXEC-RENDER-REFUSES",
