@@ -1058,6 +1058,44 @@
     "notes": "Verified this tick: cli.ts:886-895 repeats liveLoopPid's read/finite/positive/kill(pid,0) sequence; job.ts:306-311 claims the opposite. Drop-in — the lock wants the pid only for its refusal message, which liveLoopPid returns, and the block is already async. Behavior-identical today, so nothing fails pre-fix (the named exception); the agreement pin is what makes a later divergence fail."
   },
   {
+    "tag": "PARSEPENDING-DUP-ERROR-MAPPING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "extract the JSON.parse-into-ParseError wrap (288-303, 331-346) and the zod-issues-to-ParseError[] map (310-318, 359-367) into one shared helper; parsePending and parsePendingLoose both call it instead of each re-deriving the same two blocks"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "mechanism pin beside the existing single-call-site test (451-463) — same source-text-scan idiom"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "parsePending and parsePendingLoose duplicate the invalid-JSON wrap and the zod-issues-to-ParseError[] mapping verbatim instead of sharing one implementation.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "the literal `invalid JSON: ` error-message construction occurs exactly once in the module source after the refactor, not twice — a future fix to one path can no longer silently diverge from the other"
+      }
+    ],
+    "acceptance": "One helper builds the invalid-JSON ParseError and one helper maps zod issues to ParseError[]; both parsePending and parsePendingLoose call them; both functions' error output is byte-unchanged; tsc/vitest green.",
+    "notes": "Sweep finding, tests/PendingSchema.test.ts neighborhood (frontier: 7e71fcc touched this file; import src/PendingSchema.ts read with it). Verified on disk this tick: PendingSchema.ts:288-303 and :331-346 are identical JSON.parse try/catch blocks; :310-318 and :359-367 are identical issue-mapping loops. Behavior-identical today, so nothing fails pre-fix (the named exception) — the pin catches a future one-sided drift, same shape as DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
     "gate": {
       "kind": "blockedBy",
