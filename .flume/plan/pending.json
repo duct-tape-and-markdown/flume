@@ -1361,5 +1361,30 @@
     ],
     "acceptance": "cascade-chain.ts's plan phase gates is [pendingGate({ targetFence: build, extension: entryExtension })]; the hand-rolled pendingParseGate function is gone; tsc/vitest green.",
     "notes": "docs/CHAIN-AUTHORING.md:313 already says this shape predates the pendingGate builtin - reach for that first; MIGRATING-0.8.md:78 says the same. cascade-chain.ts:84-93's own why-custom cites tscGate/vitestGate/eslintGate, never pendingGate, so the divergence isn't declared against the mechanism it overlaps. build is declared after plan today; targetFence: build needs build hoisted above plan, or a get gates() per the docs' own deferred-fence pattern."
+  },
+  {
+    "tag": "GATE-TEST-REPO-BOOTSTRAP-DUP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "fold writablePathsGate's beforeEach (207-221) and chainLoadGate's beforeEach (361-373) into one shared repo-bootstrap helper (mkdtemp+git init+config+seed commit); fold commitFiles (227-238) and commit (380-394) into one shared commit helper taking an optional message; both describes call the shared pair"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/Gate.test.ts hand-rolls the same git-repo bootstrap and commit helper twice across two describes instead of sharing one.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [],
+    "acceptance": "One repo-bootstrap helper and one commit helper are each defined once in tests/Gate.test.ts and used by both describes; vitest green; test behavior unchanged.",
+    "notes": "Sweep finding, tests/Gate.test.ts neighborhood. Verified on disk: writablePathsGate's beforeEach (207-221) and chainLoadGate's beforeEach (361-373) are identical git-init+config+seed-commit sequences, differing only in mkdtemp prefix; commitFiles (227-238) and commit (380-394) are identical write+commit helpers, differing only in a hardcoded vs parameterized message. Same shape as DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP. A deletion pins nothing decidably; the suite is the proof."
   }
 ]
