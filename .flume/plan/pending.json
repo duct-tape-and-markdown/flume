@@ -1118,5 +1118,34 @@
     "tests": [],
     "acceptance": "Each doc block sits on the describe it describes; no cite in the file names a line number; the suite is green and no test moves between files.",
     "notes": "Verified on disk this tick: isInvokedDirectly is cli.ts:1041 not :854; the render CjsContextLoadError catch is :966 not :872-881; runJobVerb is :449 not :356-387; frictionCountLine is Dispatcher.ts:509, not cli.ts at all. The 402-412 block's 'no chain.ts, no git repo, no child processes' is false of the two supervisorPolicy tests it now heads. Prose + placement only; no assertion changes."
+  },
+  {
+    "tag": "DISPATCHER-TEST-FRICTION-OMISSION-VACUOUS",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the three friction-omission tests (4268-4292, 4294-4320, 4349-4369) assert a known always-present line first - 'hibernating after' for the two hibernation cases, 'reached --max 2' for the third - before reading the friction-omission verdict, matching the pattern the sibling positive tests (4234-4266, 4322-4347) already use"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Three superviseLoop friction-omission tests read infos.some(...).toBe(false) without ever showing infos populated - a silenced logger passes all three.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "each of the three omission tests asserts a known always-emitted line is present in infos before asserting the friction line's absence - fails on the pre-fix tree, which passes even if superviseLoop's logger silently stopped emitting anything"
+      }
+    ],
+    "acceptance": "All three omission tests assert infos non-empty via a known line before the friction-omission check; suite green.",
+    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood. Verified on disk: lines 4291, 4319, 4368 have no preceding assertion on infos; the --max positive test at 4343 already proves the pattern (asserts 'reached --max 2' before the friction:true check at 4345) - its omission sibling at 4349-4369 lacks the equivalent. Does not fail pre-fix (the named exception) - superviseLoop does log today; what it catches is the logger going silent."
   }
 ]
