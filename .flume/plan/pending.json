@@ -1342,5 +1342,114 @@
     "tests": [],
     "acceptance": "No occurrence of schemaDelta remains in tests/partition.test.ts or tests/Prompt.test.ts; vitest green.",
     "notes": "Sweep finding, tests/partition.test.ts neighborhood. 8c52c92 deleted schemaDelta (dead field, no consumer); these two fixture builders still set it (PendingEntry types as Record<string, unknown>, so tsc never caught it). PendingSchema.test.ts:219-226 reuses the same name as its rejected-undeclared-field example, so the leftover is a landmine, not neutral cruft: a real parsePending call would refuse it. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
+  },
+  {
+    "tag": "DISPATCHER-STREAMJSON-PARSE-DUP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "factor renderStreamJsonLine's line-parse + assistant-content-block extraction (346-380) into two shared helpers - parse-one-NDJSON-event, and content-blocks-of-type from an assistant event's message.content - exported for Dispatcher.ts"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "finalAgentMessage/assistantTurnText (2735-2789) call the shared Agent.ts helpers instead of re-deriving the same JSON.parse+type-dispatch+content-block-walk"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "mechanism pin for the extracted helpers, beside the existing withTerminalRenderer describe (368)"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the existing stream-json voluntary-bail test (2985-3132) rides the refactor unchanged - proves it stays byte-identical"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Dispatcher's finalAgentMessage/assistantTurnText re-derive the same NDJSON line-parse and message.content block-walk that Agent.ts's renderStreamJsonLine already implements for terminal rendering.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/Agent.test.ts",
+        "asserts": "the extracted NDJSON-event-parse and content-blocks-of-type helpers are used by both renderStreamJsonLine (tool_use blocks) and a stand-in caller shaped like Dispatcher's text-block extraction - a one-sided change to either consumer's block-type filter doesn't touch the shared parse"
+      }
+    ],
+    "acceptance": "One shared pair of helpers in src/Agent.ts parses an NDJSON line and extracts message.content blocks by type; both withTerminalRenderer's renderStreamJsonLine and Dispatcher's finalAgentMessage/assistantTurnText call them instead of re-deriving the parse; tests/Dispatcher.test.ts:2985-3132 stays green unchanged; tsc/vitest green.",
+    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood (Agent.ts read as its import). Verified on disk: Agent.ts:353-372 and Dispatcher.ts:2740-2789 both JSON.parse a line, check evt is an object, read .type, and for \"assistant\" walk message.content[] by block .type - one keeps tool_use (rendering), the other keeps text (bail message). Agent.ts already owns stream-json awareness via the decorator; Dispatcher.ts re-deriving the parse is the duplication, not the awareness itself."
+  },
+  {
+    "tag": "DISPATCHER-COMMIT-MESSAGE-PREFIX-HARDCODED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "commitPendingUpdate's git.commitPaths call (2303-2310) takes its message from a new optional DispatcherOptions field (e.g. commitMessage), defaulting to today's exact 'chore(flume): ship ...' / 'chore(flume): record merge-failure footprints for ...' text"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the override producing a custom commit message; the omitted-option case stays byte-identical to today"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "commitPendingUpdate hardcodes the \"chore(flume): ...\" commit-message text with no chain override point - a non-Flume-convention chain can't choose its own ship-commit message.",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Capability vs convention"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a DispatcherOptions-supplied commit-message override lands verbatim in the pending.json ship commit; omitting the option reproduces today's exact 'chore(flume): ship ...' / 'chore(flume): record merge-failure footprints for ...' text"
+      }
+    ],
+    "acceptance": "A chain can override the pending-ledger ship-commit message text; default (no override) behavior is byte-identical to today; tsc/vitest green.",
+    "notes": "Verified on disk this tick: Dispatcher.ts:2303-2310 hardcodes \"chore(flume): ship ...\" / \"chore(flume): record merge-failure footprints...\" with no override. job.ts:221/407 carry the identical literal but sit outside this neighborhood and are due for rewrite under JOB-BRANCH-GRAMMAR-RETIRED/JOB-EXTRACT-REMOVED - leave those for a later sweep once that churn lands, to avoid rework. DispatcherOptions already carries chain-overridable knobs of this shape (namespace, chainLoader)."
+  },
+  {
+    "tag": "DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "fold writeFrictionChain (4362-4373) and writeChainWithFriction (4716-4729) into one shared minimal chain.ts template builder taking a raw friction-expression-or-omit arg; both describes call it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two describes in tests/Dispatcher.test.ts (friction summary, Chain.friction validation) each hand-roll an identical minimal chain.ts template builder instead of sharing one.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [],
+    "acceptance": "One chain.ts-template builder is used by both the loop-end friction summary describe and the Chain.friction load-time validation describe; tsc/vitest green.",
+    "notes": "Verified on disk: writeFrictionChain (4362-4373) and writeChainWithFriction (4716-4729) build an identical minimal chain.ts template string, differing only in how the friction field is spliced in (pre-stringified vs raw-expression arg) - two describes, no cross-reference. A future required-field change to the phase shape has to land in both or silently diverge."
   }
 ]
