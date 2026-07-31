@@ -1,5 +1,138 @@
 [
   {
+    "tag": "INLINE-EXEC-STDIN-TRANSPORT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "evaluateInlineExec (187-211) spawns sh with no command argv, writes the command to stdin as UTF-8 and closes it; buffers and enforces the 4 MiB cap itself per §2"
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "execGate docstring (30-38) stops naming Prompt.ts as a second consumer; the helper itself is unchanged per §4"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "retire the execFile-mock argv assertions; assert stdin transport and the U+2014 repro"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "hold execGate's win32 ENOENT shim retry unchanged per §4"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Inline-exec reaches sh through stdin instead of argv - the argv path corrupts any non-ASCII byte on win32, silently blinding a tick's digest spans.",
+    "per": {
+      "path": "spec/RELEASE-v0.10.md",
+      "section": "2. Inline-exec reaches `sh` through stdin, never argv"
+    },
+    "tests": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "asserts": "sh is spawned with no command argument and the command text arrives on stdin - fails on the pre-fix tree, which passes ['-c', cmd], on every platform. The U+2014 span rendering its real output rides this as the end-to-end case."
+      },
+      {
+        "path": "tests/builtinGates.test.ts",
+        "asserts": "execGate still retries a win32 ENOENT through the shell for pnpm/npm shim args - §4's 'unchanged and still covered' leg"
+      }
+    ],
+    "acceptance": "A span whose command contains U+2014 renders its real output on win32; no inline-exec path constructs ['-c', cmd] or reaches cmd.exe; execGate's shim behavior is untouched.",
+    "notes": "Supersedes INLINE-EXEC-NO-WIN32-SHELL-RETRY (retired this tick): §4 removes the sharing outright rather than making the retry caller-declared. §2 wants an assertion the pre-fix tree fails - the transport-shape assert does that on every platform; the U+2014 end-to-end case only fails pre-fix on win32, so it rides rather than carries. spawn has no maxBuffer, hence the hand-rolled cap. CHANGELOG.md declared because changelogGate fires on any src/ commit."
+  },
+  {
+    "tag": "INLINE-EXEC-RENDER-REFUSES",
+    "gate": { "kind": "blockedBy", "tag": "INLINE-EXEC-STDIN-TRANSPORT" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "delete the exec-failed substitution (203-208); an unresolved span aborts the render, naming every failing span's command text and stderr"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "widen NoCommitMode for the render abort and classify it at both renderPrompt callsites (1029 singleton, 1583 wave)"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "rewrite the inline-exec section per §6 - stdin transport, the stdin-consumption consequence, render-fails-loud replacing the 'prompt still sends' paragraph at 837"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "replace the three marker pins (311, 338, 357) with refusal assertions"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the render-abort no-commit classification"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Breaking entry for the removal per §6"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "An unresolvable inline-exec span aborts the render - the agent is never invoked, and the tick classifies as a no-commit outcome distinct from a voluntary bail.",
+    "per": {
+      "path": "spec/RELEASE-v0.10.md",
+      "section": "3. An unresolved inline-exec span fails the tick"
+    },
+    "tests": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "asserts": "renderPrompt throws on a failing span, naming its command text and stderr; an empty-but-zero-exit command still renders - exit status decides, never output length"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a render abort produces no agent invocation, a non-zero tick, and a noCommit mode a handoff can tell apart from voluntary-bail"
+      }
+    ],
+    "acceptance": "A chain whose prompt names a failing command produces no agent invocation and a non-zero tick with the failing command in the message; no exec-failed marker string remains in src/, docs/, or tests/.",
+    "notes": "§3's 'reuse the existing NoCommitMode union' reads as adding a member to it (Prompt.ts:43): the abort must be distinguishable from voluntary-bail, and no current member means 'could not see'. Retire list is empty on purpose - pendingGate fences every files.retire element as a path (touchedPaths, PendingSchema.ts:480), so a symbol there reverts the plan tick; the marker's deletion rides the Prompt.ts edit description instead."
+  },
+  {
+    "tag": "PENDING-RETIRE-HINT-PATH-ONLY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "renderSchemaForPrompt's retire hint (419) names a path only, matching the :23 docstring and the touchedPaths/fence consumer"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "inline snapshot at 525-545 rides the hint text change; add the fence-compatibility assertion"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "renderSchemaForPrompt advertises files.retire as 'path or symbol', but touchedPaths and pendingGate's fence treat every element as a path - a symbol reverts the tick.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "the rendered retire hint advertises no non-path value - fails on the pre-fix tree, where it reads 'path or symbol'"
+      }
+    ],
+    "acceptance": "The prompt-rendered schema's retire hint names a path only; the inline snapshot carries the new text and the suite is green.",
+    "notes": "Cost a reverted plan tick 2026-07-31: an entry declared a retire symbol on the hint's authority and pendingGate refused it as outside the fence. PendingSchema.ts:23 already says 'retire is path-only', so the rendered hint is the outlier - correcting it is the simple fix; widening the fence to skip non-paths is machinery one call site does not justify. parsePending cannot catch this class: any non-empty string passes."
+  },
+  {
     "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
     "gate": { "kind": "open" },
     "files": {
@@ -12,51 +145,11 @@
       ],
       "retire": []
     },
-    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl — untracked noise every tick.",
+    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl - untracked noise every tick.",
     "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
     "tests": [],
     "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, or .flume/tick-verdicts.jsonl in git status.",
-    "notes": "last-tick.json is dead — v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs; this repo's root .flume/ isn't a job dir so it never got the entry. tick-verdicts.jsonl (Dispatcher.ts:234, bounded history log) is the file actually untracked in git status this tick — the prior note named only the singular tick-verdict.json, not currently on disk."
-  },
-  {
-    "tag": "INLINE-EXEC-NO-WIN32-SHELL-RETRY",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "make execGate's win32 ENOENT shell retry caller-declared; gate spawns keep it"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "inline-exec opts out of the retry at Prompt.ts:196"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "flip the win32-retry inline-exec case; add the metacharacter repro"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "hold the shim-spawn retry unchanged (v0.4 §6)"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "execGate's win32 ENOENT shell retry is shared with Prompt.ts inline-exec, whose `sh -c <script>` payload cmd.exe then re-interprets — a silent wrong substitution into the prompt.",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
-    "tests": [
-      {
-        "path": "tests/Prompt.test.ts",
-        "asserts": "a win32 ENOENT inline-exec whose command carries shell metacharacters is NOT retried through the shell — renders <exec-failed>. Fails on the pre-fix tree, where the retry fires and cmd.exe consumes the metacharacters."
-      },
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "execGate still retries a win32 ENOENT for flag-shaped gate args, so the v0.4 §6 shim fallback is unchanged"
-      }
-    ],
-    "acceptance": "No `sh -c` payload routes through cmd.exe; gate spawns keep the v0.4 §6 fallback. Prompt.test.ts:290 pins the opposite today and flips as part of this fix, not alongside it.",
-    "notes": "Verified this tick: builtinGates.ts:40-56 calls the retry safe because 'gate args are chain-authored flags' — false for the consumer that same docstring names (Prompt.ts:196 passes ['-c', <script>]). Real spans (.flume/prompts/plan.md:8,12,32) carry |, ||, $( ), 2>/dev/null; Node's shell:true does not escape them. Spec v0.4 §6 scopes the fallback to non-exe binary spawns, never inline-exec. Distinct from the parked non-ASCII argv question: that is the first spawn, this is the retry."
+    "notes": "last-tick.json is dead - v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs; this repo's root .flume/ isn't a job dir so it never got the entry. tick-verdicts.jsonl (Dispatcher.ts:234, bounded history log) is the file actually untracked in git status this tick."
   },
   {
     "tag": "CHANGELOG-0.9.0-BACKFILL",
@@ -90,8 +183,11 @@
       ],
       "retire": []
     },
-    "summary": "renderSchemaForPrompt and parsePending are an ungated agreement seam in PendingSchema.ts — nothing drives the real writer through the real reader.",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A seam gate reads what the real writer wrote" },
+    "summary": "renderSchemaForPrompt and parsePending are an ungated agreement seam in PendingSchema.ts - nothing drives the real writer through the real reader.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
     "tests": [
       {
         "path": "tests/PendingSchema.test.ts",
@@ -99,7 +195,7 @@
       }
     ],
     "acceptance": "New agreement test passes; it would have caught the tag-charset and notes-cap drift instances this entry supersedes (both already in sync today, now pinned against silent regression).",
-    "notes": "Closes the class, not just the two known-fixed instances (v0.8 §3 tag-grammar reduction; notes cap already rendered). Supersedes inbox's TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-VISIBILITY concern. Also this tick's posture-sweep finding for the PendingSchema.ts neighborhood (bootstrap rotation)."
+    "notes": "Closes the class, not just the two known-fixed instances (v0.8 §3 tag-grammar reduction; notes cap already rendered). Supersedes inbox's TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-VISIBILITY concern. Distinct from PENDING-RETIRE-HINT-PATH-ONLY: that seam's consumer is the fence, which parsePending never exercises."
   },
   {
     "tag": "PARSEPENDINGLOOSE-WRITE-PATH-PIN",
@@ -114,8 +210,11 @@
       ],
       "retire": []
     },
-    "summary": "parsePendingLoose's 'never used on a write path' contract (PendingSchema.ts:324-329) is prose-only — no test pins it.",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "summary": "parsePendingLoose's 'never used on a write path' contract (PendingSchema.ts:324-329) is prose-only - no test pins it.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [
       {
         "path": "tests/PendingSchema.test.ts",
@@ -123,7 +222,7 @@
       }
     ],
     "acceptance": "New test fails if a future call site appears outside the documented read-only listing, forcing deliberate review before it ships.",
-    "notes": "Posture-sweep finding, PendingSchema.ts neighborhood (bootstrap rotation, no prior stamp). A pinning test is the proportionate fix — one call site today, correctly used; a type-brand is more machinery than the current risk justifies (collaboration.md complexity signal)."
+    "notes": "Posture-sweep finding, PendingSchema.ts neighborhood (bootstrap rotation, no prior stamp). A pinning test is the proportionate fix - one call site today, correctly used; a type-brand is more machinery than the current risk justifies (collaboration.md complexity signal)."
   },
   {
     "tag": "PENDING-GATE-HINT-OPTION",
@@ -138,12 +237,19 @@
         {
           "path": "tests/builtinGates.test.ts",
           "description": "cover hint present/absent on both violation paths"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
         }
       ],
       "retire": []
     },
-    "summary": "pendingGate has no injection point for chain-authored operator guidance on a violation — a bay's hand-rolled fork carried this, the builtin drops it.",
-    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Capability vs convention" },
+    "summary": "pendingGate has no injection point for chain-authored operator guidance on a violation - a bay's hand-rolled fork carried this, the builtin drops it.",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Capability vs convention"
+    },
     "tests": [
       {
         "path": "tests/builtinGates.test.ts",
@@ -151,29 +257,36 @@
       }
     ],
     "acceptance": "pendingGate({ ..., hint: 'park it, never re-scope' }) echoes the hint in both failure branches; default behavior unchanged.",
-    "notes": "Passes the second-implementation test — chain supplies text, engine supplies enforcement. Keep minimal: one string, no per-violation-class customization; richer needs stay a chain-side run() wrap, per the inbox finding's own stated alternative."
+    "notes": "Passes the second-implementation test - chain supplies text, engine supplies enforcement. Keep minimal: one string, no per-violation-class customization; richer needs stay a chain-side run() wrap. CHANGELOG.md added this tick: the entry touched src/ without declaring it, which changelogGate would have reverted."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
-    "gate": { "kind": "open" },
+    "gate": { "kind": "blockedBy", "tag": "INLINE-EXEC-RENDER-REFUSES" },
     "files": {
       "new": [],
       "edit": [
         {
           "path": "src/Prompt.ts",
-          "description": "lines 47-48, 142, 252 — state the condition or point at the pin"
+          "description": "lines 47-48, 142, 252 - state the condition or point at the pin"
         },
         {
           "path": "src/builtinGates.ts",
-          "description": "lines 77 and 250-251 — same"
+          "description": "lines 77 and 250-251 - same"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
         }
       ],
       "retire": []
     },
-    "summary": "Prompt.ts neighborhood carries era-scoped narration: three 'byte-identical to <past release>' claims a test already pins, plus a clause citing two shipped-and-gone pending tags.",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "summary": "Prompt.ts neighborhood carries era-scoped narration: three 'byte-identical to past release' claims a test already pins, plus a clause citing two shipped-and-gone pending tags.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [],
     "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test already pins.",
-    "notes": "Pinned already, so the prose shrinks to a pointer: Prompt.ts:142 and :252 ('byte-identical to pre-§2 / 0.6.2') by tests/Prompt.test.ts:144; builtinGates.ts:77 ('before this option existed') by tests/Gate.test.ts:61. builtinGates.ts:250-251 cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS — both shipped, unresolvable by a reader today. Prompt.ts:47-48 ('the only variant shipped at §5') is the same era shape. Prose-only; no behavior moves."
+    "notes": "Pinned already, so prose shrinks to a pointer: Prompt.ts:142/:252 by tests/Prompt.test.ts:144; builtinGates.ts:77 by tests/Gate.test.ts:61. builtinGates.ts:250-251 cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS, both shipped and unresolvable today. Prompt.ts:47-48 is the same shape - and v0.10 §3 rewrites that exact docstring, hence the block; re-read every line number after it lands. Prose-only; no behavior moves."
   }
 ]

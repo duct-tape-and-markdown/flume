@@ -9,6 +9,51 @@ Status markers:
 
 <!-- questions below this line -->
 
+## plan's delta window can drop a spec change permanently
+
+**PARKED**
+
+`spec/RELEASE-v0.10.md` landed in `c88925a` (10:57:14). The plan tick already
+running committed `7080d7d` (10:58:53) with a delta snapshotted before it, so
+it saw no spec change and derived nothing — correctly, on its inputs. The next
+tick's window is `7080d7d..HEAD`, which excludes `c88925a` by construction. A
+whole release line became invisible to the mechanism while `Plan continues:
+yes` reported a healthy sweep on top of it. Caught only by reading `spec/`
+against the plan-commit history by hand.
+
+This is a correctness defect in the derive dimension, not a papercut: the
+harness reported a clean delta while dropping a release line. Second
+occurrence of the shape — `28df0d5` audited a mid-tick `chore(flume):` commit
+the same way — but commits stay visible to `git log`, so that one self-healed.
+A spec change does not.
+
+The delta is computed in `.flume/prompts/plan.md:3-13` (three inline-exec
+spans, each keyed on `git log --grep='^plan:' -n 1`). That is chain surface:
+plan's `writablePaths` do not reach `.flume/prompts/`, and neither do build's.
+Any fix here is a `chore(flume):` commit — which is why this is a question and
+not an entry.
+
+Options:
+
+1. **A derive stamp plan controls**, mirroring `posture-sweep.md`'s
+   `Posture swept through: <sha>`. State.md carries `Spec derived through:
+   <sha>`; the spec-delta span diffs against that, advanced only when a
+   derivation closes. Immune to the mid-tick race because plan writes it
+   after the fact rather than inferring it from commit order.
+2. **Compute the delta at commit time rather than tick start.** Narrows the
+   race window; does not close it, since the agent has already reasoned on
+   the stale digest by then.
+3. **Prose convention** — a prompt paragraph telling plan to check `spec/`
+   against plan-commit history every tick. Bottom rung of the ladder, and
+   `engineering.md` says so outright; it is also the defence that already
+   failed here.
+
+Recommended: (1). It is the pattern this repo already proves for exactly this
+problem, and it puts the cursor under the phase's own control. Worth noting
+the same race applies to `<commit-delta>` and `<pending-now>`; a stamp fixes
+only the spec leg, so whether the other two want the same treatment is part
+of the call.
+
 ## pendingGate — report both violation classes in one pass (inbox finding 3)
 
 **PARKED**
@@ -66,74 +111,3 @@ Recommended: (1) — the asymmetry (`setupWorktree` already detects the
 manager, the gates don't) is a real duplication smell per
 engine-boundary.md — but the exact options shape is a spec author's call,
 not plan's to invent silently.
-
-## win32 inline-exec argv mangling — which fix, at which depth (inbox: NON-ASCII root cause)
-
-**PARKED**
-
-Root cause isolated and reproduced in this repo: `execFile("sh", ["-c", cmd])`
-on win32 mangles any non-ASCII byte in the argv round-trip, so `sh` receives
-the whole command as a program name and the span renders `<exec-failed>`.
-Confirmed here — `.flume/prompts/plan.md`'s two em-dash inline-exec spans
-both failed before the ASCII sweep in `2874c2c`. Quoting is innocent; only
-non-ASCII content triggers it. `58be15d`'s ENOENT→shell-retry fallback
-doesn't help — this isn't an ENOENT, `sh` runs fine, just on mangled input.
-
-Harness-side mitigation already ships (prompts ASCII-swept, PROTOCOL.md's
-interim rule, marked for retirement by this fix). This question is the
-engine-lane fix underneath it.
-
-Adjacent, already filed: `INLINE-EXEC-NO-WIN32-SHELL-RETRY` narrows
-`58be15d`'s ENOENT retry so it stops re-interpreting an `sh -c` payload
-through cmd.exe. That is the *retry* path; this question is the *first*
-spawn. Whichever option wins below should not re-widen the retry.
-
-Options:
-
-1. **Encode the win32 spawn argv correctly** (UTF-8 codepage handling) —
-   lands at the mechanism (engineering.md), but Node/Windows argv encoding
-   is genuinely finicky; `58be15d` already misdiagnosed the model once
-   before this repro corrected it.
-2. **Pass the command via stdin or a temp script file** instead of argv —
-   sidesteps the encoding issue entirely; larger change to the inline-exec
-   invocation path.
-3. **Lint inline-exec for non-ASCII at render, fail loud** — doesn't restore
-   the capability (non-ASCII digests still can't run), just fails visibly.
-   A floor, not a fix; entangled with the exec-failed question below.
-
-Recommended: needs an empirical spike on (1) before committing — the repro
-is already reduced to a one-line em-dash case (ships as the fix's test per
-engineering.md), but the right Windows-API-level approach isn't obvious
-without testing candidates against it.
-
-## `<exec-failed>` renders and the prompt still sends — loud-or-nothing vs. shipped tolerance (inbox finding)
-
-**PARKED**
-
-`evaluateInlineExec` substitutes `<exec-failed cmd="...">stderr</exec-failed>`
-for a failed span and the tick proceeds; `docs/CHAIN-AUTHORING.md` states
-this outright and `tests/Prompt.test.ts` asserts it as correct behavior.
-This is the one place flume's shipped behavior contradicts
-`.claude/rules/engineering.md`'s "Loud or nothing" (no path proceeds over
-an unresolved input) — measured cost: a Windows plan tick oriented on a
-blinded digest for a full loop with nothing surfacing it.
-
-Deliberate design affordance, not a slipped bug — reversing it deletes
-shipped tests. Needs a human/product call before any code moves.
-
-Options:
-
-1. **Fail the tick** on any unresolved span — simplest, loudest; a
-   transient digest command failure now costs a tick.
-2. **Render but refuse to invoke the agent**, surfacing the failed spans —
-   preserves the artifact for debugging; needs a new dispatcher exit path
-   and a §6 no-commit classification.
-3. **Chain-declared per-span tolerance** (`optional` inline-exec) — most
-   flexible, passes the second-implementation test cleanly (engine reports
-   the fact, chain owns the interpretation per engine-boundary.md), most
-   surface to build.
-
-Recommended: lean (3) per engine-boundary.md's fact/interpretation split,
-but this is a product call on shipped, tested behavior — not plan's to
-invent silently. Entangled with the win32 argv question above: whichever
-wins there changes how often this path is even hit.
