@@ -1,51 +1,5 @@
 [
   {
-    "tag": "STATUS-PENDING-COUNT-UNSHIPPED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "status (761-809) prints the pending count; HELP_TOP:227 and HELP_SUB.status (268-278) both describe what it actually emits, capability-skip lines included"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "the count detection inline at 485-491 becomes the one probe both status surfaces call"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the status entry (21-28) gains the count and drops 'no chain is loaded' - false since the friction and capability reads landed"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "extend the status describes (804, 1047) with the count cases; the job status describes pin the shared probe"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`flume status` never prints the pending entry count §3 requires, and drops an unparsable pending.json silently - `flume job status` reports both.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "3. CLI surface"
-    },
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "`flume status` names the entry count for a valid pending.json, 'unparsable' for a corrupt one, and 0 when the file is absent - fails on the pre-fix tree, which prints no count line in any of the three states; `flume job status` output is byte-unchanged by the shared probe"
-      }
-    ],
-    "acceptance": "`flume status` prints a pending count in all three states; one probe serves both status surfaces; help text and docs/CLI.md describe the output the code emits.",
-    "notes": "§3 names three things status prints - awake phases, pending entry count, last commit. Only the awake set shipped. The 'last commit' leg is parked, not filed: unspecified format, and it restates git. cli.ts:793 drops a parse failure under a catch (805) whose comment claims only chain-load failures, so today a corrupt file also silences the v0.8 §4 capability lines. job.ts:485-491 already holds the detection - share it, never re-derive."
-  },
-  {
     "tag": "CHANGELOG-0.9.0-BACKFILL",
     "gate": {
       "kind": "open"
