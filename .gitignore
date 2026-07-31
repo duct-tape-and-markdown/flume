@@ -6,6 +6,10 @@ dist/
 .flume/sessions/
 .flume/prior-attempts/
 .flume/worktrees/
+.flume/last-tick.json
+.flume/loop.pid
+.flume/tick-verdict.json
+.flume/tick-verdicts.jsonl
 .env
 .env.*
 !.env.example
