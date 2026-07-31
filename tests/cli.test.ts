@@ -401,19 +401,7 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
 });
 
 /**
- * v0.4 §2a — cross-process loop lock at `<flumeDir>/loop.pid`. One supervisor
- * per state root: a second `flume loop` is refused while the recorded pid is
- * alive; a stale pidfile (dead pid) is reclaimed.
- *
- * The lock branch resolves before `superviseLoop` spawns any child tick, so
- * `--max 0` exercises both outcomes with a single real CLI subprocess each —
- * no chain.ts, no git repo, no child processes. That keeps these fast-lane
- * safe despite spawning the real `flume loop` (the lock lives inline in the
- * CLI's `main()`; only a real process can exercise it).
- */
-
-/**
- * §3 — `isInvokedDirectly` (`src/cli.ts:854`), the seam gating `main()`.
+ * §3 — `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
  * Unit-level rather than a subprocess: the seam takes `argv1` and answers
  * against this module's own `import.meta.url`, so calling it directly with
  * `CLI` (this file's own import of cli.ts) exercises the exact comparison
@@ -499,7 +487,7 @@ describe("hermeticEnv — strips all three canonical FLUME_* vars", () => {
 /**
  * v0.7 §5, render-command seam: `main()`'s `render` branch wraps
  * `resolveChain()` in its own try/catch for `CjsContextLoadError`
- * (`src/cli.ts:872-881`) — independent of, and exercised separately from,
+ * (`src/cli.ts`) — independent of, and exercised separately from,
  * Dispatcher.tick()'s `usageError` path (`tickExitCode` above,
  * `Dispatcher.test.ts`'s loadChainModule suite).
  *
@@ -604,22 +592,6 @@ describe("flume render — corrupt pending.json refuses instead of rendering ove
   }, 60_000);
 });
 
-/**
- * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
- * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
- * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
- * policy knobs" suite already proves the quarantine/abort-backstop
- * mechanics themselves at the `superviseLoop` options seam with a stubbed
- * `runTick`; this suite proves only that the CLI's real chain-load-and-
- * forward wiring carries the declared block there at all — nothing
- * upstream of that seam is re-tested here.
- *
- * `writeStuckEntryPending` below manufactures a genuine, deterministic
- * pre-tick worktree-provisioning failure without mocking `git`: with
- * `FLUME_WORKTREES_DIR` pointed at a path this suite pre-creates as a
- * plain FILE, `createWorktree`'s `mkdir(dirname(path), { recursive: true
- * })` throws the identical Node `EEXIST` every attempt.
- */
 function supervisorPolicyChainSrc(policy?: {
   quarantineScope?: "run" | "none";
   abortThreshold?: number;
@@ -670,6 +642,17 @@ async function writeStuckEntryPending(root: string): Promise<void> {
   );
 }
 
+/**
+ * v0.4 §2a — cross-process loop lock at `<flumeDir>/loop.pid`. One supervisor
+ * per state root: a second `flume loop` is refused while the recorded pid is
+ * alive; a stale pidfile (dead pid) is reclaimed.
+ *
+ * The lock branch resolves before `superviseLoop` spawns any child tick, so
+ * `--max 0` exercises both outcomes with a single real CLI subprocess each —
+ * no chain.ts, no git repo, no child processes. That keeps these fast-lane
+ * safe despite spawning the real `flume loop` (the lock lives inline in the
+ * CLI's `main()`; only a real process can exercise it).
+ */
 describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
   // LOOP-MAX-NONNUMERIC-ACCEPTED: the --max bound below resolves before the
   // lock branch above it, so — like the lock cases in this suite — these
@@ -785,7 +768,25 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
     },
     30_000,
   );
+});
 
+/**
+ * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
+ * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
+ * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
+ * policy knobs" suite already proves the quarantine/abort-backstop
+ * mechanics themselves at the `superviseLoop` options seam with a stubbed
+ * `runTick`; this suite proves only that the CLI's real chain-load-and-
+ * forward wiring carries the declared block there at all — nothing
+ * upstream of that seam is re-tested here.
+ *
+ * `writeStuckEntryPending` above manufactures a genuine, deterministic
+ * pre-tick worktree-provisioning failure without mocking `git`: with
+ * `FLUME_WORKTREES_DIR` pointed at a path this suite pre-creates as a
+ * plain FILE, `createWorktree`'s `mkdir(dirname(path), { recursive: true
+ * })` throws the identical Node `EEXIST` every attempt.
+ */
+describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () => {
   it(
     "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (v0.8 §8 default)",
     async () => {
@@ -1007,8 +1008,8 @@ function minimalChainSrc(friction?: string): string {
 }
 
 /**
- * §6 (v0.6.2) — `flume status`'s friction line (`src/cli.ts:660-667`,
- * `frictionCountLine`): a count of files in the declared friction dir,
+ * §6 (v0.6.2) — `flume status`'s friction line (`frictionCountLine`,
+ * `src/Dispatcher.ts`): a count of files in the declared friction dir,
  * appended only when declared and non-empty. Best-effort: a missing/broken
  * chain never fails `status` (covered elsewhere); these tests hold the
  * chain fixed and vary only the friction declaration/dir contents.
@@ -1222,7 +1223,7 @@ describe("flume status — names the missing capability on a requiresCapability 
 
 /**
  * §6 (v0.6.2) — `flume job status`'s per-job friction count
- * (`src/cli.ts:356-387`, `runJobVerb`'s `status` branch): the repo chain's
+ * (`runJobVerb`'s `status` branch, `src/cli.ts`): the repo chain's
  * declared friction dir, resolved job-dir-relative per job. Jobs are built
  * as plain directories under `.flume/jobs/` — `job status` is purely
  * observational (v0.5 §5d), so no real `jobNew`/branch is needed to exercise it.
