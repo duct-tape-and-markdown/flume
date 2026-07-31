@@ -10,23 +10,27 @@
       "edit": [
         {
           "path": "src/job.ts",
-          "description": "delete jobExtract (598-804), JobExtractOptions/JobExtractResult (540-572), gitShowBlob (507-524), worktreeHolding (330-349); delete readFrictionFiles (525-539) only if LSP shows no caller outside extract - v0.6.2 §6 friction reads may still need it"
+          "description": "delete jobExtract w/ docstring (540-768, EOF), JobExtractOptions/JobExtractResult (505-538), gitShowBlob (471-481), worktreeHolding (303-313), readFrictionFiles w/ docstring (483-503) - LSP-confirmed zero callers outside jobExtract (findReferences: decl + jobExtract:750 only), delete unconditionally"
         },
         {
           "path": "src/cli.ts",
-          "description": "delete the extract verb wiring (524-580) and its help text (247-251)"
+          "description": "delete the extract verb wiring (522-580); HELP_TOP's job-extract block (248-254); HELP_JOB's extract verb doc (396-408) and its extract clauses inside the shared exit-code list (419-422, 426-428)"
         },
         {
           "path": "src/Phase.ts",
-          "description": "delete Chain.harvest (241-245) - job.ts:637 was its only consumer"
+          "description": "delete Chain.harvest (241-245) - job.ts:601 was its only consumer"
         },
         {
           "path": "tests/job.test.ts",
-          "description": "delete the jobExtract describe block and its helper setup (1192-1614) whole, not rewritten, per §3"
+          "description": "delete the jobExtract describe block whole (1169-1657, EOF), not rewritten, per §3"
         },
         {
           "path": "tests/job.integration.test.ts",
-          "description": "delete the job-new to run to extract describe block (332-576) whole, not rewritten, per §3"
+          "description": "delete the job-new to run to extract describe block whole (318-573, EOF), not rewritten, per §3"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "net-new coverage (no extract mentions exist in this file today): flume job extract exits as an unrecognized verb"
         },
         {
           "path": "CHANGELOG.md",
@@ -47,7 +51,7 @@
       }
     ],
     "acceptance": "grep -rn 'harvest' src/ is empty; grep -n 'checkout|cherry-pick|branch' src/job.ts hits no git invocations; extract's test suites are deleted, not rewritten; tsc/vitest green.",
-    "notes": "Blocked on JOB-BRANCH-GRAMMAR-RETIRED so the full §3 grep is checkable in one pass - both entries touch job.ts, the engine serializes on the overlap. readFrictionFiles' other-caller status is unverified this tick (research flagged 'possibly used elsewhere') - LSP-verify before deleting."
+    "notes": "File line numbers re-verified this tick against HEAD (JOB-BRANCH-GRAMMAR-RETIRED shifted job.ts/cli.ts by ~150 lines each). tests/cli.test.ts is a new addition to files - the entry's own tests[] required it but it was undeclared, which the fanout guard would have reverted."
   },
   {
     "tag": "TIP-CLAIM-ADVISORY",
