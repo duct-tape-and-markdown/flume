@@ -57,12 +57,16 @@ const Gate = z.discriminatedUnion("kind", [
  * Filesystem NAME_MAX (Linux ext4/APFS/NTFS, conservatively shared across
  * platforms): the ceiling any single path component must clear. The
  * tightest raw-tag consumer is the revert-note filename (Dispatcher.ts
- * `writeRevertNote`, `<stamp>--<tag>--reverted.md`), whose fixed overhead is
- * a 24-char ISO stamp + 2 + 2 + `reverted.md` (11) = 39 chars — every other
- * consumer (worktree/branch slug, commit-message token) is looser, so this
- * bound covers them too.
+ * `writeRevertNote`, `<stamp>--<tag>--reverted.md`) — every other consumer
+ * (worktree/branch slug, commit-message token) is looser, so this bound
+ * covers them too. The subtracted overhead is `writeRevertNote`'s fixed
+ * filename scaffolding around the raw tag; that arithmetic lives at the
+ * writer (Dispatcher.ts), not restated here. Pinned against the real writer
+ * by tests/Dispatcher.test.ts, "revert note to the friction channel (§5)":
+ * a gate-revert on the longest tag this module accepts asserts the real
+ * filename lands on disk within NAME_MAX.
  */
-const TAG_MAX_LENGTH = 255 - 39;
+export const TAG_MAX_LENGTH = 255 - 39;
 
 /**
  * Tag grammar reduces to mechanical safety only (v0.8 §3): the engine

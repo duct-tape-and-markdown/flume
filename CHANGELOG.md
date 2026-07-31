@@ -84,6 +84,18 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   surfaced. `flume status` and `flume job status` now share one probe
   (`readPendingLoose`, `src/job.ts`) for the count, so a corrupt file reads
   identically on both surfaces.
+- `PendingSchema.ts`'s `TAG_MAX_LENGTH` and `Dispatcher.ts`'s
+  `writeRevertNote` filename each restated the other's arithmetic in prose,
+  with nothing driving the schema's ceiling through the real writer — a
+  drift in either would silently overrun filesystem NAME_MAX and lose the
+  revert note (a warn line, swallowed inside `writeRevertNote`'s
+  best-effort catch) instead of failing loudly. `TAG_MAX_LENGTH` is now
+  exported and pinned against the real writer in
+  `tests/Dispatcher.test.ts`, "revert note to the friction channel (§5)": a
+  real gate-revert on the longest tag `parsePending` accepts asserts the
+  real filename lands on disk within NAME_MAX
+  (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+  wrote").
 
 ## [0.9.0] - 2026-07-31
 

@@ -37,7 +37,11 @@ import { Baton } from "../src/Baton.ts";
 import { chainLoadGate } from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { Chain, Phase, TickResult } from "../src/Phase.ts";
-import { parsePending, type PendingEntry } from "../src/PendingSchema.ts";
+import {
+  parsePending,
+  TAG_MAX_LENGTH,
+  type PendingEntry,
+} from "../src/PendingSchema.ts";
 import * as git from "../src/git.ts";
 
 const exec = promisify(execFile);
@@ -5458,5 +5462,66 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
           w.includes("revert note write failed"),
       ),
     ).toBe(true);
+  }, 20_000);
+
+  it("a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)", async () => {
+    const tag = "A".repeat(TAG_MAX_LENGTH);
+    await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
+    // The real reader accepts the boundary tag — a value one over would
+    // fail TAG_PATTERN and never reach the writer this test pins.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      tag,
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const failing: Gate = {
+      name: "boom-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom said no", details: "d" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failing],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      friction: "friction",
+    };
+
+    const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+    const agent = fanoutAgent({
+      [slug]: async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/tag-len.ts",
+          "ok\n",
+          `build(${tag}): ship`,
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual([]);
+
+    // The real writer, driven by the real schema's own accepted maximum: if
+    // either side's arithmetic moves without the other, writeRevertNote's
+    // filename exceeds NAME_MAX, the write throws, and no note lands.
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    const files = await readdir(frictionDir);
+    expect(files.length).toBe(1);
+    expect(files[0]!.length).toBeLessThanOrEqual(255);
+    expect(files[0]).toContain(tag);
   }, 20_000);
 });

@@ -373,12 +373,13 @@ type AgentTermination =
  *
  * `tag` itself is length-bounded at the schema gate (v0.8 §3,
  * `PendingSchema.ts` `TAG_MAX_LENGTH`), derived from this module's own
- * tightest raw-tag consumer — so every tag-derived path component here
- * stays within filesystem NAME_MAX (255) by construction, no runtime check
- * needed: this `slug`/`createWorktree`'s worktree-dir and branch-name path
- * component, `writeRevertNote`'s `` `${stamp}--${entry.tag}--reverted.md` ``
- * (the tightest fit, at 39 fixed chars of overhead), and
- * `harvestFriction`'s `` `${tag}--${file.name}` ``.
+ * tightest raw-tag consumer, `writeRevertNote`'s
+ * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
+ * component here (this `slug`/`createWorktree`'s worktree-dir and
+ * branch-name, `harvestFriction`'s `` `${tag}--${file.name}` ``) is looser
+ * and stays within filesystem NAME_MAX (255) by construction as a result.
+ * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
+ * "revert note to the friction channel (§5)", not asserted here.
  */
 function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
