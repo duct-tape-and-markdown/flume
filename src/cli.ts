@@ -319,6 +319,7 @@ Exit codes:
       wall.
   78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
       --help\`); the orphaned awake flags are left on disk.
+  2   Bad --max: missing, non-numeric, or negative. No tick runs.
 `,
   wake: `Usage: flume wake <phase>
 
@@ -875,7 +876,16 @@ async function main(): Promise<number> {
 
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
-    const max = maxIdx >= 0 ? Number(rest[maxIdx + 1]) : 50;
+    let max = 50;
+    if (maxIdx >= 0) {
+      const value = rest[maxIdx + 1];
+      const parsed = value !== undefined ? Number(value) : NaN;
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        console.error("usage: flume loop [--max N]");
+        return 2;
+      }
+      max = parsed;
+    }
     // Cross-process loop lock: one supervisor per state root. A stale
     // pidfile (dead pid) is reclaimed; a live one refuses the second loop —
     // two supervisors against one state root race plan/build state. Lives

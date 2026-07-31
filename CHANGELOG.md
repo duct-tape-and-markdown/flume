@@ -72,6 +72,11 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   (`effectiveFenceLines`) each call the shared helper instead of
   re-deriving the same union inline (`.claude/rules/engineering.md`,
   "The fix lands at the mechanism").
+- `flume loop --max` now refuses a missing, non-numeric, or negative value
+  (exit 2, usage message) instead of parsing to `NaN`, which made the loop
+  run zero ticks and exit 0 — a typo'd cap was indistinguishable from a
+  clean hibernation (`.claude/rules/engineering.md`, "Loud or nothing").
+  `--max 0` is unaffected: it still runs zero ticks and exits 0.
 
 ## [0.9.0] - 2026-07-31
 

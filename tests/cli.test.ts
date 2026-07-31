@@ -671,6 +671,57 @@ async function writeStuckEntryPending(root: string): Promise<void> {
 }
 
 describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
+  // LOOP-MAX-NONNUMERIC-ACCEPTED: the --max bound below resolves before the
+  // lock branch above it, so — like the lock cases in this suite — these
+  // exercise the real CLI with no chain.ts, no git repo, no child tick.
+  it(
+    "`--max abc` (non-numeric) exits 2 naming usage and spawns no tick",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      try {
+        const r = await runCli(dir, ["loop", "--max", "abc"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume loop");
+        expect(r.out).not.toContain("reached --max");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "`--max` with no following value exits 2 naming usage and spawns no tick",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      try {
+        const r = await runCli(dir, ["loop", "--max"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume loop");
+        expect(r.out).not.toContain("reached --max");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "`--max -1` (negative) exits 2 naming usage and spawns no tick",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      try {
+        const r = await runCli(dir, ["loop", "--max", "-1"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume loop");
+        expect(r.out).not.toContain("reached --max");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
   it(
     "refuses a second loop while the recorded pid is alive, leaving the pidfile untouched",
     async () => {
