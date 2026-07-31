@@ -225,6 +225,76 @@
     "notes": "Posture-sweep finding, PendingSchema.ts neighborhood (bootstrap rotation, no prior stamp). A pinning test is the proportionate fix - one call site today, correctly used; a type-brand is more machinery than the current risk justifies (collaboration.md complexity signal)."
   },
   {
+    "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "defaultCaptureFilename (262-264) discriminates per invocation, not by clock alone; the SessionCaptureOpts docstring (217-222) claims only what the code holds"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "first coverage of the default-filename path - both capture tests today supply an explicit filename"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "withSessionCapture's default filename is clock-only, so two fanout captures opening in the same millisecond share one path and one transcript is silently lost.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      {
+        "path": "tests/Agent.test.ts",
+        "asserts": "two withSessionCapture invocations with distinct cwds under a frozen clock (vi.setSystemTime) land in two files, each holding its own stream - fails on the pre-fix tree, where the second createWriteStream truncates the first"
+      }
+    ],
+    "acceptance": "Concurrent captures under a stopped clock produce one file per invocation; the docstring's no-collision claim is the one the test pins.",
+    "notes": "Untested today - both capture tests pass filename, and this repo's chain does too (.flume/chain.ts:316-320 appends the cwd basename), so the collision only reaches a downstream chain taking the default. The chain's own filename is the shape the default should have had. Chain-overridable default, so no boundary question."
+  },
+  {
+    "tag": "RENDER-RELATIVIZE-SEPARATOR-BLIND",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "relativize (459-463) strips the cwd prefix on either separator instead of hardcoding '/'"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "file_path rendering has no coverage today; add the backslash-cwd case beside the POSIX one"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "withTerminalRenderer's relativize hardcodes '/', so on win32 every Read/Write/Edit line renders an absolute path while the tag beside it shortens correctly.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/Agent.test.ts",
+        "asserts": "a tool_use whose file_path sits under a backslash cwd renders relative, and the POSIX pair keeps today's output - separator-agnostic, so it fails on the pre-fix tree on every platform"
+      }
+    ],
+    "acceptance": "Read(<file>) renders relative under a backslash cwd and a POSIX cwd alike.",
+    "notes": "The sibling detection exists: the default tag (307) uses node:path basename and carries a win32-gated regression test (tests/Agent.test.ts:473). path.relative is platform-bound - it would make the case win32-only again; stripping on either separator keeps it runnable everywhere. Display-only: the rendered line, never the captured transcript."
+  },
+  {
     "tag": "PENDING-GATE-HINT-OPTION",
     "gate": { "kind": "open" },
     "files": {
