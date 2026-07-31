@@ -201,44 +201,53 @@ describe.runIf(process.platform === "win32")(
   },
 );
 
+async function createBootstrappedRepo(prefix = "flume-gate-"): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), prefix));
+  const opts = { cwd: repo };
+  await exec("git", ["init", "-q"], opts);
+  await exec("git", ["config", "user.email", "test@example.com"], opts);
+  await exec("git", ["config", "user.name", "Test User"], opts);
+  await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  // Byte-exact checkout on Windows: revert-path assertions compare file
+  // content, and a host-level autocrlf=true would rewrite LF on reset.
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
+  // Seed an initial commit so HEAD exists and `git show` works cleanly.
+  await writeFile(join(repo, ".seed"), "");
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  return repo;
+}
+
+async function commitFiles(
+  repo: string,
+  files: Record<string, string>,
+  msg = "candidate",
+): Promise<string> {
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(repo, rel);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, content);
+  }
+  const opts = { cwd: repo };
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", msg], opts);
+  const { stdout } = await exec("git", ["rev-parse", "HEAD"], opts);
+  return stdout.trim();
+}
+
 describe("writablePathsGate — git-backed checks", () => {
   let repo: string;
 
   beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "flume-gate-"));
-    const opts = { cwd: repo };
-    await exec("git", ["init", "-q"], opts);
-    await exec("git", ["config", "user.email", "test@example.com"], opts);
-    await exec("git", ["config", "user.name", "Test User"], opts);
-    await exec("git", ["config", "commit.gpgsign", "false"], opts);
-    // Byte-exact checkout on Windows: revert-path assertions compare file
-    // content, and a host-level autocrlf=true would rewrite LF on reset.
-    await exec("git", ["config", "core.autocrlf", "false"], opts);
-    // Seed an initial commit so HEAD exists and `git show` works cleanly.
-    await writeFile(join(repo, ".seed"), "");
-    await exec("git", ["add", "."], opts);
-    await exec("git", ["commit", "-q", "-m", "seed"], opts);
+    repo = await createBootstrappedRepo();
   });
 
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
   });
 
-  async function commitFiles(files: Record<string, string>): Promise<string> {
-    for (const [rel, content] of Object.entries(files)) {
-      const abs = join(repo, rel);
-      await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, content);
-    }
-    const opts = { cwd: repo };
-    await exec("git", ["add", "."], opts);
-    await exec("git", ["commit", "-q", "-m", "candidate"], opts);
-    const { stdout } = await exec("git", ["rev-parse", "HEAD"], opts);
-    return stdout.trim();
-  }
-
   it("accepts a commit whose paths all sit inside the globs", async () => {
-    const sha = await commitFiles({
+    const sha = await commitFiles(repo, {
       "src/foo.ts": "x",
       "src/nested/bar.ts": "y",
     });
@@ -249,7 +258,7 @@ describe("writablePathsGate — git-backed checks", () => {
   });
 
   it("rejects a commit whose paths fall outside the globs", async () => {
-    const sha = await commitFiles({
+    const sha = await commitFiles(repo, {
       "src/foo.ts": "x",
       "spec/bad.md": "stay out",
     });
@@ -262,7 +271,7 @@ describe("writablePathsGate — git-backed checks", () => {
   });
 
   it("supports literal file globs alongside ** patterns", async () => {
-    const sha = await commitFiles({
+    const sha = await commitFiles(repo, {
       "package.json": "{}",
       "src/foo.ts": "x",
     });
@@ -272,7 +281,7 @@ describe("writablePathsGate — git-backed checks", () => {
   });
 
   it("treats `*` as a single-segment match (not `**`)", async () => {
-    const sha = await commitFiles({
+    const sha = await commitFiles(repo, {
       "src/foo.ts": "x",
       "src/nested/deep.ts": "y",
     });
@@ -359,42 +368,16 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
   let repo: string;
 
   beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "flume-chainload-"));
-    const opts = { cwd: repo };
-    await exec("git", ["init", "-q"], opts);
-    await exec("git", ["config", "user.email", "test@example.com"], opts);
-    await exec("git", ["config", "user.name", "Test User"], opts);
-    await exec("git", ["config", "commit.gpgsign", "false"], opts);
-    // Byte-exact checkout on Windows: revert-path assertions compare file
-    // content, and a host-level autocrlf=true would rewrite LF on reset.
-    await exec("git", ["config", "core.autocrlf", "false"], opts);
-    await writeFile(join(repo, ".seed"), "");
-    await exec("git", ["add", "."], opts);
-    await exec("git", ["commit", "-q", "-m", "seed"], opts);
+    repo = await createBootstrappedRepo("flume-chainload-");
   });
 
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
   });
 
-  async function commit(
-    files: Record<string, string>,
-    msg: string,
-  ): Promise<string> {
-    for (const [rel, content] of Object.entries(files)) {
-      const abs = join(repo, rel);
-      await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, content);
-    }
-    const opts = { cwd: repo };
-    await exec("git", ["add", "."], opts);
-    await exec("git", ["commit", "-q", "-m", msg], opts);
-    const { stdout } = await exec("git", ["rev-parse", "HEAD"], opts);
-    return stdout.trim();
-  }
-
   it("passes a commit whose post-tick .flume/chain.ts loads as a valid Chain", async () => {
-    const sha = await commit(
+    const sha = await commitFiles(
+      repo,
       { ".flume/chain.ts": VALID_CHAIN },
       "build: rewrite chain",
     );
@@ -404,7 +387,8 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
   });
 
   it("is a no-op when the commit did not touch .flume/chain.ts", async () => {
-    const sha = await commit(
+    const sha = await commitFiles(
+      repo,
       { "src/unrelated.ts": "export const x = 1;\n" },
       "build: unrelated",
     );
@@ -415,8 +399,9 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
 
   it("fails a syntactically-broken chain.ts", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
-    await commit({ ".flume/chain.ts": VALID_CHAIN }, "build: good chain");
-    const brokenSha = await commit(
+    await commitFiles(repo, { ".flume/chain.ts": VALID_CHAIN }, "build: good chain");
+    const brokenSha = await commitFiles(
+      repo,
       { ".flume/chain.ts": "export default { phases: [" },
       "build: rewrite chain (broken)",
     );
@@ -430,7 +415,8 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
   });
 
   it("fails a chain.ts that has no default export", async () => {
-    const sha = await commit(
+    const sha = await commitFiles(
+      repo,
       { ".flume/chain.ts": "export const notTheDefault = 1;\n" },
       "build: no default export",
     );
