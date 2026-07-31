@@ -49,6 +49,24 @@ Built-in from v0 via git worktree fanout for phases declared `concurrency: "fano
 
 Docker is a v1 layer for AFK / env reproducibility / capability isolation, behind the same `SandboxProvider` seam.
 
+## Decided, not yet executed — spec corpus reform
+
+The per-release spec segmentation (`spec/RELEASE-*.md`, frozen once
+shipped) is to be replaced with a **living, domain-partitioned spec**
+(e.g. `spec/tick.md`, `spec/cli.md`, `spec/jobs.md`) that always states
+current truth, edited in place under operator direction (ruling,
+2026-07-31). The release files conflate three roles — current truth,
+ship-target delta, record of rulings — and only the first is unowned
+elsewhere: plan's delta detection is already a git diff over `spec/`
+(layout-agnostic), and the record already lives in git history +
+CHANGELOG. The supersedes-chain tax compounds per release and is the
+complexity signal. Ruling-of-record moves to the spec commit; release
+boundaries move to CHANGELOG + tags (or a minimal target note). Touches
+only convention surface: plan prompt hints, chain.ts comments,
+CLAUDE.md pointer — zero engine. Sequencing: execute after the current
+release lines (0.10 sighted-render, 0.11 boundary line) are underway or
+shipped; the consolidation is human-surface work done in-session.
+
 ## Beyond v0.1 — dependency-aware fanout
 
 Fanout intelligence stays partition-level, not orchestration-level. Today entries fan out disjoint-by-`Files:` — pure conflict-avoidance, with no notion of "entry B consumes entry A's output." The Pending schema already carries `blockedBy`/`deferred`; the next step is for the partitioner and dispatcher to *schedule waves by declared dependency*, not just file-disjointness — dependent entries serialize, independent ones still parallelize.
