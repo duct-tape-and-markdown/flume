@@ -9,7 +9,13 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 (see `spec/RELEASE-v0.1.md` §2). Breaking changes land under a `### Breaking`
 subheading per `spec/RELEASE-v0.1.md` §9.
 
-## [Unreleased]
+## [0.9.0] - 2026-07-31
+
+The doctrine line: one engine per bay, resolved by the package manager
+(`pnpm exec flume` / npm scripts). Flume ships no version-coordination
+machinery — the 0.8.0 engine↔pin handshake and the job-dir engine link
+are removed outright (net −675 lines). Global installs are unsupported.
+Also carries the 0.8.0 migration-wave fixes below; 0.8.1 was never cut.
 
 ### Breaking
 
