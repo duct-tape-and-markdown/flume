@@ -4520,6 +4520,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
     });
 
     expect(res.hibernated).toBe(true);
+    expect(infos.some((l) => l.includes("hibernating after"))).toBe(true);
     expect(infos.some((l) => l.includes("friction:"))).toBe(false);
   });
 
@@ -4548,6 +4549,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
     });
 
     expect(res.hibernated).toBe(true);
+    expect(infos.some((l) => l.includes("hibernating after"))).toBe(true);
     expect(infos.some((l) => l.includes("friction:"))).toBe(false);
   });
 
@@ -4597,6 +4599,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
     });
 
     expect(res.hibernated).toBe(false);
+    expect(infos.some((l) => l.includes("reached --max 2"))).toBe(true);
     expect(infos.some((l) => l.includes("friction:"))).toBe(false);
   });
 });
