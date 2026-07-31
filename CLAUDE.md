@@ -36,12 +36,14 @@ Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
 ## Quality Standard
 
-Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, writable-paths, pending-parse) validate each tick. Product/UX pressure-test is human.
+Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, writable-paths, pending-parse, changelog) validate each tick — they check *shape*. Shape is not truth: a gate can pass over an input that never resolved, a changelog that describes nothing, a schema whose two sides disagree. **@.claude/rules/engineering.md** holds the standard that closes that gap (the ladder, non-vacuity, agreement gates, a fix ships its test); **@.claude/rules/posture-sweep.md** is how it reaches code that already exists. Product/UX pressure-test remains human.
 
 ## Non-Negotiables
 
 - **Engine ships mechanism, never convention.** Every `src/` change passes the second-implementation test; the engine validates only what its mechanics consume. See @.claude/rules/engine-boundary.md.
 - **A complicated solution is likely chasing a tail.** Go with the simple solution; if there is none, raise a flag (park/open question) instead of building the complicated one.
+- **Every check lives at the most deterministic layer that can express it** — type, then test/pin, then gate, then prose. Prose is a queue for promotion, not an archive. See @.claude/rules/engineering.md.
+- **A fix ships the test that would have caught it** — one that fails on the pre-fix tree. A fix aimed at a described symptom instead of a reproduced one is a guess.
 - Build phase commits per pending entry directly to `main` after green validation.
 - NEVER force-push, amend pushed commits, or `--no-verify`.
 - NEVER modify files when asked to investigate — investigate and report.

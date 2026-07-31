@@ -17,9 +17,13 @@
  * in the same commit.
  */
 
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 
 
 /** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
@@ -167,7 +171,16 @@ const buildFence = {
   // whole ticks — three in one day, every violating path a test file.
   // Collisions between parallel entries editing shared suites stay covered
   // by per-entry afterMerge revert (§7b).
-  entryChannelPaths: [".flume/plan/open-questions.md", "tests/**"],
+  // CHANGELOG.md rides the channel for the same reason tests/** does: the
+  // changelog gate below makes a line mandatory for every src/-touching
+  // commit, so requiring each entry to also *declare* CHANGELOG.md would
+  // turn one under-declaration into a fence revert on work that is
+  // otherwise correct.
+  entryChannelPaths: [
+    ".flume/plan/open-questions.md",
+    "tests/**",
+    "CHANGELOG.md",
+  ],
 };
 
 /**
@@ -206,6 +219,60 @@ const worktreeDepsGate: Gate = {
       ok: false,
       message:
         "worktree node_modules missing sentinel 'zod' — setupWorktree dependency materialization failed",
+    };
+  },
+};
+
+/**
+ * Every commit touching `src/` also touches CHANGELOG.md.
+ *
+ * The agreement check for this repo's loudest self-description seam
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote"): a changelog hand-authored beside the diff it describes drifts
+ * silently, and a downstream bay reading it keeps workarounds it no longer
+ * needs. Chain-owned by construction — "every ship gets a line" is this
+ * repo's convention, not the engine's (`.claude/rules/engine-boundary.md`).
+ *
+ * The empty case is spelled, not inherited: a commit touching no `src/` file
+ * passes with its reason named, per the non-vacuity rule on the same page.
+ */
+const changelogGate: Gate = {
+  name: "changelog covers src",
+  when: "afterCommit",
+  async run(ctx) {
+    if (!ctx.commitSha) {
+      return { ok: false, message: "changelog gate requires commitSha" };
+    }
+    const { stdout } = await execFileP(
+      "git",
+      ["show", "--name-only", "--pretty=format:", ctx.commitSha],
+      { cwd: ctx.cwd },
+    );
+    const touched = stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const srcTouched = touched.filter((f) => f.startsWith("src/"));
+
+    if (srcTouched.length === 0) {
+      return {
+        ok: true,
+        message: "no src/ file in this commit; changelog line not required",
+      };
+    }
+    if (touched.includes("CHANGELOG.md")) {
+      return {
+        ok: true,
+        message: `changelog line present for ${srcTouched.length} src/ file(s)`,
+      };
+    }
+    return {
+      ok: false,
+      message:
+        `commit touches ${srcTouched.length} src/ file(s) but not CHANGELOG.md — ` +
+        "add the [Unreleased] entry describing this change. CHANGELOG.md rides " +
+        "entryChannelPaths, so it needs no declaration in entry.files.",
+      details: srcTouched.join("\n"),
     };
   },
 };
@@ -285,6 +352,7 @@ const build: Phase = {
   gates: [
     worktreeDepsGate,
     tscGate,
+    changelogGate,
     shellGate({
       name: "vitest",
       when: "afterMerge",

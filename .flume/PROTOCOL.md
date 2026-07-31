@@ -27,6 +27,26 @@ Plan ticks process the *delta* between this tick and the last `plan:` commit (co
 
 The contract: any line in `state.md` matching `/^Plan continues:\s*yes\b/im` triggers re-wake. Convention is to put it as the final line; the regex doesn't require that. Plan owns `state.md`; this line is **load-bearing** — the harness's plan-handoff in `.flume/chain.ts` reads it synchronously to decide who wakes next.
 
+## Inline-exec commands are ASCII-only
+
+Every `` !`...` `` span in `.flume/prompts/*.md` contains ASCII only. No em
+dashes, curly quotes, arrows, or box-drawing characters — inside the command
+text. Prose outside the span is unrestricted.
+
+On Windows the engine's inline-exec spawn mangles non-ASCII bytes in the argv
+round-trip, so `sh` receives the whole command as a program name and the span
+renders `<exec-failed>`. The tick then proceeds on a blinded digest: the
+failure is silent, and adjacent ASCII spans in the same file render normally,
+so nothing about the output looks wrong.
+
+Quoting style is innocent — single quotes, double quotes, `$(...)`, and
+pipelines all pass with ASCII content.
+
+**Interim.** This is prose holding a property no rung above it holds yet
+(`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung").
+It retires when the engine encodes the win32 spawn argv correctly or lints
+inline-exec at render; the promoting commit deletes this section.
+
 ## Disk vs git log
 
 When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending.json`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.

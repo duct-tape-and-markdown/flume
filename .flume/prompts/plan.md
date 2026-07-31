@@ -1,7 +1,7 @@
 # DELTA
 
 <last-plan>
-!`git log --grep='^plan:' -n 1 --format='%H %s' 2>/dev/null || echo "(no prior plan: commit — bootstrap tick)"`
+!`git log --grep='^plan:' -n 1 --format='%H %s' 2>/dev/null || echo "(no prior plan: commit - bootstrap tick)"`
 </last-plan>
 
 <commit-delta>
@@ -9,7 +9,7 @@
 </commit-delta>
 
 <spec-delta>
-!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then DIFF=$(git diff "$LAST..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since last plan)"; else echo "$DIFF" | head -300; fi; else echo "(bootstrap: read all of spec/RELEASE-*.md in full — the spec corpus is the delta)"; fi`
+!`LAST=$(git log --grep='^plan:' -n 1 --format='%H' 2>/dev/null); if [ -n "$LAST" ]; then DIFF=$(git diff "$LAST..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since last plan)"; else echo "$DIFF" | head -300; fi; else echo "(bootstrap: read all of spec/RELEASE-*.md in full - the spec corpus is the delta)"; fi`
 </spec-delta>
 
 <pending-now>
@@ -48,6 +48,8 @@ Plan processes the **delta** between this tick and the last `plan:` commit. The 
 
 **Promote (unblock).** Trigger: any entry in `<pending-now>` with `gate.kind === "blockedBy"` whose `gate.tag` is no longer a tag in `<pending-now>`. Flip such entries to `gate.kind: "open"`. This is mechanical — process all of them.
 
+**Sweep (posture).** Trigger: commits past the `Posture swept through:` stamp in `<state>` touch the sweep domain (`src/`, `tests/`, `bin/`, `examples/`) or a posture page (`.claude/rules/{engineering,engine-boundary}.md`). Apply the posture pages to code that already exists — a ratified phrase governs nothing until it is swept. Mechanics, frontier, cursor, and stamp: `.claude/rules/posture-sweep.md`, which binds this dimension. One neighborhood per tick; an open rotation sets `Plan continues: yes`; quiet-on-clean advances the stamp alone.
+
 ## How much to do this tick
 
 Each dimension is processed *to its quality bar*, not to a count. Audit deeply enough to catch real drift. Derive entries telegraphic enough that build can act mechanically. Route inbox entries you can route cleanly; leave the rest for next tick rather than guess.
@@ -58,6 +60,7 @@ If the delta is small enough that you can meet the bar across every dimension, d
 
 - **Verify writable paths** for entries you touched this tick. Off-allowlist file paths become open questions proposing chain.ts amendments, not pending entries.
 - **Re-derive state.md from scratch** — phase, this tick's `mode` tag, queue head, in-flight work, open-questions count, trunk status. **Final line is mandatory: `Plan continues: yes — <one-line reason>` OR `Plan continues: no`.** The harness re-wakes plan iff `yes`; absence is treated as `no`.
+- **Carry the posture stamp.** `Posture swept through: <sha>` is copied forward verbatim into the re-derived state.md every tick, and advanced only when a sweep rotation closes. Losing the line re-arms the whole domain; guessing a sha is worse. If `<state>` carries no stamp, this is the bootstrap sweep: stamp `HEAD` and note it in the commit body.
 
 ## Field discipline
 
@@ -89,7 +92,12 @@ Commit all changes in one commit prefixed `plan:`. **Body opens with `mode: <aud
 
 The harness will reject your commit if `pending.json` doesn't parse, or if you modify anything outside the phase's writable paths.
 
-For `per.path`, use the `spec/RELEASE-*.md` file each section was derived from — one plan round may span multiple release specs (e.g. an older line winding down while a newer one is active). For `per.section`, use that file's exact section heading text without the leading `## `. The `per` cite must resolve in the file it names.
+For `per.path`, use the file each section was derived from — one plan round may span multiple release specs (e.g. an older line winding down while a newer one is active). Two citable corpora, both human-authored:
+
+- `spec/RELEASE-*.md` — what to ship. The default for Derive and most Audit findings.
+- `.claude/rules/*.md` — what shape it takes. Sweep findings and shape defects cite the owning rule section (`engineering.md`, `engine-boundary.md`); these need no release-line home, which is what unblocks shape work between lines.
+
+For `per.section`, use that file's exact section heading text without the leading `## `. The `per` cite must resolve in the file it names.
 
 <schema>
 {{PENDING_SCHEMA}}
