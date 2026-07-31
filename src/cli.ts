@@ -20,7 +20,6 @@ import {
   writeFileSync,
   unlinkSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
@@ -55,16 +54,6 @@ import { parsePending } from "./PendingSchema.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
- * The running engine's own package root, real-path resolved once at load —
- * `ensureFlumeLink`'s default link target (`src/job.ts:133-150,163-169`) is
- * this exact path, so a job provisioned by *this* running CLI (flume ticking
- * flume, e.g. this repo's own dogfood chain from a source checkout) links
- * straight back to itself. `readLocalInstall` compares against this to catch
- * that case before re-exec'ing to it.
- */
-const OWN_PACKAGE_ROOT = realpathSync(resolve(HERE, ".."));
-
-/**
  * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
  * dist/ in the published tarball — both layouts put it at `../package.json`).
  */
@@ -75,195 +64,6 @@ function readPackageVersion(): string {
     throw new Error(`package.json at ${pkgPath} has no string "version"`);
   }
   return pkg.version;
-}
-
-/**
- * `<flumeDir>/node_modules/@dtmd/flume` — the bay's local install (v0.7 §10,
- * amended 2026-07-30), the same junction/symlink shape `job new`'s
- * `ensureFlumeLink` (`src/job.ts:133-150`) provisions under the job-scoped
- * `flumeDir` (`<repoRoot>/.flume/jobs/<name>`), reused here purely as a
- * read-time resolution signal. A bare bay's `flumeDir` is
- * `<repoRoot>/.flume`, reducing to the pre-amendment literal path.
- * "Resolves" means its `package.json` is readable and names an executable
- * `flume` bin; anything short of that (missing, unreadable, unparsable, no
- * usable bin entry) is "does not resolve" — the handshake falls through
- * rather than crashing on a malformed link target. A link that real-path
- * resolves to {@link OWN_PACKAGE_ROOT} — the running engine linking back to
- * itself, e.g. this repo's own dogfood chain provisioning a job from a
- * source checkout with no built `dist/` — is a distinct third outcome,
- * `"self"`: this invocation *is* the provisioned install, not a copy of it
- * and not an absent one. Re-exec'ing it would be at best a no-op and at
- * worst an unbounded spawn loop (the re-exec'd copy resolves the same link
- * and re-execs again); but collapsing it into "absent" wrongly hands a
- * pinned bay to arm 2's refusal even though the running engine already is
- * the pinned install. Callers proceed as authority on `"self"` — same as
- * arm 3 — rather than treating it as no local install at all.
- */
-function readLocalInstall(
-  flumeDir: string,
-): { version: string; bin: string } | "self" | undefined {
-  const root = join(flumeDir, "node_modules", "@dtmd", "flume");
-  let raw: string;
-  try {
-    raw = readFileSync(join(root, "package.json"), "utf8");
-  } catch {
-    return undefined;
-  }
-  try {
-    if (realpathSync(root) === OWN_PACKAGE_ROOT) return "self";
-  } catch {
-    return undefined;
-  }
-  let pkg: { version?: unknown; bin?: unknown };
-  try {
-    pkg = JSON.parse(raw) as { version?: unknown; bin?: unknown };
-  } catch {
-    return undefined;
-  }
-  const rel =
-    typeof pkg.bin === "string"
-      ? pkg.bin
-      : pkg.bin && typeof pkg.bin === "object"
-        ? (pkg.bin as Record<string, unknown>).flume
-        : undefined;
-  if (typeof rel !== "string") return undefined;
-  return {
-    bin: resolve(root, rel),
-    version: typeof pkg.version === "string" ? pkg.version : "unknown",
-  };
-}
-
-/**
- * The bay's own declared `@dtmd/flume` version, read from
- * `<repoRoot>/package.json` — undefined when the bay has no package.json, it
- * doesn't parse, or it never names the dependency (v0.7 §10 arm 3: an
- * unpinned bay).
- */
-function readPin(repoRoot: string): string | undefined {
-  let raw: string;
-  try {
-    raw = readFileSync(join(repoRoot, "package.json"), "utf8");
-  } catch {
-    return undefined;
-  }
-  let pkg: {
-    dependencies?: Record<string, unknown>;
-    devDependencies?: Record<string, unknown>;
-    peerDependencies?: Record<string, unknown>;
-  };
-  try {
-    pkg = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  const spec =
-    pkg.dependencies?.["@dtmd/flume"] ??
-    pkg.devDependencies?.["@dtmd/flume"] ??
-    pkg.peerDependencies?.["@dtmd/flume"];
-  return typeof spec === "string" ? spec : undefined;
-}
-
-/**
- * Best-effort peek at the `job run <name>` invocation form (v0.7 §10
- * job-run-form amendment): mirrors main()'s own `cmd === "job" && rest[0]
- * === "run"` rewrite (~line 791-825) just enough to recover `<name>` ahead
- * of that rewrite — the handshake runs before it, so it can't reuse the
- * result. Only the `--max N` shape is stripped (the one flag the real
- * rewrite also strips before reading the name), and only once it passes the
- * same validation the real rewrite applies (value present, not
- * dash-prefixed) — a malformed `--max` bails to `undefined` here exactly as
- * it would fail the real rewrite's own usage check, rather than splicing it
- * out anyway and risking a false-positive job-scoped resolution; anything
- * else malformed is left for the real dispatch to reject with its own usage
- * error.
- */
-function handshakeJobRunName(argv: readonly string[]): string | undefined {
-  if (argv[0] !== "job" || argv[1] !== "run") return undefined;
-  const words = [...argv.slice(2)];
-  const maxIdx = words.indexOf("--max");
-  if (maxIdx >= 0) {
-    const value = words[maxIdx + 1];
-    if (!value || value.startsWith("-")) return undefined;
-    words.splice(maxIdx, 2);
-  }
-  const name = words[0];
-  return name && !name.startsWith("-") && words.length === 1 ? name : undefined;
-}
-
-/**
- * Best-effort `--job`/`FLUME_JOB`/`job run <name>` peek for the handshake
- * (v0.7 §10 amendment, extended for the job-run invocation form):
- * `engineHandshake` runs ahead of every other line in `main()`, before the
- * real `--job` extraction and before the `job run` rewrite below it, so it
- * cannot reuse either result. Re-derives just enough of `resolveStateDirs`'s
- * own job resolution — same precedence (`--job` flag over `FLUME_JOB` env),
- * `job run <name>` (no `--job` flag) resolving the same as `--job <name>` —
- * same default shape (`<repoRoot>/.flume/jobs/<name>` when scoped) — to find
- * the `flumeDir` the real resolution will land on, without mutating `argv`
- * or `process.env` (a copy of `process.env` absorbs `resolveStateDirs`'s
- * write-back). A `JobResolutionConflictError` here (both `--job` and an
- * explicit `FLUME_DIR` set) is swallowed: this is a read-only signal for
- * the handshake's own path check, not the authoritative resolution — that
- * one runs later in `main()` and reports the conflict properly.
- */
-function handshakeFlumeDir(repoRoot: string, argv: readonly string[]): string {
-  const jobIdx = argv.indexOf("--job");
-  const jobValue = jobIdx >= 0 ? argv[jobIdx + 1] : undefined;
-  const jobFlag =
-    (jobValue && !jobValue.startsWith("-") ? jobValue : undefined) ??
-    handshakeJobRunName(argv);
-  try {
-    return resolveStateDirs({ ...process.env }, repoRoot, jobFlag).flumeDir;
-  } catch {
-    return join(repoRoot, ".flume");
-  }
-}
-
-/**
- * Engine↔pin handshake (v0.7 §10, amended 2026-07-30) — three arms, run
- * before any subcommand dispatch:
- *
- * 1. A local install resolves at the resolveStateDirs-derived `flumeDir`
- *    (job-scoped when `--job`/`FLUME_JOB` applies, bare-bay otherwise) —
- *    re-exec its bin with this process's own argv, inheriting stdio, and
- *    return its exit code. No version comparison: the local install is the
- *    authority once a bay is provisioned, not a copy to check against it.
- *    A self-referential install (`readLocalInstall` returns `"self"`) skips
- *    this re-exec — this process already *is* the install — and returns
- *    `undefined` to proceed, same as arm 3, regardless of pin state: it is
- *    the authority, never a stale-install refusal target.
- * 2. No local install, but the bay's `package.json` pins `@dtmd/flume` —
- *    refuse (exit 2), naming the pin and this running engine's own version
- *    (`readPackageVersion()`, compared only to shape the message).
- * 3. Unpinned — returns `undefined`; the caller proceeds exactly as today.
- */
-function engineHandshake(repoRoot: string, argv: readonly string[]): number | undefined {
-  const flumeDir = handshakeFlumeDir(repoRoot, argv);
-  const local = readLocalInstall(flumeDir);
-  if (local === "self") return undefined;
-  if (local) {
-    const result = spawnSync(process.execPath, [local.bin, ...argv], {
-      stdio: "inherit",
-    });
-    if (result.error) throw result.error;
-    if (result.signal) {
-      process.kill(process.pid, result.signal);
-      return 1;
-    }
-    return result.status ?? 1;
-  }
-
-  const pin = readPin(repoRoot);
-  if (pin === undefined) return undefined;
-
-  const linkPath = join(flumeDir, "node_modules", "@dtmd", "flume");
-  console.error(
-    `[flume] ${repoRoot}'s package.json pins @dtmd/flume@${pin}, but no ` +
-      `install resolves at ${linkPath} (this running engine is ` +
-      `@dtmd/flume@${readPackageVersion()}); provision the pinned install ` +
-      `(e.g. \`flume job new\`) or drop the pin to run unpinned`,
-  );
-  return 2;
 }
 
 /**
@@ -817,12 +617,6 @@ async function runJobVerb(
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const repoRoot = resolveRepoRoot(process.cwd());
-
-  // Engine↔pin handshake (v0.7 §10) — ahead of every other line in main():
-  // a local install, once present, is the authority for this invocation's
-  // argv verbatim, not just the state-root-scoped subcommands below.
-  const handshake = engineHandshake(repoRoot, argv);
-  if (handshake !== undefined) return handshake;
 
   // Global `--job <name>` (v0.5 §3): extract it wherever it appears so it
   // composes with every subcommand, before any dispatch.
