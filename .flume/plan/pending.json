@@ -1,51 +1,10 @@
 [
   {
-    "tag": "INLINE-EXEC-STDIN-TRANSPORT",
+    "tag": "INLINE-EXEC-RENDER-REFUSES",
     "gate": {
       "kind": "open"
     },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "evaluateInlineExec (187-211) spawns sh with no command argv, writes the command to stdin as UTF-8 and closes it; buffers and enforces the 4 MiB cap itself per §2"
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "execGate drops its `export` and the Prompt.ts-consumer clause from its docstring (30-38) - shellGate is its only caller once §4 removes the sharing; behavior unchanged per §4"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "retire the execFile-mock argv assertions; assert stdin transport and the U+2014 repro"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Inline-exec reaches sh through stdin instead of argv - the argv path corrupts any non-ASCII byte on win32, silently blinding a tick's digest spans.",
-    "per": {
-      "path": "spec/RELEASE-v0.10.md",
-      "section": "2. Inline-exec reaches `sh` through stdin, never argv"
-    },
-    "tests": [
-      {
-        "path": "tests/Prompt.test.ts",
-        "asserts": "sh is spawned with no command argument and the command text arrives on stdin - fails on the pre-fix tree, which passes ['-c', cmd], on every platform. The U+2014 span rendering its real output rides this as the end-to-end case."
-      }
-    ],
-    "acceptance": "A span whose command contains U+2014 renders its real output on win32; no inline-exec path constructs ['-c', cmd] or reaches cmd.exe; execGate's shim behavior is untouched.",
-    "notes": "§4 removes the sharing outright (supersedes INLINE-EXEC-NO-WIN32-SHELL-RETRY). §2 wants a pre-fix failure - the transport-shape assert does that on every platform; the U+2014 case only fails pre-fix on win32, so it rides. spawn has no maxBuffer, hence the hand-rolled cap. Verified this tick: execGate is absent from index.ts and Prompt.ts is its only outside caller, so §4 strands the export. §4's still-covered leg is pinned via shellGate at tests/Gate.test.ts:147 (win32-gated) - no test write."
-  },
-  {
-    "tag": "INLINE-EXEC-RENDER-REFUSES",
-    "gate": {
-      "kind": "blockedBy",
-      "tag": "INLINE-EXEC-STDIN-TRANSPORT"
-    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -99,6 +58,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -136,6 +96,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -185,6 +146,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -238,6 +200,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -275,6 +238,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -316,34 +280,11 @@
     "notes": "§3 names three things status prints - awake phases, pending entry count, last commit. Only the awake set shipped. The 'last commit' leg is parked, not filed: unspecified format, and it restates git. cli.ts:793 drops a parse failure under a catch (805) whose comment claims only chain-load failures, so today a corrupt file also silences the v0.8 §4 capability lines. job.ts:485-491 already holds the detection - share it, never re-derive."
   },
   {
-    "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": ".gitignore",
-          "description": "add .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl - untracked noise every tick.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "8. Repository hygiene"
-    },
-    "tests": [],
-    "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, or .flume/tick-verdicts.jsonl in git status.",
-    "notes": "last-tick.json is dead - v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs; this repo's root .flume/ isn't a job dir so it never got the entry. tick-verdicts.jsonl (Dispatcher.ts:234, bounded history log) is the file actually untracked in git status this tick."
-  },
-  {
     "tag": "CHANGELOG-0.9.0-BACKFILL",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -364,39 +305,11 @@
     "notes": "480b81c pendingGate lazy targetFence read; 9f4e62f+1a67d1c renderSchemaForPrompt separator-swallowed-by-comment fix; 58be15d win32 inline-exec ENOENT shell-retry fallback; 3170113 shellGate optional env. Pre-1.0: published npm tarball's copy stays stale, acceptable. changelogGate (chain.ts) prevents recurrence going forward; this is the one-time backfill only."
   },
   {
-    "tag": "SCHEMA-PROMPT-AGREEMENT-GATE",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "agreement test: real renderSchemaForPrompt output driven through real parsePending; the 'no drift' test (607-623) gets the title it asserts - today it checks only that each declared name appears in the render, never the converse"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "renderSchemaForPrompt and parsePending are an ungated agreement seam in PendingSchema.ts - nothing drives the real writer through the real reader.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [
-      {
-        "path": "tests/PendingSchema.test.ts",
-        "asserts": "entries built from renderSchemaForPrompt's stated hints (tag charset/length, notes/summary caps) parse via parsePending; entries violating a stated hint constraint fail parsePending"
-      }
-    ],
-    "acceptance": "New agreement test passes; it would have caught the tag-charset and notes-cap drift instances this entry supersedes (both already in sync today, now pinned against silent regression).",
-    "notes": "Closes the class, not just the two known-fixed instances (v0.8 §3 tag-grammar reduction; notes cap already rendered). Supersedes inbox's TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-VISIBILITY concern. Distinct from PENDING-RETIRE-HINT-PATH-ONLY: that seam's consumer is the fence, which parsePending never exercises."
-  },
-  {
     "tag": "TAG-LENGTH-BOUND-AGREEMENT-PIN",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -438,6 +351,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -467,6 +381,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -504,6 +419,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -541,6 +457,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -578,6 +495,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -602,43 +520,11 @@
     "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
   },
   {
-    "tag": "CASCADE-ENTRY-PHASE-HUMANONLY",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "phases (263) leads with plan, so the entry phase is machine-wakeable per v0.5 decision 6; the header's three-phase list (5-11) follows the new order"
-        },
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "no coverage of any example's phase order today - add the entry-phase pin over every chain in examples/"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade-chain.ts declares phases [spec, plan, build] with humanOnly ['spec'], so a cold `flume job run` wakes the one phase the chain marks human-woken.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "7. Examples"
-    },
-    "tests": [
-      {
-        "path": "tests/examples.integration.test.ts",
-        "asserts": "every chain under examples/ names a phases[0] absent from its own humanOnly list - fails on the pre-fix tree, where cascade leads with spec"
-      }
-    ],
-    "acceptance": "cascade's phases[0] is plan; a test refuses a humanOnly entry phase across every example chain; CHAIN-AUTHORING's 'cascade leads with plan' claim is true of the file it quotes.",
-    "notes": "Verified this tick: job.ts:297 wakes chain.phases[0] unconditionally (v0.5 decision 6); Phase.ts:224-229 scopes humanOnly to handoff alone, so jobRun is not the defect - the example is. docs/CHAIN-AUTHORING.md:1216-1229 shows [plan, build, spec] and says cascade leads with plan because a fresh job must derive pending first; the file it quotes says the opposite. No doc edit needed. Nothing imports cascade-chain.ts, so tsc is its only check today."
-  },
-  {
     "tag": "EXAMPLES-INTEGRATION-VACUOUS-GREEN",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -668,6 +554,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -697,6 +584,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -726,6 +614,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [
         {
@@ -777,6 +666,7 @@
       "kind": "deferred",
       "reason": "tests/job.test.ts is v0.11's most-churned file; landing this pin now duplicates work v0.11's test rewrite will redo"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -806,6 +696,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -836,6 +727,7 @@
       "kind": "blockedBy",
       "tag": "INLINE-EXEC-RENDER-REFUSES"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -868,6 +760,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -900,6 +793,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -942,6 +836,7 @@
       "kind": "deferred",
       "reason": ":570 and :793 sit inside extract, which RELEASE-v0.11.md §3 deletes outright; :417 is in code that section rewrites - hold until v0.11 derives"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -970,6 +865,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -998,6 +894,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -1039,6 +936,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -1071,6 +969,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -1100,6 +999,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -1124,6 +1024,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -1153,6 +1054,7 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
