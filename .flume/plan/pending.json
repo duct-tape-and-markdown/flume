@@ -1147,5 +1147,33 @@
     ],
     "acceptance": "All three omission tests assert infos non-empty via a known line before the friction-omission check; suite green.",
     "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood. Verified on disk: lines 4291, 4319, 4368 have no preceding assertion on infos; the --max positive test at 4343 already proves the pattern (asserts 'reached --max 2' before the friction:true check at 4345) - its omission sibling at 4349-4369 lacks the equivalent. Does not fail pre-fix (the named exception) - superviseLoop does log today; what it catches is the logger going silent."
+  },
+  {
+    "tag": "SCHEMADELTA-DEAD-FIXTURE-FIELD",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/partition.test.ts",
+          "description": "delete the dead `schemaDelta: \"none\"` line from makeEntry (21)"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "same dead field, the entry() helper (86)"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two test fixture builders still set schemaDelta on constructed PendingEntry objects - the field was deleted from the schema and has no consumer.",
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "A violation counts only when verified on disk this tick"
+    },
+    "tests": [],
+    "acceptance": "No occurrence of schemaDelta remains in tests/partition.test.ts or tests/Prompt.test.ts; vitest green.",
+    "notes": "Sweep finding, tests/partition.test.ts neighborhood. 8c52c92 deleted schemaDelta (dead field, no consumer); these two fixture builders still set it (PendingEntry types as Record<string, unknown>, so tsc never caught it). PendingSchema.test.ts:219-226 reuses the same name as its rejected-undeclared-field example, so the leftover is a landmine, not neutral cruft: a real parsePending call would refuse it. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
   }
 ]
