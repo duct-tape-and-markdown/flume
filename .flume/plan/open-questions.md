@@ -119,30 +119,33 @@ practice — (1) is disproportionate machinery for a UX papercut, (2) barely
 helps. Every real fix here is heavier than the problem it solves
 (collaboration.md's complexity signal).
 
-## setupWorktree/gate install-options & manager-detection sharing (inbox finding 4)
+## setupWorktree install-options surface (inbox finding 4, narrowed)
 
 **PARKED**
 
 `setupWorktree(dir)` (`src/setupWorktree.ts`) takes no options — install
 commands are hardcoded arrays; v0.7 §11's acceptance/non-goals text locks
 the exact `pnpm install --frozen-lockfile` / `npm ci` shape with no options
-surface. Separately, `tscGate`/`vitestGate`/`eslintGate`
-(`src/builtinGates.ts:111-143`) hardcode `cmd: "pnpm"`, independent of
-`setupWorktree`'s own lockfile-sniffing — no shared detection helper
-exists, and no spec section covers gates auto-detecting the package
-manager (v0.1 §2's public-API list names the gates, not this behavior).
+surface.
+
+The gate half of this question is already in flight and no longer needs a
+spec amendment: `BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE` (pending, cites
+`engine-boundary.md`'s *Capability vs convention*) gives `tscGate`/
+`vitestGate`/`eslintGate` an optional `cmd` override the chain supplies
+directly — a capability injection point, not auto-detection, but it closes
+the "chain can't reuse these builtins at all" gap without touching §11.
+What remains open is `setupWorktree`'s own missing options surface (no
+`{ args?, env? }` of any kind today) — that one still needs a human call on
+whether it's spec-worthy.
 
 Options:
 
 1. **Spec amendment.** Extend §11 with an optional `{ args?, env? }` on
-   `setupWorktree` and describe a shared manager-detection helper the
-   pnpm-hardcoded gates adopt — becomes a normal derive-from-spec entry
-   once written.
+   `setupWorktree` — becomes a normal derive-from-spec entry once written.
 2. **Decline, chain-side workaround.** A chain wanting `--no-audit
-   --no-fund` or `CI=true` can already wrap `setupWorktree` itself; a
-   chain wanting non-pnpm `tsc`/`vitest` can hand-roll `shellGate`.
+   --no-fund` or `CI=true` can already wrap `setupWorktree` itself.
 
-Recommended: (1) — the asymmetry (`setupWorktree` already detects the
-manager, the gates don't) is a real duplication smell per
-engine-boundary.md — but the exact options shape is a spec author's call,
-not plan's to invent silently.
+Recommended: (2) unless a real chain hits the need — once
+`BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE` ships, the sharper duplication
+smell (gates hardcoding `pnpm` with no override at all) is gone; what's left
+is a wrap-it-yourself gap, not an asymmetry.
