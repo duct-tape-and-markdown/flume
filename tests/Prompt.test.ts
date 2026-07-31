@@ -53,7 +53,6 @@ function entry(overrides: Partial<PendingEntry> = {}): PendingEntry {
     gate: { kind: "open" },
     dependsOnForks: [],
     files: { new: [], edit: [], retire: [] },
-    schemaDelta: "none",
     tests: [],
     acceptance: "green",
     ...overrides,

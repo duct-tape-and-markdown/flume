@@ -18,7 +18,6 @@ function makeEntry(
       edit: (paths.edit ?? []).map((p) => ({ path: p, description: "e" })),
       retire: paths.retire ?? [],
     },
-    schemaDelta: "none",
     tests: [],
     acceptance: "green",
   };
