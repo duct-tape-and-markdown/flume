@@ -297,6 +297,306 @@
     "notes": "PendingSchema.ts:65 hardcodes 39 = a 24-char stamp + 2 + 2 + 'reverted.md'; Dispatcher.ts:2129 is the writer. Correct today - this pins it, so it does not fail pre-fix (same shape as PARSEPENDINGLOOSE-WRITE-PATH-PIN). A silent break lands as ENAMETOOLONG inside writeRevertNote's best-effort catch (2133): a warn line and a lost operator note."
   },
   {
+    "tag": "JOB-BRANCH-GRAMMAR-RETIRED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "jobNew (145-160) drops branch creation/checkout and stays on current HEAD; jobRun (270-282) drops the branchExists assert-or-throw and checkout leg; jobRm (368-397) drops the branch checkout leg and the 'branch survives' framing in its final log (425-426) - per §2/§3"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "delete the wrong-branch guard (745-758); drop the HEAD==job/<name> exit-1 clauses from HELP_SUB.tick (287-288), HELP_SUB.loop (307-308), the --job flag help (260), and the lifecycle-verbs header (357-358); job new/run/rm help text (234-244) drops branch-creation language"
+        },
+        {
+          "path": "src/git.ts",
+          "description": "currentBranch (39-42) loses its only caller when the cli.ts guard above goes - LSP-verify zero remaining callers and retire it if so, leave it if not"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "update the branch-leg assertions across jobNew (271-506), jobRun preflight (752-876), jobRm (877-1044) to the no-branch-topology behavior per §2/§3"
+        },
+        {
+          "path": "tests/job.integration.test.ts",
+          "description": "update the job-new to job-run (143-239) and job-new to run to rm (240-331) integration fixtures off branch-checkout choreography"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "drop or repoint the wrong-branch-guard coverage tied to the removed cli.ts block"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Breaking entry per §7: job/<name> branch convention retired"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "job/<name> branch grammar retired from job new/run/rm and the tick/loop wrong-branch guard - the engine no longer creates, asserts, or names a job branch.",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "2. A job is a state root"
+    },
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "jobNew leaves HEAD on whatever branch it started on with one baseline commit (no branch created); jobRun/jobRm no longer touch branches"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "flume tick/loop under --job succeed regardless of current branch; two state roots under one checkout each run a tick sequentially without a branch switch (§2 acceptance fixture)"
+      }
+    ],
+    "acceptance": "job new/run/rm construct, assert, or checkout no job/<name> branch; the cli.ts wrong-branch guard is gone; job new leaves HEAD on whatever branch it started on with one baseline commit; tick/loop run under --job regardless of current branch; tsc/vitest green. (Full §3 grep, including extract's own branch use, lands with JOB-EXTRACT-REMOVED.)",
+    "notes": "job.ts's git ops go through its own git() wrapper (61-70), not src/git.ts - no src/git.ts changes needed except currentBranch's possible retirement. branchExists (75-82) may still be needed by jobExtract until JOB-EXTRACT-REMOVED lands - verify before deleting. Blast radius per RELEASE-v0.11.md §1."
+  },
+  {
+    "tag": "JOB-EXTRACT-REMOVED",
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "JOB-BRANCH-GRAMMAR-RETIRED"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "delete jobExtract (598-804), JobExtractOptions/JobExtractResult (540-572), gitShowBlob (507-524), worktreeHolding (330-349); delete readFrictionFiles (525-539) only if LSP shows no caller outside extract - v0.6.2 §6 friction reads may still need it"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "delete the extract verb wiring (524-580) and its help text (247-251)"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "delete Chain.harvest (241-245) - job.ts:637 was its only consumer"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "delete the jobExtract describe block and its helper setup (1192-1614) whole, not rewritten, per §3"
+        },
+        {
+          "path": "tests/job.integration.test.ts",
+          "description": "delete the job-new to run to extract describe block (332-576) whole, not rewritten, per §3"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Breaking entry per §7: flume job extract and Chain.harvest removed"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume job extract and Chain.harvest removed entirely - the clean-history ending becomes an operator git recipe, not engine machinery (§3).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "3. Job verbs shed navigation; extract is removed"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "flume job extract exits with an unrecognized-verb usage error rather than running"
+      }
+    ],
+    "acceptance": "grep -rn 'harvest' src/ is empty; grep -n 'checkout|cherry-pick|branch' src/job.ts hits no git invocations; extract's test suites are deleted, not rewritten; tsc/vitest green.",
+    "notes": "Blocked on JOB-BRANCH-GRAMMAR-RETIRED so the full §3 grep is checkable in one pass - both entries touch job.ts, the engine serializes on the overlap. readFrictionFiles' other-caller status is unverified this tick (research flagged 'possibly used elsewhere') - LSP-verify before deleting."
+  },
+  {
+    "tag": "TIP-CLAIM-ADVISORY",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "add a git-common-dir resolver (git rev-parse --git-common-dir) and the tip-claim primitive (exclusive-create wx, pid-liveness reclaim) mirroring liveLoopPid's shape (src/job.ts:312-323) - new code, no existing common-dir helper today"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "loop's start (883-919) acquires the tip claim alongside loop.pid, same exit/SIGINT/SIGTERM release hooks; loop and tick both refuse (exit 1) on detached HEAD before any tick per §4; the status block (769-776) reports the claim's holder pid or staleness alongside supervisor liveness"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Added entry per §7: advisory tip claim"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Advisory per-ref tip claim (§4): one flume writer per tip, keyed under <git-common-dir>/flume/tip-claims/<ref path>, mirroring the loop.pid lock's acquire/reclaim shape.",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "4. Tip claim - one flume writer per tip, advisory"
+    },
+    "tests": [
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "acquire creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>; EEXIST + live pid refuses naming the holder; EEXIST + dead pid reclaims silently and retries; release removes the file"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "two flume loops against different state roots on one branch - second refuses naming the holder pid; two loops from two worktrees on different branches both run; claim file gone after clean exit and after SIGTERM; flume loop on detached HEAD exits 1 before any tick; flume status reports the claim"
+      }
+    ],
+    "acceptance": "§4's acceptance list verbatim: two loops on one branch serialize with a named-holder refusal; two loops on different branches from different worktrees both run; claim file absent after clean exit/SIGTERM; a dead-pid claim reclaims silently; detached-HEAD loop exits 1 before any tick; tsc/vitest green.",
+    "notes": "No git-common-dir resolver exists in src/git.ts today. Mirrors src/job.ts:312-323 (liveLoopPid) and src/cli.ts:883-919 (loop.pid acquire/release) structurally; keying differs (per-ref vs per-state-root) so this is a sibling primitive, not a call-site reuse of liveLoopPid itself."
+  },
+  {
+    "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "record the tip sha at each tick-start read already in place (singleton preHead 1028, fanout-entry preHead ~1139, fanout preCherry 1316, pending-ledger preUpdate ~2295); re-verify immediately before each harness-driven commit call (cherryPick ~1318, commitPaths in commitPendingUpdate ~2303-2310) - moved ref aborts with no commit; for the agent's own direct commit (singleton/fanout-worktree), apply the existing guarded-revert idiom to any commit whose parent isn't the recorded tip, per §5's own cited precedent"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "TickOutcome/PriorAttempt gain the tip-moved fact per §5 as a sibling to NoCommitMode (53-57), not a fifth member - see notes"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the §5 acceptance fixture: ref advances between agent completion and commit - tip-moved reported, no commit lands, working tree retains agent output; unmoved ref commits exactly as today"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Added entry per §7: tip-moved verify"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Tick commits only land on the tip they started on (§5) - a moved ref refuses the commit and reports tip-moved instead of gate-revert/voluntary-bail/platform-preempt.",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "5. Tip verify - commit only onto the tip the tick started on"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a fixture that advances the ref between agent completion and commit reports tip-moved, produces no commit, and leaves the agent's output on disk; an unmoved ref's tick commits exactly as before; the tip-moved outcome is distinguishable in the verdict a supervisor reads (superviseLoop's errored-tick classification, ~2497)"
+      }
+    ],
+    "acceptance": "§5's acceptance verbatim: ref-advanced fixture reports tip-moved with no commit and retained agent output; unmoved-ref tick is unchanged; tip-moved is distinguishable in the tick verdict; tsc/vitest green.",
+    "notes": "Architecturally split by path: fanout has a real harness-side commit step (cherryPick/commitPaths) to gate cleanly; singleton/fanout-worktree-direct agent commits already exist by the time the harness observes them (the agent runs `git commit` itself), so those need the guarded-revert idiom §5 explicitly cites as its own precedent, not a pre-commit gate. Functionally independent of TIP-CLAIM-ADVISORY - §5's backstop stands alone per spec."
+  },
+  {
+    "tag": "DOCS-JOB-EXTRACT-RETIRED",
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "JOB-EXTRACT-REMOVED"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "docs/MIGRATING-0.11.md",
+          "description": "model docs/MIGRATING-0.8.md's shape (audience para, numbered upgrade sections, symptom-to-cause table, Non-goals close); cover integrate-or-abandon for live job/<name> branches via ordinary git then delete the branch, plus the extract-replacement recipe (side branch + operator integration) per §6"
+        }
+      ],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "rewrite the branch-is-the-job framing (103, 229-276) - jobs as coexisting state roots on whatever branch, no branch guidance beyond 'run on whatever branch you want the record on', worktrees as the parallelism recipe, extract's mention dropped"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "rewrite job new/run/rm/status (13, 73-126) off branch language; delete the job extract section (134-147) entirely"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "delete the Chain.harvest field doc (59, 77-80)"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "README.md/docs/CLI.md job-branch+extract sections rewritten, docs/CHAIN-AUTHORING.md drops harvest, new docs/MIGRATING-0.11.md ships the branch-integration and extract-replacement recipes (§6).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "6. Docs"
+    },
+    "tests": [],
+    "acceptance": "grep -rin 'extract' README.md docs/CLI.md docs/CHAIN-AUTHORING.md is empty; MIGRATING-0.11.md contains the branch-integration and extract-replacement recipes (§6 acceptance verbatim).",
+    "notes": "docs/MIGRATING-0.8.md (only existing precedent) is the shape to model - audience para, numbered sections, symptom/cause table, Non-goals. This entry covers only the branch/extract half of §6; tip-claim/verify's doc facts are DOCS-TIP-CLAIM-VERIFY, since README/CLI.md need both edits independently."
+  },
+  {
+    "tag": "DOCS-TIP-CLAIM-VERIFY",
+    "gate": {
+      "kind": "blockedBy",
+      "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "add the tip claim/verify facts an operator may hit - one advisory claim per ref, worktrees as the way to run jobs hot simultaneously (§4), a tip-moved tick outcome (§5)"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "document flume status's tip-claim line and the tip-moved exit/verdict behavior"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "README.md/docs/CLI.md document the tip claim and tip-moved verify as operator-facing facts (§6).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "6. Docs"
+    },
+    "tests": [],
+    "acceptance": "README.md and docs/CLI.md describe the tip claim and tip-verify behavior a real operator invocation now produces.",
+    "notes": "Blocked on TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP rather than TIP-CLAIM-ADVISORY only because gate.blockedBy takes one tag; TIP-CLAIM-ADVISORY should also ship first in practice - both are open today, confirm both landed before writing this."
+  },
+  {
+    "tag": "BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "give tscGate/vitestGate/eslintGate (122, 135, 148) an optional cmd override, defaulting to 'pnpm' - chain supplies the package manager, engine supplies the enforcement"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "cover the override - a non-default cmd used instead of pnpm; omitted cmd behaves exactly as today"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tscGate/vitestGate/eslintGate hardcode cmd: 'pnpm' with no override - a non-pnpm chain can't reuse these builtins at all, must hand-roll via shellGate.",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Capability vs convention"
+    },
+    "tests": [
+      {
+        "path": "tests/builtinGates.test.ts",
+        "asserts": "tscGate/vitestGate/eslintGate accept an optional cmd override that replaces 'pnpm' in the invoked command; omitting it reproduces today's exact shellGate options"
+      }
+    ],
+    "acceptance": "A chain can get tscGate/vitestGate/eslintGate with npm/yarn/bun's invocation instead of pnpm without hand-rolling shellGate from scratch; default (no override) behavior is byte-identical to today; tsc/vitest green.",
+    "notes": "Sweep finding, src/builtinGates.ts neighborhood (bootstrap rotation - code delta armed it, no prior stamp covered this file). Same shape as the already-pending PENDING-GATE-HINT-OPTION (missing injection point on a builtin gate) but a different field - the command itself, not the failure hint. All three re-exported via src/index.ts:31-37, presented as reusable builtins in examples/cascade-chain.ts."
+  },
+  {
     "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
     "gate": {
       "kind": "open"
@@ -553,8 +853,8 @@
   {
     "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",
     "gate": {
-      "kind": "deferred",
-      "reason": "tests/job.test.ts is v0.11's most-churned file; landing this pin now duplicates work v0.11's test rewrite will redo"
+      "kind": "blockedBy",
+      "tag": "JOB-EXTRACT-REMOVED"
     },
     "dependsOnForks": [],
     "files": {
@@ -579,7 +879,7 @@
       }
     ],
     "acceptance": "No assertion in tests/job.test.ts reads a verdict off a set it has not shown to be populated.",
-    "notes": "Deferred 2026-07-31 (inbox): the pinned behavior (jobNew ignore-merge) survives v0.11, but tests/job.test.ts is v0.11's most-churned file (RELEASE-v0.11.md §3) - landing this pin now does the work twice. Fold into v0.11's test rewrite once that line derives. job.ts:34/177/219/639 unchanged meanwhile."
+    "notes": "The pinned behavior (jobNew ignore-merge) survives v0.11 unchanged (job.ts:34/177/219/639), but its three cited lines sit inside tests/job.test.ts's jobNew describe (271-506), which JOB-BRANCH-GRAMMAR-RETIRED rewrites and JOB-EXTRACT-REMOVED further churns - landing this pin before both land would duplicate the work. Blocked on the later of the two."
   },
   {
     "tag": "PROMPT-TEST-FENCE-SLICE-VACUOUS",
@@ -722,8 +1022,8 @@
   {
     "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
     "gate": {
-      "kind": "deferred",
-      "reason": ":570 and :793 sit inside extract, which RELEASE-v0.11.md §3 deletes outright; :417 is in code that section rewrites - hold until v0.11 derives"
+      "kind": "blockedBy",
+      "tag": "JOB-EXTRACT-REMOVED"
     },
     "dependsOnForks": [],
     "files": {
@@ -747,7 +1047,7 @@
     },
     "tests": [],
     "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
-    "notes": "Deferred 2026-07-31 (inbox): :570/:793 sit inside extract, which RELEASE-v0.11.md §3 removes outright; :417's pre-0.9 clause is in code that section rewrites. Only :48 (JOB-RESOLUTION cite) survives v0.11 untouched. Re-scope to :48 alone or drop, once v0.11 derives."
+    "notes": ":570/:793 sit inside extract, which JOB-EXTRACT-REMOVED deletes outright; :417's pre-0.9 clause is in jobRm, which JOB-BRANCH-GRAMMAR-RETIRED rewrites. Only :48 (JOB-RESOLUTION cite) survives both untouched. Re-verify line numbers and re-scope to :48 alone (or drop) once JOB-EXTRACT-REMOVED lands."
   },
   {
     "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
