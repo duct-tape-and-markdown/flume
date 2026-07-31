@@ -20,6 +20,17 @@ Every check lives at the most deterministic layer that can express it — a
   a test now pins is residue fileable against this section.
 - A directive repeated in a prompt *and* a rule is drift: the rule is the
   home, the prompt points at it.
+- **Narration that anticipates its own obsolescence names both the trigger
+  and the actor that retires it.** "Unpin when X", "revisit after Y", "for
+  the v0.N line" — each is a decision carrying an expiry predicate. A
+  checkable predicate belongs a rung up: a pin, a gate, or a named sweep
+  lens. An uncheckable one names, in the prose itself, who retires it and in
+  which commit. An unowned trigger is how a scoped decision outlives its
+  scope silently, in a form that still reads as current.
+- **Prefer the condition to the era.** Prose scoped to a window that closes
+  ("for the current line", "until the migration") goes stale the moment the
+  window does, and nothing re-reads it. State the condition that would
+  change the decision, so a sweep can evaluate it.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is

@@ -277,6 +277,67 @@ const changelogGate: Gate = {
   },
 };
 
+// ---------- agents ----------
+
+/**
+ * Per-tick session capture + condensed terminal output, pinned to `model`.
+ *
+ * `claude -p --output-format stream-json --verbose` emits NDJSON per turn
+ * (tool calls, content, token usage). withSessionCapture (innermost) tees
+ * the raw stream into `<FLUME_DIR>/sessions/<timestamp>-<cwd>.jsonl` for cost
+ * analysis and replay. withTerminalRenderer (outermost) consumes the same
+ * stream and forwards a one-line-per-tool-call summary to the dispatcher's
+ * stdout instead of the raw JSON wall.
+ */
+const phaseAgent = (model: string) =>
+  withTerminalRenderer(
+    withSessionCapture(
+      claudeCode({
+        outputFormat: "stream-json",
+        extraArgs: [
+          // Stabilize the system prompt for cache reuse: moves per-machine
+          // sections (cwd, env, git status) into the first user message.
+          // Within an active cache window, consecutive ticks can hit the
+          // cached system prefix instead of rebuilding it.
+          "--exclude-dynamic-system-prompt-sections",
+          "--model",
+          model,
+        ],
+      }),
+      {
+        // Sessions track the flume state dir (FLUME_DIR), so a relocated,
+        // ephemeral dock owns its transcripts too and one `rm` removes the
+        // whole footprint (RELEASE-v0.3 §12). The CLI canonicalizes the
+        // resolved root into FLUME_DIR; the `?? CHAIN_DIR` fallback is
+        // defensive only. Absolute either way, so build (which runs in
+        // <flumeDir>/worktrees/<tag>/) writes up into the state dir's
+        // sessions/ rather than a worktree git eats.
+        dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
+        filename: (inv) => {
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          const cwdName = basename(inv.cwd) || "tick";
+          return `${ts}-${cwdName}.jsonl`;
+        },
+      },
+    ),
+  );
+
+/**
+ * Model is pinned per phase because the phases differ in kind, not in
+ * difficulty: plan carries open-ended judgment — the posture sweep, inbox
+ * triage, deciding what is a question versus an entry — while build
+ * executes entries whose decisions are already made.
+ *
+ * Revisit when either premise stops holding: if plan's dimensions reduce to
+ * bookkeeping again, or if build begins reverting on judgment rather than on
+ * mechanics. That check is owned by the posture sweep's `expired narration`
+ * lens (`.claude/rules/posture-sweep.md`) — a tick observing either
+ * condition files the re-pin as a pending entry rather than leaving this
+ * comment to describe a decision that no longer holds.
+ */
+const planAgent = phaseAgent("opus");
+const buildAgent = phaseAgent("sonnet");
+
 // ---------- phases ----------
 
 const plan: Phase = {
@@ -285,6 +346,7 @@ const plan: Phase = {
     "Re-derive .flume/plan/{pending.json,state.md,open-questions.md} from spec/ + current src state; drain .flume/inbox.md.",
   promptPath: "prompts/plan.md",
   concurrency: "singleton",
+  agent: planAgent,
   writablePaths: [
     ".flume/plan/pending.json",
     ".flume/plan/state.md",
@@ -341,6 +403,7 @@ const build: Phase = {
   description: "Ship one (or N disjoint) pending entries to the trunk.",
   promptPath: "prompts/build.md",
   concurrency: "fanout",
+  agent: buildAgent,
   // Fence hoisted to `buildFence` above so plan's pendingGate pre-checks
   // against the same object build enforces — one declaration, no drift.
   writablePaths: buildFence.writablePaths,
@@ -403,47 +466,9 @@ const flumeChain: Chain = {
 export default flumeChain;
 
 /**
- * Per-tick session capture + condensed terminal output.
- *
- * `claude -p --output-format stream-json --verbose` emits NDJSON per turn
- * (tool calls, content, token usage). withSessionCapture (innermost) tees
- * the raw stream into `<FLUME_DIR>/sessions/<timestamp>-<cwd>.jsonl` for cost
- * analysis and replay. withTerminalRenderer (outermost) consumes the same
- * stream and forwards a one-line-per-tool-call summary to the dispatcher's
- * stdout instead of the raw JSON wall.
+ * Chain-level fallback agent (`phase.agent ?? chainModule.agent ??
+ * DispatcherOptions.agent`). Both phases declare their own above, so this
+ * resolves only for a phase added without one — it exists so that phase runs
+ * rather than failing to resolve an agent at all.
  */
-export const agent = withTerminalRenderer(
-  withSessionCapture(
-    claudeCode({
-      outputFormat: "stream-json",
-      extraArgs: [
-        // Stabilize the system prompt for cache reuse: moves per-machine
-        // sections (cwd, env, git status) into the first user message.
-        // Within an active 5-min cache window, consecutive ticks can hit
-        // the cached system prefix instead of rebuilding it.
-        "--exclude-dynamic-system-prompt-sections",
-        // Both phases on Sonnet for the v0.6 line: the design decisions
-        // live in the spec (grilled 2026-07-23), so remaining plan ticks
-        // are queue bookkeeping and build is well-specced implementation.
-        // Unpin (or re-split per phase) when a line starts from a thinner
-        // spec or dogfood shows gate-revert churn.
-        "--model",
-        "sonnet",
-      ],
-    }),
-    {
-      // Sessions track the flume state dir (FLUME_DIR), so a relocated,
-      // ephemeral dock owns its transcripts too and one `rm` removes the whole
-      // footprint (RELEASE-v0.3 §12). The CLI canonicalizes the resolved root
-      // into FLUME_DIR; the `?? CHAIN_DIR` fallback is defensive only. Absolute
-      // either way, so build (which runs in <flumeDir>/worktrees/<tag>/) writes
-      // up into the state dir's sessions/ rather than a worktree git eats.
-      dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
-      filename: (inv) => {
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        const cwdName = basename(inv.cwd) || "tick";
-        return `${ts}-${cwdName}.jsonl`;
-      },
-    },
-  ),
-);
+export const agent = buildAgent;

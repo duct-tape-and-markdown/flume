@@ -50,9 +50,14 @@ commit message, or a prior tick's note does not count.
 
 Beyond the pages' own sections, standing sweep lenses: a module carrying jobs
 that want separate homes; dead plumbing (unconstructable branches, vacuous
-result paths); and embedded provider knowledge (documented external facts —
-tool names, path layouts, payload shapes — as literals outside the surface
-that owns them).
+result paths); embedded provider knowledge (documented external facts — tool
+names, path layouts, payload shapes — as literals outside the surface that
+owns them); and **expired narration** — prose whose stated scope has closed
+or whose revisit condition has fired: a comment scoped to a shipped release
+line, an `interim` marker whose retiring change has landed, a "revisit when
+X" whose X is observable now. The sweep domain for this lens includes
+`.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no other
+lens reads.
 
 An **absence verdict never rests on a bare text search**: proving a symbol is
 *un*referenced needs LSP references (`code-navigation.md`), never a plain
