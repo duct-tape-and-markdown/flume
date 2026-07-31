@@ -1063,5 +1063,58 @@
     "tests": [],
     "acceptance": "Neither site claims a condition the tree contradicts; no behavior moves.",
     "notes": "Fourth sibling of the ERA-SCOPED-NARRATION-* family. Verified this tick: package.json:26-31 declares an exports map exposing '.' alone, so index.ts:3's 'not enforced - there's no exports map yet' fired its own trigger. setupWorktree.ts:5-7 names flume's dogfood buildSetupWorktree as a hand-rolled hardcode; chain.ts:50 imports the engine helper, :197-201 delegates to it, and :192-193 says so outright. Prose-only."
+  },
+  {
+    "tag": "CLI-TEST-OMISSION-VERDICTS-VACUOUS",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the three not-toContain-only status tests (962, 976, 1064) show `status` produced its output before reading the omission verdict - each positive sibling already does; the walk-up equality test (1165) shows the pair populated before comparing"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Four cli.test.ts verdicts read off r.out with nothing showing it populated - a status regressed to empty output passes all three omission tests and the walk-up equality.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "each omission test shows the status line present before asserting the absent one; the subdirectory walk-up test shows fromRoot.out names the job before asserting fromNested.out equals it"
+      }
+    ],
+    "acceptance": "No assertion in tests/cli.test.ts reads a verdict off output it has not shown to be populated.",
+    "notes": "Sweep finding, tests/cli.test.ts neighborhood. Verified on disk: 970, 986, 1072-1073 assert only exit 0 plus not-toContain; 1177 compares two outputs neither shown non-empty. Siblings at 955 and 1147 carry the pin already. Does not fail pre-fix (the named exception) - cli.ts:763 prints 'hibernating' today; what it catches is that line going silent."
+  },
+  {
+    "tag": "CLI-TEST-DOCBLOCKS-ORPHANED",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "move the 402-412 block onto the describe it heads (651), and the 585-600 block onto its own describe holding the two v0.8 §8 tests (716-793) that today sit under a title naming the loop lock; the four src/cli.ts cites (425, 512, 937, 1083) name symbols, not lines"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two suite doc blocks sit ~200 lines above their subjects, one claiming what is false of the tests it now heads; all four src/cli.ts line cites in the file point at unrelated lines.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "Each doc block sits on the describe it describes; no cite in the file names a line number; the suite is green and no test moves between files.",
+    "notes": "Verified on disk this tick: isInvokedDirectly is cli.ts:1041 not :854; the render CjsContextLoadError catch is :966 not :872-881; runJobVerb is :449 not :356-387; frictionCountLine is Dispatcher.ts:509, not cli.ts at all. The 402-412 block's 'no chain.ts, no git repo, no child processes' is false of the two supervisorPolicy tests it now heads. Prose + placement only; no assertion changes."
   }
 ]
