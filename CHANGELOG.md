@@ -126,6 +126,28 @@ Also carries the 0.8.0 migration-wave fixes below; 0.8.1 was never cut.
   chain provisioning a job from a source checkout) into "absent" and
   routing a pinned bay through arm 2's refusal — no pinned,
   self-referentially-provisioned bay could previously run at all.
+- `pendingGate` read `targetFence.writablePaths`/`entryChannelPaths` into a
+  snapshot array at construction time, so a declaration-driven chain
+  building the target Phase before its fence was fully populated (e.g. a
+  getter-backed `writablePaths` resolved from a per-job `declaration.json`)
+  got fence-checked against a stale snapshot. The array now builds inside
+  `run()`, so every invocation reads the fence's current value.
+- `renderSchemaForPrompt` joined `extensionLines` with `",\n"`, so a hint
+  ending in a `// comment` had the delimiter appended past the comment
+  marker instead of separating the field from the next line. The separator
+  now inserts before the trailing comment when one is present, matching the
+  core lines' own style.
+- The trailing-comment split above then matched the first `"//"` anywhere
+  in a hint, so a hint whose own text contains `"//"` (e.g. a URL) got its
+  separator spliced mid-string. `lastIndexOf(" // ")` now distinguishes a
+  genuine trailing comment (always preceded by a space in this renderer's
+  own hints) from an in-string `"//"` (never preceded by one), without a
+  language parser.
+- Inline-exec (`` !`cmd` ``) spawned `sh` with no ENOENT fallback, so a
+  win32 direct-spawn failure produced `<exec-failed>` on every tick instead
+  of retrying through the shell. `execGate` is now exported from
+  `builtinGates.ts` and reused in `Prompt.ts` rather than duplicating the
+  direct-spawn→ENOENT→shell-retry logic a second time.
 
 ### Added
 
@@ -135,6 +157,10 @@ Also carries the 0.8.0 migration-wave fixes below; 0.8.1 was never cut.
   `"deferred"`) can exempt those entries without hand-rolling a fork of the
   gate. Default `() => true` fences every entry, matching prior behavior
   exactly.
+- `shellGate` (and `execGate`) gain an optional `env?` option, merged over
+  `process.env` for the spawned command — closes the gap that had chains
+  hand-forking `shellGate` to scrub or inject vars. Omitting it is
+  byte-identical to before.
 
 ## [0.8.0] - 2026-07-30
 
