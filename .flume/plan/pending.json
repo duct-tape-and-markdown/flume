@@ -538,7 +538,7 @@
       "edit": [
         {
           "path": "src/git.ts",
-          "description": "delete softReset (45), commitAll (198), isDirty (226) and the commitPaths comment clause naming commitAll (211)"
+          "description": "delete softReset (45), commitAll (198), isDirty (226) and the commitPaths comment clause naming commitAll (211); the header's 'nine commands' count (4) goes with them - isDirty is the module's only `git status` consumer, so the count is 8 after this"
         },
         {
           "path": "CHANGELOG.md",
@@ -646,6 +646,35 @@
     ],
     "acceptance": "No assertion in tests/Gate.test.ts has git as its subject; every test name's claim has an assertion behind it; pendingGate's empty-queue green is asserted in its own test.",
     "notes": "Verified this tick: the real revert+restore property is pinned by the real dispatcher at tests/Dispatcher.test.ts:3565-3567, so 431-437 is a hand-rolled restatement - delete it, and the title's second clause with it. pendingGate returns ok over entries=[] (builtinGates.ts:293-312); [] is a valid drained queue, so the case is legitimate and the rule wants it spelled. Neither half fails pre-fix (the named exception). Overlaps GATECONTEXT-REPOROOT-REQUIRED on this path - independent."
+  },
+  {
+    "tag": "GIT-TEST-REMOVAL-PATH-UNDISCRIMINATED",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/git.test.ts",
+          "description": "the two removeWorktree success tests (162, 175) assert which path actually ran, through the rm mock the file already installs (15-18); clear the mock immediately before the act so the outer afterEach's own rm(repo) cannot leak into the count"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "removeWorktree's 'bare remove clears cleanly' test stays green if the bare path always fails - the fallback clears the directory and no assertion tells the two apart.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "the clean-removal test shows rm was never called - the bare path returned early at git.ts:115; the fallback test shows rm was called on the surviving path with recursive: true. Each test name's path becomes its own subject"
+      }
+    ],
+    "acceptance": "Neither removeWorktree success test would pass over the other's code path; the third (survivor) test is unchanged.",
+    "notes": "Sweep finding, tests/git.test.ts neighborhood. Both assertions hold today, so neither fails pre-fix (the named exception) - what they catch is a bare-remove regression silently covered by the fallback, invisible on the non-win32 CI where §7's trigger never fires. No new machinery: rm is already partially mocked at :15-18 and mockClear'd in the describe's afterEach."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
