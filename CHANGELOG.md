@@ -13,6 +13,20 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Breaking
 
+- The `job/<name>` branch convention is retired from `job new`/`run`/`rm`
+  (v0.11 §2/§3): `job new` no longer creates or checks out a branch — it
+  baseline-commits the seeded harness on the current HEAD and leaves it
+  there; `job run` no longer asserts or checks out `job/<name>`; `job rm`
+  no longer checks out the branch, and its cleanup commit lands on the
+  current HEAD instead. A job is now exactly `.flume/jobs/<name>/` — the
+  operator's branch is never touched, so `job rm` on an already-removed job
+  dir is a usage error (exit 2, "no job") rather than a no-op. The
+  tick/loop `HEAD == job/<name>` guard (and its exit-1 documentation) is
+  removed — `--job`/`FLUME_JOB` now run on whatever branch is current.
+  Existing `job/<name>` branches are the operator's to integrate or delete;
+  `job extract` still reads/writes that branch grammar until
+  JOB-EXTRACT-REMOVED lands.
+
 - An inline-exec span that fails to resolve (non-zero exit, spawn failure,
   `sh` not found, output-cap overrun) now **aborts the prompt render** —
   the agent is never invoked, and the tick classifies as a no-commit

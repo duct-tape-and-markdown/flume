@@ -36,11 +36,6 @@ export async function revParse(cwd: string, ref = "HEAD"): Promise<string> {
   return stdout;
 }
 
-export async function currentBranch(cwd: string): Promise<string> {
-  const { stdout } = await run(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  return stdout;
-}
-
 /** Soft reset by N commits. Working tree preserved; index reset. */
 export async function softReset(cwd: string, n: number): Promise<void> {
   await run(cwd, ["reset", "--soft", `HEAD~${n}`]);

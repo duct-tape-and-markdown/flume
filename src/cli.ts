@@ -23,7 +23,6 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
-import { currentBranch } from "./git.js";
 import {
   jobExtract,
   jobNew,
@@ -233,15 +232,16 @@ Commands:
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
   render <phase>      Print the rendered prompt for <phase> without invoking
                       the agent.
-  job new <name>      Create branch job/<name> + seed .flume/jobs/<name>/ from
-                      the repo chain's declared Chain.seedDir, if any
-                      (runtime .gitignore, @dtmd/flume link, baseline commit).
+  job new <name>      Seed .flume/jobs/<name>/ from the repo chain's declared
+                      Chain.seedDir, if any (runtime .gitignore, baseline
+                      commit on the current HEAD). No branch created.
   job run <name> [--max N]
-                      Check out job/<name>, wake the chain's entry phase from
-                      hibernation, then loop under the job resolution.
+                      Wake the chain's entry phase from hibernation, then
+                      loop under the job resolution — on whatever branch
+                      HEAD is on.
   job rm <name>       Remove the job's state root: git rm + cleanup commit on
-                      job/<name>, untracked runtime swept, worktrees pruned.
-                      Refuses on a live loop; the job branch survives.
+                      the current HEAD, untracked runtime swept, worktrees
+                      pruned. Refuses on a live loop.
   job status          List jobs under .flume/jobs/ — awake phases + pending
                       count, plus a friction count where declared and
                       non-empty, per job. Observational; no side effects.
@@ -259,7 +259,6 @@ Options:
                       Config (chain.ts + prompts) stays at <repoRoot>/.flume —
                       chains are repo-resident; an explicit FLUME_CONFIG_DIR
                       composes. Conflicts with explicit FLUME_DIR (exit 2).
-                      tick/loop then require HEAD == job/<name>.
   -h, --help          Print this message.
   -v, --version       Print the flume version.
 
@@ -289,8 +288,7 @@ invokes the agent, and applies validation gates.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
-  1   Harness error (unexpected exception), or — under a job resolution
-      (--job/FLUME_JOB) — HEAD is not job/<name>.
+  1   Harness error (unexpected exception).
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.
@@ -309,8 +307,7 @@ Exit codes:
   0   Hibernation reached, or --max ticks completed — including partial
       success (some ticks errored but at least one entry shipped; the
       completion summary names the errors).
-  1   Harness error, another live loop holds the lock, or — under a job
-      resolution (--job/FLUME_JOB) — HEAD is not job/<name>; also, at least
+  1   Harness error, another live loop holds the lock; also, at least
       one tick errored and the run shipped nothing (v0.7 §4); also, an
       identical pre-tick worktree provisioning failure repeated 3
       consecutive ticks with no successful tick between them (v0.7 §16) —
@@ -360,37 +357,33 @@ Exit codes:
 
 const HELP_JOB = `Usage: flume job <verb> [args]
 
-Lifecycle verbs over the job convention (a job is branch job/<name> plus
-state root .flume/jobs/<name>/). Machinery only — harness content arrives via
-the repo chain's declared Chain.seedDir, chain-owned.
+Lifecycle verbs over a job — .flume/jobs/<name>/, tracked files in the
+working tree, on whatever branch the operator is on. Machinery only —
+harness content arrives via the repo chain's declared Chain.seedDir,
+chain-owned.
 
 Verbs:
   new <name>
-      From current HEAD: create branch job/<name> (reuse if it exists), load
-      the repo chain (<configDir>/chain.ts — missing chain exits 2: a job
-      that could never \`run\` must not be creatable), copy its declared
+      Load the repo chain (<configDir>/chain.ts — missing chain exits 2: a
+      job that could never \`run\` must not be creatable), copy its declared
       seedDir into .flume/jobs/<name>/ verbatim and skip-existing (absent
       seedDir → bare job, no warning; a declared-but-absent seedDir exits 2),
       merge runtime ignore entries into the job dir's .gitignore (awake/,
-      prior-attempts/, worktrees/, node_modules/, loop.pid), link
-      node_modules/@dtmd/flume to the running flume's package root (junction
-      on win32; skipped if the link exists), pin core.longpaths repo-locally
-      (win32), and baseline-commit the seeded harness. Stays on job/<name>.
+      prior-attempts/, worktrees/, node_modules/, loop.pid), pin
+      core.longpaths repo-locally (win32), and baseline-commit the seeded
+      harness on the current HEAD. No branch is created or checked out.
 
   run <name> [--max N]
-      Assert branch job/<name> exists (error otherwise) and check it out
-      unless HEAD is already on it; wake the chain's entry phase (phases[0])
-      iff the baton is hibernating — a mid-job baton is left untouched; then
-      run the standard loop under the job resolution. Lock, supervisor, and
-      exit codes are identical to \`flume --job <name> loop [--max N]\`.
+      Wake the chain's entry phase (phases[0]) iff the baton is hibernating
+      — a mid-job baton is left untouched; then run the standard loop under
+      the job resolution, on whatever branch HEAD is on. Lock, supervisor,
+      and exit codes are identical to \`flume --job <name> loop [--max N]\`.
 
   rm <name>
-      Refuse while the job's loop.pid records a live pid. Check out
-      job/<name> if HEAD is elsewhere, \`git rm -r .flume/jobs/<name>\` plus
-      a cleanup commit on the branch, remove untracked runtime remnants
-      (awake/, prior-attempts/, the @dtmd/flume link, pid files), and
-      \`git worktree prune\`. The job branch survives — integration
-      (merge/squash) and branch deletion are the operator's acts.
+      Refuse while the job's loop.pid records a live pid. \`git rm -r
+      .flume/jobs/<name>\` plus a cleanup commit on the current HEAD, remove
+      untracked runtime remnants (awake/, prior-attempts/, the @dtmd/flume
+      link, pid files), and \`git worktree prune\`. No branch is touched.
 
   status
       Enumerate .flume/jobs/* in the working tree: one line per job with its
@@ -417,23 +410,22 @@ Verbs:
 Exit codes:
   0   Success (run: hibernation reached, or --max ticks completed —
       including partial success, some ticks errored but at least one entry
-      shipped; rm on an already-clean job is a no-op; status: always,
-      including no jobs).
-  1   Git or filesystem failure (checkout, link provisioning, commit); for
-      run also: harness error, another live loop holds the job's lock, at
-      least one tick errored and the run shipped nothing (v0.7 §4), or an
-      identical pre-tick worktree provisioning failure repeated 3
-      consecutive ticks (v0.7 §16); for rm also: the job's loop is still
-      live; for extract also: branch <name> already exists, uncommitted
-      tracked changes, a live loop, job/<name> checked out in another
-      worktree, or a cherry-pick conflict (unwound to job/<name>; retryable).
+      shipped; rm on a job dir with nothing tracked is a no-op; status:
+      always, including no jobs).
+  1   Git or filesystem failure (provisioning, commit); for run also:
+      harness error, another live loop holds the job's lock, at least one
+      tick errored and the run shipped nothing (v0.7 §4), or an identical
+      pre-tick worktree provisioning failure repeated 3 consecutive ticks
+      (v0.7 §16); for rm also: the job's loop is still live; for extract
+      also: branch <name> already exists, uncommitted tracked changes, a
+      live loop, job/<name> checked out in another worktree, or a
+      cherry-pick conflict (unwound to job/<name>; retryable).
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
-      a declared seedDir absent on disk, run on a job whose branch does not
-      exist, rm on a <name> that names neither a branch nor a job dir, status
-      given any argument, or extract missing --onto, given a flag without a
-      value, given an --onto that resolves to no commit, or naming a job
-      whose branch does not exist.
+      a declared seedDir absent on disk, rm on a <name> whose job dir does
+      not exist, status given any argument, or extract missing --onto,
+      given a flag without a value, given an --onto that resolves to no
+      commit, or naming a job whose branch does not exist.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`).
 `;
@@ -729,13 +721,13 @@ async function main(): Promise<number> {
     throw err;
   }
 
-  // `job run` preflight (v0.5 §5b-1/2): assert-or-checkout job/<name>, wake
-  // the entry phase iff hibernating. Placed after the resolution (a conflict
-  // must refuse before any mutation) and before the wrong-branch guard —
-  // the checkout is what satisfies it.
+  // `job run` preflight (v0.11 §2/§3): wake the entry phase iff hibernating.
+  // Placed after the resolution (a conflict must refuse before any
+  // mutation). No branch assertion — the engine has no opinion on which
+  // branch a state root runs on.
   if (jobRunName !== undefined) {
     try {
-      await jobRun({ repoRoot, name: jobRunName, flumeDir, configDir });
+      await jobRun({ name: jobRunName, flumeDir, configDir });
     } catch (err) {
       if (err instanceof JobUsageError) {
         console.error(`[flume] ${err.message}`);
@@ -743,22 +735,6 @@ async function main(): Promise<number> {
       }
       console.error(
         `[flume] job run failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return 1;
-    }
-  }
-
-  // Wrong-branch guard (v0.5 §3): under a job resolution the mutating
-  // subcommands commit to the working tree's HEAD (HEAD-is-truth, §2), so
-  // they assert HEAD is the job's conventional branch before dispatch.
-  // Read-only subcommands skip the check; bare invocation (no job) keeps
-  // HEAD-is-truth untouched.
-  if (job && (cmd === "tick" || cmd === "loop")) {
-    const head = await currentBranch(repoRoot);
-    const want = `job/${job}`;
-    if (head !== want) {
-      console.error(
-        `[flume] job '${job}' mutates branch '${want}' but HEAD is '${head}'; refusing ${cmd} — check out ${want} first`,
       );
       return 1;
     }

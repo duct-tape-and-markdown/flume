@@ -212,7 +212,7 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
 
 describe("flume job new — real CLI on a scratch repo", () => {
   it(
-    "seeds from Chain.seedDir: branch, files, merged ignores, no node_modules planted, baseline commit excluding runtime state; re-run preserves a worked file and fills a newly added stub",
+    "seeds from Chain.seedDir: files, merged ignores, no node_modules planted, baseline commit excluding runtime state; re-run preserves a worked file and fills a newly added stub",
     async () => {
       const repo = await makeRepo();
       try {
@@ -229,11 +229,12 @@ describe("flume job new — real CLI on a scratch repo", () => {
 
         const r = await runCli(repo.dir, ["job", "new", "t1"]);
         expect(r.code).toBe(0);
-        expect(r.out).toContain("created branch job/t1");
+        expect(r.out).toContain("baseline commit on current HEAD");
 
-        // 1. On the conventional branch, staying there (§5a-1, §5a-7).
+        // 1. No branch created — HEAD stays on whatever the operator started
+        // on (v0.11 §2/§3).
         expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-          "job/t1",
+          "main",
         );
 
         // 2. Verbatim seed.
@@ -288,12 +289,12 @@ describe("flume job new — real CLI on a scratch repo", () => {
           "new stub\n",
         );
 
-        // Re-run: branch reused, skip-existing preserves the worked file,
-        // and the newly declared stub fills the gap.
+        // Re-run: skip-existing preserves the worked file, and the newly
+        // declared stub fills the gap.
         const before = await gitOut(repo.dir, ["rev-list", "--count", "HEAD"]);
         const again = await runCli(repo.dir, ["job", "new", "t1"]);
         expect(again.code).toBe(0);
-        expect(again.out).toContain("reusing branch job/t1");
+        expect(again.out).toContain("baseline commit on current HEAD");
         expect(await gitOut(repo.dir, ["rev-list", "--count", "HEAD"])).not.toBe(
           before,
         );
@@ -311,7 +312,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
   );
 
   it(
-    "re-run with an unchanged seedDir commits nothing: reused branch, no new commit",
+    "re-run with an unchanged seedDir commits nothing",
     async () => {
       const repo = await makeRepo();
       try {
@@ -328,7 +329,6 @@ describe("flume job new — real CLI on a scratch repo", () => {
         const before = await gitOut(repo.dir, ["rev-list", "--count", "HEAD"]);
         const again = await runCli(repo.dir, ["job", "new", "t2"]);
         expect(again.code).toBe(0);
-        expect(again.out).toContain("reusing branch job/t2");
         expect(again.out).toContain("nothing to commit");
         expect(await gitOut(repo.dir, ["rev-list", "--count", "HEAD"])).toBe(
           before,
@@ -404,7 +404,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
   );
 
   it(
-    "no chain at <configDir>/chain.ts exits 2 after branching, before any state root is created",
+    "no chain at <configDir>/chain.ts exits 2 before any state root is created, HEAD untouched",
     async () => {
       const repo = await makeRepo();
       try {
@@ -412,11 +412,10 @@ describe("flume job new — real CLI on a scratch repo", () => {
         expect(r.code).toBe(2);
         expect(r.out).toContain("chain.ts");
 
-        // The branch (§4 step 1) already exists — only the state root is
-        // gated on the chain load (step 2): a job that could never `run`
-        // must not be creatable.
+        // Nothing mutated: no branch, no state root — a job that could
+        // never `run` must not be creatable.
         expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-          "job/nc",
+          "main",
         );
         expect(existsSync(join(repo.dir, ".flume", "jobs", "nc"))).toBe(false);
       } finally {
@@ -427,7 +426,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
   );
 
   it(
-    "a declared-but-absent seedDir exits 2 after branching, before the state root is created",
+    "a declared-but-absent seedDir exits 2 before the state root is created, HEAD untouched",
     async () => {
       const repo = await makeRepo();
       try {
@@ -438,7 +437,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         expect(r.out).toContain("no-such-seed");
 
         expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-          "job/ft",
+          "main",
         );
         expect(existsSync(join(repo.dir, ".flume", "jobs", "ft"))).toBe(false);
       } finally {
@@ -462,7 +461,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         expect(backslash.out).toContain("path separator");
 
         // Nothing was built: no job dirs, no job/* branches (name validation
-        // fails before the branch checkout).
+        // fails before any mutation).
         expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
         expect(await gitOut(repo.dir, ["branch", "--list", "job/*"])).toBe("");
 
@@ -710,49 +709,12 @@ async function makeRunnableJob(repoDir: string, name: string): Promise<string> {
   return join(repoDir, ".flume", "jobs", name);
 }
 
-describe("jobRun preflight — §5b wake/branch-assert units", () => {
-  it("errors as JobUsageError when the branch does not exist, touching neither HEAD nor the state root", async () => {
-    const repo = await makeRepo();
-    try {
-      // The resolved shape the CLI hands in (v0.6 §3): state root in the job
-      // dir, config at the repo .flume.
-      const flumeDir = join(repo.dir, ".flume", "jobs", "ghost");
-      const configDir = join(repo.dir, ".flume");
-      await expect(
-        jobRun({
-          repoRoot: repo.dir,
-          name: "ghost",
-          flumeDir,
-          configDir,
-          log: () => {},
-        }),
-      ).rejects.toThrow(/branch job\/ghost does not exist.*flume job new ghost/);
-      await expect(
-        jobRun({
-          repoRoot: repo.dir,
-          name: "ghost",
-          flumeDir,
-          configDir,
-          log: () => {},
-        }),
-      ).rejects.toBeInstanceOf(JobUsageError);
-
-      // Nothing mutated: HEAD stays on main, no state root materialized.
-      expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-        "main",
-      );
-      expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
-    } finally {
-      await repo.cleanup();
-    }
-  }, 60_000);
-
+describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §2/§3)", () => {
   it("from hibernation, wakes exactly phases[0]; a re-run is idempotent", async () => {
     const repo = await makeRepo();
     try {
       const jobDir = await makeRunnableJob(repo.dir, "r1");
       const opts = {
-        repoRoot: repo.dir,
         name: "r1",
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
@@ -775,7 +737,6 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
       new Baton(jobDir).wake("beta");
 
       await jobRun({
-        repoRoot: repo.dir,
         name: "r2",
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
@@ -787,56 +748,68 @@ describe("jobRun preflight — §5b wake/branch-assert units", () => {
     }
   }, 60_000);
 
-  it("checks out job/<name> when HEAD is elsewhere; no checkout when already on it", async () => {
+  it("wakes the entry phase regardless of which branch HEAD is on — no branch asserted or checked out", async () => {
     const repo = await makeRepo();
     try {
       const jobDir = await makeRunnableJob(repo.dir, "r3");
-      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+      await exec("git", ["checkout", "-q", "-b", "feature"], { cwd: repo.dir });
 
       const lines: string[] = [];
-      const opts = {
-        repoRoot: repo.dir,
+      await jobRun({
         name: "r3",
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
         log: (l: string) => lines.push(l),
-      };
-      await jobRun(opts);
+      });
       expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-        "job/r3",
+        "feature",
       );
-      expect(lines.join("\n")).toContain("checked out job/r3");
-
-      lines.length = 0;
-      await jobRun(opts);
-      expect(lines.join("\n")).toContain("on job/r3");
       expect(lines.join("\n")).not.toContain("checked out");
+      expect(new Baton(jobDir).awake()).toEqual(["alpha"]);
     } finally {
       await repo.cleanup();
     }
   }, 60_000);
 
-  it("real CLI: missing <name> and nonexistent branch both exit 2", async () => {
+  it("no existence check: wakes the entry phase for a name never seeded by `job new`", async () => {
+    const repo = await makeRepo();
+    try {
+      await mkdir(join(repo.dir, ".flume"), { recursive: true });
+      await writeFile(
+        join(repo.dir, ".flume", "chain.ts"),
+        twoPhaseChainSrc(),
+        "utf8",
+      );
+      const flumeDir = join(repo.dir, ".flume", "jobs", "ghost");
+
+      await jobRun({
+        name: "ghost",
+        flumeDir,
+        configDir: join(repo.dir, ".flume"),
+        log: () => {},
+      });
+      expect(new Baton(flumeDir).awake()).toEqual(["alpha"]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("real CLI: missing <name> exits 2", async () => {
     const repo = await makeRepo();
     try {
       const noName = await runCli(repo.dir, ["job", "run"]);
       expect(noName.code).toBe(2);
       expect(noName.out).toContain("usage: flume job run <name> [--max N]");
-
-      const ghost = await runCli(repo.dir, ["job", "run", "ghost"]);
-      expect(ghost.code).toBe(2);
-      expect(ghost.out).toContain("branch job/ghost does not exist");
-      expect(ghost.out).toContain("flume job new ghost");
     } finally {
       await repo.cleanup();
     }
-  }, 120_000);
+  }, 60_000);
 });
 
 // ---------- v0.5 §5c — `flume job rm` refusal + removal units ----------
 
 describe("jobRm — §5c refusal + removal units", () => {
-  it("refuses on a live loop.pid, touching neither dir, branch, nor history", async () => {
+  it("refuses on a live loop.pid, touching neither dir nor history", async () => {
     const repo = await makeRepo();
     try {
       await writeRepoChain(repo.dir);
@@ -858,15 +831,12 @@ describe("jobRm — §5c refusal + removal units", () => {
       expect(await gitOut(repo.dir, ["rev-list", "--count", "HEAD"])).toBe(
         before,
       );
-      expect(await gitOut(repo.dir, ["branch", "--list", "job/rm1"])).toContain(
-        "job/rm1",
-      );
     } finally {
       await repo.cleanup();
     }
   }, 60_000);
 
-  it("removes tracked harness + untracked runtime, commits cleanup on job/<name>; branch and history survive; stale pid reclaimed", async () => {
+  it("removes tracked harness + untracked runtime, commits cleanup on the current HEAD; history survives; stale pid reclaimed", async () => {
     const repo = await makeRepo();
     try {
       await writeRepoChain(repo.dir);
@@ -880,10 +850,6 @@ describe("jobRm — §5c refusal + removal units", () => {
       await writeFile(join(jobDir, "prior-attempts", "x.md"), "attempt");
       await writeFile(join(jobDir, "loop.pid"), "999999999", "utf8");
 
-      // rm from off-branch: the cleanup commit must land on job/rm2.
-      await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
-      const mainBefore = await gitOut(repo.dir, ["rev-parse", "main"]);
-
       const lines: string[] = [];
       await jobRm({
         repoRoot: repo.dir,
@@ -894,17 +860,15 @@ describe("jobRm — §5c refusal + removal units", () => {
       // Dir gone.
       expect(existsSync(jobDir)).toBe(false);
 
-      // Cleanup commit at the tip of job/rm2; the seed commit (history)
-      // beneath it; main untouched.
+      // Cleanup commit at the tip of HEAD; the seed commit (history) beneath
+      // it. No branch was ever created or touched.
       expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
-        "job/rm2",
+        "main",
       );
       const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
       expect(subjects.split("\n")[0]).toBe("chore(flume): rm job rm2");
       expect(subjects).toContain("chore(flume): seed job rm2");
-      expect(await gitOut(repo.dir, ["rev-parse", "main"])).toBe(mainBefore);
-      expect(lines.join("\n")).toContain("cleanup commit on job/rm2");
-      expect(lines.join("\n")).toContain("branch job/rm2 survives");
+      expect(lines.join("\n")).toContain("cleanup commit on current HEAD");
 
       // Nothing tracked under the job dir; tree clean.
       expect(
@@ -1157,6 +1121,10 @@ describe("jobStatus — §5d enumeration units", () => {
  * non-harness work commit, an intake-only plan-side append, and a
  * harness-only friction/open-questions commit; main advanced past the fork
  * afterward. Ends with job/x checked out.
+ *
+ * `job new` no longer creates a branch (v0.11 §2/§3) — extract itself still
+ * does (its branch-strategy replacement lands with JOB-EXTRACT-REMOVED), so
+ * this fixture creates job/x by hand, exactly what `job new` used to do.
  */
 async function makeExtractScenario(dir: string): Promise<void> {
   const opts = { cwd: dir };
@@ -1167,6 +1135,9 @@ async function makeExtractScenario(dir: string): Promise<void> {
   await writeRepoChain(dir, {
     harvest: ["friction.md", "plan/open-questions.md"],
   });
+  // `job new` no longer creates a branch — check one out first so the
+  // baseline commit below lands there, not on main.
+  await exec("git", ["checkout", "-q", "-b", "job/x"], opts);
   await jobNew({ repoRoot: dir, name: "x", log: () => {} });
   const jobDir = join(dir, ".flume", "jobs", "x");
 
@@ -1266,6 +1237,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
       await writeRepoChain(repo.dir, {
         harvest: ["friction.md", "plan/open-questions.md"],
       });
+      await exec("git", ["checkout", "-q", "-b", "job/y"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "y", log: () => {} });
       await writeFile(join(repo.dir, "work.txt"), "derived\n");
       await exec("git", ["add", "work.txt"], { cwd: repo.dir });
@@ -1299,6 +1271,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     try {
       // No `harvest` field at all — absent means harvest nothing, no default.
       await writeRepoChain(repo.dir);
+      await exec("git", ["checkout", "-q", "-b", "job/z"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "z", log: () => {} });
       const jobDir = join(repo.dir, ".flume", "jobs", "z");
       await writeFile(join(jobDir, "friction.md"), "friction: undeclared\n");
@@ -1332,6 +1305,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
         harvest: ["notes.md"],
         friction: "friction",
       });
+      await exec("git", ["checkout", "-q", "-b", "job/w"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "w", log: () => {} });
       const jobDir = join(repo.dir, ".flume", "jobs", "w");
 
@@ -1378,6 +1352,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     try {
       // `harvest` declared, `friction` deliberately absent.
       await writeRepoChain(repo.dir, { harvest: ["notes.md"] });
+      await exec("git", ["checkout", "-q", "-b", "job/v"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "v", log: () => {} });
       const jobDir = join(repo.dir, ".flume", "jobs", "v");
 
@@ -1518,6 +1493,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
       ).rejects.toBeInstanceOf(JobUsageError);
 
       await writeRepoChain(repo.dir);
+      await exec("git", ["checkout", "-q", "-b", "job/z"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "z", log: () => {} });
       await expect(
         jobExtract({ repoRoot: repo.dir, name: "z", onto: "no-such-ref", log: () => {} }),
@@ -1534,6 +1510,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
     const repo = await makeRepo();
     try {
       await writeRepoChain(repo.dir);
+      await exec("git", ["checkout", "-q", "-b", "job/m"], { cwd: repo.dir });
       await jobNew({ repoRoot: repo.dir, name: "m", log: () => {} });
 
       // Drop the repo chain on main — mirrors a caller pointing extract at a
@@ -1575,6 +1552,7 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
       await exec("git", ["commit", "-q", "-m", "seed conflict"], opts);
 
       await writeRepoChain(repo.dir);
+      await exec("git", ["checkout", "-q", "-b", "job/u"], opts);
       await jobNew({ repoRoot: repo.dir, name: "u", log: () => {} });
       // A good pick before the conflicting one — the unwind must roll back
       // already-applied picks too.

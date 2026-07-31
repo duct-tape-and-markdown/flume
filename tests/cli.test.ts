@@ -35,7 +35,7 @@ import {
   type TickOutcome,
   type SuperviseResult,
 } from "../src/Dispatcher.ts";
-import { CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -164,7 +164,8 @@ describe("resolveStateDirs — §3 job resolution", () => {
   it("env FLUME_JOB composes with explicit dirs (the loop → tick boundary): dirs win, job rides along", () => {
     // The parent's write-back sets all three; the child must not classify its
     // own inheritance as a conflict. The dir vars ARE the canonical job
-    // resolution, so they win, and the job name survives for the guard.
+    // resolution, so they win, and the job name survives for the fanout
+    // namespace (v0.5 §4).
     // resolve() drive-qualifies on win32 — the untouched assertion needs a
     // true absolute input.
     const inherited = resolve(jobDir);
@@ -937,8 +938,10 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
 // ---------- v0.6 §2/§3 — job resolution through the real CLI ----------
 
 /**
- * Scratch git repo on a chosen branch — the wrong-branch guard reads HEAD via
- * `git rev-parse`, so only a real repo can exercise it.
+ * Scratch git repo on a chosen branch. The engine has no opinion on branch
+ * names (v0.11 §2) — some fixtures below pin `job/foo` merely as a
+ * distinctive label, proven inert by running job resolution on `main`
+ * instead.
  */
 async function makeJobRepo(branch: string): Promise<{
   dir: string;
@@ -1507,31 +1510,29 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "wrong-branch guard refuses tick and loop off job/<name>, naming both branches; FLUME_JOB alone triggers it identically",
+    "tick/loop under --job succeed regardless of current branch (wrong-branch guard retired, v0.11 §2)",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeJobRepo("main"); // deliberately not job/foo
       try {
-        const tick = await runCli(repo.dir, ["--job", "foo", "tick"]);
-        expect(tick.code).toBe(1);
-        expect(tick.out).toContain("'job/foo'");
-        expect(tick.out).toContain("'main'");
-        expect(tick.out).toContain("refusing tick");
+        await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
+        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
+        new Baton(jobDir).wake("probe");
 
-        const loop = await runCli(repo.dir, ["--job", "foo", "loop", "--max", "0"]);
-        expect(loop.code).toBe(1);
-        expect(loop.out).toContain("refusing loop");
-        // Refused before dispatch — the loop never took its lock.
-        expect(
-          existsSync(join(repo.dir, ".flume", "jobs", "foo", "loop.pid")),
-        ).toBe(false);
+        const tick = await runCli(repo.dir, ["--job", "foo", "tick"]);
+        expect(tick.code).toBe(0);
+        expect(tick.out).not.toContain("refusing");
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
 
         // The env var is honored identically to the flag (§3).
-        const envOnly = await runCli(repo.dir, ["tick"], {
+        new Baton(jobDir).wake("probe");
+        const envOnly = await runCli(repo.dir, ["loop", "--max", "1"], {
           ...hermeticEnv(),
           FLUME_JOB: "foo",
         });
-        expect(envOnly.code).toBe(1);
-        expect(envOnly.out).toContain("'job/foo'");
+        expect(envOnly.code).toBe(0);
+        expect(envOnly.out).not.toContain("refusing");
       } finally {
         await repo.cleanup();
       }
@@ -1540,7 +1541,35 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "read-only subcommands (status, wake, sleep, render) skip the guard: state lands in the job root, chain + prompt load from repo .flume — a job-dir chain.ts is inert",
+    "two state roots under one checkout each run a tick sequentially, no branch switch (§2 acceptance fixture)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
+        const jobA = join(repo.dir, ".flume", "jobs", "a");
+        const jobB = join(repo.dir, ".flume", "jobs", "b");
+        new Baton(jobA).wake("probe");
+        new Baton(jobB).wake("probe");
+
+        const tickA = await runCli(repo.dir, ["--job", "a", "tick"]);
+        expect(tickA.code).toBe(0);
+        const tickB = await runCli(repo.dir, ["--job", "b", "tick"]);
+        expect(tickB.code).toBe(0);
+
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
+        expect(existsSync(join(jobA, "observed-env.json"))).toBe(true);
+        expect(existsSync(join(jobB, "observed-env.json"))).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "read-only subcommands (status, wake, sleep, render) resolve state to the job root, chain + prompt load from repo .flume — a job-dir chain.ts is inert",
     async () => {
       const repo = await makeJobRepo("main"); // deliberately NOT job/foo
       try {
@@ -1578,7 +1607,7 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "on job/<name> the guard passes and a loop-spawned child tick inherits all three env vars — configDir stays repo .flume, job-dir chain.ts inert",
+    "a loop-spawned child tick inherits all three env vars regardless of branch — configDir stays repo .flume, job-dir chain.ts inert",
     async () => {
       const repo = await makeJobRepo("job/foo");
       try {

@@ -1,14 +1,17 @@
 /**
- * v0.5 §5b + §6/§7 — `flume job new` → `flume job run` end-to-end on a
- * scratch repo, with the run executing INSIDE a linked worktree
- * (`git worktree add .git/flume-jobs/<name> job/<name>` — the §6 concurrency
- * recipe, so its viability is proven here per §7). The run path is the
- * standard loop under the job resolution: same `loop.pid` lock, same
- * one-child-per-tick supervisor, same exit codes as `flume loop`.
+ * v0.5 §5b + v0.11 §2/§3 — `flume job new` → `flume job run` end-to-end on a
+ * scratch repo. Branch grammar is retired: `job new` builds the state root
+ * on whatever branch is current and touches no branch; `job run` wakes the
+ * entry phase and loops there, asserting nothing about HEAD. The run path is
+ * the standard loop under the job resolution: same `loop.pid` lock, same
+ * one-child-per-tick supervisor, same exit codes as `flume loop`. Running
+ * jobs hot simultaneously is now the operator's `git worktree add` on a
+ * branch they create by hand (§2) — out of scope here; see job.test.ts's
+ * jobExtract fixtures for a worktree-holding scenario.
  *
  * Chain residency (v0.6 §2): the chain + prompts are committed at the repo
- * `.flume/` — one chain per `.flume`, tracked so a linked worktree's checkout
- * carries it — and job dirs stay thin (state only, no chain shims).
+ * `.flume/` — one chain per `.flume`, tracked — and job dirs stay thin
+ * (state only, no chain shims).
  */
 
 import { execFile } from "node:child_process";
@@ -102,63 +105,55 @@ const PROBE_CHAIN_SRC =
   `  },\n` +
   `};\n`;
 
-describe("§5b integration — job new → job run inside a linked worktree", () => {
+describe("§5b integration — job new → job run", () => {
   it(
-    "new creates a thin job, run (in the worktree) loads the repo chain off the branch's checkout, wakes the entry phase, ticks it, and releases the lock",
+    "new creates a thin job on the current branch, run loads the repo chain, wakes the entry phase, ticks it, and releases the lock — no branch touched",
     async () => {
       const repo = await makeRepo();
       try {
-        // The chain rides the repo (§2) — committed on main BEFORE the job
-        // exists, so job/itest (and its linked-worktree checkout) carries it.
         await commitRepoConfig(repo.dir, PROBE_CHAIN_SRC);
 
-        // §5a: create the job from the root checkout, then step off the
-        // branch so the linked worktree can hold it (§6: one working tree
-        // per job; a branch can only be checked out in one worktree). The
-        // job dir is thin: state only, no chain, no prompts.
         const created = await runCli(repo.dir, ["job", "new", "itest"]);
         expect(created.code).toBe(0);
-        await exec("git", ["checkout", "-q", "main"], { cwd: repo.dir });
+        // v0.11 §2/§3: no branch created — HEAD stays where it started.
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
 
-        // The §6 recipe verbatim: `.git/` placement is legal.
-        const wt = join(repo.dir, ".git", "flume-jobs", "itest");
-        await exec("git", ["worktree", "add", wt, "job/itest"], {
-          cwd: repo.dir,
-        });
-
-        const jobDir = join(wt, ".flume", "jobs", "itest");
-        const run = await runCli(wt, ["job", "run", "itest", "--max", "5"]);
+        const jobDir = join(repo.dir, ".flume", "jobs", "itest");
+        const run = await runCli(repo.dir, ["job", "run", "itest", "--max", "5"]);
         expect(run.code).toBe(0);
 
-        // §5b-1: HEAD was already job/itest in the worktree — assert passed,
-        // no checkout. §5b-2: hibernating baton → phases[0] woken.
-        expect(run.out).toContain("on job/itest");
+        // §5b-2: hibernating baton → phases[0] woken. No branch assertion or
+        // checkout (v0.11 §2/§3).
         expect(run.out).toContain("woke probe (entry phase)");
+        expect(run.out).not.toContain("checked out");
 
         // §5b-3: the standard supervisor ran the tick and stopped on
         // hibernation (handoff → []), well under --max.
         expect(run.out).toMatch(/tick → probe \(singleton\)/);
         expect(run.out).toContain("hibernating after 1 tick(s)");
 
-        // The child tick observed the full §3 job resolution via env —
-        // rooted in the WORKTREE, not the root checkout: state in the job
-        // dir, config at the worktree's own repo .flume (chain residency —
-        // each worktree resolves its own checkout's chain).
+        // The child tick observed the full §3 job resolution via env: state
+        // in the job dir, config at the repo's own .flume.
         const observed = JSON.parse(
           await readFile(join(jobDir, "observed-env.json"), "utf8"),
         ) as { FLUME_DIR: string; FLUME_CONFIG_DIR: string; FLUME_JOB: string };
         expect(observed.FLUME_DIR).toBe(jobDir);
-        expect(observed.FLUME_CONFIG_DIR).toBe(join(wt, ".flume"));
+        expect(observed.FLUME_CONFIG_DIR).toBe(join(repo.dir, ".flume"));
         expect(observed.FLUME_JOB).toBe("itest");
 
         // Lock taken in the job state root and dropped on exit; baton
         // hibernating after the handoff.
         expect(existsSync(join(jobDir, "loop.pid"))).toBe(false);
         expect(existsSync(join(jobDir, "awake", "probe"))).toBe(false);
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
 
         // A second run resumes identically: baton hibernating again, so the
         // entry phase re-wakes and the loop re-runs to hibernation.
-        const rerun = await runCli(wt, ["job", "run", "itest", "--max", "5"]);
+        const rerun = await runCli(repo.dir, ["job", "run", "itest", "--max", "5"]);
         expect(rerun.code).toBe(0);
         expect(rerun.out).toContain("woke probe (entry phase)");
       } finally {
@@ -178,8 +173,7 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
         expect(created.code).toBe(0);
 
         // The vitest worker plays the live prior supervisor — its pid is
-        // alive for the duration of the spawned run. Stays on job/lk (run
-        // from the root checkout: assert passes, no worktree needed here).
+        // alive for the duration of the spawned run.
         const jobDir = join(repo.dir, ".flume", "jobs", "lk");
         await writeFile(join(jobDir, "loop.pid"), String(process.pid), "utf8");
 
@@ -197,11 +191,44 @@ describe("§5b integration — job new → job run inside a linked worktree", ()
     },
     120_000,
   );
+
+  it(
+    "two state roots under one checkout each tick sequentially — no branch switch (§2 acceptance fixture)",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        await commitRepoConfig(repo.dir, PROBE_CHAIN_SRC);
+
+        const createdA = await runCli(repo.dir, ["job", "new", "coa"]);
+        expect(createdA.code).toBe(0);
+        const createdB = await runCli(repo.dir, ["job", "new", "cob"]);
+        expect(createdB.code).toBe(0);
+
+        const runA = await runCli(repo.dir, ["job", "run", "coa", "--max", "5"]);
+        expect(runA.code).toBe(0);
+        const runB = await runCli(repo.dir, ["job", "run", "cob", "--max", "5"]);
+        expect(runB.code).toBe(0);
+
+        expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
+          "main",
+        );
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "coa", "observed-env.json")),
+        ).toBe(true);
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "cob", "observed-env.json")),
+        ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    240_000,
+  );
 });
 
 describe("§5c integration — job new → job run (tick) → job rm", () => {
   it(
-    "rm after a ticked run sweeps the dir and runtime remnants, commits cleanup on the job branch, and leaves branch + history intact; re-run is a no-op",
+    "rm after a ticked run sweeps the dir and runtime remnants, commits cleanup on the current HEAD; second rm on the now-gone dir is a usage error",
     async () => {
       const repo = await makeRepo();
       try {
@@ -209,8 +236,8 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
         const created = await runCli(repo.dir, ["job", "new", "rme"]);
         expect(created.code).toBe(0);
 
-        // Run from the root checkout (stays on job/rme): one tick, then
-        // hibernation — leaving runtime remnants in the state root.
+        // One tick, then hibernation — leaving runtime remnants in the
+        // state root. No branch is ever touched (v0.11 §2/§3).
         const run = await runCli(repo.dir, ["job", "run", "rme", "--max", "5"]);
         expect(run.code).toBe(0);
         const jobDir = join(repo.dir, ".flume", "jobs", "rme");
@@ -218,22 +245,18 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
 
         const removed = await runCli(repo.dir, ["job", "rm", "rme"]);
         expect(removed.code).toBe(0);
-        expect(removed.out).toContain("cleanup commit on job/rme");
-        expect(removed.out).toContain("branch job/rme survives");
+        expect(removed.out).toContain("cleanup commit on current HEAD");
 
         // State root gone — tracked harness and untracked remnants alike.
         expect(existsSync(jobDir)).toBe(false);
 
-        // Branch survives with the full history: cleanup at the tip, the
-        // seed beneath it; the tree is clean.
+        // Cleanup landed on HEAD, atop the seed commit; the tree is clean.
         expect(
-          await exec("git", ["branch", "--list", "job/rme"], {
-            cwd: repo.dir,
-          }).then((r) => r.stdout),
-        ).toContain("job/rme");
+          await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"]),
+        ).toBe("main");
         const { stdout: subjects } = await exec(
           "git",
-          ["log", "--format=%s", "job/rme"],
+          ["log", "--format=%s"],
           { cwd: repo.dir },
         );
         expect(subjects.split("\n")[0]).toBe("chore(flume): rm job rme");
@@ -243,10 +266,11 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
         });
         expect(status.trim()).toBe("");
 
-        // Already-clean job: rm again is a harmless no-op, not an error.
+        // A job is exactly its state root (§2) — once the dir is gone,
+        // there is no job left to remove, and a second rm says so.
         const again = await runCli(repo.dir, ["job", "rm", "rme"]);
-        expect(again.code).toBe(0);
-        expect(again.out).toContain("nothing to commit");
+        expect(again.code).toBe(2);
+        expect(again.out).toContain("no job 'rme'");
 
         // The repo chain survives the removed job (§2) — rm sweeps only the
         // job's state root.
@@ -307,6 +331,10 @@ describe("§5e integration — job new → job run → job extract", () => {
         // Chain on main, before the fork — part of the base, never a pick.
         await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
 
+        // `job new` no longer creates a branch (v0.11 §2/§3) — extract
+        // itself still does (JOB-EXTRACT-REMOVED retires that separately),
+        // so check one out by hand first, exactly what `job new` used to do.
+        await exec("git", ["checkout", "-q", "-b", "job/ext"], { cwd: repo.dir });
         const created = await runCli(repo.dir, ["job", "new", "ext"]);
         expect(created.code).toBe(0);
 
@@ -424,6 +452,10 @@ describe("§5e integration — job new → job run → job extract", () => {
       const repo = await makeRepo();
       try {
         await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
+        // `job new` no longer creates a branch (v0.11 §2/§3) — the §6
+        // recipe is now the operator's own `git worktree add` on a branch
+        // they create by hand.
+        await exec("git", ["checkout", "-q", "-b", "job/wrk"], { cwd: repo.dir });
         const created = await runCli(repo.dir, ["job", "new", "wrk"]);
         expect(created.code).toBe(0);
 
@@ -495,6 +527,9 @@ describe("§5e integration — job new → job run → job extract", () => {
         // though this scenario never runs a tick.
         await commitRepoConfig(repo.dir, WORK_CHAIN_SRC, "derive prompt\n");
 
+        // `job new` no longer creates a branch (v0.11 §2/§3) — check one out
+        // by hand first, exactly what `job new` used to do.
+        await exec("git", ["checkout", "-q", "-b", "job/cfl"], opts);
         const created = await runCli(repo.dir, ["job", "new", "cfl"]);
         expect(created.code).toBe(0);
         await writeFile(join(repo.dir, "conflict.txt"), "job change\n");

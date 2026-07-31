@@ -1,10 +1,12 @@
 /**
- * `flume job` — lifecycle verbs over the job convention (v0.5 §5): a job is
- * a branch plus a state root, both named by convention —
- * `.flume/jobs/<name>/` (tracked, runtime subdirs ignored) on branch
- * `job/<name>`. Machinery only: no presets, no encoded checks, no harness
- * content — content arrives via the repo chain's `Chain.seedDir` (v0.6 §4),
- * chain-owned.
+ * `flume job` — lifecycle verbs over a job (v0.5 §5, branch grammar retired
+ * v0.11 §2/§3): a job is `.flume/jobs/<name>/` — tracked files in the
+ * working tree, on whatever branch the operator is on. Nothing more.
+ * Machinery only: no presets, no encoded checks, no harness content —
+ * content arrives via the repo chain's `Chain.seedDir` (v0.6 §4),
+ * chain-owned. `new`/`run`/`rm` construct, assert, and checkout no branch;
+ * `extract` still does (its branch-strategy replacement lands with
+ * JOB-EXTRACT-REMOVED, v0.11 §3).
  *
  * `src/cli.ts` routes `flume job <verb>` here. Git access is a local thin
  * wrapper: the verbs speak porcelain (`checkout`, `add`, `commit`,
@@ -129,16 +131,17 @@ export interface JobNewOptions {
 }
 
 /**
- * `flume job new <name>` (v0.6 §4). From current HEAD: branch `job/<name>`
- * (reuse if it exists), load the repo chain — no `<configDir>/chain.ts` is a
- * usage error, since a job that could never `run` must not be creatable —
- * then copy its declared `seedDir` into `.flume/jobs/<name>/` verbatim,
- * skip-existing (a declared-but-absent `seedDir` is the same class of usage
- * error; an undeclared `seedDir` seeds nothing, no warning), ensure runtime
- * ignores, pin `core.longpaths` (win32), baseline-commit the harness, stay on
- * the branch. Idempotent on re-run. `import "@dtmd/flume"` from a job chain
- * resolves via the bay's own install — no per-job link is provisioned (v0.9
- * §3).
+ * `flume job new <name>` (v0.6 §4; branch grammar retired, v0.11 §2/§3).
+ * Load the repo chain — no `<configDir>/chain.ts` is a usage error, since a
+ * job that could never `run` must not be creatable — then copy its declared
+ * `seedDir` into `.flume/jobs/<name>/` verbatim, skip-existing (a
+ * declared-but-absent `seedDir` is the same class of usage error; an
+ * undeclared `seedDir` seeds nothing, no warning), ensure runtime ignores,
+ * pin `core.longpaths` (win32), baseline-commit the harness on the current
+ * HEAD. No branch is created or checked out — HEAD stays wherever the
+ * operator left it. Idempotent on re-run. `import "@dtmd/flume"` from a job
+ * chain resolves via the bay's own install — no per-job link is provisioned
+ * (v0.9 §3).
  *
  * Throws {@link JobUsageError} on usage-shaped input (exit 2 at the CLI);
  * any other throw is an operational failure (exit 1).
@@ -151,19 +154,9 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
 
-  // 1. Branch by convention, from current HEAD; reuse an existing job branch.
-  const branch = `job/${name}`;
-  const reuse = await branchExists(repoRoot, branch);
-  await git(
-    repoRoot,
-    reuse ? ["checkout", "-q", branch] : ["checkout", "-q", "-b", branch],
-  );
-  log(`[flume] ${reuse ? "reusing branch" : "created branch"} ${branch}`);
-
-  // 2. Load the repo chain — after the checkout, so the checkout decides
-  // which branch's copy is on disk (mirrors jobRun). The residency invariant
-  // (v0.6 §2) guarantees a chain exists before any job does; a chainless
-  // repo cannot run the job it would create.
+  // 1. Load the repo chain. The residency invariant (v0.6 §2) guarantees a
+  // chain exists before any job does; a chainless repo cannot run the job
+  // it would create.
   const chainPath = resolve(configDir, "chain.ts");
   if (!existsSync(chainPath)) {
     throw new JobUsageError(
@@ -172,7 +165,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   }
   const { default: chain } = await loadChainModule(chainPath);
 
-  // 3. Validate a declared seedDir before touching the state root — a
+  // 2. Validate a declared seedDir before touching the state root — a
   // declared-but-absent seedDir must not leave a stray empty job dir behind.
   let seedPath: string | undefined;
   if (chain.seedDir !== undefined) {
@@ -184,7 +177,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
     }
   }
 
-  // 4. Seed the state root — configDir-relative, verbatim copy,
+  // 3. Seed the state root — configDir-relative, verbatim copy,
   // skip-existing (v0.6 §4): re-run fills gaps (a stub added to the seed
   // dir reaches existing jobs) and never clobbers a worked file. Absent
   // seedDir → bare job; state accretes from ticks, no warning.
@@ -195,7 +188,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
     log(`[flume] seeded ${jobDir} from ${seedPath}`);
   }
 
-  // 5. Runtime ignores — written before the baseline add so runtime state
+  // 4. Runtime ignores — written before the baseline add so runtime state
   // never enters the commit. A declared Chain.friction dir folds into the
   // same set (§3): gitignored by machinery, not by per-repo habit.
   await ensureRuntimeIgnores(
@@ -203,14 +196,15 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
     chain.friction !== undefined ? [frictionIgnoreEntry(chain.friction)] : [],
   );
 
-  // 6. Job dirs nest deep; spare the operator MAX_PATH failures up front.
+  // 5. Job dirs nest deep; spare the operator MAX_PATH failures up front.
   if (process.platform === "win32") {
     await git(repoRoot, ["config", "core.longpaths", "true"]);
   }
 
-  // 7. Baseline-commit the seeded harness so plan/build produce clean deltas.
-  // The commit is pathspec-scoped: anything the operator pre-staged outside
-  // the job dir stays in the index instead of being swept into the seed.
+  // 6. Baseline-commit the seeded harness on the current HEAD so plan/build
+  // produce clean deltas. The commit is pathspec-scoped: anything the
+  // operator pre-staged outside the job dir stays in the index instead of
+  // being swept into the seed.
   const rel = join(".flume", "jobs", name);
   await git(repoRoot, ["add", "--", rel]);
   const staged = await git(repoRoot, ["status", "--porcelain", "--", rel]);
@@ -223,15 +217,13 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
       "--",
       rel,
     ]);
-    log(`[flume] baseline commit on ${branch}`);
+    log(`[flume] baseline commit on current HEAD`);
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
   }
-  // 8. Stay on job/<name> — tune, then `flume job run`.
 }
 
 export interface JobRunOptions {
-  repoRoot: string;
   name: string;
   /** Job state root — where the baton lives (resolved by the CLI, §3). */
   flumeDir: string;
@@ -245,46 +237,26 @@ export interface JobRunOptions {
 }
 
 /**
- * `flume job run <name>` preflight (v0.5 §5b-1/2): assert-or-checkout
- * `job/<name>`, then wake the chain's entry phase — `chain.phases[0]`, a
- * content-free convention (decision 6, no hardcoded phase names) — iff the
- * baton is hibernating. A non-hibernating baton is left untouched (mid-job
- * resume). The loop itself (§5b-3) is the CLI's standard `flume loop` path
- * under the job resolution; this function owns only the two steps before it.
+ * `flume job run <name>` preflight (v0.11 §2/§3): wake the chain's entry
+ * phase — `chain.phases[0]`, a content-free convention (decision 6, no
+ * hardcoded phase names) — iff the baton is hibernating. A non-hibernating
+ * baton is left untouched (mid-job resume). No branch is asserted or
+ * checked out — the engine has no opinion on which branch a state root
+ * runs on. The loop itself (§5b-3) is the CLI's standard `flume loop` path
+ * under the job resolution; this function owns only the wake step before it.
  *
- * Throws {@link JobUsageError} on a bad name or a branch that does not exist
- * (the job was never created — exit 2 at the CLI); any other throw is an
- * operational failure (exit 1).
+ * Throws {@link JobUsageError} on a bad name (exit 2 at the CLI); any other
+ * throw is an operational failure (exit 1).
  */
 export async function jobRun(opts: JobRunOptions): Promise<void> {
-  const { repoRoot, name, flumeDir, configDir } = opts;
+  const { name, flumeDir, configDir } = opts;
   const log = opts.log ?? ((line: string) => console.log(line));
 
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
 
-  // 1. Assert-or-checkout. Checkout is a verb act (§2 HEAD-is-truth): the
-  // loop never switches branches, so the switch happens here or not at all.
-  // Inside a linked worktree already on job/<name> (the §6 concurrency
-  // recipe) the assert passes and no checkout runs — git would refuse to
-  // check out a branch another worktree holds anyway.
-  const branch = `job/${name}`;
-  if (!(await branchExists(repoRoot, branch))) {
-    throw new JobUsageError(
-      `branch ${branch} does not exist; create the job first: flume job new ${name}`,
-    );
-  }
-  const head = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (head === branch) {
-    log(`[flume] on ${branch}`);
-  } else {
-    await git(repoRoot, ["checkout", "-q", branch]);
-    log(`[flume] checked out ${branch}`);
-  }
-
-  // 2. Wake the entry phase iff hibernating. The chain is repo-resident
-  // (`<configDir>/chain.ts`, v0.6 §2) and loads AFTER the checkout — the
-  // checkout decides which branch's copy of the repo chain is on disk.
+  // Wake the entry phase iff hibernating. The chain is repo-resident
+  // (`<configDir>/chain.ts`, v0.6 §2).
   const baton = new Baton(flumeDir);
   if (!baton.hibernating()) {
     log(
@@ -348,12 +320,12 @@ export interface JobRmOptions {
 }
 
 /**
- * `flume job rm <name>` (v0.5 §5c) — the discard ending: throw the harness
- * away, keep the work. Refuse while the job's `loop.pid` records a live pid;
- * `git rm -r` the tracked harness plus a cleanup commit on `job/<name>`;
- * remove untracked runtime remnants; `git worktree prune`. The job branch
- * survives — integration (merge/squash) and branch deletion are the
- * operator's acts, never rm's.
+ * `flume job rm <name>` (v0.5 §5c; branch grammar retired, v0.11 §2/§3) —
+ * the discard ending: throw the harness away, keep the work. Refuse while
+ * the job's `loop.pid` records a live pid; `git rm -r` the tracked harness
+ * plus a cleanup commit on the current HEAD; remove untracked runtime
+ * remnants; `git worktree prune`. No branch is checked out or touched — the
+ * operator's branches are never rm's business.
  *
  * Throws {@link JobUsageError} on a bad name or a name that names no job
  * (exit 2 at the CLI); a live loop or git failure is an operational error
@@ -366,20 +338,14 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
 
-  const branch = `job/${name}`;
   const jobDir = join(repoRoot, ".flume", "jobs", name);
   const rel = join(".flume", "jobs", name);
-  const haveBranch = await branchExists(repoRoot, branch);
-  if (!haveBranch && !existsSync(jobDir)) {
-    throw new JobUsageError(
-      `no job '${name}': neither branch ${branch} nor ${rel} exists`,
-    );
+  if (!existsSync(jobDir)) {
+    throw new JobUsageError(`no job '${name}': ${rel} does not exist`);
   }
 
   // 1. Refuse while the loop is live — removing the state root out from
-  // under a running supervisor would strand its ticks. Checked before the
-  // checkout below: a live loop implies the branch is HEAD somewhere, and
-  // switching under it is exactly the race this refusal exists to prevent.
+  // under a running supervisor would strand its ticks.
   const livePid = await liveLoopPid(jobDir);
   if (livePid !== null) {
     throw new Error(
@@ -387,15 +353,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
     );
   }
 
-  // 2. Cleanup commit on the job branch (checkout is a verb act, §2). A
-  // branchless dir is a half-created job — clean up on the current HEAD.
-  if (haveBranch) {
-    const head = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
-    if (head !== branch) {
-      await git(repoRoot, ["checkout", "-q", branch]);
-      log(`[flume] checked out ${branch}`);
-    }
-  }
+  // 2. Cleanup commit on the current HEAD.
   const tracked = await git(repoRoot, ["ls-files", "--", rel]);
   if (tracked.length > 0) {
     await git(repoRoot, ["rm", "-q", "-r", "--", rel]);
@@ -409,7 +367,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
       "--",
       rel,
     ]);
-    log(`[flume] cleanup commit on ${haveBranch ? branch : "HEAD"}`);
+    log(`[flume] cleanup commit on current HEAD`);
   } else {
     log(`[flume] no tracked harness under ${rel}; nothing to commit`);
   }
@@ -423,9 +381,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
 
   // 4. Stale metadata from the job's fanout worktrees.
   await git(repoRoot, ["worktree", "prune"]);
-  log(
-    `[flume] removed ${rel}; branch ${branch} survives — merge or delete it when integrated`,
-  );
+  log(`[flume] removed ${rel}`);
 }
 
 /** One row of `flume job status` (v0.5 §5d). */
