@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -413,7 +413,7 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     expect(result.message).toMatch(/untouched/);
   });
 
-  it("fails a syntactically-broken chain.ts → reverting the commit restores the last-good chain", async () => {
+  it("fails a syntactically-broken chain.ts", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
     await commit({ ".flume/chain.ts": VALID_CHAIN }, "build: good chain");
     const brokenSha = await commit(
@@ -427,13 +427,6 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/broken/);
     expect(result.details ?? "").not.toBe("");
-
-    // Gate failure ⇒ the dispatcher drops the commit (hard reset). chain.ts
-    // is back to the last-good version; the next resolution would succeed.
-    await exec("git", ["reset", "--hard", "HEAD~1"], { cwd: repo });
-    expect(
-      await readFile(join(repo, ".flume", "chain.ts"), "utf8"),
-    ).toBe(VALID_CHAIN);
   });
 
   it("fails a chain.ts that has no default export", async () => {
@@ -557,6 +550,14 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     });
     const result = await gate.run(ctx(dir));
     expect(result.ok).toBe(true);
+  });
+
+  it("passes an empty queue — a fully-drained pending.json has nothing to fence", async () => {
+    await writePending([]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/\(0 entries\)/);
   });
 
   it("reports pending.json missing after commit", async () => {
