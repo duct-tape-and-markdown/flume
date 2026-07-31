@@ -416,7 +416,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
   "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
-    "retire": [ "path or symbol", ... ]
+    "retire": [ "path", ... ]
   }`;
 
   return `Each pending entry MUST conform to this shape (fields not listed here are rejected):

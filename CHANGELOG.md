@@ -45,6 +45,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   (`.claude/rules/engineering.md`, "An export earns its consumer").
   `shellGate` and `writablePathsGate` stay callable with an inline object
   literal exactly as before.
+- `renderSchemaForPrompt`'s `files.retire` hint no longer advertises "path
+  or symbol" — `touchedPaths()` and `pendingGate`'s fence pre-check treat
+  every `retire` element as a path, so a plan entry that took the hint at
+  its word and declared a symbol was refused by the fence on a guaranteed
+  revert (`.claude/rules/engineering.md`, "A seam gate reads what the real
+  writer wrote").
 
 ## [0.9.0] - 2026-07-31
 

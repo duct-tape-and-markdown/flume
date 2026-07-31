@@ -10,6 +10,7 @@ import {
   parsePending,
   parsePendingLoose,
   renderSchemaForPrompt,
+  touchedPaths,
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
@@ -597,13 +598,41 @@ describe("renderSchemaForPrompt", () => {
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
-          "retire": [ "path or symbol", ... ]
+          "retire": [ "path", ... ]
         }
       }
 
       Output is a JSON array of these entries, ordered by execution priority (top = next).
       Empty array is valid (means nothing pending)."
     `);
+  });
+
+  it("the retire hint advertises a path only, never a non-path alternative (engineering.md § A seam gate reads what the real writer wrote)", () => {
+    const rendered = renderSchemaForPrompt();
+    const retireLine = rendered
+      .split("\n")
+      .find((line) => line.includes(`"retire":`));
+    expect(retireLine).toBeDefined();
+    expect(retireLine).not.toMatch(/symbol/);
+  });
+
+  it("fence compatibility: a retired entry the hint's own contract allows survives the same path-fence its new/edit siblings do", () => {
+    // touchedPaths() is what the build-fence pre-check (pendingGate) reads
+    // to decide whether an entry's declared files clear the target fence —
+    // driving the real writer's output through it here is the agreement
+    // check for the hint fixed above: since retire elements are folded into
+    // touchedPaths() unchanged (no path-or-symbol branch), a retire value
+    // the hint permits reaches the fence exactly as any new/edit path does.
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      files: {
+        new: [],
+        edit: [],
+        retire: ["src/deprecated.ts"],
+      },
+    });
+    expect(touchedPaths(entry)).toEqual(["src/deprecated.ts"]);
   });
 
   it("renders every declared extension field with its hint, after the core", () => {
