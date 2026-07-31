@@ -7,16 +7,16 @@
       "edit": [
         {
           "path": ".gitignore",
-          "description": "add .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json"
+          "description": "add .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl"
         }
       ],
       "retire": []
     },
-    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json — untracked noise every tick.",
+    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json, .flume/tick-verdicts.jsonl — untracked noise every tick.",
     "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
     "tests": [],
-    "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, or .flume/tick-verdict.json in git status.",
-    "notes": "last-tick.json is dead — v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs, but this repo's own root .flume/ isn't a job dir so it never got the entry."
+    "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json, or .flume/tick-verdicts.jsonl in git status.",
+    "notes": "last-tick.json is dead — v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs; this repo's root .flume/ isn't a job dir so it never got the entry. tick-verdicts.jsonl (Dispatcher.ts:234, bounded history log) is the file actually untracked in git status this tick — the prior note named only the singular tick-verdict.json, not currently on disk."
   },
   {
     "tag": "CHANGELOG-0.9.0-BACKFILL",
