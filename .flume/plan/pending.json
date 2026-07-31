@@ -730,7 +730,7 @@
       "new": [
         {
           "path": "tests/helpers/subprocess.ts",
-          "description": "one home for the CLI-subprocess harness: the tsx/dist/cli.mjs + src/cli.ts entry paths, hermeticEnv over all three canonical vars, runCli with the optional env param cli.test.ts already takes. Not *.test.ts, so neither vitest lane collects it"
+          "description": "one home for the CLI-subprocess harness: the tsx/dist/cli.mjs + src/cli.ts entry paths, hermeticEnv over all three canonical vars, runCli with the optional env param cli.test.ts already takes, plus gitOut (git subprocess + trimEnd) per the job.test.ts/job.integration.test.ts duplicate. Not *.test.ts, so neither vitest lane collects it"
         }
       ],
       "edit": [
@@ -744,11 +744,11 @@
         },
         {
           "path": "tests/job.test.ts",
-          "description": "import the helper; the 46-78 block goes"
+          "description": "import the helper; the 46-78 block goes, and the byte-identical gitOut (100-103) drops in favor of the shared one"
         },
         {
           "path": "tests/job.integration.test.ts",
-          "description": "import the helper; the 26-58 block goes"
+          "description": "import the helper; the 26-58 block goes, and the byte-identical gitOut (60-63) drops in favor of the shared one"
         }
       ],
       "retire": []
@@ -769,7 +769,7 @@
       }
     ],
     "acceptance": "One module states tsx's dist layout and builds the hermetic env; all four suites import it; the integration lane is green when run under a job resolution.",
-    "notes": "Verified this tick: loop-process-boundary.integration.test.ts:134-139 deletes FLUME_DIR + FLUME_CONFIG_DIR only, while cli.test.ts:481, job.test.ts:55 and job.integration.test.ts:35 also delete FLUME_JOB. cli.ts:136-140 then resolves the child's flumeDir to <tempRepo>/.flume/jobs/<outer>. Integration lane only (vitest.config.ts), so build's gate never sees it - the host lane is where it goes red. tsx's dist path is a literal in all four."
+    "notes": "Verified this tick: loop-process-boundary.integration.test.ts:134-139 deletes FLUME_DIR+FLUME_CONFIG_DIR only; cli.test.ts:481, job.test.ts:55, job.integration.test.ts:35 also delete FLUME_JOB. cli.ts:136-140 then resolves the child's flumeDir to <tempRepo>/.flume/jobs/<outer>. Integration lane only, so build's gate never sees it. tsx's dist path is a literal in all four. Sweep: gitOut is byte-identical at job.test.ts:100-103/job.integration.test.ts:60-63 - folded here, not a new entry."
   },
   {
     "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",

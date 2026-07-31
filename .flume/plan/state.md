@@ -15,7 +15,7 @@ Covered this rotation: `src/Baton.ts`, `src/Prompt.ts`, `src/builtinGates.ts`,
 `tests/builtinGates.test.ts`, `tests/PendingSchema.test.ts`,
 `tests/job.test.ts`, `tests/Prompt.test.ts`, `tests/cli.test.ts`,
 `tests/Baton.test.ts`, `tests/setupWorktree.test.ts`, `tests/Dispatcher.test.ts`,
-`tests/partition.test.ts`.
+`tests/partition.test.ts`, `tests/job.integration.test.ts`.
 
 ## Operator leg (not an entry)
 
@@ -29,5 +29,4 @@ re-surface this file once this commit lands. Derive it the first tick neither
 INLINE-EXEC-STDIN-TRANSPORT nor INLINE-EXEC-RENDER-REFUSES remains in
 `<pending-now>`.
 
-Plan continues: yes — sweep frontier still open (`tests/job.integration.test.ts`,
-`tests/loop-process-boundary.integration.test.ts`).
+Plan continues: yes — sweep frontier still open (`tests/loop-process-boundary.integration.test.ts`).
