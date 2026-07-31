@@ -1451,5 +1451,30 @@
     "tests": [],
     "acceptance": "One chain.ts-template builder is used by both the loop-end friction summary describe and the Chain.friction load-time validation describe; tsc/vitest green.",
     "notes": "Verified on disk: writeFrictionChain (4362-4373) and writeChainWithFriction (4716-4729) build an identical minimal chain.ts template string, differing only in how the friction field is spliced in (pre-stringified vs raw-expression arg) - two describes, no cross-reference. A future required-field change to the phase shape has to land in both or silently diverge."
+  },
+  {
+    "tag": "PROMPT-TEST-RENDER-HELPER-DUP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "fold the byte-identical local render(promptBody) helpers at 249-259 (inline-exec-via-stdin describe) and 294-304 (unresolved-inline-exec-abort describe) into one shared helper both describes call"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/Prompt.test.ts defines the same local render(promptBody) helper twice, verbatim, across two describes instead of sharing one.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [],
+    "acceptance": "One render(promptBody) helper is defined once in tests/Prompt.test.ts and used by both describes; vitest green; test behavior unchanged.",
+    "notes": "Sweep finding, tests/Prompt.test.ts neighborhood (frontier armed by 9dffc51, which touched this file's sibling src/Prompt.ts). Verified on disk: the two render() closures are character-for-character identical. Same shape as DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP - a future required-arg change to renderPrompt's call shape can land in one and silently miss the other. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
   }
 ]
