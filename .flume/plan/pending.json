@@ -524,6 +524,31 @@
     "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
   },
   {
+    "tag": "BUILTINGATES-DEAD-EXPORT-TYPES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "drop `export` from ShellGateOptions (62) and EntryWriteScope (321) - each resolves only to its own declaration plus its one in-module signature use, and neither is re-exported via src/index.ts"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "ShellGateOptions and EntryWriteScope are exported with zero consumers outside builtinGates.ts and no place in index.ts's declared public surface.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "An export earns its consumer"
+    },
+    "tests": [],
+    "acceptance": "Neither type carries `export`; tsc (both tsconfig.json and tsconfig.build.json) and vitest stay green; shellGate and writablePathsGate remain callable with an inline object literal exactly as today.",
+    "notes": "LSP findReferences this tick: builtinGates.ts:62 and :321 each resolve to their own declaration plus the one signature using them, both inside the file. PendingGateOptions is the correct sibling - declared via index.ts (:38) - these two are not. Verified same-file and re-exported-function declaration emit stays clean without `export` on the param type (tsc --declaration repro). A deletion pins nothing decidably; the green suite is the proof (the named exception, per GIT-DEAD-EXPORTS-RETIRE)."
+  },
+  {
     "tag": "EXAMPLES-INTEGRATION-VACUOUS-GREEN",
     "gate": {
       "kind": "open"

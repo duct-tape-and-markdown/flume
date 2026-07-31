@@ -7,7 +7,7 @@ Posture swept through: `89258d671bb1f8bed072601ac632acf3024f8bb2`
 Rotation armed (code delta touched src/Prompt.ts, src/builtinGates.ts,
 examples/cascade-chain.ts, tests/examples.integration.test.ts,
 tests/PendingSchema.test.ts, tests/Prompt.test.ts past the stamp). Covered
-this rotation: src/Prompt.ts.
+this rotation: src/Prompt.ts, src/builtinGates.ts.
 
 ## Operator leg (not an entry)
 
