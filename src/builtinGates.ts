@@ -40,7 +40,7 @@ const exec = promisify(execFile);
 export async function execGate(
   cmd: string,
   args: string[],
-  opts: { cwd: string; maxBuffer: number },
+  opts: { cwd: string; maxBuffer: number; env?: NodeJS.ProcessEnv },
 ): Promise<{ stdout: string; stderr: string }> {
   try {
     return await exec(cmd, args, opts);
@@ -70,6 +70,13 @@ export interface ShellGateOptions {
   maxBuffer?: number;
   /** Hint surfaced when the gate fails. Defaults to "<name> failed". */
   failHint?: string;
+  /**
+   * Merged over `process.env` for the spawned command. Lets a chain inject
+   * or override a var (e.g. a test-only flag, a scrubbed secret) without
+   * hand-forking `shellGate` to rebuild its exec plumbing. Omit for
+   * byte-identical behavior to before this option existed.
+   */
+  env?: Record<string, string>;
 }
 
 /**
@@ -87,6 +94,7 @@ export function shellGate(opts: ShellGateOptions): Gate {
         const { stdout, stderr } = await execGate(opts.cmd, opts.args, {
           cwd: ctx.cwd,
           maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,
+          ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
         });
         return {
           ok: true,

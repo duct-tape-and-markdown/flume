@@ -57,6 +57,49 @@ describe("shellGate — ok path", () => {
   });
 });
 
+describe("shellGate — env option", () => {
+  it("without env, behavior is byte-identical to today (no forced var leaks in)", async () => {
+    const gate = shellGate({
+      name: "no-env",
+      when: "afterCommit",
+      cmd: "node",
+      args: ["-e", "process.stdout.write(process.env.SHELLGATE_ENV_OPTION_TEST ?? 'unset')"],
+    });
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.ok).toBe(true);
+    expect(result.details).toContain("unset");
+  });
+
+  it("with env, the spawned command observes the merged var", async () => {
+    const gate = shellGate({
+      name: "with-env",
+      when: "afterCommit",
+      cmd: "node",
+      args: ["-e", "process.stdout.write(process.env.SHELLGATE_ENV_OPTION_TEST ?? 'unset')"],
+      env: { SHELLGATE_ENV_OPTION_TEST: "bar" },
+    });
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.ok).toBe(true);
+    expect(result.details).toContain("bar");
+  });
+
+  it("merges env over process.env rather than replacing it", async () => {
+    const gate = shellGate({
+      name: "merged-env",
+      when: "afterCommit",
+      cmd: "node",
+      args: [
+        "-e",
+        "process.stdout.write(typeof process.env.PATH === 'string' && process.env.FOO === 'bar' ? 'both-present' : 'missing')",
+      ],
+      env: { FOO: "bar" },
+    });
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.ok).toBe(true);
+    expect(result.details).toContain("both-present");
+  });
+});
+
 describe("shellGate — fail path", () => {
   it("returns ok=false with failHint on non-zero exit", async () => {
     const gate = shellGate({
