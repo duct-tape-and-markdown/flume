@@ -122,6 +122,10 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         expect(outcome.hibernated).toBe(false);
         expect(outcome.failed).toBeUndefined();
         expect(outcome.result?.committed).toBe(true);
+        // Vacuity pin (engineering.md "A green verdict is proven
+        // non-vacuous"): prove the gate set judged below isn't empty before
+        // trusting its every(ok) verdict.
+        expect(outcome.result?.gateResults.length).toBeGreaterThan(0);
         expect(outcome.result?.gateResults.every((g) => g.ok)).toBe(true);
         // handoff() => [] and nothing re-woke `groom`: the system hibernates
         // after this one tick — no plan/build split, single phase.
@@ -170,10 +174,8 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
           reason: "needs ops access this chain does not assert",
         },
       ];
-      await writeFile(
-        join(repo.dir, "BACKLOG.json"),
-        `${JSON.stringify(backlog, null, 2)}\n`,
-      );
+      const backlogContent = `${JSON.stringify(backlog, null, 2)}\n`;
+      await writeFile(join(repo.dir, "BACKLOG.json"), backlogContent);
       await exec("git", ["add", "BACKLOG.json"], { cwd: repo.dir });
       await exec("git", ["commit", "-q", "-m", "seed backlog"], {
         cwd: repo.dir,
@@ -194,6 +196,17 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
 
       expect(outcome.result?.committed).toBe(false);
       expect(outcome.noCommit).toBe("voluntary-bail");
+
+      // The title's claim ("leaves the backlog untouched") asserted
+      // directly: byte-identical BACKLOG.json, no SHIPPED.md written.
+      const remaining = await readFile(
+        join(repo.dir, "BACKLOG.json"),
+        "utf8",
+      );
+      expect(remaining).toBe(backlogContent);
+      await expect(
+        readFile(join(repo.dir, "SHIPPED.md"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await repo.cleanup();
     }
