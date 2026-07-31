@@ -1,59 +1,5 @@
 [
   {
-    "tag": "JOB-EXTRACT-REMOVED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "delete jobExtract w/ docstring (540-768, EOF), JobExtractOptions/JobExtractResult (505-538), gitShowBlob (471-481), worktreeHolding (303-313), readFrictionFiles w/ docstring (483-503) - LSP-confirmed zero callers outside jobExtract (findReferences: decl + jobExtract:750 only), delete unconditionally"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "delete the extract verb wiring (522-580); HELP_TOP's job-extract block (248-254); HELP_JOB's extract verb doc (396-408) and its extract clauses inside the shared exit-code list (419-422, 426-428)"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "delete Chain.harvest (241-245) - job.ts:601 was its only consumer"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "delete the jobExtract describe block whole (1169-1657, EOF), not rewritten, per §3"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "delete the job-new to run to extract describe block whole (318-573, EOF), not rewritten, per §3"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "net-new coverage (no extract mentions exist in this file today): flume job extract exits as an unrecognized verb"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Breaking entry per §7: flume job extract and Chain.harvest removed"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume job extract and Chain.harvest removed entirely - the clean-history ending becomes an operator git recipe, not engine machinery (§3).",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "3. Job verbs shed navigation; extract is removed"
-    },
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "flume job extract exits with an unrecognized-verb usage error rather than running"
-      }
-    ],
-    "acceptance": "grep -rn 'harvest' src/ is empty; grep -n 'checkout|cherry-pick|branch' src/job.ts hits no git invocations; extract's test suites are deleted, not rewritten; tsc/vitest green.",
-    "notes": "File line numbers re-verified this tick against HEAD (JOB-BRANCH-GRAMMAR-RETIRED shifted job.ts/cli.ts by ~150 lines each). tests/cli.test.ts is a new addition to files - the entry's own tests[] required it but it was undeclared, which the fanout guard would have reverted."
-  },
-  {
     "tag": "TIP-CLAIM-ADVISORY",
     "gate": {
       "kind": "open"
@@ -140,8 +86,7 @@
   {
     "tag": "DOCS-JOB-EXTRACT-RETIRED",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-EXTRACT-REMOVED"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -390,8 +335,7 @@
   {
     "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-EXTRACT-REMOVED"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -605,8 +549,7 @@
   {
     "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-EXTRACT-REMOVED"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
