@@ -1,30 +1,5 @@
 [
   {
-    "tag": "CHANGELOG-0.9.0-BACKFILL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "CHANGELOG.md",
-          "description": "backfill 5 omitted post-0.8.0 fixes into the published [0.9.0] section"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Published [0.9.0] section omits 5 post-0.8.0 fixes that never got a changelog line: 480b81c, 9f4e62f, 1a67d1c, 58be15d, 3170113.",
-    "per": {
-      "path": "spec/RELEASE-v0.1.md",
-      "section": "8. Repository hygiene"
-    },
-    "tests": [],
-    "acceptance": "[0.9.0] section carries one line per commit below; retroactively satisfies the every-ship-gets-a-line convention for the published section.",
-    "notes": "480b81c pendingGate lazy targetFence read; 9f4e62f+1a67d1c renderSchemaForPrompt separator-swallowed-by-comment fix; 58be15d win32 inline-exec ENOENT shell-retry fallback; 3170113 shellGate optional env. Pre-1.0: published npm tarball's copy stays stale, acceptable. changelogGate (chain.ts) prevents recurrence going forward; this is the one-time backfill only."
-  },
-  {
     "tag": "TAG-LENGTH-BOUND-AGREEMENT-PIN",
     "gate": {
       "kind": "open"
@@ -857,31 +832,6 @@
     "tests": [],
     "acceptance": "Neither site claims a condition the tree contradicts; no behavior moves.",
     "notes": "Fourth sibling of the ERA-SCOPED-NARRATION-* family. Verified this tick: package.json:26-31 declares an exports map exposing '.' alone, so index.ts:3's 'not enforced - there's no exports map yet' fired its own trigger. setupWorktree.ts:5-7 names flume's dogfood buildSetupWorktree as a hand-rolled hardcode; chain.ts:50 imports the engine helper, :197-201 delegates to it, and :192-193 says so outright. Prose-only."
-  },
-  {
-    "tag": "CLI-TEST-DOCBLOCKS-ORPHANED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "move the 402-412 block onto the describe it heads (651), and the 585-600 block onto its own describe holding the two v0.8 §8 tests (716-793) that today sit under a title naming the loop lock; the four src/cli.ts cites (425, 512, 937, 1083) name symbols, not lines"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Two suite doc blocks sit ~200 lines above their subjects, one claiming what is false of the tests it now heads; all four src/cli.ts line cites in the file point at unrelated lines.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "Each doc block sits on the describe it describes; no cite in the file names a line number; the suite is green and no test moves between files.",
-    "notes": "Verified on disk this tick: isInvokedDirectly is cli.ts:1041 not :854; the render CjsContextLoadError catch is :966 not :872-881; runJobVerb is :449 not :356-387; frictionCountLine is Dispatcher.ts:509, not cli.ts at all. The 402-412 block's 'no chain.ts, no git repo, no child processes' is false of the two supervisorPolicy tests it now heads. Prose + placement only; no assertion changes."
   },
   {
     "tag": "DISPATCHER-STREAMJSON-PARSE-DUP",
