@@ -548,6 +548,47 @@ root (`node -e "require.resolve('vitest')"`).
 Singleton phases run in the main repo, so the hook is never invoked for
 them.
 
+**Concurrency recipe: repo-owned unit, thin caller, serialized queue.** The
+dispatcher runs a wave's `setupWorktree` calls concurrently — one
+`Promise.all` across every entry in the batch — so N entries provision in
+parallel rather than serially. That's safe for disjoint per-worktree state,
+but an install racing against a **shared cold cache** (the package
+manager's global store, not yet warmed) is not disjoint: two
+`pnpm install --frozen-lockfile` calls hitting an empty store at the same
+moment can race underneath both. `Promise.all` also fails all-or-nothing —
+one entry's setup rejecting poisons the wave's `await`, taking every
+sibling's setup down with it instead of leaving the clean ones to proceed.
+
+The recipe that avoids both:
+
+- **The repo owns the provisioning unit.** The actual install logic —
+  what the exported `setupWorktree` helper above wraps — lives as one
+  function in the repo (under `.flume/` or the chain's own source), not
+  duplicated inline per chain.
+- **The chain's `setupWorktree` hook stays a thin caller.** It invokes
+  that one repo-owned unit and returns its result, carrying no install
+  logic of its own — the code sample above is already this shape.
+- **Wave setups serialize through a non-poisoning queue.** Instead of
+  awaiting every entry's setup in one `Promise.all`, the repo's
+  provisioning unit enqueues each call onto a single in-process queue (a
+  promise chain, a mutex, a one-token semaphore) so only one setup runs at
+  a time, warming the shared cache without a concurrent second writer.
+  "Non-poisoning" is the operative property: one entry's rejection
+  resolves *that* entry's queued call with its own error and lets the
+  queue keep draining the rest — it must never reject the queue itself,
+  which would take every not-yet-run sibling down with it the same way
+  `Promise.all` does today.
+- **A failed setup fails loud, with its own error.** The queue surfaces
+  the failing entry's actual error back to its own `setupWorktree` call —
+  never a generic "queue aborted", never swallowed into a silent no-op —
+  so the dispatcher's existing per-entry handling (that entry stays
+  pending, siblings continue) has a real error to log and act on.
+
+This is chain-authored discipline, not an engine capability — a scheduling
+knob in the dispatcher itself isn't warranted by today's evidence (see
+`engine-boundary.md`); the queue lives in the chain's own provisioning
+unit, behind the thin `setupWorktree` caller above.
+
 ### `{ extraEnv }`: per-worktree env for the agent
 
 `setupWorktree` may return a `WorktreeSetupResult` — `{ extraEnv }` — and
