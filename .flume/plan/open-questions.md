@@ -14,18 +14,13 @@ Status markers:
 **NEEDS AMENDMENT**
 
 `spec/RELEASE-v0.1.md:72` says `flume status` prints "awake phases, pending
-entry count, last commit". Only the awake set ever shipped. The pending count
-is mechanical — `flume job status` already computes it — and is filed as
-STATUS-PENDING-COUNT-UNSHIPPED. The "last commit" leg is not fileable: §3
-names no format, no purpose, and no exit semantics for it, and nothing
-downstream cites it.
-
-The gap went unnoticed because the three surfaces describing `status` disagree
-and none is gated: `HELP_TOP` (`src/cli.ts:227`) promises the pending count,
-`HELP_SUB.status` (:268-278) does not and omits the capability-skip lines the
-code does print, and `docs/CLI.md:23` claims "no chain is loaded" — false
-since the friction and capability reads landed. Whichever way this resolves,
-all three want to say the same thing.
+entry count, last commit". The pending-count leg shipped
+(STATUS-PENDING-COUNT-UNSHIPPED, `c982316`/`8bb2061`) — `HELP_TOP`,
+`HELP_SUB.status`, and `docs/CLI.md` now agree on it, and the count reads
+identically to `flume job status` via the shared `readPendingLoose` probe.
+Only "last commit" remains unshipped, and it is still not fileable: §3 names
+no format, no purpose, and no exit semantics for it, and nothing downstream
+cites it.
 
 Options:
 
