@@ -239,3 +239,18 @@ describe("example chains — entry phase is machine-wakeable", () => {
     },
   );
 });
+
+/**
+ * v0.8 §6 / engineering.md "The fix lands at the mechanism" — the flagship
+ * example hand-rolled a "does pending.json parse" gate that
+ * `docs/CHAIN-AUTHORING.md` itself documents as predating the `pendingGate`
+ * builtin. Pins the swap: plan's gate list carries `pendingGate`'s identity
+ * (`"pending-gate"`), not the hand-rolled gate's name.
+ */
+describe("cascade-chain.ts — plan phase gates through the pendingGate builtin", () => {
+  it("plan.gates contains a gate named 'pending-gate'", () => {
+    const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+    expect(planPhase).toBeDefined();
+    expect(planPhase!.gates.map((g) => g.name)).toContain("pending-gate");
+  });
+});

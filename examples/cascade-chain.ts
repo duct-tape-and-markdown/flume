@@ -28,7 +28,7 @@ import type {
   TickContext,
 } from "../src/index.ts";
 import {
-  parsePending,
+  pendingGate,
   renderSchemaForPrompt,
   shellGate,
   tscGate,
@@ -41,10 +41,10 @@ import {
 /**
  * This project's pending-entry fields beyond the engine core
  * (tag/gate/dependsOnForks/files). Declared once — the same record drives
- * the parse-gate validator (`parsePending(raw, entryExtension)`) and the
- * prompt schema (`renderSchemaForPrompt(entryExtension)`), so the prompt and
- * the parser cannot drift. The engine consumes none of these fields; they
- * are this chain's spec→plan→build workflow.
+ * the parse-gate validator (`pendingGate({ extension: entryExtension, ... })`)
+ * and the prompt schema (`renderSchemaForPrompt(entryExtension)`), so the
+ * prompt and the parser cannot drift. The engine consumes none of these
+ * fields; they are this chain's spec→plan→build workflow.
  */
 const entryExtension = {
   summary: {
@@ -80,45 +80,6 @@ const entryExtension = {
 } satisfies EntryExtension;
 
 // ---------- project-specific gates ----------
-
-/**
- * Plan-output validation. Reads `.flume/plan/pending.json` and confirms every
- * entry conforms to the schema. If parse fails, the commit is reverted and
- * plan re-runs with the parse errors injected as context.
- *
- * Why custom: the schema gate is project-shaped, not language-shaped — the
- * built-in gates (`tscGate`, `vitestGate`, `eslintGate`) cover language
- * correctness; this one covers the plan ↔ build contract specific to chains
- * that use the pending-schema surface. Inlined here so the example is
- * self-contained.
- */
-const pendingParseGate: Gate = {
-  name: "pending.json parses",
-  when: "afterCommit",
-  async run(ctx) {
-    const { readFile } = await import("node:fs/promises");
-    let raw: string;
-    try {
-      raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, "utf8");
-    } catch {
-      return { ok: false, message: "pending.json missing after plan commit" };
-    }
-    const result = parsePending(raw, entryExtension);
-    if (result.ok) {
-      return {
-        ok: true,
-        message: `pending.json parsed (${result.entries.length} entries)`,
-      };
-    }
-    return {
-      ok: false,
-      message: `pending.json has ${result.errors.length} schema violations`,
-      details: result.errors
-        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-        .join("\n"),
-    };
-  },
-};
 
 /**
  * Corpus-health audit run after the spec phase commits. Asserts the aligned
@@ -171,39 +132,6 @@ const spec: Phase = {
 };
 
 /**
- * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
- * spec corpus + current src state, every tick from scratch.
- *
- * Singleton: pending.json and state.md are shared artifacts; two concurrent
- * planners would race. Gates the output through `pendingParseGate` so a
- * malformed pending.json reverts the commit instead of poisoning build.
- *
- * Hands off to build when at least one entry is `gate.kind === "open"`
- * (pickable); otherwise hibernates and waits for human signal.
- */
-const plan: Phase = {
-  name: "plan",
-  description: "Re-derive .flume/plan/pending.json + state.md from disk.",
-  promptPath: "prompts/plan.md",
-  concurrency: "singleton",
-  writablePaths: [
-    ".flume/plan/pending.json",
-    ".flume/plan/state.md",
-    ".flume/plan/open-questions.md",
-    "specs/_aligned/**", // graduation moves files into here
-    "specs/active/**", // graduation removes them from here
-  ],
-  gates: [pendingParseGate],
-  promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
-  },
-  handoff(result) {
-    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
-    return hasPickable ? ["build"] : [];
-  },
-};
-
-/**
  * Build phase — ships one or more disjoint pending entries to the trunk.
  *
  * Fanout: the dispatcher picks N entries that don't touch the same files and
@@ -219,6 +147,13 @@ const plan: Phase = {
  *
  * Always hands off to plan so pending.json reconciles against the new trunk
  * state, regardless of success, bail, or validation-fail.
+ *
+ * Declared above `plan` (rather than in the spec/plan/build reading order)
+ * so `plan.gates` can reference `build` directly as `pendingGate`'s
+ * `targetFence` — `build.writablePaths` is a static array literal here, not
+ * declaration-driven, so no `get gates()` deferral is needed (contrast the
+ * getter-backed pattern in `docs/CHAIN-AUTHORING.md`'s `pendingGate` section
+ * for a chain where the fence resolves lazily).
  */
 const build: Phase = {
   name: "build",
@@ -257,6 +192,40 @@ const build: Phase = {
   },
 };
 
+/**
+ * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
+ * spec corpus + current src state, every tick from scratch.
+ *
+ * Singleton: pending.json and state.md are shared artifacts; two concurrent
+ * planners would race. Gates the output through `pendingGate` so a
+ * malformed pending.json, or an entry whose declared `files` can't survive
+ * build's fence, reverts the commit instead of poisoning build.
+ *
+ * Hands off to build when at least one entry is `gate.kind === "open"`
+ * (pickable); otherwise hibernates and waits for human signal.
+ */
+const plan: Phase = {
+  name: "plan",
+  description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+  promptPath: "prompts/plan.md",
+  concurrency: "singleton",
+  writablePaths: [
+    ".flume/plan/pending.json",
+    ".flume/plan/state.md",
+    ".flume/plan/open-questions.md",
+    "specs/_aligned/**", // graduation moves files into here
+    "specs/active/**", // graduation removes them from here
+  ],
+  gates: [pendingGate({ targetFence: build, extension: entryExtension })],
+  promptArgs() {
+    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
+  },
+  handoff(result) {
+    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
+    return hasPickable ? ["build"] : [];
+  },
+};
+
 // ---------- chain ----------
 
 export const cascadeChain: Chain = {
@@ -278,7 +247,7 @@ export const cascadeChain: Chain = {
  *
  *          import type { Chain, Gate, Phase, TickContext } from "flume";
  *          import {
- *            parsePending,
+ *            pendingGate,
  *            renderSchemaForPrompt,
  *            shellGate,
  *            tscGate,
