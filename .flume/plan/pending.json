@@ -1,1 +1,123 @@
-[]
+[
+  {
+    "tag": "EXEC-LOCAL-HANDSHAKE-REMOVAL",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "Delete engineHandshake and its whole apparatus (handshakeFlumeDir, handshakeJobRunName, readLocalInstall, readPin, OWN_PACKAGE_ROOT) and the main() call site (~L822-825) per §2. Drop now-orphaned imports (spawnSync, realpathSync — check for other uses first)."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Delete the 'engine↔pin handshake — v0.7 §10' describe block (~L254-577; its fixtures are self-contained, go with it). CI's consumer-install smoke (.github/workflows/ci.yml) is a separate surface, out of scope."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Remove the engine↔pin handshake apparatus (engineHandshake, readLocalInstall, readPin, OWN_PACKAGE_ROOT, re-exec) from src/cli.ts — exec-local doctrine, v0.9 §2.",
+    "per": {
+      "path": "spec/RELEASE-v0.9.md",
+      "section": "2. The engine↔pin handshake is removed"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "Full suite green with the handshake describe gone; an unpinned bay and a pinned-but-unlinked bay both run every subcommand identically (no refusal, no re-exec)."
+      }
+    ],
+    "acceptance": "grep -n 'engineHandshake\\|readLocalInstall\\|readPin\\|OWN_PACKAGE_ROOT' src/ is empty; full suite passes with the handshake tests gone.",
+    "notes": "handshakeFlumeDir/handshakeJobRunName existed only to feed engineHandshake's job-scoped path lookup — they go with it, not separately named in spec prose but scoped by their own JSDoc as its apparatus."
+  },
+  {
+    "tag": "EXEC-LOCAL-JOBLINK-REMOVAL",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "Delete ensureFlumeLink (~L129-150) and its call in jobNew step 6 (~L248); drop JobNewOptions.linkTarget and now-orphaned imports (symlink, lstat — check for other uses first) per §3."
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "Delete the link assertion (~L291-298, 'Link provisioned...') in the main job-new test, and the '§5a-4 provisioning — no-dep-tree fixture' describe (~L653-732) EXCEPT its link-independent 'rejects a bad name' JobUsageError case — keep or relocate that one. Add a fixture proving a job chain's `import \"@dtmd/flume\"` resolves via the bay's own node_modules per §3's acceptance."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Remove job-dir @dtmd/flume link provisioning (ensureFlumeLink, JobNewOptions.linkTarget) from src/job.ts — job chains resolve via the bay's own install, v0.9 §3.",
+    "per": {
+      "path": "spec/RELEASE-v0.9.md",
+      "section": "3. Job-dir engine link provisioning is removed"
+    },
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "flume job new plants no node_modules under the job dir; a job chain resolves @dtmd/flume through the bay's normal install, not a provisioned link."
+      }
+    ],
+    "acceptance": "grep -n 'ensureFlumeLink' src/ is empty; flume job new on a fresh repo creates no node_modules under the job dir; new fixture proves bay-resolution (assert the resolved module path).",
+    "notes": "Stale links in pre-existing job dirs are inert per spec — no sweeper, nothing to test for that leg. The node_modules/ runtime-ignore entry job new writes stays untouched."
+  },
+  {
+    "tag": "EXEC-LOCAL-DOCS",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "State the doctrine in Quickstart (~L34-57) per §4: @dtmd/flume as a dev dependency, invoke via the package manager; global installs unsupported."
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "Update the `job new` link bullet (~L77) and `job rm` link-cleanup line (~L109) for the §3 removal; add the doctrine's global-unsupported statement per §4."
+        },
+        {
+          "path": "docs/MIGRATING-0.8.md",
+          "description": "Rewrite §4's handshake bullet (~L113-141) and the pin-refusal symptom-table row (~L163) to the doctrine — 'invoke via your bay's install, full stop'."
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Remove the node_modules/@dtmd/flume link bullet (~L97) per §3."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rewrite install/invocation docs (README, CLI.md, MIGRATING-0.8, CHAIN-AUTHORING) to the exec-local doctrine — no handshake, no job-dir link, v0.9 §4.",
+    "per": {
+      "path": "spec/RELEASE-v0.9.md",
+      "section": "4. Docs teach the doctrine"
+    },
+    "tests": [],
+    "acceptance": "grep -rin 'global' README.md docs/CLI.md hits only the doctrine's unsupported-install statement and CLI.md's pre-existing 'Global --job' flag heading (unrelated collision, predates this line); MIGRATING-0.8 contains no provisioning instruction; no doc references ensureFlumeLink or the handshake.",
+    "notes": "§4's literal grep check would false-positive on CLI.md's existing 'Global --job <name>' heading — a naming coincidence, not doctrine-related. Confirmed no other 'global' hits there; don't chase that one."
+  },
+  {
+    "tag": "EXEC-LOCAL-CHANGELOG",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "Add Breaking + Removed bullets under [Unreleased] per §5: handshake (0.8.0) and job-dir link provisioning (0.5.0) removed, exec-local invocation doctrine, stray-global unsupported/undetected, job-run/--max handshake legs removed, existing job links inert."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Add CHANGELOG [Unreleased] Breaking/Removed entries for the engine↔pin handshake + job-dir-link removal, v0.9 §5.",
+    "per": {
+      "path": "spec/RELEASE-v0.9.md",
+      "section": "5. CHANGELOG"
+    },
+    "tests": [],
+    "acceptance": "[Unreleased] gains the §5 bullets (Breaking: handshake + link removal; Removed: job-run/--max validation legs); no version-number heading added — bump/publish stay human-performed at cut."
+  }
+]
