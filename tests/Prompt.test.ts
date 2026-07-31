@@ -59,6 +59,18 @@ function entry(overrides: Partial<PendingEntry> = {}): PendingEntry {
   };
 }
 
+async function render(promptBody: string): Promise<string> {
+  const promptFile = join(dir, "prompt.md");
+  await writeFile(promptFile, promptBody, "utf8");
+  return renderPrompt({
+    phase: phase(),
+    flumeDir: "/state-root",
+    promptFile,
+    cwd: dir,
+    args: {},
+  });
+}
+
 describe("renderPrompt — reserved {{FLUME_DIR}} arg (§16)", () => {
   it("auto-injects FLUME_DIR so a prompt resolves it with no chain-declared arg", async () => {
     const promptFile = join(dir, "prompt.md");
@@ -250,18 +262,6 @@ function fakeChild(stdout: string): {
 }
 
 describe("renderPrompt — inline-exec reaches sh through stdin (RELEASE-v0.10 §2)", () => {
-  async function render(promptBody: string): Promise<string> {
-    const promptFile = join(dir, "prompt.md");
-    await writeFile(promptFile, promptBody, "utf8");
-    return renderPrompt({
-      phase: phase(),
-      flumeDir: "/state-root",
-      promptFile,
-      cwd: dir,
-      args: {},
-    });
-  }
-
   it("spawns sh with no command argv and writes the command text to stdin — the pre-fix tree always passed ['-c', cmd] and never wrote stdin, on every platform", async () => {
     const { child, getWritten } = fakeChild("mock-output");
     spawnMock.mockImplementationOnce(() => child);
@@ -295,18 +295,6 @@ describe("renderPrompt — inline-exec reaches sh through stdin (RELEASE-v0.10 �
 });
 
 describe("renderPrompt — an unresolved inline-exec span aborts the render (RELEASE-v0.10 §3)", () => {
-  async function render(promptBody: string): Promise<string> {
-    const promptFile = join(dir, "prompt.md");
-    await writeFile(promptFile, promptBody, "utf8");
-    return renderPrompt({
-      phase: phase(),
-      flumeDir: "/state-root",
-      promptFile,
-      cwd: dir,
-      args: {},
-    });
-  }
-
   it("a non-zero exit throws InlineExecRenderError naming the command text and stderr — no <exec-failed> marker, no agent-bound output", async () => {
     let caught: unknown;
     try {
