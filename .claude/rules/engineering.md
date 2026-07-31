@@ -36,6 +36,28 @@ Every check lives at the most deterministic layer that can express it — a
 being no defence at all; leaving it there when a rung above is available is
 a choice to keep it fragile.
 
+## Derived state is computed, never restated beside its source
+
+A value computable from existing state enters the tree as a computation,
+never a second stored copy kept in sync by discipline. Two copies of one
+truth is a bug class no compiler checks, and the copy always wins the
+argument it should lose — it reads as authoritative while being stale.
+
+- In code: a field derivable from other fields is a getter, not storage.
+  Caching a derivation is the sanctioned exception, taken for a measured
+  cost, with one home and one invalidation.
+- **In artifacts, the same bar.** A tick-written file restating what
+  another on-disk artifact already holds — a queue listing beside
+  `pending.json`, a question listing beside `open-questions.md`, a HEAD sha
+  beside git — is the same defect wearing prose. The artifact that owns the
+  fact is the only one that states it; everything else points.
+- The test is ownership, not convenience: if regenerating the copy from its
+  source would be mechanical, the copy should not exist.
+
+**Why:** these files are re-injected verbatim into every tick, so a restated
+fact is both a per-tick token tax and a second thing that can go stale
+against the source it paraphrases.
+
 ## Loud or nothing
 
 No path silently degrades, reconciles, or **proceeds over an unresolved

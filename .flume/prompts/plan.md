@@ -59,8 +59,7 @@ If the delta is small enough that you can meet the bar across every dimension, d
 ## Always-on (every tick)
 
 - **Verify writable paths** for entries you touched this tick. Off-allowlist file paths become open questions proposing chain.ts amendments, not pending entries.
-- **Re-derive state.md from scratch** — phase, this tick's `mode` tag, queue head, in-flight work, open-questions count, trunk status. **Final line is mandatory: `Plan continues: yes — <one-line reason>` OR `Plan continues: no`.** The harness re-wakes plan iff `yes`; absence is treated as `no`.
-- **Carry the posture stamp.** `Posture swept through: <sha>` is copied forward verbatim into the re-derived state.md every tick, and advanced only when a sweep rotation closes. Losing the line re-arms the whole domain; guessing a sha is worse. If `<state>` carries no stamp, this is the bootstrap sweep: stamp `HEAD` and note it in the commit body.
+- **Re-derive state.md from scratch**, to the contract in *Artifact discipline* below. **Final line is mandatory: `Plan continues: yes — <one-line reason>` OR `Plan continues: no`.** The harness re-wakes plan iff `yes`; absence is treated as `no`.
 
 ## Field discipline
 
@@ -75,7 +74,13 @@ Telegraphic: short enough that build can act on the entry without re-reading the
 Every file you write is re-injected verbatim into future ticks — size is a per-tick token tax, paid every tick until the content leaves. **Git is the log; the files are the present.** A done item leaves the file; its narrative lives in the `plan:` commit body.
 
 - `open-questions.md` — open questions only. Closing a question means **deleting its section**; the disposition goes in the commit body. No closure ledgers, no "closed this tick" comment blocks, no history — delete any you find. Steady state with nothing open: the header alone.
-- `state.md` — a snapshot, not a tick report: phase, mode, queue head, open-question count, trunk status, `Plan continues:` line. Aim for ≲30 lines. Audit reasoning and evidence chains belong in the commit body.
+- `state.md` — **only what has no other home on disk.** Every other fact you might put here is already injected into this prompt verbatim from the artifact that owns it: the queue from `<pending-now>`, the questions from `<open-questions>`, the commits and HEAD from `<commit-delta>` / `<last-plan>`. Restating any of them is a second copy of one truth (`.claude/rules/engineering.md` — *Derived state is computed, never restated beside its source*), and it goes stale against the source it paraphrases. Exactly three things qualify:
+
+  1. **`Posture swept through: <sha>`** — copied forward *verbatim*, advanced only when a rotation closes. Losing the line re-arms the whole domain; guessing a sha is worse. If `<state>` carries no stamp, this is the bootstrap sweep: stamp `HEAD` and say so in the commit body.
+  2. **The open rotation's covered set** — which modules this rotation has already swept. Settled for the window, and recorded nowhere else. Omit entirely when no rotation is open. Don't also list the remaining frontier: it is the domain minus this set.
+  3. **`Plan continues: yes — <reason>` / `Plan continues: no`** — final line, mandatory, read by the harness.
+
+  Plus, rarely, a cross-tick note the next tick genuinely needs that no artifact carries. No queue listing, no question listing, no HEAD sha, no mode line, no phase narrative, no per-dimension trigger report — **this tick's story goes in the commit body.** Steady state with no rotation open is about five lines.
 - `inbox.md` — drained means deleted (already the contract).
 - `pending.json` — entries only; shipped entries are removed by the harness.
 
