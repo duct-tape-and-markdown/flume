@@ -201,13 +201,18 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
 
     const out = await render(p, e);
 
-    expect(out).toContain("  - src/only.ts");
-    // Nothing else named in the fence — the ceiling glob is separate.
-    const fenceSection = out.slice(
-      out.indexOf("Effective fence"),
-      out.indexOf("Outer ceiling"),
+    const fenceIdx = out.indexOf("Effective fence");
+    const ceilingIdx = out.indexOf("Outer ceiling");
+    expect(fenceIdx).toBeGreaterThan(-1);
+    expect(ceilingIdx).toBeGreaterThan(fenceIdx);
+
+    // Fence is exactly entry.files — one bullet, no stray empty line, and
+    // nothing from the ceiling glob leaking in.
+    const fenceSection = out.slice(fenceIdx, ceilingIdx);
+    expect(fenceSection).toBe(
+      "Effective fence (your commit may touch exactly these; anything else reverts the commit whole):\n" +
+        "  - src/only.ts\n",
     );
-    expect(fenceSection).not.toContain("src/**");
   });
 });
 
