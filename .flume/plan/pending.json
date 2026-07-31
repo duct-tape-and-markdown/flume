@@ -10,11 +10,11 @@
       "edit": [
         {
           "path": "src/git.ts",
-          "description": "add a git-common-dir resolver (git rev-parse --git-common-dir) and the tip-claim primitive (exclusive-create wx, pid-liveness reclaim) mirroring liveLoopPid's shape (src/job.ts:312-323) - new code, no existing common-dir helper today"
+          "description": "add a git-common-dir resolver (git rev-parse --git-common-dir) and the tip-claim primitive (exclusive-create wx, pid-liveness reclaim) mirroring liveLoopPid's shape (src/job.ts:269-287) - new code, no existing common-dir helper today"
         },
         {
           "path": "src/cli.ts",
-          "description": "loop's start (883-919) acquires the tip claim alongside loop.pid, same exit/SIGINT/SIGTERM release hooks; loop and tick both refuse (exit 1) on detached HEAD before any tick per §4; the status block (769-776) reports the claim's holder pid or staleness alongside supervisor liveness"
+          "description": "loop's start (787-823) acquires the tip claim alongside loop.pid, same exit/SIGINT/SIGTERM release hooks; loop and tick both refuse (exit 1) on detached HEAD before any tick per §4; the status block (664-671) reports the claim's holder pid or staleness alongside supervisor liveness"
         },
         {
           "path": "CHANGELOG.md",
@@ -39,7 +39,7 @@
       }
     ],
     "acceptance": "§4's acceptance list verbatim: two loops on one branch serialize with a named-holder refusal; two loops on different branches from different worktrees both run; claim file absent after clean exit/SIGTERM; a dead-pid claim reclaims silently; detached-HEAD loop exits 1 before any tick; tsc/vitest green.",
-    "notes": "No git-common-dir resolver exists in src/git.ts today. Mirrors src/job.ts:312-323 (liveLoopPid) and src/cli.ts:883-919 (loop.pid acquire/release) structurally; keying differs (per-ref vs per-state-root) so this is a sibling primitive, not a call-site reuse of liveLoopPid itself."
+    "notes": "No git-common-dir resolver exists in src/git.ts today. Mirrors src/job.ts:269-287 (liveLoopPid) and src/cli.ts:787-823 (loop.pid acquire/release) structurally; keying differs (per-ref vs per-state-root) so this is a sibling primitive, not a call-site reuse of liveLoopPid itself."
   },
   {
     "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
@@ -343,7 +343,7 @@
       "edit": [
         {
           "path": "tests/job.test.ts",
-          "description": "the three `for (const entry of RUNTIME_IGNORES)` verdicts (205-207, 287-289, 552-554) show the judged set populated before reading it"
+          "description": "the three `for (const entry of RUNTIME_IGNORES)` verdicts (151, 234, 497) show the judged set populated before reading it"
         }
       ],
       "retire": []
@@ -360,7 +360,7 @@
       }
     ],
     "acceptance": "No assertion in tests/job.test.ts reads a verdict off a set it has not shown to be populated.",
-    "notes": "The pinned behavior (jobNew ignore-merge) survives v0.11 unchanged (job.ts:34/177/219/639), but its three cited lines sit inside tests/job.test.ts's jobNew describe (271-506), which JOB-BRANCH-GRAMMAR-RETIRED rewrites and JOB-EXTRACT-REMOVED further churns - landing this pin before both land would duplicate the work. Blocked on the later of the two."
+    "notes": "The pinned behavior (jobNew ignore-merge) survives v0.11 unchanged (job.ts:38/86/186); both JOB-BRANCH-GRAMMAR-RETIRED and JOB-EXTRACT-REMOVED have now landed, so this pin's three tests/job.test.ts line cites are re-verified against current HEAD (151, 234, 497) and it is unblocked, no further churn expected from this line."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
@@ -477,15 +477,15 @@
       "edit": [
         {
           "path": "src/cli.ts",
-          "description": "the loop lock (885-902) takes liveness from liveLoopPid — already imported at :34 — instead of re-deriving the probe inline"
+          "description": "the loop lock (787-805) takes liveness from liveLoopPid — already imported at :32 — instead of re-deriving the probe inline"
         },
         {
           "path": "src/job.ts",
-          "description": "liveLoopPid docstring (306-311) names the lock among its consumers; its reuse claim only becomes true with this entry"
+          "description": "liveLoopPid docstring (269-275) names the lock among its consumers; its reuse claim only becomes true with this entry"
         },
         {
           "path": "tests/cli.test.ts",
-          "description": "add the agreement pin to the §2a loop-lock describe (651); the :800 status-liveness describe already narrates the sharing"
+          "description": "add the agreement pin to the §2a loop-lock describe (657); the :879 status-liveness describe already narrates the sharing"
         },
         {
           "path": "CHANGELOG.md",
@@ -506,7 +506,7 @@
       }
     ],
     "acceptance": "Liveness reaches the loop lock through liveLoopPid; no second process.kill pid probe remains in src/cli.ts; the loop-lock and status-liveness suites stay green.",
-    "notes": "Verified this tick: cli.ts:886-895 repeats liveLoopPid's read/finite/positive/kill(pid,0) sequence; job.ts:306-311 claims the opposite. Drop-in — the lock wants the pid only for its refusal message, which liveLoopPid returns, and the block is already async. Behavior-identical today, so nothing fails pre-fix (the named exception); the agreement pin is what makes a later divergence fail."
+    "notes": "Re-verified this tick against post-JOB-EXTRACT-REMOVED line numbers: cli.ts:788-797 repeats liveLoopPid's read/finite/positive/kill(pid,0) sequence; job.ts:269-275 claims the opposite. Drop-in — the lock wants the pid only for its refusal message, which liveLoopPid returns, and the block is already async. Behavior-identical today, so nothing fails pre-fix (the named exception); the agreement pin is what makes a later divergence fail."
   },
   {
     "tag": "PARSEPENDING-DUP-ERROR-MAPPING",
@@ -557,7 +557,7 @@
       "edit": [
         {
           "path": "src/job.ts",
-          "description": "lines 48, 417, 570, 793 - state the condition or drop the retired framing"
+          "description": "line 52 - state the condition or drop the retired framing"
         },
         {
           "path": "CHANGELOG.md",
@@ -566,14 +566,14 @@
       ],
       "retire": []
     },
-    "summary": "job.ts carries era-scoped narration: a cite to the shipped-and-gone JOB-RESOLUTION tag, two pre-0.9 migration clauses, and a superseded harvest convention.",
+    "summary": "job.ts:52 cites the shipped-and-gone JOB-RESOLUTION pending tag as live accepted debt - unresolvable, era-scoped narration.",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
     "tests": [],
     "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
-    "notes": ":570/:793 sit inside extract, which JOB-EXTRACT-REMOVED deletes outright; :417's pre-0.9 clause is in jobRm, which JOB-BRANCH-GRAMMAR-RETIRED rewrites. Only :48 (JOB-RESOLUTION cite) survives both untouched. Re-verify line numbers and re-scope to :48 alone (or drop) once JOB-EXTRACT-REMOVED lands."
+    "notes": "Narrowed this tick: both JOB-BRANCH-GRAMMAR-RETIRED and JOB-EXTRACT-REMOVED have now landed. The old :417/:570/:793 sites (jobRm's pre-0.9 clause, extract's framing) are gone with the code they sat in - only the JOB-RESOLUTION cite survives, re-verified at :52 (was :48)."
   },
   {
     "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
@@ -761,6 +761,6 @@
       }
     ],
     "acceptance": "A chain can override the pending-ledger ship-commit message text; default (no override) behavior is byte-identical to today; tsc/vitest green.",
-    "notes": "Verified on disk this tick: Dispatcher.ts:2303-2310 hardcodes \"chore(flume): ship ...\" / \"chore(flume): record merge-failure footprints...\" with no override. job.ts:221/407 carry the identical literal but sit outside this neighborhood and are due for rewrite under JOB-BRANCH-GRAMMAR-RETIRED/JOB-EXTRACT-REMOVED - leave those for a later sweep once that churn lands, to avoid rework. DispatcherOptions already carries chain-overridable knobs of this shape (namespace, chainLoader)."
+    "notes": "Verified on disk this tick: Dispatcher.ts:2303-2310 hardcodes \"chore(flume): ship ...\" / \"chore(flume): record merge-failure footprints...\" with no override. job.ts:208/340 (re-verified post-JOB-EXTRACT-REMOVED) carry the identical literal but sit outside this neighborhood - a later sweep, not this entry's scope. DispatcherOptions already carries chain-overridable knobs of this shape (namespace, chainLoader)."
   }
 ]
