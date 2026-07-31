@@ -774,7 +774,8 @@
   {
     "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",
     "gate": {
-      "kind": "open"
+      "kind": "deferred",
+      "reason": "tests/job.test.ts is v0.11's most-churned file; landing this pin now duplicates work v0.11's test rewrite will redo"
     },
     "files": {
       "new": [],
@@ -798,7 +799,7 @@
       }
     ],
     "acceptance": "No assertion in tests/job.test.ts reads a verdict off a set it has not shown to be populated.",
-    "notes": "Sweep finding, tests/job.test.ts neighborhood. job.ts:34 owns the constant; :177, :219 and :639 assert the exact join, so an emptied RUNTIME_IGNORES does fail the suite today - these three do not fail pre-fix (the named exception). What the pin catches is the merge path's own claim ('appending only the missing entries', :195) going green over an empty judged set."
+    "notes": "Deferred 2026-07-31 (inbox): the pinned behavior (jobNew ignore-merge) survives v0.11, but tests/job.test.ts is v0.11's most-churned file (RELEASE-v0.11.md §3) - landing this pin now does the work twice. Fold into v0.11's test rewrite once that line derives. job.ts:34/177/219/639 unchanged meanwhile."
   },
   {
     "tag": "PROMPT-TEST-FENCE-SLICE-VACUOUS",
@@ -938,7 +939,8 @@
   {
     "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
     "gate": {
-      "kind": "open"
+      "kind": "deferred",
+      "reason": ":570 and :793 sit inside extract, which RELEASE-v0.11.md §3 deletes outright; :417 is in code that section rewrites - hold until v0.11 derives"
     },
     "files": {
       "new": [],
@@ -961,7 +963,7 @@
     },
     "tests": [],
     "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
-    "notes": "Third sibling of the ERA-SCOPED-NARRATION-* pair. :48 cites JOB-RESOLUTION, a v0.5 pending tag shipped and unresolvable today - the builtinGates.ts:250-251 shape. :417 and :793 scope themselves to 'a pre-0.9 job dir'; [0.9.0] is published and the pre-1.0 clean-slate posture retires compat framing. :570 narrates the legacy fixed-'friction.md' harvest convention the friction declaration replaced. Prose-only."
+    "notes": "Deferred 2026-07-31 (inbox): :570/:793 sit inside extract, which RELEASE-v0.11.md §3 removes outright; :417's pre-0.9 clause is in code that section rewrites. Only :48 (JOB-RESOLUTION cite) survives v0.11 untouched. Re-scope to :48 alone or drop, once v0.11 derives."
   },
   {
     "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
