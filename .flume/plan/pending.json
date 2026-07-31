@@ -1,67 +1,8 @@
 [
   {
-    "tag": "JOB-BRANCH-GRAMMAR-RETIRED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "jobNew (145-160) drops branch creation/checkout and stays on current HEAD; jobRun (270-282) drops the branchExists assert-or-throw and checkout leg; jobRm (368-397) drops the branch checkout leg and the 'branch survives' framing in its final log (425-426) - per §2/§3"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "delete the wrong-branch guard (745-758); drop the HEAD==job/<name> exit-1 clauses from HELP_SUB.tick (287-288), HELP_SUB.loop (307-308), the --job flag help (260), and the lifecycle-verbs header (357-358); job new/run/rm help text (234-244) drops branch-creation language"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "currentBranch (39-42) loses its only caller when the cli.ts guard above goes - LSP-verify zero remaining callers and retire it if so, leave it if not"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "update the branch-leg assertions across jobNew (271-506), jobRun preflight (752-876), jobRm (877-1044) to the no-branch-topology behavior per §2/§3"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "update the job-new to job-run (143-239) and job-new to run to rm (240-331) integration fixtures off branch-checkout choreography"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "drop or repoint the wrong-branch-guard coverage tied to the removed cli.ts block"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Breaking entry per §7: job/<name> branch convention retired"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "job/<name> branch grammar retired from job new/run/rm and the tick/loop wrong-branch guard - the engine no longer creates, asserts, or names a job branch.",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "2. A job is a state root"
-    },
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "jobNew leaves HEAD on whatever branch it started on with one baseline commit (no branch created); jobRun/jobRm no longer touch branches"
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "flume tick/loop under --job succeed regardless of current branch; two state roots under one checkout each run a tick sequentially without a branch switch (§2 acceptance fixture)"
-      }
-    ],
-    "acceptance": "job new/run/rm construct, assert, or checkout no job/<name> branch; the cli.ts wrong-branch guard is gone; job new leaves HEAD on whatever branch it started on with one baseline commit; tick/loop run under --job regardless of current branch; tsc/vitest green. (Full §3 grep, including extract's own branch use, lands with JOB-EXTRACT-REMOVED.)",
-    "notes": "job.ts's git ops go through its own git() wrapper (61-70), not src/git.ts - no src/git.ts changes needed except currentBranch's possible retirement. branchExists (75-82) may still be needed by jobExtract until JOB-EXTRACT-REMOVED lands - verify before deleting. Blast radius per RELEASE-v0.11.md §1."
-  },
-  {
     "tag": "JOB-EXTRACT-REMOVED",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "JOB-BRANCH-GRAMMAR-RETIRED"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
