@@ -218,6 +218,28 @@ function fanoutAgent(
   };
 }
 
+/**
+ * Minimal, otherwise-valid chain.ts: one singleton "build" phase, no gates,
+ * empty handoff. `frictionExpr`, if given, is a raw TS expression spliced in
+ * as the `friction` field's value (e.g. `JSON.stringify("friction")`);
+ * omitted entirely when absent.
+ */
+async function writeMinimalChain(
+  cfg: string,
+  frictionExpr?: string,
+): Promise<void> {
+  await mkdir(cfg, { recursive: true });
+  await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+  await writeFile(
+    join(cfg, "chain.ts"),
+    `export default { phases: [{ name: "build", description: "", ` +
+      `promptPath: "prompt.md", concurrency: "singleton", ` +
+      `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+      `humanOnly: []${frictionExpr ? `, friction: ${frictionExpr}` : ""} };\n`,
+    "utf8",
+  );
+}
+
 // ---------- singleton ----------
 
 describe("Dispatcher singleton — commit detected", () => {
@@ -4450,26 +4472,13 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
  * `opts.configDir`.
  */
 describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing", () => {
-  async function writeFrictionChain(cfg: string, friction?: string): Promise<void> {
-    await mkdir(cfg, { recursive: true });
-    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
-    await writeFile(
-      join(cfg, "chain.ts"),
-      `export default { phases: [{ name: "build", description: "", ` +
-        `promptPath: "prompt.md", concurrency: "singleton", ` +
-        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-        `humanOnly: []${friction ? `, friction: ${JSON.stringify(friction)}` : ""} };\n`,
-      "utf8",
-    );
-  }
-
   it("logs the friction count line at the hibernation stop when declared and non-empty, loading the chain from opts.configDir", async () => {
     // The repo default has no chain.ts at all — only opts.configDir does.
     expect(existsSync(join(fx.repo, ".flume", "chain.ts"))).toBe(false);
 
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeFrictionChain(fx.configDir, "friction");
+    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -4500,7 +4509,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("omits the friction line at hibernation when the declared dir exists but holds no files", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeFrictionChain(fx.configDir, "friction");
+    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
     await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
 
     let calls = 0;
@@ -4527,7 +4536,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("omits the friction line at hibernation when Chain.friction is undeclared", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeFrictionChain(fx.configDir); // no friction declared
+    await writeMinimalChain(fx.configDir); // no friction declared
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -4556,7 +4565,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("logs the friction count line at the --max-reached stop when declared and non-empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan"); // never sleeps → never hibernates
-    await writeFrictionChain(fx.configDir, "friction");
+    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -4583,7 +4592,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("omits the friction line at the --max-reached stop when the declared dir is empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeFrictionChain(fx.configDir, "friction");
+    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
     await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
 
     const runTick = (): Promise<{ exitCode: number | null }> =>
@@ -4804,29 +4813,11 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
 });
 
 describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
-  // A minimal, otherwise-valid chain.ts; only the `friction` field varies
-  // per test. `frictionSource` is a raw TS expression (or "" to omit the
-  // field entirely) spliced into the default export's object literal.
-  async function writeChainWithFriction(
-    cfg: string,
-    frictionSource: string,
-  ): Promise<void> {
-    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
-    await writeFile(
-      join(cfg, "chain.ts"),
-      `export default { phases: [{ name: "build", description: "", ` +
-        `promptPath: "prompt.md", concurrency: "singleton", ` +
-        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-        `humanOnly: []${frictionSource ? `, friction: ${frictionSource}` : ""} };\n`,
-      "utf8",
-    );
-  }
-
   it("rejects an absolute-path friction declaration with a usage-shaped error", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));
     try {
       const abs = resolve(tmpdir(), "flume-friction-abs-target");
-      await writeChainWithFriction(cfg, JSON.stringify(abs));
+      await writeMinimalChain(cfg, JSON.stringify(abs));
 
       await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
         /friction .* as an absolute path/,
@@ -4839,7 +4830,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("rejects a friction declaration that resolves outside the state root", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-escape-"));
     try {
-      await writeChainWithFriction(cfg, JSON.stringify("../escaped-friction"));
+      await writeMinimalChain(cfg, JSON.stringify("../escaped-friction"));
 
       await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
         /friction .* resolves outside the state root/,
@@ -4852,7 +4843,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("accepts a valid state-root-relative friction declaration", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-valid-"));
     try {
-      await writeChainWithFriction(cfg, JSON.stringify("friction"));
+      await writeMinimalChain(cfg, JSON.stringify("friction"));
 
       const mod = await loadChainModule(join(cfg, "chain.ts"));
 
@@ -4865,7 +4856,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("treats an undeclared friction field as a strict no-op — chain loads unaffected", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-undeclared-"));
     try {
-      await writeChainWithFriction(cfg, "");
+      await writeMinimalChain(cfg);
 
       const mod = await loadChainModule(join(cfg, "chain.ts"));
 
