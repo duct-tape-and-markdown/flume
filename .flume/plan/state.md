@@ -8,7 +8,7 @@ whole domain).
 Covered this rotation: `src/Baton.ts`, `src/Prompt.ts`, `src/builtinGates.ts`,
 `src/Agent.ts`, `tests/Agent.test.ts`, `src/Dispatcher.ts`, `src/Phase.ts`,
 `src/git.ts`, `src/partition.ts`, `src/job.ts`, `src/PendingSchema.ts`,
-`src/cli.ts`, `bin/flume.js`, `src/index.ts`, `src/Gate.ts`,
+`src/cli.ts`, `bin/flume.js`, `bin/flume`, `src/index.ts`, `src/Gate.ts`,
 `src/setupWorktree.ts`, `tests/examples.integration.test.ts`,
 `examples/backlog-groomer-chain.ts`, `examples/cascade-chain.ts`,
 `examples/minimal-chain.ts`, `tests/Gate.test.ts`, `tests/git.test.ts`,
@@ -29,5 +29,4 @@ INLINE-EXEC-STDIN-TRANSPORT nor INLINE-EXEC-RENDER-REFUSES remains in
 `<pending-now>`.
 
 Plan continues: yes — sweep frontier still open (`tests/job.integration.test.ts`,
-`tests/loop-process-boundary.integration.test.ts`, `tests/partition.test.ts`,
-plus `bin/flume`).
+`tests/loop-process-boundary.integration.test.ts`, `tests/partition.test.ts`).
