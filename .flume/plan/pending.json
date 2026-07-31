@@ -156,11 +156,15 @@
         },
         {
           "path": "src/builtinGates.ts",
-          "description": "the fence pre-check (293) reads declaredPaths, matching the docstring it already carries (246-248); the touchedPaths import (24) goes"
+          "description": "the fence pre-check (291) reads declaredPaths, matching the docstring it already carries (244-248); the touchedPaths import (24) goes"
         },
         {
           "path": "src/Dispatcher.ts",
           "description": "the two inline declared-file lists (1391-1395, 1738-1742) call declaredPaths instead of re-deriving it; their observedFiles-exclusion comments shrink to the helper"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "effectiveFenceLines' entryPaths derivation (341-345) calls declaredPaths(entry) instead of re-deriving the same files.new/edit/retire union - a third copy, not just Dispatcher.ts's two"
         },
         {
           "path": "tests/PendingSchema.test.ts",
@@ -193,7 +197,7 @@
       }
     ],
     "acceptance": "One helper answers what an entry declares; pendingGate's fence pre-check no longer reads observedFiles; no site re-derives the declared-file list inline.",
-    "notes": "Verified on disk: builtinGates.ts:246-248 promises declared files, :293 passes touchedPaths (PendingSchema.ts:481 folds in observedFiles); Dispatcher.ts:1730 and :1388 exclude observedFiles by name, re-deriving the list inline at :1391 and :1738. Unreachable under this chain today (buildFence covers every path build's guard admits); reachable when targetFence isn't the phase that recorded the footprint. Plan owns neither field, so it cannot fix such a violation."
+    "notes": "Verified on disk: builtinGates.ts:244-248 promises declared files, :291 passes touchedPaths (PendingSchema.ts:481 folds in observedFiles); Dispatcher.ts:1730/:1388 and Prompt.ts:341-345 (effectiveFenceLines) each re-derive the same files.new/edit/retire union inline - three sites, not two. Unreachable under this chain today; reachable when targetFence isn't the phase that recorded the footprint. Plan owns neither field, so it cannot fix such a violation."
   },
   {
     "tag": "LOOP-MAX-NONNUMERIC-ACCEPTED",
