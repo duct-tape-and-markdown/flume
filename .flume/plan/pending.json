@@ -1,47 +1,5 @@
 [
   {
-    "tag": "TAG-LENGTH-BOUND-AGREEMENT-PIN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "extend the §5 revert-note describe (4997) with the agreement case"
-        },
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "TAG_MAX_LENGTH doc (56-65) points at the pin instead of restating the writer's arithmetic"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "slugify doc (368-381) drops 'no runtime check needed' for a pointer to the pin"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "TAG_MAX_LENGTH = 255-39 encodes writeRevertNote's filename overhead; both sides restate it in prose and nothing drives the schema's ceiling through the real writer.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a gate-revert on an entry whose tag is the longest parsePending accepts writes a revert note that exists on disk with a filename component within 255 chars - the real schema bound through the real writer, so a one-sided change to either breaks it"
-      }
-    ],
-    "acceptance": "The revert-note filename is pinned against the schema's own accepted maximum; neither module's prose restates the other's arithmetic.",
-    "notes": "PendingSchema.ts:65 hardcodes 39 = a 24-char stamp + 2 + 2 + 'reverted.md'; Dispatcher.ts:2129 is the writer. Correct today - this pins it, so it does not fail pre-fix (same shape as PARSEPENDINGLOOSE-WRITE-PATH-PIN). A silent break lands as ENAMETOOLONG inside writeRevertNote's best-effort catch (2133): a warn line and a lost operator note."
-  },
-  {
     "tag": "JOB-BRANCH-GRAMMAR-RETIRED",
     "gate": {
       "kind": "open"
