@@ -2,14 +2,15 @@
  * v0.5 §5a / v0.6 §4 — `flume job new <name>`: a job is a branch plus a
  * state root, both named by convention, seeded from the repo chain's
  * declared `Chain.seedDir` (no more `--template`). The suite runs against
- * scratch git repos: seeding, ignore-ensure idempotence, link provisioning
- * (junction on win32), baseline-commit hygiene, and name validation. The
- * no-dep-tree fixture proves the provisioned link is what resolves
- * `@dtmd/flume` at chain load — the version-coherence claim (§5a-4).
+ * scratch git repos: seeding, ignore-ensure idempotence, baseline-commit
+ * hygiene, and name validation. Job-dir `@dtmd/flume` link provisioning is
+ * removed (v0.9 §3): a bay-resolution fixture proves a job chain's
+ * `import "@dtmd/flume"` resolves through the bay's own `node_modules`, with
+ * no per-job link involved.
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -20,7 +21,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -49,9 +50,6 @@ const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 const TSX_CLI = fileURLToPath(
   new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
 );
-
-/** The flume checkout root — the default link target (`resolve(HERE, "..")`). */
-const PACKAGE_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 /** Strip the harness's canonical FLUME_* vars so spawned CLIs stay hermetic. */
 function hermeticEnv(): NodeJS.ProcessEnv {
@@ -253,7 +251,7 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
 
 describe("flume job new — real CLI on a scratch repo", () => {
   it(
-    "seeds from Chain.seedDir: branch, files, merged ignores, link, baseline commit excluding runtime + junction; re-run preserves a worked file and fills a newly added stub",
+    "seeds from Chain.seedDir: branch, files, merged ignores, no node_modules planted, baseline commit excluding runtime state; re-run preserves a worked file and fills a newly added stub",
     async () => {
       const repo = await makeRepo();
       try {
@@ -290,17 +288,13 @@ describe("flume job new — real CLI on a scratch repo", () => {
           expect(ignores).toContain(entry);
         }
 
-        // 4. Link provisioned at node_modules/@dtmd/flume, resolving to the
-        // running CLI's package root (version coherence).
-        const link = join(jobDir, "node_modules", "@dtmd", "flume");
-        expect(lstatSync(link).isSymbolicLink()).toBe(true);
-        expect(statSync(link).isDirectory()).toBe(true);
-        expect(realpathSync(link).toLowerCase()).toBe(
-          realpathSync(PACKAGE_ROOT).toLowerCase(),
-        );
+        // 4. No node_modules planted under the job dir (v0.9 §3): a job
+        // chain's `@dtmd/flume` import resolves via the bay's own install,
+        // not a provisioned link.
+        expect(existsSync(join(jobDir, "node_modules"))).toBe(false);
 
-        // 6. Baseline commit carries the harness, not the link (node_modules
-        // is ignored before add), and leaves the tree clean.
+        // 5. Baseline commit carries the harness (node_modules never exists,
+        // so it can't ride along), and leaves the tree clean.
         const committed = await gitOut(repo.dir, [
           "show",
           "--name-only",
@@ -398,7 +392,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
 
         const jobDir = join(repo.dir, ".flume", "jobs", "bare");
         const entries = (await readdir(jobDir)).sort();
-        expect(entries).toEqual([".gitignore", "node_modules"]);
+        expect(entries).toEqual([".gitignore"]);
 
         const committed = await gitOut(repo.dir, [
           "show",
@@ -651,17 +645,28 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
   );
 });
 
-describe("§5a-4 provisioning — no-dep-tree fixture", () => {
-  it("chain load resolves @dtmd/flume through the provisioned link alone", async () => {
-    // A repo with no package.json and no dependency tree anywhere up its
-    // tmpdir ancestry: the ONLY way `@dtmd/flume` can resolve from chain.ts
-    // is the link `job new` provisioned. The link-target seam points at a
-    // fake package so the fixture doesn't depend on this checkout's dist/.
+describe("§3 job-dir link provisioning removed — bay resolution", () => {
+  it("plants no node_modules under the job dir", async () => {
     const repo = await makeRepo();
-    const fake = await mkdtemp(join(tmpdir(), "flume-fake-pkg-"));
     try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "nolink", log: () => {} });
+      const jobDir = join(repo.dir, ".flume", "jobs", "nolink");
+      expect(existsSync(join(jobDir, "node_modules"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('a job chain\'s `import "@dtmd/flume"` resolves through the bay\'s own node_modules, with no per-job link involved', async () => {
+    const repo = await makeRepo();
+    try {
+      // The bay's own install (v0.9 §3) — the only place resolution can
+      // reach, since `job new` provisions no per-job node_modules.
+      const pkgDir = join(repo.dir, "node_modules", "@dtmd", "flume");
+      await mkdir(pkgDir, { recursive: true });
       await writeFile(
-        join(fake, "package.json"),
+        join(pkgDir, "package.json"),
         JSON.stringify({
           name: "@dtmd/flume",
           version: "0.0.0-fixture",
@@ -669,24 +674,27 @@ describe("§5a-4 provisioning — no-dep-tree fixture", () => {
           exports: { ".": "./index.js" },
         }),
       );
-      await writeFile(join(fake, "index.js"), 'export const marker = "linked";\n');
+      const indexPath = join(pkgDir, "index.js");
+      // Self-reports its own resolved path, so the assertion below proves
+      // *where* Node resolved the import from, not merely that it succeeded.
+      await writeFile(
+        indexPath,
+        `import { fileURLToPath } from "node:url";\n` +
+          `export const resolvedFrom = fileURLToPath(import.meta.url);\n`,
+      );
 
       await writeRepoChain(repo.dir);
-      await jobNew({
-        repoRoot: repo.dir,
-        name: "ndt",
-        linkTarget: fake,
-        log: () => {},
-      });
+      await jobNew({ repoRoot: repo.dir, name: "bay", log: () => {} });
 
-      const jobDir = join(repo.dir, ".flume", "jobs", "ndt");
+      const jobDir = join(repo.dir, ".flume", "jobs", "bay");
+      expect(existsSync(join(jobDir, "node_modules"))).toBe(false);
       await writeFile(
         join(jobDir, "chain.ts"),
-        `import { marker } from "@dtmd/flume";\n` +
+        `import { resolvedFrom } from "@dtmd/flume";\n` +
           `export default {\n` +
           `  phases: [{\n` +
           `    name: "probe",\n` +
-          `    description: marker,\n` +
+          `    description: resolvedFrom,\n` +
           `    promptPath: "prompt.md",\n` +
           `    concurrency: "singleton",\n` +
           `    writablePaths: ["**"],\n` +
@@ -698,34 +706,13 @@ describe("§5a-4 provisioning — no-dep-tree fixture", () => {
       );
 
       const mod = await loadChainModule(join(jobDir, "chain.ts"));
-      expect(mod.default.phases[0]?.description).toBe("linked");
+      expect(mod.default.phases[0]?.description.toLowerCase()).toBe(
+        indexPath.toLowerCase(),
+      );
     } finally {
       await repo.cleanup();
-      await rm(fake, { recursive: true, force: true });
     }
   }, 60_000);
-
-  it("refuses loudly when a non-link squats on the @dtmd/flume path", async () => {
-    const repo = await makeRepo();
-    try {
-      const linkPath = join(
-        repo.dir,
-        ".flume",
-        "jobs",
-        "sq",
-        "node_modules",
-        "@dtmd",
-        "flume",
-      );
-      await mkdir(linkPath, { recursive: true });
-      await writeRepoChain(repo.dir);
-      await expect(
-        jobNew({ repoRoot: repo.dir, name: "sq", log: () => {} }),
-      ).rejects.toThrow(/not a link/);
-    } finally {
-      await repo.cleanup();
-    }
-  });
 
   it("rejects a bad name in-process as JobUsageError before touching git", async () => {
     await expect(
@@ -918,7 +905,7 @@ describe("jobRm — §5c refusal + removal units", () => {
     }
   }, 60_000);
 
-  it("removes tracked harness + untracked runtime, commits cleanup on job/<name>; branch, history, and link target survive; stale pid reclaimed", async () => {
+  it("removes tracked harness + untracked runtime, commits cleanup on job/<name>; branch and history survive; stale pid reclaimed", async () => {
     const repo = await makeRepo();
     try {
       await writeRepoChain(repo.dir);
@@ -943,10 +930,8 @@ describe("jobRm — §5c refusal + removal units", () => {
         log: (l: string) => lines.push(l),
       });
 
-      // Dir gone — junction unlinked, not followed: the package root the
-      // link resolved to is intact.
+      // Dir gone.
       expect(existsSync(jobDir)).toBe(false);
-      expect(existsSync(join(PACKAGE_ROOT, "package.json"))).toBe(true);
 
       // Cleanup commit at the tip of job/rm2; the seed commit (history)
       // beneath it; main untouched.
@@ -1704,40 +1689,27 @@ describe("jobExtract — §5e selection/refusal/unwind units", () => {
   }, 120_000);
 });
 
-// win32 lane (v0.4 §6): the junction + longpaths paths only exist on
-// Windows hosts — assert them where they can actually run.
+// win32 lane (v0.4 §6): the core.longpaths pin only exists on Windows
+// hosts — assert it where it can actually run.
 describe.runIf(process.platform === "win32")(
-  "§5a win32 lane — junction + core.longpaths",
+  "§5a win32 lane — core.longpaths",
   () => {
-    it("provisions a junction and pins core.longpaths repo-locally, idempotently", async () => {
+    it("pins core.longpaths repo-locally, idempotently", async () => {
       const repo = await makeRepo();
       try {
         await writeRepoChain(repo.dir);
         await jobNew({ repoRoot: repo.dir, name: "w32", log: () => {} });
-
-        // Junction: a symbolic-link-typed dirent that traverses as a dir —
-        // created without admin rights, which is why win32 gets a junction
-        // and not a true symlink.
-        const link = join(
-          repo.dir,
-          ".flume",
-          "jobs",
-          "w32",
-          "node_modules",
-          "@dtmd",
-          "flume",
-        );
-        expect(lstatSync(link).isSymbolicLink()).toBe(true);
-        expect(statSync(link).isDirectory()).toBe(true);
 
         // Repo-local pin, not a global config mutation.
         expect(
           await gitOut(repo.dir, ["config", "--local", "--get", "core.longpaths"]),
         ).toBe("true");
 
-        // Re-run: existing junction skipped, pin idempotent.
+        // Re-run: pin idempotent.
         await jobNew({ repoRoot: repo.dir, name: "w32", log: () => {} });
-        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(
+          await gitOut(repo.dir, ["config", "--local", "--get", "core.longpaths"]),
+        ).toBe("true");
       } finally {
         await repo.cleanup();
       }

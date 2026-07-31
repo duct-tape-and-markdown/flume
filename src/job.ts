@@ -13,17 +13,8 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import {
-  cp,
-  lstat,
-  mkdir,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
@@ -31,8 +22,6 @@ import { loadChainModule } from "./Dispatcher.js";
 import { parsePendingLoose } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Usage-shaped failure (bad name, missing template): the CLI maps it to exit 2. */
 export class JobUsageError extends Error {}
@@ -125,30 +114,6 @@ function frictionIgnoreEntry(friction: string): string {
   return `${friction.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
 }
 
-/**
- * Provision `<jobDir>/node_modules/@dtmd/flume` as a junction (win32) or
- * symlink to `target` (§5a-4). Skip only if the link already exists; a
- * non-link squatting on the path is a loud error, not a silent skip.
- */
-async function ensureFlumeLink(jobDir: string, target: string): Promise<void> {
-  const linkPath = join(jobDir, "node_modules", "@dtmd", "flume");
-  try {
-    const st = await lstat(linkPath);
-    if (st.isSymbolicLink()) return;
-    throw new Error(
-      `${linkPath} exists and is not a link; remove it and re-run \`flume job new\``,
-    );
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-  }
-  await mkdir(dirname(linkPath), { recursive: true });
-  await symlink(
-    target,
-    linkPath,
-    process.platform === "win32" ? "junction" : "dir",
-  );
-}
-
 export interface JobNewOptions {
   repoRoot: string;
   name: string;
@@ -159,14 +124,6 @@ export interface JobNewOptions {
    * explicit `FLUME_CONFIG_DIR`.
    */
   configDir?: string;
-  /**
-   * Link target for `<jobDir>/node_modules/@dtmd/flume`. Defaults to the
-   * running CLI's own package root (`resolve(HERE, "..")`) — version
-   * coherence: the chain resolves the exact flume that ticks it, even when
-   * the repo declares another version. Injectable as the test seam for the
-   * no-dep-tree fixture.
-   */
-  linkTarget?: string;
   log?: (line: string) => void;
 }
 
@@ -177,8 +134,10 @@ export interface JobNewOptions {
  * then copy its declared `seedDir` into `.flume/jobs/<name>/` verbatim,
  * skip-existing (a declared-but-absent `seedDir` is the same class of usage
  * error; an undeclared `seedDir` seeds nothing, no warning), ensure runtime
- * ignores, link `@dtmd/flume`, pin `core.longpaths` (win32), baseline-commit
- * the harness, stay on the branch. Idempotent on re-run.
+ * ignores, pin `core.longpaths` (win32), baseline-commit the harness, stay on
+ * the branch. Idempotent on re-run. `import "@dtmd/flume"` from a job chain
+ * resolves via the bay's own install — no per-job link is provisioned (v0.9
+ * §3).
  *
  * Throws {@link JobUsageError} on usage-shaped input (exit 2 at the CLI);
  * any other throw is an operational failure (exit 1).
@@ -236,23 +195,19 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   }
 
   // 5. Runtime ignores — written before the baseline add so runtime state
-  // and the link below never enter the commit. A declared Chain.friction
-  // dir folds into the same set (§3): gitignored by machinery, not by
-  // per-repo habit.
+  // never enters the commit. A declared Chain.friction dir folds into the
+  // same set (§3): gitignored by machinery, not by per-repo habit.
   await ensureRuntimeIgnores(
     jobDir,
     chain.friction !== undefined ? [frictionIgnoreEntry(chain.friction)] : [],
   );
 
-  // 6. Unconditional provisioning (§5a-4, resolved decision 5).
-  await ensureFlumeLink(jobDir, opts.linkTarget ?? resolve(HERE, ".."));
-
-  // 7. Job dirs nest deep; spare the operator MAX_PATH failures up front.
+  // 6. Job dirs nest deep; spare the operator MAX_PATH failures up front.
   if (process.platform === "win32") {
     await git(repoRoot, ["config", "core.longpaths", "true"]);
   }
 
-  // 8. Baseline-commit the seeded harness so plan/build produce clean deltas.
+  // 7. Baseline-commit the seeded harness so plan/build produce clean deltas.
   // The commit is pathspec-scoped: anything the operator pre-staged outside
   // the job dir stays in the index instead of being swept into the seed.
   const rel = join(".flume", "jobs", name);
@@ -271,7 +226,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
   }
-  // 9. Stay on job/<name> — tune, then `flume job run`.
+  // 8. Stay on job/<name> — tune, then `flume job run`.
 }
 
 export interface JobRunOptions {
@@ -458,10 +413,11 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
     log(`[flume] no tracked harness under ${rel}; nothing to commit`);
   }
 
-  // 3. Untracked runtime remnants (awake/, prior-attempts/, the @dtmd/flume
-  // link, pid files) — the ignore entries kept them out of git, so git rm
-  // left them behind. fs.rm unlinks the junction/symlink without following
-  // it; the link target is never touched.
+  // 3. Untracked runtime remnants (awake/, prior-attempts/, pid files, and
+  // any stale @dtmd/flume link left by a pre-0.9 job dir) — the ignore
+  // entries kept them out of git, so git rm left them behind. fs.rm unlinks
+  // a stale junction/symlink without following it; the link target is never
+  // touched.
   await rm(jobDir, { recursive: true, force: true });
 
   // 4. Stale metadata from the job's fanout worktrees.
@@ -834,9 +790,9 @@ export async function jobExtract(
 
   // 5. Extract consumes the job (§5e-5). The harness dir now holds only
   // ignored runtime remnants — the checkout off the job branch removed the
-  // tracked files; fs.rm unlinks the @dtmd/flume junction without following
-  // it. Prune afterward for the same reason rm does (§5c-4): the dir held
-  // the job's fanout worktrees.
+  // tracked files; fs.rm unlinks a stale @dtmd/flume junction (a pre-0.9 job
+  // dir) without following it. Prune afterward for the same reason rm does
+  // (§5c-4): the dir held the job's fanout worktrees.
   await git(repoRoot, ["branch", "-q", "-D", jobBranch]);
   await rm(jobDir, { recursive: true, force: true });
   await git(repoRoot, ["worktree", "prune"]);
