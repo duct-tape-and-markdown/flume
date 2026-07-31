@@ -1,41 +1,55 @@
 # State
 
-Phase: v0.7 shipped (§§1-17); v0.8 shipped (§§2-10); v0.9 "the doctrine
-line" (§§1-5) fully shipped this delta — all 4 derived entries landed
-and audited clean.
+Phase: v0.9 "the doctrine line" shipped and audited (prior tick). This
+delta shipped the shape-standard + posture-sweep machinery itself
+(`2874c2c`) plus its inbox batch and the 0.9.0 release cut. No new
+`spec/RELEASE-*.md` line open.
 
-Mode: audit (commit-delta was the only non-empty dimension — 4 build
-commits since last plan, no spec-delta, empty inbox, empty
-pending-now). Checked each commit's diff against its `per.section`:
-tsc + full vitest suite green; `src/` acceptance greps (engineHandshake,
-readLocalInstall, readPin, OWN_PACKAGE_ROOT, ensureFlumeLink) all empty;
-job.test.ts carries the §3 bay-resolution fixture; docs/CHANGELOG match
-§§4-5 acceptance exactly; all four commits' touched files match their
-entry's declared `files` with no scope creep; `.flume/chain.ts` has no
-dependency on any removed symbol. No drift found — nothing to file.
+Mode: audit (commit-delta: 3 commits, no drift — changelogGate correctly
+scoped to build's `afterCommit`, `per.path` widening is prompt-guidance
+only as intended, release-cut diff routine). Drain: 6 inbox entries — 4
+routed to pending (2 fixed the .gitignore/CHANGELOG gaps the inbox named,
+2 cited the newly-admissible `.claude/rules/*.md` per-path to unblock
+findings previously parked for want of a spec home), 2 parked (win32
+argv encoding needs an empirical spike; exec-failed-silent-degradation
+needs a product ruling — both flagged high/entangled). Sweep: bootstrap
+(no prior stamp; `2874c2c` created the posture pages themselves, phrase
+delta, whole domain armed). One neighborhood swept this tick.
 
-Self-audit also caught two open questions that v0.9 §1/§4 explicitly
-supersede/dissolve (the handshake's old-engine blind spot, and the
-bay-manifest pin-placement ambiguity) but that survived the prior
-derive tick uncrossed off — both deleted this tick, disposition in
-commit body.
+## Queue (5)
 
-## Queue (0)
+Head: GITIGNORE-RUNTIME-ARTIFACTS. Then CHANGELOG-0.9.0-BACKFILL,
+SCHEMA-PROMPT-AGREEMENT-GATE, PARSEPENDINGLOOSE-WRITE-PATH-PIN,
+PENDING-GATE-HINT-OPTION (ascending priority order).
 
-Empty. Nothing pending.
+## Open questions (4)
 
-## Open questions (2)
+pendingGate dual-violation report — unchanged, PARKED.
+setupWorktree/gate manager-detection sharing — unchanged, PARKED.
+win32 inline-exec argv mangling (which fix, at which depth) — new,
+PARKED, needs empirical spike.
+`<exec-failed>` loud-or-nothing vs. shipped tolerance — new, PARKED,
+needs product ruling.
 
-pendingGate dual-violation report — unchanged, PARKED (recommend
-leave-as-is unless proven costly).
-setupWorktree/gate manager-detection sharing — unchanged, PARKED (needs
-a spec touch either way).
+## Posture sweep
+
+Posture swept through: `2874c2c` (bootstrap stamp this tick — first
+appearance of `.claude/rules/{engineering,posture-sweep}.md`; whole
+sweep domain armed as a phrase delta).
+
+Covered this tick: `src/PendingSchema.ts` (self-contained neighborhood —
+its only import is `zod`). Found: the seam-agreement gap (routed as
+SCHEMA-PROMPT-AGREEMENT-GATE, converging with the inbox drain) and the
+prose-only `parsePendingLoose` write-path contract (routed as
+PARSEPENDINGLOOSE-WRITE-PATH-PIN).
+
+Remaining frontier: 13 other `src/` modules, all of `tests/`, `bin/`,
+`examples/`. Rotation stays open until the frontier empties.
 
 ## Trunk
 
-HEAD `77a997a` (chore(flume): ship EXEC-LOCAL-HANDSHAKE-REMOVAL,
-EXEC-LOCAL-JOBLINK-REMOVAL, EXEC-LOCAL-DOCS, EXEC-LOCAL-CHANGELOG). v0.9
-fully shipped; no new spec line open. Next plan tick needs a fresh
-`spec/RELEASE-*.md` (or inbox activity) to have anything to derive.
+HEAD `2874c2c` (chore(flume): shape standard, posture sweep, and the two
+gates that close the recurring misses). Next tick: continue the sweep
+frontier, or derive if a new `spec/` line lands first.
 
-Plan continues: no
+Plan continues: yes — sweep frontier open (13+ modules remain)

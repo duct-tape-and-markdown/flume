@@ -1,1 +1,116 @@
-[]
+[
+  {
+    "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": ".gitignore",
+          "description": "add .flume/last-tick.json, .flume/loop.pid, .flume/tick-verdict.json"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Root .gitignore misses .flume/last-tick.json (stale), .flume/loop.pid, .flume/tick-verdict.json — untracked noise every tick.",
+    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
+    "tests": [],
+    "acceptance": "A fresh build tick leaves no untracked .flume/last-tick.json, .flume/loop.pid, or .flume/tick-verdict.json in git status.",
+    "notes": "last-tick.json is dead — v0.8 §5 (Dispatcher.ts:164) superseded it with tick-verdict.json; the stray file predates that ship, safe to also delete by hand. loop.pid is already in RUNTIME_IGNORES (job.ts:39) for job dirs, but this repo's own root .flume/ isn't a job dir so it never got the entry."
+  },
+  {
+    "tag": "CHANGELOG-0.9.0-BACKFILL",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "backfill 5 omitted post-0.8.0 fixes into the published [0.9.0] section"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Published [0.9.0] section omits 5 post-0.8.0 fixes that never got a changelog line: 480b81c, 9f4e62f, 1a67d1c, 58be15d, 3170113.",
+    "per": { "path": "spec/RELEASE-v0.1.md", "section": "8. Repository hygiene" },
+    "tests": [],
+    "acceptance": "[0.9.0] section carries one line per commit below; retroactively satisfies the every-ship-gets-a-line convention for the published section.",
+    "notes": "480b81c pendingGate lazy targetFence read; 9f4e62f+1a67d1c renderSchemaForPrompt separator-swallowed-by-comment fix; 58be15d win32 inline-exec ENOENT shell-retry fallback; 3170113 shellGate optional env. Pre-1.0: published npm tarball's copy stays stale, acceptable. changelogGate (chain.ts) prevents recurrence going forward; this is the one-time backfill only."
+  },
+  {
+    "tag": "SCHEMA-PROMPT-AGREEMENT-GATE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "agreement test: real renderSchemaForPrompt output driven through real parsePending"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "renderSchemaForPrompt and parsePending are an ungated agreement seam in PendingSchema.ts — nothing drives the real writer through the real reader.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A seam gate reads what the real writer wrote" },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "entries built from renderSchemaForPrompt's stated hints (tag charset/length, notes/summary caps) parse via parsePending; entries violating a stated hint constraint fail parsePending"
+      }
+    ],
+    "acceptance": "New agreement test passes; it would have caught the tag-charset and notes-cap drift instances this entry supersedes (both already in sync today, now pinned against silent regression).",
+    "notes": "Closes the class, not just the two known-fixed instances (v0.8 §3 tag-grammar reduction; notes cap already rendered). Supersedes inbox's TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-VISIBILITY concern. Also this tick's posture-sweep finding for the PendingSchema.ts neighborhood (bootstrap rotation)."
+  },
+  {
+    "tag": "PARSEPENDINGLOOSE-WRITE-PATH-PIN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "pin parsePendingLoose's 'never on a write path' contract mechanically"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "parsePendingLoose's 'never used on a write path' contract (PendingSchema.ts:324-329) is prose-only — no test pins it.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "parsePendingLoose has exactly one production call site (job.ts's read-only job-listing) and it never rewrites pending.json"
+      }
+    ],
+    "acceptance": "New test fails if a future call site appears outside the documented read-only listing, forcing deliberate review before it ships.",
+    "notes": "Posture-sweep finding, PendingSchema.ts neighborhood (bootstrap rotation, no prior stamp). A pinning test is the proportionate fix — one call site today, correctly used; a type-brand is more machinery than the current risk justifies (collaboration.md complexity signal)."
+  },
+  {
+    "tag": "PENDING-GATE-HINT-OPTION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "add optional hint?: string to PendingGateOptions, appended to both violation messages"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "cover hint present/absent on both violation paths"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "pendingGate has no injection point for chain-authored operator guidance on a violation — a bay's hand-rolled fork carried this, the builtin drops it.",
+    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Capability vs convention" },
+    "tests": [
+      {
+        "path": "tests/builtinGates.test.ts",
+        "asserts": "hint text appended verbatim to both schema-violation and fence-violation failure output when supplied; output unchanged from today when omitted"
+      }
+    ],
+    "acceptance": "pendingGate({ ..., hint: 'park it, never re-scope' }) echoes the hint in both failure branches; default behavior unchanged.",
+    "notes": "Passes the second-implementation test — chain supplies text, engine supplies enforcement. Keep minimal: one string, no per-violation-class customization; richer needs stay a chain-side run() wrap, per the inbox finding's own stated alternative."
+  }
+]

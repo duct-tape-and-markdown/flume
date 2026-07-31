@@ -66,3 +66,69 @@ Recommended: (1) — the asymmetry (`setupWorktree` already detects the
 manager, the gates don't) is a real duplication smell per
 engine-boundary.md — but the exact options shape is a spec author's call,
 not plan's to invent silently.
+
+## win32 inline-exec argv mangling — which fix, at which depth (inbox: NON-ASCII root cause)
+
+**PARKED**
+
+Root cause isolated and reproduced in this repo: `execFile("sh", ["-c", cmd])`
+on win32 mangles any non-ASCII byte in the argv round-trip, so `sh` receives
+the whole command as a program name and the span renders `<exec-failed>`.
+Confirmed here — `.flume/prompts/plan.md`'s two em-dash inline-exec spans
+both failed before the ASCII sweep in `2874c2c`. Quoting is innocent; only
+non-ASCII content triggers it. `58be15d`'s ENOENT→shell-retry fallback
+doesn't help — this isn't an ENOENT, `sh` runs fine, just on mangled input.
+
+Harness-side mitigation already ships (prompts ASCII-swept, PROTOCOL.md's
+interim rule, marked for retirement by this fix). This question is the
+engine-lane fix underneath it.
+
+Options:
+
+1. **Encode the win32 spawn argv correctly** (UTF-8 codepage handling) —
+   lands at the mechanism (engineering.md), but Node/Windows argv encoding
+   is genuinely finicky; `58be15d` already misdiagnosed the model once
+   before this repro corrected it.
+2. **Pass the command via stdin or a temp script file** instead of argv —
+   sidesteps the encoding issue entirely; larger change to the inline-exec
+   invocation path.
+3. **Lint inline-exec for non-ASCII at render, fail loud** — doesn't restore
+   the capability (non-ASCII digests still can't run), just fails visibly.
+   A floor, not a fix; entangled with the exec-failed question below.
+
+Recommended: needs an empirical spike on (1) before committing — the repro
+is already reduced to a one-line em-dash case (ships as the fix's test per
+engineering.md), but the right Windows-API-level approach isn't obvious
+without testing candidates against it.
+
+## `<exec-failed>` renders and the prompt still sends — loud-or-nothing vs. shipped tolerance (inbox finding)
+
+**PARKED**
+
+`evaluateInlineExec` substitutes `<exec-failed cmd="...">stderr</exec-failed>`
+for a failed span and the tick proceeds; `docs/CHAIN-AUTHORING.md` states
+this outright and `tests/Prompt.test.ts` asserts it as correct behavior.
+This is the one place flume's shipped behavior contradicts
+`.claude/rules/engineering.md`'s "Loud or nothing" (no path proceeds over
+an unresolved input) — measured cost: a Windows plan tick oriented on a
+blinded digest for a full loop with nothing surfacing it.
+
+Deliberate design affordance, not a slipped bug — reversing it deletes
+shipped tests. Needs a human/product call before any code moves.
+
+Options:
+
+1. **Fail the tick** on any unresolved span — simplest, loudest; a
+   transient digest command failure now costs a tick.
+2. **Render but refuse to invoke the agent**, surfacing the failed spans —
+   preserves the artifact for debugging; needs a new dispatcher exit path
+   and a §6 no-commit classification.
+3. **Chain-declared per-span tolerance** (`optional` inline-exec) — most
+   flexible, passes the second-implementation test cleanly (engine reports
+   the fact, chain owns the interpretation per engine-boundary.md), most
+   surface to build.
+
+Recommended: lean (3) per engine-boundary.md's fact/interpretation split,
+but this is a product call on shipped, tested behavior — not plan's to
+invent silently. Entangled with the win32 argv question above: whichever
+wins there changes how often this path is even hit.
