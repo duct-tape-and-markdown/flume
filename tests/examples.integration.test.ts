@@ -26,9 +26,12 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import type { Agent } from "../src/Agent.ts";
+import type { Chain } from "../src/Phase.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
 import backlogGroomerChain from "../examples/backlog-groomer-chain.ts";
+import { cascadeChain } from "../examples/cascade-chain.ts";
+import minimalChain from "../examples/minimal-chain.ts";
 
 const exec = promisify(execFile);
 
@@ -195,4 +198,31 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       await repo.cleanup();
     }
   }, 30_000);
+});
+
+/**
+ * `flume job run` wakes `phases[0]` unconditionally on a cold job (v0.5
+ * decision 6, `src/job.ts` `jobRun`) — it has no notion of `humanOnly` at
+ * that call site. A chain whose entry phase is also in its own `humanOnly`
+ * list declares a job that can never cold-start on its own machinery; a
+ * human has to intervene on tick one, every time. Every chain under
+ * `examples/` is a "read this to learn the shape" artifact (v0.1 §7 /
+ * v0.8 §7), so this pins the entry-phase/humanOnly relationship across all
+ * of them, not just cascade.
+ */
+describe("example chains — entry phase is machine-wakeable", () => {
+  const chains: Array<{ name: string; chain: Chain }> = [
+    { name: "cascade-chain.ts", chain: cascadeChain },
+    { name: "backlog-groomer-chain.ts", chain: backlogGroomerChain },
+    { name: "minimal-chain.ts", chain: minimalChain },
+  ];
+
+  it.each(chains)(
+    "$name: phases[0] is absent from its own humanOnly list",
+    ({ chain }) => {
+      const entryPhase = chain.phases[0];
+      expect(entryPhase).toBeDefined();
+      expect(chain.humanOnly).not.toContain(entryPhase!.name);
+    },
+  );
 });

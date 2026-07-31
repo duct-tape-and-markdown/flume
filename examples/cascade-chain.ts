@@ -3,11 +3,11 @@
  * expressed as Flume Phases.
  *
  * Three phases:
- *   - spec: derives an aligned spec corpus from a workshop draft (singleton,
- *     human-woken).
  *   - plan: re-derives pending.json + state.md from the spec corpus + src
  *     (singleton).
  *   - build: ships pending entries to the trunk (fanout).
+ *   - spec: derives an aligned spec corpus from a workshop draft (singleton,
+ *     human-woken).
  *
  * This file is the load-bearing example: it demonstrates the shape a chain
  * takes when it spans the full derivation pipeline. Read it alongside the
@@ -260,7 +260,7 @@ const build: Phase = {
 // ---------- chain ----------
 
 export const cascadeChain: Chain = {
-  phases: [spec, plan, build],
+  phases: [plan, build, spec],
   entryExtension,
   humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
 };
