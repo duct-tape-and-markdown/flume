@@ -143,8 +143,16 @@
           "description": "readPending refuses on a parse failure at the reads that decide work (1022 singleton, 1111 fanout) and at the rewrite read (2221); the tick returns failed per the EX_MOUNT_DEAD class. The two pendingAfter report reads (1093, 1536) keep today's tolerance, declared at the site"
         },
         {
+          "path": "src/cli.ts",
+          "description": "the third reader, same shape: `flume render` (982-997) prints the parse errors then hands ctx.pending an empty array (999) - it refuses instead, so no prompt renders over a queue that failed to resolve"
+        },
+        {
           "path": "tests/Dispatcher.test.ts",
           "description": "no corrupt-pending fixture exists today; add both refusal cases"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "cover the render refusal beside the existing render describe (525)"
         },
         {
           "path": "CHANGELOG.md",
@@ -162,10 +170,89 @@
       {
         "path": "tests/Dispatcher.test.ts",
         "asserts": "a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation; and a wave whose pending.json is corrupted after tick start leaves the file byte-identical rather than committing []. Both fail on the pre-fix tree"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "`flume render <singleton>` over a corrupt pending.json writes no prompt to stdout and exits non-zero - fails on the pre-fix tree, which prints the errors to stderr and renders anyway"
       }
     ],
-    "acceptance": "A corrupt pending.json produces a non-zero tick naming the parse errors and no agent invocation; no path derives a rewrite of pending.json from a failed parse.",
-    "notes": "readPending (2183-2194) warns and returns []. Both directions lose data - plan re-derives from an empty <pending-now> and commits it; commitPendingUpdate (2221) derives its rewrite from [] and commits '[]'. pendingParseGate cannot bound it - the empty rewrite parses green. failed/EX_MOUNT_DEAD over a new Axis-C kind: that docstring (731-743) already covers an invalid state root, and its fail-fast is the wanted behavior - no agent repairs this file without discarding it."
+    "acceptance": "A corrupt pending.json produces a non-zero tick naming the parse errors and no agent invocation; no path derives a rewrite of pending.json, or a rendered prompt, from a failed parse.",
+    "notes": "readPending (2183-2194) warns and returns []. Both directions lose data - plan re-derives from an empty <pending-now> and commits it; commitPendingUpdate (2221) derives its rewrite from [] and commits '[]'. pendingParseGate cannot bound it - the empty rewrite parses green. failed/EX_MOUNT_DEAD over a new Axis-C kind: the docstring (731-743) already covers an invalid state root, and fail-fast is wanted - no agent repairs this file without discarding it."
+  },
+  {
+    "tag": "LOOP-MAX-NONNUMERIC-ACCEPTED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "bound the --max value where it is parsed (876-877), per the sibling check `job run --max` already performs (673-682); HELP_SUB.loop gains the exit-2 usage line"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "every --max test supplies a valid number today; add the refusal cases to the §2a loop describe (651)"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume loop --max <garbage>` parses to NaN and runs zero ticks on a 0 exit - a typo'd cap is indistinguishable from a clean hibernation.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "`flume loop --max abc` and `--max` with no value each exit 2 and spawn no tick child; `--max 0` keeps today's zero-tick stop and its 'reached --max 0' line. Fails on the pre-fix tree, which exits 0 after printing 'reached --max NaN'"
+      }
+    ],
+    "acceptance": "A non-numeric, negative, or absent --max value exits 2 naming usage; `--max 0` and `--max 5` behave exactly as today.",
+    "notes": "Verified this tick: Dispatcher.ts:2399 `?? 50` catches undefined, never NaN; 2431 `i < NaN` is false so the run does zero ticks; 2580 logs 'reached --max NaN'; loopExitCode then returns 0. `--max 0` is legitimate and load-bearing (tests/cli.test.ts:664, 699), so the check bounds the value rather than requiring truthiness."
+  },
+  {
+    "tag": "STATUS-PENDING-COUNT-UNSHIPPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "status (761-809) prints the pending count; HELP_TOP:227 and HELP_SUB.status (268-278) both describe what it actually emits, capability-skip lines included"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "the count detection inline at 485-491 becomes the one probe both status surfaces call"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the status entry (21-28) gains the count and drops 'no chain is loaded' - false since the friction and capability reads landed"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "extend the status describes (804, 1047) with the count cases; the job status describes pin the shared probe"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume status` never prints the pending entry count §3 requires, and drops an unparsable pending.json silently - `flume job status` reports both.",
+    "per": { "path": "spec/RELEASE-v0.1.md", "section": "3. CLI surface" },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "`flume status` names the entry count for a valid pending.json, 'unparsable' for a corrupt one, and 0 when the file is absent - fails on the pre-fix tree, which prints no count line in any of the three states; `flume job status` output is byte-unchanged by the shared probe"
+      }
+    ],
+    "acceptance": "`flume status` prints a pending count in all three states; one probe serves both status surfaces; help text and docs/CLI.md describe the output the code emits.",
+    "notes": "§3 names three things status prints - awake phases, pending entry count, last commit. Only the awake set shipped. The 'last commit' leg is parked, not filed: unspecified format, and it restates git. cli.ts:793 drops a parse failure under a catch (805) whose comment claims only chain-load failures, so today a corrupt file also silences the v0.8 §4 capability lines. job.ts:485-491 already holds the detection - share it, never re-derive."
   },
   {
     "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
@@ -553,5 +640,31 @@
     "tests": [],
     "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
     "notes": "Third sibling of the ERA-SCOPED-NARRATION-* pair. :48 cites JOB-RESOLUTION, a v0.5 pending tag shipped and unresolvable today - the builtinGates.ts:250-251 shape. :417 and :793 scope themselves to 'a pre-0.9 job dir'; [0.9.0] is published and the pre-1.0 clean-slate posture retires compat framing. :570 narrates the legacy fixed-'friction.md' harvest convention the friction declaration replaced. Prose-only."
+  },
+  {
+    "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "move the 77-105 block down onto resolveStateDirs (126); resolveRepoRoot keeps its own 107-114 block. A move, not a rewrite - the text is accurate for its subject"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "resolveStateDirs' 29-line docstring is detached - a second docstring intervenes, so it documents nothing and the v0.6 §3 resolution authority is invisible to hover.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "Hover on resolveStateDirs shows the job-resolution semantics; hover on resolveRepoRoot is unchanged.",
+    "notes": "LSP hover this tick: resolveStateDirs (126) returns the signature alone, no docs; resolveRepoRoot (115) returns only its own block. The 77-105 text sits between JobResolutionConflictError (75) and resolveRepoRoot's docstring, separated by a blank line, so TS attaches it to nothing - the conflict rule, the write-back rationale, and the FLUME_JOB composition case all read as current while reaching no consumer. Prose-only."
   }
 ]

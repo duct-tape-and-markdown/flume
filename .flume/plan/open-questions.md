@@ -9,6 +9,46 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `flume status` — v0.1 §3's "last commit" leg was never shipped
+
+**NEEDS AMENDMENT**
+
+`spec/RELEASE-v0.1.md:72` says `flume status` prints "awake phases, pending
+entry count, last commit". Only the awake set ever shipped. The pending count
+is mechanical — `flume job status` already computes it — and is filed as
+STATUS-PENDING-COUNT-UNSHIPPED. The "last commit" leg is not fileable: §3
+names no format, no purpose, and no exit semantics for it, and nothing
+downstream cites it.
+
+The gap went unnoticed because the three surfaces describing `status` disagree
+and none is gated: `HELP_TOP` (`src/cli.ts:227`) promises the pending count,
+`HELP_SUB.status` (:268-278) does not and omits the capability-skip lines the
+code does print, and `docs/CLI.md:23` claims "no chain is loaded" — false
+since the friction and capability reads landed. Whichever way this resolves,
+all three want to say the same thing.
+
+Options:
+
+1. **Print `<short-sha> <subject>` for HEAD.** Closest to the spec's words.
+   But `status` is the baton surface, and this is git's answer to a git
+   question — `engineering.md`'s *Derived state is computed, never restated
+   beside its source* names "a HEAD sha beside git" as the shape to avoid.
+   It also gives `status` its first failure mode outside `.flume/` (a
+   detached HEAD, a fresh repo with no commits) on a command specced to
+   always exit 0.
+2. **Drop the clause from §3.** `git log -1` already answers it, and every
+   real consumer of `status` (the §17 liveness line, the friction count, the
+   v0.8 §4 capability lines) is about harness state git cannot report.
+3. **Behind a flag** (`status --verbose`). Keeps the option without taxing
+   the common path — but invents CLI surface no one has asked for.
+
+Recommended: (2), with §3's sentence amended to name what `status` actually
+owes: awake phases, pending entry count, supervisor liveness, and the
+chain-declared extras. That makes the section describe the shipped surface
+instead of a three-item list two-thirds of which drifted. (1) is defensible
+if the intent was a one-glance "where am I" line — if so, say so in §3 and it
+becomes a normal entry.
+
 ## plan's delta window can drop a spec change permanently
 
 **PARKED**
