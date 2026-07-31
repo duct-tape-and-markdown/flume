@@ -1066,6 +1066,73 @@ describe("flume status — friction line (§6)", () => {
 });
 
 /**
+ * §3 — `flume status` names the pending entry count alongside awake phases:
+ * a valid pending.json by entry count, a corrupt one as "unparsable" rather
+ * than silently dropped, and an absent one as 0. No chain/git repo needed —
+ * the count comes from `readPendingLoose` (`src/job.ts`), the same
+ * chain-less probe `flume job status` uses per job.
+ */
+describe("flume status — pending entry count (§3)", () => {
+  it("names the entry count for a valid pending.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    try {
+      const planDir = join(dir, ".flume", "plan");
+      await mkdir(planDir, { recursive: true });
+      await writeFile(
+        join(planDir, "pending.json"),
+        JSON.stringify([
+          {
+            tag: "A",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: { new: [], edit: [], retire: [] },
+          },
+          {
+            tag: "B",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: { new: [], edit: [], retire: [] },
+          },
+        ]),
+        "utf8",
+      );
+
+      const r = await runCli(dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("pending: 2");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('prints "pending: unparsable" for a corrupt pending.json instead of dropping it silently', async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    try {
+      const planDir = join(dir, ".flume", "plan");
+      await mkdir(planDir, { recursive: true });
+      await writeFile(join(planDir, "pending.json"), "not json{", "utf8");
+
+      const r = await runCli(dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("pending: unparsable");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('prints "pending: 0" when plan/pending.json is absent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    try {
+      const r = await runCli(dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("pending: 0");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+/**
  * A minimal chain declaring `capabilities` (or omitting it) — same shape as
  * `minimalChainSrc`, varied for the v0.8 §4 capability-skip status tests
  * below.
@@ -1206,6 +1273,58 @@ describe("flume job status — friction line (§6)", () => {
       expect(r.code).toBe(0);
       expect(r.out).toContain("j1");
       expect(r.out).not.toContain("friction:");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
+ * §3 — `flume job status` and `flume status` share one pending-count probe
+ * (`readPendingLoose`, `src/job.ts`): a job's corrupt pending.json reads
+ * "pending: unparsable" through the real `job status` CLI path exactly as
+ * `flume status` does for the top-level file, and a valid job pending.json
+ * is byte-unchanged from its pre-shared-probe count line.
+ */
+describe("flume job status — pending entry count via the shared probe (§3)", () => {
+  it('reports "pending: unparsable" for a job whose pending.json is corrupt', async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "plan"), { recursive: true });
+      await writeFile(join(jobDir, "plan", "pending.json"), "not json{", "utf8");
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("j1");
+      expect(r.out).toContain("pending: unparsable");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("counts a valid job pending.json unchanged", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "plan"), { recursive: true });
+      await writeFile(
+        join(jobDir, "plan", "pending.json"),
+        JSON.stringify([
+          {
+            tag: "A",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: { new: [], edit: [], retire: [] },
+          },
+        ]),
+        "utf8",
+      );
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("j1");
+      expect(r.out).toContain("pending: 1");
     } finally {
       await repo.cleanup();
     }

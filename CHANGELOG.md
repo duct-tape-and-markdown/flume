@@ -77,6 +77,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   run zero ticks and exit 0 — a typo'd cap was indistinguishable from a
   clean hibernation (`.claude/rules/engineering.md`, "Loud or nothing").
   `--max 0` is unaffected: it still runs zero ticks and exits 0.
+- `flume status` now prints the pending entry count §3 requires
+  (`pending: N`; `pending: 0` when `plan/pending.json` is absent;
+  `pending: unparsable` when it exists but fails to parse) — previously
+  omitted entirely, and a corrupt file was dropped silently rather than
+  surfaced. `flume status` and `flume job status` now share one probe
+  (`readPendingLoose`, `src/job.ts`) for the count, so a corrupt file reads
+  identically on both surfaces.
 
 ## [0.9.0] - 2026-07-31
 

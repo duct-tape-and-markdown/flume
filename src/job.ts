@@ -20,6 +20,7 @@ import { promisify } from "node:util";
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
 import { parsePendingLoose } from "./PendingSchema.js";
+import type { ParseResult } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
 
@@ -460,6 +461,19 @@ function countFrictionFiles(dir: string): number {
 }
 
 /**
+ * Chain-less informational read of a pending.json at `pendingPath`: absent
+ * reads as the empty, valid list (nothing planned is nothing pending);
+ * present reads through `parsePendingLoose` (core fields validated, no
+ * extension composed — never a write path). The one probe `flume status`
+ * and `flume job status` (`src/cli.ts`) both call, so a corrupt file reads
+ * "unparsable" identically on either surface.
+ */
+export function readPendingLoose(pendingPath: string): ParseResult {
+  if (!existsSync(pendingPath)) return { ok: true, entries: [], errors: [] };
+  return parsePendingLoose(readFileSync(pendingPath, "utf8"));
+}
+
+/**
  * `flume job status` (v0.5 §5d): enumerate `.flume/jobs/*` in the working
  * tree — awake phases + pending count per job. Observational: reads only
  * what exists and writes nothing. The Baton constructor mkdirs `awake/`, so
@@ -482,14 +496,8 @@ export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
       const awake = existsSync(join(jobDir, "awake"))
         ? new Baton(jobDir).awake()
         : [];
-      const pendingPath = join(jobDir, "plan", "pending.json");
-      let pending: number | null = 0;
-      if (existsSync(pendingPath)) {
-        // Chain-less informational read: count entries without composing
-        // the chain's extension (v0.8 §2) — loose parse, never rewritten.
-        const parsed = parsePendingLoose(readFileSync(pendingPath, "utf8"));
-        pending = parsed.ok ? parsed.entries.length : null;
-      }
+      const parsed = readPendingLoose(join(jobDir, "plan", "pending.json"));
+      const pending = parsed.ok ? parsed.entries.length : null;
       const frictionCount =
         frictionDir !== undefined
           ? countFrictionFiles(join(jobDir, frictionDir))

@@ -20,11 +20,12 @@ FLUME_JOB=docs-refresh flume tick      # identical resolution via env
 
 ## `flume status`
 
-Prints baton state: the list of awake phases (or `hibernating` if none) read from `.flume/awake/`. Observational only — no chain is loaded, no agent is invoked, nothing on disk changes. Exit code is `0` regardless of the awake set; status is the right call to bake into shell prompts or watch loops without risk of side effects.
+Prints baton state: the list of awake phases (or `hibernating` if none) read from `.flume/awake/`, then the pending entry count read from `.flume/plan/pending.json` (`pending: N`; `pending: 0` when the file is absent; `pending: unparsable` when it exists but fails to parse), then, best-effort, chain-derived lines — a friction count when `Chain.friction` is declared and its dir holds notes, and one line per pending entry gated on a capability the chain hasn't asserted (a broken or missing chain withholds only these, never the awake/pending lines above). Observational only — nothing on disk changes. Exit code is `0` regardless of state; status is the right call to bake into shell prompts or watch loops without risk of side effects.
 
 ```sh
 flume status
 # awake: plan
+# pending: 3
 ```
 
 ## `flume tick`

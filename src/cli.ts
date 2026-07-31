@@ -32,6 +32,7 @@ import {
   jobStatus,
   JobUsageError,
   liveLoopPid,
+  readPendingLoose,
 } from "./job.js";
 import {
   Dispatcher,
@@ -271,8 +272,11 @@ const HELP_SUB: Record<Subcommand, string> = {
 Print baton state: awake phases (or "hibernating" if none), then, when
 .flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
 "loop.pid present, process dead — stale"; no pidfile prints nothing extra),
-then, when the chain declares Chain.friction and its dir holds notes, a
-friction count. Observational — no side effects, no agent invocation.
+then the pending entry count from plan/pending.json ("pending: N"; "pending:
+0" if absent; "pending: unparsable" if present but malformed), then, when
+the chain loads, a friction count (declared Chain.friction dir holding
+notes) and one line per pending entry gated on a capability the chain
+hasn't asserted. Observational — no side effects, no agent invocation.
 
 Exit codes:
   0   Always.
@@ -776,6 +780,14 @@ async function main(): Promise<number> {
           : "loop.pid present, process dead — stale",
       );
     }
+    // §3: the pending entry count, independent of whether the chain loads —
+    // `flume job status` probes the same file the same way (`readPendingLoose`,
+    // src/job.ts), so a corrupt pending.json reads "unparsable" identically
+    // on both surfaces.
+    const pending = readPendingLoose(join(flumeDir, "plan", "pending.json"));
+    console.log(
+      pending.ok ? `pending: ${pending.entries.length}` : "pending: unparsable",
+    );
     // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
     // `status`, only silently withhold the friction line.
     try {
@@ -785,27 +797,19 @@ async function main(): Promise<number> {
       // v0.8 §4: name entries stuck on a capability this chain hasn't
       // asserted — a `requiresCapability` skip must never be silent.
       const capabilities = new Set(chain.capabilities ?? []);
-      const pendingPath = join(flumeDir, "plan", "pending.json");
-      if (existsSync(pendingPath)) {
-        const result = parsePending(
-          readFileSync(pendingPath, "utf8"),
-          chain.entryExtension,
-        );
-        if (result.ok) {
-          for (const entry of result.entries) {
-            if (
-              entry.gate.kind === "requiresCapability" &&
-              !capabilities.has(entry.gate.capability)
-            ) {
-              console.log(
-                `${entry.tag}: skipped — missing capability "${entry.gate.capability}"`,
-              );
-            }
-          }
+      for (const entry of pending.entries) {
+        if (
+          entry.gate.kind === "requiresCapability" &&
+          !capabilities.has(entry.gate.capability)
+        ) {
+          console.log(
+            `${entry.tag}: skipped — missing capability "${entry.gate.capability}"`,
+          );
         }
       }
     } catch {
-      // no chain, or a chain that fails to load — nothing to report
+      // no chain, or a chain that fails to load — nothing to report beyond
+      // the pending count above
     }
     return 0;
   }
