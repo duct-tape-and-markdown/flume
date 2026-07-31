@@ -34,8 +34,16 @@ error.
 ## Quickstart
 
 ```bash
-npm install @dtmd/flume
+npm install --save-dev @dtmd/flume
 ```
+
+Flume is exec-local: a bay declares `@dtmd/flume` as its own dependency
+and invokes it through the package manager (`pnpm exec flume`, an npm
+script, `npx flume`). The binary that runs is always the bay's pinned
+copy, and a chain's `import "@dtmd/flume"` resolves to that same
+copy — one engine per bay, coherent by construction. Global installs
+are unsupported; the engine makes no attempt to detect or accommodate
+one.
 
 Drop a `.flume/chain.ts` into your repo:
 

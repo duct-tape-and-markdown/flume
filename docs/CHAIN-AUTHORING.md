@@ -94,10 +94,6 @@ opinion" everywhere else in this doc:
 - Merging the runtime `.gitignore` entries (`awake/`, `prior-attempts/`,
   `worktrees/`, `node_modules/`, `loop.pid`) into the job dir — creating
   the file if `seedDir` carries none, preserving any lines it does.
-- Linking `node_modules/@dtmd/flume` inside the job dir to the running
-  flume's own package root, so `import … from "@dtmd/flume"` in the chain
-  resolves to the exact flume that ticks it — a seed needs no dependency
-  manifest.
 - Pinning `core.longpaths true` repo-locally on Windows.
 - Baseline-committing the seeded harness so subsequent plan/build ticks
   produce clean deltas.

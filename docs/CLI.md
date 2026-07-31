@@ -2,6 +2,8 @@
 
 `flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands, `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes.
 
+Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invokes it through the package manager (`pnpm exec flume`, an npm script, `npx flume`). The binary that runs is the bay's own pinned copy, resolved the same way as every other dependency — global installs are unsupported, and the engine makes no attempt to detect or accommodate one.
+
 ## Global `--job <name>` / `FLUME_JOB`
 
 `flume --job <name> <subcommand>` (the flag composes with every subcommand, at any argument position) resolves both `FLUME_DIR` and `FLUME_CONFIG_DIR` to `<repoRoot>/.flume/jobs/<name>` and sets `FLUME_JOB=<name>` — all three canonicalized and written back into the environment at CLI entry, so loop-spawned tick children inherit the resolution via env rather than flags. Setting `FLUME_JOB=<name>` directly (no flag) is honored identically.
@@ -74,9 +76,8 @@ Every run (idempotent) also:
 
 - **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
 - **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
-- **Links `node_modules/@dtmd/flume`** inside the job dir (junction on Windows, symlink elsewhere) to the running flume's own package root, so the chain resolves the exact flume that ticks it even when the repo declares another version. Skipped if the link already exists; a non-link squatting on that path is an error.
 - **Pins `core.longpaths true`** repo-locally on Windows.
-- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state and the link out of the commit), so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
+- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit), so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
 
 Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, no chain at `<configDir>/chain.ts`, or a declared `seedDir` absent on disk).
 
@@ -106,7 +107,7 @@ The discard ending: throw the harness away, keep the work. Four steps:
 
 1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
 2. **`git rm -r .flume/jobs/<name>` + cleanup commit on `job/<name>`.** The branch is checked out first if HEAD is elsewhere (it must be free — git refuses if a linked worktree holds it; run rm from inside that worktree instead). The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index.
-3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, the `node_modules/@dtmd/flume` link, pid files: the ignore entries kept them out of git, so `git rm` left them behind. The link is unlinked, never followed; its target is untouched.
+3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
 4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
 
 The job branch survives, cleanup commit at its tip. Integration (merge or squash into a base branch) and branch deletion are the operator's acts, never rm's.

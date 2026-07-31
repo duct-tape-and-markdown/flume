@@ -110,37 +110,24 @@ required, but each removes maintenance surface `src/` now owns generically.
 Because no 0.7.0 shipped standalone, a 0.6.x bay hits all of these for the
 first time alongside the v0.8 schema split:
 
-- **The engine↔pin handshake.** Every `flume` invocation now checks, ahead
-  of any subcommand: does a local install resolve at
-  `<flumeDir>/node_modules/@dtmd/flume`? If so, that install is re-exec'd
-  and is the authority — no version comparison. If not, and the bay's
-  `package.json` pins `@dtmd/flume`, the CLI **refuses** (exit 2), naming
-  the pin and telling you to provision it. Provisioning means running
-  `flume job new <name>` (which links the local install into the job-scoped
-  state root), or dropping the pin from `package.json` to run unpinned as
-  the escape hatch. A pinned bay with no provisioned install is a hard stop,
-  not a silent fallback to whatever `flume` is on `PATH` — **but only once
-  the binary that gets invoked already contains this check.** The handshake
-  is code inside the engine (`engineHandshake`, `src/cli.ts`); it is not
-  retroactive. If the global `flume` your shell resolves is still a 0.6.x
-  install — the exact case this guide's audience is upgrading from — that
-  binary predates the handshake entirely and has no way to refuse anything:
-  it runs straight through using its own pre-0.7 code, against whatever
-  pending.json/chain.ts is on disk, with no version check and no error. The
-  hard stop only protects a bay once the *invoking* global binary is itself
-  >=0.7; until you've upgraded that global install, there is no guard rail
-  here — treat "upgrade the global `flume` first" as step zero, before
-  §1's pre-upgrade checklist. One exception to the refusal itself, once
-  the handshake is running at all: if the resolved local install
-  real-path-resolves back to the running engine itself (a self-referential
-  provisioned install — e.g. a dogfood chain provisioning a job from a
-  source checkout), this invocation *is* the provisioned install, so it
-  proceeds as authority instead of refusing — it is never re-exec'd into
-  and never treated as absent.
+- **Invocation is exec-local, full stop.** Flume ships no version-
+  coordination machinery at startup: no re-exec, no refusal, no version
+  check. A bay declares `@dtmd/flume` as a dev dependency and invokes
+  it through the package manager (`pnpm exec flume`, an npm script,
+  `npx flume`) — the binary that runs is always the bay's own pinned
+  copy, resolved the same way as every other dependency, and a chain's
+  `import "@dtmd/flume"` resolves to that same copy natively. There is
+  no separate provisioning step and no pin-placement ambiguity to
+  reason about, because nothing but the package manager ever reads the
+  pin. If this guide's audience — a bay still invoking a pre-0.7 global
+  `flume` from `PATH` — keeps doing that, nothing here will catch it:
+  an out-of-doctrine invocation fails however it fails, undetected.
+  Drop the habit of a global install and invoke through the package
+  manager instead, so the binary that runs is always the one the bay
+  declared.
 - **The exit-code contract.** `flume tick` returns `0` on a committed or
-  cleanly-hibernating tick, `2` on a usage error (including the handshake
-  refusal above), `69` when the chain never resolved at all, `78` on a
-  terminal misconfiguration (a chain that loaded but declares an
+  cleanly-hibernating tick, `2` on a usage error, `69` when the chain
+  never resolved at all, `78` on a terminal misconfiguration (a chain that loaded but declares an
   inconsistent world). `flume loop`/`job run` propagate a child's `69`/`78`
   unchanged, return `1` unconditionally if the consecutive-failure backstop
   aborted the run, and otherwise return `1` only if some tick errored *and*
@@ -160,7 +147,7 @@ first time alongside the v0.8 schema split:
 | Symptom | Cause |
 | --- | --- |
 | Plan or build tick fails at the parse gate with `Unrecognized key: "<field>"` | A pending-entry field your chain uses (`summary`, `per`, `tests`, …) isn't declared in `Chain.entryExtension` yet — see §1. |
-| CLI refuses at startup naming a pinned `@dtmd/flume` version | The bay's `package.json` pins the package but no local install is provisioned at `<flumeDir>/node_modules/@dtmd/flume` — run `flume job new <name>`, or drop the pin to run unpinned (§4). |
+| Invoking a global `flume` resolves a different version than the bay's pin, or behaves inconsistently | There's no version coordination to fall back on (§4) — invoke through the package manager (`pnpm exec flume`, an npm script, `npx flume`) so the binary that runs is always the bay's own `@dtmd/flume` install; a stray global is unsupported and undetected. |
 | A tag that validated pre-upgrade is now rejected | Either it violates the engine's mechanical floor (whitespace, a path separator, an out-of-charset character), or your chain declared a `tag` refinement in `entryExtension` ([CHAIN-AUTHORING.md §11](CHAIN-AUTHORING.md#11-refining-the-tag-grammar)) that's stricter than what shipped before — check which by testing the tag against the bare core pattern first. |
 | An entry gated on Docker (or another environment fact) never gets picked, and `flume status` says why | `requiresDockerHost` is gone; the entry needs `gate: { kind: "requiresCapability", capability: "..." }` and the chain needs a matching `Chain.capabilities` entry (§2). |
 | A hand-rolled pending-parse gate compiles against the old `PendingList` import and now fails to build | `PendingList` is a type, not a runtime schema, post-split — swap the validator for `composePendingList(entryExtension)` or the `pendingGate` builtin (§2, §3). |
