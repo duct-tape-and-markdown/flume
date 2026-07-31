@@ -1386,5 +1386,30 @@
     "tests": [],
     "acceptance": "One repo-bootstrap helper and one commit helper are each defined once in tests/Gate.test.ts and used by both describes; vitest green; test behavior unchanged.",
     "notes": "Sweep finding, tests/Gate.test.ts neighborhood. Verified on disk: writablePathsGate's beforeEach (207-221) and chainLoadGate's beforeEach (361-373) are identical git-init+config+seed-commit sequences, differing only in mkdtemp prefix; commitFiles (227-238) and commit (380-394) are identical write+commit helpers, differing only in a hardcoded vs parameterized message. Same shape as DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP. A deletion pins nothing decidably; the suite is the proof."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-SETUPWORKTREE-PROVISIONING-RECIPE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "setupWorktree section (~509-596) gains a recipe: repo owns the provisioning unit, chain's setupWorktree stays a thin caller, wave setups serialize through a non-poisoning queue, a failed setup fails loud with its own error"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md's setupWorktree section documents a concurrency-safe provisioning recipe (repo-owned unit, serialized queue, fail-loud) — inbox finding, docs-only.",
+    "per": {
+      "path": "spec/RELEASE-v0.7.md",
+      "section": "11. `setupWorktree` package-manager-aware helper"
+    },
+    "tests": [],
+    "acceptance": "The setupWorktree section names the repo-owned-unit/thin-caller split, wave-serialization via a non-poisoning queue, and fail-loud-on-setup-failure as a recipe.",
+    "notes": "Inbox 2026-07-31 (centercode-platform PR #688, head 11c44b799e). Verified: docs/CHAIN-AUTHORING.md:509-596 names none of this; Dispatcher.ts:1215 runs a wave's setups in one Promise.all with no serialization, so a shared cold cache races today. Docs-only — a chain-owned scheduling knob isn't warranted yet (single bay observed)."
   }
 ]

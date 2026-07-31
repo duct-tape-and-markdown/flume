@@ -16,4 +16,4 @@ trigger for `.flume/PROTOCOL.md`'s "Inline-exec commands are ASCII-only"
 section has fired. No phase can write that path; a human/`chore(flume):`
 commit deletes that section now.
 
-Plan continues: yes — posture sweep rotation open, 3 frontier modules remain
+Plan continues: no
