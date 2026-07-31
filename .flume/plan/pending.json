@@ -133,6 +133,41 @@
     "notes": "Cost a reverted plan tick 2026-07-31: an entry declared a retire symbol on the hint's authority and pendingGate refused it as outside the fence. PendingSchema.ts:23 already says 'retire is path-only', so the rendered hint is the outlier - correcting it is the simple fix; widening the fence to skip non-paths is machinery one call site does not justify. parsePending cannot catch this class: any non-empty string passes."
   },
   {
+    "tag": "PENDING-PARSE-FAILURE-REFUSES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readPending refuses on a parse failure at the reads that decide work (1022 singleton, 1111 fanout) and at the rewrite read (2221); the tick returns failed per the EX_MOUNT_DEAD class. The two pendingAfter report reads (1093, 1536) keep today's tolerance, declared at the site"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "no corrupt-pending fixture exists today; add both refusal cases"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "An unparseable pending.json reads as an empty queue - a tick reports nothing pickable and hibernates clean, and a post-wave rewrite commits [] over the whole file.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation; and a wave whose pending.json is corrupted after tick start leaves the file byte-identical rather than committing []. Both fail on the pre-fix tree"
+      }
+    ],
+    "acceptance": "A corrupt pending.json produces a non-zero tick naming the parse errors and no agent invocation; no path derives a rewrite of pending.json from a failed parse.",
+    "notes": "readPending (2183-2194) warns and returns []. Both directions lose data - plan re-derives from an empty <pending-now> and commits it; commitPendingUpdate (2221) derives its rewrite from [] and commits '[]'. pendingParseGate cannot bound it - the empty rewrite parses green. failed/EX_MOUNT_DEAD over a new Axis-C kind: that docstring (731-743) already covers an invalid state root, and its fail-fast is the wanted behavior - no agent repairs this file without discarding it."
+  },
+  {
     "tag": "GITIGNORE-RUNTIME-ARTIFACTS",
     "gate": { "kind": "open" },
     "files": {
@@ -196,6 +231,45 @@
     ],
     "acceptance": "New agreement test passes; it would have caught the tag-charset and notes-cap drift instances this entry supersedes (both already in sync today, now pinned against silent regression).",
     "notes": "Closes the class, not just the two known-fixed instances (v0.8 §3 tag-grammar reduction; notes cap already rendered). Supersedes inbox's TAG-PATTERN-SLICE-CONSTRAINT / PENDING-NOTES-CAP-VISIBILITY concern. Distinct from PENDING-RETIRE-HINT-PATH-ONLY: that seam's consumer is the fence, which parsePending never exercises."
+  },
+  {
+    "tag": "TAG-LENGTH-BOUND-AGREEMENT-PIN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "extend the §5 revert-note describe (4997) with the agreement case"
+        },
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "TAG_MAX_LENGTH doc (56-65) points at the pin instead of restating the writer's arithmetic"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "slugify doc (368-381) drops 'no runtime check needed' for a pointer to the pin"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "TAG_MAX_LENGTH = 255-39 encodes writeRevertNote's filename overhead; both sides restate it in prose and nothing drives the schema's ceiling through the real writer.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a gate-revert on an entry whose tag is the longest parsePending accepts writes a revert note that exists on disk with a filename component within 255 chars - the real schema bound through the real writer, so a one-sided change to either breaks it"
+      }
+    ],
+    "acceptance": "The revert-note filename is pinned against the schema's own accepted maximum; neither module's prose restates the other's arithmetic.",
+    "notes": "PendingSchema.ts:65 hardcodes 39 = a 24-char stamp + 2 + 2 + 'reverted.md'; Dispatcher.ts:2129 is the writer. Correct today - this pins it, so it does not fail pre-fix (same shape as PARSEPENDINGLOOSE-WRITE-PATH-PIN). A silent break lands as ENAMETOOLONG inside writeRevertNote's best-effort catch (2133): a warn line and a lost operator note."
   },
   {
     "tag": "PARSEPENDINGLOOSE-WRITE-PATH-PIN",
@@ -330,6 +404,32 @@
     "notes": "Passes the second-implementation test - chain supplies text, engine supplies enforcement. Keep minimal: one string, no per-violation-class customization; richer needs stay a chain-side run() wrap. CHANGELOG.md added this tick: the entry touched src/ without declaring it, which changelogGate would have reverted."
   },
   {
+    "tag": "GIT-DEAD-EXPORTS-RETIRE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "delete softReset (45), commitAll (198), isDirty (226) and the commitPaths comment clause naming commitAll (211)"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "git.ts exports softReset, commitAll, and isDirty with zero consumers - LSP resolves one reference each, its own declaration.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "An export earns its consumer"
+    },
+    "tests": [],
+    "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
+    "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": { "kind": "blockedBy", "tag": "INLINE-EXEC-RENDER-REFUSES" },
     "files": {
@@ -358,5 +458,35 @@
     "tests": [],
     "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test already pins.",
     "notes": "Pinned already, so prose shrinks to a pointer: Prompt.ts:142/:252 by tests/Prompt.test.ts:144; builtinGates.ts:77 by tests/Gate.test.ts:61. builtinGates.ts:250-251 cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS, both shipped and unresolvable today. Prompt.ts:47-48 is the same shape - and v0.10 §3 rewrites that exact docstring, hence the block; re-read every line number after it lands. Prose-only; no behavior moves."
+  },
+  {
+    "tag": "ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "lines 626-632, 2294, 2311, 2392-2393 - state the condition or point at the pin"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "lines 169-170 and 268-269 - same"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Dispatcher neighborhood carries era-scoped narration: three 'byte-identical to v0.7 §16' claims tests already pin, plus three sites narrating mechanisms that no longer exist.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test pins or a mechanism the tree no longer has.",
+    "notes": "Pinned already: tests/Dispatcher.test.ts:4202 (undeclared abortThreshold still aborts on the 3rd consecutive tick), :4117 (quarantineScope default). Dispatcher.ts:626-632 narrates a deleted content-hash cache; 2392-2393 compares against the removed in-process loop. Phase.ts:169-170 'existing void-returning implementations are unaffected' is migration-era under the pre-1.0 clean-slate posture. Prose-only; no behavior moves."
   }
 ]

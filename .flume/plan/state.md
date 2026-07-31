@@ -6,7 +6,8 @@ Posture swept through: `2874c2c` (rotation open — a phrase delta armed the
 whole domain).
 
 Covered this rotation: `src/Baton.ts`, `src/Prompt.ts`, `src/builtinGates.ts`,
-`src/Agent.ts`, `tests/Agent.test.ts`.
+`src/Agent.ts`, `tests/Agent.test.ts`, `src/Dispatcher.ts`, `src/Phase.ts`,
+`src/git.ts`, `src/partition.ts`.
 
 ## Operator leg (not an entry)
 
