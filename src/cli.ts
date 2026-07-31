@@ -24,7 +24,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import {
-  jobExtract,
   jobNew,
   jobRm,
   jobRun,
@@ -245,13 +244,6 @@ Commands:
   job status          List jobs under .flume/jobs/ — awake phases + pending
                       count, plus a friction count where declared and
                       non-empty, per job. Observational; no side effects.
-  job extract <name> --onto <base> [--intake <path>]...
-                      Fork clean branch <name> off <base>: intake files first
-                      as one commit, then non-harness commits cherry-picked
-                      oldest-first; harvest the chain-declared paths (and,
-                      when declared, the friction dir's files) to stdout;
-                      delete job/<name> + the job dir (extract consumes the
-                      job).
 
 Options:
   --job <name>        Resolve state to <repoRoot>/.flume/jobs/<name> and set
@@ -393,20 +385,6 @@ Verbs:
       notes, a friction count. Observational — nothing on disk changes;
       prints "no jobs" when the jobs dir is empty or missing.
 
-  extract <name> --onto <base> [--intake <path>]...
-      The clean-history ending: refuse if branch <name> already exists (no
-      clobber); fork <name> off --onto; sync each --intake file byte-exact
-      to its state at the job/<name> tip and ship the whole delta as one
-      commit; then cherry-pick, oldest-first, the commits in
-      <base>..job/<name> touching any path outside .flume/jobs/<name> and
-      outside the intake set. A cherry-pick failure aborts, unwinds to the
-      job branch, and deletes the partial branch — retryable, nothing lost.
-      On success, print the chain-declared harvest paths (git show, off the
-      job branch tip) and, when Chain.friction is declared, that dir's files
-      (path + content, off the job's working tree) to stdout, then delete
-      job/<name> and the harness dir: extract consumes the job. --onto is
-      required, never guessed.
-
 Exit codes:
   0   Success (run: hibernation reached, or --max ticks completed —
       including partial success, some ticks errored but at least one entry
@@ -416,16 +394,11 @@ Exit codes:
       harness error, another live loop holds the job's lock, at least one
       tick errored and the run shipped nothing (v0.7 §4), or an identical
       pre-tick worktree provisioning failure repeated 3 consecutive ticks
-      (v0.7 §16); for rm also: the job's loop is still live; for extract
-      also: branch <name> already exists, uncommitted tracked changes, a
-      live loop, job/<name> checked out in another worktree, or a
-      cherry-pick conflict (unwound to job/<name>; retryable).
+      (v0.7 §16); for rm also: the job's loop is still live.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, rm on a <name> whose job dir does
-      not exist, status given any argument, or extract missing --onto,
-      given a flag without a value, given an --onto that resolves to no
-      commit, or naming a job whose branch does not exist.
+      not exist, or status given any argument.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`).
 `;
@@ -514,66 +487,6 @@ async function runJobVerb(
       }
       console.error(
         `[flume] job rm failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return 1;
-    }
-  }
-
-  if (verb === "extract") {
-    const usage =
-      "usage: flume job extract <name> --onto <base> [--intake <path>]...";
-    const words = [...rest];
-    let onto: string | undefined;
-    const ontoIdx = words.indexOf("--onto");
-    if (ontoIdx >= 0) {
-      const value = words[ontoIdx + 1];
-      if (!value || value.startsWith("-")) {
-        console.error(usage);
-        return 2;
-      }
-      onto = value;
-      words.splice(ontoIdx, 2);
-    }
-    const intake: string[] = [];
-    let intakeIdx: number;
-    while ((intakeIdx = words.indexOf("--intake")) >= 0) {
-      const value = words[intakeIdx + 1];
-      if (!value || value.startsWith("-")) {
-        console.error(usage);
-        return 2;
-      }
-      intake.push(value);
-      words.splice(intakeIdx, 2);
-    }
-    const name = words[0];
-    if (!name || words.length > 1 || onto === undefined) {
-      console.error(usage);
-      return 2;
-    }
-    try {
-      const configDir = process.env.FLUME_CONFIG_DIR
-        ? resolve(process.env.FLUME_CONFIG_DIR)
-        : join(repoRoot, ".flume");
-      const result = await jobExtract({ repoRoot, name, onto, intake, configDir });
-      // §5e-4: the harvested prose goes to stdout for operator routing.
-      for (const h of result.harvest) {
-        if (h.content === null) {
-          console.log(`[flume] no ${h.path} on job/${name}`);
-        } else {
-          console.log(`--- job/${name}:${h.path} ---`);
-          process.stdout.write(
-            h.content.endsWith("\n") ? h.content : h.content + "\n",
-          );
-        }
-      }
-      return 0;
-    } catch (err) {
-      if (err instanceof JobUsageError) {
-        console.error(`[flume] ${err.message}`);
-        return 2;
-      }
-      console.error(
-        `[flume] job extract failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       return 1;
     }

@@ -23,9 +23,16 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   dir is a usage error (exit 2, "no job") rather than a no-op. The
   tick/loop `HEAD == job/<name>` guard (and its exit-1 documentation) is
   removed — `--job`/`FLUME_JOB` now run on whatever branch is current.
-  Existing `job/<name>` branches are the operator's to integrate or delete;
-  `job extract` still reads/writes that branch grammar until
-  JOB-EXTRACT-REMOVED lands.
+  Existing `job/<name>` branches are the operator's to integrate or delete.
+
+- `flume job extract` and `Chain.harvest` are removed entirely (v0.11 §3):
+  the clean-history ending (fork a branch, sync intake, cherry-pick
+  non-harness commits, harvest declared paths, delete the job) is no longer
+  engine machinery. Run the job on a side branch and integrate it with
+  ordinary git — merge keeps the record, squash keeps it clean; friction
+  files are still readable off the working tree by their owner (`Chain.friction`,
+  unchanged). A repo with a live `job/<name>` branch integrates or deletes it
+  by hand; there is no replacement verb.
 
 - An inline-exec span that fails to resolve (non-zero exit, spawn failure,
   `sh` not found, output-cap overrun) now **aborts the prompt render** —

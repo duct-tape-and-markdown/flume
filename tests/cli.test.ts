@@ -1392,6 +1392,25 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
   }, 30_000);
 });
 
+describe("flume job extract — removed (v0.11 §3)", () => {
+  it("exits as an unrecognized verb rather than running", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const r = await runCli(repo.dir, [
+        "job",
+        "extract",
+        "j1",
+        "--onto",
+        "main",
+      ]);
+      expect(r.code).toBe(2);
+      expect(r.out).toContain("unknown job verb: extract");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
 /**
  * A chain.ts whose singleton phase records the FLUME_DIR / FLUME_CONFIG_DIR /
  * FLUME_JOB it observes *inside the child tick process* to
