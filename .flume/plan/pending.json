@@ -801,6 +801,35 @@
     "notes": "Sweep finding, tests/job.test.ts neighborhood. job.ts:34 owns the constant; :177, :219 and :639 assert the exact join, so an emptied RUNTIME_IGNORES does fail the suite today - these three do not fail pre-fix (the named exception). What the pin catches is the merge path's own claim ('appending only the missing entries', :195) going green over an empty judged set."
   },
   {
+    "tag": "PROMPT-TEST-FENCE-SLICE-VACUOUS",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the no-entryChannelPaths test (217-241) shows both slice markers present before reading the verdict off the slice - the sibling at 211-214 already does; and asserts the two claims its title makes (fence is exactly entry.files, no stray empty line)"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The fence section at 236-240 is sliced between two indexOf results - an absent marker yields '' and the not-toContain verdict stays green over nothing.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "asserts": "the fence slice is shown non-empty before its not-toContain verdict is read; the fence names exactly src/only.ts and carries no blank bullet line - the title's own two claims"
+      }
+    ],
+    "acceptance": "No assertion in tests/Prompt.test.ts reads a verdict off a slice it has not shown to be populated; every test name's claim has an assertion behind it.",
+    "notes": "Sweep finding, tests/Prompt.test.ts neighborhood. Verified on disk: String.indexOf returns -1 for an absent marker, so a rendering that emitted no scoped block at all slices to '' and :240 passes. Does not fail pre-fix (the named exception) - both markers are present today; what it catches is the scoped rendering regressing to the unscoped one. Prompt.ts:275 dedupes the fence, so 'exactly' is assertable."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "blockedBy",
