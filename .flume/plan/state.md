@@ -2,13 +2,7 @@
 
 ## Posture sweep
 
-Posture swept through: `89258d671bb1f8bed072601ac632acf3024f8bb2`
-
-Rotation armed (code delta touched src/Prompt.ts, src/builtinGates.ts,
-examples/cascade-chain.ts, tests/examples.integration.test.ts,
-tests/PendingSchema.test.ts, tests/Prompt.test.ts past the stamp). Covered
-this rotation: src/Prompt.ts, src/builtinGates.ts, examples/cascade-chain.ts,
-tests/examples.integration.test.ts, tests/PendingSchema.test.ts.
+Posture swept through: `9894f64ae1cb85eb8f7e59b9e07ef81eed395dde`
 
 ## Operator leg (not an entry)
 
@@ -22,4 +16,4 @@ derive it the first tick neither INLINE-EXEC-STDIN-TRANSPORT nor
 INLINE-EXEC-RENDER-REFUSES remains in `<pending-now>`. INLINE-EXEC-RENDER-REFUSES
 still pending.
 
-Plan continues: yes — posture sweep rotation open, frontier not empty
+Plan continues: no
