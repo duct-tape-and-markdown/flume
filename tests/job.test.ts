@@ -22,7 +22,6 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -40,42 +39,9 @@ import {
 } from "../src/job.ts";
 import { Baton } from "../src/Baton.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
+import { gitOut, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
-
-// Run the source CLI through the project's own `tsx` (no build step) — via
-// `node <tsx cli.mjs>`, not the `.bin/tsx` shim (a `.cmd` shell script on
-// win32 that `execFile` cannot spawn without a shell).
-const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-const TSX_CLI = fileURLToPath(
-  new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
-);
-
-/** Strip the harness's canonical FLUME_* vars so spawned CLIs stay hermetic. */
-function hermeticEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.FLUME_DIR;
-  delete env.FLUME_CONFIG_DIR;
-  delete env.FLUME_JOB;
-  return env;
-}
-
-async function runCli(
-  cwd: string,
-  args: string[],
-): Promise<{ out: string; code: number }> {
-  try {
-    const { stdout, stderr } = await exec(
-      process.execPath,
-      [TSX_CLI, CLI, ...args],
-      { cwd, env: hermeticEnv() },
-    );
-    return { out: stdout + stderr, code: 0 };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-  }
-}
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{
@@ -95,11 +61,6 @@ async function makeRepo(): Promise<{
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
-}
-
-async function gitOut(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await exec("git", args, { cwd });
-  return stdout.trimEnd();
 }
 
 /** Minimal valid chain, no `seedDir` declared — the chain-load precondition `jobNew` enforces (v0.6 §4/§9-7): a chainless repo cannot create a job. */

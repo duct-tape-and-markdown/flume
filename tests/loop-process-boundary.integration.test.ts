@@ -13,24 +13,14 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+import { CLI, TSX_CLI, hermeticEnv } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
-
-// Run the source CLI through the project's own `tsx` (no build step in this
-// repo) — via `node <tsx cli.mjs>`, not the `.bin/tsx` shim: the shim is a
-// shell script (`.cmd` on win32) that `execFile` cannot spawn without a shell
-// (§6 spawn discipline). Absolute paths so cwd can be the temp repo; tsx
-// resolves cli.ts's own imports relative to cli.ts, independent of cwd.
-const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-const TSX_CLI = fileURLToPath(
-  new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
-);
 
 /**
  * A chain.ts that declares one singleton phase `<name>` and exports a no-op
@@ -124,20 +114,6 @@ async function makeRepo(): Promise<Repo> {
   };
 }
 
-/**
- * A copy of this process's env with the canonical FLUME_DIR /
- * FLUME_CONFIG_DIR stripped, so a spawned tick resolves the temp repo's
- * `.flume` default. Without this the suite is not hermetic: run under a
- * flume harness (whose canonicalized env the vitest process inherits), the
- * child would escape its temp repo and operate on the outer state root.
- */
-function hermeticEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.FLUME_DIR;
-  delete env.FLUME_CONFIG_DIR;
-  return env;
-}
-
 /** Spawn one real `flume tick`; collect combined stdout+stderr and exit code. */
 async function runTick(cwd: string): Promise<{ out: string; code: number }> {
   try {
@@ -222,6 +198,38 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
   );
 });
 
+describe("§14 FLUME_JOB leak — hermeticEnv keeps a job resolution from leaking into a real tick", () => {
+  it(
+    "with FLUME_JOB stubbed on the vitest process, a real `flume tick` still resolves the temp repo's own .flume",
+    async () => {
+      // Same alpha/beta misconfiguration fixture as §2 above: chain declares
+      // only "alpha", the awake flag names "beta". Read alone this always
+      // exits 78 (Axis-C, unknown phase). But if `runTick`'s env leaked
+      // FLUME_JOB from this vitest process, `resolveStateDirs` would treat
+      // that leaked value as a job resolution (src/cli.ts's `job` var), and
+      // the wrong-branch guard fires *before* dispatch ever reaches phase
+      // resolution — the temp repo's HEAD is "main", never "job/<leaked>" —
+      // exiting 1 instead of 78. `hermeticEnv()` stripping FLUME_JOB is what
+      // keeps this test on the real, intended failure mode.
+      await writeFile(join(repo.dir, ".flume", "chain.ts"), chainSrc("alpha"), "utf8");
+      new Baton(join(repo.dir, ".flume")).wake("beta");
+
+      const prior = process.env.FLUME_JOB;
+      process.env.FLUME_JOB = "outer-job";
+      try {
+        const t = await runTick(repo.dir);
+        expect(t.code).toBe(78);
+        expect(t.out).toMatch(/unknown phases: beta/);
+        expect(t.out).not.toMatch(/refusing tick/);
+      } finally {
+        if (prior === undefined) delete process.env.FLUME_JOB;
+        else process.env.FLUME_JOB = prior;
+      }
+    },
+    30_000,
+  );
+});
+
 describe("§14 process-boundary env inheritance — supervisor → child tick", () => {
   it(
     "a child `flume tick` spawned by `flume loop` observes the supervisor's canonical FLUME_DIR/FLUME_CONFIG_DIR",
@@ -245,7 +253,7 @@ describe("§14 process-boundary env inheritance — supervisor → child tick", 
       new Baton(stateDir).wake("probe");
 
       const env = {
-        ...process.env,
+        ...hermeticEnv(),
         FLUME_DIR: stateDir,
         FLUME_CONFIG_DIR: configDir,
       };

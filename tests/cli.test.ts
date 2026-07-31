@@ -35,6 +35,7 @@ import {
   type TickOutcome,
   type SuperviseResult,
 } from "../src/Dispatcher.ts";
+import { CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -411,15 +412,6 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
  * CLI's `main()`; only a real process can exercise it).
  */
 
-// Run the source CLI through the project's own `tsx` (no build step) — via
-// `node <tsx cli.mjs>`, not the `.bin/tsx` shim, which is a `.cmd` shell
-// script on win32 that `execFile` cannot spawn without a shell (§6 spawn
-// discipline). Absolute paths so cwd can be the temp state root.
-const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-const TSX_CLI = fileURLToPath(
-  new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url),
-);
-
 /**
  * §3 — `isInvokedDirectly` (`src/cli.ts:854`), the seam gating `main()`.
  * Unit-level rather than a subprocess: the seam takes `argv1` and answers
@@ -471,39 +463,38 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
 });
 
 /**
- * A copy of this process's env with the canonical FLUME_DIR /
- * FLUME_CONFIG_DIR / FLUME_JOB stripped, so the spawned CLI resolves the temp
- * dir's `.flume` default (or the test's own job resolution). Without this the
- * suite is not hermetic: run under a flume harness (whose canonicalized env
- * the vitest process inherits), the child would lock — or refuse against —
- * the outer state root.
+ * The shared subprocess harness's `hermeticEnv()` (`tests/helpers/subprocess.ts`)
+ * strips all three canonical FLUME_* vars, not just FLUME_DIR/FLUME_CONFIG_DIR
+ * — a job resolution leaked from the vitest process's own env is exactly as
+ * capable of retargeting a spawned CLI as a relocated state root is. Pinned
+ * fast-lane so a future partial copy of the harness cannot ship green through
+ * build's afterMerge gate.
  */
-function hermeticEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.FLUME_DIR;
-  delete env.FLUME_CONFIG_DIR;
-  delete env.FLUME_JOB;
-  return env;
-}
+describe("hermeticEnv — strips all three canonical FLUME_* vars", () => {
+  it("carries none of FLUME_DIR, FLUME_CONFIG_DIR, FLUME_JOB when all three are set", () => {
+    const prior = {
+      FLUME_DIR: process.env.FLUME_DIR,
+      FLUME_CONFIG_DIR: process.env.FLUME_CONFIG_DIR,
+      FLUME_JOB: process.env.FLUME_JOB,
+    };
+    try {
+      process.env.FLUME_DIR = "/outer/state";
+      process.env.FLUME_CONFIG_DIR = "/outer/config";
+      process.env.FLUME_JOB = "outer-job";
 
-/** Spawn one real `flume <args>`; collect combined output + exit code. */
-async function runCli(
-  cwd: string,
-  args: string[],
-  env: NodeJS.ProcessEnv = hermeticEnv(),
-): Promise<{ out: string; code: number }> {
-  try {
-    const { stdout, stderr } = await exec(
-      process.execPath,
-      [TSX_CLI, CLI, ...args],
-      { cwd, env },
-    );
-    return { out: stdout + stderr, code: 0 };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-  }
-}
+      const env = hermeticEnv();
+
+      expect(env.FLUME_DIR).toBeUndefined();
+      expect(env.FLUME_CONFIG_DIR).toBeUndefined();
+      expect(env.FLUME_JOB).toBeUndefined();
+    } finally {
+      for (const [key, value] of Object.entries(prior)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+});
 
 /**
  * v0.7 §5, render-command seam: `main()`'s `render` branch wraps
