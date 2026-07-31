@@ -1,63 +1,5 @@
 [
   {
-    "tag": "PENDINGGATE-FENCES-DECLARED-FILES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "declaredPaths(entry) lands beside touchedPaths (476) as the one answer to 'what does this entry declare'; touchedPaths composes it with observedFiles"
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "the fence pre-check (291) reads declaredPaths, matching the docstring it already carries (244-248); the touchedPaths import (24) goes"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the two inline declared-file lists (1391-1395, 1738-1742) call declaredPaths instead of re-deriving it; their observedFiles-exclusion comments shrink to the helper"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "effectiveFenceLines' entryPaths derivation (341-345) calls declaredPaths(entry) instead of re-deriving the same files.new/edit/retire union - a third copy, not just Dispatcher.ts's two"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "pin the split - neither helper today has a direct test"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "the out-of-fence observedFiles case, beside the lazy-fence describe (42)"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "pendingGate fences touchedPaths, which folds in dispatcher-written observedFiles - its own docstring says declared files, and the sibling write guard excludes them by name.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "pendingGate passes an entry whose declared files all sit inside the fence but whose observedFiles names a path outside it - fails on the pre-fix tree, which reports it as a fence violation the authoring phase cannot fix"
-      },
-      {
-        "path": "tests/PendingSchema.test.ts",
-        "asserts": "declaredPaths returns files.new+edit+retire only; touchedPaths over the same entry additionally returns observedFiles - a one-sided change to either breaks the pair"
-      }
-    ],
-    "acceptance": "One helper answers what an entry declares; pendingGate's fence pre-check no longer reads observedFiles; no site re-derives the declared-file list inline.",
-    "notes": "Verified on disk: builtinGates.ts:244-248 promises declared files, :291 passes touchedPaths (PendingSchema.ts:481 folds in observedFiles); Dispatcher.ts:1730/:1388 and Prompt.ts:341-345 (effectiveFenceLines) each re-derive the same files.new/edit/retire union inline - three sites, not two. Unreachable under this chain today; reachable when targetFence isn't the phase that recorded the footprint. Plan owns neither field, so it cannot fix such a violation."
-  },
-  {
     "tag": "LOOP-MAX-NONNUMERIC-ACCEPTED",
     "gate": {
       "kind": "open"
@@ -1001,36 +943,6 @@
     "notes": "Fourth sibling of the ERA-SCOPED-NARRATION-* family. Verified this tick: package.json:26-31 declares an exports map exposing '.' alone, so index.ts:3's 'not enforced - there's no exports map yet' fired its own trigger. setupWorktree.ts:5-7 names flume's dogfood buildSetupWorktree as a hand-rolled hardcode; chain.ts:50 imports the engine helper, :197-201 delegates to it, and :192-193 says so outright. Prose-only."
   },
   {
-    "tag": "CLI-TEST-OMISSION-VERDICTS-VACUOUS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the three not-toContain-only status tests (962, 976, 1064) show `status` produced its output before reading the omission verdict - each positive sibling already does; the walk-up equality test (1165) shows the pair populated before comparing"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Four cli.test.ts verdicts read off r.out with nothing showing it populated - a status regressed to empty output passes all three omission tests and the walk-up equality.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "each omission test shows the status line present before asserting the absent one; the subdirectory walk-up test shows fromRoot.out names the job before asserting fromNested.out equals it"
-      }
-    ],
-    "acceptance": "No assertion in tests/cli.test.ts reads a verdict off output it has not shown to be populated.",
-    "notes": "Sweep finding, tests/cli.test.ts neighborhood. Verified on disk: 970, 986, 1072-1073 assert only exit 0 plus not-toContain; 1177 compares two outputs neither shown non-empty. Siblings at 955 and 1147 carry the pin already. Does not fail pre-fix (the named exception) - cli.ts:763 prints 'hibernating' today; what it catches is that line going silent."
-  },
-  {
     "tag": "CLI-TEST-DOCBLOCKS-ORPHANED",
     "gate": {
       "kind": "open"
@@ -1054,65 +966,6 @@
     "tests": [],
     "acceptance": "Each doc block sits on the describe it describes; no cite in the file names a line number; the suite is green and no test moves between files.",
     "notes": "Verified on disk this tick: isInvokedDirectly is cli.ts:1041 not :854; the render CjsContextLoadError catch is :966 not :872-881; runJobVerb is :449 not :356-387; frictionCountLine is Dispatcher.ts:509, not cli.ts at all. The 402-412 block's 'no chain.ts, no git repo, no child processes' is false of the two supervisorPolicy tests it now heads. Prose + placement only; no assertion changes."
-  },
-  {
-    "tag": "DISPATCHER-TEST-FRICTION-OMISSION-VACUOUS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the three friction-omission tests (4268-4292, 4294-4320, 4349-4369) assert a known always-present line first - 'hibernating after' for the two hibernation cases, 'reached --max 2' for the third - before reading the friction-omission verdict, matching the pattern the sibling positive tests (4234-4266, 4322-4347) already use"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Three superviseLoop friction-omission tests read infos.some(...).toBe(false) without ever showing infos populated - a silenced logger passes all three.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "each of the three omission tests asserts a known always-emitted line is present in infos before asserting the friction line's absence - fails on the pre-fix tree, which passes even if superviseLoop's logger silently stopped emitting anything"
-      }
-    ],
-    "acceptance": "All three omission tests assert infos non-empty via a known line before the friction-omission check; suite green.",
-    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood. Verified on disk: lines 4291, 4319, 4368 have no preceding assertion on infos; the --max positive test at 4343 already proves the pattern (asserts 'reached --max 2' before the friction:true check at 4345) - its omission sibling at 4349-4369 lacks the equivalent. Does not fail pre-fix (the named exception) - superviseLoop does log today; what it catches is the logger going silent."
-  },
-  {
-    "tag": "SCHEMADELTA-DEAD-FIXTURE-FIELD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/partition.test.ts",
-          "description": "delete the dead `schemaDelta: \"none\"` line from makeEntry (21)"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "same dead field, the entry() helper (86)"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Two test fixture builders still set schemaDelta on constructed PendingEntry objects - the field was deleted from the schema and has no consumer.",
-    "per": {
-      "path": ".claude/rules/posture-sweep.md",
-      "section": "A violation counts only when verified on disk this tick"
-    },
-    "tests": [],
-    "acceptance": "No occurrence of schemaDelta remains in tests/partition.test.ts or tests/Prompt.test.ts; vitest green.",
-    "notes": "Sweep finding, tests/partition.test.ts neighborhood. 8c52c92 deleted schemaDelta (dead field, no consumer); these two fixture builders still set it (PendingEntry types as Record<string, unknown>, so tsc never caught it). PendingSchema.test.ts:219-226 reuses the same name as its rejected-undeclared-field example, so the leftover is a landmine, not neutral cruft: a real parsePending call would refuse it. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
   },
   {
     "tag": "DISPATCHER-STREAMJSON-PARSE-DUP",
