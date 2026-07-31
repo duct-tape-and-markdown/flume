@@ -181,6 +181,59 @@
     "notes": "readPending (2183-2194) warns and returns []. Both directions lose data - plan re-derives from an empty <pending-now> and commits it; commitPendingUpdate (2221) derives its rewrite from [] and commits '[]'. pendingParseGate cannot bound it - the empty rewrite parses green. failed/EX_MOUNT_DEAD over a new Axis-C kind: the docstring (731-743) already covers an invalid state root, and fail-fast is wanted - no agent repairs this file without discarding it."
   },
   {
+    "tag": "PENDINGGATE-FENCES-DECLARED-FILES",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "declaredPaths(entry) lands beside touchedPaths (476) as the one answer to 'what does this entry declare'; touchedPaths composes it with observedFiles"
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "the fence pre-check (293) reads declaredPaths, matching the docstring it already carries (246-248); the touchedPaths import (24) goes"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the two inline declared-file lists (1391-1395, 1738-1742) call declaredPaths instead of re-deriving it; their observedFiles-exclusion comments shrink to the helper"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "pin the split - neither helper today has a direct test"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "the out-of-fence observedFiles case, beside the lazy-fence describe (42)"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "pendingGate fences touchedPaths, which folds in dispatcher-written observedFiles - its own docstring says declared files, and the sibling write guard excludes them by name.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/builtinGates.test.ts",
+        "asserts": "pendingGate passes an entry whose declared files all sit inside the fence but whose observedFiles names a path outside it - fails on the pre-fix tree, which reports it as a fence violation the authoring phase cannot fix"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "declaredPaths returns files.new+edit+retire only; touchedPaths over the same entry additionally returns observedFiles - a one-sided change to either breaks the pair"
+      }
+    ],
+    "acceptance": "One helper answers what an entry declares; pendingGate's fence pre-check no longer reads observedFiles; no site re-derives the declared-file list inline.",
+    "notes": "Verified on disk: builtinGates.ts:246-248 promises declared files, :293 passes touchedPaths (PendingSchema.ts:481 folds in observedFiles); Dispatcher.ts:1730 and :1388 exclude observedFiles by name, re-deriving the list inline at :1391 and :1738. Unreachable under this chain today (buildFence covers every path build's guard admits); reachable when targetFence isn't the phase that recorded the footprint. Plan owns neither field, so it cannot fix such a violation."
+  },
+  {
     "tag": "LOOP-MAX-NONNUMERIC-ACCEPTED",
     "gate": {
       "kind": "open"
@@ -320,7 +373,7 @@
       "edit": [
         {
           "path": "tests/PendingSchema.test.ts",
-          "description": "agreement test: real renderSchemaForPrompt output driven through real parsePending"
+          "description": "agreement test: real renderSchemaForPrompt output driven through real parsePending; the 'no drift' test (607-623) gets the title it asserts - today it checks only that each declared name appears in the render, never the converse"
         }
       ],
       "retire": []
