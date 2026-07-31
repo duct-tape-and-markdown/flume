@@ -1,59 +1,42 @@
 # State
 
-Phase: v0.9 "the doctrine line" shipped and audited. One commit landed
-since the last `plan:` commit (`ad87a6f`): `76b6ab9` (`chore(flume):`,
-human/interactive, landed mid-tick — see below).
+Phase: v0.9 "the doctrine line" shipped and audited. Zero commits since
+the last `plan:` commit (`28df0d5` is HEAD) — no audit, no derive, empty
+inbox, nothing blocked to promote.
 
-Mode: audit. `76b6ab9` reviewed: direct rules+chain.ts edit (not a build
-entry, no `per` cite expected — same lane as `2874c2c`). It adds the
-`engineering.md` "names its retiring actor" / "condition not era" bullets
-and the `posture-sweep.md` expired-narration lens, and fixes the exact
-specimen this tick's own sweep had independently found (chain.ts:425-429's
-v0.6-era model-pin comment) by splitting the pin per phase via the
-pre-existing `Phase.agent` capability — no engine change, confirmed
-against `src/Phase.ts:115`. No drift, no action needed; an open question
-I'd drafted for that same finding was retracted as moot once the commit
-surfaced (net no-op on open-questions.md). spec-delta, inbox, and
-unblock-promote stay empty. `pending-now` re-verified against disk,
-unchanged.
+Mode: maintain. The sweep is the tick's only live dimension; the rotation
+armed by `76b6ab9`'s phrase delta stays open.
 
-## Queue (5)
+## Queue (7)
 
-Head: GITIGNORE-RUNTIME-ARTIFACTS. Then CHANGELOG-0.9.0-BACKFILL,
-SCHEMA-PROMPT-AGREEMENT-GATE, PARSEPENDINGLOOSE-WRITE-PATH-PIN,
-PENDING-GATE-HINT-OPTION — unchanged, ascending priority.
+Head: GITIGNORE-RUNTIME-ARTIFACTS. Then INLINE-EXEC-NO-WIN32-SHELL-RETRY
+(new, ordered ahead of the changelog backfill — it is a silent-wrong-output
+defect), CHANGELOG-0.9.0-BACKFILL, SCHEMA-PROMPT-AGREEMENT-GATE,
+PARSEPENDINGLOOSE-WRITE-PATH-PIN, PENDING-GATE-HINT-OPTION,
+ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD (new, prose-only, last).
 
 ## Open questions (4)
 
 Unchanged: pendingGate dual-violation report; setupWorktree/gate
-manager-detection sharing; win32 inline-exec argv mangling; `<exec-failed>`
+manager-detection sharing; win32 inline-exec argv mangling (gained a
+one-line cross-ref to the new retry entry); `<exec-failed>`
 loud-or-nothing.
 
 ## Posture sweep
 
-Posture swept through: `2874c2c` (carried forward; rotation open — not
-advanced, since the frontier hasn't emptied).
+Posture swept through: `2874c2c` (carried forward; rotation open).
 
-`76b6ab9` is a phrase delta (touches `.claude/rules/{engineering,
-posture-sweep}.md` directly): per posture-sweep.md, this re-arms the
-*entire* sweep domain, since the new bullets/lens have been applied to
-nothing yet. `src/Gate.ts` and `src/PendingSchema.ts`'s prior "covered"
-marks predate this phrase and re-enter the frontier.
+Covered this tick: the `src/Prompt.ts` neighborhood — `Prompt.ts` and its
+one value import `builtinGates.ts`, both read in full. Its other two
+imports (`Phase.ts`, `PendingSchema.ts`) are type-only and were not read,
+so they stay in the frontier.
 
-Covered this tick, against the current (post-`76b6ab9`) phrasing:
-`src/Baton.ts` (leaf, zero internal imports) — clean, already
-well-tested. Also checked the lens's named extra domain: `.flume/chain.ts`
-(the one finding, already fixed by `76b6ab9` itself) and
-`.flume/PROTOCOL.md` (clean — its inline-exec "Interim." section already
-names both trigger and retiring commit).
-
-Remaining frontier: 13 of 14 `src/` modules (all except `Baton.ts`,
-including `Gate.ts`/`PendingSchema.ts` per the re-arm above), all of
-`tests/`, `bin/`, `examples/`.
+Remaining frontier: 11 of 14 `src/` modules (all but `Baton.ts`,
+`Prompt.ts`, `builtinGates.ts`), all of `tests/`, `bin/`, `examples/`.
 
 ## Trunk
 
-HEAD `76b6ab9`. Next tick: continue the sweep frontier, or derive/audit
-if new commits or a `spec/` change land first.
+HEAD `28df0d5`. Next tick: take the next neighborhood, or audit/derive if
+commits or a `spec/` change land first.
 
-Plan continues: yes — sweep frontier open (13+ modules remain)
+Plan continues: yes — sweep frontier open (11 src modules plus tests/, bin/, examples/)

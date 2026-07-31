@@ -83,6 +83,11 @@ Harness-side mitigation already ships (prompts ASCII-swept, PROTOCOL.md's
 interim rule, marked for retirement by this fix). This question is the
 engine-lane fix underneath it.
 
+Adjacent, already filed: `INLINE-EXEC-NO-WIN32-SHELL-RETRY` narrows
+`58be15d`'s ENOENT retry so it stops re-interpreting an `sh -c` payload
+through cmd.exe. That is the *retry* path; this question is the *first*
+spawn. Whichever option wins below should not re-widen the retry.
+
 Options:
 
 1. **Encode the win32 spawn argv correctly** (UTF-8 codepage handling) —
