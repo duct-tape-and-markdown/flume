@@ -557,6 +557,68 @@
     "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
   },
   {
+    "tag": "CASCADE-ENTRY-PHASE-HUMANONLY",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "phases (263) leads with plan, so the entry phase is machine-wakeable per v0.5 decision 6; the header's three-phase list (5-11) follows the new order"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "no coverage of any example's phase order today - add the entry-phase pin over every chain in examples/"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade-chain.ts declares phases [spec, plan, build] with humanOnly ['spec'], so a cold `flume job run` wakes the one phase the chain marks human-woken.",
+    "per": {
+      "path": "spec/RELEASE-v0.1.md",
+      "section": "7. Examples"
+    },
+    "tests": [
+      {
+        "path": "tests/examples.integration.test.ts",
+        "asserts": "every chain under examples/ names a phases[0] absent from its own humanOnly list - fails on the pre-fix tree, where cascade leads with spec"
+      }
+    ],
+    "acceptance": "cascade's phases[0] is plan; a test refuses a humanOnly entry phase across every example chain; CHAIN-AUTHORING's 'cascade leads with plan' claim is true of the file it quotes.",
+    "notes": "Verified this tick: job.ts:297 wakes chain.phases[0] unconditionally (v0.5 decision 6); Phase.ts:224-229 scopes humanOnly to handoff alone, so jobRun is not the defect - the example is. docs/CHAIN-AUTHORING.md:1216-1229 shows [plan, build, spec] and says cascade leads with plan because a fresh job must derive pending first; the file it quotes says the opposite. No doc edit needed. Nothing imports cascade-chain.ts, so tsc is its only check today."
+  },
+  {
+    "tag": "EXAMPLES-INTEGRATION-VACUOUS-GREEN",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "populate-then-judge at 122; the nothing-pickable test (158-197) asserts the untouched backlog its name claims"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "gateResults.every(ok) at :122 passes over zero gates, and the second test's 'leaves the backlog untouched' title is asserted nowhere - both greens prove less than they read.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/examples.integration.test.ts",
+        "asserts": "the chain's one afterCommit gate is shown present in gateResults before the every(ok) verdict is read; and the nothing-pickable tick leaves BACKLOG.json byte-identical with no SHIPPED.md written"
+      }
+    ],
+    "acceptance": "No assertion in the file reads a verdict off a set it has not shown to be populated, and every test name's claim has an assertion behind it.",
+    "notes": "Verified this tick: the chain declares exactly one gate (backlog-groomer-chain.ts:187), so gateResults holds 1 element today - the pin does not fail pre-fix (the named exception); a gate-scheduling regression is what it catches. Test 2 asserts only committed=false plus noCommit, never re-reading BACKLOG.json. Two sections, one file, one commit: splitting would only serialize on file overlap for a one-line second half."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "blockedBy",
