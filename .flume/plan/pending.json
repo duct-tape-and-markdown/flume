@@ -619,6 +619,35 @@
     "notes": "Verified this tick: the chain declares exactly one gate (backlog-groomer-chain.ts:187), so gateResults holds 1 element today - the pin does not fail pre-fix (the named exception); a gate-scheduling regression is what it catches. Test 2 asserts only committed=false plus noCommit, never re-reading BACKLOG.json. Two sections, one file, one commit: splitting would only serialize on file overlap for a one-line second half."
   },
   {
+    "tag": "GATE-TEST-TAUTOLOGICAL-GREENS",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "delete the hand-rolled reset tail (431-437) and the title clause it stood behind (416); spell pendingGate's empty-queue case in the describe at 458"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Gate.test.ts's broken-chain tail asserts git reset, not flume; and pendingGate's legitimately-empty queue green is inherited, never spelled in its own test.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/Gate.test.ts",
+        "asserts": "every assertion in the chainLoadGate broken-chain test has the gate as its subject; and pendingGate over an empty pending.json is green on its own explicit '0 entries' assertion rather than by inheritance"
+      }
+    ],
+    "acceptance": "No assertion in tests/Gate.test.ts has git as its subject; every test name's claim has an assertion behind it; pendingGate's empty-queue green is asserted in its own test.",
+    "notes": "Verified this tick: the real revert+restore property is pinned by the real dispatcher at tests/Dispatcher.test.ts:3565-3567, so 431-437 is a hand-rolled restatement - delete it, and the title's second clause with it. pendingGate returns ok over entries=[] (builtinGates.ts:293-312); [] is a valid drained queue, so the case is legitimate and the rule wants it spelled. Neither half fails pre-fix (the named exception). Overlaps GATECONTEXT-REPOROOT-REQUIRED on this path - independent."
+  },
+  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "blockedBy",
