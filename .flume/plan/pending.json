@@ -1,55 +1,5 @@
 [
   {
-    "tag": "PENDING-PARSE-FAILURE-REFUSES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "readPending refuses on a parse failure at the reads that decide work (1022 singleton, 1111 fanout) and at the rewrite read (2221); the tick returns failed per the EX_MOUNT_DEAD class. The two pendingAfter report reads (1093, 1536) keep today's tolerance, declared at the site"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the third reader, same shape: `flume render` (982-997) prints the parse errors then hands ctx.pending an empty array (999) - it refuses instead, so no prompt renders over a queue that failed to resolve"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "no corrupt-pending fixture exists today; add both refusal cases"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "cover the render refusal beside the existing render describe (525)"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "An unparseable pending.json reads as an empty queue - a tick reports nothing pickable and hibernates clean, and a post-wave rewrite commits [] over the whole file.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation; and a wave whose pending.json is corrupted after tick start leaves the file byte-identical rather than committing []. Both fail on the pre-fix tree"
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "`flume render <singleton>` over a corrupt pending.json writes no prompt to stdout and exits non-zero - fails on the pre-fix tree, which prints the errors to stderr and renders anyway"
-      }
-    ],
-    "acceptance": "A corrupt pending.json produces a non-zero tick naming the parse errors and no agent invocation; no path derives a rewrite of pending.json, or a rendered prompt, from a failed parse.",
-    "notes": "readPending (2183-2194) warns and returns []. Both directions lose data - plan re-derives from an empty <pending-now> and commits it; commitPendingUpdate (2221) derives its rewrite from [] and commits '[]'. pendingParseGate cannot bound it - the empty rewrite parses green. failed/EX_MOUNT_DEAD over a new Axis-C kind: the docstring (731-743) already covers an invalid state root, and fail-fast is wanted - no agent repairs this file without discarding it."
-  },
-  {
     "tag": "PENDINGGATE-FENCES-DECLARED-FILES",
     "gate": {
       "kind": "open"
@@ -733,36 +683,6 @@
     "notes": "The pinned behavior (jobNew ignore-merge) survives v0.11 unchanged (job.ts:34/177/219/639), but its three cited lines sit inside tests/job.test.ts's jobNew describe (271-506), which JOB-BRANCH-GRAMMAR-RETIRED rewrites and JOB-EXTRACT-REMOVED further churns - landing this pin before both land would duplicate the work. Blocked on the later of the two."
   },
   {
-    "tag": "PROMPT-TEST-FENCE-SLICE-VACUOUS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "the no-entryChannelPaths test (217-241) shows both slice markers present before reading the verdict off the slice - the sibling at 211-214 already does; and asserts the two claims its title makes (fence is exactly entry.files, no stray empty line)"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The fence section at 236-240 is sliced between two indexOf results - an absent marker yields '' and the not-toContain verdict stays green over nothing.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "tests": [
-      {
-        "path": "tests/Prompt.test.ts",
-        "asserts": "the fence slice is shown non-empty before its not-toContain verdict is read; the fence names exactly src/only.ts and carries no blank bullet line - the title's own two claims"
-      }
-    ],
-    "acceptance": "No assertion in tests/Prompt.test.ts reads a verdict off a slice it has not shown to be populated; every test name's claim has an assertion behind it.",
-    "notes": "Sweep finding, tests/Prompt.test.ts neighborhood. Verified on disk: String.indexOf returns -1 for an absent marker, so a rendering that emitted no scoped block at all slices to '' and :240 passes. Does not fail pre-fix (the named exception) - both markers are present today; what it catches is the scoped rendering regressing to the unscoped one. Prompt.ts:275 dedupes the fence, so 'exactly' is assertable."
-  },
-  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "open"
@@ -1327,65 +1247,6 @@
     "tests": [],
     "acceptance": "One render(promptBody) helper is defined once in tests/Prompt.test.ts and used by both describes; vitest green; test behavior unchanged.",
     "notes": "Sweep finding, tests/Prompt.test.ts neighborhood (frontier armed by 9dffc51, which touched this file's sibling src/Prompt.ts). Verified on disk: the two render() closures are character-for-character identical. Same shape as DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP - a future required-arg change to renderPrompt's call shape can land in one and silently miss the other. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
-  },
-  {
-    "tag": "CASCADE-EXAMPLE-HANDROLLED-PENDINGGATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "swap the hand-rolled pendingParseGate (95-121) for pendingGate({ targetFence: build, extension: entryExtension }) per docs/CHAIN-AUTHORING.md's own example (238-268); hoist the build phase's const above plan's so plan.gates can reference it directly, matching the doc's non-getter case"
-        },
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "pin the swap - cascadeChain's plan phase gate list carries a gate named 'pending-gate' (pendingGate's identity), not 'pending.json parses'"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade-chain.ts hand-rolls a pending-parse gate that CHAIN-AUTHORING.md itself says predates the pendingGate builtin - the flagship example never adopted its own doc's advice.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/examples.integration.test.ts",
-        "asserts": "cascadeChain.phases.find(p => p.name === 'plan').gates contains a gate named 'pending-gate' - fails on the pre-fix tree, which names it 'pending.json parses'"
-      }
-    ],
-    "acceptance": "cascade-chain.ts's plan phase gates is [pendingGate({ targetFence: build, extension: entryExtension })]; the hand-rolled pendingParseGate function is gone; tsc/vitest green.",
-    "notes": "docs/CHAIN-AUTHORING.md:313 already says this shape predates the pendingGate builtin - reach for that first; MIGRATING-0.8.md:78 says the same. cascade-chain.ts:84-93's own why-custom cites tscGate/vitestGate/eslintGate, never pendingGate, so the divergence isn't declared against the mechanism it overlaps. build is declared after plan today; targetFence: build needs build hoisted above plan, or a get gates() per the docs' own deferred-fence pattern."
-  },
-  {
-    "tag": "GATE-TEST-REPO-BOOTSTRAP-DUP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "fold writablePathsGate's beforeEach (207-221) and chainLoadGate's beforeEach (361-373) into one shared repo-bootstrap helper (mkdtemp+git init+config+seed commit); fold commitFiles (227-238) and commit (380-394) into one shared commit helper taking an optional message; both describes call the shared pair"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "tests/Gate.test.ts hand-rolls the same git-repo bootstrap and commit helper twice across two describes instead of sharing one.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [],
-    "acceptance": "One repo-bootstrap helper and one commit helper are each defined once in tests/Gate.test.ts and used by both describes; vitest green; test behavior unchanged.",
-    "notes": "Sweep finding, tests/Gate.test.ts neighborhood. Verified on disk: writablePathsGate's beforeEach (207-221) and chainLoadGate's beforeEach (361-373) are identical git-init+config+seed-commit sequences, differing only in mkdtemp prefix; commitFiles (227-238) and commit (380-394) are identical write+commit helpers, differing only in a hardcoded vs parameterized message. Same shape as DISPATCHER-TEST-FRICTION-CHAIN-FIXTURE-DUP. A deletion pins nothing decidably; the suite is the proof."
   },
   {
     "tag": "CHAIN-AUTHORING-SETUPWORKTREE-PROVISIONING-RECIPE",
