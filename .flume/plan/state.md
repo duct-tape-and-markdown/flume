@@ -8,7 +8,7 @@ Rotation armed (code delta touched src/Prompt.ts, src/builtinGates.ts,
 examples/cascade-chain.ts, tests/examples.integration.test.ts,
 tests/PendingSchema.test.ts, tests/Prompt.test.ts past the stamp). Covered
 this rotation: src/Prompt.ts, src/builtinGates.ts, examples/cascade-chain.ts,
-tests/examples.integration.test.ts.
+tests/examples.integration.test.ts, tests/PendingSchema.test.ts.
 
 ## Operator leg (not an entry)
 
