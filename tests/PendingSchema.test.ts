@@ -622,6 +622,92 @@ describe("renderSchemaForPrompt", () => {
     expect(result.ok).toBe(false);
   });
 
+  /**
+   * Agreement gate (engineering.md § "A seam gate reads what the real
+   * writer wrote"): the checks above only confirm field *names* line up.
+   * A hint's stated numeric bound (e.g. "≤200 chars") is free text on the
+   * same declaration record as `schema` — nothing ties the two together,
+   * so the hint can claim a bound the schema doesn't actually enforce (or
+   * vice versa). These tests extract the bound from the real
+   * `renderSchemaForPrompt` output and drive it through the real
+   * `parsePending`, so a hint/schema mismatch fails here instead of
+   * shipping silently.
+   */
+  function extractCharBound(rendered: string, fieldName: string): number {
+    const match = new RegExp(`"${fieldName}":[\\s\\S]*?≤(\\d+) chars`).exec(
+      rendered,
+    );
+    if (!match) {
+      throw new Error(
+        `rendered schema states no "≤N chars" bound for "${fieldName}" — cannot derive the agreement check`,
+      );
+    }
+    return Number(match[1]);
+  }
+
+  it("tag: a tag at the rendered length bound parses; one char past it does not", () => {
+    const max = extractCharBound(renderSchemaForPrompt(), "tag");
+    const atBound = "A".repeat(max);
+    const overBound = "A".repeat(max + 1);
+
+    const ok = parsePending(
+      JSON.stringify([{ ...baseEntry, tag: atBound, gate: { kind: "open" } }]),
+    );
+    expect(ok.ok, JSON.stringify(ok.errors)).toBe(true);
+
+    const bad = parsePending(
+      JSON.stringify([
+        { ...baseEntry, tag: overBound, gate: { kind: "open" } },
+      ]),
+    );
+    expect(bad.ok).toBe(false);
+  });
+
+  it("tag: every character the rendered charset admits is accepted by the real parser", () => {
+    // Rendered as "<letters/digits/._()- only, no whitespace, ...>".
+    const sample = "aZ9._()-";
+    const result = parsePending(
+      JSON.stringify([{ ...baseEntry, tag: sample, gate: { kind: "open" } }]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  });
+
+  it("tag: whitespace, excluded by the rendered charset, is rejected by the real parser", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, tag: "has space", gate: { kind: "open" } },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it.each(["summary", "notes"] as const)(
+    "extension field %s: a value at its rendered cap parses; one char past it does not",
+    (name) => {
+      const rendered = renderSchemaForPrompt(testExtension);
+      const max = extractCharBound(rendered, name);
+      const validEntry = {
+        ...baseEntry,
+        gate: { kind: "open" },
+        summary: "a valid summary",
+        per: { path: "src/foo.ts", section: "some section" },
+        notes: "valid notes",
+      };
+
+      const ok = parsePending(
+        JSON.stringify([{ ...validEntry, [name]: "x".repeat(max) }]),
+        testExtension,
+      );
+      expect(ok.ok, JSON.stringify(ok.errors)).toBe(true);
+
+      const bad = parsePending(
+        JSON.stringify([{ ...validEntry, [name]: "x".repeat(max + 1) }]),
+        testExtension,
+      );
+      expect(bad.ok).toBe(false);
+    },
+  );
+
   it("states the in-force tag constraint — core alone", () => {
     const rendered = renderSchemaForPrompt();
     expect(rendered).toContain(`"tag": "<letters/digits/._()- only`);
