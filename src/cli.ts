@@ -50,6 +50,7 @@ import { claudeCode } from "./Agent.js";
 import type { TickContext, Chain } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import { parsePending } from "./PendingSchema.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -979,22 +980,29 @@ async function main(): Promise<number> {
     const entryTag = entryIdx >= 0 ? rest[entryIdx + 1] : undefined;
 
     const pendingPath = join(flumeDir, "plan", "pending.json");
-    const pending = existsSync(pendingPath)
-      ? (() => {
-          const r = parsePending(
-            readFileSync(pendingPath, "utf8"),
-            chain.entryExtension,
-          );
-          if (!r.ok) {
-            console.error(`pending.json invalid (${r.errors.length} errors):`);
-            for (const e of r.errors) {
-              console.error(`  [${e.index}] ${e.path}: ${e.message}`);
-            }
-            return [];
-          }
-          return r.entries;
-        })()
-      : [];
+    let pending: PendingEntry[];
+    if (existsSync(pendingPath)) {
+      const r = parsePending(
+        readFileSync(pendingPath, "utf8"),
+        chain.entryExtension,
+      );
+      if (!r.ok) {
+        // Same reader `Dispatcher.tick()`'s decide-reads refuse on
+        // (engineering.md "Loud or nothing"): a queue that never resolved
+        // must not read as an empty one — render is a third reader of the
+        // same file, and rendering a prompt over `[]` would show the agent a
+        // queue that lost every real entry rather than the parse errors
+        // blocking it.
+        console.error(`pending.json invalid (${r.errors.length} errors):`);
+        for (const e of r.errors) {
+          console.error(`  [${e.index}] ${e.path}: ${e.message}`);
+        }
+        return 2;
+      }
+      pending = r.entries;
+    } else {
+      pending = [];
+    }
 
     const ctx: TickContext = { cwd: repoRoot, flumeDir, pending };
     if (phase.concurrency === "fanout") {

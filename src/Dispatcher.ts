@@ -31,7 +31,7 @@ import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { parsePending } from "./PendingSchema.js";
-import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
+import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
 /**
  * Local-mutable shape for accumulating gate results before they widen to
@@ -744,6 +744,28 @@ export const EX_TERMINAL_MISCONFIG = 78;
 export const EX_MOUNT_DEAD = 69;
 
 /**
+ * Thrown by the strict `readPending()` — the reads that decide pickable work
+ * (singleton/fanout tick start) or derive a rewrite (`commitPendingUpdate`) —
+ * when `pending.json` exists but fails to parse. engineering.md "Loud or
+ * nothing": a queue that never resolved must not read as an empty one, and
+ * nothing downstream may derive a decision or a rewrite from it. `tick()`
+ * catches this exactly where it catches chain-resolution failure and folds
+ * it into the same {@link EX_MOUNT_DEAD} failed-outcome shape — a pending.json
+ * no agent can parse is exactly as unusable next tick as this one.
+ */
+export class PendingParseFailure extends Error {
+  readonly errors: readonly ParseError[];
+  constructor(errors: readonly ParseError[]) {
+    super(
+      `pending.json failed to parse (${errors.length} error(s)): ` +
+        errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; "),
+    );
+    this.name = "PendingParseFailure";
+    this.errors = errors;
+  }
+}
+
+/**
  * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
  * deterministic, non-retryable, no agent ran. `kind` is a union open to
  * future Axis-C members; `"orphaned-awake"` (awake flags naming phases the
@@ -964,10 +986,31 @@ export class Dispatcher {
 
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
+    let phaseOutcome: PhaseTickOutcome;
+    try {
+      phaseOutcome =
+        phase.concurrency === "singleton"
+          ? await this.runSingleton(phase, agent)
+          : await this.runFanout(phase, agent, chain, forkResolver);
+    } catch (err) {
+      if (!(err instanceof PendingParseFailure)) throw err;
+      // Same failure class as an unresolved chain (v0.7 §4): no agent ran
+      // (singleton/fanout's decide-read refused before invoking one) or a
+      // wave's shipped work landed on trunk but the rewrite that would clear
+      // it from pending.json refused rather than deriving `[]` from a parse
+      // it never trusted — either way this tick does no more work, and a
+      // fresh process next tick reads the same unparseable file until a
+      // human fixes it.
+      this.log.error(`[flume] ${err.message}`);
+      return {
+        hibernated: false,
+        failed: true,
+        awakeAfter: this.baton.awake(),
+        summary: err.message,
+      };
+    }
     const { result, noCommit, provisionFailures, tags, mergeOutcomes } =
-      phase.concurrency === "singleton"
-        ? await this.runSingleton(phase, agent)
-        : await this.runFanout(phase, agent, chain, forkResolver);
+      phaseOutcome;
 
     // §15: fold the already-computed no-commit classification into the
     // TickResult before handoff — a chain's `handoff` is the only place a
@@ -1119,7 +1162,7 @@ export class Dispatcher {
         committed,
         ...(committed ? { commitSha: postHead } : {}),
         gateResults,
-        pendingAfter: await this.readPending(),
+        pendingAfter: await this.readPendingTolerant(),
         shippedTags: [],
         revertedTags: [],
       },
@@ -1458,6 +1501,16 @@ export class Dispatcher {
       // commitPendingUpdate then returns the pre-existing HEAD, which must
       // not be reported as this wave's commit.
       const preUpdate = await git.revParse(repoRoot);
+      // commitPendingUpdate's rewrite read is the strict `readPending()`
+      // (engineering.md "Loud or nothing"): if pending.json was corrupted by
+      // something outside this tick in the window since the wave's
+      // decide-read, the throw propagates past worktree cleanup below,
+      // straight to `tick()`'s PendingParseFailure catch — already-shipped
+      // commits stay on trunk (cherry-picked above), but the file itself is
+      // never overwritten with a rewrite derived from `[]`. Surviving
+      // worktrees are the accepted cost of refusing rather than proceeding;
+      // the next `pruneWorktrees` call reclaims their metadata once a human
+      // has fixed the file.
       const updSha = await this.commitPendingUpdate(shippedTags, mergeOutcomes);
       if (updSha !== preUpdate) chorSha = updSha;
       this.log.info(
@@ -1566,7 +1619,7 @@ export class Dispatcher {
         committed: committedWave,
         ...(chorSha ? { commitSha: chorSha } : {}),
         gateResults: allGateResults,
-        pendingAfter: await this.readPending(),
+        pendingAfter: await this.readPendingTolerant(),
         shippedTags: shipped.map((s) => s.tag),
         revertedTags: mergeReverted.map((e) => e.tag),
       },
@@ -2225,7 +2278,34 @@ export class Dispatcher {
     return "platform-preempt";
   }
 
+  /**
+   * Strict reader: throws {@link PendingParseFailure} on a parse error rather
+   * than degrading to `[]`. Used at every read this dispatcher acts on — the
+   * singleton/fanout decide-reads and `commitPendingUpdate`'s rewrite read
+   * (engineering.md "Loud or nothing": a decision or a rewrite must never
+   * derive from an input that failed to resolve). `readPendingTolerant`
+   * below is the one declared exception, for the two report-only reads.
+   */
   private async readPending(): Promise<PendingEntry[]> {
+    if (!existsSync(this.pendingPath)) return [];
+    const raw = await readFile(this.pendingPath, "utf8");
+    const r = parsePending(raw, this.entryExtension);
+    if (!r.ok) throw new PendingParseFailure(r.errors);
+    return r.entries;
+  }
+
+  /**
+   * Tolerant twin of `readPending()`, kept only for `TickResult.pendingAfter`
+   * — an informational re-read taken after this tick's own strict decide- or
+   * rewrite-read already ran (and, for the fanout wave, after any shipped
+   * work already landed on trunk). A parse failure here means something
+   * outside this tick corrupted the file in the gap between that strict read
+   * and now; degrading to `[]` is bounded because `pendingAfter` feeds only
+   * `chain.ts`'s advisory `hasPickable` handoff check, never a rewrite or a
+   * work decision (engineering.md "Loud or nothing": the degraded-but-
+   * proceeding path, declared and cited at its two call sites).
+   */
+  private async readPendingTolerant(): Promise<PendingEntry[]> {
     if (!existsSync(this.pendingPath)) return [];
     const raw = await readFile(this.pendingPath, "utf8");
     const r = parsePending(raw, this.entryExtension);

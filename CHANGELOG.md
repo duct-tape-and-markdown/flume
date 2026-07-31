@@ -51,6 +51,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   its word and declared a symbol was refused by the fence on a guaranteed
   revert (`.claude/rules/engineering.md`, "A seam gate reads what the real
   writer wrote").
+- An unparseable `pending.json` no longer reads as an empty queue. The
+  reads that decide pickable work (`Dispatcher.tick()`'s singleton/fanout
+  starts) and the rewrite a ship wave derives (`commitPendingUpdate`) now
+  refuse — the tick returns a `failed` outcome (the `EX_MOUNT_DEAD` class)
+  instead of reporting nothing pickable and hibernating clean, or
+  committing `[]` over the whole file. `flume render` refuses the same way
+  instead of printing the parse errors and rendering a prompt over an
+  empty queue anyway (`.claude/rules/engineering.md`, "Loud or nothing").
 
 ## [0.9.0] - 2026-07-31
 

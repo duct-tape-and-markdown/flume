@@ -2168,6 +2168,97 @@ describe("Dispatcher fanout — empty pickable set", () => {
   });
 });
 
+describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
+  it("a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation", async () => {
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    await mkdir(dirname(pendingPath), { recursive: true });
+    await writeFile(pendingPath, "{ this is not valid json", "utf8");
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    const agent: Agent = {
+      name: "fake-fanout",
+      async invoke() {
+        invoked = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const errors: string[] = [];
+    const rec: Logger = { info: () => {}, warn: () => {}, error: (l) => errors.push(l) };
+
+    const preHead = await head(fx.repo);
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: rec,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.failed).toBe(true);
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.result).toBeUndefined();
+    expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
+      true,
+    );
+    // No commit was made — the corrupt file is untouched.
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(await readFile(pendingPath, "utf8")).toBe("{ this is not valid json");
+  });
+
+  it("a wave whose pending.json is corrupted after tick start leaves the file byte-identical rather than committing []", async () => {
+    const entries = [makeEntry("SHIP-A", ["src/a.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+
+    // Stands in for a concurrent process corrupting pending.json mid-wave —
+    // same mechanism the sibling "commitPendingUpdate rewrite reads fresh"
+    // suite above uses to simulate a race, but this time the concurrent
+    // write is unparseable rather than a valid concurrent edit.
+    const corrupt = "{ corrupted mid-wave, not json";
+    const agent = fanoutAgent({
+      "ship-a": async (cwd) => {
+        await writeFile(pendingPath, corrupt, "utf8");
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
+      },
+    });
+
+    const errors: string[] = [];
+    const rec: Logger = { info: () => {}, warn: () => {}, error: (l) => errors.push(l) };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: rec,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.failed).toBe(true);
+    // The rewrite never derived `[]` from the corrupted read and overwrote
+    // it — the concurrent corruption survives byte-for-byte.
+    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+  }, 20_000);
+});
+
 // ---------- foundations governor (§v0.3) ----------
 
 describe("Dispatcher fanout — foundations governor skips fork-blocked entries", () => {

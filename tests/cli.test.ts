@@ -574,6 +574,37 @@ describe("flume render — CJS-context host refusal via the real CLI (v0.7 §5)"
 });
 
 /**
+ * PENDING-PARSE-FAILURE-REFUSES, engineering.md "Loud or nothing" — `render`
+ * is a third reader of pending.json alongside `Dispatcher.tick()`'s
+ * decide/rewrite reads. Pre-fix, a parse failure printed the errors to
+ * stderr and fell through to `ctx.pending = []`, then rendered the prompt
+ * anyway — a plan/build agent would see an empty queue instead of the
+ * parse errors blocking it.
+ */
+describe("flume render — corrupt pending.json refuses instead of rendering over an empty queue (PENDING-PARSE-FAILURE-REFUSES)", () => {
+  it("writes no prompt to stdout and exits non-zero", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      const pendingPath = join(repo.dir, ".flume", "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(pendingPath, "{ not valid json", "utf8");
+
+      const r = await runCli(repo.dir, ["render", "probe"]);
+
+      expect(r.code).not.toBe(0);
+      // Combined stdout+stderr never carries the prompt body — had it
+      // rendered, this marker (from writeRepoConfig's default prompt
+      // content) would be present.
+      expect(r.out).not.toContain("job probe prompt");
+      expect(r.out).toContain("pending.json invalid");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
  * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
  * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
  * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
