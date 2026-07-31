@@ -1,17 +1,61 @@
+// execFile mocked so inline-exec tests can simulate a win32 ENOENT without a
+// real Windows host; the custom-promisify symbol mirrors Node's real
+// child_process decoration so execGate's `{ stdout, stderr }` destructure
+// (promisify(execFile)) still resolves correctly through the mock.
+vi.mock("node:child_process", () => {
+  const execFileMock = vi.fn();
+  Object.assign(execFileMock, {
+    [Symbol.for("nodejs.util.promisify.custom")]: (
+      cmd: string,
+      args: string[],
+      opts: unknown,
+    ) =>
+      new Promise((resolve, reject) => {
+        execFileMock(
+          cmd,
+          args,
+          opts,
+          (err: unknown, stdout: string, stderr: string) => {
+            if (err) reject(err);
+            else resolve({ stdout, stderr });
+          },
+        );
+      }),
+  });
+  return { execFile: execFileMock };
+});
+
+import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderPrompt } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 
+const execFileMock = vi.mocked(execFile);
+
+async function withPlatform(
+  platform: NodeJS.Platform,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: platform });
+  try {
+    await fn();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
+}
+
 let dir: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "flume-prompt-"));
+  execFileMock.mockReset();
 });
 
 afterEach(async () => {
@@ -194,5 +238,124 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
       out.indexOf("Outer ceiling"),
     );
     expect(fenceSection).not.toContain("src/**");
+  });
+});
+
+type ExecCallback = (
+  err: NodeJS.ErrnoException | null,
+  stdout: string,
+  stderr: string,
+) => void;
+
+function enoent(): NodeJS.ErrnoException {
+  return Object.assign(new Error("spawn sh ENOENT"), { code: "ENOENT" });
+}
+
+describe("renderPrompt — inline-exec win32 shell fallback (RELEASE-v0.4 §6)", () => {
+  async function render(): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "value=!`echo hi`\n", "utf8");
+    return renderPrompt({
+      phase: phase(),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+    });
+  }
+
+  it("POSIX: spawns sh -c directly with no shell option — byte-identical to pre-fallback behavior", async () => {
+    await withPlatform("linux", async () => {
+      execFileMock.mockImplementation(((
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: ExecCallback,
+      ) => {
+        cb(null, "posix-output", "");
+        return {} as never;
+      }) as never);
+
+      const out = await render();
+
+      expect(out).toContain("value=posix-output");
+      expect(execFileMock).toHaveBeenCalledOnce();
+      const [cmd, args, opts] = execFileMock.mock.calls[0]!;
+      expect(cmd).toBe("sh");
+      expect(args).toEqual(["-c", "echo hi"]);
+      expect("shell" in (opts as Record<string, unknown>)).toBe(false);
+    });
+  });
+
+  it("win32 (simulated ENOENT): retries through the shell and substitutes the retry's stdout", async () => {
+    await withPlatform("win32", async () => {
+      let call = 0;
+      execFileMock.mockImplementation(((
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: ExecCallback,
+      ) => {
+        call++;
+        if (call === 1) {
+          cb(enoent(), "", "");
+        } else {
+          cb(null, "shell-output", "");
+        }
+        return {} as never;
+      }) as never);
+
+      const out = await render();
+
+      expect(out).toContain("value=shell-output");
+      expect(out).not.toContain("<exec-failed");
+      expect(execFileMock).toHaveBeenCalledTimes(2);
+      const [firstCmd, firstArgs, firstOpts] = execFileMock.mock.calls[0]!;
+      const [retryCmd, retryArgs, retryOpts] = execFileMock.mock.calls[1]!;
+      expect(firstCmd).toBe("sh");
+      expect(firstArgs).toEqual(["-c", "echo hi"]);
+      expect("shell" in (firstOpts as Record<string, unknown>)).toBe(false);
+      expect(retryCmd).toBe("sh");
+      expect(retryArgs).toEqual(["-c", "echo hi"]);
+      expect(retryOpts).toMatchObject({ shell: true });
+    });
+  });
+
+  it("win32 (ENOENT on the shell retry too): falls back to <exec-failed> instead of throwing", async () => {
+    await withPlatform("win32", async () => {
+      execFileMock.mockImplementation(((
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: ExecCallback,
+      ) => {
+        cb(enoent(), "", "");
+        return {} as never;
+      }) as never);
+
+      const out = await render();
+
+      expect(out).toContain('<exec-failed cmd="echo hi">');
+      expect(execFileMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("non-win32 ENOENT is not retried through the shell", async () => {
+    await withPlatform("linux", async () => {
+      execFileMock.mockImplementation(((
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: ExecCallback,
+      ) => {
+        cb(enoent(), "", "");
+        return {} as never;
+      }) as never);
+
+      const out = await render();
+
+      expect(out).toContain('<exec-failed cmd="echo hi">');
+      expect(execFileMock).toHaveBeenCalledOnce();
+    });
   });
 });

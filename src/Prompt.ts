@@ -26,14 +26,11 @@
  * attempt ships.
  */
 
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
 
+import { execGate } from "./builtinGates.js";
 import type { Phase } from "./Phase.js";
 import type { PendingEntry } from "./PendingSchema.js";
-
-const exec = promisify(execFile);
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
@@ -196,7 +193,7 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
     matches.map(async (m) => {
       const cmd = m[1]!.trim();
       try {
-        const { stdout } = await exec("sh", ["-c", cmd], {
+        const { stdout } = await execGate("sh", ["-c", cmd], {
           cwd,
           maxBuffer: 4 * 1024 * 1024,
         });

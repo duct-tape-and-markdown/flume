@@ -33,9 +33,11 @@ const exec = promisify(execFile);
  * npm) are .cmd shims on Windows, which Node refuses to spawn without a
  * shell (CVE-2024-27980 hardening). A direct spawn is tried first so args
  * keep exact quoting semantics; only a win32 ENOENT — the shim case, where
- * gate args are chain-authored flags — retries through the shell.
+ * gate args are chain-authored flags — retries through the shell. Exported
+ * so `Prompt.ts`'s inline-exec evaluation shares the fallback rather than
+ * duplicating it (RELEASE-v0.4 §6).
  */
-async function execGate(
+export async function execGate(
   cmd: string,
   args: string[],
   opts: { cwd: string; maxBuffer: number },
