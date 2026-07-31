@@ -335,7 +335,7 @@ const phaseAgent = (model: string) =>
  * condition files the re-pin as a pending entry rather than leaving this
  * comment to describe a decision that no longer holds.
  */
-const planAgent = phaseAgent("opus");
+const planAgent = phaseAgent("sonnet");
 const buildAgent = phaseAgent("sonnet");
 
 // ---------- phases ----------
