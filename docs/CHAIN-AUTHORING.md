@@ -830,13 +830,27 @@ without round-tripping through `promptArgs`:
 
 Notes:
 
-- Commands run through `sh -c`, so pipes, redirects, and `||` work.
+- The command text reaches `sh` through **stdin**, not argv — `sh` is
+  spawned with no command-line arguments and the command is written to its
+  stdin then closed. Pipes, redirects, and `||` all still work, since `sh`
+  itself parses the text. (`execFile("sh", ["-c", cmd])` corrupted any
+  non-ASCII byte in `cmd` on win32 under MSYS2's re-parsing of the Windows
+  command line; stdin transport doesn't.)
+- Consequence: **`sh` consumes stdin**, so a span whose own command reads
+  stdin sees EOF instead of any inherited input. Don't write a span that
+  depends on reading stdin.
 - All inline-execs run in parallel; don't depend on ordering between them.
 - Output is capped at 4 MiB.
-- On failure, the placeholder becomes
-  `<exec-failed cmd="...">stderr</exec-failed>` — the prompt still sends.
-  Use inline-exec for _soft_ context (recent commits, current state); use
-  `promptArgs` for required values.
+- **A span that fails to resolve — non-zero exit, spawn failure, `sh` not
+  found, or a cap overrun — aborts the whole render.** The agent is never
+  invoked; the error names every failing span's command text and its
+  stderr, and the tick classifies as a no-commit outcome distinct from a
+  voluntary bail. There is no substituted placeholder and no partial send —
+  every span in a prompt is load-bearing. An empty-but-successful command
+  (`git diff` with no changes) is not a failure: exit status decides, never
+  output length. Keep spans command lines you're confident will succeed;
+  a command that can legitimately fail belongs behind `promptArgs`-level
+  handling in the chain, not inline-exec.
 
 ### The `<harness>` block
 

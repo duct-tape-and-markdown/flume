@@ -16,10 +16,12 @@
  *
  * A `<prior-attempt>` block follows it whenever the dispatcher hands in a
  * persisted {@link PriorAttempt} — the bounded record of a previous no-commit
- * attempt, tagged with exactly one of the three causally-distinct modes
- * (§6 no-commit taxonomy): `gate-revert` (committed then a gate reverted it),
- * `voluntary-bail` (exited cleanly refusing a constraint), `platform-preempt`
- * (the process failed for non-work reasons — not a defect in the work). Each
+ * attempt, tagged with exactly one of the four causally-distinct modes
+ * (§6 no-commit taxonomy, widened by RELEASE-v0.10 §3): `gate-revert`
+ * (committed then a gate reverted it), `voluntary-bail` (exited cleanly
+ * refusing a constraint), `platform-preempt` (the process failed for
+ * non-work reasons — not a defect in the work), `render-refused` (the prompt
+ * itself never resolved — the agent was never invoked). Each
  * renders distinctly so the retry knows what actually happened. Like
  * `<harness>` it is dispatcher-owned and structural: no `{{token}}` in the
  * prompt file, no `promptArgs`. Absent on a first attempt; cleared once an
@@ -43,11 +45,16 @@ const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
 
 /**
- * The three causally-distinct ways a tick produces no usable commit (§6).
- * The discriminant of {@link PriorAttempt} and the value carried on
- * `TickOutcome.noCommit`; exactly one per no-commit tick.
+ * The four causally-distinct ways a tick produces no usable commit (§6,
+ * widened by RELEASE-v0.10 §3). The discriminant of {@link PriorAttempt} and
+ * the value carried on `TickOutcome.noCommit`; exactly one per no-commit
+ * tick.
  */
-export type NoCommitMode = "gate-revert" | "voluntary-bail" | "platform-preempt";
+export type NoCommitMode =
+  | "gate-revert"
+  | "voluntary-bail"
+  | "platform-preempt"
+  | "render-refused";
 
 /**
  * A prior attempt that committed and was then REVERTED by a gate
@@ -98,6 +105,20 @@ export interface PlatformPreemptAttempt {
 }
 
 /**
+ * The render aborted before the agent was invoked — one or more inline-exec
+ * spans in the prompt did not resolve (RELEASE-v0.10 §3). Distinct from
+ * `voluntary-bail` (the agent ran and chose not to commit) and from
+ * `platform-preempt` (the agent process itself failed): here the agent never
+ * ran at all, so a chain's `handoff` can tell "could not see" from "chose
+ * not to act".
+ */
+export interface RenderRefusedAttempt {
+  mode: "render-refused";
+  /** Every failing span's command text and stderr, bounded. */
+  failures: string;
+}
+
+/**
  * A prior no-commit attempt for one entry (fanout, keyed by tag) or phase
  * (singleton, keyed by phase name) — a mode-tagged union, exactly one
  * variant. The dispatcher persists this to disk when a tick yields no usable
@@ -108,7 +129,8 @@ export interface PlatformPreemptAttempt {
 export type PriorAttempt =
   | GateRevertAttempt
   | VoluntaryBailAttempt
-  | PlatformPreemptAttempt;
+  | PlatformPreemptAttempt
+  | RenderRefusedAttempt;
 
 /**
  * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
@@ -191,28 +213,66 @@ function substitutePlaceholders(
   return result;
 }
 
+/** One inline-exec span that failed to resolve — its command text and stderr. */
+export interface InlineExecFailure {
+  cmd: string;
+  stderr: string;
+}
+
+/**
+ * Thrown by {@link evaluateInlineExec} when at least one inline-exec span
+ * cannot be resolved (non-zero exit, spawn failure, `sh` not found, cap
+ * overrun) — RELEASE-v0.10 §3: the render aborts and the agent is never
+ * invoked. `message` names every failing span's command text and stderr, so
+ * a caller that just logs `.message` (rather than reading `.failures`) still
+ * surfaces the full picture.
+ */
+export class InlineExecRenderError extends Error {
+  readonly failures: InlineExecFailure[];
+
+  constructor(failures: InlineExecFailure[]) {
+    super(
+      [
+        `prompt render aborted: ${failures.length} inline-exec span(s) failed to resolve`,
+        ...failures.map((f) => `  cmd: ${f.cmd}\n  stderr: ${f.stderr}`),
+      ].join("\n"),
+    );
+    this.name = "InlineExecRenderError";
+    this.failures = failures;
+  }
+}
+
+type InlineExecOutcome =
+  | { ok: true; match: string; replacement: string }
+  | { ok: false; match: string; cmd: string; stderr: string };
+
 async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
   // Collect all matches first so we can run them in parallel.
   const matches = [...raw.matchAll(INLINE_EXEC_RE)];
   if (matches.length === 0) return raw;
 
-  const results = await Promise.all(
-    matches.map(async (m) => {
+  const results: InlineExecOutcome[] = await Promise.all(
+    matches.map(async (m): Promise<InlineExecOutcome> => {
       const cmd = m[1]!.trim();
       try {
         const { stdout } = await runInlineExec(cmd, cwd);
-        return { match: m[0], replacement: stdout.trimEnd() };
+        return { ok: true, match: m[0], replacement: stdout.trimEnd() };
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; message: string };
-        return {
-          match: m[0],
-          replacement: `<exec-failed cmd="${cmd}">${
-            e.stderr ?? e.message
-          }</exec-failed>`,
-        };
+        return { ok: false, match: m[0], cmd, stderr: e.stderr ?? e.message };
       }
     }),
   );
+
+  // Loud or nothing (RELEASE-v0.10 §3): any unresolved span aborts the whole
+  // render before the agent is invoked — no substituted marker standing in
+  // for output that never came.
+  const failures = results.filter((r): r is Extract<InlineExecOutcome, { ok: false }> => !r.ok);
+  if (failures.length > 0) {
+    throw new InlineExecRenderError(
+      failures.map((f) => ({ cmd: f.cmd, stderr: f.stderr })),
+    );
+  }
 
   // Replace by walking the original string with computed offsets — multiple
   // matches with the same text would otherwise alias on naive String.replace.
@@ -221,7 +281,7 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i]!;
     const start = m.index!;
-    out += raw.slice(cursor, start) + results[i]!.replacement;
+    out += raw.slice(cursor, start) + (results[i] as Extract<InlineExecOutcome, { ok: true }>).replacement;
     cursor = start + m[0].length;
   }
   out += raw.slice(cursor);
@@ -422,6 +482,16 @@ function priorAttemptLines(prior: PriorAttempt): string[] {
         `treat this as a wall in the task. Resume the work. No commit, no gate.`,
         `Failure class (not your fault):`,
         indentBlock(prior.failureClass),
+      ];
+    case "render-refused":
+      return [
+        `A previous attempt's prompt could not even be rendered — one or`,
+        `more inline-exec spans failed to resolve, so the agent was NEVER`,
+        `invoked. This is not a voluntary bail and not a platform failure:`,
+        `something in the prompt itself is broken. Fix or remove the failing`,
+        `command(s) before retrying.`,
+        `Failing span(s):`,
+        indentBlock(prior.failures),
       ];
   }
 }

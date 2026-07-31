@@ -11,6 +11,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ## [Unreleased]
 
+### Breaking
+
+- An inline-exec span that fails to resolve (non-zero exit, spawn failure,
+  `sh` not found, output-cap overrun) now **aborts the prompt render** —
+  the agent is never invoked, and the tick classifies as a no-commit
+  `render-refused` outcome distinct from a voluntary bail (v0.10 §3). The
+  `<exec-failed cmd="...">stderr</exec-failed>` substitution is deleted: a
+  chain that relied on a tolerated failing span silently sending anyway
+  will now fail its tick loudly instead. The error names every failing
+  span's command text and stderr.
+
 ### Fixed
 
 - Inline-exec (`` !`cmd` ``) spans now reach `sh` through stdin instead of

@@ -15,7 +15,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { renderPrompt } from "../src/Prompt.ts";
+import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 
@@ -288,9 +288,73 @@ describe("renderPrompt — inline-exec reaches sh through stdin (RELEASE-v0.10 �
     expect(out).toContain("value=(no prior plan: commit - bootstrap tick)");
   });
 
-  it("a non-zero exit still substitutes <exec-failed>, unchanged from before the transport change", async () => {
-    const out = await render("value=!`exit 3`\n");
+});
 
-    expect(out).toContain('<exec-failed cmd="exit 3">');
+describe("renderPrompt — an unresolved inline-exec span aborts the render (RELEASE-v0.10 §3)", () => {
+  async function render(promptBody: string): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, promptBody, "utf8");
+    return renderPrompt({
+      phase: phase(),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+    });
+  }
+
+  it("a non-zero exit throws InlineExecRenderError naming the command text and stderr — no <exec-failed> marker, no agent-bound output", async () => {
+    let caught: unknown;
+    try {
+      await render('value=!`echo oops-stderr 1>&2; exit 3`\n');
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(InlineExecRenderError);
+    const err = caught as InlineExecRenderError;
+    expect(err.failures).toHaveLength(1);
+    expect(err.failures[0]!.cmd).toBe("echo oops-stderr 1>&2; exit 3");
+    expect(err.failures[0]!.stderr).toContain("oops-stderr");
+    expect(err.message).toContain("echo oops-stderr 1>&2; exit 3");
+    expect(err.message).toContain("oops-stderr");
+    expect(err.message).not.toContain("exec-failed");
+  });
+
+  it("names every failing span when more than one fails in the same prompt", async () => {
+    let caught: unknown;
+    try {
+      await render("a=!`exit 1`\nb=!`exit 2`\n");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(InlineExecRenderError);
+    const failures = (caught as InlineExecRenderError).failures;
+    expect(failures.map((f) => f.cmd).sort()).toEqual(["exit 1", "exit 2"]);
+  });
+
+  it("a spawn failure (sh not found) also aborts the render rather than substituting a marker", async () => {
+    spawnMock.mockImplementationOnce(() => {
+      const child = new EventEmitter() as unknown as ReturnType<typeof spawn>;
+      Object.assign(child, {
+        stdout: new EventEmitter(),
+        stderr: new EventEmitter(),
+        stdin: { end: () => {} },
+        kill: vi.fn(),
+      });
+      queueMicrotask(() => child.emit("error", new Error("spawn sh ENOENT")));
+      return child;
+    });
+
+    await expect(render("value=!`echo hi`\n")).rejects.toThrow(
+      InlineExecRenderError,
+    );
+  });
+
+  it("an empty-but-zero-exit command still renders — exit status decides, never output length", async () => {
+    const out = await render("value=[!`printf ''`]\n");
+
+    expect(out).toContain("value=[]\n");
   });
 });

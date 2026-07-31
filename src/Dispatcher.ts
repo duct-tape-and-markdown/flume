@@ -46,12 +46,13 @@ type GateResultEntry = {
   details?: string;
 };
 import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
-import { renderPrompt } from "./Prompt.js";
+import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
 import type {
   PriorAttempt,
   GateRevertAttempt,
   VoluntaryBailAttempt,
   PlatformPreemptAttempt,
+  RenderRefusedAttempt,
   NoCommitMode,
 } from "./Prompt.js";
 import * as git from "./git.js";
@@ -784,23 +785,29 @@ export interface TickOutcome {
    */
   usageError?: boolean;
   /**
-   * For a no-commit tick where an agent ran (§6): which of the three
-   * causally-distinct modes produced no usable commit —
+   * For a no-commit tick (§6, widened by RELEASE-v0.10 §3): which of the
+   * four causally-distinct modes produced no usable commit —
    *  - `gate-revert`      a commit was made then a gate reverted it,
    *  - `voluntary-bail`   the agent exited cleanly without committing
    *                       (a constraint it refused to cross),
    *  - `platform-preempt` the agent process failed for non-work reasons
    *                       (rate-limit, auth, timeout, dispatcher-killed) —
-   *                       NOT a defect in the work.
+   *                       NOT a defect in the work,
+   *  - `render-refused`   the prompt itself never resolved (an inline-exec
+   *                       span failed) — the agent was never invoked at all.
    * Absent when the tick shipped a usable commit, hibernated, `failed`
-   * (chain resolution threw), or ran no agent (nothing pickable). For a
-   * fanout wave it is the representative cause when the whole wave shipped
-   * nothing (precedence gate-revert > platform-preempt > voluntary-bail —
-   * §6's stated harm is platform failures masquerading as agent failures,
-   * so platform-preempt outranks voluntary-bail in the wave summary); each
-   * entry's own mode is persisted to its §5 prior-attempt record (the
-   * durable per-entry channel §6 mandates for telling voluntary-bail loops
-   * from platform-preempt runs without reading session logs).
+   * (chain resolution threw), or ran no agent because nothing was pickable
+   * (as opposed to `render-refused`, where an agent invocation was
+   * attempted and the render itself is what failed). For a fanout wave it
+   * is the representative cause when the whole wave shipped nothing
+   * (precedence gate-revert > render-refused > platform-preempt >
+   * voluntary-bail — §6's stated harm is platform failures masquerading as
+   * agent failures, so platform-preempt outranks voluntary-bail in the wave
+   * summary; render-refused is a real defect in the prompt/config, ranked
+   * above the two non-defect classes); each entry's own mode is persisted
+   * to its §5 prior-attempt record (the durable per-entry channel §6
+   * mandates for telling voluntary-bail loops from platform-preempt runs
+   * without reading session logs).
    */
   noCommit?: NoCommitMode;
   /**
@@ -1026,14 +1033,36 @@ export class Dispatcher {
 
     const ctx: TickContext = { cwd, flumeDir: this.flumeDir, pending };
     const args = phase.promptArgs?.(ctx) ?? {};
-    const prompt = await renderPrompt({
-      phase,
-      flumeDir: this.flumeDir,
-      promptFile: join(this.opts.configDir, phase.promptPath),
-      cwd,
-      args,
-      ...(prior ? { priorAttempt: prior } : {}),
-    });
+
+    let prompt: string;
+    try {
+      prompt = await renderPrompt({
+        phase,
+        flumeDir: this.flumeDir,
+        promptFile: join(this.opts.configDir, phase.promptPath),
+        cwd,
+        args,
+        ...(prior ? { priorAttempt: prior } : {}),
+      });
+    } catch (err) {
+      if (!(err instanceof InlineExecRenderError)) throw err;
+      // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render —
+      // the agent is never invoked. Distinct from voluntary-bail/
+      // platform-preempt: no agent ran at all.
+      await this.writePriorAttempt(key, buildRenderRefused(err));
+      this.log.warn(`[flume] ${phase.name}: render-refused (no commit): ${err.message}`);
+      return {
+        result: {
+          phaseName: phase.name,
+          committed: false,
+          gateResults: [],
+          pendingAfter: pending,
+          shippedTags: [],
+          revertedTags: [],
+        },
+        noCommit: "render-refused",
+      };
+    }
 
     const termination = await this.invokeAgent(phase, cwd, prompt, agent);
 
@@ -1506,10 +1535,12 @@ export class Dispatcher {
     // Per-entry modes are already persisted to each entry's own §5 record
     // (the durable channel §6 mandates); this is the single representative
     // label for the logger/TickOutcome. Precedence gate-revert >
-    // platform-preempt > voluntary-bail: gate-revert means work was produced
-    // and lost (highest signal); platform-preempt outranks voluntary-bail so
-    // a rate-limited wave is not misread as the agents bailing — §6's
-    // explicit "platform failures masquerade as agent failures" harm.
+    // render-refused > platform-preempt > voluntary-bail: gate-revert means
+    // work was produced and lost (highest signal); render-refused (§3) is a
+    // real defect in the prompt/config, ranked above the non-defect classes;
+    // platform-preempt outranks voluntary-bail so a rate-limited wave is not
+    // misread as the agents bailing — §6's explicit "platform failures
+    // masquerade as agent failures" harm.
     let waveNoCommit: NoCommitMode | undefined;
     if (!committedWave) {
       const modes = new Set<NoCommitMode>(
@@ -1520,11 +1551,13 @@ export class Dispatcher {
       if (mergeReverted.length > 0) modes.add("gate-revert");
       waveNoCommit = modes.has("gate-revert")
         ? "gate-revert"
-        : modes.has("platform-preempt")
-          ? "platform-preempt"
-          : modes.has("voluntary-bail")
-            ? "voluntary-bail"
-            : undefined;
+        : modes.has("render-refused")
+          ? "render-refused"
+          : modes.has("platform-preempt")
+            ? "platform-preempt"
+            : modes.has("voluntary-bail")
+              ? "voluntary-bail"
+              : undefined;
     }
 
     return {
@@ -1580,15 +1613,26 @@ export class Dispatcher {
       assignedEntry: entry,
     };
     const args = phase.promptArgs?.(ctx) ?? {};
-    const prompt = await renderPrompt({
-      phase,
-      flumeDir: this.flumeDir,
-      promptFile: join(this.opts.configDir, phase.promptPath),
-      cwd: wt.path,
-      args,
-      assignedEntry: entry,
-      ...(prior ? { priorAttempt: prior } : {}),
-    });
+
+    let prompt: string;
+    try {
+      prompt = await renderPrompt({
+        phase,
+        flumeDir: this.flumeDir,
+        promptFile: join(this.opts.configDir, phase.promptPath),
+        cwd: wt.path,
+        args,
+        assignedEntry: entry,
+        ...(prior ? { priorAttempt: prior } : {}),
+      });
+    } catch (err) {
+      if (!(err instanceof InlineExecRenderError)) throw err;
+      // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
+      // this entry — the agent for this entry is never invoked.
+      await this.writePriorAttempt(key, buildRenderRefused(err));
+      this.log.warn(`[flume] ${entry.tag}: render-refused (no commit): ${err.message}`);
+      return { entry, committed: false, gateResults: [], noCommit: "render-refused" };
+    }
 
     const preHead = await git.revParse(wt.path);
     const termination = await this.invokeAgent(
@@ -1924,7 +1968,7 @@ export class Dispatcher {
   /**
    * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
    * unrecognized `mode` discriminant → treated as absent: the renderer is
-   * exhaustive over the three known modes and must never be fed an unknown
+   * exhaustive over the four known modes and must never be fed an unknown
    * shape (and a stale slot should never become a false signal).
    */
   private async readPriorAttempt(
@@ -1938,7 +1982,8 @@ export class Dispatcher {
         rec &&
         (rec.mode === "gate-revert" ||
           rec.mode === "voluntary-bail" ||
-          rec.mode === "platform-preempt")
+          rec.mode === "platform-preempt" ||
+          rec.mode === "render-refused")
       ) {
         return rec as PriorAttempt;
       }
@@ -2440,7 +2485,8 @@ export async function superviseLoop(
     // terminal misconfiguration) — nothing to add. `errored` is not a stored
     // field on the verdict (v0.8 §5: facts only) — derived here, at the read
     // site, from the same formula v0.7 §4 used: a genuine tick-level failure
-    // is `gate-revert`/`platform-preempt`, or a provisioning failure that
+    // is `gate-revert`/`platform-preempt`/`render-refused` (RELEASE-v0.10
+    // §3: the prompt itself was broken), or a provisioning failure that
     // left nothing shipped — never a `voluntary-bail` (the agent correctly
     // declining and naming the constraint is not evidence anything went
     // wrong).
@@ -2451,6 +2497,7 @@ export async function superviseLoop(
       const errored =
         verdict.noCommit === "gate-revert" ||
         verdict.noCommit === "platform-preempt" ||
+        verdict.noCommit === "render-refused" ||
         (verdictProvisionFailures.length > 0 &&
           verdict.shippedTags.length === 0);
       if (errored) {
@@ -2746,6 +2793,18 @@ function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
+  };
+}
+
+/**
+ * Build the RELEASE-v0.10 §3 render-refused record from the render's own
+ * {@link InlineExecRenderError} — its `message` already names every failing
+ * span's command text and stderr.
+ */
+function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
+  return {
+    mode: "render-refused",
+    failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
   };
 }
 

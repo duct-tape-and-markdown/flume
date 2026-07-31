@@ -2854,6 +2854,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
 const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
 const BAIL_INTRO = "exited deliberately WITHOUT committing";
 const PREEMPT_INTRO = "cut short by a PLATFORM failure";
+const RENDER_REFUSED_INTRO = "could not even be rendered";
 
 describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   it("gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty", async () => {
@@ -3176,6 +3177,69 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[1]).not.toContain(BAIL_INTRO);
   }, 20_000);
+
+  it("render-refused (RELEASE-v0.10 §3): an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from voluntary-bail", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const promptPath = join(fx.configDir, "prompt.md");
+    await writeFile(
+      promptPath,
+      "digest: !`echo boom-detail 1>&2; exit 3`\n",
+      "utf8",
+    );
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "must-not-run-while-render-fails",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+
+    // No agent invocation at all — the render never got far enough to hand
+    // the agent a prompt.
+    expect(prompts.length).toBe(0);
+    expect(first.result?.committed).toBe(false);
+    expect(first.noCommit).toBe("render-refused");
+    expect(first.noCommit).not.toBe("voluntary-bail");
+    expect(first.verdict?.committed).toBe(false);
+    expect(first.verdict?.noCommit).toBe("render-refused");
+    expect(first.verdict?.gateResults).toEqual([]);
+    expect(first.verdict?.shippedTags).toEqual([]);
+    expect(first.verdict?.mergeOutcomes).toEqual([]);
+
+    // Fix the span so the second tick's render succeeds — only then can the
+    // agent actually be invoked, and its prompt inspected for the retry's
+    // <prior-attempt> block.
+    await writeFile(promptPath, "digest: fixed\n", "utf8");
+    baton.wake("plan");
+    await dispatcher.tick();
+
+    expect(prompts.length).toBe(1);
+    expect(prompts[0]).toContain("<prior-attempt>");
+    expect(prompts[0]).toContain(RENDER_REFUSED_INTRO);
+    expect(prompts[0]).toContain("echo boom-detail 1>&2; exit 3");
+    expect(prompts[0]).toContain("boom-detail");
+    // …and ONLY that variant.
+    expect(prompts[0]).not.toContain(GATE_REVERT_INTRO);
+    expect(prompts[0]).not.toContain(BAIL_INTRO);
+    expect(prompts[0]).not.toContain(PREEMPT_INTRO);
+  }, 20_000);
 });
 
 /**
@@ -3376,6 +3440,49 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
     const second = await dispatcher.tick(); // attempt 1 → ships clean
     expect(second.result?.committed).toBe(true);
     expect(existsSync(snapDir)).toBe(false);
+  }, 20_000);
+});
+
+describe("Dispatcher fanout — render-refused: an unresolved inline-exec span aborts one entry's render (RELEASE-v0.10 §3)", () => {
+  it("no agent invocation for the affected entry; the wave's TickOutcome.noCommit is 'render-refused', the entry stays pending", async () => {
+    await writePending(fx.repo, [makeEntry("RENDER-BOOM", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    await writeFile(join(fx.configDir, "prompt.md"), "digest: !`exit 3`\n", "utf8");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    const agent = fanoutAgent({
+      "render-boom": async () => {
+        invoked = true;
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("render-refused");
+    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.verdict?.noCommit).toBe("render-refused");
+    expect(outcome.verdict?.gateResults).toEqual([]);
+    // Never reached cherry-pick/merge — the entry stays pending for a retry
+    // once the span is fixed.
+    expect(await readPendingFromDisk(fx.repo)).toHaveLength(1);
   }, 20_000);
 });
 
@@ -3845,6 +3952,40 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.shippedTags).toEqual(["SHIPPED-ENTRY"]);
     expect(res.erroredTicks).toHaveLength(1);
     expect(res.erroredTicks[0]).toContain("gate-revert");
+  });
+
+  it("render-refused (RELEASE-v0.10 §3) counts as errored — a broken prompt is a genuine failure, not a voluntary-bail no-op", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
+
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath,
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            noCommit: "render-refused",
+            summary: "build: no commit (render-refused) → hibernate",
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(1);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("render-refused");
   });
 
   it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
