@@ -989,6 +989,7 @@ describe("flume status — friction line (§6)", () => {
 
       const r = await runCli(repo.dir, ["status"]);
       expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
       expect(r.out).not.toContain("friction:");
     } finally {
       await repo.cleanup();
@@ -1005,6 +1006,7 @@ describe("flume status — friction line (§6)", () => {
 
       const r = await runCli(repo.dir, ["status"]);
       expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
       expect(r.out).not.toContain("friction:");
     } finally {
       await repo.cleanup();
@@ -1091,6 +1093,7 @@ describe("flume status — names the missing capability on a requiresCapability 
 
       const r = await runCli(repo.dir, ["status"]);
       expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
       expect(r.out).not.toContain("GATED");
       expect(r.out).not.toContain("missing capability");
     } finally {
@@ -1195,6 +1198,7 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
       const fromRoot = await runCli(repo.dir, ["job", "status"]);
       const fromNested = await runCli(nested, ["job", "status"]);
 
+      expect(fromRoot.out).toContain("j1");
       expect(fromNested.code).toBe(0);
       expect(fromNested.out).toBe(fromRoot.out);
     } finally {
