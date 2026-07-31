@@ -1,59 +1,5 @@
 [
   {
-    "tag": "INLINE-EXEC-RENDER-REFUSES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "delete the exec-failed substitution (203-208); an unresolved span aborts the render, naming every failing span's command text and stderr"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "widen NoCommitMode for the render abort and classify it at both renderPrompt callsites (1029 singleton, 1583 wave)"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "rewrite the inline-exec section per §6 - stdin transport, the stdin-consumption consequence, render-fails-loud replacing the 'prompt still sends' paragraph at 837"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "replace the three marker pins (311, 338, 357) with refusal assertions"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "cover the render-abort no-commit classification"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Breaking entry for the removal per §6"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "An unresolvable inline-exec span aborts the render - the agent is never invoked, and the tick classifies as a no-commit outcome distinct from a voluntary bail.",
-    "per": {
-      "path": "spec/RELEASE-v0.10.md",
-      "section": "3. An unresolved inline-exec span fails the tick"
-    },
-    "tests": [
-      {
-        "path": "tests/Prompt.test.ts",
-        "asserts": "renderPrompt throws on a failing span, naming its command text and stderr; an empty-but-zero-exit command still renders - exit status decides, never output length"
-      },
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a render abort produces no agent invocation, a non-zero tick, and a noCommit mode a handoff can tell apart from voluntary-bail"
-      }
-    ],
-    "acceptance": "A chain whose prompt names a failing command produces no agent invocation and a non-zero tick with the failing command in the message; no exec-failed marker string remains in src/, docs/, or tests/.",
-    "notes": "§3's 'reuse the existing NoCommitMode union' reads as adding a member to it (Prompt.ts:43): the abort must be distinguishable from voluntary-bail, and no current member means 'could not see'. Retire list is empty on purpose - pendingGate fences every files.retire element as a path (touchedPaths, PendingSchema.ts:480), so a symbol there reverts the plan tick; the marker's deletion rides the Prompt.ts edit description instead."
-  },
-  {
     "tag": "PENDING-RETIRE-HINT-PATH-ONLY",
     "gate": {
       "kind": "open"
@@ -351,36 +297,6 @@
     "notes": "PendingSchema.ts:65 hardcodes 39 = a 24-char stamp + 2 + 2 + 'reverted.md'; Dispatcher.ts:2129 is the writer. Correct today - this pins it, so it does not fail pre-fix (same shape as PARSEPENDINGLOOSE-WRITE-PATH-PIN). A silent break lands as ENAMETOOLONG inside writeRevertNote's best-effort catch (2133): a warn line and a lost operator note."
   },
   {
-    "tag": "PARSEPENDINGLOOSE-WRITE-PATH-PIN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "pin parsePendingLoose's 'never on a write path' contract mechanically"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "parsePendingLoose's 'never used on a write path' contract (PendingSchema.ts:324-329) is prose-only - no test pins it.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      {
-        "path": "tests/PendingSchema.test.ts",
-        "asserts": "parsePendingLoose has exactly one production call site (job.ts's read-only job-listing) and it never rewrites pending.json"
-      }
-    ],
-    "acceptance": "New test fails if a future call site appears outside the documented read-only listing, forcing deliberate review before it ships.",
-    "notes": "Posture-sweep finding, PendingSchema.ts neighborhood (bootstrap rotation, no prior stamp). A pinning test is the proportionate fix - one call site today, correctly used; a type-brand is more machinery than the current risk justifies (collaboration.md complexity signal)."
-  },
-  {
     "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
     "gate": {
       "kind": "open"
@@ -522,61 +438,6 @@
     "tests": [],
     "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
     "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
-  },
-  {
-    "tag": "BUILTINGATES-DEAD-EXPORT-TYPES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "drop `export` from ShellGateOptions (62) and EntryWriteScope (321) - each resolves only to its own declaration plus its one in-module signature use, and neither is re-exported via src/index.ts"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "ShellGateOptions and EntryWriteScope are exported with zero consumers outside builtinGates.ts and no place in index.ts's declared public surface.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "An export earns its consumer"
-    },
-    "tests": [],
-    "acceptance": "Neither type carries `export`; tsc (both tsconfig.json and tsconfig.build.json) and vitest stay green; shellGate and writablePathsGate remain callable with an inline object literal exactly as today.",
-    "notes": "LSP findReferences this tick: builtinGates.ts:62 and :321 each resolve to their own declaration plus the one signature using them, both inside the file. PendingGateOptions is the correct sibling - declared via index.ts (:38) - these two are not. Verified same-file and re-exported-function declaration emit stays clean without `export` on the param type (tsc --declaration repro). A deletion pins nothing decidably; the green suite is the proof (the named exception, per GIT-DEAD-EXPORTS-RETIRE)."
-  },
-  {
-    "tag": "EXAMPLES-INTEGRATION-VACUOUS-GREEN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "populate-then-judge at 122; the nothing-pickable test (158-197) asserts the untouched backlog its name claims"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "gateResults.every(ok) at :122 passes over zero gates, and the second test's 'leaves the backlog untouched' title is asserted nowhere - both greens prove less than they read.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "tests": [
-      {
-        "path": "tests/examples.integration.test.ts",
-        "asserts": "the chain's one afterCommit gate is shown present in gateResults before the every(ok) verdict is read; and the nothing-pickable tick leaves BACKLOG.json byte-identical with no SHIPPED.md written"
-      }
-    ],
-    "acceptance": "No assertion in the file reads a verdict off a set it has not shown to be populated, and every test name's claim has an assertion behind it.",
-    "notes": "Verified this tick: the chain declares exactly one gate (backlog-groomer-chain.ts:187), so gateResults holds 1 element today - the pin does not fail pre-fix (the named exception); a gate-scheduling regression is what it catches. Test 2 asserts only committed=false plus noCommit, never re-reading BACKLOG.json. Two sections, one file, one commit: splitting would only serialize on file overlap for a one-line second half."
   },
   {
     "tag": "GATE-TEST-TAUTOLOGICAL-GREENS",
@@ -753,8 +614,7 @@
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "INLINE-EXEC-RENDER-REFUSES"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
