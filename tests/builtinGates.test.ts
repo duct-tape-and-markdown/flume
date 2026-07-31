@@ -150,3 +150,43 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     expect(second.details ?? "").toContain("src/foo.ts");
   });
 });
+
+describe("pendingGate — fence pre-check reads declared files, not observedFiles (engineering.md § The fix lands at the mechanism)", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-declared-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function writePending(entries: unknown): Promise<void> {
+    const pendingDir = join(dir, ".flume", "plan");
+    await mkdir(pendingDir, { recursive: true });
+    await writeFile(
+      join(pendingDir, "pending.json"),
+      JSON.stringify(entries),
+      "utf8",
+    );
+  }
+
+  it("passes an entry whose declared files all sit inside the fence but whose observedFiles names a path outside it", async () => {
+    await writePending([
+      {
+        ...validEntry,
+        // A prior tick's dispatcher-observed footprint, outside the fence.
+        // This is not a declaration the authoring phase could have avoided —
+        // touchedPaths() folding it into the fence pre-check would report a
+        // fence violation the authoring phase has no way to fix.
+        observedFiles: ["docs/unrelated.md"],
+      },
+    ]);
+    const targetFence = { writablePaths: ["src/**"] };
+    const gate = pendingGate({ targetFence });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+});

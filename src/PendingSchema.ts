@@ -470,14 +470,22 @@ export function isPickableNow(
 }
 
 /**
- * The set of file paths an entry would touch. Used by the fanout partitioner
- * to decide which entries can run in parallel worktrees.
+ * The set of file paths an entry declares it will touch — files.new/edit/retire
+ * only. This is what the entry's author committed to; it excludes
+ * dispatcher-observed writes (`observedFiles`), which the entry never declared.
  */
-export function touchedPaths(entry: PendingEntry): string[] {
+export function declaredPaths(entry: PendingEntry): string[] {
   return [
     ...entry.files.new.map((f) => f.path),
     ...entry.files.edit.map((f) => f.path),
     ...entry.files.retire,
-    ...(entry.observedFiles ?? []),
   ];
+}
+
+/**
+ * The set of file paths an entry would touch. Used by the fanout partitioner
+ * to decide which entries can run in parallel worktrees.
+ */
+export function touchedPaths(entry: PendingEntry): string[] {
+  return [...declaredPaths(entry), ...(entry.observedFiles ?? [])];
 }

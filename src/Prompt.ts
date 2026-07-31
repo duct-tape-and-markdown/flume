@@ -32,7 +32,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 import type { Phase } from "./Phase.js";
-import type { PendingEntry } from "./PendingSchema.js";
+import { declaredPaths, type PendingEntry } from "./PendingSchema.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
@@ -398,11 +398,7 @@ function unscopedFenceLines(phase: Phase): string[] {
  * entry-scope check, so the two can never state a different fence.
  */
 function effectiveFenceLines(phase: Phase, entry: PendingEntry): string[] {
-  const entryPaths = [
-    ...entry.files.new.map((f) => f.path),
-    ...entry.files.edit.map((f) => f.path),
-    ...entry.files.retire,
-  ];
+  const entryPaths = declaredPaths(entry);
   const fence = [...new Set([...entryPaths, ...(phase.entryChannelPaths ?? [])])];
   const ceilingLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
 

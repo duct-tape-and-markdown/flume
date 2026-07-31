@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import {
   composePendingList,
+  declaredPaths,
   isPickableNow,
   parsePending,
   parsePendingLoose,
@@ -617,11 +618,11 @@ describe("renderSchemaForPrompt", () => {
   });
 
   it("fence compatibility: a retired entry the hint's own contract allows survives the same path-fence its new/edit siblings do", () => {
-    // touchedPaths() is what the build-fence pre-check (pendingGate) reads
+    // declaredPaths() is what the build-fence pre-check (pendingGate) reads
     // to decide whether an entry's declared files clear the target fence —
     // driving the real writer's output through it here is the agreement
     // check for the hint fixed above: since retire elements are folded into
-    // touchedPaths() unchanged (no path-or-symbol branch), a retire value
+    // declaredPaths() unchanged (no path-or-symbol branch), a retire value
     // the hint permits reaches the fence exactly as any new/edit path does.
     const entry = roundTrip({
       ...baseEntry,
@@ -632,7 +633,7 @@ describe("renderSchemaForPrompt", () => {
         retire: ["src/deprecated.ts"],
       },
     });
-    expect(touchedPaths(entry)).toEqual(["src/deprecated.ts"]);
+    expect(declaredPaths(entry)).toEqual(["src/deprecated.ts"]);
   });
 
   it("renders every declared extension field with its hint, after the core", () => {
@@ -828,5 +829,26 @@ describe("parsePending — observedFiles survives the round-trip", () => {
       observedFiles: ["src/other.ts", "tests/other.test.ts"],
     });
     expect(entry.observedFiles).toEqual(["src/other.ts", "tests/other.test.ts"]);
+  });
+});
+
+describe("declaredPaths vs touchedPaths (engineering.md § The fix lands at the mechanism)", () => {
+  it("declaredPaths answers files.new+edit+retire only; touchedPaths additionally folds in observedFiles", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "open" },
+      observedFiles: ["src/other.ts"],
+    });
+    expect(declaredPaths(entry)).toEqual([
+      "src/foo.ts",
+      "src/bar.ts",
+      "src/baz.ts",
+    ]);
+    expect(touchedPaths(entry)).toEqual([
+      "src/foo.ts",
+      "src/bar.ts",
+      "src/baz.ts",
+      "src/other.ts",
+    ]);
   });
 });

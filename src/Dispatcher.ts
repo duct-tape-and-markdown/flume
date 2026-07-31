@@ -30,7 +30,7 @@ import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { parsePending } from "./PendingSchema.js";
+import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
 /**
@@ -1460,11 +1460,7 @@ export class Dispatcher {
       // *declared* files.{new,edit,retire}, not touchedPaths() — that
       // folds in observedFiles, a downstream footprint signal, not proof
       // this diff shipped real work.
-      const declaredFiles = [
-        ...r.entry.files.new.map((f) => f.path),
-        ...r.entry.files.edit.map((f) => f.path),
-        ...r.entry.files.retire,
-      ];
+      const declaredFiles = declaredPaths(r.entry);
       const mergedDiff = await git.showNameOnly(repoRoot, mergedSha);
       const touchesDeclaredFile = mergedDiff.some((p) =>
         declaredFiles.includes(p),
@@ -1832,11 +1828,7 @@ export class Dispatcher {
         phase.writablePaths,
         assignedEntry
           ? {
-              entryPaths: [
-                ...assignedEntry.files.new.map((f) => f.path),
-                ...assignedEntry.files.edit.map((f) => f.path),
-                ...assignedEntry.files.retire,
-              ],
+              entryPaths: declaredPaths(assignedEntry),
               channelPaths: phase.entryChannelPaths ?? [],
             }
           : undefined,

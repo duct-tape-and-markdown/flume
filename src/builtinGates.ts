@@ -21,7 +21,7 @@ import type { Phase } from "./Phase.js";
 import { loadChainModule } from "./Dispatcher.js";
 import {
   parsePending,
-  touchedPaths,
+  declaredPaths,
   type EntryExtension,
   type PendingEntry,
 } from "./PendingSchema.js";
@@ -288,7 +288,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
         .filter((entry) => fenceWhen(entry))
         .map((entry) => ({
           tag: entry.tag,
-          offending: touchedPaths(entry).filter((p) => !matchesAny(p, fence)),
+          offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
         }))
         .filter((v) => v.offending.length > 0);
       if (violations.length > 0) {

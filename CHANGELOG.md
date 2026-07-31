@@ -59,6 +59,19 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   committing `[]` over the whole file. `flume render` refuses the same way
   instead of printing the parse errors and rendering a prompt over an
   empty queue anyway (`.claude/rules/engineering.md`, "Loud or nothing").
+- `pendingGate`'s fence pre-check no longer reads `touchedPaths()`, which
+  folds in dispatcher-written `observedFiles` — a footprint signal, not a
+  declaration. An entry whose declared `files` all clear the target fence
+  but whose `observedFiles` names a path outside it (a prior tick's
+  downstream write, unreachable under this repo's chain today but live
+  once a target fence differs from the phase that recorded the footprint)
+  was refused as a fence violation the authoring phase has no way to fix.
+  `PendingSchema.ts` splits a new `declaredPaths()` (files.new+edit+retire
+  only) out of `touchedPaths()` (adds `observedFiles`); `builtinGates.ts`,
+  `Dispatcher.ts` (both inline declared-file lists), and `Prompt.ts`
+  (`effectiveFenceLines`) each call the shared helper instead of
+  re-deriving the same union inline (`.claude/rules/engineering.md`,
+  "The fix lands at the mechanism").
 
 ## [0.9.0] - 2026-07-31
 
