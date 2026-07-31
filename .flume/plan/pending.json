@@ -488,5 +488,70 @@
     "tests": [],
     "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test pins or a mechanism the tree no longer has.",
     "notes": "Pinned already: tests/Dispatcher.test.ts:4202 (undeclared abortThreshold still aborts on the 3rd consecutive tick), :4117 (quarantineScope default). Dispatcher.ts:626-632 narrates a deleted content-hash cache; 2392-2393 compares against the removed in-process loop. Phase.ts:169-170 'existing void-returning implementations are unaffected' is migration-era under the pre-1.0 clean-slate posture. Prose-only; no behavior moves."
+  },
+  {
+    "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the loop lock (885-902) takes liveness from liveLoopPid — already imported at :34 — instead of re-deriving the probe inline"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "liveLoopPid docstring (306-311) names the lock among its consumers; its reuse claim only becomes true with this entry"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "add the agreement pin to the §2a loop-lock describe (651); the :800 status-liveness describe already narrates the sharing"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume loop's lock re-derives liveLoopPid's pid probe inline — the helper's own docstring says it was exported to prevent exactly this second implementation.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "the loop lock and `flume status` return the same liveness verdict over one live and one stale pidfile — one probe, so a future one-sided change breaks it"
+      }
+    ],
+    "acceptance": "Liveness reaches the loop lock through liveLoopPid; no second process.kill pid probe remains in src/cli.ts; the loop-lock and status-liveness suites stay green.",
+    "notes": "Verified this tick: cli.ts:886-895 repeats liveLoopPid's read/finite/positive/kill(pid,0) sequence; job.ts:306-311 claims the opposite. Drop-in — the lock wants the pid only for its refusal message, which liveLoopPid returns, and the block is already async. Behavior-identical today, so nothing fails pre-fix (the named exception); the agreement pin is what makes a later divergence fail."
+  },
+  {
+    "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "lines 48, 417, 570, 793 - state the condition or drop the retired framing"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "job.ts carries era-scoped narration: a cite to the shipped-and-gone JOB-RESOLUTION tag, two pre-0.9 migration clauses, and a superseded harvest convention.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
+    "notes": "Third sibling of the ERA-SCOPED-NARRATION-* pair. :48 cites JOB-RESOLUTION, a v0.5 pending tag shipped and unresolvable today - the builtinGates.ts:250-251 shape. :417 and :793 scope themselves to 'a pre-0.9 job dir'; [0.9.0] is published and the pre-1.0 clean-slate posture retires compat framing. :570 narrates the legacy fixed-'friction.md' harvest convention the friction declaration replaced. Prose-only."
   }
 ]

@@ -7,7 +7,7 @@ whole domain).
 
 Covered this rotation: `src/Baton.ts`, `src/Prompt.ts`, `src/builtinGates.ts`,
 `src/Agent.ts`, `tests/Agent.test.ts`, `src/Dispatcher.ts`, `src/Phase.ts`,
-`src/git.ts`, `src/partition.ts`.
+`src/git.ts`, `src/partition.ts`, `src/job.ts`, `src/PendingSchema.ts`.
 
 ## Operator leg (not an entry)
 
