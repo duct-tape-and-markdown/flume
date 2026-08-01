@@ -6120,5 +6120,118 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(snapshotPath)).toBe(true);
       expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
     }, 20_000);
+
+    it("createWorktree creates the worktree when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: fresh create)", async () => {
+      const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-"));
+      const savedOverride = process.env.FLUME_WORKTREES_DIR;
+      try {
+        const base = join(container, "wt-base");
+        process.env.FLUME_WORKTREES_DIR = base;
+
+        const tag = "DEEP-WT-A";
+        await writePending(fx.repo, [makeEntry(tag, ["src/deep-wt-a.ts"])]);
+        new Baton(join(fx.repo, ".flume")).wake("build");
+
+        const phase = makePhase({ name: "build", concurrency: "fanout" });
+        const chain: Chain = { phases: [phase], humanOnly: [] };
+
+        // Same deep-nesting shape as WRITEREVERTNOTE/HARVESTFRICTION-
+        // WIN32-PATH-TOTAL-LIMIT above (six 50-char segments), driven off
+        // the namespace instead of chain.friction: createWorktree joins
+        // wtBase with this.opts.namespace and the tag slug, unwrapped.
+        const deepNamespace = join(
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+        const worktreePath = join(base, deepNamespace, slug);
+        expect(worktreePath.length).toBeGreaterThan(260);
+
+        const agent = fanoutAgent({
+          [slug]: async (cwd) => {
+            await writeAndCommit(
+              cwd,
+              "src/deep-wt-a.ts",
+              "ok\n",
+              `build(${tag}): ship`,
+            );
+          },
+        });
+
+        const dispatcher = new Dispatcher({
+          chainLoader: staticLoader(chain),
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          agent,
+          log: silent,
+          namespace: deepNamespace,
+        });
+
+        const outcome = await dispatcher.tick();
+        expect(outcome.result?.shippedTags).toEqual([tag]);
+      } finally {
+        if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+        else process.env.FLUME_WORKTREES_DIR = savedOverride;
+        await rm(container, { recursive: true, force: true });
+      }
+    }, 20_000);
+
+    it("createWorktree cleans up a stale worktree dir and creates the replacement when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: stale cleanup)", async () => {
+      const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-stale-"));
+      const savedOverride = process.env.FLUME_WORKTREES_DIR;
+      try {
+        const base = join(container, "wt-base");
+        process.env.FLUME_WORKTREES_DIR = base;
+
+        const tag = "DEEP-WT-B";
+        await writePending(fx.repo, [makeEntry(tag, ["src/deep-wt-b.ts"])]);
+        new Baton(join(fx.repo, ".flume")).wake("build");
+
+        const phase = makePhase({ name: "build", concurrency: "fanout" });
+        const chain: Chain = { phases: [phase], humanOnly: [] };
+
+        const deepNamespace = join(
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+        const worktreePath = join(base, deepNamespace, slug);
+        expect(worktreePath.length).toBeGreaterThan(260);
+
+        // Simulate a crashed prior run: a stray directory already sits at
+        // the worktree path, unregistered with git — createWorktree's
+        // existsSync branch must detect it, fail the `git worktree
+        // remove` attempt, and fall through to the raw rm cleanup before
+        // re-creating it.
+        await mkdir(worktreePath, { recursive: true });
+        await writeFile(join(worktreePath, "stale.txt"), "leftover\n");
+
+        const agent = fanoutAgent({
+          [slug]: async (cwd) => {
+            await writeAndCommit(
+              cwd,
+              "src/deep-wt-b.ts",
+              "ok\n",
+              `build(${tag}): ship`,
+            );
+          },
+        });
+
+        const dispatcher = new Dispatcher({
+          chainLoader: staticLoader(chain),
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          agent,
+          log: silent,
+          namespace: deepNamespace,
+        });
+
+        const outcome = await dispatcher.tick();
+        expect(outcome.result?.shippedTags).toEqual([tag]);
+        expect(existsSync(join(worktreePath, "stale.txt"))).toBe(false);
+      } finally {
+        if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+        else process.env.FLUME_WORKTREES_DIR = savedOverride;
+        await rm(container, { recursive: true, force: true });
+      }
+    }, 20_000);
   },
 );

@@ -2151,15 +2151,15 @@ export class Dispatcher {
     const path = this.opts.namespace
       ? join(wtBase, this.opts.namespace, slug)
       : join(wtBase, slug);
-    if (existsSync(path)) {
+    if (existsSync(toNamespacedPath(path))) {
       // Stale from a prior crashed run; clean up.
       try {
         await git.removeWorktree(this.opts.repoRoot, path);
       } catch {
-        await rm(path, { recursive: true, force: true });
+        await rm(toNamespacedPath(path), { recursive: true, force: true });
       }
     }
-    await mkdir(dirname(path), { recursive: true });
+    await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
     // Fanout worktrees nest at least as deep as the job dir they're cloned
     // for (v0.4 §6) — the identical win32 MAX_PATH gap job.ts's own baseline
     // pin exists to spare.

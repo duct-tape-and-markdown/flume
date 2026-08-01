@@ -85,6 +85,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   unwrapped `join(dir, rel)` shape and the silently-swallowed best-effort
   catch are identical: a deep repo path lost its §8 recovery snapshot
   without any signal (v0.4 §6).
+- `createWorktree`'s `existsSync` check, its stale-worktree `rm` fallback,
+  and its `mkdir(dirname(path))` now route through `toNamespacedPath`, the
+  same idiom `writeRevertNote`/`harvestFriction`/the friction counters/
+  `snapshotRevertedFiles` above were fixed with — here the win32 ~260-char
+  total-path limit is driven by the worktree base dir nested under a job
+  namespace and the entry tag slug. Unlike those siblings this path was
+  visibly stuck rather than silently wrong: the caller already catches,
+  logs, and leaves the entry pending for retry, but the retry hit the same
+  unwrapped join every time (v0.4 §6).
 - `Dispatcher.createWorktree` now pins `core.longpaths` on `repoRoot` before
   `git worktree add`, closing a win32 MAX_PATH gap fanout worktrees hit
   identically to job dirs (`job.ts` already pinned it for its own deep
