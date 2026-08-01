@@ -1,43 +1,5 @@
 [
   {
-    "tag": "DISPATCHER-TIPMOVED-CHECK-UNSHARED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "extract the tip-verify-after-commit check (revParse the commit's parent, revertTipMovedCommit, writePriorAttempt(buildTipMoved), log.warn) shared by runSingleton (~1163-1181) and runFanoutEntry (~1809-1825) into one private helper beside revertTipMovedCommit (~1900); each call site keeps constructing its own return shape, same precedent classifyNoCommit's two callers already set"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "add the agreement pin beside the existing tip-verify describe (RELEASE-v0.11 §5) - singleton and fanout tip-moved paths persist byte-identical expectedTip/observedTip content and the same-shaped log line for equivalent input, driven through the one shared method"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Dispatcher's tip-verify-after-commit check (parent-check, revert, persist, log) is duplicated at runSingleton and runFanoutEntry instead of sharing one method - same shape as render-refused.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "singleton and fanout tip-moved paths persist byte-identical expectedTip/observedTip content and the same-shaped log line for equivalent input - a one-sided edit to either site's persisted record or log text breaks the pin"
-      }
-    ],
-    "acceptance": "One shared private method performs the parent-check/revert/persist/log sequence; both runSingleton and runFanoutEntry call it instead of re-deriving it inline; tsc/vitest green.",
-    "notes": "Audit finding, b89ebb4 (TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP): the new §5 check repeats DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED's exact shape - revertTipMovedCommit already shares the verify+reset mechanics, but the writePriorAttempt+log.warn wrapper around it is re-derived at both callsites. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift. Consider landing together with the render-refused entry - same extraction site, same pattern."
-  },
-  {
     "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
     "gate": {
       "kind": "open"
