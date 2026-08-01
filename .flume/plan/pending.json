@@ -1,43 +1,5 @@
 [
   {
-    "tag": "RENDER-RELATIVIZE-SEPARATOR-BLIND",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "relativize (459-463) strips the cwd prefix on either separator instead of hardcoding '/'"
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "file_path rendering has no coverage today; add the backslash-cwd case beside the POSIX one"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "withTerminalRenderer's relativize hardcodes '/', so on win32 every Read/Write/Edit line renders an absolute path while the tag beside it shortens correctly.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/Agent.test.ts",
-        "asserts": "a tool_use whose file_path sits under a backslash cwd renders relative, and the POSIX pair keeps today's output - separator-agnostic, so it fails on the pre-fix tree on every platform"
-      }
-    ],
-    "acceptance": "Read(<file>) renders relative under a backslash cwd and a POSIX cwd alike.",
-    "notes": "The sibling detection exists: the default tag (307) uses node:path basename and carries a win32-gated regression test (tests/Agent.test.ts:473). path.relative is platform-bound - it would make the case win32-only again; stripping on either separator keeps it runnable everywhere. Display-only: the rendered line, never the captured transcript."
-  },
-  {
     "tag": "PENDING-GATE-HINT-OPTION",
     "gate": {
       "kind": "open"
