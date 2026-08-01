@@ -349,6 +349,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `tests/Dispatcher.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
+### Changed
+
+- Narration cleanup in `src/Prompt.ts` and `src/builtinGates.ts`
+  (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung" —
+  ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD): three "byte-identical to a past
+  release" doc comments now point at the tests that pin the exact byte shape
+  (`tests/Prompt.test.ts`, `tests/Gate.test.ts`) instead of restating a
+  property those tests already cover; `pendingGate`'s doc no longer cites
+  the two now-shipped-and-retired pending tags that motivated it, stating
+  the condition it guards against instead. No behavior changes.
+
 ## [0.9.0] - 2026-07-31
 
 The doctrine line: one engine per bay, resolved by the package manager

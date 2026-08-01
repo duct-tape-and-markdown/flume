@@ -71,8 +71,9 @@ interface ShellGateOptions {
   /**
    * Merged over `process.env` for the spawned command. Lets a chain inject
    * or override a var (e.g. a test-only flag, a scrubbed secret) without
-   * hand-forking `shellGate` to rebuild its exec plumbing. Omit for
-   * byte-identical behavior to before this option existed.
+   * hand-forking `shellGate` to rebuild its exec plumbing. Omit-behavior is
+   * pinned by tests/Gate.test.ts's "without env, behavior is byte-identical
+   * to today" case.
    */
   env?: Record<string, string>;
 }
@@ -313,8 +314,9 @@ export interface PendingGateOptions {
  * against `targetFence.writablePaths ∪ targetFence.entryChannelPaths`. An
  * entry whose declaration cannot survive that fence fails here, naming the
  * offending paths, instead of shipping through plan and burning a build
- * tick on a guaranteed revert — the GATECONTEXT-REPOROOT-TESTS /
- * CLI-JUNCTION-SAFE-ENTRY-TESTS re-file class this extinguishes.
+ * tick on a guaranteed revert: an entry declaring a file outside the
+ * downstream phase's fence is caught at plan's own commit, never handed to
+ * build as unshippable work.
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
   const pendingPath = opts.pendingPath ?? join("plan", "pending.json");

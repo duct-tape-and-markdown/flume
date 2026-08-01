@@ -188,7 +188,9 @@ export interface RenderOptions {
    * (`src/Dispatcher.ts` `runAfterCommitGates`) actually enforces on this
    * tick, naming `phase.writablePaths` separately as the outer ceiling
    * (RELEASE-v0.7 §2). Absent (singleton ticks, or a fanout tick with no
-   * assignment) renders the unscoped, byte-identical-to-0.6.2 block.
+   * assignment) renders the unscoped block — exact byte shape pinned by
+   * tests/Prompt.test.ts's "byte-identical to the pre-§2 collapsed
+   * rendering" case.
    */
   assignedEntry?: PendingEntry;
 }
@@ -400,7 +402,10 @@ function prependHarnessBlock(
   return harness + body;
 }
 
-/** Unscoped rendering — byte-identical to the pre-§2 collapsed block. */
+/**
+ * Unscoped rendering. Byte shape pinned by tests/Prompt.test.ts's
+ * "byte-identical to the pre-§2 collapsed rendering" case.
+ */
 function unscopedFenceLines(phase: Phase): string[] {
   const pathLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
   return [
