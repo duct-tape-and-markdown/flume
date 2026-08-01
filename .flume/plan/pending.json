@@ -1,5 +1,30 @@
 [
   {
+    "tag": "CHAINAUTHORING-DOCS-PRE-FACTORY-IMPORTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "four sites still teach the pre-§6 value-import shape: 'Use the built-ins first' (231-241), 'setupWorktree for fanout' (530-531), 'The agent seam' intro (676-687), 'readTickVerdicts' (1114-1115) - rewrite each to destructure off the factory's api param, matching the doc's own 'Putting it together' example (1281-1282)"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md's built-ins, setupWorktree, agent-seam, and readTickVerdicts sections still show `import { X } from \"@dtmd/flume\"`/\"flume\" - the exact consumer pattern v0.11 §6 removed.",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "6. The chain is a plugin, not a consumer"
+    },
+    "tests": [],
+    "acceptance": "Every chain-authoring code example in docs/CHAIN-AUTHORING.md sources gates/setupWorktree/agent-ctors/readTickVerdicts off the factory's api parameter; the only surviving value-import from the package is in the embedder-wiring section (Dispatcher/consoleLogger), which §6 explicitly leaves untouched.",
+    "notes": "Verified on disk this tick: §6's own blast radius names this file, and its acceptance requires a chain's only engine import be `import type`. 9d9684f (the atomic §6 landing commit) updated the doc's closing 'Putting it together' example to the factory shape but left four earlier walkthrough sections showing the old value-import pattern, so mid-doc guidance now contradicts itself. docs/MIGRATING-0.11.md and README.md are already correct - checked, no drift there."
+  },
+  {
     "tag": "GATECONTEXT-TOUCHED-PATHS-DEDUP",
     "gate": {
       "kind": "open"
