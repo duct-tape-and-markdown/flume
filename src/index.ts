@@ -1,6 +1,7 @@
 /**
- * Public surface for `flume`. Consumers import from here; everything else is
- * internal-ish (but not enforced — there's no exports map yet).
+ * Public surface for `flume`. Consumers import from here; package.json's
+ * `exports` map restricts resolution to this entry point, so anything not
+ * re-exported below is unreachable from outside the package.
  */
 
 export type { Agent, AgentInvocation, AgentResult } from "./Agent.js";

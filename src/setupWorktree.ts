@@ -2,12 +2,11 @@
  * setupWorktree — lockfile-aware fanout worktree provisioning.
  *
  * A fresh fanout worktree holds only tracked files; something has to
- * materialize `node_modules` before gates run. Every chain that needs this
- * has been hand-rolling a single-package-manager hardcode (flume's own
- * dogfood `buildSetupWorktree`, `.flume/chain.ts`; connect's `npm ci`).
- * This is the shared, lockfile-aware default: inspect the target directory,
- * run the install command its lockfile implies, and refuse rather than
- * guess when neither is present.
+ * materialize `node_modules` before gates run, and the install command
+ * depends on which lockfile the target repo commits. This is the shared,
+ * lockfile-aware default: inspect the target directory, run the install
+ * command its lockfile implies, and refuse rather than guess when neither
+ * is present.
  *
  * Sibling to the `builtinGates.ts` precedent (`shellGate`, `tscGate`, …) —
  * exported standalone, not as a `Gate`, since provisioning runs before the

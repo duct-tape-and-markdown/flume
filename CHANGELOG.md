@@ -425,6 +425,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   lands at the mechanism" — PARSEPENDING-DUP-ERROR-MAPPING); both now call
   one `parseJsonOrFail` helper and one `issuesToParseErrors` helper. Error
   output is byte-unchanged. No behavior changes.
+- Narration cleanup in `src/index.ts` and `src/setupWorktree.ts`
+  (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung" —
+  ERA-SCOPED-NARRATION-BARREL-NEIGHBORHOOD): `index.ts`'s doc comment no
+  longer claims there's no `exports` map — `package.json` has declared one
+  restricted to `.` since the package went public, and the comment now
+  states that condition instead; `setupWorktree.ts`'s doc no longer cites
+  `.flume/chain.ts`'s pre-adoption hand-rolled install step as the
+  motivating example, since the chain now calls this helper directly. No
+  behavior changes.
 
 ## [0.9.0] - 2026-07-31
 
