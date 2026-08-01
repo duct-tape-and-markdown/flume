@@ -76,6 +76,44 @@
     "notes": "Sixth sibling, found auditing 935ea4d/63ef1d0 (WORKTREE-WIN32-PATH-TOTAL-LIMIT ship) for remaining instances. Two failure modes in one function pair: writePriorAttempt's mkdir (2227) is uncaught and throws ENAMETOOLONG into every caller (render-refused/tip-moved/gate-revert/voluntary-bail paths); readPriorAttempt's existsSync (2202) returns false on a too-long path by Node's own contract, silently reporting 'no prior attempt' - the original SNAPSHOTREVERTEDFILES silent-loss shape."
   },
   {
+    "tag": "REMOVEWORKTREE-WIN32-PATH-TOTAL-LIMIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "removeWorktree's fallback rm (129) and existsSync (135) route path through toNamespacedPath, same idiom as the tip-claim family just above it"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "win32-gated coverage beside the existing removeWorktree describe (164): a populated worktree at a path past win32's ~260-char limit clears via the fallback without throwing"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "git.ts's removeWorktree fallback rm/existsSync join path unwrapped - same win32 total-path-limit shape as the tip-claim/createWorktree family, on the same worktree-dir depth.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "removeWorktree's fallback clears a deep worktree tree (path past win32's ~260-char limit) without ENAMETOOLONG - fails on the pre-fix tree via the unwrapped rm/existsSync"
+      }
+    ],
+    "acceptance": "removeWorktree's rm and existsSync both route path through toNamespacedPath; a win32-gated deep-path fixture clears via the fallback without throwing; tsc/vitest green.",
+    "notes": "Seventh sibling, found auditing GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT's ship (6858749) - same file, unaudited function. path is the worktree dir (Dispatcher.ts createWorktree/teardown loop), same branch-slug depth. On the fanout teardown loop (Dispatcher.ts:1672) the throw is caught and misreported as 'survived removal (fallback exhausted)' - a false leak report, not a crash; createWorktree's own stale-cleanup call site self-heals via its already-wrapped rm fallback (Dispatcher.ts:2159)."
+  },
+  {
     "tag": "WIN32-NAMESPACEDPATH-JOIN-UNSHARED",
     "gate": {
       "kind": "open"
