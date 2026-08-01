@@ -205,6 +205,81 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
   });
 });
 
+describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary.md § Capability vs convention)", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-hint-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function writePending(entries: unknown): Promise<void> {
+    const pendingDir = join(dir, ".flume", "plan");
+    await mkdir(pendingDir, { recursive: true });
+    await writeFile(
+      join(pendingDir, "pending.json"),
+      JSON.stringify(entries),
+      "utf8",
+    );
+  }
+
+  const outsideFenceEntry = {
+    ...validEntry,
+    files: {
+      new: [],
+      edit: [{ path: "docs/nope.md", description: "not allowed" }],
+      retire: [],
+    },
+  };
+
+  it("appends the hint to the schema-violation message when supplied", async () => {
+    await writePending([{ ...validEntry, mystery: "field" }]);
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      hint: "park it, never re-scope",
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/schema violation/);
+    expect(result.message).toContain("park it, never re-scope");
+  });
+
+  it("leaves the schema-violation message unchanged when the hint is omitted", async () => {
+    await writePending([{ ...validEntry, mystery: "field" }]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toBe(
+      `${join("plan", "pending.json")} has 1 schema violation(s)`,
+    );
+  });
+
+  it("appends the hint to the fence-violation message when supplied", async () => {
+    await writePending([outsideFenceEntry]);
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      hint: "park it, never re-scope",
+    });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/outside the target fence/);
+    expect(result.message).toContain("park it, never re-scope");
+  });
+
+  it("leaves the fence-violation message unchanged when the hint is omitted", async () => {
+    await writePending([outsideFenceEntry]);
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir));
+    expect(result.ok).toBe(false);
+    expect(result.message).toBe(
+      "1 pending entry declare files outside the target fence",
+    );
+  });
+});
+
 describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE)", () => {
   it.each([
     ["tscGate", tscGate, "tsc"],

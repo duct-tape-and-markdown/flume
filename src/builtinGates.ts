@@ -295,6 +295,15 @@ export interface PendingGateOptions {
    * convention test).
    */
   fenceWhen?: (entry: PendingEntry) => boolean;
+  /**
+   * Chain-authored operator guidance appended verbatim to both violation
+   * messages (schema and fence). The chain supplies the text, the engine
+   * supplies the enforcement — the same capability/convention split as
+   * `failHint` on `shellGate` (engine-boundary.md "Capability vs
+   * convention"). Omit for byte-identical behavior to before this option
+   * existed.
+   */
+  hint?: string;
 }
 
 /**
@@ -310,6 +319,8 @@ export interface PendingGateOptions {
 export function pendingGate(opts: PendingGateOptions): Gate {
   const pendingPath = opts.pendingPath ?? join("plan", "pending.json");
   const fenceWhen = opts.fenceWhen ?? (() => true);
+  const withHint = (message: string): string =>
+    opts.hint ? `${message} — ${opts.hint}` : message;
   return {
     name: "pending-gate",
     when: "afterCommit",
@@ -337,7 +348,9 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       if (!parsed.ok) {
         return {
           ok: false,
-          message: `${pendingPath} has ${parsed.errors.length} schema violation(s)`,
+          message: withHint(
+            `${pendingPath} has ${parsed.errors.length} schema violation(s)`,
+          ),
           details: parsed.errors
             .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
             .join("\n"),
@@ -353,9 +366,11 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       if (violations.length > 0) {
         return {
           ok: false,
-          message: `${violations.length} pending entr${
-            violations.length === 1 ? "y" : "ies"
-          } declare files outside the target fence`,
+          message: withHint(
+            `${violations.length} pending entr${
+              violations.length === 1 ? "y" : "ies"
+            } declare files outside the target fence`,
+          ),
           details: violations
             .map(
               (v) =>

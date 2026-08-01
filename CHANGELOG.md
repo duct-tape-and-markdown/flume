@@ -88,6 +88,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   npm invocation. Omitting `args` (or the whole override) stays
   byte-identical to today.
 
+- `pendingGate` accepts an optional `hint` (engine-boundary.md "Capability
+  vs convention" — PENDING-GATE-HINT-OPTION): chain-authored operator
+  guidance appended verbatim to both failure messages (the schema-violation
+  branch and the fence-pre-check branch), mirroring `shellGate`'s
+  `failHint`. A hand-rolled fork had carried this text; the builtin dropped
+  it. Omitting `hint` is byte-identical to today's messages.
+
 - An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
   (the ref HEAD resolves to) at start and releases it at exit — one flume
   writer per tip, visible from every worktree of one repository. The claim
