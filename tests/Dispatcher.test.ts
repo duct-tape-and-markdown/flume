@@ -4008,6 +4008,108 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
   }, 20_000);
 });
 
+describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED)", () => {
+  it("both callsites persist byte-identical §5 record content and emit a same-shaped log line for equivalent input, driven through the one shared persist+log method", async () => {
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      "digest: !`echo boom-detail 1>&2; exit 3`\n",
+      "utf8",
+    );
+
+    // ---- singleton ----
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const singletonPhase = makePhase({ name: "plan", concurrency: "singleton" });
+    const singletonChain: Chain = { phases: [singletonPhase], humanOnly: [] };
+    let singletonInvoked = false;
+    const singletonAgent: Agent = {
+      name: "must-not-run-singleton",
+      async invoke() {
+        singletonInvoked = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const singletonWarnings: string[] = [];
+    const singletonLog: Logger = {
+      info: () => {},
+      warn: (l) => singletonWarnings.push(l),
+      error: () => {},
+    };
+    const singletonDispatcher = new Dispatcher({
+      chainLoader: staticLoader(singletonChain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singletonAgent,
+      log: singletonLog,
+    });
+    const singletonOutcome = await singletonDispatcher.tick();
+
+    expect(singletonInvoked).toBe(false);
+    expect(singletonOutcome.noCommit).toBe("render-refused");
+    const singletonRecord = await readFile(
+      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      "utf8",
+    );
+
+    // ---- fanout — same repo, own tag so its §5 slot never shares a path
+    // with the singleton's above.
+    await writePending(fx.repo, [makeEntry("FANOUT-TWIN", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const fanoutPhase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const fanoutChain: Chain = { phases: [fanoutPhase], humanOnly: [] };
+    let fanoutInvoked = false;
+    const fanoutAgentInst = fanoutAgent({
+      "fanout-twin": async () => {
+        fanoutInvoked = true;
+      },
+    });
+    const fanoutWarnings: string[] = [];
+    const fanoutLog: Logger = {
+      info: () => {},
+      warn: (l) => fanoutWarnings.push(l),
+      error: () => {},
+    };
+    const fanoutDispatcher = new Dispatcher({
+      chainLoader: staticLoader(fanoutChain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgentInst,
+      log: fanoutLog,
+    });
+    const fanoutOutcome = await fanoutDispatcher.tick();
+
+    expect(fanoutInvoked).toBe(false);
+    expect(fanoutOutcome.noCommit).toBe("render-refused");
+    const fanoutRecord = await readFile(
+      join(fx.repo, ".flume", "prior-attempts", "fanout-twin.json"),
+      "utf8",
+    );
+
+    // §5 record content (mode + failures) is byte-identical for equivalent
+    // input — a one-sided edit to either callsite's persisted record breaks
+    // this pin.
+    expect(fanoutRecord).toBe(singletonRecord);
+
+    // Both callsites log through the same template —
+    // "[flume] <label>: render-refused (no commit): <message>" — with only
+    // the label (phase name vs. entry tag) differing; the message text
+    // itself agrees for equivalent input.
+    expect(singletonWarnings).toHaveLength(1);
+    expect(fanoutWarnings).toHaveLength(1);
+    const shape = /^\[flume\] (.+): render-refused \(no commit\): ([\s\S]+)$/;
+    const singletonMatch = singletonWarnings[0]!.match(shape);
+    const fanoutMatch = fanoutWarnings[0]!.match(shape);
+    expect(singletonMatch).not.toBeNull();
+    expect(fanoutMatch).not.toBeNull();
+    expect(singletonMatch![1]).toBe("plan");
+    expect(fanoutMatch![1]).toBe("FANOUT-TWIN");
+    expect(fanoutMatch![2]).toBe(singletonMatch![2]);
+  }, 20_000);
+});
+
 // ---------- TickResult carries the no-commit classification (§15) ----------
 
 // SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan

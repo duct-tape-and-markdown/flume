@@ -1169,8 +1169,7 @@ export class Dispatcher {
       // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render —
       // the agent is never invoked. Distinct from voluntary-bail/
       // platform-preempt: no agent ran at all.
-      await this.writePriorAttempt(key, buildRenderRefused(err));
-      this.log.warn(`[flume] ${phase.name}: render-refused (no commit): ${err.message}`);
+      await this.persistRenderRefused(key, phase.name, err);
       return {
         result: {
           phaseName: phase.name,
@@ -1822,8 +1821,7 @@ export class Dispatcher {
       if (!(err instanceof InlineExecRenderError)) throw err;
       // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
       // this entry — the agent for this entry is never invoked.
-      await this.writePriorAttempt(key, buildRenderRefused(err));
-      this.log.warn(`[flume] ${entry.tag}: render-refused (no commit): ${err.message}`);
+      await this.persistRenderRefused(key, entry.tag, err);
       return { entry, committed: false, gateResults: [], noCommit: "render-refused" };
     }
 
@@ -2501,6 +2499,27 @@ export class Dispatcher {
       buildPlatformPreempt(termination.failureClass),
     );
     return "platform-preempt";
+  }
+
+  /**
+   * Persist the RELEASE-v0.10 §3 render-refused record and log it — the one
+   * shared shape both the singleton and fanout render callsites route
+   * through (engineering.md "The fix lands at the mechanism"), the same way
+   * {@link classifyNoCommit} above already centralizes the §6 persist+log.
+   * Each callsite still builds its own return shape from here, matching how
+   * `classifyNoCommit`'s two callers already differ. `label` is the
+   * phase name (singleton) or entry tag (fanout) — whichever scope `key`
+   * itself was derived from.
+   */
+  private async persistRenderRefused(
+    key: string,
+    label: string,
+    err: InlineExecRenderError,
+  ): Promise<void> {
+    await this.writePriorAttempt(key, buildRenderRefused(err));
+    this.log.warn(
+      `[flume] ${label}: render-refused (no commit): ${err.message}`,
+    );
   }
 
   /**

@@ -348,6 +348,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   Behavior-identical today — the fix is the shared computation, pinned in
   `tests/Dispatcher.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+- The render-refused catch (persist the §5 record, then log) was duplicated
+  inline at both the singleton and fanout render callsites instead of
+  routing through a shared method, the precedent `classifyNoCommit` already
+  set for the §6 no-commit persist+log. Both callsites now call a new
+  `persistRenderRefused`; each still builds its own return shape, matching
+  how `classifyNoCommit`'s two callers already differ. Behavior-identical
+  today — the fix is the shared computation, pinned in
+  `tests/Dispatcher.test.ts` against a future one-sided edit
+  (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
 ### Changed
 
