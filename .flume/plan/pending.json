@@ -1,43 +1,5 @@
 [
   {
-    "tag": "WORKTREE-WIN32-PATH-TOTAL-LIMIT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "createWorktree (2127-2174): existsSync (2154), the stale-worktree rm fallback (2159), and mkdir(dirname(path)) (2162) route through toNamespacedPath, same idiom as writeRevertNote/harvestFriction; import already present at line 29"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "win32-gated coverage beside the WRITEREVERTNOTE/HARVESTFRICTION/FRICTIONCOUNT suites: createWorktree succeeds (both the fresh-create and the stale-cleanup existsSync branch) when namespace/slug nests past win32's ~260-char limit"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "createWorktree's existsSync/rm/mkdir(dirname(path)) join flumeDir with an entry-tag-driven slug unwrapped - same win32 total-path-limit shape as the friction/revert-note siblings.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "6. win32 portability"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "createWorktree resolves and creates successfully under a deep namespace/slug path past win32's ~260-char limit - fails on the pre-fix tree via ENAMETOOLONG on existsSync/mkdir"
-      }
-    ],
-    "acceptance": "existsSync, the stale-worktree rm fallback, and mkdir(dirname(path)) in createWorktree all route through toNamespacedPath; a win32-gated deep-tag fixture creates its worktree successfully; tsc/vitest green.",
-    "notes": "Fourth sibling, found auditing 9c7da44's ship (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT) for remaining instances. git.pinLongPaths (2166) runs AFTER these three fs calls and only covers git's own path handling for addWorktree - it never reaches them, despite the adjacent comment naming the identical MAX_PATH gap. Unlike the friction siblings, the caller (~1340-1352) catches, logs, and leaves the entry pending for retry - visible-but-stuck, not silently wrong, but the same missing-wrapper defect."
-  },
-  {
     "tag": "GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT",
     "gate": {
       "kind": "open"
