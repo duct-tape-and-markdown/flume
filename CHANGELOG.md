@@ -68,6 +68,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Added
 
+- `tscGate`, `vitestGate`, and `eslintGate` accept an optional `cmd`
+  override (engine-boundary.md "Capability vs convention" —
+  BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE): each is still a bare `Gate`
+  usable directly in a `gates: []` array exactly as before, but is now also
+  callable — `tscGate({ cmd: "npm" })` — to run the same check through a
+  different package manager's binary instead of hand-rolling `shellGate`
+  from scratch. Omitting the call (or calling with no override) is
+  byte-identical to today's pnpm-only behavior.
+
 - An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
   (the ref HEAD resolves to) at start and releases it at exit — one flume
   writer per tip, visible from every worktree of one repository. The claim

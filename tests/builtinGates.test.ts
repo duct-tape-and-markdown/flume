@@ -7,6 +7,11 @@
  * `pendingGate(...)` is called — the declaration-driven-fence case
  * (v0.8 §7's second-implementation shape) that a plain object literal can't
  * surface.
+ *
+ * Also covers the tscGate/vitestGate/eslintGate pnpm cmd override
+ * (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE, engine-boundary.md "Capability
+ * vs convention"): the injection point a non-pnpm chain needs, and that
+ * omitting it stays byte-identical to before the override existed.
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -15,7 +20,12 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { pendingGate } from "../src/builtinGates.ts";
+import {
+  eslintGate,
+  pendingGate,
+  tscGate,
+  vitestGate,
+} from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
@@ -190,3 +200,95 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 });
+
+describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE)", () => {
+  it.each([
+    ["tscGate", tscGate, "tsc"],
+    ["vitestGate", vitestGate, "vitest"],
+    ["eslintGate", eslintGate, "eslint"],
+  ] as const)(
+    "%s stays a bare Gate (name=%s, when=afterCommit) whether used directly or called with no override",
+    (_label, gate, name) => {
+      expect(gate.name).toBe(name);
+      expect(gate.when).toBe("afterCommit");
+      const called = gate();
+      expect(called.name).toBe(name);
+      expect(called.when).toBe("afterCommit");
+      expect(gate({}).name).toBe(name);
+    },
+  );
+
+  it.each([
+    ["tscGate", tscGate, "TypeScript errors — commit reverted"],
+    ["vitestGate", vitestGate, "Tests failed — commit reverted"],
+    ["eslintGate", eslintGate, "Lint errors — commit reverted"],
+  ] as const)(
+    "%s({ cmd }) actually swaps the invoked binary away from pnpm",
+    async (_label, gate, failHint) => {
+      // Overriding to "node" and keeping the gate's own fixed args (e.g.
+      // ["tsc", "--noEmit"]) makes node try to load the first arg as its
+      // entry script — Node's own MODULE_NOT_FOUND, not a pnpm/shell
+      // "not recognized" failure, is proof the override binary actually ran.
+      const result = await gate({ cmd: "node" }).run(ctx(process.cwd()));
+      expect(result.ok).toBe(false);
+      expect(result.message).toBe(failHint);
+      expect(result.details ?? "").toContain("MODULE_NOT_FOUND");
+    },
+  );
+});
+
+// win32-only: proves the *default* (omitted cmd) invocation is literally
+// "pnpm" — a fake pnpm.cmd shimmed ahead on PATH is what a bare/no-override
+// call resolves to, and an explicit override bypasses it entirely. Mirrors
+// the win32 .cmd shim fixture in Gate.test.ts (same CVE-2024-27980 shim
+// resolution this repo already tests against).
+describe.runIf(process.platform === "win32")(
+  "tscGate — pnpm shim proves the default cmd (win32)",
+  () => {
+    let shimDir: string;
+    let originalPath: string | undefined;
+
+    beforeEach(async () => {
+      shimDir = await mkdtemp(join(tmpdir(), "flume-pnpm-shim-"));
+      await writeFile(
+        join(shimDir, "pnpm.cmd"),
+        "@echo off\r\necho pnpm-shim %*\r\n",
+      );
+      originalPath = process.env.PATH;
+      process.env.PATH = `${shimDir};${process.env.PATH ?? ""}`;
+    });
+
+    afterEach(async () => {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      await rm(shimDir, { recursive: true, force: true });
+    });
+
+    it("bare tscGate (no override) resolves to the pnpm shim", async () => {
+      const result = await tscGate.run(ctx(process.cwd()));
+      expect(result.ok).toBe(true);
+      expect(result.details).toContain("pnpm-shim tsc --noEmit");
+    });
+
+    it("tscGate() called with no override is byte-identical to the bare gate", async () => {
+      const result = await tscGate().run(ctx(process.cwd()));
+      expect(result.ok).toBe(true);
+      expect(result.details).toContain("pnpm-shim tsc --noEmit");
+    });
+
+    it("tscGate({ cmd }) bypasses the pnpm shim entirely", async () => {
+      await writeFile(
+        join(shimDir, "other-pm.cmd"),
+        "@echo off\r\necho other-pm-shim %*\r\n",
+      );
+      const result = await tscGate({ cmd: "other-pm" }).run(
+        ctx(process.cwd()),
+      );
+      expect(result.ok).toBe(true);
+      expect(result.details).toContain("other-pm-shim tsc --noEmit");
+    });
+  },
+);
