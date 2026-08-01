@@ -9,6 +9,54 @@ Status markers:
 
 <!-- questions below this line -->
 
+## win32 path-limit tests assert outcomes a host's registry can fake green (v0.11)
+
+**PARKED**
+
+Diagnosed on a native Windows host, 2026-08-01. Two facts changed the shape of
+the original "the loop has no win32 oracle" finding:
+
+**An oracle exists for interactive sessions.** The operator's machine runs the
+suite under native Windows node 22 — all nine CI reds reproduce in ~25s. The
+gap is real only for the autonomous loop, which runs on Linux.
+
+**But it is a partial oracle, and that is the real problem.** The host carries
+`LongPathsEnabled=1`, so Node's `fs` writes a 368-char raw path without
+complaint. The thing the WIN32-PATH-TOTAL-LIMIT sweep actually shipped —
+wrapping paths in `toNamespacedPath` — is therefore a no-op here and cannot be
+falsified by any test that asserts an *outcome*. A host with the registry key
+unset would fail the same tests the sweep believes it fixed, and no host in the
+loop's reach can tell the difference.
+
+The sweep's tests are outcome-shaped ("the file landed", "the tick shipped").
+That shape makes them a function of host configuration rather than of the code
+under test. The one test in the tree that pins the *call* — `tests/git.test.ts`
+:210, asserting `rm` received the path — is the only one that caught the
+sweep's own change, and it caught it by going red.
+
+Options:
+
+1. **Re-shape the win32 assertions to call-shape.** Spy the `fs` boundary and
+   assert it received a `\\?\`-prefixed path. Falsifiable on every host
+   including Linux, so the Linux loop regains a real signal and the registry
+   key stops mattering. Costs a rewrite of the sweep's ~7 test cases.
+2. **Keep outcome assertions, gate them win32-only** (`skipIf(!win32)`) and
+   accept that they prove nothing on a `LongPathsEnabled=1` host. Local green
+   becomes honest about *where* it ran, but never about *what* it proved.
+3. **Both** — call-shape for the wrapping itself, outcome for the handful of
+   cases where the wrap's effect is genuinely observable.
+
+Recommended: (1), and it likely subsumes the standing
+`WIN32-NAMESPACEDPATH-JOIN-UNSHARED` entry — once the shared helper exists, one
+call-shape pin over it replaces the per-site outcome tests entirely.
+
+**Blocking on this question:** three reds remain after the fixture fix filed as
+`WIN32-SWEEP-TESTS-VACUOUS-ON-BOTH-PLATFORMS` (WORKTREE fresh-create, WORKTREE
+stale-cleanup, PRIORATTEMPT round-trip). They fail with a different symptom —
+nothing shipped, no record written — and were not diagnosed. Deriving a fix for
+them before this question resolves repeats the blind-wave failure the original
+inbox entry warned about.
+
 ## `flume loop`'s tip claim can't literally go "gone after SIGTERM" on win32 (v0.11 §4)
 
 **NEEDS AMENDMENT**

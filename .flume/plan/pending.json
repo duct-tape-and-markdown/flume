@@ -1,5 +1,43 @@
 [
   {
+    "tag": "WIN32-SWEEP-TESTS-VACUOUS-ON-BOTH-PLATFORMS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "makeFixture (93-102) pins core.longpaths=true beside its existing core.autocrlf win32 pin - without it every fixture-driven `git add` of a >260-char path fails on Windows, so the win32 tests die in setup"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "line 210-213's removeWorktree fallback assertion expects toNamespacedPath(path), not the raw path - production has namespaced it since REMOVEWORKTREE-WIN32-PATH-TOTAL-LIMIT and the assertion only stayed green because toNamespacedPath is identity on Linux"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The WIN32-PATH-TOTAL-LIMIT sweep's own tests verify nothing on either platform: on Windows they die in fixture setup, on Linux the win32 semantics are absent.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "the SNAPSHOTREVERTEDFILES/PRIORATTEMPT win32 cases reach their gate-revert assertion instead of ending platform-preempt - fails on the pre-fix tree on Windows, where the fixture's git rejects the deep path and the stub agent's invoke rejects with it"
+      },
+      {
+        "path": "tests/git.test.ts",
+        "asserts": "removeWorktree's fallback rm receives the namespaced path - fails on the pre-fix tree on Windows, where the assertion compares \\\\?\\C:\\... against the raw path"
+      }
+    ],
+    "acceptance": "The three SNAPSHOTREVERTEDFILES/PRIORATTEMPT-class win32 cases and tests/git.test.ts's removeWorktree fallback pass under native Windows node; Linux stays green and byte-identical.",
+    "notes": "Diagnosed on a native Windows host, not derived. Proven in isolation: `git add` of a 375-char path fails 'Filename too long' with core.longpaths unset, succeeds with it set. makeFixture:96-102 pins autocrlf but not longpaths; writeAndCommit:145-149 shells that git add inside the stub agent, so its rejection lands as noCommit=platform-preempt and the tick never reaches the pinned code. GIT_CONFIG_GLOBAL injection turned 3 of 6 reds green, no src change. Other 3 differ - see open-questions.md."
+  },
+  {
     "tag": "WIN32-NAMESPACEDPATH-JOIN-UNSHARED",
     "gate": {
       "kind": "open"
