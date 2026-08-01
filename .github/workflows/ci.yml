@@ -131,11 +131,17 @@ jobs:
         # because attw@0.18.2 crashes (see the attw step). nodenext + an
         # ESM (.mts) consumer is the strict, faithful resolution mode for
         # this ESM-only package — exercises the exports `types` condition.
-        # Reuses the tarball already installed by the smoke step above.
+        # Reuses the smoke step's consumer dir and tarball, but must
+        # re-install the tarball AFTER typescript: every `npm install`
+        # reconciles node_modules against package.json, pruning the
+        # --no-save'd package the smoke step left behind.
         run: |
           set -euo pipefail
+          REPO="$PWD"
+          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
           cd "$RUNNER_TEMP/flume-consumer"
           npm install --no-audit --no-fund -D typescript@5 >/dev/null
+          npm install --no-audit --no-fund --no-save "$REPO/$TARBALL" >/dev/null
           cat > tsconfig.json <<'EOF'
           {
             "compilerOptions": {
