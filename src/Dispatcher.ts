@@ -38,6 +38,7 @@ import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
 import { partitionByFileOverlap } from "./partition.js";
+import { namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
@@ -547,12 +548,10 @@ export async function frictionCountLine(
   try {
     // win32 total-path limit (~260 chars, v0.4 §6): same join(stateRoot,
     // chain.friction) construction writeRevertNote and harvestFriction
-    // guard below. toNamespacedPath prepends the \\?\ extended-length
-    // prefix on win32 (no-op elsewhere) — same idiom as those.
-    entries = await readdir(
-      toNamespacedPath(join(stateRoot, chain.friction)),
-      { withFileTypes: true },
-    );
+    // guard below — namespacedJoin (src/paths.ts) is the shared idiom.
+    entries = await readdir(namespacedJoin(stateRoot, chain.friction), {
+      withFileTypes: true,
+    });
   } catch {
     return undefined;
   }
@@ -2067,10 +2066,9 @@ export class Dispatcher {
       // win32 total-path limit (~260 chars, v0.4 §6): mirrorDir nests a
       // worktree path (itself at least as deep as the job dir, v0.4 §6's
       // own createWorktree comment) under chain.friction, so it can exceed
-      // MAX_PATH even where no single component does. toNamespacedPath
-      // prepends the \\?\ extended-length prefix on win32 (no-op
-      // elsewhere) — same idiom as writeRevertNote below.
-      entries = await readdir(toNamespacedPath(mirrorDir), {
+      // MAX_PATH even where no single component does. namespacedJoin
+      // (src/paths.ts) is the shared idiom — same as writeRevertNote below.
+      entries = await readdir(namespacedJoin(mirrorDir), {
         withFileTypes: true,
       });
     } catch (err) {
@@ -2089,7 +2087,7 @@ export class Dispatcher {
 
     const primaryDir = join(this.flumeDir, chain.friction);
     try {
-      await mkdir(toNamespacedPath(primaryDir), { recursive: true });
+      await mkdir(namespacedJoin(primaryDir), { recursive: true });
     } catch (err) {
       this.log.warn(
         `[flume] friction harvest: could not create ${primaryDir}: ${(err as Error).message}`,
@@ -2101,14 +2099,14 @@ export class Dispatcher {
       const src = join(mirrorDir, file.name);
       const dest = join(primaryDir, `${tag}--${file.name}`);
       try {
-        await rename(toNamespacedPath(src), toNamespacedPath(dest));
+        await rename(namespacedJoin(src), namespacedJoin(dest));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "EXDEV") {
           // Worktree relocated onto a different volume (FLUME_WORKTREES_DIR)
           // — rename can't cross devices; copy then drop the source instead.
           try {
-            await copyFile(toNamespacedPath(src), toNamespacedPath(dest));
-            await rm(toNamespacedPath(src), { force: true });
+            await copyFile(namespacedJoin(src), namespacedJoin(dest));
+            await rm(namespacedJoin(src), { force: true });
             continue;
           } catch (copyErr) {
             this.log.warn(
@@ -2398,10 +2396,10 @@ export class Dispatcher {
       const primaryDir = join(this.flumeDir, chain.friction);
       // win32 total-path limit (~260 chars, v0.4 §6): TAG_MAX_LENGTH bounds
       // only the filename component, not the friction dir's full depth.
-      // toNamespacedPath prepends the \\?\ extended-length prefix on
-      // win32 (no-op elsewhere), so the mkdir/writeFile below survive a
-      // full path past MAX_PATH even when the per-component bound holds.
-      await mkdir(toNamespacedPath(primaryDir), { recursive: true });
+      // namespacedJoin (src/paths.ts) is the shared idiom — the mkdir/
+      // writeFile below survive a full path past MAX_PATH even when the
+      // per-component bound holds.
+      await mkdir(namespacedJoin(primaryDir), { recursive: true });
       const lines = [
         `# Gate revert: ${failure.gate}`,
         "",
@@ -2415,9 +2413,7 @@ export class Dispatcher {
         "",
       ];
       await writeFile(
-        toNamespacedPath(
-          join(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
-        ),
+        namespacedJoin(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
         lines.join("\n"),
         "utf8",
       );

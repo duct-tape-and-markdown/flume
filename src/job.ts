@@ -17,12 +17,13 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve, toNamespacedPath } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
 import { pinLongPaths } from "./git.js";
+import { namespacedJoin } from "./paths.js";
 import { parsePendingLoose } from "./PendingSchema.js";
 import type { ParseResult } from "./PendingSchema.js";
 
@@ -384,10 +385,11 @@ function countFrictionFiles(dir: string): number {
   try {
     // win32 total-path limit (~260 chars, v0.4 §6): dir joins a job dir
     // onto chain.friction, the same construction writeRevertNote and
-    // harvestFriction guard in Dispatcher.ts. toNamespacedPath prepends the
-    // \\?\ extended-length prefix on win32 (no-op elsewhere).
-    return readdirSync(toNamespacedPath(dir), { withFileTypes: true })
-      .filter((e) => e.isFile()).length;
+    // harvestFriction guard in Dispatcher.ts. namespacedJoin (src/paths.ts)
+    // is the shared idiom.
+    return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
+      (e) => e.isFile(),
+    ).length;
   } catch {
     return 0;
   }

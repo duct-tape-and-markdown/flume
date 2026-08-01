@@ -248,6 +248,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   thrown on every CI run to date (spec/RELEASE-v0.1.md §4); the job's
   earlier `pnpm build` step already produces `dist/`, so the redundant
   prepack rebuild is skipped rather than routed around.
+- `writeRevertNote`, `harvestFriction`, `frictionCountLine`
+  (`Dispatcher.ts`), and `countFrictionFiles` (`job.ts`) each inlined the
+  win32 total-path-limit idiom (`toNamespacedPath(join(...))`) separately.
+  A new `namespacedJoin` (`src/paths.ts`) is now the one place that pairs
+  them; all four call sites use it instead of re-deriving the wrap.
+  Behavior-identical today — the fix is the shared mechanism, pinned in
+  `tests/paths.test.ts` against a future one-sided edit
+  (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
 ## [0.9.0] - 2026-07-31
 
