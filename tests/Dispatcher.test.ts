@@ -5354,6 +5354,32 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
+  // RELEASE-v0.11 §6 — every engine value a chain composes with rides the
+  // api param; `readTickVerdicts` is the one §6 doesn't name explicitly but
+  // the same rule covers (FLUMEAPI-READTICKVERDICTS-MISSING).
+  it("hands the chain factory the identity-same readTickVerdicts the engine exports (§6)", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-readtickverdicts-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default (api) => ({ chain: { phases: [{ name: "build", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [api.readTickVerdicts], ` +
+          `handoff: () => [] }], humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      const gates = mod.chain.phases[0]!.gates;
+      expect(gates[0]).toBe(readTickVerdicts);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
   it("refuses a default export that is not a function, naming the migration (§6)", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-nonfactory-"));
     try {

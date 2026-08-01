@@ -1114,27 +1114,26 @@ A chain that wants a phase's prompt to carry recent tick history renders it
 itself, from `promptArgs`:
 
 ```ts
-import { readTickVerdicts } from "@dtmd/flume";
+const factory: ChainFactory = (flume) => {
+  const { readTickVerdicts } = flume;
 
-const plan: Phase = {
-  name: "plan",
+  const plan: Phase = {
+    name: "plan",
+    // ...
+    async promptArgs(ctx) {
+      const recent = await readTickVerdicts(ctx.flumeDir, 5);
+      const lines = recent.map(
+        (v) =>
+          `${v.phaseName}: ${v.committed ? "committed" : (v.noCommit ?? "no-op")}` +
+          (v.shippedTags.length ? ` (shipped ${v.shippedTags.join(", ")})` : ""),
+      );
+      return { RECENT_TICKS: lines.join("\n") || "(no prior ticks)" };
+    },
+  };
+
   // ...
-  async promptArgs(ctx) {
-    const recent = await readTickVerdicts(ctx.flumeDir, 5);
-    const lines = recent.map(
-      (v) =>
-        `${v.phaseName}: ${v.committed ? "committed" : (v.noCommit ?? "no-op")}` +
-        (v.shippedTags.length ? ` (shipped ${v.shippedTags.join(", ")})` : ""),
-    );
-    return { RECENT_TICKS: lines.join("\n") || "(no prior ticks)" };
-  },
 };
 ```
-
-`readTickVerdicts` is not yet carried on `FlumeApi` (unlike the gates,
-`setupWorktree`, and the agent constructors above), so it stays a direct
-package import until it moves — see the open question in
-`.flume/plan/open-questions.md`.
 
 Whether to render history at all, how far back, and what to do with a
 reverted tick's `gateResults[].details` (surface it verbatim? summarize it?

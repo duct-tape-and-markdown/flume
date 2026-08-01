@@ -30,7 +30,11 @@ import {
   writablePathsGate,
   pendingGate,
 } from "./builtinGates.js";
-import { CjsContextLoadError, PendingParseFailure } from "./Dispatcher.js";
+import {
+  CjsContextLoadError,
+  PendingParseFailure,
+  readTickVerdicts,
+} from "./Dispatcher.js";
 import { showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
@@ -75,6 +79,7 @@ export interface FlumeApi {
   isPickableNow: typeof isPickableNow;
   partitionByFileOverlap: typeof partitionByFileOverlap;
   renderPrompt: typeof renderPrompt;
+  readTickVerdicts: typeof readTickVerdicts;
   /** Read-only git helpers a chain gate may need. */
   git: {
     showNameOnly: typeof showNameOnly;
@@ -118,6 +123,7 @@ export function buildFlumeApi(): FlumeApi {
     isPickableNow,
     partitionByFileOverlap,
     renderPrompt,
+    readTickVerdicts,
     git: { showNameOnly },
     CjsContextLoadError,
     PendingParseFailure,
