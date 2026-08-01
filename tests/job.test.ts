@@ -1129,3 +1129,34 @@ describe.runIf(process.platform === "win32")(
     }, 60_000);
   },
 );
+
+describe.runIf(process.platform === "win32")(
+  "jobStatus frictionCount — win32 total-path limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    it("resolves a real count when frictionDir nests past win32's ~260-char limit", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-job-status-w32-"));
+      try {
+        const jobs = join(dir, ".flume", "jobs");
+        // Same deep-friction shape as the Dispatcher.ts win32 suites
+        // (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT et al., tests/Dispatcher.test.ts):
+        // <jobDir>/<frictionDir> alone clears win32's ~260-char total-path
+        // limit.
+        const deepFriction = join(
+          "friction",
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const frictionDir = join(jobs, "alpha", deepFriction);
+        await mkdir(frictionDir, { recursive: true });
+        await writeFile(join(frictionDir, "a.md"), "x\n");
+        await writeFile(join(frictionDir, "b.md"), "y\n");
+
+        expect(frictionDir.length).toBeGreaterThan(260);
+        expect(jobStatus(dir, deepFriction)).toEqual([
+          { name: "alpha", awake: [], pending: 0, frictionCount: 2 },
+        ]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  },
+);

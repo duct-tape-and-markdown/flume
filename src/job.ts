@@ -17,7 +17,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
@@ -382,8 +382,12 @@ export interface JobStatus {
 /** Files (not subdirs) directly under `dir`; 0 when `dir` is absent or unreadable. */
 function countFrictionFiles(dir: string): number {
   try {
-    return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile())
-      .length;
+    // win32 total-path limit (~260 chars, v0.4 §6): dir joins a job dir
+    // onto chain.friction, the same construction writeRevertNote and
+    // harvestFriction guard in Dispatcher.ts. toNamespacedPath prepends the
+    // \\?\ extended-length prefix on win32 (no-op elsewhere).
+    return readdirSync(toNamespacedPath(dir), { withFileTypes: true })
+      .filter((e) => e.isFile()).length;
   } catch {
     return 0;
   }

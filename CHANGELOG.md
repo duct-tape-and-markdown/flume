@@ -173,6 +173,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   total-path limit — a deep friction channel silently dropped the
   worktree's friction note (swallowed by the existing best-effort catch)
   instead of harvesting it before worktree removal (v0.4 §6).
+- `job.ts`'s `countFrictionFiles` (`jobStatus`'s `frictionCount`) and
+  `Dispatcher.ts`'s `frictionCountLine` (`flume status` / `flume job
+  status`'s friction line) now route their `readdir` through
+  `toNamespacedPath`, the same idiom `writeRevertNote` and `harvestFriction`
+  above were just fixed with — both joined `chain.friction` onto a state
+  root unwrapped, so a deep friction channel hit the identical win32
+  ~260-char total-path limit and silently under-reported: `readdirSync`'s
+  swallowed `ENAMETOOLONG` read as "0 files" (`jobStatus`) or "no friction
+  line" (`frictionCountLine`) instead of the real count (v0.4 §6).
 - CI's "npm pack file-set guard" step now passes `--ignore-scripts` to
   `npm pack --dry-run --json`. `"prepack": "pnpm build"` writes a script
   banner ahead of npm's JSON on stdout, so the guard's `JSON.parse` has

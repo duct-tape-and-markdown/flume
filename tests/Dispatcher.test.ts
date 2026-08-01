@@ -20,6 +20,7 @@ import { tsImport } from "tsx/esm/api";
 import {
   CjsContextLoadError,
   Dispatcher,
+  frictionCountLine,
   loadChainModule,
   superviseLoop,
   writeTickVerdict,
@@ -6025,6 +6026,31 @@ describe.runIf(process.platform === "win32")(
       expect(await readFile(harvested, "utf8")).toBe(
         "the loop wants owner input\n",
       );
+    }, 20_000);
+
+    it("frictionCountLine resolves a real count when chain.friction nests past win32's ~260-char limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-w32-"));
+      try {
+        // Same deep-friction shape as WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT
+        // / HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT above: join(stateRoot,
+        // chain.friction) alone clears win32's ~260-char total-path limit.
+        const deepFriction = join(
+          "friction",
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const frictionDir = join(stateRoot, deepFriction);
+        await mkdir(frictionDir, { recursive: true });
+        await writeFile(join(frictionDir, "a.md"), "x\n");
+        await writeFile(join(frictionDir, "b.md"), "y\n");
+
+        expect(frictionDir.length).toBeGreaterThan(260);
+        const chain: Chain = { phases: [], humanOnly: [], friction: deepFriction };
+        expect(await frictionCountLine(stateRoot, chain)).toBe(
+          "friction: 2 note(s) await routing",
+        );
+      } finally {
+        await rm(stateRoot, { recursive: true, force: true });
+      }
     }, 20_000);
   },
 );

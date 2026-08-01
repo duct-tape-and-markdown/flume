@@ -545,9 +545,14 @@ export async function frictionCountLine(
   if (chain.friction === undefined) return undefined;
   let entries: Dirent[];
   try {
-    entries = await readdir(join(stateRoot, chain.friction), {
-      withFileTypes: true,
-    });
+    // win32 total-path limit (~260 chars, v0.4 §6): same join(stateRoot,
+    // chain.friction) construction writeRevertNote and harvestFriction
+    // guard below. toNamespacedPath prepends the \\?\ extended-length
+    // prefix on win32 (no-op elsewhere) — same idiom as those.
+    entries = await readdir(
+      toNamespacedPath(join(stateRoot, chain.friction)),
+      { withFileTypes: true },
+    );
   } catch {
     return undefined;
   }
