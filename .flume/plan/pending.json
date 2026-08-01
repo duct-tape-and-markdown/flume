@@ -1,34 +1,5 @@
 [
   {
-    "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "move the 77-105 block down onto resolveStateDirs (126); resolveRepoRoot keeps its own 107-114 block. A move, not a rewrite - the text is accurate for its subject"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "resolveStateDirs' 29-line docstring is detached - a second docstring intervenes, so it documents nothing and the v0.6 §3 resolution authority is invisible to hover.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "Hover on resolveStateDirs shows the job-resolution semantics; hover on resolveRepoRoot is unchanged.",
-    "notes": "LSP hover this tick: resolveStateDirs (126) returns the signature alone, no docs; resolveRepoRoot (115) returns only its own block. The 77-105 text sits between JobResolutionConflictError (75) and resolveRepoRoot's docstring, separated by a blank line, so TS attaches it to nothing - the conflict rule, the write-back rationale, and the FLUME_JOB composition case all read as current while reaching no consumer. Prose-only."
-  },
-  {
     "tag": "GATECONTEXT-REPOROOT-REQUIRED",
     "gate": {
       "kind": "open"
