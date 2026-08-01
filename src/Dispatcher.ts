@@ -2059,7 +2059,15 @@ export class Dispatcher {
     const mirrorDir = join(worktreePath, stateRootRel, chain.friction);
     let entries: Dirent[];
     try {
-      entries = await readdir(mirrorDir, { withFileTypes: true });
+      // win32 total-path limit (~260 chars, v0.4 §6): mirrorDir nests a
+      // worktree path (itself at least as deep as the job dir, v0.4 §6's
+      // own createWorktree comment) under chain.friction, so it can exceed
+      // MAX_PATH even where no single component does. toNamespacedPath
+      // prepends the \\?\ extended-length prefix on win32 (no-op
+      // elsewhere) — same idiom as writeRevertNote below.
+      entries = await readdir(toNamespacedPath(mirrorDir), {
+        withFileTypes: true,
+      });
     } catch (err) {
       // Absent dir (no friction written this tick) is expected and silent.
       // Anything else — unreadable dir, e.g. permissions — is §4's
@@ -2076,7 +2084,7 @@ export class Dispatcher {
 
     const primaryDir = join(this.flumeDir, chain.friction);
     try {
-      await mkdir(primaryDir, { recursive: true });
+      await mkdir(toNamespacedPath(primaryDir), { recursive: true });
     } catch (err) {
       this.log.warn(
         `[flume] friction harvest: could not create ${primaryDir}: ${(err as Error).message}`,
@@ -2088,14 +2096,14 @@ export class Dispatcher {
       const src = join(mirrorDir, file.name);
       const dest = join(primaryDir, `${tag}--${file.name}`);
       try {
-        await rename(src, dest);
+        await rename(toNamespacedPath(src), toNamespacedPath(dest));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "EXDEV") {
           // Worktree relocated onto a different volume (FLUME_WORKTREES_DIR)
           // — rename can't cross devices; copy then drop the source instead.
           try {
-            await copyFile(src, dest);
-            await rm(src, { force: true });
+            await copyFile(toNamespacedPath(src), toNamespacedPath(dest));
+            await rm(toNamespacedPath(src), { force: true });
             continue;
           } catch (copyErr) {
             this.log.warn(

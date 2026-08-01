@@ -5965,5 +5965,66 @@ describe.runIf(process.platform === "win32")(
       expect(files.length).toBe(1);
       expect(files[0]).toContain(tag);
     }, 20_000);
+
+    it("harvestFriction moves the worktree-local file into the primary dir when the friction channel nests past win32's ~260-char limit (HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      const tag = "LONGFRICTION-B";
+      await writePending(fx.repo, [
+        makeEntry(tag, ["src/longfriction-b.ts"]),
+      ]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      // Same deep-friction shape as WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT
+      // above: <flumeDir>/<friction> alone clears win32's ~260-char total-
+      // path limit, and harvestFriction's mirrorDir nests the (already deep,
+      // per createWorktree's own MAX_PATH comment) worktree path under the
+      // same friction value, so it clears the limit by an even wider margin.
+      const deepFriction = join(
+        "friction",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+      );
+      const chain: Chain = {
+        phases: [phase],
+        humanOnly: [],
+        friction: deepFriction,
+      };
+
+      const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      const agent = fanoutAgent({
+        [slug]: async (cwd) => {
+          const mirrorDir = join(cwd, ".flume", deepFriction);
+          await mkdir(mirrorDir, { recursive: true });
+          await writeFile(
+            join(mirrorDir, "note.md"),
+            "the loop wants owner input\n",
+          );
+          await writeAndCommit(
+            cwd,
+            "src/longfriction-b.ts",
+            "ok\n",
+            `build(${tag}): ship`,
+          );
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+      expect(outcome.result?.shippedTags).toEqual([tag]);
+
+      const primaryFrictionDir = join(fx.repo, ".flume", deepFriction);
+      expect(primaryFrictionDir.length).toBeGreaterThan(260);
+      const harvested = join(primaryFrictionDir, `${tag}--note.md`);
+      expect(existsSync(harvested)).toBe(true);
+      expect(await readFile(harvested, "utf8")).toBe(
+        "the loop wants owner input\n",
+      );
+    }, 20_000);
   },
 );

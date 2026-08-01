@@ -164,6 +164,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `flumeDir`/friction-channel nesting still silently dropped the note
   (swallowed by the existing best-effort catch) after that fix shipped
   (v0.4 §6).
+- `harvestFriction`'s `readdir`/`mkdir`/`rename` (and the `EXDEV`
+  `copyFile`/`rm` fallback) now route the worktree-local mirror dir and the
+  primary friction dir through `toNamespacedPath`, the same idiom
+  `writeRevertNote` above was just fixed with. The mirror dir nests a
+  fanout worktree path (itself at least as deep as the job dir, v0.4 §6)
+  under `chain.friction`, so it hit the identical win32 ~260-char
+  total-path limit — a deep friction channel silently dropped the
+  worktree's friction note (swallowed by the existing best-effort catch)
+  instead of harvesting it before worktree removal (v0.4 §6).
 - CI's "npm pack file-set guard" step now passes `--ignore-scripts` to
   `npm pack --dry-run --json`. `"prepack": "pnpm build"` writes a script
   banner ahead of npm's JSON on stdout, so the guard's `JSON.parse` has
