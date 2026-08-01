@@ -76,6 +76,44 @@
     "notes": "Fifth sibling, same audit as WORKTREE-WIN32-PATH-TOTAL-LIMIT. Different failure mode: acquireTipClaim's mkdir (328) isn't try/catch'd at all and writeFile's catch only swallows EEXIST, so ENAMETOOLONG propagates to cli.ts:869's rethrow - a `flume loop`/`run` crash on win32, not a silent wrong count. refPath mirrors createWorktree's own branch naming (flume/<namespace>/slugify(entry.tag)), so an entry near TAG_MAX_LENGTH (216) triggers it today."
   },
   {
+    "tag": "SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "snapshotRevertedFiles' stale-snapshot rm (2283, clears the dir before rewriting) and clearPriorAttempt's rm (2239, clears on a clean ship) both route dir through toNamespacedPath, same idiom as the mkdir/writeFile just above them and as createWorktree's stale-worktree rm fallback (2159, already in WORKTREE-WIN32-PATH-TOTAL-LIMIT's scope)"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "win32-gated coverage beside SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT's suite: a second gate-revert under the same key clears and replaces a prior deep-path snapshot; a clean ship after a deep-path revert clears the stale snapshot without the tick throwing"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "snapshotRevertedFiles/clearPriorAttempt's rm(revertedSnapshotDir(key), {recursive:true}) are unwrapped, can't reliably clear the deep-path snapshots the fixed mkdir/writeFile now write.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a deep-path snapshot from a prior revert is fully cleared on both a repeat revert (same key) and a subsequent clean ship - fails on the pre-fix tree via ENAMETOOLONG in the unwrapped recursive rm"
+      }
+    ],
+    "acceptance": "both rm(revertedSnapshotDir(key), {recursive:true}) call sites route dir through toNamespacedPath; win32-gated repeat-revert and clean-ship-after-revert fixtures at depth pass; tsc/vitest green.",
+    "notes": "Found auditing f80eb3a/16cd332 (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT): that entry wrapped dest mkdir/writeFile but left its own stale-snapshot rm (2283) and clearPriorAttempt's rm (2239) unwrapped - both walk the same deep dir. clearPriorAttempt's caller (runSingleton:1220) has no surrounding try/catch and tick()'s catch only swallows PendingParseFailure, so this throws out of the tick - GITTIPCLAIM's crash class, not the snapshot entry's silent-loss shape."
+  },
+  {
     "tag": "WIN32-NAMESPACEDPATH-JOIN-UNSHARED",
     "gate": {
       "kind": "open"
