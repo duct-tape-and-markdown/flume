@@ -1,47 +1,5 @@
 [
   {
-    "tag": "FLUMEAPI-READTICKVERDICTS-MISSING",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/flumeApi.ts",
-          "description": "FlumeApi interface (57-87) and buildFlumeApi() (99-127) gain readTickVerdicts: typeof readTickVerdicts (Dispatcher.js, already imported there for the error classes) per §6 - mirrors FLUMEAPI-ERROR-CLASSES-MISSING's shape (947cb4a)"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "extend the §6 identity test (~5330, 'hands the chain factory the identity-same error classes the engine throws') or add a sibling case asserting api.readTickVerdicts toBe the real export"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "§8 (1097-1137) - swap the direct `import { readTickVerdicts } from \"@dtmd/flume\"` example for `const { readTickVerdicts } = flume;`, matching the three sites ccc5673 already migrated; drop the 1134-1137 caveat now that it's on FlumeApi"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "FlumeApi omits readTickVerdicts - §6 requires every engine value a chain composes with ride the api param, but this one still needs a direct package import.",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "6. The chain is a plugin, not a consumer"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "buildFlumeApi()'s returned object carries readTickVerdicts, toBe the real Dispatcher.js export - a chain factory can call api.readTickVerdicts with no value import"
-      }
-    ],
-    "acceptance": "A chain factory calls api.readTickVerdicts directly, no value import; docs/CHAIN-AUTHORING.md §8's example matches; tsc/vitest green.",
-    "notes": "Closes the open question filed in ccc5673 (sibling to FLUMEAPI-ERROR-CLASSES-MISSING, which caught the same §6 omission for the instanceof error classes but not this one, since §6's text names those explicitly and not readTickVerdicts). Recommended action was already unambiguous - filed directly per collaboration.md 'Inform before parking'."
-  },
-  {
     "tag": "DISPATCHER-FANOUT-AFTERCOMMIT-FOOTPRINT-DUP",
     "gate": {
       "kind": "open"
