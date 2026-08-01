@@ -1,30 +1,16 @@
 /**
- * Flume's own Flume chain — plan → build.
+ * Flume's own Flume chain — plan → build. Loaded by the flume CLI from
+ * `.flume/chain.ts`; the default export is the Chain.
  *
- * Loaded by the flume CLI from `.flume/chain.ts`. The default export is the
- * Chain.
- *
- * Two phases (no spec): the spec corpus (`spec/RELEASE-*.md`) is human-directed, not phase-written.
- * Plan derives pending.json from it + current src state; build ships entries.
- *
- * Spec edits flow through normal commits, not through a flume phase. If an
- * entry surfaces real spec ambiguity, hand-edit the spec file as a separate
- * commit and run `flume tick` (plan) to refresh.
- *
- * Dogfood note: this is flume operating on flume. chain.ts imports from
- * `../src/` (the in-repo runtime) rather than `flume/src/` (the published
- * dep). Any breaking runtime change must be paired with a chain.ts update
- * in the same commit.
+ * Dogfood note: chain.ts imports the in-repo runtime (`../src/`), not the
+ * published dep — a breaking runtime change pairs with a chain.ts update in
+ * the same commit (CLAUDE.md, "Source of truth"). Layer lanes and spec
+ * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-
-const execFileP = promisify(execFile);
-
 
 /** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
 const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
@@ -43,11 +29,13 @@ import {
 } from "../src/Agent.ts";
 import { z } from "zod";
 import {
+  isPickableNow,
   renderSchemaForPrompt,
   type EntryExtension,
 } from "../src/PendingSchema.ts";
 import { tscGate, shellGate, pendingGate } from "../src/builtinGates.ts";
 import { setupWorktree as installWorktreeDeps } from "../src/setupWorktree.ts";
+import { showNameOnly } from "../src/git.ts";
 
 // ---------- entry extension (v0.8 §2) ----------
 
@@ -93,16 +81,32 @@ const entryExtension = {
 // ---------- build fence ----------
 
 /**
+ * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
+ * declarations: every behavior-changing entry edits tests, changelogGate
+ * demands a CHANGELOG line per src/ commit, and open-questions.md is the
+ * always-writable parking lane (collaboration rule). Requiring these in
+ * entry.files turns one under-declaration into a fence revert on
+ * otherwise-correct work; cross-entry collisions stay covered by per-entry
+ * afterMerge revert (§7b).
+ */
+const channelPaths = [
+  ".flume/plan/open-questions.md",
+  "tests/**",
+  "CHANGELOG.md",
+];
+
+/**
  * Build's fence, hoisted so plan's `pendingGate` (v0.8 §6) can pre-check
  * every derived entry's declared files against the fence build will
  * actually enforce — an entry that can't survive it fails at plan time,
  * naming the paths, instead of burning a build tick into a revert.
+ * v0.4 §5: on a fanout tick the write guard narrows to the entry's declared
+ * files ∪ channelPaths; the phase globs below stay the outer ceiling.
  */
 const buildFence = {
   writablePaths: [
-    // Source, tests, bin, examples, docs, ad-hoc scripts
+    // Source, bin, examples, docs, ad-hoc scripts (tests/** rides the channel)
     "src/**",
-    "tests/**",
     "bin/**",
     "examples/**",
     "docs/**",
@@ -131,11 +135,10 @@ const buildFence = {
     ".npmrc",
     ".env.example",
 
-    // User-facing root docs
+    // User-facing root docs (CHANGELOG.md rides the channel)
     "README.md",
     "LICENSE",
     "LICENSE.*",
-    "CHANGELOG.md",
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     "SECURITY.md",
@@ -147,80 +150,46 @@ const buildFence = {
     ".husky/**",
     ".devcontainer/**",
 
-    // Cross-tick channel: a build tick parks judgment calls here for the
-    // next plan tick (collaboration rule) — the one .flume/plan/ file build
-    // may write. Also the §5 channel allowance (entryChannelPaths below).
-    ".flume/plan/open-questions.md",
+    // Mandatory per-entry surfaces — one declaration, shared with
+    // entryChannelPaths (the engine requires channel ⊆ writable).
+    ...channelPaths,
 
-    // NOTE: build does NOT touch .flume/plan/pending.json. Harness writes
-    // the ship commit post-merge to avoid cherry-pick conflicts.
-    // NOTE: build does NOT touch spec/**. The spec corpus is human-curated;
-    // if a build entry needs spec clarification, the entry should be blocked
-    // and an open question surfaced.
-    // NOTE: build does NOT touch .flume/{chain.ts,prompts/**} or
-    // .flume/plan/** beyond open-questions.md above, or
-    // .claude/{rules,settings*.json}. Those are harness/human territory;
-    // edits flow through `chore(flume):` commits, not build ticks.
+    // NOTE: pending.json is harness-written post-merge (the ship commit);
+    // spec/** and harness surfaces (.flume/{chain.ts,prompts/**},
+    // .claude/**) are outside every phase lane —
+    // `.claude/rules/spec-plan-build.md`.
   ],
-  // v0.4 §5: on a fanout tick with an assignedEntry the write guard narrows
-  // to the entry's declared files ∪ this channel (phase globs stay the outer
-  // ceiling). open-questions.md is the parking lane a scoped tick may always
-  // write regardless of what its entry declared. tests/** rides the channel
-  // (operator, 2026-07-29): in this repo every behavior-changing entry
-  // forces test edits, and under-declared entries were fence-reverting
-  // whole ticks — three in one day, every violating path a test file.
-  // Collisions between parallel entries editing shared suites stay covered
-  // by per-entry afterMerge revert (§7b).
-  // CHANGELOG.md rides the channel for the same reason tests/** does: the
-  // changelog gate below makes a line mandatory for every src/-touching
-  // commit, so requiring each entry to also *declare* CHANGELOG.md would
-  // turn one under-declaration into a fence revert on work that is
-  // otherwise correct.
-  entryChannelPaths: [
-    ".flume/plan/open-questions.md",
-    "tests/**",
-    "CHANGELOG.md",
-  ],
+  entryChannelPaths: channelPaths,
 };
 
 /**
- * Materialize node_modules in a fresh build worktree.
- *
- * `git worktree add` shares .git and the tracked tree but not gitignored
- * files; node_modules is gitignored and tsc/vitest need it. We do NOT
- * symlink repoRoot/node_modules: pnpm deletes a symlinked node_modules on
- * install (pnpm/pnpm#9973). Dogfood discipline (spec §11): the chain uses
- * the engine's own lockfile-aware helper — this repo's pnpm-lock.yaml
- * selects `pnpm install --frozen-lockfile`, hardlinked from pnpm's global
- * store, so this is seconds, not a refetch.
+ * Materialize node_modules in a fresh build worktree, then assert it: a
+ * failed setup parks the entry before the agent runs (dispatcher §16),
+ * where missing deps would otherwise surface post-agent as confusing
+ * tsc/vitest "cannot find module" noise. The engine helper is
+ * lockfile-aware (src/setupWorktree.ts; dogfood discipline
+ * RELEASE-v0.1.md §11); we do NOT symlink repoRoot/node_modules — pnpm
+ * deletes a symlinked node_modules on install (pnpm/pnpm#9973). The
+ * sentinel derives from the worktree's own manifest, not a hardcoded dep.
  */
-const buildSetupWorktree = async (
+const setupBuildWorktree = async (
   ctx: WorktreeSetupContext,
 ): Promise<void> => {
   await installWorktreeDeps(ctx.worktreePath);
-};
-
-/**
- * Defense-in-depth (spec §6): a worktree with un-materialized deps makes
- * tscGate/vitestGate fail with confusing "cannot find module" noise. Fail
- * loud and specific instead. Strategy-agnostic — asserts the outcome (a
- * sentinel dep resolves from the worktree root), not the mechanism, so it
- * stays valid if setupWorktree's strategy changes.
- */
-const worktreeDepsGate: Gate = {
-  name: "worktree deps resolve",
-  when: "afterCommit",
-  async run(ctx) {
-    const sentinel = join(ctx.cwd, "node_modules", "zod", "package.json");
-    if (existsSync(sentinel)) {
-      return { ok: true, message: "worktree node_modules resolves (zod sentinel)" };
-    }
-    return {
-      ok: false,
-      message:
-        "worktree node_modules missing sentinel 'zod' — setupWorktree dependency materialization failed",
-    };
-  },
+  const manifest = JSON.parse(
+    readFileSync(join(ctx.worktreePath, "package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  const sentinel = Object.keys(manifest.dependencies ?? {})[0];
+  if (
+    sentinel &&
+    !existsSync(
+      join(ctx.worktreePath, "node_modules", sentinel, "package.json"),
+    )
+  ) {
+    throw new Error(
+      `setupWorktree: node_modules/${sentinel} missing after install — dependency materialization failed`,
+    );
+  }
 };
 
 /**
@@ -243,15 +212,7 @@ const changelogGate: Gate = {
     if (!ctx.commitSha) {
       return { ok: false, message: "changelog gate requires commitSha" };
     }
-    const { stdout } = await execFileP(
-      "git",
-      ["show", "--name-only", "--pretty=format:", ctx.commitSha],
-      { cwd: ctx.cwd },
-    );
-    const touched = stdout
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const touched = await showNameOnly(ctx.cwd, ctx.commitSha);
     const srcTouched = touched.filter((f) => f.startsWith("src/"));
 
     if (srcTouched.length === 0) {
@@ -323,17 +284,10 @@ const phaseAgent = (model: string) =>
   );
 
 /**
- * Model is pinned per phase because the phases differ in kind, not in
- * difficulty: plan carries open-ended judgment — the posture sweep, inbox
- * triage, deciding what is a question versus an entry — while build
- * executes entries whose decisions are already made.
- *
- * Revisit when either premise stops holding: if plan's dimensions reduce to
- * bookkeeping again, or if build begins reverting on judgment rather than on
- * mechanics. That check is owned by the posture sweep's `expired narration`
- * lens (`.claude/rules/posture-sweep.md`) — a tick observing either
- * condition files the re-pin as a pending entry rather than leaving this
- * comment to describe a decision that no longer holds.
+ * Model pinned per phase: the seam exists so the tiers can diverge (plan
+ * carries open-ended judgment; build executes decided entries). Both
+ * currently sonnet — a usage-budget ruling, not a collapse of the seam;
+ * re-pin via pending entry when either phase's needs diverge.
  */
 const planAgent = phaseAgent("sonnet");
 const buildAgent = phaseAgent("sonnet");
@@ -364,24 +318,23 @@ const plan: Phase = {
     // findings do NOT pass through inbox — they're written directly to
     // pending.json / open-questions.md, with narrative in the commit body.
   ],
-  // v0.8 §6 dogfood adoption: the builtin composes core + this chain's
-  // extension for validation AND pre-checks every entry's declared files
-  // against build's fence — replaces the hand-rolled pendingParseGate.
+  // v0.8 §6: the builtin composes core + this chain's extension for
+  // validation and pre-checks every entry's declared files against build's
+  // fence at plan time.
   gates: [pendingGate({ extension: entryExtension, targetFence: buildFence })],
   promptArgs() {
     return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
   },
   handoff(result) {
-    // Plan re-wakes itself when state.md ends with `Plan continues: yes`.
-    // This is the vertical-slice signal: plan does one focused mode per tick
-    // (audit / derive / maintain) and tells the harness whether more plan
-    // work remains. If yes, the harness keeps the baton on plan; if no, hand
-    // off to build (if pickable) or hibernate. The prompt mandates the final
-    // state.md line, so absence here = stable.
+    // Plan re-wakes itself while state.md carries `Plan continues: yes` —
+    // the vertical-slice signal (one focused mode per tick). The prompt
+    // mandates the marker; absence = stable. state.md lives under the
+    // relocatable state root (FLUME_DIR), not the config dir — same idiom
+    // as the sessions dir above.
     let planContinues = false;
     try {
       const stateText = readFileSync(
-        resolve(CHAIN_DIR, "plan", "state.md"),
+        resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "plan", "state.md"),
         "utf8",
       );
       planContinues = /^Plan continues:\s*yes\b/im.test(stateText);
@@ -389,12 +342,16 @@ const plan: Phase = {
       // state.md missing — treat as stable; build (if pickable) or hibernate.
     }
 
-    if (planContinues) return ["plan"];
+    if (planContinues) return [plan.name];
 
-    const hasPickable = result.pendingAfter.some(
-      (e) => e.gate.kind === "open",
+    // Same pickability verdict the dispatcher will reach (blockedBy with
+    // shipped blockers, fork gates, capabilities) — not a hand-rolled
+    // subset that drifts as gate variants are added.
+    const shipped = new Set(result.shippedTags);
+    const hasPickable = result.pendingAfter.some((e) =>
+      isPickableNow(e, shipped),
     );
-    return hasPickable ? ["build"] : [];
+    return hasPickable ? [build.name] : [];
   },
 };
 
@@ -413,7 +370,6 @@ const build: Phase = {
   // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
   // afterCommit — cheap, structural, catches type errors before merge.
   gates: [
-    worktreeDepsGate,
     tscGate,
     changelogGate,
     shellGate({
@@ -424,7 +380,7 @@ const build: Phase = {
       failHint: "Tests failed — wave reverted",
     }),
   ],
-  setupWorktree: buildSetupWorktree,
+  setupWorktree: setupBuildWorktree,
   promptArgs(ctx: TickContext) {
     if (!ctx.assignedEntry) {
       throw new Error("build phase requires an assignedEntry");
@@ -453,7 +409,7 @@ const build: Phase = {
     ) {
       return [];
     }
-    return ["plan"];
+    return [plan.name];
   },
 };
 
@@ -464,11 +420,3 @@ const flumeChain: Chain = {
 };
 
 export default flumeChain;
-
-/**
- * Chain-level fallback agent (`phase.agent ?? chainModule.agent ??
- * DispatcherOptions.agent`). Both phases declare their own above, so this
- * resolves only for a phase added without one — it exists so that phase runs
- * rather than failing to resolve an agent at all.
- */
-export const agent = buildAgent;
