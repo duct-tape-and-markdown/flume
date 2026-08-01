@@ -1,43 +1,5 @@
 [
   {
-    "tag": "DISPATCHER-FANOUT-AFTERCOMMIT-FOOTPRINT-DUP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runAfterCommitGates (~2005-2069) returns touchedPaths alongside ok/failure/results - already computed unconditionally at ~2037 before the gate loop; its fanout caller's afterCommit-reverted footprint capture (~1896-1902) reads verdict.touchedPaths instead of re-deriving via git.showNameOnly(wt.path, postHead); the singleton caller (~1218) ignores the added field"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "pin beside the existing FOOT-STRAY afterCommit-reverted footprint test (~1960-2025) - spy git.showNameOnly, assert it's called once for the reverted commit, not twice"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Fanout's afterCommit-reverted footprint capture re-derives git.showNameOnly for the same commit runAfterCommitGates just computed internally and discarded.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "the FOOT-STRAY-shaped afterCommit-reverted fanout path calls git.showNameOnly exactly once for the reverted commit - a spy pin catching a future re-introduction of the duplicate fetch"
-      }
-    ],
-    "acceptance": "runAfterCommitGates exposes the touchedPaths it already computes; the fanout caller's footprint capture reads it instead of re-deriving; the existing footprint test (~1960-2025) stays green unchanged; tsc/vitest green.",
-    "notes": "Verified on disk this tick: 0163b7a (GATECONTEXT-TOUCHED-PATHS-DEDUP) shared touchedPaths across gates *within* one runAfterCommitGates call but didn't return it, so Dispatcher.ts:1898 still re-derives via git.showNameOnly(wt.path, postHead) for the identical commit right after - one call site short of the dedup it shipped. Singleton caller never captures a footprint, so it's unaffected."
-  },
-  {
     "tag": "BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE",
     "gate": {
       "kind": "open"
