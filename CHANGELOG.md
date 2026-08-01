@@ -359,6 +359,20 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   property those tests already cover; `pendingGate`'s doc no longer cites
   the two now-shipped-and-retired pending tags that motivated it, stating
   the condition it guards against instead. No behavior changes.
+- Narration cleanup in `src/Dispatcher.ts` and `src/Phase.ts`
+  (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung" —
+  ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD): the `quarantineScope` /
+  `abortThreshold` doc comments (`SuperviseLoopOptions` and
+  `Chain.supervisorPolicy`) now point at
+  `tests/Dispatcher.test.ts`'s "a chain declaring neither knob gets the
+  v0.7 §16 defaults, byte-identical" case instead of restating the claim
+  the test already pins; `diskChainLoader` and `superviseLoop`'s doc
+  comments no longer compare current behavior against the removed
+  in-process loop and content-hash cache, stating the current
+  one-resolution-per-process condition directly instead;
+  `Phase.setupWorktree`'s doc no longer reassures pre-migration
+  void-returning implementations, stating the current return-type contract
+  instead. No behavior changes.
 
 ## [0.9.0] - 2026-07-31
 

@@ -687,12 +687,10 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
 
 /**
  * Build the default per-tick chain resolver: load `<configDir>/chain.ts` via
- * `loadChainModule`, once per call. No memoization — each `flume tick` is a
+ * `loadChainModule`, once per call. No memoization: each `flume tick` is a
  * fresh process (§2), so there is exactly one resolution per process and
- * nothing to memoize across. The prior content-hash cache was an in-process
- * optimization for a mechanism (in-process reload) that cannot deliver the
- * re-resolution guarantee; cost is one small `tsImport` per tick, dominated
- * by orders of magnitude by the agent invocation.
+ * nothing to memoize across — cost is one small `tsImport` per tick,
+ * dominated by orders of magnitude by the agent invocation.
  *
  * Injecting `DispatcherOptions.chainLoader` replaces this wholesale — the
  * in-process unit-test seam (tests call `tick()` directly, no subprocess).
@@ -2673,21 +2671,22 @@ export interface SuperviseLoopOptions {
    * quarantine (RELEASE-v0.7). `"none"` disables per-entry quarantine
    * outright — a tagged provisioning failure is never withheld from later
    * ticks this run — while the consecutive-identical-failure backstop
-   * (`abortThreshold` below) still applies. Default `"run"` is
-   * byte-identical to v0.7 §16: quarantine a tagged failure's slug for the
-   * rest of the run. The CLI forwards this from the resolved chain's
-   * `supervisorPolicy.quarantineScope` (`src/Phase.ts`); undeclared falls
-   * through to the default here.
+   * (`abortThreshold` below) still applies. Default `"run"`: quarantine a
+   * tagged failure's slug for the rest of the run — exact default byte
+   * shape pinned by tests/Dispatcher.test.ts's "a chain declaring neither
+   * knob gets the v0.7 §16 defaults, byte-identical" case. The CLI forwards
+   * this from the resolved chain's `supervisorPolicy.quarantineScope`
+   * (`src/Phase.ts`); undeclared falls through to the default here.
    */
   quarantineScope?: "run" | "none";
   /**
    * §8: chain-declared override for §16's consecutive-identical-failure
    * abort threshold (RELEASE-v0.7) — the number of consecutive ticks the
    * same provisioning-failure signature must repeat, with no successful
-   * tick between them, before the run aborts. Default 3 is byte-identical
-   * to v0.7 §16. The CLI forwards this from the resolved chain's
-   * `supervisorPolicy.abortThreshold`; undeclared falls through to the
-   * default here.
+   * tick between them, before the run aborts. Default 3, pinned by the same
+   * tests/Dispatcher.test.ts case cited on `quarantineScope` above. The CLI
+   * forwards this from the resolved chain's `supervisorPolicy.abortThreshold`;
+   * undeclared falls through to the default here.
    */
   abortThreshold?: number;
   /**
@@ -2769,8 +2768,7 @@ export interface SuperviseResult {
  * either of which stops the loop immediately: both defeat the hibernation
  * check (nothing on disk changed to reflect them), so proceeding would
  * hot-spin to `--max` while masquerading each iteration as routine. Bounded
- * by `maxTicks` (the `--max N` cap); observable `--max`/hibernation behavior
- * is unchanged from the prior in-process loop.
+ * by `maxTicks` (the `--max N` cap).
  */
 export async function superviseLoop(
   opts: SuperviseLoopOptions,

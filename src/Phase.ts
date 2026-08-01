@@ -166,8 +166,8 @@ export interface Phase {
    * for this worktree, layered on top of the harness's `process.env`. Use
    * this when the worktree needs an ephemeral resource handle the chain
    * provisioned at setup time (per-worktree DATABASE_URL, scratch dir,
-   * issued credential). Existing void-returning implementations are
-   * unaffected.
+   * issued credential). A hook with no vars to inject returns `void` — the
+   * result object is only needed to carry `extraEnv`.
    */
   setupWorktree?: (
     ctx: WorktreeSetupContext,
@@ -260,7 +260,10 @@ export interface Chain {
    * (v0.7 §16, opened v0.8 §8) — the run-scoped quarantine and the
    * consecutive-identical-failure abort threshold ship as engine defaults;
    * this block lets a chain choose otherwise. Undeclared or omitted fields
-   * fall through to the v0.7 §16 defaults, byte-identical.
+   * fall through to the defaults in `src/Dispatcher.ts`'s
+   * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
+   * byte shape is pinned by tests/Dispatcher.test.ts's "a chain declaring
+   * neither knob gets the v0.7 §16 defaults, byte-identical" case.
    */
   supervisorPolicy?: {
     /**
