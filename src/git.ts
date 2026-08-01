@@ -126,13 +126,13 @@ export async function removeWorktree(
     // through to the recursive-removal fallback below.
   }
   await pruneWorktrees(repoRoot);
-  await rm(path, {
+  await rm(toNamespacedPath(path), {
     recursive: true,
     force: true,
     maxRetries: FALLBACK_REMOVE_MAX_RETRIES,
     retryDelay: FALLBACK_REMOVE_RETRY_DELAY_MS,
   });
-  if (existsSync(path)) {
+  if (existsSync(toNamespacedPath(path))) {
     throw new Error(`worktree directory survived removal fallback: ${path}`);
   }
   // The directory is gone now — prune the now-stale `.git/worktrees/` entry

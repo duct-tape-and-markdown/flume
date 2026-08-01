@@ -135,6 +135,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   paths; the two call sites now share one `pinLongPaths` helper in
   `src/git.ts` instead of `job.ts` carrying a second inline implementation)
   (v0.4 §6).
+- `removeWorktree`'s fallback `rm` and `existsSync` now route `path` through
+  `toNamespacedPath`, the same idiom `createWorktree`/`acquireTipClaim`
+  above were fixed with — same worktree-dir depth as those siblings, just
+  on the removal side. On a fanout teardown loop the throw is caught and
+  aggregated as a survivor, so this was a false "leak" report rather than a
+  crash: `createWorktree`'s own stale-cleanup call site already routed
+  through the wrapped fallback, so only removal's own two calls were left
+  unwrapped (v0.4 §6).
 - Inline-exec (`` !`cmd` ``) spans now reach `sh` through stdin instead of
   argv (`["-c", cmd]`), fixing corruption of any non-ASCII byte anywhere in
   the command on win32 — measured under MSYS2 `sh.exe`: quoting was not

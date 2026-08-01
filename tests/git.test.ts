@@ -230,6 +230,45 @@ describe("removeWorktree (§7)", () => {
   });
 });
 
+// win32 total-path limit (v0.4 §6): removeWorktree's fallback rm/existsSync
+// join `path` unwrapped — same shape as the tip-claim/createWorktree family
+// (GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT et al.), on the same worktree-dir
+// depth (Dispatcher.ts's fanout worktree base already needed
+// toNamespacedPath for this). A worktree this deep pushes the fallback's
+// own rm/existsSync calls past win32's ~260-char limit.
+describe.runIf(process.platform === "win32")(
+  "removeWorktree — win32 total-path limit (REMOVEWORKTREE-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    afterEach(() => {
+      vi.mocked(rm).mockClear();
+    });
+
+    it("falls back to prune + recursive removal, clearing a populated tree past win32's ~260-char limit, without throwing", async () => {
+      const path = join(
+        repo,
+        "not-a-registered-worktree",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+      );
+      expect(path.length).toBeGreaterThan(260);
+      // Stand in for a populated node_modules survivor, same fixture shape
+      // as the shallow-path §7 fallback test above.
+      await mkdir(join(path, "node_modules", "some-pkg"), { recursive: true });
+      await writeFile(
+        join(path, "node_modules", "some-pkg", "index.js"),
+        "module.exports = {};\n",
+      );
+
+      vi.mocked(rm).mockClear();
+      // `git worktree remove --force` refuses a path it never registered,
+      // falling through to the fallback — same trigger as the shallow-path
+      // test, just deep enough that the fallback's own unwrapped rm/
+      // existsSync would throw ENAMETOOLONG on a real win32 host.
+      await expect(removeWorktree(repo, path)).resolves.toBeUndefined();
+      expect(existsSync(path)).toBe(false);
+    });
+  },
+);
+
 /**
  * v0.11 §4 — the advisory per-ref tip claim. Keyed under
  * `<git-common-dir>/flume/tip-claims/<ref path>`, mirroring `liveLoopPid`'s
