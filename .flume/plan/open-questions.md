@@ -9,6 +9,43 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `flume loop`'s tip claim can't literally go "gone after SIGTERM" on win32 (v0.11 §4)
+
+**NEEDS AMENDMENT**
+
+CI run 30675682946 (windows): tests/cli.test.ts's "claim file (and loop.pid)
+are gone after SIGTERM" is red. `process.kill` SIGTERM on Windows maps to
+`TerminateProcess` — no exit/signal handler runs, so the claim file and
+`loop.pid` survive by construction, on every Windows process, not just
+flume's. §4's stale-reclaim path (dead-pid liveness check on next acquire)
+already covers the mechanism a lost release needs: a stale claim is unusable
+by anyone but the next acquirer, who reclaims it. What can't be true on
+win32 is §4's literal acceptance text — "gone after SIGTERM" assumes a
+handler runs, which win32's `TerminateProcess` semantics rule out
+categorically. Not an engine gap; a platform fact, same shape as the
+already-parked "flume status last commit" question below.
+
+Options:
+
+1. **Amend §4's acceptance to a win32-conditional form** — "claim file gone
+   after clean exit and after SIGTERM on POSIX; reclaimed as stale (not
+   necessarily removed) after SIGTERM on win32." The test then asserts the
+   platform-appropriate outcome and goes green for a true reason.
+2. **Leave the spec text as-is, exempt win32 in the suite only**
+   (`it.skipIf`). Spec keeps a claim only POSIX satisfies; a wrong invariant
+   stands unflagged.
+3. **Force cleanup on win32 anyway** (a supervisor process, a Windows job
+   object). This repo's win32 story elsewhere (`core.longpaths`, spawn
+   discipline) sticks to Node/OS-native mechanisms; building a supervisor to
+   route around an OS primitive designed to prevent exactly this is the
+   "complicated solution chasing a tail" `collaboration.md` warns against.
+
+Recommended: (1) — the stale-reclaim mechanism is the actual cross-platform
+guarantee; the acceptance text should say what's true per platform instead
+of a claim only POSIX satisfies. Once amended, the test-expectation fix
+(win32-conditional assertion) is mechanical and files as a normal entry
+citing the amended section.
+
 ## `flume status` — v0.1 §3's "last commit" leg was never shipped
 
 **NEEDS AMENDMENT**

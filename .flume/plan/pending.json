@@ -1,5 +1,43 @@
 [
   {
+    "tag": "WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "writeRevertNote's mkdir/writeFile (2209-2222) route the primaryDir/file path through node:path's toNamespacedPath (win32 extended-length \\\\?\\ prefix, no-op elsewhere) so the write survives Windows' total-path limit even when TAG_MAX_LENGTH's per-component bound holds"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "win32-gated coverage forcing the friction dir's full path well past ~260 chars (deep flumeDir nesting) - note lands; TAG-LENGTH-BOUND-AGREEMENT-PIN (5467) is the real-world acceptance signal already red on the windows CI lane"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "writeRevertNote silently drops the operator note under Windows' ~260-char total-path limit even when TAG_MAX_LENGTH's per-component bound holds - the guard is path-total-blind.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a revert note write succeeds when the friction dir's full path exceeds win32's ~260-char limit, driven through toNamespacedPath - TAG-LENGTH-BOUND-AGREEMENT-PIN (5467) is the same pin already red on the windows CI lane at HEAD"
+      }
+    ],
+    "acceptance": "windows CI job's pnpm test step is green including TAG-LENGTH-BOUND-AGREEMENT-PIN (CI run 30675682946); tsc/vitest green on POSIX.",
+    "notes": "CI run 30675682946 (windows), still red after WIN32-FANOUT-WORKTREE-LONGPATH shipped - distinct mechanism: core.longpaths only governs git's own path handling, never Node's fs calls. writeRevertNote's best-effort catch swallows the ENOENT/ENAMETOOLONG, so the friction dir is never created and the note silently never lands."
+  },
+  {
     "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
     "gate": {
       "kind": "open"
@@ -70,6 +108,60 @@
     "tests": [],
     "acceptance": "README.md and docs/CLI.md describe the tip claim and tip-verify behavior a real operator invocation now produces.",
     "notes": "Blocked on TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP rather than TIP-CLAIM-ADVISORY only because gate.blockedBy takes one tag; TIP-CLAIM-ADVISORY should also ship first in practice - both are open today, confirm both landed before writing this."
+  },
+  {
+    "tag": "GATECONTEXT-TOUCHED-PATHS-DEDUP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "GateContext gains touchedPaths: string[] (52-58 area) - the commit's changed paths, computed once per commit by the dispatcher via git.showNameOnly"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runAfterCommitGates (1810) and the afterMerge gate loop (~1394) compute touchedPaths once before their gate loops and pass it into every constructed GateContext, instead of each gate re-deriving it"
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "chainLoadGate (179) and writablePathsGate (352) read ctx.touchedPaths when present instead of shelling out to git show --name-only themselves"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "ctx helper carries touchedPaths"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "chainLoadGate/writablePathsGate suites cover reading ctx.touchedPaths instead of exec'ing git"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "existing afterCommit/afterMerge gate suites ride the refactor unchanged - proves the same touched-path set reaches both loops"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "chainLoadGate, writablePathsGate, and Dispatcher's own gate-context construction each re-derive git show --name-only on the same commit instead of sharing one computation.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/builtinGates.test.ts",
+        "asserts": "chainLoadGate and writablePathsGate consume ctx.touchedPaths when supplied and issue no independent git show; a hand-built ctx omitting it falls back to today's exec - a one-sided change to either gate's derivation no longer silently diverges from the other"
+      }
+    ],
+    "acceptance": "one shared computation (git.showNameOnly, dispatcher-side) feeds every gate's touched-path list per commit; chainLoadGate/writablePathsGate no longer shell out independently; tsc/vitest green.",
+    "notes": "Inbox finding (2914c42): git show --name-only run independently at builtinGates.ts:184 (chainLoadGate), :352 (writablePathsGate), and Dispatcher.ts's own afterCommit/afterMerge gate-loop context construction (1810, ~1394) - verified on disk this tick, same commit, same tick. .flume/chain.ts's changelogGate already calls the shared git.ts helper (post-7380d2d); picking up ctx.touchedPaths there is a chain-side follow-up outside build's writablePaths, not this entry's scope."
   },
   {
     "tag": "BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE",
@@ -234,7 +326,7 @@
       "edit": [
         {
           "path": "src/git.ts",
-          "description": "delete softReset (45), commitAll (198), isDirty (226) and the commitPaths comment clause naming commitAll (211); the header's 'nine commands' count (4) goes with them - isDirty is the module's only `git status` consumer, so the count is 8 after this"
+          "description": "delete softReset (41), commitAll (206), isDirty (234) and the commitPaths comment clause naming commitAll (219); the header's 'nine commands' count (4) goes with them - isDirty is the module's only `git status` consumer, so the count is 8 after this"
         },
         {
           "path": "CHANGELOG.md",
@@ -250,7 +342,7 @@
     },
     "tests": [],
     "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
-    "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
+    "notes": "LSP findReferences this tick: git.ts:41, :206, :234 each resolve to their own declaration alone (line numbers shifted by pinLongPaths landing this delta). index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :219 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
