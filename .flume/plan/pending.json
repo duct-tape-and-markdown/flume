@@ -1,5 +1,93 @@
 [
   {
+    "tag": "FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "countFrictionFiles (383-389, readdirSync at 385) routes through toNamespacedPath; import it from node:path"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "frictionCountLine (541-556, readdir at 548) routes join(stateRoot, chain.friction) through toNamespacedPath, same idiom as harvestFriction/writeRevertNote in this file"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "win32-gated coverage: jobStatus's frictionCount resolves a real count when frictionDir nests past win32's ~260-char limit"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "win32-gated coverage beside WRITEREVERTNOTE/HARVESTFRICTION's suites: frictionCountLine resolves a real count over the same deep-friction shape"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "countFrictionFiles and frictionCountLine join chain.friction onto a state root unwrapped - the same win32 total-path-limit shape writeRevertNote/harvestFriction were just fixed for.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/job.test.ts",
+        "asserts": "jobStatus's frictionCount reflects the real file count under a deep chain.friction dir - fails on the pre-fix tree via readdirSync's swallowed ENAMETOOLONG (silently returns 0)"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "frictionCountLine reflects the real file count under a deep chain.friction dir - fails on the pre-fix tree the same way (silently returns undefined, so status prints no friction line)"
+      }
+    ],
+    "acceptance": "countFrictionFiles and frictionCountLine both route their readdir through toNamespacedPath; win32-gated deep-friction fixtures for both resolve real counts instead of 0/undefined; tsc/vitest green.",
+    "notes": "Audit finding following 8a69ef8's HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT ship: that fix and the earlier WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT both guard join(flumeDir/stateRoot, chain.friction); these two count-only readers of the identical join were left unguarded - job.ts has no toNamespacedPath import at all today. Both already swallow readdir errors by existing design, so the failure mode is a silently wrong count (status under-reports friction), not a crash."
+  },
+  {
+    "tag": "SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "snapshotRevertedFiles (2269-2306ish, dest at 2301, mkdir/writeFile at 2302-2303) routes dest and dirname(dest) through toNamespacedPath, same idiom as writeRevertNote/harvestFriction"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "win32-gated coverage: a gate-reverted commit touching a deeply-nested repo path still lands its snapshot under prior-attempts/<key>.reverted"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "snapshotRevertedFiles' mkdir/writeFile join a flumeDir-derived dir with an arbitrary git-diff path unwrapped - same win32 total-path-limit shape, driven by diff depth not chain.friction.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a gate-reverted commit touching a deeply-nested file (pushing prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit) still lands the snapshot content on disk - fails on the pre-fix tree via the swallowed mkdir/writeFile exception"
+      }
+    ],
+    "acceptance": "snapshotRevertedFiles' dest mkdir/writeFile route through toNamespacedPath; a win32-gated deep-path fixture snapshots successfully; tsc/vitest green.",
+    "notes": "Third sibling of WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT/HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT, found this tick via the same sweep (Explore agent, verified on disk). Different depth driver than the friction siblings - an arbitrary git-diff rel path, not chain.friction - but identical fs-call/fix shape. Best-effort by §8 spec already; the failure mode is a silently lost recovery snapshot, not a crash."
+  },
+  {
     "tag": "GATECONTEXT-TOUCHED-PATHS-DEDUP",
     "gate": {
       "kind": "open"
