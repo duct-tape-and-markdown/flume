@@ -1,43 +1,5 @@
 [
   {
-    "tag": "BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "give tscGate/vitestGate/eslintGate (122, 135, 148) an optional cmd override, defaulting to 'pnpm' - chain supplies the package manager, engine supplies the enforcement"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "cover the override - a non-default cmd used instead of pnpm; omitted cmd behaves exactly as today"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "tscGate/vitestGate/eslintGate hardcode cmd: 'pnpm' with no override - a non-pnpm chain can't reuse these builtins at all, must hand-roll via shellGate.",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Capability vs convention"
-    },
-    "tests": [
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "tscGate/vitestGate/eslintGate accept an optional cmd override that replaces 'pnpm' in the invoked command; omitting it reproduces today's exact shellGate options"
-      }
-    ],
-    "acceptance": "A chain can get tscGate/vitestGate/eslintGate with npm/yarn/bun's invocation instead of pnpm without hand-rolling shellGate from scratch; default (no override) behavior is byte-identical to today; tsc/vitest green.",
-    "notes": "Sweep finding, src/builtinGates.ts neighborhood (bootstrap rotation - code delta armed it, no prior stamp covered this file). Same shape as the already-pending PENDING-GATE-HINT-OPTION (missing injection point on a builtin gate) but a different field - the command itself, not the failure hint. All three re-exported via src/index.ts:31-37, presented as reusable builtins in examples/cascade-chain.ts."
-  },
-  {
     "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
     "gate": {
       "kind": "open"
