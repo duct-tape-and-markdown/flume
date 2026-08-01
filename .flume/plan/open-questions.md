@@ -141,7 +141,8 @@ of the call.
 
 **PARKED**
 
-`pendingGate` (`src/builtinGates.ts:243-306`, v0.8 §6) calls `parsePending`,
+`pendingGate` (`src/builtinGates.ts:304-367`, v0.8 §6, drifted from :243-306
+by 86789b8's pkgManagerGate insert) calls `parsePending`,
 which is all-or-nothing over the whole entry array (`z.array(...).safeParse`)
 — a single entry's schema violation (e.g. an undeclared field) fails the
 entire parse with no `entries` to fence-check, so a sibling entry's fence
@@ -176,13 +177,14 @@ commands are hardcoded arrays; v0.7 §11's acceptance/non-goals text locks
 the exact `pnpm install --frozen-lockfile` / `npm ci` shape with no options
 surface.
 
-The gate half of this question is already in flight and no longer needs a
-spec amendment: `BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE` (pending, cites
-`engine-boundary.md`'s *Capability vs convention*) gives `tscGate`/
-`vitestGate`/`eslintGate` an optional `cmd` override the chain supplies
-directly — a capability injection point, not auto-detection, but it closes
-the "chain can't reuse these builtins at all" gap without touching §11.
-What remains open is `setupWorktree`'s own missing options surface (no
+The gate half of this question shipped: `BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE`
+(86789b8/48a87df, cites `engine-boundary.md`'s *Capability vs convention*)
+gives `tscGate`/`vitestGate`/`eslintGate` an optional `cmd` override the
+chain supplies directly. This tick's audit found the override only closes
+the gap for pnpm/yarn-classic-shaped tools — args stay hardcoded to the
+bare-bin invocation, so `{cmd:"npm"}` fails npm's own "Unknown command" for
+tsc/lint; filed `BUILTINGATES-CMD-OVERRIDE-PNPM-SHAPED-ARGS` to close that.
+What remains open here is `setupWorktree`'s own missing options surface (no
 `{ args?, env? }` of any kind today) — that one still needs a human call on
 whether it's spec-worthy.
 
@@ -193,7 +195,7 @@ Options:
 2. **Decline, chain-side workaround.** A chain wanting `--no-audit
    --no-fund` or `CI=true` can already wrap `setupWorktree` itself.
 
-Recommended: (2) unless a real chain hits the need — once
-`BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE` ships, the sharper duplication
-smell (gates hardcoding `pnpm` with no override at all) is gone; what's left
-is a wrap-it-yourself gap, not an asymmetry.
+Recommended: (2) unless a real chain hits the need — the sharper duplication
+smell (gates hardcoding `pnpm` with no override at all) is gone now that
+the cmd override shipped; what's left is a wrap-it-yourself gap, not an
+asymmetry.
