@@ -24,6 +24,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Baton } from "./Baton.js";
 import {
+  acquireTipClaim,
+  currentRefPath,
+  gitCommonDir,
+  liveTipClaimPid,
+  tipClaimPath,
+  TipClaimHeldError,
+} from "./git.js";
+import {
   jobNew,
   jobRm,
   jobRun,
@@ -263,11 +271,14 @@ const HELP_SUB: Record<Subcommand, string> = {
 Print baton state: awake phases (or "hibernating" if none), then, when
 .flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
 "loop.pid present, process dead — stale"; no pidfile prints nothing extra),
-then the pending entry count from plan/pending.json ("pending: N"; "pending:
-0" if absent; "pending: unparsable" if present but malformed), then, when
-the chain loads, a friction count (declared Chain.friction dir holding
-notes) and one line per pending entry gated on a capability the chain
-hasn't asserted. Observational — no side effects, no agent invocation.
+then, when HEAD names a ref and a tip claim exists for it, its holder ("tip
+claimed by pid N" or "tip claim present, process dead — stale"; a detached
+HEAD or no claim file prints nothing extra), then the pending entry count
+from plan/pending.json ("pending: N"; "pending: 0" if absent; "pending:
+unparsable" if present but malformed), then, when the chain loads, a
+friction count (declared Chain.friction dir holding notes) and one line per
+pending entry gated on a capability the chain hasn't asserted. Observational
+— no side effects, no agent invocation.
 
 Exit codes:
   0   Always.
@@ -280,7 +291,9 @@ invokes the agent, and applies validation gates.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
-  1   Harness error (unexpected exception).
+  1   Harness error (unexpected exception), or HEAD is detached (v0.11 §4:
+      the tick record's meaning is advancing a named tip; checkout a branch
+      first). No claim is taken or checked — that's loop-level only.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.
@@ -299,7 +312,10 @@ Exit codes:
   0   Hibernation reached, or --max ticks completed — including partial
       success (some ticks errored but at least one entry shipped; the
       completion summary names the errors).
-  1   Harness error, another live loop holds the lock; also, at least
+  1   Harness error, another live loop holds the lock; also, HEAD is
+      detached (v0.11 §4: checkout a branch first — the tip claim below
+      keys on the ref); also, another process holds the tip claim (v0.11
+      §4: the refusal names the holder pid and claim path); also, at least
       one tick errored and the run shipped nothing (v0.7 §4); also, an
       identical pre-tick worktree provisioning failure repeated 3
       consecutive ticks with no successful tick between them (v0.7 §16) —
@@ -669,6 +685,25 @@ async function main(): Promise<number> {
           : "loop.pid present, process dead — stale",
       );
     }
+    // v0.11 §4: report the current tip's claim alongside supervisor
+    // liveness, observational and best-effort — a detached HEAD (no ref to
+    // key the claim on) or an absent claim file both read as silence, the
+    // same precedent as the no-pidfile case above.
+    const headRefForStatus = await currentRefPath(repoRoot);
+    if (headRefForStatus !== null) {
+      const claimPath = tipClaimPath(
+        await gitCommonDir(repoRoot),
+        headRefForStatus,
+      );
+      if (existsSync(claimPath)) {
+        const holder = await liveTipClaimPid(claimPath);
+        console.log(
+          holder !== null
+            ? `tip claimed by pid ${holder}`
+            : "tip claim present, process dead — stale",
+        );
+      }
+    }
     // §3: the pending entry count, independent of whether the chain loads —
     // `flume job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
@@ -751,6 +786,17 @@ async function main(): Promise<number> {
   });
 
   if (cmd === "tick") {
+    // v0.11 §4: tick and loop both refuse before any tick when HEAD is
+    // detached — the tick record's meaning is advancing a named tip, and
+    // the (loop-level) claim that guards it keys on a ref. A bare tick
+    // takes no claim itself but still refuses here so the behavior is
+    // identical whether or not a loop wraps it.
+    if ((await currentRefPath(repoRoot)) === null) {
+      console.error(
+        "[flume] tick refuses: HEAD is detached — checkout a branch first",
+      );
+      return 1;
+    }
     // v0.8 §5: clear any stale verdict before this tick's own work — a tick
     // that returns below without an agent having run (chain-load failure,
     // hibernation, terminal misconfiguration) must leave no record for
@@ -779,6 +825,15 @@ async function main(): Promise<number> {
       }
       max = parsed;
     }
+    // v0.11 §4: refuse before any tick when HEAD is detached — the tip
+    // claim acquired below keys on the ref HEAD resolves to.
+    const headRef = await currentRefPath(repoRoot);
+    if (headRef === null) {
+      console.error(
+        "[flume] loop refuses: HEAD is detached — checkout a branch first",
+      );
+      return 1;
+    }
     // Cross-process loop lock: one supervisor per state root. A stale
     // pidfile (dead pid) is reclaimed; a live one refuses the second loop —
     // two supervisors against one state root race plan/build state. Lives
@@ -805,12 +860,32 @@ async function main(): Promise<number> {
       }
     }
     writeFileSync(lockPath, String(process.pid));
+    // v0.11 §4: advisory per-ref tip claim — one flume writer per tip, the
+    // resource multiple jobs under one checkout actually contend on. Guards
+    // a different resource than loop.pid (a ref vs. a state root); both
+    // stand. A refusal here rolls back the loop.pid claim just taken above.
+    let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>>;
+    try {
+      tipClaim = await acquireTipClaim(repoRoot, headRef);
+    } catch (err) {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // already gone
+      }
+      if (err instanceof TipClaimHeldError) {
+        console.error(`[flume] ${err.message}`);
+        return 1;
+      }
+      throw err;
+    }
     const dropLock = () => {
       try {
         unlinkSync(lockPath);
       } catch {
         // already gone
       }
+      tipClaim.release();
     };
     process.on("exit", dropLock);
     process.on("SIGINT", () => {

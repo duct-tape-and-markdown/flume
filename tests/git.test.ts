@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,11 +18,16 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 import {
+  acquireTipClaim,
   addWorktree,
   commitPaths,
+  currentRefPath,
   dropLastCommit,
+  gitCommonDir,
   removeWorktree,
   revParse,
+  tipClaimPath,
+  TipClaimHeldError,
 } from "../src/git.ts";
 
 const exec = promisify(execFile);
@@ -220,5 +225,79 @@ describe("removeWorktree (§7)", () => {
       new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     );
     expect(existsSync(path)).toBe(true);
+  });
+});
+
+/**
+ * v0.11 §4 — the advisory per-ref tip claim. Keyed under
+ * `<git-common-dir>/flume/tip-claims/<ref path>`, mirroring `liveLoopPid`'s
+ * (src/job.ts) exclusive-create/pid-liveness/reclaim shape but as a sibling
+ * primitive — the tip claim guards a ref, not a state root.
+ */
+describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.11 §4)", () => {
+  it("creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>, holding this process's pid", async () => {
+    const refPath = await currentRefPath(repo);
+    expect(refPath).not.toBeNull();
+    const commonDir = await gitCommonDir(repo);
+    const expectedPath = tipClaimPath(commonDir, refPath!);
+
+    const claim = await acquireTipClaim(repo, refPath!);
+
+    expect(claim.path).toBe(expectedPath);
+    expect(existsSync(claim.path)).toBe(true);
+    expect(await readFile(claim.path, "utf8")).toBe(String(process.pid));
+
+    claim.release();
+  });
+
+  it("refuses with TipClaimHeldError naming the holder pid when a live pid already holds the claim (EEXIST)", async () => {
+    const refPath = await currentRefPath(repo);
+    const first = await acquireTipClaim(repo, refPath!);
+
+    const attempt = acquireTipClaim(repo, refPath!);
+    await expect(attempt).rejects.toBeInstanceOf(TipClaimHeldError);
+    await expect(attempt).rejects.toThrow(
+      new RegExp(
+        `${refPath}.*pid ${process.pid}`.replace(/[/\\]/g, "\\$&"),
+      ),
+    );
+
+    // The refused attempt never disturbed the live holder's claim file.
+    expect(await readFile(first.path, "utf8")).toBe(String(process.pid));
+
+    first.release();
+  });
+
+  it("reclaims silently and retries when the recorded pid is dead, taking over the claim", async () => {
+    const refPath = await currentRefPath(repo);
+    const commonDir = await gitCommonDir(repo);
+    const claimPath = tipClaimPath(commonDir, refPath!);
+
+    // Harvest a genuinely dead pid: spawn a no-op node child and wait for it
+    // to exit before planting it as the stale holder.
+    const probe = exec(process.execPath, ["-e", ""]);
+    const deadPid = probe.child.pid;
+    await probe;
+    await mkdir(dirname(claimPath), { recursive: true });
+    await writeFile(claimPath, String(deadPid));
+
+    const claim = await acquireTipClaim(repo, refPath!);
+
+    expect(claim.path).toBe(claimPath);
+    // The dead holder's pid was overwritten by this call's own — proof the
+    // stale claim was reclaimed rather than refused.
+    expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
+
+    claim.release();
+  });
+
+  it("release removes the claim file", async () => {
+    const refPath = await currentRefPath(repo);
+    const claim = await acquireTipClaim(repo, refPath!);
+    expect(existsSync(claim.path)).toBe(true);
+
+    claim.release();
+
+    expect(existsSync(claim.path)).toBe(false);
   });
 });

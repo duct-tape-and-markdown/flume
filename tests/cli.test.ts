@@ -9,7 +9,7 @@
  * env-set-relative cases.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,7 +35,7 @@ import {
   type TickOutcome,
   type SuperviseResult,
 } from "../src/Dispatcher.ts";
-import { CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { CLI, TSX_CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -709,16 +709,18 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "refuses a second loop while the recorded pid is alive, leaving the pidfile untouched",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-loop-lock-"));
+      // A real git repo on a named branch (v0.11 §4: loop refuses outright
+      // on detached HEAD, before ever reaching the lock check below).
+      const repo = await makeJobRepo("main");
       try {
-        const flumeDir = join(dir, ".flume");
+        const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
         // The vitest worker itself plays the live prior supervisor — its pid
         // is guaranteed alive for the duration of the spawned loop.
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(process.pid), "utf8");
 
-        const r = await runCli(dir, ["loop", "--max", "0"]);
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
         expect(r.code).toBe(1);
         expect(r.out).toContain(
@@ -731,7 +733,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         // The holder's pidfile survives the refused contender untouched.
         expect(await readFile(pidPath, "utf8")).toBe(String(process.pid));
       } finally {
-        await rm(dir, { recursive: true, force: true });
+        await repo.cleanup();
       }
     },
     30_000,
@@ -740,9 +742,9 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-loop-lock-"));
+      const repo = await makeJobRepo("main");
       try {
-        const flumeDir = join(dir, ".flume");
+        const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
         // Harvest a genuinely dead pid: spawn a no-op node child and wait
         // for it to exit before recording its pid as the stale holder.
@@ -753,7 +755,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(deadPid), "utf8");
 
-        const r = await runCli(dir, ["loop", "--max", "0"]);
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
         // Not refused — the dead holder was reclaimed and the loop ran to
         // its --max 0 stop.
@@ -764,7 +766,273 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         // refusal would have left the stale pidfile in place.
         expect(existsSync(pidPath)).toBe(false);
       } finally {
-        await rm(dir, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
+/**
+ * v0.11 §4 — the advisory per-ref tip claim reaching `flume loop`/`flume
+ * tick` end-to-end through the real CLI. `tests/git.test.ts` already proves
+ * `acquireTipClaim`'s own acquire/refuse/reclaim mechanics in isolation;
+ * this suite proves the CLI wiring: the claim is taken alongside `loop.pid`,
+ * released on the same exit/SIGINT/SIGTERM hooks, and a detached HEAD
+ * refuses before either command runs a tick.
+ */
+describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
+  it(
+    "two loops against different state roots on one branch: the second refuses, naming the claim's holder pid",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          "main",
+        );
+        await mkdir(dirname(claimPath), { recursive: true });
+        // The vitest worker itself plays the live first loop's holder.
+        await writeFile(claimPath, String(process.pid), "utf8");
+
+        // A different state root (--job other) than the planted claim's
+        // holder — only the tip claim can refuse this pair; loop.pid never
+        // collides.
+        const r = await runCli(repo.dir, ["--job", "other", "loop", "--max", "0"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain(`refs/heads/main claimed by pid ${process.pid}`);
+        expect(r.out).toContain(claimPath);
+        // Refused before ever taking its own loop.pid — nothing left behind
+        // for the job's own state root.
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "other", "loop.pid")),
+        ).toBe(false);
+        // The live holder's claim survives the refused contender untouched.
+        expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "two loops from two worktrees on different branches: both run (keyed per-ref, not per-checkout)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const wtParent = await mkdtemp(join(tmpdir(), "flume-tip-claim-wt-"));
+      const wtDir = join(wtParent, "wt");
+      try {
+        await exec("git", ["worktree", "add", "-b", "other", wtDir], {
+          cwd: repo.dir,
+        });
+
+        const [main, other] = await Promise.all([
+          runCli(repo.dir, ["loop", "--max", "0"]),
+          runCli(wtDir, ["loop", "--max", "0"]),
+        ]);
+
+        expect(main.code).toBe(0);
+        expect(main.out).toContain("reached --max 0");
+        expect(other.code).toBe(0);
+        expect(other.out).toContain("reached --max 0");
+      } finally {
+        await rm(wtParent, { recursive: true, force: true });
+        await exec("git", ["worktree", "prune"], { cwd: repo.dir }).catch(
+          () => {},
+        );
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "claim file is gone after a clean exit",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+        expect(r.code).toBe(0);
+
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          "main",
+        );
+        expect(existsSync(claimPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "claim file (and loop.pid) are gone after SIGTERM",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const child = spawn(
+          process.execPath,
+          [TSX_CLI, CLI, "loop", "--max", "1"],
+          { cwd: repo.dir, env: hermeticEnv() },
+        );
+
+        // Long enough for the loop to acquire both locks, load the chain,
+        // and spawn its child tick — now mid-sleep inside `invoke()`, well
+        // inside the process's lifetime rather than racing its startup.
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          "main",
+        );
+        const pidPath = join(repo.dir, ".flume", "loop.pid");
+        expect(existsSync(claimPath)).toBe(true);
+        expect(existsSync(pidPath)).toBe(true);
+
+        const exited = new Promise<void>((resolveExit) => {
+          child.on("exit", () => resolveExit());
+        });
+        child.kill("SIGTERM");
+        await exited;
+
+        expect(existsSync(claimPath)).toBe(false);
+        expect(existsSync(pidPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume loop exits 1 on detached HEAD before any tick, taking neither loop.pid nor the tip claim",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "1"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("HEAD is detached");
+        // No tick ran — the awake flag survives untouched, and neither lock
+        // was ever written.
+        expect(existsSync(join(repo.dir, ".flume", "awake", "probe"))).toBe(
+          true,
+        );
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume tick exits 1 on detached HEAD without invoking the agent",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("HEAD is detached");
+        expect(existsSync(join(repo.dir, ".flume", "awake", "probe"))).toBe(
+          true,
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume status reports the tip claim alongside supervisor liveness",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimDir = join(commonDir, "flume", "tip-claims", "refs", "heads");
+        await mkdir(claimDir, { recursive: true });
+        // The vitest worker itself plays the live holder.
+        await writeFile(join(claimDir, "main"), String(process.pid), "utf8");
+
+        const live = await runCli(repo.dir, ["status"]);
+        expect(live.code).toBe(0);
+        expect(live.out).toContain(`tip claimed by pid ${process.pid}`);
+
+        // Harvest a genuinely dead pid: spawn a no-op node child and wait
+        // for it to exit before recording its pid as the stale holder.
+        const probe = exec(process.execPath, ["-e", ""]);
+        const deadPid = probe.child.pid;
+        await probe;
+        await writeFile(join(claimDir, "main"), String(deadPid), "utf8");
+
+        const stale = await runCli(repo.dir, ["status"]);
+        expect(stale.code).toBe(0);
+        expect(stale.out).toContain("tip claim present, process dead — stale");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume status prints nothing extra with no claim file, or on a detached HEAD",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const clean = await runCli(repo.dir, ["status"]);
+        expect(clean.code).toBe(0);
+        expect(clean.out).not.toContain("tip claim");
+
+        await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
+        const detached = await runCli(repo.dir, ["status"]);
+        expect(detached.code).toBe(0);
+        expect(detached.out).not.toContain("tip claim");
+      } finally {
+        await repo.cleanup();
       }
     },
     30_000,
@@ -1006,6 +1274,36 @@ function minimalChainSrc(friction?: string): string {
     (friction !== undefined
       ? `  friction: ${JSON.stringify(friction)},\n`
       : ``) +
+    `};\n`
+  );
+}
+
+/**
+ * A chain whose singleton phase's agent sleeps before returning — used to
+ * hold a real `flume loop` process open long enough (v0.11 §4's SIGTERM
+ * test) to deliver a signal mid-tick, rather than racing the process's own
+ * startup and near-instant completion.
+ */
+function slowAgentChainSrc(phaseName: string): string {
+  return (
+    `export default {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "sigterm probe",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `};\n` +
+    `export const agent = {\n` +
+    `  name: "slow",\n` +
+    `  async invoke() {\n` +
+    `    await new Promise((r) => setTimeout(r, 3000));\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
     `};\n`
   );
 }

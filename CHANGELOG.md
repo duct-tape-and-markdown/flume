@@ -43,6 +43,21 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   will now fail its tick loudly instead. The error names every failing
   span's command text and stderr.
 
+### Added
+
+- An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
+  (the ref HEAD resolves to) at start and releases it at exit — one flume
+  writer per tip, visible from every worktree of one repository. The claim
+  lives at `<git-common-dir>/flume/tip-claims/<ref path>` (e.g.
+  `.git/flume/tip-claims/refs/heads/main`), exclusive-created and
+  pid-liveness reclaimed the same way `loop.pid` already is: a live holder
+  refuses the second loop, naming the holder's pid and the claim path; a
+  dead holder's claim is reclaimed silently. `tick` and `loop` both refuse
+  (exit 1) on a detached HEAD before running any tick — the claim keys on a
+  named ref, and a bare `tick` takes no claim itself (loop-level only).
+  `flume status` reports the current tip's claim alongside supervisor
+  liveness.
+
 ### Fixed
 
 - Inline-exec (`` !`cmd` ``) spans now reach `sh` through stdin instead of

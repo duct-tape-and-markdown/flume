@@ -5,8 +5,9 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { existsSync, unlinkSync } from "node:fs";
+import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -221,4 +222,127 @@ export async function commitPaths(opts: {
 export async function isDirty(cwd: string): Promise<boolean> {
   const { stdout } = await run(cwd, ["status", "--porcelain"]);
   return stdout.length > 0;
+}
+
+/**
+ * Resolve the shared git-common-dir for `cwd` (`git rev-parse
+ * --git-common-dir`) — the same absolute path from every linked worktree, so
+ * state written under it is visible across every worktree of one repository
+ * (RELEASE-v0.11 §4, following the `git-lfs`/`sequencer` precedent for
+ * shared, untracked tool state under `.git/`).
+ */
+export async function gitCommonDir(cwd: string): Promise<string> {
+  const { stdout } = await run(cwd, ["rev-parse", "--git-common-dir"]);
+  return resolve(cwd, stdout);
+}
+
+/**
+ * The ref HEAD resolves to (e.g. `refs/heads/main`), or `null` when HEAD is
+ * detached (or `cwd` is not a git repo at all) — `git symbolic-ref` exits
+ * non-zero rather than naming a ref in either case.
+ */
+export async function currentRefPath(cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await run(cwd, ["symbolic-ref", "--quiet", "HEAD"]);
+    return stdout || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where the tip claim for `refPath` lives under a git-common-dir
+ * (RELEASE-v0.11 §4): the ref path mirrored as directories, e.g.
+ * `<commonDir>/flume/tip-claims/refs/heads/main`.
+ */
+export function tipClaimPath(commonDir: string, refPath: string): string {
+  return join(commonDir, "flume", "tip-claims", ...refPath.split("/"));
+}
+
+/**
+ * The pid recorded at a tip-claim path, when it names a live process —
+ * `null` for no claim file, an unparsable one, or a dead/not-ours pid
+ * (stale; callers reclaim silently). Same liveness probe as the loop lock
+ * (`liveLoopPid`, src/job.ts) — a sibling primitive rather than a shared call
+ * site, since the two guard different resources (a ref vs. a state root)
+ * under different keying.
+ */
+export async function liveTipClaimPid(claimPath: string): Promise<number | null> {
+  if (!existsSync(claimPath)) return null;
+  const pid = Number((await readFile(claimPath, "utf8")).trim());
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Thrown by {@link acquireTipClaim} when a live process already holds the
+ * claim — the operational-refusal class, same as the loop lock's refusal.
+ */
+export class TipClaimHeldError extends Error {
+  constructor(
+    public readonly refPath: string,
+    public readonly holderPid: number,
+    public readonly claimPath: string,
+  ) {
+    super(`tip ${refPath} claimed by pid ${holderPid} (${claimPath})`);
+  }
+}
+
+export interface TipClaim {
+  path: string;
+  /** Remove the claim file. Idempotent — safe to call from an exit handler. */
+  release: () => void;
+}
+
+/**
+ * Acquire the advisory per-ref tip claim (RELEASE-v0.11 §4): one flume
+ * writer per tip. Exclusive-create (`wx`) the claim file at
+ * `<git-common-dir>/flume/tip-claims/<refPath>`. On `EEXIST`, probe the
+ * recorded pid with the same liveness check as the loop lock: live → refuse
+ * ({@link TipClaimHeldError}, naming the holder); dead → reclaim (unlink,
+ * retry the exclusive create).
+ */
+export async function acquireTipClaim(
+  cwd: string,
+  refPath: string,
+): Promise<TipClaim> {
+  const commonDir = await gitCommonDir(cwd);
+  const claimPath = tipClaimPath(commonDir, refPath);
+  await mkdir(dirname(claimPath), { recursive: true });
+  for (;;) {
+    try {
+      await writeFile(claimPath, String(process.pid), { flag: "wx" });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      const holder = await liveTipClaimPid(claimPath);
+      if (holder !== null) {
+        throw new TipClaimHeldError(refPath, holder, claimPath);
+      }
+      // Dead pid — reclaim: unlink and retry the exclusive create. A
+      // concurrent reclaimer may win the unlink race first; the retried
+      // create's own possible EEXIST re-probes rather than assuming this
+      // call won.
+      try {
+        await unlink(claimPath);
+      } catch {
+        // Already gone — another reclaimer won the race; retry the create.
+      }
+    }
+  }
+  return {
+    path: claimPath,
+    release: () => {
+      try {
+        unlinkSync(claimPath);
+      } catch {
+        // already gone
+      }
+    },
+  };
 }
