@@ -1,38 +1,5 @@
 [
   {
-    "tag": "ERA-SCOPED-NARRATION-BARREL-NEIGHBORHOOD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/index.ts",
-          "description": "line 3 - the exports map exists and does enforce; state the condition or drop the clause"
-        },
-        {
-          "path": "src/setupWorktree.ts",
-          "description": "lines 4-10 - drop the pre-adoption 'has been hand-rolling' rationale for what the helper does"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "index.ts and setupWorktree.ts carry expired narration: a 'no exports map yet' claim package.json contradicts, and a hand-rolling rationale the dogfood chain retired.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "Neither site claims a condition the tree contradicts; no behavior moves.",
-    "notes": "Fourth sibling of the ERA-SCOPED-NARRATION-* family. Verified this tick: package.json:26-31 declares an exports map exposing '.' alone, so index.ts:3's 'not enforced - there's no exports map yet' fired its own trigger. setupWorktree.ts:5-7 names flume's dogfood buildSetupWorktree as a hand-rolled hardcode; chain.ts:50 imports the engine helper, :197-201 delegates to it, and :192-193 says so outright. Prose-only."
-  },
-  {
     "tag": "DISPATCHER-STREAMJSON-PARSE-DUP",
     "gate": {
       "kind": "open"
