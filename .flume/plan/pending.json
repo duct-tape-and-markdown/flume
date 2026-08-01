@@ -1,34 +1,5 @@
 [
   {
-    "tag": "ERA-SCOPED-NARRATION-JOB-NEIGHBORHOOD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "line 52 - state the condition or drop the retired framing"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "job.ts:52 cites the shipped-and-gone JOB-RESOLUTION pending tag as live accepted debt - unresolvable, era-scoped narration.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "No site in src/job.ts cites an unresolvable pending tag or scopes itself to a closed migration window; no behavior moves.",
-    "notes": "Narrowed this tick: both JOB-BRANCH-GRAMMAR-RETIRED and JOB-EXTRACT-REMOVED have now landed. The old :417/:570/:793 sites (jobRm's pre-0.9 clause, extract's framing) are gone with the code they sat in - only the JOB-RESOLUTION cite survives, re-verified at :52 (was :48)."
-  },
-  {
     "tag": "CLI-RESOLVESTATEDIRS-DOCSTRING-ORPHANED",
     "gate": {
       "kind": "open"
