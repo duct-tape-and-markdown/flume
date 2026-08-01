@@ -2199,9 +2199,11 @@ export class Dispatcher {
     key: string,
   ): Promise<PriorAttempt | undefined> {
     const p = this.priorAttemptPath(key);
-    if (!existsSync(p)) return undefined;
+    if (!existsSync(toNamespacedPath(p))) return undefined;
     try {
-      const rec = JSON.parse(await readFile(p, "utf8")) as { mode?: unknown };
+      const rec = JSON.parse(
+        await readFile(toNamespacedPath(p), "utf8"),
+      ) as { mode?: unknown };
       if (
         rec &&
         (rec.mode === "gate-revert" ||
@@ -2224,8 +2226,12 @@ export class Dispatcher {
     rec: PriorAttempt,
   ): Promise<void> {
     const p = this.priorAttemptPath(key);
-    await mkdir(dirname(p), { recursive: true });
-    await writeFile(p, JSON.stringify(rec, null, 2) + "\n", "utf8");
+    await mkdir(toNamespacedPath(dirname(p)), { recursive: true });
+    await writeFile(
+      toNamespacedPath(p),
+      JSON.stringify(rec, null, 2) + "\n",
+      "utf8",
+    );
   }
 
   /**
@@ -2235,7 +2241,7 @@ export class Dispatcher {
    * already holds, extended to the prose snapshot).
    */
   private async clearPriorAttempt(key: string): Promise<void> {
-    await rm(this.priorAttemptPath(key), { force: true });
+    await rm(toNamespacedPath(this.priorAttemptPath(key)), { force: true });
     await rm(toNamespacedPath(this.revertedSnapshotDir(key)), {
       recursive: true,
       force: true,

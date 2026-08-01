@@ -77,6 +77,18 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
+  `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
+  now route through `toNamespacedPath`, the same idiom the §8 reverted-prose
+  snapshot siblings above were fixed with — here the win32 ~260-char
+  total-path limit is driven by the §5 record's own flat filename
+  (`<flumeDir>/prior-attempts/<key>.json`) rather than a nested diff path,
+  reachable at the longest tag `parsePending` accepts. Two failure modes in
+  one function pair: `writePriorAttempt`'s `mkdir` was uncaught and threw
+  `ENAMETOOLONG` into every render-refused/tip-moved/gate-revert/
+  voluntary-bail caller; `readPriorAttempt`'s `existsSync` returned `false`
+  on a too-long path by Node's own contract, silently reporting "no prior
+  attempt" instead (v0.4 §6).
 - `snapshotRevertedFiles`'s `mkdir`/`writeFile` now route the snapshot
   destination and its dirname through `toNamespacedPath`, the same idiom
   `writeRevertNote`/`harvestFriction`/the friction counters above were fixed

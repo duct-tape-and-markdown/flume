@@ -6281,6 +6281,94 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(snapDir)).toBe(false);
     }, 20_000);
 
+    it("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
+      // from the reverted commit's own diff path), the depth driver here is
+      // the §5 record's own flat filename: priorAttemptPath is
+      // `<flumeDir>/prior-attempts/<key>.json` with no further nesting, so
+      // only the fanout key (slugify(entry.tag), bounded by the real
+      // TAG_PATTERN/TAG_MAX_LENGTH schema gate) can push it past 260 — the
+      // longest tag the schema accepts, driven through the real writer.
+      const tag = "A".repeat(TAG_MAX_LENGTH);
+      await writePending(fx.repo, [
+        makeEntry(tag, ["src/priorattempt-w32.ts"]),
+      ]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      let calls = 0;
+      const gate: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          calls++;
+          return calls === 1
+            ? { ok: false, message: "boom said no" }
+            : { ok: true, message: "second attempt passes" };
+        },
+      };
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [gate],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      let attempt = 0;
+      const prompts: string[] = [];
+      const agent: Agent = {
+        name: "priorattempt-w32-agent",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          const n = attempt++;
+          await writeAndCommit(
+            inv.cwd,
+            "src/priorattempt-w32.ts",
+            n === 0 ? "first\n" : "second\n",
+            `build(${tag}): attempt ${n}`,
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.shippedTags).toEqual([]);
+
+      const priorAttemptPath = join(
+        fx.repo,
+        ".flume",
+        "prior-attempts",
+        `${slug}.json`,
+      );
+      expect(priorAttemptPath.length).toBeGreaterThan(260);
+      // writePriorAttempt's mkdir/writeFile landed the record instead of
+      // throwing ENAMETOOLONG.
+      expect(existsSync(priorAttemptPath)).toBe(true);
+
+      new Baton(join(fx.repo, ".flume")).wake("build");
+      const second = await dispatcher.tick();
+      expect(second.result?.shippedTags).toEqual([tag]);
+
+      // readPriorAttempt actually decoded the deep-path record rather than
+      // existsSync silently reporting "no prior attempt": the gate-revert
+      // block, carrying the first gate's own failure message, lands in the
+      // second attempt's rendered prompt.
+      expect(prompts[1]).toContain("<prior-attempt>");
+      expect(prompts[1]).toContain("boom said no");
+
+      // clearPriorAttempt removed the deep-path record after the clean
+      // ship-and-merge.
+      expect(existsSync(priorAttemptPath)).toBe(false);
+    }, 20_000);
+
     it("createWorktree creates the worktree when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: fresh create)", async () => {
       const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-"));
       const savedOverride = process.env.FLUME_WORKTREES_DIR;
