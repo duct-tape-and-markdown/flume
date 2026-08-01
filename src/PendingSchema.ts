@@ -281,37 +281,40 @@ export interface ParseError {
 }
 
 /**
- * Parse pending.json contents against core + the chain's declared extension.
- * Returns structured errors rather than throwing so the harness can inject
- * them back into the plan prompt for re-derivation.
+ * Parse `raw` as JSON, wrapped as a failed `ParseResult` on failure. Shared
+ * by `parsePending` and `parsePendingLoose` so the invalid-JSON error shape
+ * has one source instead of two copies that can drift.
  */
-export function parsePending(
+function parseJsonOrFail(
   raw: string,
-  extension?: EntryExtension,
-): ParseResult {
-  let parsed: unknown;
+): { ok: true; value: unknown } | { ok: false; result: ParseResult } {
   try {
-    parsed = JSON.parse(raw);
+    return { ok: true, value: JSON.parse(raw) };
   } catch (err) {
     return {
       ok: false,
-      entries: [],
-      errors: [
-        {
-          index: -1,
-          path: "",
-          message: `invalid JSON: ${(err as Error).message}`,
-        },
-      ],
+      result: {
+        ok: false,
+        entries: [],
+        errors: [
+          {
+            index: -1,
+            path: "",
+            message: `invalid JSON: ${(err as Error).message}`,
+          },
+        ],
+      },
     };
   }
+}
 
-  const result = composePendingList(extension).safeParse(parsed);
-  if (result.success) {
-    return { ok: true, entries: result.data, errors: [] };
-  }
-
-  const errors: ParseError[] = result.error.issues.map((issue) => {
+/**
+ * Map zod's issue list to `ParseError[]`. Shared by `parsePending` and
+ * `parsePendingLoose` so the mapping has one source instead of two copies
+ * that can drift.
+ */
+function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
+  return issues.map((issue) => {
     const [first, ...rest] = issue.path;
     const index = typeof first === "number" ? first : -1;
     return {
@@ -320,8 +323,30 @@ export function parsePending(
       message: issue.message,
     };
   });
+}
 
-  return { ok: false, entries: [], errors };
+/**
+ * Parse pending.json contents against core + the chain's declared extension.
+ * Returns structured errors rather than throwing so the harness can inject
+ * them back into the plan prompt for re-derivation.
+ */
+export function parsePending(
+  raw: string,
+  extension?: EntryExtension,
+): ParseResult {
+  const parsed = parseJsonOrFail(raw);
+  if (!parsed.ok) return parsed.result;
+
+  const result = composePendingList(extension).safeParse(parsed.value);
+  if (result.success) {
+    return { ok: true, entries: result.data, errors: [] };
+  }
+
+  return {
+    ok: false,
+    entries: [],
+    errors: issuesToParseErrors(result.error.issues),
+  };
 }
 
 /**
@@ -332,26 +357,12 @@ export function parsePending(
  * parse that didn't know the extension is how fields get destroyed.
  */
 export function parsePendingLoose(raw: string): ParseResult {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    return {
-      ok: false,
-      entries: [],
-      errors: [
-        {
-          index: -1,
-          path: "",
-          message: `invalid JSON: ${(err as Error).message}`,
-        },
-      ],
-    };
-  }
+  const parsed = parseJsonOrFail(raw);
+  if (!parsed.ok) return parsed.result;
 
   const result = z
     .array(PendingEntryCore.catchall(z.unknown()))
-    .safeParse(parsed);
+    .safeParse(parsed.value);
   if (result.success) {
     return {
       ok: true,
@@ -360,17 +371,11 @@ export function parsePendingLoose(raw: string): ParseResult {
     };
   }
 
-  const errors: ParseError[] = result.error.issues.map((issue) => {
-    const [first, ...rest] = issue.path;
-    const index = typeof first === "number" ? first : -1;
-    return {
-      index,
-      path: rest.join("."),
-      message: issue.message,
-    };
-  });
-
-  return { ok: false, entries: [], errors };
+  return {
+    ok: false,
+    entries: [],
+    errors: issuesToParseErrors(result.error.issues),
+  };
 }
 
 // ---------- prompt rendering ----------

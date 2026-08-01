@@ -479,6 +479,14 @@ describe("parsePendingLoose — chain-less informational reads", () => {
   });
 });
 
+describe("parsePending/parsePendingLoose — shared error mapping", () => {
+  it("constructs the invalid-JSON message exactly once in module source", () => {
+    const src = readFileSync(`${SRC_DIR}/PendingSchema.ts`, "utf8");
+    const occurrences = (src.match(/invalid JSON: /g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+});
+
 describe("dependsOnForks — foundations governor", () => {
   const noForks = new Set<string>();
 

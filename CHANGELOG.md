@@ -397,6 +397,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `Phase.setupWorktree`'s doc no longer reassures pre-migration
   void-returning implementations, stating the current return-type contract
   instead. No behavior changes.
+- `src/PendingSchema.ts`'s `parsePending` and `parsePendingLoose` shared the
+  invalid-JSON wrap and the zod-issues-to-`ParseError[]` mapping verbatim
+  instead of one implementation (`.claude/rules/engineering.md`, "The fix
+  lands at the mechanism" — PARSEPENDING-DUP-ERROR-MAPPING); both now call
+  one `parseJsonOrFail` helper and one `issuesToParseErrors` helper. Error
+  output is byte-unchanged. No behavior changes.
 
 ## [0.9.0] - 2026-07-31
 
