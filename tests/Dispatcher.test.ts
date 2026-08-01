@@ -5565,5 +5565,69 @@ describe.runIf(process.platform === "win32")(
       );
       expect(stdout.trim()).toBe("true");
     }, 30_000);
+
+    it("writeRevertNote lands the note when the friction dir's own total path exceeds win32's ~260-char limit (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      const tag = "LONGFRICTION-A";
+      await writePending(fx.repo, [
+        makeEntry(tag, ["src/longfriction-a.ts"]),
+      ]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const failing: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          return { ok: false, message: "boom said no" };
+        },
+      };
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [failing],
+      });
+      // A friction channel nested deep enough that <flumeDir>/<friction>
+      // alone clears win32's ~260-char total-path limit, independent of
+      // the host tmpdir's own depth — TAG_MAX_LENGTH bounds only the
+      // note's filename component (TAG-LENGTH-BOUND-AGREEMENT-PIN above),
+      // never the friction dir's own depth.
+      const deepFriction = join(
+        "friction",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+      );
+      const chain: Chain = {
+        phases: [phase],
+        humanOnly: [],
+        friction: deepFriction,
+      };
+
+      const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      const agent = fanoutAgent({
+        [slug]: async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/longfriction-a.ts",
+            "ok\n",
+            `build(${tag}): ship`,
+          );
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+      expect(outcome.result?.shippedTags).toEqual([]);
+
+      const frictionDir = join(fx.repo, ".flume", deepFriction);
+      expect(frictionDir.length).toBeGreaterThan(260);
+      const files = await readdir(frictionDir);
+      expect(files.length).toBe(1);
+      expect(files[0]).toContain(tag);
+    }, 20_000);
   },
 );

@@ -138,6 +138,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   real filename lands on disk within NAME_MAX
   (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
   wrote").
+- `writeRevertNote`'s `mkdir`/`writeFile` now route the friction dir and
+  note path through `node:path`'s `toNamespacedPath` (the win32
+  extended-length `\\?\` prefix; a no-op on POSIX), so the write survives
+  win32's ~260-char total-path limit even when `TAG_MAX_LENGTH`'s
+  per-component bound holds. `core.longpaths` (v0.4 §6, above) only governs
+  git's own path handling — it never reaches Node's `fs` calls — so a deep
+  `flumeDir`/friction-channel nesting still silently dropped the note
+  (swallowed by the existing best-effort catch) after that fix shipped
+  (v0.4 §6).
 - CI's "npm pack file-set guard" step now passes `--ignore-scripts` to
   `npm pack --dry-run --json`. `"prepack": "pnpm build"` writes a script
   banner ahead of npm's JSON on stdout, so the guard's `JSON.parse` has

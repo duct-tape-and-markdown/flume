@@ -19,7 +19,15 @@ import {
 import { existsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { spawn, execFile } from "node:child_process";
-import { join, dirname, resolve, relative, isAbsolute, sep } from "node:path";
+import {
+  join,
+  dirname,
+  resolve,
+  relative,
+  isAbsolute,
+  sep,
+  toNamespacedPath,
+} from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -2207,7 +2215,12 @@ export class Dispatcher {
       const { subject, body } = await this.capturedCommitMessage(cwd, sha);
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const primaryDir = join(this.flumeDir, chain.friction);
-      await mkdir(primaryDir, { recursive: true });
+      // win32 total-path limit (~260 chars, v0.4 §6): TAG_MAX_LENGTH bounds
+      // only the filename component, not the friction dir's full depth.
+      // toNamespacedPath prepends the \\?\ extended-length prefix on
+      // win32 (no-op elsewhere), so the mkdir/writeFile below survive a
+      // full path past MAX_PATH even when the per-component bound holds.
+      await mkdir(toNamespacedPath(primaryDir), { recursive: true });
       const lines = [
         `# Gate revert: ${failure.gate}`,
         "",
@@ -2221,7 +2234,9 @@ export class Dispatcher {
         "",
       ];
       await writeFile(
-        join(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
+        toNamespacedPath(
+          join(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
+        ),
         lines.join("\n"),
         "utf8",
       );
