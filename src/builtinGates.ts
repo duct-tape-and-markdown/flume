@@ -113,22 +113,27 @@ export function shellGate(opts: ShellGateOptions): Gate {
 
 /**
  * Package-manager override accepted by `tscGate`, `vitestGate`, and
- * `eslintGate`. The chain supplies which binary runs the check; the engine
- * supplies the enforcement (engine-boundary.md "Capability vs convention").
- * Omit for pnpm — byte-identical to before this option existed.
+ * `eslintGate`. The chain supplies which binary (and, since args stay
+ * pnpm-shaped otherwise, which args) runs the check; the engine supplies the
+ * enforcement (engine-boundary.md "Capability vs convention"). `cmd` alone is
+ * only safe for a pnpm-args-compatible binary (e.g. yarn classic); npm's own
+ * verb grammar has no bare `npm tsc --noEmit` — it needs `args: ["exec",
+ * "--", "tsc", "--noEmit"]`. Omit both for pnpm — byte-identical to before
+ * this option existed.
  */
 export interface PkgManagerOverride {
   cmd?: string;
+  args?: string[];
 }
 
 /**
  * A builtin language gate doubles as its own factory. Used bare (e.g.
  * `gates: [tscGate]`) it *is* the pnpm-flavored `Gate`, so every existing
  * call site that drops these straight into a `gates: []` array keeps
- * compiling unchanged. Called (`tscGate({ cmd: "npm" })`) it returns the
- * identical check run through a different package-manager binary — the
- * injection point a non-pnpm chain needs without hand-rolling `shellGate`
- * from scratch.
+ * compiling unchanged. Called (`tscGate({ cmd: "npm", args: ["exec", "--",
+ * "tsc", "--noEmit"] })`) it returns the identical check run through a
+ * different package-manager binary and arg shape — the injection point a
+ * non-pnpm chain needs without hand-rolling `shellGate` from scratch.
  */
 export interface PkgManagerGate extends Gate {
   (override?: PkgManagerOverride): Gate;
@@ -139,11 +144,11 @@ function pkgManagerGate(
   args: string[],
   failHint: string,
 ): PkgManagerGate {
-  const build = (cmd: string): Gate =>
-    shellGate({ name, when: "afterCommit", cmd, args, failHint });
-  const defaultGate = build("pnpm");
+  const build = (cmd: string, gateArgs: string[]): Gate =>
+    shellGate({ name, when: "afterCommit", cmd, args: gateArgs, failHint });
+  const defaultGate = build("pnpm", args);
   const fn = ((override) =>
-    build(override?.cmd ?? "pnpm")) as PkgManagerGate;
+    build(override?.cmd ?? "pnpm", override?.args ?? args)) as PkgManagerGate;
   Object.defineProperty(fn, "name", {
     value: defaultGate.name,
     configurable: true,
@@ -156,8 +161,9 @@ function pkgManagerGate(
 /**
  * `pnpm tsc --noEmit` after the agent's commit. Catches type errors before
  * the commit ships; on failure the dispatcher drops the commit and the
- * pending entry stays in queue for the next tick. Call with `{ cmd }` to
- * run a different package manager's `tsc --noEmit`.
+ * pending entry stays in queue for the next tick. Call with `{ cmd, args }`
+ * to run a different package manager's `tsc --noEmit` — e.g. npm needs
+ * `{ cmd: "npm", args: ["exec", "--", "tsc", "--noEmit"] }`.
  */
 export const tscGate: PkgManagerGate = pkgManagerGate(
   "tsc",
@@ -169,7 +175,7 @@ export const tscGate: PkgManagerGate = pkgManagerGate(
  * `pnpm test --run` (vitest non-watch) after the agent's commit. A red
  * suite reverts the commit; pair with `tscGate` (run first) so type errors
  * are caught before vitest even attempts to load the changed module. Call
- * with `{ cmd }` to run a different package manager's `test --run`.
+ * with `{ cmd, args }` to run a different package manager's `test --run`.
  */
 export const vitestGate: PkgManagerGate = pkgManagerGate(
   "vitest",
@@ -181,7 +187,7 @@ export const vitestGate: PkgManagerGate = pkgManagerGate(
  * `pnpm lint` (ESLint) after the agent's commit. Opt-in: only meaningful
  * for chains that wire `scripts.lint` in their `package.json`. Failures
  * revert the commit just like the other afterCommit gates. Call with
- * `{ cmd }` to run a different package manager's `lint`.
+ * `{ cmd, args }` to run a different package manager's `lint`.
  */
 export const eslintGate: PkgManagerGate = pkgManagerGate(
   "eslint",

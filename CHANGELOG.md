@@ -77,6 +77,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   from scratch. Omitting the call (or calling with no override) is
   byte-identical to today's pnpm-only behavior.
 
+- `PkgManagerOverride` (accepted by `tscGate`/`vitestGate`/`eslintGate`)
+  gains an optional `args` alongside `cmd` (BUILTINGATES-CMD-OVERRIDE-PNPM-
+  SHAPED-ARGS): the `cmd`-only override above still swaps only the binary
+  while args stay pnpm-shaped (`["tsc", "--noEmit"]`, etc), which silently
+  misreports an npm chain's gate as "TypeScript errors"/"Lint errors" when
+  npm never ran the check at all — npm has no bare `npm tsc`/`npm lint`
+  verb and exits with its own "Unknown command" instead. Pass
+  `{ cmd: "npm", args: ["exec", "--", "tsc", "--noEmit"] }` for a working
+  npm invocation. Omitting `args` (or the whole override) stays
+  byte-identical to today.
+
 - An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
   (the ref HEAD resolves to) at start and releases it at exit — one flume
   writer per tip, visible from every worktree of one repository. The claim

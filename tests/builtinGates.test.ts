@@ -11,7 +11,11 @@
  * Also covers the tscGate/vitestGate/eslintGate pnpm cmd override
  * (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE, engine-boundary.md "Capability
  * vs convention"): the injection point a non-pnpm chain needs, and that
- * omitting it stays byte-identical to before the override existed.
+ * omitting it stays byte-identical to before the override existed. And the
+ * args override that rides alongside it (BUILTINGATES-CMD-OVERRIDE-PNPM-
+ * SHAPED-ARGS): cmd alone only swaps the binary while args stay pnpm-shaped,
+ * which silently misreports an npm chain's gate (npm has no bare `npm tsc`
+ * verb) as "TypeScript errors" when npm never ran tsc at all.
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -234,6 +238,48 @@ describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-
       expect(result.message).toBe(failHint);
       expect(result.details ?? "").toContain("MODULE_NOT_FOUND");
     },
+  );
+});
+
+describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-OVERRIDE-PNPM-SHAPED-ARGS)", () => {
+  it.each([
+    ["tscGate", tscGate],
+    ["vitestGate", vitestGate],
+    ["eslintGate", eslintGate],
+  ] as const)(
+    "%s({ cmd, args }) runs the overridden args instead of the pnpm-shaped default",
+    async (_label, gate) => {
+      // On the pre-fix tree PkgManagerOverride carries no `args` field, so
+      // this override's `args` is silently dropped and the gate still runs
+      // `<node> tsc --noEmit` (etc, the gate's own fixed pnpm-shaped args) —
+      // node tries to load "tsc"/"test"/"lint" as an entry script and fails
+      // with MODULE_NOT_FOUND, exactly like the cmd-only override proven
+      // above. Only once `args` is actually threaded into `build()` does
+      // this trivial `-e` script run instead and the gate goes green.
+      const result = await gate({
+        cmd: process.execPath,
+        args: ["-e", "process.exit(0)"],
+      }).run(ctx(process.cwd()));
+      expect(result.ok).toBe(true);
+    },
+  );
+
+  it("tscGate({ cmd: 'npm' }) (cmd-only) fails with npm's own \"Unknown command\" — npm has no bare-bin tsc verb", async () => {
+    const result = await tscGate({ cmd: "npm" }).run(ctx(process.cwd()));
+    expect(result.ok).toBe(false);
+    expect(result.details ?? "").toContain("Unknown command");
+  });
+
+  it(
+    "tscGate({ cmd: 'npm', args: [...] }) composes a working npm invocation and actually runs tsc",
+    async () => {
+      const result = await tscGate({
+        cmd: "npm",
+        args: ["exec", "--", "tsc", "--noEmit"],
+      }).run(ctx(process.cwd()));
+      expect(result.ok).toBe(true);
+    },
+    30_000,
   );
 });
 
