@@ -120,6 +120,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `withSessionCapture`'s default `filename` now suffixes the ISO timestamp
+  with the invocation's `cwd` basename, matching the discriminator this
+  repo's own chain already applied on top of the default. Two fanout
+  invocations opening in the same clock millisecond (distinct cwds, no
+  `filename` override) collided on one path, and the second
+  `createWriteStream` silently truncated the first invocation's transcript —
+  no error, one capture just vanished (`.claude/rules/engineering.md` §Loud
+  or nothing).
 - `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
   `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
   now route through `toNamespacedPath`, the same idiom the §8 reverted-prose

@@ -211,8 +211,11 @@ function combineSignals(
 
 /**
  * Options for `withSessionCapture`. `dir` is created on demand; `filename`
- * defaults to an ISO-timestamped `.txt` if omitted, so concurrent fanout
- * invocations don't collide on filename.
+ * defaults to an ISO-timestamped name suffixed with the invocation's `cwd`
+ * basename if omitted, so concurrent fanout invocations (distinct cwds,
+ * same clock tick) don't collide on filename. Two invocations sharing both
+ * clock tick and cwd still collide — not reachable through the dispatcher,
+ * which gives fanout invocations distinct worktree cwds.
  */
 export interface SessionCaptureOpts {
   /** Directory to write session output files into. Created if missing. */
@@ -239,7 +242,7 @@ export function withSessionCapture(
     name: `${agent.name}+capture`,
     async invoke(inv) {
       await mkdir(opts.dir, { recursive: true });
-      const name = opts.filename?.(inv) ?? defaultCaptureFilename();
+      const name = opts.filename?.(inv) ?? defaultCaptureFilename(inv);
       const stream = createWriteStream(join(opts.dir, name), {
         encoding: "utf8",
       });
@@ -259,8 +262,10 @@ export function withSessionCapture(
   };
 }
 
-function defaultCaptureFilename(): string {
-  return `${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+function defaultCaptureFilename(inv: AgentInvocation): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const cwdName = basename(inv.cwd) || "tick";
+  return `${ts}-${cwdName}.txt`;
 }
 
 // ---------- terminal renderer decorator ----------

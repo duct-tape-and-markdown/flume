@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -361,6 +361,42 @@ describe("withSessionCapture", () => {
       expect(captured).toBe("bytes");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not collide when two invocations with distinct cwds default the filename under a frozen clock", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-capture-fanout-"));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const fake = (payload: string): Agent => ({
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.(payload);
+          return { exitCode: 0, stdout: payload, stderr: "" };
+        },
+      });
+
+      const wrapped = withSessionCapture(fake("payload"), { dir });
+
+      const [resultA, resultB] = await Promise.all([
+        wrapped.invoke({ cwd: join("/tmp", "worktree-a"), prompt: "" }),
+        wrapped.invoke({ cwd: join("/tmp", "worktree-b"), prompt: "" }),
+      ]);
+
+      expect(resultA.exitCode).toBe(0);
+      expect(resultB.exitCode).toBe(0);
+
+      const files = await readdir(dir);
+      expect(files).toHaveLength(2);
+
+      const contents = await Promise.all(
+        files.map((f) => readFile(join(dir, f), "utf8")),
+      );
+      expect(contents).toEqual(["payload", "payload"]);
+    } finally {
+      vi.useRealTimers();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
