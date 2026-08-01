@@ -1,43 +1,5 @@
 [
   {
-    "tag": "GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "tipClaimPath's readers/writers - liveTipClaimPid's existsSync/readFile (283-284), acquireTipClaim's mkdir/writeFile/unlink (328, 331, 344), release's unlinkSync (354) - route through toNamespacedPath; import it from node:path"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "win32-gated coverage beside the existing acquireTipClaim/liveTipClaimPid describe (238): acquire/release round-trips when refPath's mirrored directories nest past win32's ~260-char limit"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "git.ts's tip-claim family joins commonDir with an entry-tag-driven refPath unwrapped - same win32 total-path-limit shape, but here the miss throws instead of silently degrading.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "6. win32 portability"
-    },
-    "tests": [
-      {
-        "path": "tests/git.test.ts",
-        "asserts": "acquireTipClaim/liveTipClaimPid/release round-trip successfully when refPath (mirrored as directories) nests past win32's ~260-char limit - fails on the pre-fix tree via ENAMETOOLONG propagating out of mkdir/writeFile"
-      }
-    ],
-    "acceptance": "tipClaimPath's readers and writers all route through toNamespacedPath; a win32-gated deep-refPath fixture round-trips acquire/release; tsc/vitest green.",
-    "notes": "Fifth sibling, same audit as WORKTREE-WIN32-PATH-TOTAL-LIMIT. Different failure mode: acquireTipClaim's mkdir (328) isn't try/catch'd at all and writeFile's catch only swallows EEXIST, so ENAMETOOLONG propagates to cli.ts:869's rethrow - a `flume loop`/`run` crash on win32, not a silent wrong count. refPath mirrors createWorktree's own branch naming (flume/<namespace>/slugify(entry.tag)), so an entry near TAG_MAX_LENGTH (216) triggers it today."
-  },
-  {
     "tag": "SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT",
     "gate": {
       "kind": "open"
@@ -77,7 +39,9 @@
   },
   {
     "tag": "PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
