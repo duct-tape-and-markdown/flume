@@ -148,6 +148,7 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
       await ensureRuntimeIgnores(dir);
       const content = await readFile(join(dir, ".gitignore"), "utf8");
       expect(content.startsWith(template)).toBe(true);
+      expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
       for (const entry of RUNTIME_IGNORES) {
         expect(content).toContain(entry);
       }
@@ -231,6 +232,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         // 3. Runtime ignores merged into the seed's .gitignore.
         const ignores = await readFile(join(jobDir, ".gitignore"), "utf8");
         expect(ignores.startsWith("sessions/\n")).toBe(true);
+        expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
         for (const entry of RUNTIME_IGNORES) {
           expect(ignores).toContain(entry);
         }
@@ -494,6 +496,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
         const jobDir = join(repo.dir, ".flume", "jobs", "f1");
         const ignores = await readFile(join(jobDir, ".gitignore"), "utf8");
         expect(ignores.match(/^notes\/loop\/$/gm)).toHaveLength(1);
+        expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
         for (const entry of RUNTIME_IGNORES) {
           expect(ignores).toContain(entry);
         }
