@@ -128,6 +128,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `createWriteStream` silently truncated the first invocation's transcript —
   no error, one capture just vanished (`.claude/rules/engineering.md` §Loud
   or nothing).
+- `withTerminalRenderer`'s `relativize` now strips the invocation `cwd`
+  prefix on either `/` or `\`, not just `/`. On win32 every rendered
+  Read/Write/Edit/MultiEdit/NotebookEdit line showed the full absolute
+  `file_path` instead of the relative path the tag beside it already
+  shortens to, because the strip only recognized the POSIX separator
+  (`.claude/rules/engineering.md` §The fix lands at the mechanism).
 - `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
   `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
   now route through `toNamespacedPath`, the same idiom the §8 reverted-prose

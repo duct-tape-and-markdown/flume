@@ -522,6 +522,49 @@ describe("withTerminalRenderer", () => {
     });
   });
 
+  describe("file_path relativizing", () => {
+    async function readLineFor(cwd: string, filePath: string): Promise<string> {
+      const stream =
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Read", input: { file_path: filePath } },
+            ],
+          },
+        }) + "\n";
+      const fake: Agent = {
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.(stream);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+      const captured: string[] = [];
+      await withTerminalRenderer(fake).invoke({
+        cwd,
+        prompt: "",
+        onStdout: (chunk) => captured.push(chunk),
+      });
+      return captured.join("");
+    }
+
+    it("renders relative under a backslash-separated cwd", async () => {
+      expect(
+        await readLineFor(
+          "C:\\Users\\dev\\repo",
+          "C:\\Users\\dev\\repo\\src\\Agent.ts",
+        ),
+      ).toContain("Read(src\\Agent.ts)\n");
+    });
+
+    it("keeps rendering relative under a POSIX cwd", async () => {
+      expect(await readLineFor("/work/repo", "/work/repo/src/Agent.ts")).toContain(
+        "Read(src/Agent.ts)\n",
+      );
+    });
+  });
+
   it("passes non-JSON lines through verbatim with the tag prefix", async () => {
     const fake: Agent = {
       name: "fake",

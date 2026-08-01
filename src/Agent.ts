@@ -463,7 +463,9 @@ function formatTokens(n: number): string {
 
 function relativize(p: string, cwd: string): string {
   if (!p) return "";
-  if (p.startsWith(cwd + "/")) return p.slice(cwd.length + 1);
+  for (const sep of ["/", "\\"]) {
+    if (p.startsWith(cwd + sep)) return p.slice(cwd.length + 1);
+  }
   return p;
 }
 
