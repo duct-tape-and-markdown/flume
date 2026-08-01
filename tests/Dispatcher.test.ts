@@ -1432,10 +1432,19 @@ describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
       }
 
       const aOutcome = await aTick;
-      expect(aOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
-      // Both entries landed on trunk; neither wave lost its commit.
-      expect(await readFile(join(fx.repo, "src/dup-a.ts"), "utf8")).toBe("A\n");
+      // RELEASE-v0.11 §5: A's wave started on the tip before B ran at all,
+      // and B's wave has since landed on it — a claim-less bare-tick
+      // collision, exactly what the tip verify exists to catch (v0.11 §2:
+      // running two ticks hot against one ref with no coordination is the
+      // case the operator avoids by giving them different tips or
+      // serializing on the §4 claim). A's cherry-pick refuses; its own
+      // worktree commit, on its own disposable branch, is simply never
+      // merged — not a lost or corrupted commit, just never landed.
+      expect(aOutcome.result?.committed).toBe(false);
+      expect(aOutcome.result?.shippedTags).toEqual([]);
+      expect(aOutcome.tipMoved).toBe(true);
       expect(await readFile(join(fx.repo, "src/dup-b.ts"), "utf8")).toBe("B\n");
+      expect(existsSync(join(fx.repo, "src/dup-a.ts"))).toBe(false);
     } finally {
       await rm(container, { recursive: true, force: true });
       await rm(dockA, { recursive: true, force: true });
@@ -2972,6 +2981,7 @@ const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
 const BAIL_INTRO = "exited deliberately WITHOUT committing";
 const PREEMPT_INTRO = "cut short by a PLATFORM failure";
 const RENDER_REFUSED_INTRO = "could not even be rendered";
+const TIP_MOVED_INTRO = "was DISCARDED because the ref moved";
 
 describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   it("gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty", async () => {
@@ -3357,6 +3367,332 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[0]).not.toContain(BAIL_INTRO);
     expect(prompts[0]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
+});
+
+describe("Dispatcher — tip verify: commit only onto the tick's starting tip (RELEASE-v0.11 §5)", () => {
+  it("singleton: a commit whose parent isn't the recorded tip is soft-reverted — tip-moved, no commit lands, agent output stays on disk uncommitted", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let interloperSha = "";
+    const agent = singleAgent(async (cwd) => {
+      // An operator (or a concurrent flume process) commits to trunk after
+      // the dispatcher already recorded `preHead` — the §5 race the tip
+      // verify exists to catch. The agent's own commit lands on top of it.
+      await writeAndCommit(
+        cwd,
+        "src/interloper.ts",
+        "external\n",
+        "external: concurrent commit",
+      );
+      interloperSha = await head(cwd);
+      await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.commitSha).toBeUndefined();
+    expect(outcome.result?.gateResults).toEqual([]);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(outcome.tipMoved).toBe(true);
+    expect(outcome.verdict?.committed).toBe(false);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(outcome.summary).toContain("tip-moved");
+
+    // The interloper's own commit stands — real work must never be
+    // destroyed by the tip-verify revert. The agent's own commit refused.
+    expect(await head(fx.repo)).toBe(interloperSha);
+    expect(await head(fx.repo)).not.toBe(preHead);
+
+    // Agent output stays on disk, uncommitted — a soft reset, not the
+    // gate-revert path's hard reset.
+    expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
+      "agent-work\n",
+    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: fx.repo,
+    });
+    expect(status).toContain("plan-output.ts");
+  }, 20_000);
+
+  it("singleton: an unmoved tip commits exactly as before — no tip-moved fact", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+  });
+
+  it("singleton: the retry's prompt carries the tip-moved prior-attempt block, and only that variant — the retry against the new tip then commits clean", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const prompts: string[] = [];
+    let firstAttempt = true;
+    const agent: Agent = {
+      name: "recording-singleton",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        if (firstAttempt) {
+          firstAttempt = false;
+          await writeAndCommit(
+            inv.cwd,
+            "src/interloper.ts",
+            "external\n",
+            "external: concurrent commit",
+          );
+        }
+        await writeAndCommit(inv.cwd, "src/plan-output.ts", "x\n", "plan: attempt");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+    expect(first.tipMoved).toBe(true);
+
+    baton.wake("plan");
+    const second = await dispatcher.tick();
+    expect(second.result?.committed).toBe(true);
+    expect(second.tipMoved).toBeUndefined();
+
+    expect(prompts.length).toBe(2);
+    expect(prompts[0]).not.toContain("<prior-attempt>");
+    expect(prompts[1]).toContain("<prior-attempt>");
+    expect(prompts[1]).toContain(TIP_MOVED_INTRO);
+    // …and ONLY that variant.
+    expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
+    expect(prompts[1]).not.toContain(BAIL_INTRO);
+    expect(prompts[1]).not.toContain(PREEMPT_INTRO);
+  }, 20_000);
+
+  it("fanout: an entry's own worktree commit whose parent isn't the tip it was provisioned from is soft-reverted — tip-moved, never reaches cherry-pick, entry stays pending", async () => {
+    await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "test-a": async (cwd) => {
+        // Something rewrote this entry's own (private, per-tick) worktree
+        // branch out from under the agent mid-run — the same race, scoped
+        // to the worktree's own tip rather than trunk's.
+        await writeAndCommit(
+          cwd,
+          "src/interloper.ts",
+          "external\n",
+          "external: concurrent commit",
+        );
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.tipMoved).toBe(true);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+
+    // Entry stays pending, byte-identical — nothing shipped or cherry-picked.
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      makeEntry("TEST-A", ["src/a.ts"]),
+    ]);
+  }, 20_000);
+
+  it("fanout: an entry's worktree commit is ready but trunk moved during the wave — refuses the cherry-pick, entry stays pending, recorded as tip-moved", async () => {
+    await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "test-a": async (cwd) => {
+        // A concurrent actor commits directly to trunk while this entry's
+        // agent is still running in its own worktree — the wave only
+        // discovers it once cherry-picking starts, after every agent this
+        // wave has already finished.
+        await writeAndCommit(
+          fx.repo,
+          "src/interloper.ts",
+          "external\n",
+          "external: concurrent commit",
+        );
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.tipMoved).toBe(true);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      { tag: "TEST-A", outcome: "tip-moved" },
+    ]);
+
+    // Entry stays pending; the interloper's own commit stands untouched.
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      makeEntry("TEST-A", ["src/a.ts"]),
+    ]);
+    expect(await readFile(join(fx.repo, "src/interloper.ts"), "utf8")).toBe(
+      "external\n",
+    );
+    expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
+  }, 20_000);
+
+  it("fanout: trunk moved before the wave's own pending-ledger commit (no cherry-pick this wave) — refuses it, pending.json left untouched", async () => {
+    await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const failingGate: Gate = {
+      name: "always-fail",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failingGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "test-a": async (cwd) => {
+        // The entry's own afterCommit gate always fails, so this wave's
+        // only trunk-touching action is the trailing footprint-only
+        // pending-ledger commit — exactly where a concurrent actor's commit,
+        // landed here while the agent still runs in its own worktree, would
+        // otherwise be silently overwritten.
+        await writeAndCommit(
+          fx.repo,
+          "src/interloper.ts",
+          "external\n",
+          "external: concurrent commit",
+        );
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): attempt");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.tipMoved).toBe(true);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    // The entry's own afterCommit gate-revert is a real, independent fact —
+    // tip-moved rides alongside it, a sibling, not a replacement.
+    expect(outcome.noCommit).toBe("gate-revert");
+
+    // pending.json untouched: no footprint recorded, entry unchanged.
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      makeEntry("TEST-A", ["src/a.ts"]),
+    ]);
+  }, 20_000);
+});
+
+describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", () => {
+  it("a tip-moved tick is distinguishable in the run's errored-tick classification, even though it is never a NoCommitMode", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
+
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath,
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            tipMoved: true,
+            summary: "build: no commit (tip-moved) → hibernate",
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(1);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("tip-moved");
+  });
 });
 
 /**

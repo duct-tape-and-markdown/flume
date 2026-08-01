@@ -61,6 +61,7 @@ import type {
   VoluntaryBailAttempt,
   PlatformPreemptAttempt,
   RenderRefusedAttempt,
+  TipMovedAttempt,
   NoCommitMode,
 } from "./Prompt.js";
 import * as git from "./git.js";
@@ -140,13 +141,20 @@ export interface TickVerdictGateResult {
  *  - `channel-only`          landed and passed every gate, but touched no
  *                            file the entry declared (§12) — stays on
  *                            trunk, entry stays pending (not a ship).
+ *  - `tip-moved`             the wave's own commit-onto-trunk step refused
+ *                            because the ref moved since this wave started
+ *                            or since its own last successful action
+ *                            (RELEASE-v0.11 §5) — never reached cherry-pick,
+ *                            entry stays pending for a fresh retry against
+ *                            the new tip.
  */
 export type MergeOutcome =
   | "merged"
   | "cherry-pick-conflict"
   | "afterMerge-reverted"
   | "afterCommit-reverted"
-  | "channel-only";
+  | "channel-only"
+  | "tip-moved";
 
 /**
  * One fanout entry's {@link MergeOutcome}, as recorded in a {@link
@@ -194,6 +202,18 @@ export interface TickVerdict {
    * committed tick or a nothing-pickable no-op (no agent ran).
    */
   noCommit?: NoCommitMode;
+  /**
+   * RELEASE-v0.11 §5: set when this tick (or, for a fanout wave, any part of
+   * it) refused to commit because the ref moved between the tip it recorded
+   * at tick start and the point a commit would have landed onto it — the
+   * tip-verify backstop. A sibling fact to `noCommit`, never folded into it:
+   * the cause here is never one of the four `NoCommitMode` classes, and a
+   * wave can carry both (some entries shipped before the ref moved, the rest
+   * refused) or `tipMoved` alone with `committed: true` (every entry that
+   * reached cherry-pick shipped; only the trailing pending-ledger commit
+   * refused). Absent when nothing this tick touched hit the backstop.
+   */
+  tipMoved?: boolean;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: TickVerdictGateResult[];
   /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
@@ -214,6 +234,8 @@ export interface TickVerdict {
 type PhaseTickOutcome = {
   result: TickResult;
   noCommit?: NoCommitMode;
+  /** RELEASE-v0.11 §5: sibling to `noCommit` — see {@link TickVerdict.tipMoved}. */
+  tipMoved?: boolean;
   provisionFailures?: ProvisionFailure[];
   /** Entry tags this wave provisioned a worktree/agent for (fanout only; §5); absent for a singleton phase. */
   tags?: string[];
@@ -842,6 +864,14 @@ export interface TickOutcome {
    */
   noCommit?: NoCommitMode;
   /**
+   * RELEASE-v0.11 §5: mirrors {@link TickVerdict.tipMoved} — set when this
+   * tick refused a commit because the ref moved out from under the tip it
+   * recorded at tick start. A sibling fact to `noCommit` above, never a
+   * fifth `NoCommitMode`: the tip-verify backstop is a harness-mechanical
+   * refusal, not a cause the four causally-distinct modes classify.
+   */
+  tipMoved?: boolean;
+  /**
    * Axis-C terminal misconfiguration (§3) — sibling of `hibernated` /
    * `failed`, never a `NoCommitMode` member (no agent ran, no entry exists
    * to retry). Set when every awake flag names a phase the chain does not
@@ -1018,12 +1048,16 @@ export class Dispatcher {
         summary: err.message,
       };
     }
-    const { result, noCommit, provisionFailures, tags, mergeOutcomes } =
+    const { result, noCommit, tipMoved, provisionFailures, tags, mergeOutcomes } =
       phaseOutcome;
 
     // §15: fold the already-computed no-commit classification into the
     // TickResult before handoff — a chain's `handoff` is the only place a
     // voluntary-bail wave can be distinguished from a genuine no-op.
+    // `tipMoved` (RELEASE-v0.11 §5) does NOT fold in here: `TickResult`
+    // (`src/Phase.ts`) carries no field for it — the fact lives on
+    // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
+    // this same tick's synchronous `handoff`.
     const resultForHandoff: TickResult = noCommit
       ? { ...result, noCommit }
       : result;
@@ -1034,7 +1068,7 @@ export class Dispatcher {
     const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
-    const summary = summarize(phase.name, result, allowed, noCommit);
+    const summary = summarize(phase.name, result, allowed, noCommit, tipMoved);
 
     // v0.8 §5: the unified facts artifact — a pure value, built here so
     // `TickOutcome` carries everything the CLI's `tick` command needs to
@@ -1047,6 +1081,7 @@ export class Dispatcher {
       tags: tags ?? [],
       committed: result.committed,
       ...(noCommit ? { noCommit } : {}),
+      ...(tipMoved ? { tipMoved } : {}),
       gateResults: [...result.gateResults] as TickVerdictGateResult[],
       shippedTags: [...result.shippedTags],
       mergeOutcomes: mergeOutcomes ?? [],
@@ -1062,6 +1097,7 @@ export class Dispatcher {
       result: resultForHandoff,
       verdict,
       ...(noCommit ? { noCommit } : {}),
+      ...(tipMoved ? { tipMoved } : {}),
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
@@ -1122,6 +1158,27 @@ export class Dispatcher {
     let committed = postHead !== preHead;
     const gateResults: GateResultEntry[] = [];
     let noCommit: NoCommitMode | undefined;
+    let tipMoved = false;
+
+    if (committed) {
+      // RELEASE-v0.11 §5 tip verify: the agent commits directly, so the
+      // dispatcher never sees the moment of commit — verify after the fact
+      // instead. The commit's own parent must be the tip this tick recorded
+      // at start; a mismatch means the ref moved (an operator committing
+      // mid-tick, a pull, a claim-less bare-tick collision) while the agent
+      // ran. Checked before any gate runs — a commit on the wrong parent is
+      // refused regardless of what the gates would have said.
+      const parent = await git.revParse(cwd, `${postHead}^`);
+      if (parent !== preHead) {
+        await this.revertTipMovedCommit(cwd, postHead);
+        committed = false;
+        tipMoved = true;
+        await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
+        this.log.warn(
+          `[flume] ${phase.name}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
+        );
+      }
+    }
 
     if (committed) {
       const verdict = await this.runAfterCommitGates(phase, cwd, postHead);
@@ -1156,11 +1213,13 @@ export class Dispatcher {
       // A clean ship clears the slot so the next tick starts with no stale
       // prior-attempt signal.
       await this.clearPriorAttempt(key);
-    } else if (!noCommit) {
+    } else if (!tipMoved && !noCommit) {
       // No commit and no gate ran: classify the agent's own termination
       // (§6). A clean exit that produced nothing is a voluntary-bail (the
       // agent refused a constraint and named it in its final message); any
       // process failure is a platform-preempt (not a defect in the work).
+      // `tipMoved` already wrote its own §5 record above — the §6 taxonomy
+      // never applies to it (it's not a NoCommitMode).
       noCommit = await this.classifyNoCommit(key, termination);
       this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
     }
@@ -1176,6 +1235,7 @@ export class Dispatcher {
         revertedTags: [],
       },
       ...(noCommit ? { noCommit } : {}),
+      ...(tipMoved ? { tipMoved } : {}),
     };
   }
 
@@ -1347,8 +1407,19 @@ export class Dispatcher {
     // cherry-pick, so it gets an outcome here only when it carried a
     // captured footprint (§13).
     const mergeOutcomes: TickVerdictMergeOutcome[] = [];
+    // RELEASE-v0.11 §5 tip verify: the tip this wave's cherry-picks may
+    // legitimately land on — `preHead` for the first, advanced to each
+    // successful merge's sha as the wave makes its own progress. Distinct
+    // from "moved": our own cherry-picks advancing trunk is expected;
+    // anything else showing up here is external interference. A wave that
+    // hits it at all sets the wave-level `tipMoved` fact even when it also
+    // ships (entries already merged before the interference stay shipped —
+    // same per-entry isolation §7b's afterMerge revert already established).
+    let expectedTip = preHead;
+    let waveTipMoved = false;
 
     for (const r of perEntry) {
+      if (r.tipMoved) waveTipMoved = true;
       if (!r.committed || !r.commitSha) {
         // §13: an in-worktree afterCommit gate revert never reaches
         // cherry-pick, so it never touches trunk on its own — record its
@@ -1366,6 +1437,20 @@ export class Dispatcher {
       }
 
       const preCherry = await git.revParse(repoRoot);
+      if (preCherry !== expectedTip) {
+        // §5: trunk moved since this wave's last known-good state — an
+        // operator commit, a pull, a claim-less collision. Refuse to
+        // cherry-pick onto it; the entry's worktree commit never reaches
+        // trunk and stays pending for a fresh retry against the new tip.
+        // `expectedTip` is left unchanged, so every remaining entry this
+        // wave hits the same refusal (the interference doesn't undo itself).
+        this.log.warn(
+          `[flume] ${phase.name}: tip moved before cherry-picking ${r.entry.tag} (expected ${expectedTip}, found ${preCherry}); entry stays pending`,
+        );
+        waveTipMoved = true;
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "tip-moved" });
+        continue;
+      }
       try {
         await git.cherryPick(repoRoot, r.commitSha);
       } catch (err) {
@@ -1484,6 +1569,9 @@ export class Dispatcher {
 
       shipped.push(r.entry);
       mergeOutcomes.push({ tag: r.entry.tag, outcome: "merged" });
+      // Our own successful cherry-pick is the wave's new known-good tip —
+      // the next entry's `preCherry` is expected to land here, not `preHead`.
+      expectedTip = mergedSha;
     }
 
     // Update pending.json — remove shipped entries, record merge-failure
@@ -1516,17 +1604,29 @@ export class Dispatcher {
       // worktrees are the accepted cost of refusing rather than proceeding;
       // the next `pruneWorktrees` call reclaims their metadata once a human
       // has fixed the file.
-      const updSha = await this.commitPendingUpdate(shippedTags, mergeOutcomes);
-      if (updSha !== preUpdate) chorSha = updSha;
-      this.log.info(
-        shippedTags.length > 0
-          ? updSha === preUpdate
-            ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
-            : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
-          : updSha === preUpdate
-            ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
-            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
+      const update = await this.commitPendingUpdate(
+        shippedTags,
+        mergeOutcomes,
+        expectedTip,
       );
+      const updSha = update.sha;
+      if (updSha !== preUpdate) chorSha = updSha;
+      if (update.tipMoved) {
+        waveTipMoved = true;
+        this.log.warn(
+          `[flume] ${phase.name}: tip moved before the pending-ledger commit (expected ${expectedTip}, found ${updSha}); pending.json left untouched — shipped entries already on trunk stay shipped`,
+        );
+      } else {
+        this.log.info(
+          shippedTags.length > 0
+            ? updSha === preUpdate
+              ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
+              : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+            : updSha === preUpdate
+              ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
+              : `[flume] footprint commit ${updSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
+        );
+      }
     }
 
     // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
@@ -1629,6 +1729,7 @@ export class Dispatcher {
         revertedTags: mergeReverted.map((e) => e.tag),
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
+      ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       tags: provisioned.map((e) => e.tag),
       mergeOutcomes,
@@ -1651,6 +1752,8 @@ export class Dispatcher {
     gateResults: GateResultEntry[];
     /** §6 mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
+    /** RELEASE-v0.11 §5: sibling to `noCommit`, set when this entry's own worktree commit landed on a moved tip. */
+    tipMoved?: boolean;
     /**
      * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
      * before `dropLastCommit` discards it — set only on an in-worktree
@@ -1701,7 +1804,25 @@ export class Dispatcher {
       extraEnv,
     );
     const postHead = await git.revParse(wt.path);
-    const committed = postHead !== preHead;
+    let committed = postHead !== preHead;
+
+    if (committed) {
+      // RELEASE-v0.11 §5 tip verify: same idiom as the singleton callsite —
+      // the agent commits directly in this worktree, so verify after the
+      // fact that its commit's parent is the tip this entry's worktree was
+      // provisioned from. The worktree's own branch is private to this
+      // entry/tick, so a mismatch here means something reset or rewrote it
+      // out from under the agent mid-run, not routine external traffic.
+      const parent = await git.revParse(wt.path, `${postHead}^`);
+      if (parent !== preHead) {
+        await this.revertTipMovedCommit(wt.path, postHead);
+        await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
+        this.log.warn(
+          `[flume] ${entry.tag}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
+        );
+        return { entry, committed: false, gateResults: [], tipMoved: true };
+      }
+    }
 
     const gateResults: GateResultEntry[] = [];
     if (!committed) {
@@ -1768,6 +1889,38 @@ export class Dispatcher {
   }
 
   // ---------- helpers ----------
+
+  /**
+   * RELEASE-v0.11 §5 tip verify, for a commit the agent made itself
+   * (singleton, or a fanout entry's per-worktree commit — the dispatcher
+   * never sees the moment of commit in either case, so it verifies after the
+   * fact: the commit's own parent must be the tip this tick recorded at
+   * start). `expectedSha` is `postHead`, the commit this call's own caller
+   * just observed.
+   *
+   * Mirrors `git.dropLastCommit`'s guarded-revert idiom — §5 cites it as its
+   * own precedent — reconfirming the tip is still `expectedSha` immediately
+   * before resetting, so a second race (the ref moving again in the gap
+   * between observing `postHead` and reverting it) refuses loudly rather
+   * than silently dropping a commit this call never observed at the tip.
+   * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
+   * fault, so it survives as uncommitted changes (§5 "agent output stays on
+   * disk") rather than being discarded.
+   */
+  private async revertTipMovedCommit(
+    cwd: string,
+    expectedSha: string,
+  ): Promise<void> {
+    const currentTip = await git.revParse(cwd);
+    if (currentTip !== expectedSha) {
+      throw new Error(
+        `tip-verify revert refused: current tip ${currentTip} does not ` +
+          `match expected ${expectedSha} — this call did not observe the ` +
+          `commit at the current tip, refusing to reset`,
+      );
+    }
+    await git.softReset(cwd, 1);
+  }
 
   private async invokeAgent(
     phase: Phase,
@@ -2026,7 +2179,7 @@ export class Dispatcher {
   /**
    * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
    * unrecognized `mode` discriminant → treated as absent: the renderer is
-   * exhaustive over the four known modes and must never be fed an unknown
+   * exhaustive over the five known modes and must never be fed an unknown
    * shape (and a stale slot should never become a false signal).
    */
   private async readPriorAttempt(
@@ -2041,7 +2194,8 @@ export class Dispatcher {
         (rec.mode === "gate-revert" ||
           rec.mode === "voluntary-bail" ||
           rec.mode === "platform-preempt" ||
-          rec.mode === "render-refused")
+          rec.mode === "render-refused" ||
+          rec.mode === "tip-moved")
       ) {
         return rec as PriorAttempt;
       }
@@ -2330,10 +2484,20 @@ export class Dispatcher {
     return r.entries;
   }
 
+  /**
+   * `expectedTip` (RELEASE-v0.11 §5): the wave's own running tip — `preHead`
+   * if no cherry-pick landed this wave, else the last one's `mergedSha` —
+   * checked against a fresh read immediately before this method's own
+   * harness-driven `commitPaths` call, the wave's other tip-verify site
+   * beside `cherryPick` (`runFanout`, above). Checked before `writeFile`:
+   * a refusal here leaves pending.json untouched on disk rather than a
+   * write with no commit behind it.
+   */
   private async commitPendingUpdate(
     shippedTags: string[],
-    mergeOutcomes: readonly TickVerdictMergeOutcome[] = [],
-  ): Promise<string> {
+    mergeOutcomes: readonly TickVerdictMergeOutcome[],
+    expectedTip: string,
+  ): Promise<{ sha: string; tipMoved: boolean }> {
     // v0.8 §5: footprint content sources from the wave's own TickVerdict
     // record (mergeOutcomes) rather than a separately maintained map — a
     // view over the same facts `tick()` persists, not a second capture.
@@ -2378,21 +2542,38 @@ export class Dispatcher {
     // second time around) — committing an unchanged file fails, so skip.
     const existing = await readFile(this.pendingPath, "utf8").catch(() => "");
     if (serialized === existing) {
-      return git.revParse(this.opts.repoRoot);
+      return { sha: await git.revParse(this.opts.repoRoot), tipMoved: false };
     }
-    await mkdir(dirname(this.pendingPath), { recursive: true });
-    await writeFile(this.pendingPath, serialized, "utf8");
     // A relocated flumeDir puts pendingPath outside the repo, where staging
     // it would fatal — after the entries already merged. An out-of-tree dock
     // is invisible to git by construction, so no chore commit is wanted: the
-    // disk write alone carries the auto-unblock and observedFiles forward.
+    // disk write alone carries the auto-unblock and observedFiles forward —
+    // computed before the tip check below, which only guards the git-commit
+    // path this dock never takes.
     const rel = relative(this.opts.repoRoot, this.pendingPath);
-    if (rel.startsWith("..") || isAbsolute(rel)) {
-      return git.revParse(this.opts.repoRoot);
+    const relocated = rel.startsWith("..") || isAbsolute(rel);
+
+    if (!relocated) {
+      // RELEASE-v0.11 §5 tip verify, re-read immediately before this
+      // method's own commit — the wave's other harness-driven commit
+      // besides `cherryPick`. Checked before `writeFile`: a refusal here
+      // leaves pending.json untouched on disk, never a write with no commit
+      // behind it. Shipped entries this wave already cherry-picked stay
+      // shipped regardless — only the ledger update itself is refused.
+      const currentTip = await git.revParse(this.opts.repoRoot);
+      if (currentTip !== expectedTip) {
+        return { sha: currentTip, tipMoved: true };
+      }
+    }
+
+    await mkdir(dirname(this.pendingPath), { recursive: true });
+    await writeFile(this.pendingPath, serialized, "utf8");
+    if (relocated) {
+      return { sha: await git.revParse(this.opts.repoRoot), tipMoved: false };
     }
     // Scoped to pending.json — `git add -A` would sweep up untracked worktree
     // metadata and unrelated user changes into the harness's chore commit.
-    return git.commitPaths({
+    const sha = await git.commitPaths({
       cwd: this.opts.repoRoot,
       message:
         shippedTags.length > 0
@@ -2400,6 +2581,7 @@ export class Dispatcher {
           : `chore(flume): record merge-failure footprints for ${[...observed.keys()].join(", ")}`,
       paths: [this.pendingPath],
     });
+    return { sha, tipMoved: false };
   }
 }
 
@@ -2578,10 +2760,13 @@ export async function superviseLoop(
     // field on the verdict (v0.8 §5: facts only) — derived here, at the read
     // site, from the same formula v0.7 §4 used: a genuine tick-level failure
     // is `gate-revert`/`platform-preempt`/`render-refused` (RELEASE-v0.10
-    // §3: the prompt itself was broken), or a provisioning failure that
-    // left nothing shipped — never a `voluntary-bail` (the agent correctly
-    // declining and naming the constraint is not evidence anything went
-    // wrong).
+    // §3: the prompt itself was broken), `tipMoved` (RELEASE-v0.11 §5: the
+    // ref moved out from under this tick — worth surfacing even on a wave
+    // that also shipped something, unlike the provisioning leg below, since
+    // it signals something else is writing to this ref), or a provisioning
+    // failure that left nothing shipped — never a `voluntary-bail` (the
+    // agent correctly declining and naming the constraint is not evidence
+    // anything went wrong).
     const verdict = await readTickVerdict(flumeDir);
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
@@ -2590,6 +2775,7 @@ export async function superviseLoop(
         verdict.noCommit === "gate-revert" ||
         verdict.noCommit === "platform-preempt" ||
         verdict.noCommit === "render-refused" ||
+        verdict.tipMoved === true ||
         (verdictProvisionFailures.length > 0 &&
           verdict.shippedTags.length === 0);
       if (errored) {
@@ -2768,6 +2954,7 @@ function summarize(
   result: TickResult,
   awaking: string[],
   noCommit?: NoCommitMode,
+  tipMoved?: boolean,
 ): string {
   const parts: string[] = [phaseName];
   if (result.committed) {
@@ -2776,11 +2963,22 @@ function summarize(
     } else if (result.commitSha) {
       parts.push(`committed ${result.commitSha.slice(0, 8)}`);
     }
+    // A wave can ship *and* hit the §5 backstop (some entries landed before
+    // the ref moved; the rest, or the trailing ledger commit, refused).
+    if (tipMoved) parts.push("(tip-moved for part of this tick)");
   } else {
     // The §6 mode in the one-liner is the logger record that lets a
     // voluntary-bail loop be told from a platform-preempt run without
-    // reading session logs.
-    parts.push(noCommit ? `no commit (${noCommit})` : "no commit");
+    // reading session logs. `tip-moved` (RELEASE-v0.11 §5) is reported the
+    // same way even though it is never a `NoCommitMode` — the one-liner is
+    // a rendering, not the typed fact itself.
+    parts.push(
+      tipMoved
+        ? "no commit (tip-moved)"
+        : noCommit
+          ? `no commit (${noCommit})`
+          : "no commit",
+    );
   }
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
@@ -2898,6 +3096,16 @@ function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
     mode: "render-refused",
     failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
   };
+}
+
+/**
+ * Build the RELEASE-v0.11 §5 tip-moved record: the ref this tick found
+ * immediately before it would have committed didn't match the tip it
+ * recorded at tick start. A sibling to the §6 builders above, never a
+ * `NoCommitMode` — see {@link TipMovedAttempt}.
+ */
+function buildTipMoved(expectedTip: string, observedTip: string): TipMovedAttempt {
+  return { mode: "tip-moved", expectedTip, observedTip };
 }
 
 /**

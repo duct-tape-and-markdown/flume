@@ -21,11 +21,13 @@
  * (committed then a gate reverted it), `voluntary-bail` (exited cleanly
  * refusing a constraint), `platform-preempt` (the process failed for
  * non-work reasons — not a defect in the work), `render-refused` (the prompt
- * itself never resolved — the agent was never invoked). Each
- * renders distinctly so the retry knows what actually happened. Like
- * `<harness>` it is dispatcher-owned and structural: no `{{token}}` in the
- * prompt file, no `promptArgs`. Absent on a first attempt; cleared once an
- * attempt ships.
+ * itself never resolved — the agent was never invoked); plus `tip-moved`
+ * (RELEASE-v0.11 §5), a sibling fact rather than a fifth {@link NoCommitMode}
+ * — the tick's commit was discarded because the ref moved out from under it,
+ * never a defect the four modes classify. Each renders distinctly so the
+ * retry knows what actually happened. Like `<harness>` it is
+ * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
+ * `promptArgs`. Absent on a first attempt; cleared once an attempt ships.
  */
 
 import { spawn } from "node:child_process";
@@ -119,6 +121,23 @@ export interface RenderRefusedAttempt {
 }
 
 /**
+ * The tick's commit was discarded because the ref moved between tick start
+ * and the point a commit would land onto it (RELEASE-v0.11 §5) — the
+ * dispatcher's own tip-verify backstop, not a {@link NoCommitMode}: the
+ * agent's (or harness's) work was not at fault, and no gate ran. A sibling
+ * fact beside the four `NoCommitMode` variants, not a fifth member of that
+ * type — `mode` here is its own literal, `"tip-moved"`, never assigned to a
+ * `NoCommitMode`-typed field.
+ */
+export interface TipMovedAttempt {
+  mode: "tip-moved";
+  /** Tip this tick recorded at tick start. */
+  expectedTip: string;
+  /** Tip the harness actually found immediately before it would have committed. */
+  observedTip: string;
+}
+
+/**
  * A prior no-commit attempt for one entry (fanout, keyed by tag) or phase
  * (singleton, keyed by phase name) — a mode-tagged union, exactly one
  * variant. The dispatcher persists this to disk when a tick yields no usable
@@ -130,7 +149,8 @@ export type PriorAttempt =
   | GateRevertAttempt
   | VoluntaryBailAttempt
   | PlatformPreemptAttempt
-  | RenderRefusedAttempt;
+  | RenderRefusedAttempt
+  | TipMovedAttempt;
 
 /**
  * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
@@ -488,6 +508,15 @@ function priorAttemptLines(prior: PriorAttempt): string[] {
         `command(s) before retrying.`,
         `Failing span(s):`,
         indentBlock(prior.failures),
+      ];
+    case "tip-moved":
+      return [
+        `A previous attempt's commit was DISCARDED because the ref moved`,
+        `out from under it — NOT a defect in the work. The prior reasoning`,
+        `is not discredited; do not treat this as a wall in the task.`,
+        `Resume the work against the current tip. No commit, no gate.`,
+        `Tip expected at tick start: ${prior.expectedTip}`,
+        `Tip actually found: ${prior.observedTip}`,
       ];
   }
 }

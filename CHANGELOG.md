@@ -58,6 +58,23 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `flume status` reports the current tip's claim alongside supervisor
   liveness.
 
+- Tip verify (v0.11 §5): a tick now commits only onto the tip it started
+  on. The dispatcher records the tip at tick start and re-verifies
+  immediately before each commit it drives (the singleton/fanout-worktree
+  agent's own commit, checked after the fact via its parent sha; the
+  fanout wave's `cherry-pick`s and its trailing pending-ledger commit,
+  checked immediately before each). A moved ref refuses the commit instead
+  of landing it: the singleton/fanout-worktree case is soft-reverted (the
+  agent's output survives on disk, uncommitted — never a defect in the
+  work), the fanout wave's cherry-pick/ledger-commit case simply never
+  attempts the commit, leaving the entry pending. The tick reports a
+  `tipMoved` fact — a sibling to the existing `noCommit` classification,
+  never a fifth member of it — surfaced on `TickOutcome`/`TickVerdict` and
+  counted as an errored tick in `superviseLoop`'s run summary. This is the
+  correctness backstop behind the §4 claim: it catches an operator
+  committing mid-tick, a pull moving the ref, and claim-less bare-tick
+  collisions (running two ticks hot against one ref with no coordination).
+
 ### Fixed
 
 - `Dispatcher.createWorktree` now pins `core.longpaths` on `repoRoot` before
