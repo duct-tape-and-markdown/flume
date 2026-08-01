@@ -85,6 +85,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   unwrapped `join(dir, rel)` shape and the silently-swallowed best-effort
   catch are identical: a deep repo path lost its §8 recovery snapshot
   without any signal (v0.4 §6).
+- `snapshotRevertedFiles`'s own stale-snapshot `rm(dir, { recursive: true
+  })` (dropping the prior revert's tree before rewriting it) and
+  `clearPriorAttempt`'s `rm(revertedSnapshotDir(key), { recursive: true })`
+  (dropping it on a clean ship) now also route through `toNamespacedPath`,
+  closing the gap the mkdir/writeFile fix above left open on the two rm
+  call sites walking the same deep dir. The stale-snapshot rm silently
+  swallows its own failure (best-effort, same as the mkdir/writeFile it
+  sits beside), so a second revert under one key left the prior deep
+  snapshot un-replaced; `clearPriorAttempt` has no surrounding try/catch on
+  its caller path, so a clean ship after a deep-path revert threw
+  `ENAMETOOLONG` out of the tick instead (v0.4 §6).
 - `createWorktree`'s `existsSync` check, its stale-worktree `rm` fallback,
   and its `mkdir(dirname(path))` now route through `toNamespacedPath`, the
   same idiom `writeRevertNote`/`harvestFriction`/the friction counters/

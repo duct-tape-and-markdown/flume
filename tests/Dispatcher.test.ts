@@ -6121,6 +6121,166 @@ describe.runIf(process.platform === "win32")(
       expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
     }, 20_000);
 
+    it("snapshotRevertedFiles clears a deep-path stale snapshot before rewriting on a repeat revert under the same key (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: repeat revert)", async () => {
+      // Same singleton/afterCommit-revert shape as SNAPSHOTREVERTEDFILES-
+      // WIN32-PATH-TOTAL-LIMIT above, but ticked twice under the same
+      // priorAttemptKey ("plan"): snapshotRevertedFiles' own stale-snapshot
+      // `rm(dir, ...)` runs before it rewrites, unwrapped — on a real win32
+      // host that rm throws ENAMETOOLONG walking attempt 0's deep tree,
+      // silently swallowed by the best-effort catch, so attempt 1 never
+      // updates the snapshot at all: attempt 0's stale file survives and
+      // attempt 1's is never written.
+      const baton = new Baton(join(fx.repo, ".flume"));
+      baton.wake("plan");
+
+      const failing: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          return { ok: false, message: "boom said no" };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [failing],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const deepRelA = join(
+        "src",
+        ...Array.from({ length: 6 }, (_, i) => `sega-${i}-`.padEnd(50, "x")),
+        "deep.ts",
+      );
+      const deepRelB = join(
+        "src",
+        ...Array.from({ length: 6 }, (_, i) => `segb-${i}-`.padEnd(50, "x")),
+        "deep.ts",
+      );
+
+      let attempt = 0;
+      const agent: Agent = {
+        name: "deep-diff-repeat-revert",
+        async invoke(inv) {
+          const n = attempt++;
+          const rel = n === 0 ? deepRelA : deepRelB;
+          const content = n === 0 ? "first\n" : "second\n";
+          await writeAndCommit(inv.cwd, rel, content, `plan: attempt ${n}`);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("gate-revert");
+
+      const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+      const pathA = join(snapDir, deepRelA);
+      expect(pathA.length).toBeGreaterThan(260);
+      expect(existsSync(pathA)).toBe(true);
+      expect(await readFile(pathA, "utf8")).toBe("first\n");
+
+      baton.wake("plan");
+      const second = await dispatcher.tick();
+      expect(second.result?.committed).toBe(false);
+      expect(second.noCommit).toBe("gate-revert");
+
+      const pathB = join(snapDir, deepRelB);
+      expect(pathB.length).toBeGreaterThan(260);
+      expect(existsSync(pathB)).toBe(true);
+      expect(await readFile(pathB, "utf8")).toBe("second\n");
+      // Attempt 0's stale tree is gone, not merged alongside attempt 1's.
+      expect(existsSync(pathA)).toBe(false);
+    }, 20_000);
+
+    it("clearPriorAttempt clears a deep-path stale snapshot on a clean ship without the tick throwing (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: clean ship)", async () => {
+      // clearPriorAttempt's own `rm(revertedSnapshotDir(key), ...)` is
+      // unwrapped and runs with no surrounding try/catch on its caller path
+      // (runSingleton's clean-ship branch) — on a real win32 host, clearing
+      // a deep snapshot left by a prior deep-path revert throws ENAMETOOLONG
+      // out of the tick instead of just leaving the recovery artifact stale.
+      const baton = new Baton(join(fx.repo, ".flume"));
+      baton.wake("plan");
+
+      let calls = 0;
+      const failing: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          calls++;
+          return calls === 1
+            ? { ok: false, message: "boom said no" }
+            : { ok: true, message: "pending.json parsed (0 entries)" };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [failing],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const deepRel = join(
+        "src",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        "deep.ts",
+      );
+
+      let attempt = 0;
+      const agent: Agent = {
+        name: "deep-diff-clean-ship",
+        async invoke(inv) {
+          const n = attempt++;
+          if (n === 0) {
+            await writeAndCommit(
+              inv.cwd,
+              deepRel,
+              "ok\n",
+              "plan: touch a deeply-nested path",
+            );
+          } else {
+            await writeAndCommit(
+              inv.cwd,
+              "src/shallow.ts",
+              "ok\n",
+              "plan: clean ship",
+            );
+          }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const first = await dispatcher.tick();
+      expect(first.result?.committed).toBe(false);
+      expect(first.noCommit).toBe("gate-revert");
+
+      const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+      const snapPath = join(snapDir, deepRel);
+      expect(snapPath.length).toBeGreaterThan(260);
+      expect(existsSync(snapPath)).toBe(true);
+
+      baton.wake("plan");
+      const second = await dispatcher.tick();
+      expect(second.result?.committed).toBe(true);
+      expect(existsSync(snapDir)).toBe(false);
+    }, 20_000);
+
     it("createWorktree creates the worktree when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: fresh create)", async () => {
       const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-"));
       const savedOverride = process.env.FLUME_WORKTREES_DIR;

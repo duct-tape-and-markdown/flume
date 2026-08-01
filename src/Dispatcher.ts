@@ -2236,7 +2236,10 @@ export class Dispatcher {
    */
   private async clearPriorAttempt(key: string): Promise<void> {
     await rm(this.priorAttemptPath(key), { force: true });
-    await rm(this.revertedSnapshotDir(key), { recursive: true, force: true });
+    await rm(toNamespacedPath(this.revertedSnapshotDir(key)), {
+      recursive: true,
+      force: true,
+    });
   }
 
   // ---------- reverted-prose durability (§8) ----------
@@ -2280,7 +2283,7 @@ export class Dispatcher {
     try {
       // The artifact tracks the *latest* reverted attempt only — drop any
       // stale snapshot from an earlier revert under this key first.
-      await rm(dir, { recursive: true, force: true });
+      await rm(toNamespacedPath(dir), { recursive: true, force: true });
       const { stdout } = await execFileP(
         "git",
         [
