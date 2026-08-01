@@ -1,43 +1,5 @@
 [
   {
-    "tag": "DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "extract the render-refused catch bodies (singleton and fanout - re-locate by the buildRenderRefused call, line numbers drifted past b89ebb4's insert) into one shared private method beside classifyNoCommit that persists the §5 record and logs; each call site keeps constructing its own return shape, matching how classifyNoCommit's two callers already differ"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "add the agreement pin - singleton and fanout render-refused paths persist byte-identical §5 record content and emit the same-shaped log line for equivalent InlineExecRenderError input, driven through the one shared method"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Dispatcher's render-refused catch (persist §5 record + log) is duplicated inline at both singleton and fanout callsites, instead of routing through classifyNoCommit's shared shape.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "singleton and fanout render-refused catches persist byte-identical mode+failures text and the same-shaped log line for equivalent input - a one-sided edit to either site's persisted record or log text breaks the pin"
-      }
-    ],
-    "acceptance": "One shared private method persists the render-refused record and logs it; both singleton and fanout callsites call it instead of re-deriving the write+log inline; tsc/vitest green.",
-    "notes": "Verified this tick: classifyNoCommit is the shared method both runSingleton and the fanout path call for voluntary-bail/platform-preempt persist+log. render-refused (9dffc51) skips this precedent - duplicated inline at both callsites, each re-deriving writePriorAttempt+log.warn+return. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift. Line refs drifted past b89ebb4 - re-locate by name, not number."
-  },
-  {
     "tag": "DISPATCHER-TIPMOVED-CHECK-UNSHARED",
     "gate": {
       "kind": "open"
