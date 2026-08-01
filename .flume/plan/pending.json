@@ -1,47 +1,5 @@
 [
   {
-    "tag": "GATECONTEXT-REPOROOT-REQUIRED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "repoRoot (52) becomes required; the 45-51 docstring drops the fixture-compat clause and states the field's meaning alone"
-        },
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "the ctx helper (23-31) sets repoRoot; delete the 294-304 describe, which asserts only that object spread works"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "same one-line ctx helper change (21)"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit; Breaking - a hand-built GateContext must now set repoRoot"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "GateContext.repoRoot is optional only so pre-v0.7 fixtures compile - the engine always sets it, so the type advertises a state no producer creates.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      {
-        "path": "tests/Gate.test.ts",
-        "asserts": "the existing gate suites keep passing over a repoRoot-bearing ctx; no assertion remains whose only subject is the local fixture builder"
-      }
-    ],
-    "acceptance": "GateContext.repoRoot is non-optional, tsc and vitest are green, and no docstring scopes the field to a closed fixture-migration window.",
-    "notes": "Verified this tick: every dispatcher-constructed context sets repoRoot (Dispatcher.ts:1219, 1324, 1358, 1752, 1900); the only undefined producers are the two test ctx helpers. v0.7 §6 mandates the field, not its optionality. tsc's required-field check is the pin - no runtime test fails pre-fix (the named exception); the real §6 behavior stays pinned at tests/Dispatcher.test.ts:4459. Chain gates currently branch on a state the engine never emits."
-  },
-  {
     "tag": "ERA-SCOPED-NARRATION-BARREL-NEIGHBORHOOD",
     "gate": {
       "kind": "open"
