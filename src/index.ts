@@ -59,11 +59,14 @@ export { partitionByFileOverlap } from "./partition.js";
 
 export { renderPrompt } from "./Prompt.js";
 
+export { type FlumeApi } from "./flumeApi.js";
+
 export {
   Dispatcher,
   consoleLogger,
   readTickVerdicts,
   type ChainModule,
+  type ChainFactory,
   type DispatcherOptions,
   type Logger,
   type TickOutcome,

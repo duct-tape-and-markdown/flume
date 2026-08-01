@@ -37,6 +37,9 @@ import type { Agent } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
+// §6: `buildFlumeApi` is a function, not a constant, precisely so this
+// import participates safely in the builtinGates cycle — see its docstring.
+import { buildFlumeApi, type FlumeApi } from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
@@ -457,20 +460,28 @@ export const consoleLogger: Logger = {
 };
 
 /**
- * The shape `.flume/chain.ts` resolves to: a default-exported `Chain` plus an
+ * What a chain factory returns (RELEASE-v0.11 §6): the `Chain` plus an
  * optional `agent` override and an optional `forkResolver` (the foundations
  * governor, §v0.3). The per-tick resolver returns this; a rewritten chain.ts
- * changes the chain (and any `agent`/`forkResolver` export) for the next tick.
+ * changes all three for the next tick.
  *
- * Exporting `forkResolver` from chain.ts is how a stock-CLI consumer supplies
- * the governor's resolution predicate — it overrides `DispatcherOptions.forkResolver`
- * per tick exactly as `agent` overrides the default agent.
+ * `agent` and `forkResolver` ride the factory's return rather than named
+ * module exports because a named export cannot receive the API — leaving
+ * them as exports would preserve exactly the resolution path §6 removes.
  */
 export interface ChainModule {
-  default: Chain;
+  chain: Chain;
   agent?: Agent;
   forkResolver?: (repoRoot: string) => (slug: string) => boolean;
 }
+
+/**
+ * What `.flume/chain.ts` default-exports (RELEASE-v0.11 §6): a factory the
+ * engine calls with its own surface. The chain imports no engine *value*, so
+ * a second physical engine in one process is unreachable rather than merely
+ * detected.
+ */
+export type ChainFactory = (api: FlumeApi) => ChainModule;
 
 /**
  * Load + normalize + validate a chain module from an absolute `chain.ts`
@@ -626,33 +637,52 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
 
   // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
   // is { default: { __esModule: true, default: <realDefault> } }. A module
-  // with named exports stays true ESM: ns.default is the value directly and
-  // named exports are siblings on ns. Normalize both shapes — the documented
-  // minimal chain (default export only) hits the interop path.
+  // with named exports stays true ESM: ns.default is the value directly.
+  // Normalize both shapes — the documented minimal chain (default export
+  // only) hits the interop path.
   const d = ns.default as Record<string, unknown> | undefined;
   const interop =
     !!d &&
     (d as { __esModule?: boolean }).__esModule === true &&
     "default" in d;
-  const chain = (interop ? d!.default : d) as Chain | undefined;
-  const agent = (ns.agent ?? (interop ? d!.agent : undefined)) as
-    | Agent
-    | undefined;
-  const forkResolver = (ns.forkResolver ??
-    (interop ? d!.forkResolver : undefined)) as
-    | ((repoRoot: string) => (slug: string) => boolean)
-    | undefined;
+  const factory = (interop ? d!.default : d) as ChainFactory | undefined;
 
+  // §6: a non-function default export is refused, never accepted as the
+  // pre-§6 `Chain` object. A silent fallback would readmit the very thing
+  // the section removes — a chain resolving engine values through its own
+  // import, and with them a second physical engine.
+  if (typeof factory !== "function") {
+    throw new Error(
+      `${path} must default-export a chain factory: (api) => ({ chain }). ` +
+        `Default-exporting a Chain object is the pre-0.11 shape — wrap it in a ` +
+        `factory and take engine values from the parameter instead of importing ` +
+        `them (see docs/MIGRATING-0.11.md).`,
+    );
+  }
+
+  const module = factory(buildFlumeApi()) as ChainModule | undefined;
+
+  // A returned thenable means an async factory: §6 specifies a synchronous
+  // one, and awaiting here would silently accept a shape the contract does
+  // not carry. Name it rather than failing later on `chain.phases`.
+  if (module && typeof (module as { then?: unknown }).then === "function") {
+    throw new Error(
+      `${path}'s chain factory returned a Promise; the factory must be synchronous. ` +
+        `Do async work inside a phase hook (setupWorktree, gates), not at chain build time.`,
+    );
+  }
+
+  const chain = module?.chain;
   if (!chain || !Array.isArray((chain as { phases?: unknown }).phases)) {
     throw new Error(
-      `${path} must default-export a Chain (an object with a phases[] array)`,
+      `${path}'s chain factory must return { chain } where chain has a phases[] array`,
     );
   }
   validateFrictionDeclaration(chain);
-  const module: ChainModule = { default: chain };
-  if (agent) module.agent = agent;
-  if (forkResolver) module.forkResolver = forkResolver;
-  return module;
+  const result: ChainModule = { chain };
+  if (module.agent) result.agent = module.agent;
+  if (module.forkResolver) result.forkResolver = module.forkResolver;
+  return result;
 }
 
 /**
@@ -987,7 +1017,7 @@ export class Dispatcher {
         summary: `chain resolution failed: ${msg}; no work`,
       };
     }
-    const chain = chainModule.default;
+    const chain = chainModule.chain;
     // Pending parses compose core + the chain's declared entry extension
     // (v0.8 §2); remembered here because readPending runs downstream of the
     // one place the chain is loaded.
@@ -2748,7 +2778,7 @@ export async function superviseLoop(
   // the loop-end summary, only silently withhold the friction line.
   const logFrictionSummary = async (): Promise<void> => {
     try {
-      const { default: chain } = await diskChainLoader(configDir)();
+      const { chain } = await diskChainLoader(configDir)();
       const line = await frictionCountLine(flumeDir, chain);
       if (line) log.info(`[flume] ${line}`);
     } catch {

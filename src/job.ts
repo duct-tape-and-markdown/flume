@@ -157,7 +157,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
       `no chain at ${chainPath}; a job that could never \`run\` must not be creatable`,
     );
   }
-  const { default: chain } = await loadChainModule(chainPath);
+  const { chain } = await loadChainModule(chainPath);
 
   // 2. Validate a declared seedDir before touching the state root — a
   // declared-but-absent seedDir must not leave a stray empty job dir behind.
@@ -256,7 +256,7 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
     );
     return;
   }
-  const { default: chain } = await loadChainModule(
+  const { chain } = await loadChainModule(
     resolve(configDir, "chain.ts"),
   );
   const entry = chain.phases[0];

@@ -23,11 +23,78 @@ subtracts from (git remains the record; git *coordination* — branch
 grammar, mount choreography, a cherry-pick ending — was the engine
 absorbing convention, and it goes).
 
-None of this changes the pending-entry schema or adds a validation gate:
-the removals are subtractive. A bay with no live `job/<name>` branch and no
-`Chain.harvest` declaration has nothing to do below except bump the pin.
+Separately, **every chain must move to the factory shape**
+([`RELEASE-v0.11.md` §6](../spec/RELEASE-v0.11.md)). This one is not
+subtractive and not optional — it is the only change in this release that
+every bay must make, whether or not it ever touched `flume job`. See §2
+below.
 
-## 2. If you have a live `job/<name>` branch
+The job removals themselves change no pending-entry schema and add no
+validation gate.
+
+## 2. Move your chain to the factory shape (required)
+
+`.flume/chain.ts` now default-exports a **factory** the engine calls with
+its own API, instead of a `Chain` object. Take every engine value from the
+parameter; demote the remaining engine import to `import type`.
+
+Before:
+
+```ts
+import type { Chain, Phase } from "@dtmd/flume";
+import { tscGate, pendingGate } from "@dtmd/flume";
+
+const build: Phase = { /* ... */ gates: [tscGate] };
+const chain: Chain = { phases: [build], humanOnly: [] };
+export default chain;
+```
+
+After:
+
+```ts
+import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
+
+const factory: ChainFactory = (flume) => {
+  const { tscGate, pendingGate } = flume;
+
+  const build: Phase = { /* ... */ gates: [tscGate] };
+  const chain: Chain = { phases: [build], humanOnly: [] };
+  return { chain };
+};
+
+export default factory;
+```
+
+Mechanical checklist:
+
+1. Delete every **value** import from `@dtmd/flume`; keep `import type`.
+2. Wrap everything that used those values in
+   `const factory: ChainFactory = (flume) => { ... }` and destructure what
+   you need from `flume` at the top. Declarations that need no engine value
+   (a `zod` entry extension, plain constants) can stay at module scope.
+3. Return `{ chain }` and `export default factory`.
+4. If you exported `agent` or `forkResolver` as **named exports**, move
+   them onto the return: `return { chain, agent, forkResolver }`. A named
+   export can no longer reach the engine.
+5. `git.showNameOnly` and friends arrive as `flume.git.showNameOnly`.
+
+**Why it is required rather than opt-in.** A chain that imports engine
+values resolves them by walk-up from its own directory. Whenever the
+running engine is not the copy that walk-up finds, the process holds two
+engines: one driving the dispatcher, one building your phases —
+`instanceof` and module-level state split across them **at equal
+versions**, with nothing reporting it and commits as the output. A factory
+has nothing to resolve, so the condition stops being reachable. That is
+also why a non-function default export is refused outright instead of
+falling back to the old shape: a fallback would readmit exactly what this
+removes.
+
+**What this fixes for you.** A globally-installed engine used to be
+structurally unreachable from a chain's import — the run died with a raw
+`ERR_MODULE_NOT_FOUND` naming the very package that was executing. That
+failure is gone; the chain binds to whichever engine is running.
+
+## 3. If you have a live `job/<name>` branch
 
 A branch a pre-0.11 `flume job new`/`flume job run` created or checked out
 still exists — 0.11 doesn't touch it, it just stops managing it. Integrate
@@ -58,7 +125,7 @@ responsible for the branch, before or after this line — so run it
 separately if the state root itself is done, on whatever branch you want
 that cleanup commit to land on.
 
-## 3. Extract-replacement recipe
+## 4. Extract-replacement recipe
 
 `flume job extract` is gone; there is no engine replacement, by design (the
 clean-history ending is the implementation's branch strategy now, not
@@ -96,7 +163,7 @@ target where squash rights are absent — reproduce it with ordinary git:
    flume job rm docs-refresh   # once the side branch's job is done with
    ```
 
-## 4. If your chain declares `Chain.harvest`
+## 5. If your chain declares `Chain.harvest`
 
 `Chain.harvest` has no consumer left — `flume job extract` was the only
 reader — so it's dead configuration. Delete the field from your
@@ -105,15 +172,18 @@ place is inert rather than broken, but it will confuse the next person who
 reads the chain looking for what still matters. `Chain.seedDir` and
 `Chain.friction` are unaffected — both survive unchanged.
 
-## 5. Symptom → cause table
+## 6. Symptom → cause table
 
 | Symptom | Cause |
 | --- | --- |
 | `flume job new`/`flume job run` no longer creates or checks out a `job/<name>` branch | Expected — v0.11 §2/§3 retires the branch grammar. The job runs on whatever branch HEAD is already on; see §1 above. |
-| `flume job extract` is not a recognized verb | Removed outright (v0.11 §3), no replacement shipped in the engine. Use the recipe in §3 above. |
-| A chain's `Chain.harvest` declaration is accepted but never seems to do anything | It has no consumer post-0.11 — see §4. |
+| `flume job extract` is not a recognized verb | Removed outright (v0.11 §3), no replacement shipped in the engine. Use the recipe in §4 above. |
+| A chain's `Chain.harvest` declaration is accepted but never seems to do anything | It has no consumer post-0.11 — see §5. |
 | `tick`/`loop` used to refuse with a wrong-branch error under `--job`; now they just run | Expected — the HEAD-guard preflight is removed (v0.11 §2). The engine has no opinion on which branch a job runs on. |
-| A stale `job/<name>` branch is sitting around from before the upgrade | Not touched by 0.11 automatically — integrate or abandon it yourself, per §2. |
+| A stale `job/<name>` branch is sitting around from before the upgrade | Not touched by 0.11 automatically — integrate or abandon it yourself, per §3. |
+| `chain.ts must default-export a chain factory` | Your chain still default-exports a `Chain` object. Move it to the factory shape, per §2. |
+| A globally-invoked `flume` died with `ERR_MODULE_NOT_FOUND: Cannot find package '@dtmd/flume'` | Pre-0.11 shape: the chain resolved the engine by walk-up from its own directory, which cannot reach a global install. Fixed by §2 — the chain no longer resolves an engine at all. |
+| Unexplained `instanceof` failures, or a gate/agent behaving as if its module state were empty | Two engine copies in one process (pre-0.11). Fixed by §2. |
 
 ## Non-goals
 

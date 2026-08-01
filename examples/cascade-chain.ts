@@ -22,19 +22,13 @@
 import { z } from "zod";
 import type {
   Chain,
+  ChainFactory,
   EntryExtension,
   Gate,
   Phase,
   TickContext,
 } from "../src/index.ts";
-import {
-  pendingGate,
-  renderSchemaForPrompt,
-  shellGate,
-  tscGate,
-  vitestGate,
-  eslintGate,
-} from "../src/index.ts";
+
 
 // ---------- entry extension (v0.8 §2) ----------
 
@@ -79,160 +73,184 @@ const entryExtension = {
   },
 } satisfies EntryExtension;
 
-// ---------- project-specific gates ----------
+
+// ---------- chain factory (RELEASE-v0.11 §6) ----------
 
 /**
- * Corpus-health audit run after the spec phase commits. Asserts the aligned
- * corpus is internally consistent — no orphaned cites, no duplicate entries
- * — before the new spec state propagates to plan.
- *
- * Why custom: spec drift is corpus-shaped and project-defined; no language
- * tool catches it. We use `shellGate` (the public escape hatch) to delegate
- * the actual audit to a project-owned script, keeping the gate-as-data
- * boundary clean.
+ * The default export is a factory the engine calls with its own API. Every
+ * engine value this chain composes with — gates, the schema renderer —
+ * arrives as a parameter, so the chain resolves no engine copy of its own
+ * and a second physical engine cannot enter the process. The only engine
+ * import above is import type, which is erased at runtime.
  */
-const specAuditGate: Gate = shellGate({
-  name: "spec audit",
-  when: "afterCommit",
-  cmd: "pnpm",
-  args: ["spec:audit"],
-  failHint: "Spec corpus audit failed — commit reverted",
-});
+const factory: ChainFactory = (api) => {
+  const {
+    pendingGate,
+    renderSchemaForPrompt,
+    shellGate,
+    tscGate,
+    vitestGate,
+    eslintGate,
+  } = api;
+  // ---------- project-specific gates ----------
 
-// ---------- phases ----------
+  /**
+   * Corpus-health audit run after the spec phase commits. Asserts the aligned
+   * corpus is internally consistent — no orphaned cites, no duplicate entries
+   * — before the new spec state propagates to plan.
+   *
+   * Why custom: spec drift is corpus-shaped and project-defined; no language
+   * tool catches it. We use `shellGate` (the public escape hatch) to delegate
+   * the actual audit to a project-owned script, keeping the gate-as-data
+   * boundary clean.
+   */
+  const specAuditGate: Gate = shellGate({
+    name: "spec audit",
+    when: "afterCommit",
+    cmd: "pnpm",
+    args: ["spec:audit"],
+    failHint: "Spec corpus audit failed — commit reverted",
+  });
 
-/**
- * Spec phase — derives `specs/active/` from a workshop draft, sweeps drift,
- * audits corpus health.
- *
- * Singleton: the spec corpus is a single shared artifact that doesn't admit
- * concurrent edits. Human-woken (see `humanOnly` on the chain): the
- * dispatcher cannot wake spec from another phase's handoff, because spec
- * input is human-authored workshop content, not machine-derived signal.
- *
- * Gates the corpus through `specAuditGate` before yielding to plan; on green
- * it hands off to plan so pending.json refreshes against the new spec state.
- */
-const spec: Phase = {
-  name: "spec",
-  description:
-    "Derive specs/active/ from workshop/; sweep drift; audit corpus health.",
-  promptPath: "prompts/spec.md",
-  concurrency: "singleton",
-  writablePaths: [
-    "specs/active/**",
-    "specs/_aligned/**", // pull-back from aligned when workshop targets it
-    "specs/09-spec-flags.md",
-    "workshop/_archive/**", // absorbed sources move here
-  ],
-  gates: [specAuditGate],
-  handoff(result) {
-    return result.committed ? ["plan"] : [];
-  },
+  // ---------- phases ----------
+
+  /**
+   * Spec phase — derives `specs/active/` from a workshop draft, sweeps drift,
+   * audits corpus health.
+   *
+   * Singleton: the spec corpus is a single shared artifact that doesn't admit
+   * concurrent edits. Human-woken (see `humanOnly` on the chain): the
+   * dispatcher cannot wake spec from another phase's handoff, because spec
+   * input is human-authored workshop content, not machine-derived signal.
+   *
+   * Gates the corpus through `specAuditGate` before yielding to plan; on green
+   * it hands off to plan so pending.json refreshes against the new spec state.
+   */
+  const spec: Phase = {
+    name: "spec",
+    description:
+      "Derive specs/active/ from workshop/; sweep drift; audit corpus health.",
+    promptPath: "prompts/spec.md",
+    concurrency: "singleton",
+    writablePaths: [
+      "specs/active/**",
+      "specs/_aligned/**", // pull-back from aligned when workshop targets it
+      "specs/09-spec-flags.md",
+      "workshop/_archive/**", // absorbed sources move here
+    ],
+    gates: [specAuditGate],
+    handoff(result) {
+      return result.committed ? ["plan"] : [];
+    },
+  };
+
+  /**
+   * Build phase — ships one or more disjoint pending entries to the trunk.
+   *
+   * Fanout: the dispatcher picks N entries that don't touch the same files and
+   * runs N agent invocations in parallel worktrees. Each tick handles one
+   * `assignedEntry`. Worktree branches merge serially after their afterCommit
+   * gates pass; an afterMerge failure (none here, but the lifecycle supports
+   * it) reverts the wave on the trunk.
+   *
+   * Gates with the language-level built-ins: `tscGate` first (cheap, catches
+   * type errors before `vitestGate` even loads the module), then `vitestGate`,
+   * then `eslintGate`. All afterCommit; failure reverts the worktree commit
+   * and the entry stays pickable for the next tick.
+   *
+   * Always hands off to plan so pending.json reconciles against the new trunk
+   * state, regardless of success, bail, or validation-fail.
+   *
+   * Declared above `plan` (rather than in the spec/plan/build reading order)
+   * so `plan.gates` can reference `build` directly as `pendingGate`'s
+   * `targetFence` — `build.writablePaths` is a static array literal here, not
+   * declaration-driven, so no `get gates()` deferral is needed (contrast the
+   * getter-backed pattern in `docs/CHAIN-AUTHORING.md`'s `pendingGate` section
+   * for a chain where the fence resolves lazily).
+   */
+  const build: Phase = {
+    name: "build",
+    description: "Ship one (or N disjoint) pending entries to the trunk.",
+    promptPath: "prompts/build.md",
+    concurrency: "fanout",
+    writablePaths: [
+      "src/**",
+      "prisma/**",
+      "tests/**",
+      "package.json",
+      "tsconfig.json",
+      "eslint.config.mjs",
+      ".gitignore",
+      // NOTE: build does not touch .flume/plan/pending.json. The harness writes
+      // a separate commit post-merge that removes shipped entries. This avoids
+      // cherry-pick conflicts when N fanout worktrees each touch the same file.
+    ],
+    gates: [tscGate, vitestGate, eslintGate],
+    promptArgs(ctx: TickContext) {
+      if (!ctx.assignedEntry) {
+        throw new Error("build phase requires an assignedEntry in TickContext");
+      }
+      // `per` is this chain's declared extension field — narrow it through the
+      // same schema the parse gate validated it with.
+      const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
+      return {
+        ENTRY_JSON: JSON.stringify(ctx.assignedEntry, null, 2),
+        TAG: ctx.assignedEntry.tag,
+        PER_PATH: per.path,
+        PER_SECTION: per.section,
+      };
+    },
+    handoff() {
+      return ["plan"];
+    },
+  };
+
+  /**
+   * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
+   * spec corpus + current src state, every tick from scratch.
+   *
+   * Singleton: pending.json and state.md are shared artifacts; two concurrent
+   * planners would race. Gates the output through `pendingGate` so a
+   * malformed pending.json, or an entry whose declared `files` can't survive
+   * build's fence, reverts the commit instead of poisoning build.
+   *
+   * Hands off to build when at least one entry is `gate.kind === "open"`
+   * (pickable); otherwise hibernates and waits for human signal.
+   */
+  const plan: Phase = {
+    name: "plan",
+    description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+    promptPath: "prompts/plan.md",
+    concurrency: "singleton",
+    writablePaths: [
+      ".flume/plan/pending.json",
+      ".flume/plan/state.md",
+      ".flume/plan/open-questions.md",
+      "specs/_aligned/**", // graduation moves files into here
+      "specs/active/**", // graduation removes them from here
+    ],
+    gates: [pendingGate({ targetFence: build, extension: entryExtension })],
+    promptArgs() {
+      return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
+    },
+    handoff(result) {
+      const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
+      return hasPickable ? ["build"] : [];
+    },
+  };
+
+  // ---------- chain ----------
+
+  const cascadeChain: Chain = {
+    phases: [plan, build, spec],
+    entryExtension,
+    humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
+  };
+
+  return { chain: cascadeChain };
 };
 
-/**
- * Build phase — ships one or more disjoint pending entries to the trunk.
- *
- * Fanout: the dispatcher picks N entries that don't touch the same files and
- * runs N agent invocations in parallel worktrees. Each tick handles one
- * `assignedEntry`. Worktree branches merge serially after their afterCommit
- * gates pass; an afterMerge failure (none here, but the lifecycle supports
- * it) reverts the wave on the trunk.
- *
- * Gates with the language-level built-ins: `tscGate` first (cheap, catches
- * type errors before `vitestGate` even loads the module), then `vitestGate`,
- * then `eslintGate`. All afterCommit; failure reverts the worktree commit
- * and the entry stays pickable for the next tick.
- *
- * Always hands off to plan so pending.json reconciles against the new trunk
- * state, regardless of success, bail, or validation-fail.
- *
- * Declared above `plan` (rather than in the spec/plan/build reading order)
- * so `plan.gates` can reference `build` directly as `pendingGate`'s
- * `targetFence` — `build.writablePaths` is a static array literal here, not
- * declaration-driven, so no `get gates()` deferral is needed (contrast the
- * getter-backed pattern in `docs/CHAIN-AUTHORING.md`'s `pendingGate` section
- * for a chain where the fence resolves lazily).
- */
-const build: Phase = {
-  name: "build",
-  description: "Ship one (or N disjoint) pending entries to the trunk.",
-  promptPath: "prompts/build.md",
-  concurrency: "fanout",
-  writablePaths: [
-    "src/**",
-    "prisma/**",
-    "tests/**",
-    "package.json",
-    "tsconfig.json",
-    "eslint.config.mjs",
-    ".gitignore",
-    // NOTE: build does not touch .flume/plan/pending.json. The harness writes
-    // a separate commit post-merge that removes shipped entries. This avoids
-    // cherry-pick conflicts when N fanout worktrees each touch the same file.
-  ],
-  gates: [tscGate, vitestGate, eslintGate],
-  promptArgs(ctx: TickContext) {
-    if (!ctx.assignedEntry) {
-      throw new Error("build phase requires an assignedEntry in TickContext");
-    }
-    // `per` is this chain's declared extension field — narrow it through the
-    // same schema the parse gate validated it with.
-    const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
-    return {
-      ENTRY_JSON: JSON.stringify(ctx.assignedEntry, null, 2),
-      TAG: ctx.assignedEntry.tag,
-      PER_PATH: per.path,
-      PER_SECTION: per.section,
-    };
-  },
-  handoff() {
-    return ["plan"];
-  },
-};
-
-/**
- * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
- * spec corpus + current src state, every tick from scratch.
- *
- * Singleton: pending.json and state.md are shared artifacts; two concurrent
- * planners would race. Gates the output through `pendingGate` so a
- * malformed pending.json, or an entry whose declared `files` can't survive
- * build's fence, reverts the commit instead of poisoning build.
- *
- * Hands off to build when at least one entry is `gate.kind === "open"`
- * (pickable); otherwise hibernates and waits for human signal.
- */
-const plan: Phase = {
-  name: "plan",
-  description: "Re-derive .flume/plan/pending.json + state.md from disk.",
-  promptPath: "prompts/plan.md",
-  concurrency: "singleton",
-  writablePaths: [
-    ".flume/plan/pending.json",
-    ".flume/plan/state.md",
-    ".flume/plan/open-questions.md",
-    "specs/_aligned/**", // graduation moves files into here
-    "specs/active/**", // graduation removes them from here
-  ],
-  gates: [pendingGate({ targetFence: build, extension: entryExtension })],
-  promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
-  },
-  handoff(result) {
-    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
-    return hasPickable ? ["build"] : [];
-  },
-};
-
-// ---------- chain ----------
-
-export const cascadeChain: Chain = {
-  phases: [plan, build, spec],
-  entryExtension,
-  humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
-};
+export default factory;
 
 /* --------------------------------------------------------------------------
  * Plugging this into a host repo's `.flume/chain.ts`

@@ -37,23 +37,32 @@ error.
 npm install --save-dev @dtmd/flume
 ```
 
-Flume is exec-local: a bay declares `@dtmd/flume` as its own dependency
-and invokes it through the package manager (`pnpm exec flume`, an npm
-script, `npx flume`). The binary that runs is always the bay's pinned
-copy, and a chain's `import "@dtmd/flume"` resolves to that same
-copy — one engine per bay, coherent by construction. Global installs
-are unsupported; the engine makes no attempt to detect or accommodate
-one.
+A chain is a **plugin loaded into the engine, not a consumer of it**: the
+engine calls your chain's factory with its own API, so the chain never
+imports an engine *value* and never resolves an engine copy of its own.
+One engine per process, whichever binary you invoked — there is no second
+copy for `instanceof` or module state to split across. Your only engine
+import is `import type`, which is erased at runtime, so the declared
+dependency exists purely for types.
 
 Drop a `.flume/chain.ts` into your repo:
 
 ```ts
 // .flume/chain.ts
-import type { Chain, Phase } from "@dtmd/flume";
-const echo: Phase = { name: "echo", description: "Hello-world tick: write a note to disk.", promptPath: "prompts/echo.md", concurrency: "singleton", writablePaths: ["notes/**"], gates: [], handoff: () => [] };
-const chain: Chain = { phases: [echo], humanOnly: [] };
-export default chain;
+import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
+
+const factory: ChainFactory = (flume) => {
+  const echo: Phase = { name: "echo", description: "Hello-world tick: write a note to disk.", promptPath: "prompts/echo.md", concurrency: "singleton", writablePaths: ["notes/**"], gates: [], handoff: () => [] };
+  const chain: Chain = { phases: [echo], humanOnly: [] };
+  return { chain };
+};
+
+export default factory;
 ```
+
+Gates, agents, and schema helpers arrive on that `flume` parameter
+(`flume.tscGate`, `flume.claudeCode`, `flume.pendingGate`, …) — see
+[docs/CHAIN-AUTHORING.md](docs/CHAIN-AUTHORING.md).
 
 Author `.flume/prompts/echo.md` — the prompt template (Markdown plus
 `{{KEY}}` placeholders from `promptArgs`). Then:

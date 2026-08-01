@@ -31,12 +31,15 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { z } from "zod";
-import type { Agent, Chain, EntryExtension, Gate, Phase } from "../src/index.ts";
-import {
-  isPickableNow,
-  parsePending,
-  renderSchemaForPrompt,
+import type {
+  Agent,
+  Chain,
+  ChainFactory,
+  EntryExtension,
+  Gate,
+  Phase,
 } from "../src/index.ts";
+
 
 const BACKLOG_PATH = "BACKLOG.json";
 const SHIPPED_PATH = "SHIPPED.md";
@@ -67,145 +70,158 @@ const entryExtension = {
   },
 } satisfies EntryExtension;
 
-// ---------- the groom agent ----------
 
-/** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
-function readShippedTags(cwd: string): Set<string> {
-  const path = join(cwd, SHIPPED_PATH);
-  if (!existsSync(path)) return new Set();
-  const tags = new Set<string>();
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const m = /^- ([a-z0-9-]+):/.exec(line);
-    if (m) tags.add(m[1]!);
+// ---------- chain factory (RELEASE-v0.11 §6) ----------
+
+/**
+ * The default export is a factory the engine calls with its own API. The
+ * schema helpers this chain uses arrive as parameters rather than through an
+ * engine import, so the chain resolves no engine copy of its own — see §6.
+ */
+const factory: ChainFactory = (api) => {
+  const { isPickableNow, parsePending, renderSchemaForPrompt } = api;
+  // ---------- the groom agent ----------
+
+  /** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
+  function readShippedTags(cwd: string): Set<string> {
+    const path = join(cwd, SHIPPED_PATH);
+    if (!existsSync(path)) return new Set();
+    const tags = new Set<string>();
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      const m = /^- ([a-z0-9-]+):/.exec(line);
+      if (m) tags.add(m[1]!);
+    }
+    return tags;
   }
-  return tags;
-}
 
-/**
- * Deterministic groomer: parse `BACKLOG.json` against core + this chain's
- * extension, pick the first pickable entry (array order — "top is next",
- * same convention `pending.json` uses), remove it from the backlog, log it
- * to `SHIPPED.md`, and commit both files itself — one tick, one commit, the
- * same contract an LLM-backed agent honors.
- *
- * `capabilities` is hardcoded empty here to mirror `Chain.capabilities`
- * below (this chain asserts none); a chain that probes real capabilities at
- * load time would thread the same set through instead of the literal.
- */
-const groomAgent: Agent = {
-  name: "backlog-groomer",
-  async invoke({ cwd }) {
-    const backlogPath = join(cwd, BACKLOG_PATH);
-    let raw: string;
-    try {
-      raw = readFileSync(backlogPath, "utf8");
-    } catch {
-      return { exitCode: 0, stdout: "no BACKLOG.json; nothing to groom", stderr: "" };
-    }
+  /**
+   * Deterministic groomer: parse `BACKLOG.json` against core + this chain's
+   * extension, pick the first pickable entry (array order — "top is next",
+   * same convention `pending.json` uses), remove it from the backlog, log it
+   * to `SHIPPED.md`, and commit both files itself — one tick, one commit, the
+   * same contract an LLM-backed agent honors.
+   *
+   * `capabilities` is hardcoded empty here to mirror `Chain.capabilities`
+   * below (this chain asserts none); a chain that probes real capabilities at
+   * load time would thread the same set through instead of the literal.
+   */
+  const groomAgent: Agent = {
+    name: "backlog-groomer",
+    async invoke({ cwd }) {
+      const backlogPath = join(cwd, BACKLOG_PATH);
+      let raw: string;
+      try {
+        raw = readFileSync(backlogPath, "utf8");
+      } catch {
+        return { exitCode: 0, stdout: "no BACKLOG.json; nothing to groom", stderr: "" };
+      }
 
-    const parsed = parsePending(raw, entryExtension);
-    if (!parsed.ok) {
-      const detail = parsed.errors
-        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-        .join("\n");
-      return { exitCode: 1, stdout: "", stderr: `BACKLOG.json invalid:\n${detail}` };
-    }
+      const parsed = parsePending(raw, entryExtension);
+      if (!parsed.ok) {
+        const detail = parsed.errors
+          .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+          .join("\n");
+        return { exitCode: 1, stdout: "", stderr: `BACKLOG.json invalid:\n${detail}` };
+      }
 
-    const shippedTags = readShippedTags(cwd);
-    const pick = parsed.entries.find((entry) =>
-      isPickableNow(entry, shippedTags, undefined, new Set()),
-    );
-    if (!pick) {
-      return { exitCode: 0, stdout: "no pickable backlog item", stderr: "" };
-    }
+      const shippedTags = readShippedTags(cwd);
+      const pick = parsed.entries.find((entry) =>
+        isPickableNow(entry, shippedTags, undefined, new Set()),
+      );
+      if (!pick) {
+        return { exitCode: 0, stdout: "no pickable backlog item", stderr: "" };
+      }
 
-    const remaining = parsed.entries.filter((entry) => entry !== pick);
-    writeFileSync(backlogPath, `${JSON.stringify(remaining, null, 2)}\n`);
+      const remaining = parsed.entries.filter((entry) => entry !== pick);
+      writeFileSync(backlogPath, `${JSON.stringify(remaining, null, 2)}\n`);
 
-    const reason = entryExtension.reason.schema.parse(pick.reason);
-    const shippedPath = join(cwd, SHIPPED_PATH);
-    const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
-    writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${reason}\n`);
+      const reason = entryExtension.reason.schema.parse(pick.reason);
+      const shippedPath = join(cwd, SHIPPED_PATH);
+      const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
+      writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${reason}\n`);
 
-    execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
-    execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
+      execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
+      execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
 
-    return { exitCode: 0, stdout: `shipped ${pick.tag}`, stderr: "" };
-  },
-};
+      return { exitCode: 0, stdout: `shipped ${pick.tag}`, stderr: "" };
+    },
+  };
 
-// ---------- gate ----------
+  // ---------- gate ----------
 
-/**
- * Re-validates `BACKLOG.json` post-commit against core + `entryExtension` —
- * the same `parsePending` call cascade's `pendingParseGate` makes, reused
- * here for a single-phase chain with no plan/build split. Absence is fine
- * (a tick with nothing pickable makes no changes at all).
- */
-const backlogParseGate: Gate = {
-  name: "BACKLOG.json parses",
-  when: "afterCommit",
-  async run(ctx) {
-    let raw: string;
-    try {
-      raw = readFileSync(join(ctx.cwd, BACKLOG_PATH), "utf8");
-    } catch {
-      return { ok: true, message: "BACKLOG.json absent (nothing groomed this tick)" };
-    }
-    const result = parsePending(raw, entryExtension);
-    if (result.ok) {
+  /**
+   * Re-validates `BACKLOG.json` post-commit against core + `entryExtension` —
+   * the same `parsePending` call cascade's `pendingParseGate` makes, reused
+   * here for a single-phase chain with no plan/build split. Absence is fine
+   * (a tick with nothing pickable makes no changes at all).
+   */
+  const backlogParseGate: Gate = {
+    name: "BACKLOG.json parses",
+    when: "afterCommit",
+    async run(ctx) {
+      let raw: string;
+      try {
+        raw = readFileSync(join(ctx.cwd, BACKLOG_PATH), "utf8");
+      } catch {
+        return { ok: true, message: "BACKLOG.json absent (nothing groomed this tick)" };
+      }
+      const result = parsePending(raw, entryExtension);
+      if (result.ok) {
+        return {
+          ok: true,
+          message: `BACKLOG.json parses (${result.entries.length} item(s) remaining)`,
+        };
+      }
       return {
-        ok: true,
-        message: `BACKLOG.json parses (${result.entries.length} item(s) remaining)`,
+        ok: false,
+        message: `BACKLOG.json has ${result.errors.length} schema violations`,
+        details: result.errors
+          .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+          .join("\n"),
       };
-    }
-    return {
-      ok: false,
-      message: `BACKLOG.json has ${result.errors.length} schema violations`,
-      details: result.errors
-        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-        .join("\n"),
-    };
-  },
+    },
+  };
+
+  // ---------- phase ----------
+
+  /**
+   * Singleton: one groom tick at a time, same reasoning as cascade's plan
+   * phase — `BACKLOG.json` is a single shared artifact. No fanout, no
+   * `assignedEntry`, no `pending.json` — the queue this phase reads and
+   * writes is `BACKLOG.json`, entirely of this chain's own naming.
+   */
+  const groom: Phase = {
+    name: "groom",
+    description: "Read BACKLOG.json, ship the top pickable item, commit.",
+    promptPath: "prompts/backlog-groomer.md",
+    concurrency: "singleton",
+    agent: groomAgent,
+    writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
+    gates: [backlogParseGate],
+    promptArgs() {
+      return { BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension) };
+    },
+    // One phase, no sibling to hand off to — the chain hibernates after every
+    // tick, same as minimal-chain's `notes`.
+    handoff: () => [],
+  };
+
+  // ---------- chain ----------
+
+  const backlogGroomerChain: Chain = {
+    phases: [groom],
+    entryExtension,
+    humanOnly: [],
+    // No environment facts asserted (v0.8 §4): a backlog item gated
+    // `requiresCapability` stays parked until a deployment of this chain
+    // names the capability here.
+    capabilities: [],
+  };
+
+  return { chain: backlogGroomerChain };
 };
 
-// ---------- phase ----------
-
-/**
- * Singleton: one groom tick at a time, same reasoning as cascade's plan
- * phase — `BACKLOG.json` is a single shared artifact. No fanout, no
- * `assignedEntry`, no `pending.json` — the queue this phase reads and
- * writes is `BACKLOG.json`, entirely of this chain's own naming.
- */
-const groom: Phase = {
-  name: "groom",
-  description: "Read BACKLOG.json, ship the top pickable item, commit.",
-  promptPath: "prompts/backlog-groomer.md",
-  concurrency: "singleton",
-  agent: groomAgent,
-  writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
-  gates: [backlogParseGate],
-  promptArgs() {
-    return { BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension) };
-  },
-  // One phase, no sibling to hand off to — the chain hibernates after every
-  // tick, same as minimal-chain's `notes`.
-  handoff: () => [],
-};
-
-// ---------- chain ----------
-
-const backlogGroomerChain: Chain = {
-  phases: [groom],
-  entryExtension,
-  humanOnly: [],
-  // No environment facts asserted (v0.8 §4): a backlog item gated
-  // `requiresCapability` stays parked until a deployment of this chain
-  // names the capability here.
-  capabilities: [],
-};
-
-export default backlogGroomerChain;
+export default factory;
 
 /* --------------------------------------------------------------------------
  * Plugging this into a host repo's `.flume/chain.ts`

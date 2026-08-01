@@ -360,9 +360,9 @@ describe("afterCommit vs afterMerge wiring", () => {
 // ---------- chainLoadGate (RELEASE-v0.2 §3) ----------
 
 const VALID_CHAIN =
-  `export default { phases: [{ name: "a", description: "", ` +
+  `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
   `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
-  `gates: [], handoff: () => [] }], humanOnly: [] };\n`;
+  `gates: [], handoff: () => [] }], humanOnly: [] } });\n`;
 
 describe("chainLoadGate — post-tick chain.ts validation", () => {
   let repo: string;
@@ -422,7 +422,7 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     );
     const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
     expect(result.ok).toBe(false);
-    expect(result.details ?? "").toMatch(/default-export a Chain/);
+    expect(result.details ?? "").toMatch(/default-export a chain factory/);
   });
 
   it("fails fast when commitSha is missing from the context", async () => {

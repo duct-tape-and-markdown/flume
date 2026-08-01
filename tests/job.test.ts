@@ -56,7 +56,7 @@ async function makeRepo(): Promise<{
 
 /** Minimal valid chain, no `seedDir` declared — the chain-load precondition `jobNew` enforces (v0.6 §4/§9-7): a chainless repo cannot create a job. */
 const MINIMAL_CHAIN_SRC =
-  `export default {\n` +
+  `export default () => ({ chain: {\n` +
   `  phases: [{\n` +
   `    name: "probe",\n` +
   `    description: "",\n` +
@@ -67,7 +67,7 @@ const MINIMAL_CHAIN_SRC =
   `    handoff: () => [],\n` +
   `  }],\n` +
   `  humanOnly: [],\n` +
-  `};\n`;
+  `} });\n`;
 
 /**
  * Commit the repo chain at `<repoDir>/.flume/chain.ts` — repo-resident
@@ -639,7 +639,7 @@ describe("§3 job-dir link provisioning removed — bay resolution", () => {
       await writeFile(
         join(jobDir, "chain.ts"),
         `import { resolvedFrom } from "@dtmd/flume";\n` +
-          `export default {\n` +
+          `export default () => ({ chain: {\n` +
           `  phases: [{\n` +
           `    name: "probe",\n` +
           `    description: resolvedFrom,\n` +
@@ -650,11 +650,11 @@ describe("§3 job-dir link provisioning removed — bay resolution", () => {
           `    handoff: () => [],\n` +
           `  }],\n` +
           `  humanOnly: [],\n` +
-          `};\n`,
+          `} });\n`,
       );
 
       const mod = await loadChainModule(join(jobDir, "chain.ts"));
-      expect(mod.default.phases[0]?.description.toLowerCase()).toBe(
+      expect(mod.chain.phases[0]?.description.toLowerCase()).toBe(
         indexPath.toLowerCase(),
       );
     } finally {
@@ -681,7 +681,7 @@ function twoPhaseChainSrc(): string {
     `{ name: ${JSON.stringify(name)}, description: "", promptPath: "p.md", ` +
     `concurrency: "singleton", writablePaths: ["**"], gates: [], ` +
     `handoff: () => [] }`;
-  return `export default { phases: [${phase("alpha")}, ${phase("beta")}], humanOnly: [] };\n`;
+  return `export default () => ({ chain: { phases: [${phase("alpha")}, ${phase("beta")}], humanOnly: [] } });\n`;
 }
 
 /**

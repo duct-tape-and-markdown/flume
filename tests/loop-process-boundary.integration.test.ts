@@ -29,7 +29,7 @@ const exec = promisify(execFile);
  */
 function chainSrc(phaseName: string): string {
   return (
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
     `    description: "boundary probe",\n` +
@@ -40,11 +40,11 @@ function chainSrc(phaseName: string): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
-    `};\n` +
-    `export const agent = {\n` +
+    `},\n` +
+    `agent: {\n` +
     `  name: "noop",\n` +
     `  async invoke() { return { exitCode: 0, stdout: "", stderr: "" }; },\n` +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -60,7 +60,7 @@ function envProbeChainSrc(phaseName: string): string {
   return (
     `import { writeFileSync } from "node:fs";\n` +
     `import { join } from "node:path";\n` +
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
     `    description: "env probe",\n` +
@@ -71,8 +71,8 @@ function envProbeChainSrc(phaseName: string): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
-    `};\n` +
-    `export const agent = {\n` +
+    `},\n` +
+    `agent: {\n` +
     `  name: "env-probe",\n` +
     `  async invoke() {\n` +
     `    writeFileSync(\n` +
@@ -84,7 +84,7 @@ function envProbeChainSrc(phaseName: string): string {
     `    );\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -321,7 +321,7 @@ describe("§4 mount-dead fail-fast — real `flume loop` over an unloadable chai
       await writeFile(
         join(repo.dir, ".flume", "chain.ts"),
         `throw new Error("simulated broken chain.ts");\n` +
-          `export default { phases: [], humanOnly: [] };\n`,
+          `export default () => ({ chain: { phases: [], humanOnly: [] } });\n`,
         "utf8",
       );
 

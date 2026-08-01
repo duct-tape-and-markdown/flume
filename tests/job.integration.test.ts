@@ -76,7 +76,7 @@ async function commitRepoConfig(
 const PROBE_CHAIN_SRC =
   `import { writeFileSync } from "node:fs";\n` +
   `import { join } from "node:path";\n` +
-  `export default {\n` +
+  `export default () => ({ chain: {\n` +
   `  phases: [{\n` +
   `    name: "probe",\n` +
   `    description: "job run probe",\n` +
@@ -87,8 +87,8 @@ const PROBE_CHAIN_SRC =
   `    handoff: () => [],\n` +
   `  }],\n` +
   `  humanOnly: [],\n` +
-  `};\n` +
-  `export const agent = {\n` +
+  `},\n` +
+  `agent: {\n` +
   `  name: "job-run-probe",\n` +
   `  async invoke() {\n` +
   `    writeFileSync(\n` +
@@ -101,7 +101,7 @@ const PROBE_CHAIN_SRC =
   `    );\n` +
   `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
   `  },\n` +
-  `};\n`;
+  `} });\n`;
 
 describe("§5b integration — job new → job run", () => {
   it(

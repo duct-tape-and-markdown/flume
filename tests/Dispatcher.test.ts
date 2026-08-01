@@ -35,7 +35,12 @@ import {
 } from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
-import { chainLoadGate } from "../src/builtinGates.ts";
+import {
+  chainLoadGate,
+  // §6 identity pin: the engine's own gate object, compared by reference
+  // against what a chain factory receives.
+  tscGate as realTscGate,
+} from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { Chain, Phase, TickResult } from "../src/Phase.ts";
 import {
@@ -79,7 +84,7 @@ function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
  * same chain every tick unless the test mutates a closed-over reference.
  */
 function staticLoader(chain: Chain): () => Promise<ChainModule> {
-  return () => Promise.resolve({ default: chain });
+  return () => Promise.resolve({ chain });
 }
 
 // ---------- temp-repo fixture ----------
@@ -241,10 +246,10 @@ async function writeMinimalChain(
   await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
   await writeFile(
     join(cfg, "chain.ts"),
-    `export default { phases: [{ name: "build", description: "", ` +
-      `promptPath: "prompt.md", concurrency: "singleton", ` +
+    `export default () => ({ chain: { phases: [{ name: "build", ` +
+      `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
       `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-      `humanOnly: []${frictionExpr ? `, friction: ${frictionExpr}` : ""} };\n`,
+      `humanOnly: []${frictionExpr ? `, friction: ${frictionExpr}` : ""} } });\n`,
     "utf8",
   );
 }
@@ -2482,7 +2487,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
     // The chain module supplies its own resolver — the stock-CLI adoption
     // path. It marks nothing resolved, so the only entry is fork-blocked.
     const loader = (): Promise<ChainModule> =>
-      Promise.resolve({ default: chain, forkResolver: () => () => false });
+      Promise.resolve({ chain, forkResolver: () => () => false });
 
     const dispatcher = new Dispatcher({
       chainLoader: loader,
@@ -2512,12 +2517,12 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
       await writeFile(
         join(cfg, "chain.ts"),
-        `export default { phases: [{ name: "build", description: "", ` +
+        `export default () => ({ chain: { phases: [{ name: "build", description: "", ` +
           `promptPath: "prompt.md", concurrency: "fanout", ` +
           `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-          `humanOnly: [] };\n` +
+          `humanOnly: [] },\n` +
           // Nothing resolved — the only entry rests on an open fork.
-          `export const forkResolver = () => () => false;\n`,
+          `forkResolver: () => () => false });\n`,
         "utf8",
       );
 
@@ -2589,7 +2594,7 @@ describe("Dispatcher — per-phase agent resolution (§4)", () => {
     const chain: Chain = { phases: [withOwn, silentPhase], humanOnly: [] };
 
     const loader = (): Promise<ChainModule> =>
-      Promise.resolve({ default: chain, agent: chainAgent });
+      Promise.resolve({ chain, agent: chainAgent });
 
     const dispatcher = new Dispatcher({
       chainLoader: loader,
@@ -4049,10 +4054,10 @@ describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
       await writeFile(
         join(cfg, "chain.ts"),
-        `export default { phases: [{ name: "ondisk", description: "", ` +
+        `export default () => ({ chain: { phases: [{ name: "ondisk", description: "", ` +
           `promptPath: "prompt.md", concurrency: "singleton", ` +
           `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-          `humanOnly: [] };\n`,
+          `humanOnly: [] } });\n`,
         "utf8",
       );
 
@@ -4084,10 +4089,10 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
   it("broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
     const goodChain =
-      `export default { phases: [{ name: "build", description: "", ` +
+      `export default () => ({ chain: { phases: [{ name: "build", description: "", ` +
       `promptPath: "prompt.md", concurrency: "singleton", ` +
       `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-      `humanOnly: [] };\n`;
+      `humanOnly: [] } });\n`;
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
     const preHead = await head(fx.repo);
 
@@ -4149,10 +4154,10 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
   it("broken chain.ts reverted by chainLoadGate → next tick's prompt carries <prior-attempt> naming chain-load + its detail; chain.ts restored to last-good", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
     const goodChain =
-      `export default { phases: [{ name: "build", description: "", ` +
+      `export default () => ({ chain: { phases: [{ name: "build", description: "", ` +
       `promptPath: "prompt.md", concurrency: "singleton", ` +
       `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-      `humanOnly: [] };\n`;
+      `humanOnly: [] } });\n`;
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
 
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -5172,6 +5177,63 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
+  // RELEASE-v0.11 §6 — the chain is a plugin, not a consumer.
+  //
+  // The assertion is **identity** (`toBe`), and that is the whole point: a
+  // chain that resolved its own second copy of the engine would hand back
+  // objects structurally identical to these, so a deep-equal check would
+  // pass under exactly the condition this section exists to prevent. Only
+  // reference equality distinguishes "the engine handed me its gate" from
+  // "I resolved a gate that looks like it".
+  it("hands the chain factory the identity-same engine objects the dispatcher holds (§6)", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-identity-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      // The factory stashes what it was handed on the returned chain, so the
+      // test can compare against the engine's own exports.
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default (api) => ({ chain: { phases: [{ name: "build", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [api.tscGate], handoff: () => [] }], ` +
+          `humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      const gate = mod.chain.phases[0]!.gates[0];
+      expect(gate).toBeDefined();
+      expect(gate).toBe(realTscGate);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a default export that is not a function, naming the migration (§6)", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-nonfactory-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      // The pre-0.11 shape: a Chain object rather than a factory.
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default { phases: [{ name: "build", description: "", ` +
+          `promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+          `humanOnly: [] };\n`,
+        "utf8",
+      );
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+        /must default-export a chain factory/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a friction declaration that resolves outside the state root", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-escape-"));
     try {
@@ -5192,7 +5254,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
 
       const mod = await loadChainModule(join(cfg, "chain.ts"));
 
-      expect(mod.default.friction).toBe("friction");
+      expect(mod.chain.friction).toBe("friction");
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
@@ -5205,8 +5267,8 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
 
       const mod = await loadChainModule(join(cfg, "chain.ts"));
 
-      expect(mod.default.friction).toBeUndefined();
-      expect(mod.default.phases).toHaveLength(1);
+      expect(mod.chain.friction).toBeUndefined();
+      expect(mod.chain.phases).toHaveLength(1);
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }

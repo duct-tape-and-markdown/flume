@@ -29,11 +29,19 @@ import type { Agent } from "../src/Agent.ts";
 import type { Chain } from "../src/Phase.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
-import backlogGroomerChain from "../examples/backlog-groomer-chain.ts";
-import { cascadeChain } from "../examples/cascade-chain.ts";
-import minimalChain from "../examples/minimal-chain.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
+import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
+import cascadeFactory from "../examples/cascade-chain.ts";
+import minimalFactory from "../examples/minimal-chain.ts";
 
 const exec = promisify(execFile);
+
+// v0.11 §6: examples default-export a factory, so the chains under test are
+// built the same way a real tick builds them — through the real API object,
+// not a hand-assembled stand-in.
+const { chain: backlogGroomerChain } = backlogGroomerFactory(buildFlumeApi());
+const { chain: cascadeChain } = cascadeFactory(buildFlumeApi());
+const { chain: minimalChain } = minimalFactory(buildFlumeApi());
 
 /**
  * `examples/`, resolved from this test file's own URL — `configDir` for the
@@ -114,7 +122,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
           configDir: EXAMPLES_DIR,
           flumeDir,
           agent: neverAgent,
-          chainLoader: async () => ({ default: backlogGroomerChain }),
+          chainLoader: async () => ({ chain: backlogGroomerChain }),
         });
 
         const outcome = await dispatcher.tick();
@@ -189,7 +197,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         configDir: EXAMPLES_DIR,
         flumeDir,
         agent: neverAgent,
-        chainLoader: async () => ({ default: backlogGroomerChain }),
+        chainLoader: async () => ({ chain: backlogGroomerChain }),
       });
 
       const outcome = await dispatcher.tick();

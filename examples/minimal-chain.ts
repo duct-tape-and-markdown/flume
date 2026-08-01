@@ -11,13 +11,20 @@
  * fanout, gates, structured handoff, and the pending-schema surface, read
  * `cascade-chain.ts` instead.
  *
- * Imports come from `../src/index.ts` — the same public surface a consumer
- * sees as `import { ... } from "flume"`. The path is relative because this
- * file lives inside the flume repo; in a host repo, swap `../src/index.ts`
- * for the bare specifier `"flume"`. See the trailing block.
+ * The default export is a **factory** the engine calls with its own API
+ * (RELEASE-v0.11 §6). This chain needs no engine values, so it ignores the
+ * parameter — but the factory shape is the contract regardless, and it is
+ * why the only import below is `import type`. A chain never imports an
+ * engine *value*: that is what would let a second physical engine into the
+ * process.
+ *
+ * Type imports come from `../src/index.ts` — the same public surface a
+ * consumer sees as `import type { ... } from "flume"`. The path is relative
+ * because this file lives inside the flume repo; in a host repo, swap
+ * `../src/index.ts` for the bare specifier `"flume"`. See the trailing block.
  */
 
-import type { Chain, Phase } from "../src/index.ts";
+import type { Chain, ChainFactory, Phase } from "../src/index.ts";
 
 /**
  * Notes phase — irreducible Phase shape. Each tick appends a dated entry to
@@ -40,7 +47,9 @@ const minimalChain: Chain = {
   humanOnly: [],
 };
 
-export default minimalChain;
+const factory: ChainFactory = () => ({ chain: minimalChain });
+
+export default factory;
 
 /* --------------------------------------------------------------------------
  * Plugging this into a host repo's `.flume/chain.ts`
@@ -49,7 +58,7 @@ export default minimalChain;
  *
  *   2. Replace the `../src/index.ts` import with the bare specifier:
  *
- *          import type { Chain, Phase } from "flume";
+ *          import type { Chain, ChainFactory, Phase } from "flume";
  *
  *   3. Author `.flume/prompts/notes.md` — the agent prompt template. `{{KEY}}`
  *      placeholders are substituted from `Phase.promptArgs` at tick time;

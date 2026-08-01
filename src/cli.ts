@@ -454,7 +454,7 @@ async function runJobVerb(
         : join(repoRoot, ".flume");
       let frictionDir: string | undefined;
       try {
-        const { default: chain } = await diskChainLoader(configDir)();
+        const { chain } = await diskChainLoader(configDir)();
         frictionDir = chain.friction;
       } catch {
         frictionDir = undefined;
@@ -715,7 +715,7 @@ async function main(): Promise<number> {
     // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
     // `status`, only silently withhold the friction line.
     try {
-      const { default: chain } = await diskChainLoader(configDir)();
+      const { chain } = await diskChainLoader(configDir)();
       const line = await frictionCountLine(flumeDir, chain);
       if (line) console.log(line);
       // v0.8 §4: name entries stuck on a capability this chain hasn't
@@ -909,7 +909,7 @@ async function main(): Promise<number> {
     // `superviseLoop` falls through to the v0.7 §16 defaults meanwhile.
     let supervisorPolicy: Chain["supervisorPolicy"];
     try {
-      ({ default: { supervisorPolicy } } = await resolveChain());
+      ({ chain: { supervisorPolicy } } = await resolveChain());
     } catch {
       // unresolved chain — defaults apply; the child tick names the failure
     }
@@ -940,7 +940,7 @@ async function main(): Promise<number> {
     }
     let chain: Chain;
     try {
-      ({ default: chain } = await resolveChain());
+      ({ chain } = await resolveChain());
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
         console.error(`[flume] ${err.message}`);

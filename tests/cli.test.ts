@@ -598,7 +598,7 @@ function supervisorPolicyChainSrc(policy?: {
   abortThreshold?: number;
 }): string {
   return (
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: "build",\n` +
     `    description: "",\n` +
@@ -615,7 +615,7 @@ function supervisorPolicyChainSrc(policy?: {
     (policy !== undefined
       ? `  supervisorPolicy: ${JSON.stringify(policy)},\n`
       : ``) +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -1288,7 +1288,7 @@ const INERT_TRAP_CHAIN_SRC =
  */
 function minimalChainSrc(friction?: string): string {
   return (
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: "probe",\n` +
     `    description: "",\n` +
@@ -1302,7 +1302,7 @@ function minimalChainSrc(friction?: string): string {
     (friction !== undefined
       ? `  friction: ${JSON.stringify(friction)},\n`
       : ``) +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -1314,7 +1314,7 @@ function minimalChainSrc(friction?: string): string {
  */
 function slowAgentChainSrc(phaseName: string): string {
   return (
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
     `    description: "sigterm probe",\n` +
@@ -1325,14 +1325,14 @@ function slowAgentChainSrc(phaseName: string): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
-    `};\n` +
-    `export const agent = {\n` +
+    `},\n` +
+    `agent: {\n` +
     `  name: "slow",\n` +
     `  async invoke() {\n` +
     `    await new Promise((r) => setTimeout(r, 3000));\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -1469,7 +1469,7 @@ describe("flume status — pending entry count (§3)", () => {
  */
 function capabilityChainSrc(capabilities?: string[]): string {
   return (
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: "probe",\n` +
     `    description: "",\n` +
@@ -1483,7 +1483,7 @@ function capabilityChainSrc(capabilities?: string[]): string {
     (capabilities !== undefined
       ? `  capabilities: ${JSON.stringify(capabilities)},\n`
       : ``) +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -1749,7 +1749,7 @@ function jobEnvProbeChainSrc(phaseName: string): string {
   return (
     `import { writeFileSync } from "node:fs";\n` +
     `import { join } from "node:path";\n` +
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
     `    description: "job env probe",\n` +
@@ -1760,8 +1760,8 @@ function jobEnvProbeChainSrc(phaseName: string): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
-    `};\n` +
-    `export const agent = {\n` +
+    `},\n` +
+    `agent: {\n` +
     `  name: "job-env-probe",\n` +
     `  async invoke() {\n` +
     `    writeFileSync(\n` +
@@ -1774,7 +1774,7 @@ function jobEnvProbeChainSrc(phaseName: string): string {
     `    );\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
-    `};\n`
+    `} });\n`
   );
 }
 
@@ -1790,7 +1790,7 @@ function jobFanoutProbeChainSrc(phaseName: string): string {
     `import { execFileSync } from "node:child_process";\n` +
     `import { writeFileSync } from "node:fs";\n` +
     `import { join } from "node:path";\n` +
-    `export default {\n` +
+    `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
     `    description: "job fanout branch probe",\n` +
@@ -1801,8 +1801,8 @@ function jobFanoutProbeChainSrc(phaseName: string): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
-    `};\n` +
-    `export const agent = {\n` +
+    `},\n` +
+    `agent: {\n` +
     `  name: "job-fanout-probe",\n` +
     `  async invoke(inv) {\n` +
     `    const branch = execFileSync(\n` +
@@ -1816,7 +1816,7 @@ function jobFanoutProbeChainSrc(phaseName: string): string {
     `    );\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
-    `};\n`
+    `} });\n`
   );
 }
 

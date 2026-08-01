@@ -13,6 +13,26 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Breaking
 
+- A chain module now default-exports a **factory**, `(api) => ({ chain })`,
+  instead of a `Chain` object (v0.11 §6). Every engine value a chain
+  composes with — gates, agent constructors, schema helpers, `git`
+  read-helpers — arrives on that `api` parameter; a chain's only remaining
+  engine import is `import type`, which is erased at runtime. `agent` and
+  `forkResolver` move from named module exports onto the factory's return
+  (`{ chain, agent, forkResolver }`), because a named export cannot receive
+  the API. A default export that is not a function is refused, naming the
+  migration, rather than falling back to the old shape.
+
+  This removes the dual-engine process class by construction. A chain that
+  imported engine values resolved them by walk-up from its own directory,
+  so whenever the running engine was not the copy that walk-up found, one
+  process held two engines — one driving the dispatcher, one building the
+  chain's phases — with `instanceof` and module-level state split across
+  them *at equal versions*, nothing reporting it, and commits as the
+  output. It also fixes a globally-invoked engine dying with a raw
+  `ERR_MODULE_NOT_FOUND` for the package that was executing. New exports:
+  `FlumeApi`, `ChainFactory`. See `docs/MIGRATING-0.11.md` §2.
+
 - The `job/<name>` branch convention is retired from `job new`/`run`/`rm`
   (v0.11 §2/§3): `job new` no longer creates or checks out a branch — it
   baseline-commits the seeded harness on the current HEAD and leaves it

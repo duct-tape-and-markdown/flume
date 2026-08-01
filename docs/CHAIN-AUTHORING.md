@@ -30,9 +30,27 @@ process boundary: `flume loop` is a supervisor that spawns one `flume tick`
 child process per iteration, and each child loads the chain exactly once at
 its start. There is no in-process memoization or cache-bust — one
 `tsImport` of `chain.ts` per tick, a cost dominated by orders of magnitude
-by the tick's own agent invocation. Default-export a `Chain` value — the
-resolver rejects modules without a default export. Prompts referenced by
-`Phase.promptPath` resolve relative to `.flume/`.
+by the tick's own agent invocation.
+
+**Default-export a factory** — `(api) => ({ chain })`, where `api` carries
+every engine value your chain composes with (gates, agent constructors,
+schema helpers). The resolver refuses a default export that is not a
+function, and refuses a factory that returns no `chain` with a `phases[]`
+array. Take engine values from the parameter; your only engine `import` is
+`import type`, which is erased at runtime.
+
+That shape is what makes a second engine copy unreachable rather than
+merely unlikely. A chain that imported engine *values* would resolve them
+by walk-up from its own directory — so whenever the running engine was not
+the copy that walk-up found, the process would hold two: one driving the
+dispatcher, one building your phases, with `instanceof` and module state
+split across them at equal versions and nothing reporting it. A factory has
+nothing to resolve.
+
+An `agent` or `forkResolver` override rides the factory's return
+(`{ chain, agent, forkResolver }`), not a named module export — a named
+export cannot receive the API. Prompts referenced by `Phase.promptPath`
+resolve relative to `.flume/`.
 
 ```
 .flume/
@@ -1260,12 +1278,24 @@ identical mechanical floor; the engine has no opinion on case.
 ## Putting it together
 
 ```ts
-const cascadeChain: Chain = {
-  phases: [plan, build, spec],
-  humanOnly: ["spec"],
+const factory: ChainFactory = (flume) => {
+  const { pendingGate, tscGate, vitestGate, eslintGate, shellGate } = flume;
+
+  // ... phases defined here, composing with the destructured values ...
+
+  const cascadeChain: Chain = {
+    phases: [plan, build, spec],
+    humanOnly: ["spec"],
+  };
+  return { chain: cascadeChain };
 };
-export default cascadeChain;
+
+export default factory;
 ```
+
+Everything that needs an engine value lives inside the factory; anything
+that does not — a `zod` entry extension, plain constants — can stay at
+module scope. `examples/cascade-chain.ts` is this shape end to end.
 
 `phases` is the ordered list, and the order is a contract:
 `flume job run` wakes `phases[0]` when the baton is hibernating — the
