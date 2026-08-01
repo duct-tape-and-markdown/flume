@@ -215,6 +215,27 @@ The lock lives under `flumeDir`, not the repo: the state root is the resource
 that races, and a dock relocated via `FLUME_DIR` carries its lock with it —
 two loops against *different* docks over the same repo are allowed.
 
+### One flume writer per tip
+
+`loop.pid` guards the state root; it says nothing about the tip (the ref
+HEAD resolves to) the state root's ticks commit onto — two jobs with
+separate state roots, or a bare `tick` racing a `loop`, can still write to
+the same ref. `flume loop` closes that gap with an advisory per-ref claim:
+it claims the tip at start and releases it at exit, exclusive-create at
+`<git-common-dir>/flume/tip-claims/<ref path>` (e.g.
+`.git/flume/tip-claims/refs/heads/main`). The common dir resolves
+identically from every linked worktree, so a claim taken in one is visible
+from all of them. A second `loop` against the same ref refuses (exit 1),
+naming the holder's pid; a stale claim (holder process dead) is reclaimed
+silently, the same liveness probe as the state-root lock above. `flume
+tick` alone takes no claim — only `loop` does. Both refuse outright (exit
+1) on a detached HEAD, since the claim keys on a named ref.
+
+It is advisory, not exclusive against every possible writer — a signal
+plus a fact when the signal is bypassed. `flume status` reports the
+current tip's claim (`tip claimed by pid N`, or stale) alongside
+supervisor liveness.
+
 ## Trunk contract: HEAD is truth
 
 Commits land on the checked-out branch of the working tree the loop runs in.
@@ -222,6 +243,16 @@ Singleton ticks commit to HEAD; fanout waves cherry-pick back onto HEAD. The
 runtime never switches branches — there is no trunk configuration to point it
 elsewhere. Checkout is a human act (or a job verb's, below): whatever branch
 is checked out when the loop starts is the branch the run ships to.
+
+Before committing a tick's output, the dispatcher re-reads that tip and
+compares it against the sha recorded at tick start. Unchanged, it commits.
+Moved — a human committed mid-tick, a pull landed, or a claim-less bare
+`tick` collided with another writer — it makes **no commit**: the agent's
+output stays on disk, the entry stays pending, and the tick reports a
+tip-moved outcome instead of a shipped commit. This is the backstop behind
+the claim above: the claim is a signal that can be bypassed (a bare `tick`
+takes none), the verify is what actually refuses to commit onto a tip that
+moved out from under it.
 
 ## Jobs
 
@@ -276,14 +307,15 @@ Full per-verb contracts — steps, refusals, exit codes — in
 
 ### Concurrent jobs: one working tree per tip
 
-**One loop per working tree.** Singleton ticks, fanout cherry-picks, and
-merge-gate reverts all mutate the working tree's HEAD; two loops in one
-checkout race it. The `loop.pid` lock guards state roots, not working trees —
-per-job state roots mean two jobs' loops never share a lock, so HEAD
-occupancy is the operator-visible signal to respect.
+**One loop per tip.** Singleton ticks, fanout cherry-picks, and merge-gate
+reverts all mutate the working tree's HEAD; two loops writing to one ref
+race it — per-job state roots mean two jobs' loops never share a
+`loop.pid`, so it's the tip claim above, not the state-root lock, that
+catches this: the second job's `loop` refuses, naming the first job's pid,
+even though the two jobs have nothing else in common.
 
-To run jobs concurrently, give each its own working tree — `git worktree`
-is the parallelism recipe, each on its own tip:
+To run jobs concurrently, give each its own tip — a separate working tree,
+via `git worktree` — so neither claims the other's ref:
 
 ```bash
 git worktree add -b docs-refresh-wip .git/flume-jobs/docs-refresh
