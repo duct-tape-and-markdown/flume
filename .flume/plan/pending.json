@@ -14,7 +14,7 @@
         },
         {
           "path": "src/builtinGates.ts",
-          "description": "lines 77 and 302-303 - same"
+          "description": "lines 77 and 316-317 - same"
         },
         {
           "path": "CHANGELOG.md",
@@ -30,7 +30,7 @@
     },
     "tests": [],
     "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test already pins.",
-    "notes": "Pinned already, so prose shrinks to a pointer: Prompt.ts:142/:252 by tests/Prompt.test.ts:144; builtinGates.ts:77 by tests/Gate.test.ts:61. builtinGates.ts:302-303 (drifted from :250-251 by 86789b8's pkgManagerGate insert) cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS, both shipped and unresolvable today. Prompt.ts:47-48 is the same shape - and v0.10 §3 rewrites that exact docstring, hence the block; re-read every line number after it lands. Prose-only; no behavior moves."
+    "notes": "Pinned already, so prose shrinks to a pointer: Prompt.ts:142/:252 by tests/Prompt.test.ts:144; builtinGates.ts:77 by tests/Gate.test.ts:61. builtinGates.ts:316-317 (drifted again, by 008d5b9's hint-option insert) cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS, both shipped and unresolvable today. Prompt.ts:47-48 is the same shape - and v0.10 §3 rewrites that exact docstring, hence the block; re-read every line number after it lands. Prose-only; no behavior moves."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD",
@@ -365,7 +365,7 @@
       "edit": [
         {
           "path": "src/Agent.ts",
-          "description": "factor renderStreamJsonLine's line-parse + assistant-content-block extraction (346-380) into two shared helpers - parse-one-NDJSON-event, and content-blocks-of-type from an assistant event's message.content - exported for Dispatcher.ts"
+          "description": "factor renderStreamJsonLine's line-parse + assistant-content-block extraction (351-385) into two shared helpers - parse-one-NDJSON-event, and content-blocks-of-type from an assistant event's message.content - exported for Dispatcher.ts"
         },
         {
           "path": "src/Dispatcher.ts",
@@ -398,7 +398,7 @@
       }
     ],
     "acceptance": "One shared pair of helpers in src/Agent.ts parses an NDJSON line and extracts message.content blocks by type; both withTerminalRenderer's renderStreamJsonLine and Dispatcher's finalAgentMessage/assistantTurnText call them instead of re-deriving the parse; tests/Dispatcher.test.ts:2985-3132 stays green unchanged; tsc/vitest green.",
-    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood (Agent.ts read as its import). Verified on disk: Agent.ts:353-372 and Dispatcher.ts:2740-2789 both JSON.parse a line, check evt is an object, read .type, and for \"assistant\" walk message.content[] by block .type - one keeps tool_use (rendering), the other keeps text (bail message). Agent.ts already owns stream-json awareness via the decorator; Dispatcher.ts re-deriving the parse is the duplication, not the awareness itself."
+    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood (Agent.ts read as its import). Re-verified this tick past 56d2c4e0's insert: Agent.ts:358-377 and Dispatcher.ts:2740-2789 both JSON.parse a line, check .type, and for \"assistant\" walk message.content[] by block .type - one keeps tool_use (rendering), the other text (bail message). Agent.ts already owns stream-json awareness via the decorator; re-deriving the parse in Dispatcher.ts is the duplication, not the awareness."
   },
   {
     "tag": "DISPATCHER-COMMIT-MESSAGE-PREFIX-HARDCODED",
