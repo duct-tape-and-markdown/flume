@@ -1,43 +1,5 @@
 [
   {
-    "tag": "PENDING-GATE-HINT-OPTION",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "add optional hint?: string to PendingGateOptions, appended to both violation messages"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "cover hint present/absent on both violation paths"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "pendingGate has no injection point for chain-authored operator guidance on a violation - a bay's hand-rolled fork carried this, the builtin drops it.",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Capability vs convention"
-    },
-    "tests": [
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "hint text appended verbatim to both schema-violation and fence-violation failure output when supplied; output unchanged from today when omitted"
-      }
-    ],
-    "acceptance": "pendingGate({ ..., hint: 'park it, never re-scope' }) echoes the hint in both failure branches; default behavior unchanged.",
-    "notes": "Passes the second-implementation test - chain supplies text, engine supplies enforcement. Keep minimal: one string, no per-violation-class customization; richer needs stay a chain-side run() wrap. CHANGELOG.md added this tick: the entry touched src/ without declaring it, which changelogGate would have reverted."
-  },
-  {
     "tag": "GIT-DEAD-EXPORTS-RETIRE",
     "gate": {
       "kind": "open"
