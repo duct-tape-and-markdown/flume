@@ -2,7 +2,10 @@
 
 ## 1. Purpose & scope
 
-Two rulings (operator, 2026-07-31), one boundary:
+Three rulings, one boundary. The first two (operator, 2026-07-31) draw
+the line between the engine and the implementation's git topology; the
+third (operator, 2026-08-01, §6) draws it between the engine and the
+chain's module graph:
 
 **The engine records, never navigates.** The engine's entire git
 surface is the tick record — one tick = one commit on the tip it was
@@ -18,6 +21,12 @@ per tip, and an optimistic verify refuses to commit onto a tip that
 moved mid-tick. Not a total lock — a signal, plus a fact when the
 signal was bypassed. The engine does not choose the tip, name it, or
 move between tips.
+
+**The engine hands the chain its API.** A chain is a plugin loaded into
+a host, not a library consumer resolving its own copy. The engine calls
+the chain's factory with its own surface; the chain imports no engine
+value at runtime, so a second physical engine in one process stops
+being reachable. See §6.
 
 Why: the job apparatus (v0.5 §5, grown through v0.6.x) put the engine
 on the wrong side of its own boundary — branch grammar (`job/<name>`),
@@ -43,22 +52,31 @@ with no dedicated branch to visit, sync, or filter.
 
 Version-mismatch posture carries over from v0.9: the removals are
 subtractive, and out-of-model invocations (a stale `job/<name>` branch
-workflow) get documentation, not machinery.
+workflow) get documentation, not machinery. §6 does not reopen it —
+removing the chain's runtime dependency is an identity change, and it
+compares no versions at all. Drift between a bay's *installed* version
+and its chain stays parked, because after §6 the installed copy no
+longer executes.
 
 Supersedes v0.5 §5 (the job convention: branch grammar, lifecycle
 choreography, extract), v0.6 §4 (`job new`'s branch legs; seeding
 itself survives), and v0.6 §5 (`Chain.harvest` — extract's consumer
-dies with it). Frozen files stay frozen; this file is the ruling of
-record. v0.6 §2–3 (config/state residency and `--job` resolution) and
-v0.6.2 §6 (`Chain.friction`, minus its extract-harvest leg) survive
-unchanged.
+dies with it). §6 additionally supersedes v0.2 §2's `agent` named
+export, v0.2 §3's default-export-a-`Chain` contract, and v0.3 §2's
+`ChainModule.forkResolver` bridge. Frozen files stay frozen; this file
+is the ruling of record. v0.6 §2–3 (config/state residency and `--job`
+resolution) and v0.6.2 §6 (`Chain.friction`, minus its extract-harvest
+leg) survive unchanged.
 
 Blast radius: `src/job.ts`, `src/cli.ts`, `src/Dispatcher.ts`,
-`src/Phase.ts`, `src/git.ts`, `tests/`, `README.md`, `docs/CLI.md`,
+`src/Phase.ts`, `src/git.ts`, `src/index.ts`, `src/builtinGates.ts`,
+`tests/`, `examples/`, `README.md`, `docs/CLI.md`,
 `docs/CHAIN-AUTHORING.md`, new `docs/MIGRATING-0.11.md`, CHANGELOG.
-Net-negative line count is the expectation, not a hope. This repo's
-own `.flume/chain.ts` declares none of the removed fields — no
-companion change.
+Net-negative line count is the expectation for the job removals; §6 is
+additive in the engine and subtractive in every chain. This repo's own
+`.flume/chain.ts` declares none of the removed job fields, but §6 does
+require a companion change to it — the dogfood chain moves to the
+factory shape in the same commit as the loader that calls it.
 
 Explicitly not in this line: any engine verb that creates branches or
 worktrees; per-tick claims; mtime-heartbeat claim staleness
@@ -66,7 +84,9 @@ worktrees; per-tick claims; mtime-heartbeat claim staleness
 appear — pid-liveness is correct for the single-machine bays that
 exist); commit-tree+update-ref CAS commits (the verify's residual
 check-to-commit window defends against race-timed adversaries the
-threat model doesn't contain); any replacement for `extract`.
+threat model doesn't contain); any replacement for `extract`; any
+loader hook, specifier rewrite, version handshake, or lockfile compare
+in service of §6.
 
 ## 2. A job is a state root
 
@@ -184,7 +204,82 @@ commit → tick reports tip-moved, no commit lands, working tree retains
 agent output; unmoved ref commits exactly as today; the tip-moved
 outcome is distinguishable in the verdict a supervisor reads.
 
-## 6. Docs
+## 6. The chain is a plugin, not a consumer
+
+The engine hands the chain its API. A chain module's default export is a
+**factory** the engine calls with its own surface; `chain.ts` never
+imports the engine at runtime.
+
+Why: a chain today writes `import { tscGate } from "@dtmd/flume"`, which
+Node resolves by walk-up from the chain's directory. That makes the chain
+a *consumer* resolving its own copy of a library — so a second physical
+copy is reachable whenever the running engine is not the one the walk-up
+finds. Two field-traced shapes (consumer bay, engine 0.9.0):
+
+- A globally-installed engine is structurally unreachable from the
+  chain's import, so the run dies with a raw `ERR_MODULE_NOT_FOUND`
+  naming the very package that is running.
+- With a bay copy present, the process runs **two engines**: the invoked
+  dist drives the Dispatcher while the chain constructs Phase/Gate/Agent
+  objects from the bay copy. `instanceof` and module-level state split
+  across two physical copies **at equal versions**. Nothing reports it,
+  and the output is commits.
+
+The second is the one that rules the design. A silent degradation whose
+product is commits is what `engineering.md`'s *Loud or nothing* forbids
+outright, and a refusal is the wrong fix — the condition should not be
+reachable. Removing the chain's runtime dependency removes it by
+construction, where a specifier rewrite or an identity check would only
+redirect or report it.
+
+Shape:
+
+- A chain module default-exports `(api: FlumeApi) => ChainModule`, where
+  `ChainModule` is `{ chain: Chain; agent?: Agent; forkResolver?: ForkResolver }`.
+  Everything the chain previously supplied as a named export now rides
+  the factory's return, because a named export cannot receive the API.
+- `FlumeApi` carries the runtime surface a chain composes with — the
+  builtin gates, `setupWorktree`, the pending-schema helpers, the agent
+  constructors, the error classes chains branch on. It is the same
+  objects the engine itself holds, passed by reference, never resolved.
+- **Type-only imports stay.** `import type { Chain, FlumeApi } from
+  "@dtmd/flume"` is erased at runtime, so a types-only devDependency
+  cannot execute and its staleness cannot reach a tick.
+- A chain module whose default export is not a function is **refused**
+  at load with a usage-shaped error naming the migration — the v0.2 §3
+  mount-dead class, not a silent fallback to the old shape.
+- The engine's own dogfood chain moves to the same shape. No exemption
+  for the host repo.
+
+`src/index.ts` remains the package's public surface for programmatic
+embedders (anyone constructing a `Dispatcher` directly) and for types.
+What changes is that chains stop taking *values* from it.
+
+Supersedes: v0.2 §2's `agent` named export re-resolving with the chain,
+v0.2 §3's "default-exports a valid Chain" as `chainLoadGate`'s check
+(now: default-exports a factory returning a valid `ChainModule`), and
+v0.3 §2's `ChainModule.forkResolver` named-export bridge.
+
+Explicitly not in this section: any loader hook or specifier rewriting;
+any version comparison, handshake, or lockfile check (the v0.9 doctrine
+stands — this is an identity change, not a version one).
+
+Blast radius: `src/Dispatcher.ts` (`loadChain`, `diskChainLoader`),
+`src/index.ts` (the `FlumeApi` type and the object the engine passes),
+`src/builtinGates.ts` (`chainLoadGate`'s validation), `.flume/chain.ts`,
+`examples/`, `tests/` (every `staticLoader` fixture), `README.md`,
+`docs/CHAIN-AUTHORING.md`, `docs/MIGRATING-0.11.md`, CHANGELOG.
+
+Acceptance: a chain factory receives the **identity-same** objects the
+dispatcher holds (compared with `toBe`, not deep-equal — a resolved
+second copy would pass a structural check); a consumer chain's only
+engine import is `import type`; a default export that is not a function
+exits with the mount-dead code and names the migration; a chain that
+value-imports the engine is unnecessary to test because nothing in the
+engine resolves it; `.flume/chain.ts` runs under the factory shape with
+the suite green.
+
+## 7. Docs
 
 - `README.md`, `docs/CLI.md`: jobs described as coexisting state
   roots; branch guidance reduced to "run on whatever branch you want
@@ -192,25 +287,41 @@ outcome is distinguishable in the verdict a supervisor reads.
   recipe; tip claim/verify behavior documented as facts an operator
   may hit.
 - `docs/CHAIN-AUTHORING.md`: `harvest` retired; `seedDir` and
-  `friction` unchanged.
+  `friction` unchanged. The chain-shape section leads with the factory
+  (§6) — every value the chain composes with arrives as a parameter,
+  and the only engine import a chain writes is `import type`.
 - New `docs/MIGRATING-0.11.md`: for bays with live `job/<name>`
   branches — integrate or abandon the branch with ordinary git (merge
   keeps the record, squash keeps it clean; the state root rides
   either way), delete the branch, done. Includes the extract-
-  replacement recipe (side branch + operator integration).
+  replacement recipe (side branch + operator integration). Also
+  carries the §6 chain-shape migration: wrap the existing chain object
+  in a factory, take every engine value from the parameter, and demote
+  the remaining engine import to `import type`. Names the symptom
+  operators will have already seen — a raw `ERR_MODULE_NOT_FOUND` for
+  the package that is running, or unexplained `instanceof` failures —
+  so the doc is findable from the failure.
 
 Acceptance: `grep -rin 'extract' README.md docs/CLI.md
 docs/CHAIN-AUTHORING.md` is empty; MIGRATING-0.11 contains the
-branch-integration and extract-replacement recipes.
+branch-integration, extract-replacement, and chain-factory recipes;
+no doc shows a chain taking a *value* from an engine import.
 
-## 7. CHANGELOG
+## 8. CHANGELOG
 
 - 0.11.0 section: Breaking — the job branch convention (`job/<name>`)
   is retired; `flume job extract` and `Chain.harvest` are removed; the
   HEAD-guard legs on tick/loop are removed; `job new`/`run`/`rm` no
-  longer create, assert, or switch branches. Added — advisory tip
-  claim (one flume writer per tip, worktree-visible, stale-reclaimed)
-  and tip-moved verify (no commit onto a tip that moved mid-tick;
-  reported as a tick fact). Existing `job/<name>` branches are the
-  operator's to integrate — see MIGRATING-0.11.
+  longer create, assert, or switch branches. **A chain module now
+  default-exports a factory `(api) => ChainModule` instead of a `Chain`
+  object, and takes every engine value from that parameter; `agent` and
+  `forkResolver` move from named exports onto the factory's return. A
+  non-function default export is refused. This removes the dual-engine
+  process class — a globally-invoked engine running against a bay-
+  resolved chain copy, splitting `instanceof` and module state at equal
+  versions — see MIGRATING-0.11.** Added — advisory tip claim (one
+  flume writer per tip, worktree-visible, stale-reclaimed) and
+  tip-moved verify (no commit onto a tip that moved mid-tick; reported
+  as a tick fact). Existing `job/<name>` branches are the operator's to
+  integrate — see MIGRATING-0.11.
 - Version bump + `npm publish` stay human-performed at cut time.
