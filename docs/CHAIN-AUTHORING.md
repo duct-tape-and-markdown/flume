@@ -231,13 +231,11 @@ phases never run `afterMerge` (they commit straight to the trunk).
 ### Use the built-ins first
 
 ```ts
-import {
-  shellGate,
-  tscGate,
-  vitestGate,
-  eslintGate,
-  pendingGate,
-} from "@dtmd/flume";
+const factory: ChainFactory = (flume) => {
+  const { shellGate, tscGate, vitestGate, eslintGate, pendingGate } = flume;
+
+  // ...
+};
 ```
 
 - `tscGate` — `pnpm tsc --noEmit`.
@@ -519,25 +517,29 @@ pickable without waiting for an interim plan tick.
 ### `setupWorktree` for fanout
 
 A fresh worktree holds only tracked files; provision the gitignored deps
-the gates need first. **Default:** the exported `setupWorktree` helper —
-sibling to the `builtinGates` precedent (`shellGate`, `tscGate`, …),
-re-exported from `flume`'s top level — inspects the worktree for a
-lockfile and runs the install it implies: `pnpm-lock.yaml` →
-`pnpm install --frozen-lockfile` (pnpm hardlinks from its global store,
-so it costs seconds, not a re-download); `package-lock.json` → `npm ci`;
-neither → rejects instead of guessing a package manager.
+the gates need first. **Default:** the `setupWorktree` helper — sibling to
+the `builtinGates` precedent (`shellGate`, `tscGate`, …), carried on the
+factory's `api` parameter — inspects the worktree for a lockfile and runs
+the install it implies: `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
+(pnpm hardlinks from its global store, so it costs seconds, not a
+re-download); `package-lock.json` → `npm ci`; neither → rejects instead of
+guessing a package manager.
 
 ```ts
-import { setupWorktree } from "flume";
+const factory: ChainFactory = (flume) => {
+  const { setupWorktree } = flume;
 
-const chain: Chain = {
-  // ...
-  build: {
+  const chain: Chain = {
     // ...
-    async setupWorktree({ worktreePath }) {
-      await setupWorktree(worktreePath);
+    build: {
+      // ...
+      async setupWorktree({ worktreePath }) {
+        await setupWorktree(worktreePath);
+      },
     },
-  },
+  };
+
+  return { chain };
 };
 ```
 
@@ -674,16 +676,16 @@ Two chain-author consequences:
 one implementation, `claudeCode()`, plus two decorators.
 
 ```ts
-import {
-  claudeCode,
-  withSessionCapture,
-  withTerminalRenderer,
-} from "@dtmd/flume";
+const factory: ChainFactory = (flume) => {
+  const { claudeCode, withSessionCapture, withTerminalRenderer } = flume;
 
-const agent = claudeCode({
-  outputFormat: "stream-json",
-  dangerouslySkipPermissions: true,
-});
+  const agent = claudeCode({
+    outputFormat: "stream-json",
+    dangerouslySkipPermissions: true,
+  });
+
+  // ...
+};
 ```
 
 ### `claudeCode(opts)`
@@ -1112,7 +1114,7 @@ A chain that wants a phase's prompt to carry recent tick history renders it
 itself, from `promptArgs`:
 
 ```ts
-import { readTickVerdicts } from "flume";
+import { readTickVerdicts } from "@dtmd/flume";
 
 const plan: Phase = {
   name: "plan",
@@ -1128,6 +1130,11 @@ const plan: Phase = {
   },
 };
 ```
+
+`readTickVerdicts` is not yet carried on `FlumeApi` (unlike the gates,
+`setupWorktree`, and the agent constructors above), so it stays a direct
+package import until it moves — see the open question in
+`.flume/plan/open-questions.md`.
 
 Whether to render history at all, how far back, and what to do with a
 reverted tick's `gateResults[].details` (surface it verbatim? summarize it?

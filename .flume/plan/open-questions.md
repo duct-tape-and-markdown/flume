@@ -9,6 +9,44 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `readTickVerdicts` is missing from `FlumeApi` (v0.11 §6 gap, sibling to FLUMEAPI-ERROR-CLASSES-MISSING)
+
+**PARKED**
+
+`src/flumeApi.ts`'s `FlumeApi` carries every other engine value a chain
+composes with (gates, `setupWorktree`, `claudeCode`/decorators, the
+`instanceof` error classes) — but not `readTickVerdicts`, even though
+`src/Dispatcher.ts:265`'s own doc comment says it exists "so a chain can
+render recent tick history into a prompt," and `docs/CHAIN-AUTHORING.md`
+§8 shows exactly that: a `Phase.promptArgs` calling `readTickVerdicts`
+from inside the chain module. `src/index.ts` still exports it as a plain
+value (alongside `Dispatcher`/`consoleLogger`, the embedder-only exports
+§6 explicitly leaves as value imports) — but unlike those two,
+`readTickVerdicts` is meant to run *inside* the chain, not just around it.
+That contradicts §6's acceptance ("a consumer chain's only engine import
+is `import type`") for any chain that renders tick history into a prompt.
+No example chain (`cascade-chain.ts`, `backlog-groomer-chain.ts`,
+`.flume/chain.ts`) calls it today, so nothing currently exercises the gap
+end to end — same shape as the error-classes gap
+(FLUMEAPI-ERROR-CLASSES-MISSING/947cb4a), just missed by that audit
+because §6's spec text names the error classes explicitly and doesn't
+name `readTickVerdicts`.
+
+Found while executing CHAINAUTHORING-DOCS-PRE-FACTORY-IMPORTS: that entry's
+fourth site (`docs/CHAIN-AUTHORING.md` §8, `readTickVerdicts`) is docs-only
+by its own file declaration, so it can't carry the `src/flumeApi.ts` (and
+`src/index.ts`) edit this needs — shipped the other three sites
+(built-ins, `setupWorktree`, agent seam) and left this one as an honest
+direct-import example with a citation back to this question, rather than
+writing a `const { readTickVerdicts } = flume` line that doesn't work
+against the actual `FlumeApi` shape today.
+
+Recommended: file a pending entry mirroring FLUMEAPI-ERROR-CLASSES-MISSING
+— add `readTickVerdicts: typeof readTickVerdicts` to the `FlumeApi`
+interface and `buildFlumeApi()` (`src/flumeApi.ts`), per RELEASE-v0.11.md
+§6. A follow-up (or the same entry, if its fence can reach both) then
+finishes `docs/CHAIN-AUTHORING.md`'s fourth site and removes this question.
+
 ## A schema-valid tag can be unshippable through fanout on win32
 
 **PARKED**
