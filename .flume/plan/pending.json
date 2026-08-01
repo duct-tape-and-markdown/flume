@@ -1,47 +1,5 @@
 [
   {
-    "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the loop lock (787-805) takes liveness from liveLoopPid — already imported at :32 — instead of re-deriving the probe inline"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "liveLoopPid docstring (269-275) names the lock among its consumers; its reuse claim only becomes true with this entry"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "add the agreement pin to the §2a loop-lock describe (657); the :879 status-liveness describe already narrates the sharing"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume loop's lock re-derives liveLoopPid's pid probe inline — the helper's own docstring says it was exported to prevent exactly this second implementation.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "the loop lock and `flume status` return the same liveness verdict over one live and one stale pidfile — one probe, so a future one-sided change breaks it"
-      }
-    ],
-    "acceptance": "Liveness reaches the loop lock through liveLoopPid; no second process.kill pid probe remains in src/cli.ts; the loop-lock and status-liveness suites stay green.",
-    "notes": "Re-verified this tick against post-JOB-EXTRACT-REMOVED line numbers: cli.ts:788-797 repeats liveLoopPid's read/finite/positive/kill(pid,0) sequence; job.ts:269-275 claims the opposite. Drop-in — the lock wants the pid only for its refusal message, which liveLoopPid returns, and the block is already async. Behavior-identical today, so nothing fails pre-fix (the named exception); the agreement pin is what makes a later divergence fail."
-  },
-  {
     "tag": "PARSEPENDING-DUP-ERROR-MAPPING",
     "gate": {
       "kind": "open"
