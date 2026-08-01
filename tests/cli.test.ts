@@ -885,7 +885,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
-    "claim file (and loop.pid) are gone after SIGTERM",
+    "claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32 (TerminateProcess, no handler runs) both survive and the claim is stale-reclaimable — the amended v0.11 §4 outcome",
     async () => {
       const repo = await makeJobRepo("main");
       try {
@@ -918,15 +918,43 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
         const pidPath = join(repo.dir, ".flume", "loop.pid");
         expect(existsSync(claimPath)).toBe(true);
         expect(existsSync(pidPath)).toBe(true);
+        // tsx re-execs itself into a second node process to run the ESM
+        // loader, so the spawned `child`'s own pid is the bootstrapper's,
+        // not the one that actually acquired the locks and wrote its own
+        // pid into both files — read the real holder back off disk and
+        // signal that process directly, matching what an operator's
+        // SIGTERM/taskkill targets in production (no tsx wrapper there).
+        const recordedPid = await readFile(claimPath, "utf8");
 
         const exited = new Promise<void>((resolveExit) => {
           child.on("exit", () => resolveExit());
         });
-        child.kill("SIGTERM");
+        process.kill(Number(recordedPid), "SIGTERM");
         await exited;
 
-        expect(existsSync(claimPath)).toBe(false);
-        expect(existsSync(pidPath)).toBe(false);
+        if (process.platform === "win32") {
+          // v0.11 §4 (amended): SIGTERM maps to TerminateProcess on win32,
+          // which runs no handler — dropLock (src/cli.ts) never fires, so
+          // both the tip claim and loop.pid survive the kill exactly as a
+          // `kill -9` would. Release-on-signal is a POSIX guarantee only;
+          // the cross-platform guarantee is stale-reclaim — the claim's
+          // recorded pid now names the dead holder, so the next acquirer's
+          // liveness probe (exercised end-to-end via `flume status`, which
+          // already asserts this wording elsewhere in this suite) reclaims
+          // it rather than refusing.
+          expect(existsSync(claimPath)).toBe(true);
+          expect(existsSync(pidPath)).toBe(true);
+          expect(await readFile(claimPath, "utf8")).toBe(recordedPid);
+
+          const status = await runCli(repo.dir, ["status"]);
+          expect(status.code).toBe(0);
+          expect(status.out).toContain(
+            "tip claim present, process dead — stale",
+          );
+        } else {
+          expect(existsSync(claimPath)).toBe(false);
+          expect(existsSync(pidPath)).toBe(false);
+        }
       } finally {
         await repo.cleanup();
       }

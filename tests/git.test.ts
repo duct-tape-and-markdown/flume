@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -206,9 +206,12 @@ describe("removeWorktree (§7)", () => {
     expect(existsSync(path)).toBe(false);
     // Clearing only happened because the fallback's recursive `rm` ran on
     // this exact path — proof the bare-remove failure actually fell
-    // through to §7's fallback rather than clearing on its own.
+    // through to §7's fallback rather than clearing on its own. The
+    // fallback has namespaced the path since REMOVEWORKTREE-WIN32-PATH-
+    // TOTAL-LIMIT; asserting the raw `path` only stayed green because
+    // `toNamespacedPath` is identity on POSIX.
     expect(rm).toHaveBeenCalledWith(
-      path,
+      toNamespacedPath(path),
       expect.objectContaining({ recursive: true }),
     );
   });

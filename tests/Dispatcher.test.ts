@@ -100,6 +100,10 @@ async function makeFixture(): Promise<Fixture> {
   // Byte-exact checkout on Windows: revert-path assertions compare file
   // content, and a host-level autocrlf=true would rewrite LF on reset.
   await exec("git", ["config", "core.autocrlf", "false"], opts);
+  // Deep-path fixtures (prior-attempts/<key>.reverted/<rel> etc.) push git
+  // operations on this repo past win32's ~260-char default limit; without
+  // this pin git itself — not just Node's fs calls — refuses the path.
+  await exec("git", ["config", "core.longpaths", "true"], opts);
   await writeFile(join(repo, "README.md"), "seed\n");
   await mkdir(join(repo, "src"), { recursive: true });
   await writeFile(join(repo, "src", "seed.ts"), "// seed\n");
@@ -5801,7 +5805,17 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     ).toBe(true);
   }, 20_000);
 
-  it("a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)", async () => {
+  // win32-skip: this drives a TAG_MAX_LENGTH tag through real fanout, which
+  // provisions a git worktree keyed on the tag's slug. Measured on a real
+  // win32 host, `git worktree add` itself refuses around ~200-char worktree
+  // paths ("fatal: '$GIT_DIR' too big"), independent of core.longpaths —
+  // below win32's ~260-char total-path limit, so no namespacing fixes it.
+  // The tag-length ceiling this test pins is real and stays enforced on
+  // POSIX; on win32 the worktree never comes up, so the tick would fail on
+  // git's own ceiling rather than reach the assertion this test exists for.
+  it.skipIf(process.platform === "win32")(
+    "a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)",
+    async () => {
     const tag = "A".repeat(TAG_MAX_LENGTH);
     await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
     // The real reader accepts the boundary tag — a value one over would
@@ -5860,15 +5874,21 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     expect(files.length).toBe(1);
     expect(files[0]!.length).toBeLessThanOrEqual(255);
     expect(files[0]).toContain(tag);
-  }, 20_000);
+    },
+    20_000,
+  );
 });
 
 // win32 lane (v0.4 §6): fanout worktree paths nest as deep as job dirs and
 // hit the identical MAX_PATH gap job.ts's own baseline pin exists to spare
 // (mirrored coverage in tests/git.test.ts for the shared helper itself).
-// TAG-LENGTH-BOUND-AGREEMENT-PIN above is the real-world acceptance signal:
-// a long-tag worktree path is exactly what trips MAX_PATH first on the
-// windows CI lane when this pin is missing.
+// TAG-LENGTH-BOUND-AGREEMENT-PIN above is win32-skipped, not a win32
+// acceptance signal: measured on a real win32 host, `git worktree add`
+// refuses a long-tag fanout path around ~200 chars — below MAX_PATH and
+// unaffected by core.longpaths — so that pin is unreachable through fanout
+// on this platform. The createWorktree/prior-attempt cases below stay deep
+// only via chain.friction/namespace nesting that fs operations (not `git
+// worktree add` itself) walk, which core.longpaths does cover.
 describe.runIf(process.platform === "win32")(
   "Dispatcher fanout — createWorktree pins core.longpaths (v0.4 §6)",
   () => {
@@ -6281,7 +6301,14 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(snapDir)).toBe(false);
     }, 20_000);
 
-    it("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+    // skip: same ceiling as TAG-LENGTH-BOUND-AGREEMENT-PIN (above the fanout
+    // suite) — a TAG_MAX_LENGTH tag used as the fanout key makes createWorktree
+    // provision a worktree at a path git itself refuses on a real win32 host
+    // (measured: `git worktree add` fails ~200 chars, "fatal: '$GIT_DIR' too
+    // big", below MAX_PATH and unaffected by core.longpaths). The tick would
+    // fail on that git refusal before ever reaching the §5 round-trip this
+    // test exists to pin.
+    it.skip("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
       // from the reverted commit's own diff path), the depth driver here is
       // the §5 record's own flat filename: priorAttemptPath is
@@ -6369,117 +6396,16 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(priorAttemptPath)).toBe(false);
     }, 20_000);
 
-    it("createWorktree creates the worktree when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: fresh create)", async () => {
-      const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-"));
-      const savedOverride = process.env.FLUME_WORKTREES_DIR;
-      try {
-        const base = join(container, "wt-base");
-        process.env.FLUME_WORKTREES_DIR = base;
-
-        const tag = "DEEP-WT-A";
-        await writePending(fx.repo, [makeEntry(tag, ["src/deep-wt-a.ts"])]);
-        new Baton(join(fx.repo, ".flume")).wake("build");
-
-        const phase = makePhase({ name: "build", concurrency: "fanout" });
-        const chain: Chain = { phases: [phase], humanOnly: [] };
-
-        // Same deep-nesting shape as WRITEREVERTNOTE/HARVESTFRICTION-
-        // WIN32-PATH-TOTAL-LIMIT above (six 50-char segments), driven off
-        // the namespace instead of chain.friction: createWorktree joins
-        // wtBase with this.opts.namespace and the tag slug, unwrapped.
-        const deepNamespace = join(
-          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
-        );
-        const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-        const worktreePath = join(base, deepNamespace, slug);
-        expect(worktreePath.length).toBeGreaterThan(260);
-
-        const agent = fanoutAgent({
-          [slug]: async (cwd) => {
-            await writeAndCommit(
-              cwd,
-              "src/deep-wt-a.ts",
-              "ok\n",
-              `build(${tag}): ship`,
-            );
-          },
-        });
-
-        const dispatcher = new Dispatcher({
-          chainLoader: staticLoader(chain),
-          repoRoot: fx.repo,
-          configDir: fx.configDir,
-          agent,
-          log: silent,
-          namespace: deepNamespace,
-        });
-
-        const outcome = await dispatcher.tick();
-        expect(outcome.result?.shippedTags).toEqual([tag]);
-      } finally {
-        if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
-        else process.env.FLUME_WORKTREES_DIR = savedOverride;
-        await rm(container, { recursive: true, force: true });
-      }
-    }, 20_000);
-
-    it("createWorktree cleans up a stale worktree dir and creates the replacement when the namespace/slug path nests past win32's ~260-char limit (WORKTREE-WIN32-PATH-TOTAL-LIMIT: stale cleanup)", async () => {
-      const container = await mkdtemp(join(tmpdir(), "flume-wt-w32-stale-"));
-      const savedOverride = process.env.FLUME_WORKTREES_DIR;
-      try {
-        const base = join(container, "wt-base");
-        process.env.FLUME_WORKTREES_DIR = base;
-
-        const tag = "DEEP-WT-B";
-        await writePending(fx.repo, [makeEntry(tag, ["src/deep-wt-b.ts"])]);
-        new Baton(join(fx.repo, ".flume")).wake("build");
-
-        const phase = makePhase({ name: "build", concurrency: "fanout" });
-        const chain: Chain = { phases: [phase], humanOnly: [] };
-
-        const deepNamespace = join(
-          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
-        );
-        const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-        const worktreePath = join(base, deepNamespace, slug);
-        expect(worktreePath.length).toBeGreaterThan(260);
-
-        // Simulate a crashed prior run: a stray directory already sits at
-        // the worktree path, unregistered with git — createWorktree's
-        // existsSync branch must detect it, fail the `git worktree
-        // remove` attempt, and fall through to the raw rm cleanup before
-        // re-creating it.
-        await mkdir(worktreePath, { recursive: true });
-        await writeFile(join(worktreePath, "stale.txt"), "leftover\n");
-
-        const agent = fanoutAgent({
-          [slug]: async (cwd) => {
-            await writeAndCommit(
-              cwd,
-              "src/deep-wt-b.ts",
-              "ok\n",
-              `build(${tag}): ship`,
-            );
-          },
-        });
-
-        const dispatcher = new Dispatcher({
-          chainLoader: staticLoader(chain),
-          repoRoot: fx.repo,
-          configDir: fx.configDir,
-          agent,
-          log: silent,
-          namespace: deepNamespace,
-        });
-
-        const outcome = await dispatcher.tick();
-        expect(outcome.result?.shippedTags).toEqual([tag]);
-        expect(existsSync(join(worktreePath, "stale.txt"))).toBe(false);
-      } finally {
-        if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
-        else process.env.FLUME_WORKTREES_DIR = savedOverride;
-        await rm(container, { recursive: true, force: true });
-      }
-    }, 20_000);
+    // WORKTREE-WIN32-PATH-TOTAL-LIMIT (fresh create + stale cleanup)
+    // retired: operator ruling on a real win32 host found `git worktree
+    // add` itself refusing a namespace/slug path around ~200 chars
+    // ("fatal: '$GIT_DIR' too big"), below win32's ~260-char total-path
+    // limit and unaffected by core.longpaths — the exact depth these two
+    // cases drove the namespace to in order to exercise createWorktree's
+    // deep-path handling. The claim they pinned (createWorktree succeeds
+    // past 260 chars) is untestable through real fanout on win32; kept in
+    // the suite the two cases would run zero-width on any other platform
+    // (this describe block is win32-only), which is the vacuity the
+    // "green verdict is non-vacuous" standard rules out rather than files.
   },
 );
