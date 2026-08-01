@@ -76,6 +76,42 @@
     "notes": "Found auditing f80eb3a/16cd332 (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT): that entry wrapped dest mkdir/writeFile but left its own stale-snapshot rm (2283) and clearPriorAttempt's rm (2239) unwrapped - both walk the same deep dir. clearPriorAttempt's caller (runSingleton:1220) has no surrounding try/catch and tick()'s catch only swallows PendingParseFailure, so this throws out of the tick - GITTIPCLAIM's crash class, not the snapshot entry's silent-loss shape."
   },
   {
+    "tag": "PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readPriorAttempt's existsSync/readFile (2202, 2204), writePriorAttempt's mkdir/writeFile (2227-2228), and clearPriorAttempt's rm(priorAttemptPath(key)) (2238) route through toNamespacedPath - the §5 record's own read/write/clear, distinct from the already-pending rm(revertedSnapshotDir) at 2239"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "win32-gated coverage beside the SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT suite: write→read→clear round-trips a §5 prior-attempt record when priorAttemptPath (flumeDir/prior-attempts/<key>.json) nests past win32's ~260-char limit"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "readPriorAttempt/writePriorAttempt/clearPriorAttempt's existsSync/readFile/mkdir/writeFile/rm on priorAttemptPath are unwrapped - same win32 total-path-limit shape, but on the §5 record itself.",
+    "per": {
+      "path": "spec/RELEASE-v0.4.md",
+      "section": "6. win32 portability"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "writePriorAttempt/readPriorAttempt/clearPriorAttempt round-trip a record when priorAttemptPath nests past win32's ~260-char limit - fails on the pre-fix tree via ENAMETOOLONG on writePriorAttempt's mkdir, and readPriorAttempt silently returns undefined instead of the just-written record"
+      }
+    ],
+    "acceptance": "readPriorAttempt/writePriorAttempt/clearPriorAttempt's fs calls on priorAttemptPath all route through toNamespacedPath; a win32-gated deep-key fixture round-trips write→read→clear; tsc/vitest green.",
+    "notes": "Sixth sibling, found auditing 935ea4d/63ef1d0 (WORKTREE-WIN32-PATH-TOTAL-LIMIT ship) for remaining instances. Two failure modes in one function pair: writePriorAttempt's mkdir (2227) is uncaught and throws ENAMETOOLONG into every caller (render-refused/tip-moved/gate-revert/voluntary-bail paths); readPriorAttempt's existsSync (2202) returns false on a too-long path by Node's own contract, silently reporting 'no prior attempt' - the original SNAPSHOTREVERTEDFILES silent-loss shape."
+  },
+  {
     "tag": "WIN32-NAMESPACEDPATH-JOIN-UNSHARED",
     "gate": {
       "kind": "open"
