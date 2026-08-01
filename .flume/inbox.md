@@ -34,3 +34,25 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-07-31 — engine seams from the chain simplify review (operator)
+
+Three engine-side candidates surfaced by the 4-angle simplify pass on
+`.flume/chain.ts`; each is a dedup of a fact the engine already computes,
+not new capability. File as entries only where a spec/rules cite holds;
+park otherwise.
+
+1. **GateContext lacks touched-paths.** `git show --name-only` on the tick
+   commit is run independently by chainLoadGate, writablePathsGate, the
+   dispatcher's footprint derivation, and (until today) this chain's
+   changelogGate. One computation per commit on GateContext would retire
+   three in-engine copies and the shell-out every downstream chain gate
+   re-authors. Per engineering.md "The fix lands at the mechanism".
+2. **`showNameOnly` is not in the barrel.** This chain now imports it from
+   `../src/git.ts` directly; downstream bays (published dep) cannot. "An
+   export earns its consumer" — the consumer exists now. Moot for chains
+   if (1) ships.
+3. **Per-entry afterMerge suite cost — measured, no action.** The fast
+   lane is ~21s; per-entry granularity buys surgical revert attribution
+   and is the right trade at this suite size. Revisit trigger: fast-lane
+   wall time approaching minutes.
