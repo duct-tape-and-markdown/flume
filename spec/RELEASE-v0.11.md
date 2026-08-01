@@ -155,7 +155,11 @@ A `flume loop` claims the tip at start and releases it at exit.
 Acceptance: two `flume loop`s against different state roots on one
 branch — second refuses with the holder pid; same two loops from two
 worktrees on different branches — both run; claim file gone after
-clean exit and after SIGTERM; a hand-planted claim with a dead pid is
+clean exit, and after SIGTERM on POSIX; on win32 SIGTERM maps to
+`TerminateProcess`, which runs no handler, so the claim survives the
+kill and the next acquirer's liveness probe reclaims it as stale —
+release-on-signal is a POSIX guarantee, stale-reclaim is the
+cross-platform one; a hand-planted claim with a dead pid is
 reclaimed silently; `flume loop` on detached HEAD exits 1 before any
 tick.
 
