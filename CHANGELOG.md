@@ -94,6 +94,18 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   visibly stuck rather than silently wrong: the caller already catches,
   logs, and leaves the entry pending for retry, but the retry hit the same
   unwrapped join every time (v0.4 §6).
+- `acquireTipClaim`'s `mkdir`/`writeFile`/`unlink`, `liveTipClaimPid`'s
+  `existsSync`/`readFile`, and `release`'s `unlinkSync` now route
+  `tipClaimPath` through `toNamespacedPath`, the same idiom
+  `writeRevertNote`/`harvestFriction`/the friction counters/
+  `snapshotRevertedFiles`/`createWorktree` above were fixed with — here the
+  win32 ~260-char total-path limit is driven by `refPath` mirrored as
+  directories under `<commonDir>/flume/tip-claims`, the same branch naming
+  (`flume/<namespace>/slugify(entry.tag)`) `createWorktree` produces.
+  Unlike those siblings, `acquireTipClaim`'s `mkdir` had no surrounding
+  try/catch at all and `writeFile`'s only swallowed `EEXIST` — so the
+  miss propagated `ENAMETOOLONG` out to `cli.ts`'s rethrow, crashing
+  `flume loop`/`run` on win32 rather than silently degrading (v0.4 §6).
 - `Dispatcher.createWorktree` now pins `core.longpaths` on `repoRoot` before
   `git worktree add`, closing a win32 MAX_PATH gap fanout worktrees hit
   identically to job dirs (`job.ts` already pinned it for its own deep

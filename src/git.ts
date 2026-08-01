@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -280,8 +280,10 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
  * under different keying.
  */
 export async function liveTipClaimPid(claimPath: string): Promise<number | null> {
-  if (!existsSync(claimPath)) return null;
-  const pid = Number((await readFile(claimPath, "utf8")).trim());
+  if (!existsSync(toNamespacedPath(claimPath))) return null;
+  const pid = Number(
+    (await readFile(toNamespacedPath(claimPath), "utf8")).trim(),
+  );
   if (!Number.isFinite(pid) || pid <= 0) return null;
   try {
     process.kill(pid, 0);
@@ -325,10 +327,12 @@ export async function acquireTipClaim(
 ): Promise<TipClaim> {
   const commonDir = await gitCommonDir(cwd);
   const claimPath = tipClaimPath(commonDir, refPath);
-  await mkdir(dirname(claimPath), { recursive: true });
+  await mkdir(toNamespacedPath(dirname(claimPath)), { recursive: true });
   for (;;) {
     try {
-      await writeFile(claimPath, String(process.pid), { flag: "wx" });
+      await writeFile(toNamespacedPath(claimPath), String(process.pid), {
+        flag: "wx",
+      });
       break;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
@@ -341,7 +345,7 @@ export async function acquireTipClaim(
       // create's own possible EEXIST re-probes rather than assuming this
       // call won.
       try {
-        await unlink(claimPath);
+        await unlink(toNamespacedPath(claimPath));
       } catch {
         // Already gone — another reclaimer won the race; retry the create.
       }
@@ -351,7 +355,7 @@ export async function acquireTipClaim(
     path: claimPath,
     release: () => {
       try {
-        unlinkSync(claimPath);
+        unlinkSync(toNamespacedPath(claimPath));
       } catch {
         // already gone
       }

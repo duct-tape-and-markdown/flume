@@ -24,6 +24,7 @@ import {
   currentRefPath,
   dropLastCommit,
   gitCommonDir,
+  liveTipClaimPid,
   pinLongPaths,
   removeWorktree,
   revParse,
@@ -327,6 +328,34 @@ describe.runIf(process.platform === "win32")(
         { cwd: repo },
       );
       expect(again.trim()).toBe("true");
+    });
+  },
+);
+
+// win32 total-path limit (v0.4 §6): tipClaimPath mirrors refPath as nested
+// directories under commonDir/flume/tip-claims — the same shape
+// createWorktree's own branch naming (flume/<namespace>/slugify(entry.tag))
+// already needed toNamespacedPath for (WORKTREE-WIN32-PATH-TOTAL-LIMIT). A
+// refPath this deep pushes the claim path past win32's ~260-char limit.
+describe.runIf(process.platform === "win32")(
+  "acquireTipClaim / liveTipClaimPid / release — win32 total-path limit (GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    it("round-trips acquire/release when refPath's mirrored directories nest past win32's ~260-char limit", async () => {
+      const refPath = [
+        "refs",
+        "heads",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+      ].join("/");
+      const commonDir = await gitCommonDir(repo);
+      const claimPath = tipClaimPath(commonDir, refPath);
+      expect(claimPath.length).toBeGreaterThan(260);
+
+      const claim = await acquireTipClaim(repo, refPath);
+      expect(claim.path).toBe(claimPath);
+      expect(await liveTipClaimPid(claimPath)).toBe(process.pid);
+
+      claim.release();
+      expect(await liveTipClaimPid(claimPath)).toBeNull();
     });
   },
 );
