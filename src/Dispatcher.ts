@@ -1891,15 +1891,12 @@ export class Dispatcher {
         verdict.failure!,
       );
       // §13: this revert never reaches cherry-pick, so it's the only chance
-      // to capture what the commit actually touched — grab it before
-      // dropLastCommit discards the evidence.
-      let footprint: string[] | undefined;
-      try {
-        footprint = await git.showNameOnly(wt.path, postHead);
-      } catch {
-        // Best-effort, as elsewhere — the retry just partitions on declared
-        // files as before if this fails.
-      }
+      // to capture what the commit actually touched — runAfterCommitGates
+      // already computed this for its gate loop (engineering.md "The fix
+      // lands at the mechanism"), so reuse it instead of re-deriving via a
+      // second `git show --name-only` before dropLastCommit discards the
+      // evidence.
+      const footprint = verdict.touchedPaths;
       await git.dropLastCommit(wt.path, postHead);
       await this.writePriorAttempt(key, record);
       this.log.warn(
@@ -2012,6 +2009,10 @@ export class Dispatcher {
     /** First failing gate, structured so callers can persist a §5 record. */
     failure?: { gate: string; message: string; details?: string };
     results: GateResultEntry[];
+    /** The commit's touched paths, already computed for the gate loop below —
+     * exposed so callers don't re-derive via a second `git show --name-only`
+     * for the same commit (engineering.md "The fix lands at the mechanism"). */
+    touchedPaths: string[];
   }> {
     // Entry-scoped write guard (§5): a fanout tick's allowance narrows to the
     // assigned entry's declared files ∪ the phase's channel globs, with the
@@ -2062,10 +2063,11 @@ export class Dispatcher {
             ...(r.details ? { details: r.details } : {}),
           },
           results,
+          touchedPaths: commitTouchedPaths,
         };
       }
     }
-    return { ok: true, results };
+    return { ok: true, results, touchedPaths: commitTouchedPaths };
   }
 
   /**

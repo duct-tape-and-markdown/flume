@@ -2025,6 +2025,63 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     );
   }, 20_000);
 
+  it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (engineering.md 'the fix lands at the mechanism')", async () => {
+    // Same FOOT-STRAY shape as the footprint test above, but pinned on the
+    // git call count: runAfterCommitGates already shells out to
+    // `git show --name-only` once per commit to build the touchedPaths every
+    // afterCommit gate reads. The fanout caller re-deriving the identical
+    // commit's footprint via a second showNameOnly call is the duplicate
+    // this test catches if it's ever reintroduced.
+    await writePending(fx.repo, [makeEntry("FOOT-STRAY", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "foot-stray": async (cwd) => {
+        await writeFile(join(cwd, "src", "a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(FOOT-STRAY): overreach"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const showNameOnlySpy = vi.spyOn(git, "showNameOnly");
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      {
+        tag: "FOOT-STRAY",
+        outcome: "afterCommit-reverted",
+        footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+      },
+    ]);
+
+    // The reverted commit's touched paths are computed exactly once — inside
+    // runAfterCommitGates' own gate-loop capture — and reused by the fanout
+    // caller's §13 footprint grab, not re-derived via a second git call.
+    expect(showNameOnlySpy).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
   it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
     // Pending declares a different file; a singleton tick is not entry-scoped,
     // so writing elsewhere inside writablePaths ships. entryChannelPaths on a

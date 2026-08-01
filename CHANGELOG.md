@@ -290,6 +290,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   today — the fix is the shared computation, pinned in `tests/Gate.test.ts`
   and `tests/Dispatcher.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+- `runAfterCommitGates` computed `touchedPaths` once per commit for its own
+  gate loop (the dedup above) but discarded it on return; the fanout tick's
+  §13 afterCommit-revert footprint capture re-derived the identical commit's
+  touched paths via a second `git.showNameOnly` right after, one call site
+  short of the dedup it shipped alongside. `runAfterCommitGates` now returns
+  `touchedPaths`; the fanout caller reads it instead of re-deriving.
+  Behavior-identical today — the fix is the shared computation, pinned in
+  `tests/Dispatcher.test.ts` against a future one-sided edit
+  (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
 ## [0.9.0] - 2026-07-31
 
