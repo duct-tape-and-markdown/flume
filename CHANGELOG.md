@@ -357,6 +357,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   today — the fix is the shared computation, pinned in
   `tests/Dispatcher.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+- The §5 tip-verify-after-commit check (parent-check, revert via
+  `revertTipMovedCommit`, persist the §5 record, log) repeated the same
+  render-refused shape at both the singleton and fanout callsites instead of
+  sharing one method. Both now call a new `checkTipMoved`, which owns the
+  parent comparison and returns whether the tip moved; each callsite still
+  builds its own return shape from that boolean. Behavior-identical
+  today — the fix is the shared computation, pinned in
+  `tests/Dispatcher.test.ts` against a future one-sided edit
+  (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
 ### Changed
 

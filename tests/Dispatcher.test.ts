@@ -3728,6 +3728,138 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
   }, 20_000);
 });
 
+describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOVED-CHECK-UNSHARED)", () => {
+  it("both callsites persist same-shaped §5 records and emit a same-shaped log line for equivalent input, driven through the one shared method", async () => {
+    // ---- singleton — same race as the tip-verify describe's first test:
+    // an interloper commit lands on trunk after preHead is recorded, then
+    // the agent's own commit stacks on top of it.
+    const singletonPreHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const singletonPhase = makePhase({ name: "plan", concurrency: "singleton" });
+    const singletonChain: Chain = { phases: [singletonPhase], humanOnly: [] };
+    let singletonInterloperSha = "";
+    const singletonAgent = singleAgent(async (cwd) => {
+      await writeAndCommit(
+        cwd,
+        "src/interloper.ts",
+        "external\n",
+        "external: concurrent commit",
+      );
+      singletonInterloperSha = await head(cwd);
+      await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+    });
+    const singletonWarnings: string[] = [];
+    const singletonLog: Logger = {
+      info: () => {},
+      warn: (l) => singletonWarnings.push(l),
+      error: () => {},
+    };
+    const singletonDispatcher = new Dispatcher({
+      chainLoader: staticLoader(singletonChain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singletonAgent,
+      log: singletonLog,
+    });
+    const singletonOutcome = await singletonDispatcher.tick();
+
+    expect(singletonOutcome.tipMoved).toBe(true);
+    const singletonRecord = await readFile(
+      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      "utf8",
+    );
+
+    // ---- fanout — same race, scoped to the entry's own worktree, as the
+    // tip-verify describe's fanout test. A fresh fixture: the singleton
+    // portion above leaves its repo's working tree dirty (the soft-reset
+    // agent output survives uncommitted, §5 "agent output stays on disk"),
+    // and fanout worktree provisioning wants a clean starting repo.
+    const fx2 = await makeFixture();
+    try {
+      await writePending(fx2.repo, [makeEntry("FANOUT-TWIN", ["src/a.ts"])]);
+      new Baton(join(fx2.repo, ".flume")).wake("build");
+      const fanoutPhase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [],
+      });
+      const fanoutChain: Chain = { phases: [fanoutPhase], humanOnly: [] };
+      const fanoutPreHead = await head(fx2.repo);
+      let fanoutInterloperSha = "";
+      const fanoutAgentInst = fanoutAgent({
+        "fanout-twin": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/interloper.ts",
+            "external\n",
+            "external: concurrent commit",
+          );
+          fanoutInterloperSha = await head(cwd);
+          await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(FANOUT-TWIN): ship");
+        },
+      });
+      const fanoutWarnings: string[] = [];
+      const fanoutLog: Logger = {
+        info: () => {},
+        warn: (l) => fanoutWarnings.push(l),
+        error: () => {},
+      };
+      const fanoutDispatcher = new Dispatcher({
+        chainLoader: staticLoader(fanoutChain),
+        repoRoot: fx2.repo,
+        configDir: fx2.configDir,
+        agent: fanoutAgentInst,
+        log: fanoutLog,
+        maxParallel: 4,
+      });
+      const fanoutOutcome = await fanoutDispatcher.tick();
+
+      expect(fanoutOutcome.tipMoved).toBe(true);
+      const fanoutRecord = await readFile(
+        join(fx2.repo, ".flume", "prior-attempts", "fanout-twin.json"),
+        "utf8",
+      );
+
+      // §5 record shape (mode + field names + JSON formatting) is
+      // byte-identical for equivalent input — a one-sided edit to either
+      // callsite's persisted record breaks this pin once the two sides'
+      // real, necessarily-distinct SHAs are normalized out.
+      const normalize = (raw: string, expectedTip: string, observedTip: string) =>
+        raw
+          .split(expectedTip)
+          .join("<EXPECTED>")
+          .split(observedTip)
+          .join("<OBSERVED>");
+      expect(normalize(fanoutRecord, fanoutPreHead, fanoutInterloperSha)).toBe(
+        normalize(singletonRecord, singletonPreHead, singletonInterloperSha),
+      );
+      expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
+      expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
+
+      // Both callsites log through the same template —
+      // "[flume] <label>: tip moved (no commit) — expected <sha>, found <sha>"
+      // — with only the label (phase name vs. entry tag) and the shas
+      // (necessarily distinct per side) differing.
+      expect(singletonWarnings).toHaveLength(1);
+      expect(fanoutWarnings).toHaveLength(1);
+      const shape =
+        /^\[flume\] (.+): tip moved \(no commit\) — expected (\S+), found (\S+)$/;
+      const singletonMatch = singletonWarnings[0]!.match(shape);
+      const fanoutMatch = fanoutWarnings[0]!.match(shape);
+      expect(singletonMatch).not.toBeNull();
+      expect(fanoutMatch).not.toBeNull();
+      expect(singletonMatch![1]).toBe("plan");
+      expect(fanoutMatch![1]).toBe("FANOUT-TWIN");
+      expect(singletonMatch![2]).toBe(singletonPreHead);
+      expect(singletonMatch![3]).toBe(singletonInterloperSha);
+      expect(fanoutMatch![2]).toBe(fanoutPreHead);
+      expect(fanoutMatch![3]).toBe(fanoutInterloperSha);
+    } finally {
+      await fx2.cleanup();
+    }
+  }, 20_000);
+});
+
 describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", () => {
   it("a tip-moved tick is distinguishable in the run's errored-tick classification, even though it is never a NoCommitMode", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

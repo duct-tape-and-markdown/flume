@@ -1199,16 +1199,8 @@ export class Dispatcher {
       // mid-tick, a pull, a claim-less bare-tick collision) while the agent
       // ran. Checked before any gate runs — a commit on the wrong parent is
       // refused regardless of what the gates would have said.
-      const parent = await git.revParse(cwd, `${postHead}^`);
-      if (parent !== preHead) {
-        await this.revertTipMovedCommit(cwd, postHead);
-        committed = false;
-        tipMoved = true;
-        await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
-        this.log.warn(
-          `[flume] ${phase.name}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
-        );
-      }
+      tipMoved = await this.checkTipMoved(cwd, phase.name, key, preHead, postHead);
+      if (tipMoved) committed = false;
     }
 
     if (committed) {
@@ -1843,13 +1835,14 @@ export class Dispatcher {
       // provisioned from. The worktree's own branch is private to this
       // entry/tick, so a mismatch here means something reset or rewrote it
       // out from under the agent mid-run, not routine external traffic.
-      const parent = await git.revParse(wt.path, `${postHead}^`);
-      if (parent !== preHead) {
-        await this.revertTipMovedCommit(wt.path, postHead);
-        await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
-        this.log.warn(
-          `[flume] ${entry.tag}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
-        );
+      const tipMoved = await this.checkTipMoved(
+        wt.path,
+        entry.tag,
+        key,
+        preHead,
+        postHead,
+      );
+      if (tipMoved) {
         return { entry, committed: false, gateResults: [], tipMoved: true };
       }
     }
@@ -1947,6 +1940,34 @@ export class Dispatcher {
       );
     }
     await git.softReset(cwd, 1);
+  }
+
+  /**
+   * RELEASE-v0.11 §5 tip verify, run after a commit is observed: checks the
+   * commit's own parent against the tip this tick recorded at start, and on
+   * a mismatch reverts it (via {@link revertTipMovedCommit}), persists the
+   * §5 record, and logs — the one shared shape both the singleton and
+   * fanout callsites route through (engineering.md "The fix lands at the
+   * mechanism"), the same way {@link classifyNoCommit} and
+   * {@link persistRenderRefused} already centralize their persist+log.
+   * Each callsite still builds its own return shape from the boolean this
+   * returns. `label` is the phase name (singleton) or entry tag (fanout).
+   */
+  private async checkTipMoved(
+    cwd: string,
+    label: string,
+    key: string,
+    preHead: string,
+    postHead: string,
+  ): Promise<boolean> {
+    const parent = await git.revParse(cwd, `${postHead}^`);
+    if (parent === preHead) return false;
+    await this.revertTipMovedCommit(cwd, postHead);
+    await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
+    this.log.warn(
+      `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
+    );
+    return true;
   }
 
   private async invokeAgent(
