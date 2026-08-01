@@ -1,43 +1,5 @@
 [
   {
-    "tag": "WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "writeRevertNote's mkdir/writeFile (2209-2222) route the primaryDir/file path through node:path's toNamespacedPath (win32 extended-length \\\\?\\ prefix, no-op elsewhere) so the write survives Windows' total-path limit even when TAG_MAX_LENGTH's per-component bound holds"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "win32-gated coverage forcing the friction dir's full path well past ~260 chars (deep flumeDir nesting) - note lands; TAG-LENGTH-BOUND-AGREEMENT-PIN (5467) is the real-world acceptance signal already red on the windows CI lane"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "writeRevertNote silently drops the operator note under Windows' ~260-char total-path limit even when TAG_MAX_LENGTH's per-component bound holds - the guard is path-total-blind.",
-    "per": {
-      "path": "spec/RELEASE-v0.4.md",
-      "section": "6. win32 portability"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a revert note write succeeds when the friction dir's full path exceeds win32's ~260-char limit, driven through toNamespacedPath - TAG-LENGTH-BOUND-AGREEMENT-PIN (5467) is the same pin already red on the windows CI lane at HEAD"
-      }
-    ],
-    "acceptance": "windows CI job's pnpm test step is green including TAG-LENGTH-BOUND-AGREEMENT-PIN (CI run 30675682946); tsc/vitest green on POSIX.",
-    "notes": "CI run 30675682946 (windows), still red after WIN32-FANOUT-WORKTREE-LONGPATH shipped - distinct mechanism: core.longpaths only governs git's own path handling, never Node's fs calls. writeRevertNote's best-effort catch swallows the ENOENT/ENAMETOOLONG, so the friction dir is never created and the note silently never lands."
-  },
-  {
     "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
     "gate": {
       "kind": "open"
