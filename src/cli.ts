@@ -841,23 +841,12 @@ async function main(): Promise<number> {
     // dock must carry its lock with it.
     const lockPath = join(flumeDir, "loop.pid");
     mkdirSync(flumeDir, { recursive: true });
-    if (existsSync(lockPath)) {
-      const prior = Number(readFileSync(lockPath, "utf8").trim());
-      let alive = false;
-      if (Number.isFinite(prior) && prior > 0) {
-        try {
-          process.kill(prior, 0);
-          alive = true;
-        } catch {
-          // dead or not ours — reclaim
-        }
-      }
-      if (alive) {
-        console.error(
-          `[flume] another loop (pid ${prior}) already runs against ${flumeDir}; refusing`,
-        );
-        return 1;
-      }
+    const priorPid = await liveLoopPid(flumeDir);
+    if (priorPid !== null) {
+      console.error(
+        `[flume] another loop (pid ${priorPid}) already runs against ${flumeDir}; refusing`,
+      );
+      return 1;
     }
     writeFileSync(lockPath, String(process.pid));
     // v0.11 §4: advisory per-ref tip claim — one flume writer per tip, the

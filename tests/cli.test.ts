@@ -771,6 +771,71 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
     },
     30_000,
   );
+
+  // LOOP-LOCK-SHARES-LIVELOOPPID: the lock's liveness read and `flume
+  // status`'s supervisor-liveness read (v0.7 §17) both go through
+  // `liveLoopPid` (src/job.ts) — one probe, not two hand-rolled ones. This
+  // pins agreement so a future one-sided change to either call site fails
+  // here instead of silently diverging.
+  it(
+    "agrees with `flume status` on a live pid: loop refuses, status reports the same pid live",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        const pidPath = join(flumeDir, "loop.pid");
+        await mkdir(flumeDir, { recursive: true });
+        await writeFile(pidPath, String(process.pid), "utf8");
+
+        const loopResult = await runCli(repo.dir, ["loop", "--max", "0"]);
+        const statusResult = await runCli(repo.dir, ["status"]);
+
+        expect(loopResult.code).toBe(1);
+        expect(loopResult.out).toContain(
+          `another loop (pid ${process.pid}) already runs`,
+        );
+        expect(statusResult.out).toContain(
+          `supervisor pid ${process.pid} live`,
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "agrees with `flume status` on a stale pid: loop reclaims, status reports it dead",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        const pidPath = join(flumeDir, "loop.pid");
+        // Harvest a genuinely dead pid: spawn a no-op node child and wait
+        // for it to exit before recording its pid as the stale holder.
+        const probe = exec(process.execPath, ["-e", ""]);
+        const deadPid = probe.child.pid;
+        await probe;
+        expect(deadPid).toBeDefined();
+        await mkdir(flumeDir, { recursive: true });
+        await writeFile(pidPath, String(deadPid), "utf8");
+
+        // status first — before the loop below reclaims and removes the
+        // pidfile out from under it.
+        const statusResult = await runCli(repo.dir, ["status"]);
+        const loopResult = await runCli(repo.dir, ["loop", "--max", "0"]);
+
+        expect(statusResult.out).toContain(
+          "loop.pid present, process dead — stale",
+        );
+        expect(loopResult.code).toBe(0);
+        expect(loopResult.out).not.toContain("refusing");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
 });
 
 /**

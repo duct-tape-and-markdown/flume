@@ -135,6 +135,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `flume loop`'s cross-process lock now reads pidfile liveness through
+  `liveLoopPid` (`src/job.ts`) instead of re-deriving the same
+  read/parse/`process.kill(pid, 0)` sequence inline — the lock and `flume
+  status`'s supervisor-liveness probe (v0.7 §17) now go through one
+  mechanism, pinned by an agreement test
+  (`.claude/rules/engineering.md` §The fix lands at the mechanism).
 - `withSessionCapture`'s default `filename` now suffixes the ISO timestamp
   with the invocation's `cwd` basename, matching the discriminator this
   repo's own chain already applied on top of the default. Two fanout
