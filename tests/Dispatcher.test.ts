@@ -5164,6 +5164,114 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
   }, 20_000);
 });
 
+describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DEDUP)", () => {
+  it("singleton tick: every afterCommit gate receives the identical touchedPaths array for the commit", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let firstTouched: string[] | undefined;
+    let secondTouched: string[] | undefined;
+    const gateA: Gate = {
+      name: "capture-touched-a",
+      when: "afterCommit",
+      run(ctx) {
+        firstTouched = ctx.touchedPaths;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+    const gateB: Gate = {
+      name: "capture-touched-b",
+      when: "afterCommit",
+      run(ctx) {
+        secondTouched = ctx.touchedPaths;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [gateA, gateB],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(firstTouched).toEqual(["src/out.ts"]);
+    // Same array instance reaches both gates — computed once before the
+    // loop, not re-derived (shelled out to git) per gate.
+    expect(secondTouched).toBe(firstTouched);
+  });
+
+  it("fanout tick: afterCommit and afterMerge gates both see the commit's touched paths, each loop's own shared computation", async () => {
+    await writePending(fx.repo, [makeEntry("TP-FANOUT", ["src/tp.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let commitTouched: string[] | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-touched",
+      when: "afterCommit",
+      run(ctx) {
+        commitTouched = ctx.touchedPaths;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    let mergeTouched: string[] | undefined;
+    const captureMerge: Gate = {
+      name: "capture-merge-touched",
+      when: "afterMerge",
+      run(ctx) {
+        mergeTouched = ctx.touchedPaths;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [captureCommit, captureMerge],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "tp-fanout": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/tp.ts",
+          "ok\n",
+          "build(TP-FANOUT): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["TP-FANOUT"]);
+    expect(commitTouched).toEqual(["src/tp.ts"]);
+    expect(mergeTouched).toEqual(["src/tp.ts"]);
+  }, 20_000);
+});
+
 describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("rejects an absolute-path friction declaration with a usage-shaped error", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));

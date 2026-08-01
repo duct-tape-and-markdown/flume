@@ -432,6 +432,80 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
   });
 });
 
+// ---------- ctx.touchedPaths dedup (GATECONTEXT-TOUCHED-PATHS-DEDUP,
+// engineering.md "The fix lands at the mechanism") ----------
+
+describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no independent git show", () => {
+  let notARepo: string;
+
+  beforeEach(async () => {
+    // Not a git repository: if either gate tried to shell out its own
+    // `git show --name-only` here, that exec would reject and the gate's
+    // run() promise would reject too — a clean resolve below is only
+    // possible because the gate trusted ctx.touchedPaths instead.
+    notARepo = await mkdtemp(join(tmpdir(), "flume-gate-notrepo-"));
+  });
+
+  afterEach(async () => {
+    await rm(notARepo, { recursive: true, force: true });
+  });
+
+  it("writablePathsGate passes based on injected touchedPaths alone", async () => {
+    const gate = writablePathsGate(["src/**"]);
+    const result = await gate.run(
+      ctx(notARepo, { commitSha: "deadbeef", touchedPaths: ["src/foo.ts"] }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/writable paths respected/);
+  });
+
+  it("writablePathsGate fails based on injected touchedPaths alone, naming the offending path", async () => {
+    const gate = writablePathsGate(["src/**"]);
+    const result = await gate.run(
+      ctx(notARepo, { commitSha: "deadbeef", touchedPaths: ["spec/bad.md"] }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.details ?? "").toContain("spec/bad.md");
+  });
+
+  it("chainLoadGate skips (untouched) based on injected touchedPaths alone", async () => {
+    const result = await chainLoadGate.run(
+      ctx(notARepo, { commitSha: "deadbeef", touchedPaths: ["src/unrelated.ts"] }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/untouched/);
+  });
+
+  it("chainLoadGate loads chain.ts straight off ctx.cwd when injected touchedPaths names it, without deriving touched paths from git", async () => {
+    await mkdir(join(notARepo, ".flume"), { recursive: true });
+    await writeFile(join(notARepo, ".flume", "chain.ts"), VALID_CHAIN, "utf8");
+    const result = await chainLoadGate.run(
+      ctx(notARepo, {
+        commitSha: "deadbeef",
+        touchedPaths: [".flume/chain.ts"],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/valid Chain/);
+  });
+
+  it("both gates still fall back to git show when ctx.touchedPaths is omitted — a hand-built ctx keeps working", async () => {
+    const repo = await createBootstrappedRepo("flume-touchedpaths-fallback-");
+    try {
+      const sha = await commitFiles(repo, { "src/foo.ts": "x" });
+      const wp = await writablePathsGate(["src/**"]).run(
+        ctx(repo, { commitSha: sha }),
+      );
+      expect(wp.ok).toBe(true);
+      const cl = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+      expect(cl.ok).toBe(true);
+      expect(cl.message).toMatch(/untouched/);
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+});
+
 // ---------- pendingGate (RELEASE-v0.8 §6) ----------
 
 describe("pendingGate — composed validation + fence pre-check", () => {

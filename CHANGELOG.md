@@ -278,6 +278,17 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   Behavior-identical today — the fix is the shared mechanism, pinned in
   `tests/paths.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+- `chainLoadGate` and `writablePathsGate` each shelled out their own `git
+  show --name-only` for the same commit `Dispatcher.ts`'s afterCommit/
+  afterMerge gate loops were already about to run every other gate against.
+  `GateContext` gains `touchedPaths`, computed once per commit by the
+  dispatcher (`git.showNameOnly`) before either gate loop and passed into
+  every gate it constructs; both gates now read `ctx.touchedPaths` instead
+  of re-deriving it, falling back to their own `git show` only for a
+  hand-built `GateContext` that predates the field. Behavior-identical
+  today — the fix is the shared computation, pinned in `tests/Gate.test.ts`
+  and `tests/Dispatcher.test.ts` against a future one-sided edit
+  (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
 
 ## [0.9.0] - 2026-07-31
 

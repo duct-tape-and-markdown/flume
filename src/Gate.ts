@@ -54,6 +54,16 @@ export interface GateContext {
   phaseName: string;
   /** SHA of the commit under inspection. */
   commitSha?: string;
+  /**
+   * The commit's changed paths (relative to repo root, forward-slash),
+   * computed once per commit by the dispatcher via `git.showNameOnly` and
+   * shared across every gate this tick runs. A gate that needs touched-path
+   * detection reads this instead of shelling `git show --name-only` out on
+   * its own (engineering.md "The fix lands at the mechanism"). Optional so
+   * hand-built `GateContext` fixtures that predate this field keep
+   * compiling; every dispatcher-constructed context sets it.
+   */
+  touchedPaths?: string[];
   /** Logger for harness-side output. Gates should not write to stdout directly. */
   log: (line: string) => void;
 }

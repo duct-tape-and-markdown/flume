@@ -1515,6 +1515,11 @@ export class Dispatcher {
       // Gate this entry's merged commit. The first failing afterMerge gate
       // attributes the failure to *this* entry — it is the only delta
       // between `preCherry` and `mergedSha`.
+      // Computed once per commit and shared across every gate this loop
+      // runs, and reused below for the footprint/declared-file checks that
+      // need the identical commit's touched paths — same dedup as
+      // runAfterCommitGates above.
+      const commitTouchedPaths = await git.showNameOnly(repoRoot, mergedSha);
       let entryFailure:
         | { gate: string; message: string; details?: string }
         | undefined;
@@ -1525,6 +1530,7 @@ export class Dispatcher {
           flumeDir: this.flumeDir,
           phaseName: phase.name,
           commitSha: mergedSha,
+          touchedPaths: commitTouchedPaths,
           log: (l) => this.log.info(l),
         });
         mergeGateResults.push({
@@ -1562,18 +1568,12 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
-        let footprint: string[] | undefined;
-        try {
-          footprint = await git.showNameOnly(repoRoot, mergedSha);
-        } catch {
-          // Best-effort, as above.
-        }
         await git.hardResetTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "afterMerge-reverted",
-          ...(footprint ? { footprint } : {}),
+          footprint: commitTouchedPaths,
         });
         continue;
       }
@@ -1587,10 +1587,10 @@ export class Dispatcher {
       // clear the entry from pending.json. Diff against the entry's
       // *declared* files.{new,edit,retire}, not touchedPaths() — that
       // folds in observedFiles, a downstream footprint signal, not proof
-      // this diff shipped real work.
+      // this diff shipped real work. `commitTouchedPaths` (above) is the
+      // raw commit diff, not that folded signal, so reusing it here is safe.
       const declaredFiles = declaredPaths(r.entry);
-      const mergedDiff = await git.showNameOnly(repoRoot, mergedSha);
-      const touchesDeclaredFile = mergedDiff.some((p) =>
+      const touchesDeclaredFile = commitTouchedPaths.some((p) =>
         declaredFiles.includes(p),
       );
       if (!touchesDeclaredFile) {
@@ -2030,6 +2030,11 @@ export class Dispatcher {
           : undefined,
       ),
     ];
+    // Computed once per commit and shared across every gate this loop runs —
+    // chainLoadGate and writablePathsGate read it off the context instead of
+    // each shelling out its own `git show --name-only` for the same commit
+    // (engineering.md "The fix lands at the mechanism").
+    const commitTouchedPaths = await git.showNameOnly(cwd, commitSha);
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
       const r: GateResult = await gate.run({
@@ -2038,6 +2043,7 @@ export class Dispatcher {
         flumeDir: this.flumeDir,
         phaseName: phase.name,
         commitSha,
+        touchedPaths: commitTouchedPaths,
         log: (l) => this.log.info(l),
       });
       results.push({

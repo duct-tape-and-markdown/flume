@@ -159,6 +159,25 @@ export const eslintGate: Gate = shellGate({
 const CHAIN_REL_PATH = join(".flume", "chain.ts");
 
 /**
+ * A commit's touched paths, shared across every gate that needs them.
+ * `ctx.touchedPaths` is the dispatcher's one-per-commit computation
+ * (`git.showNameOnly`, run once before the gate loop); a gate reads it from
+ * there instead of shelling `git show --name-only` out itself. Falls back to
+ * that same exec only for hand-built `GateContext` fixtures that predate the
+ * field (tests, mainly) — never for a dispatcher-constructed context, which
+ * always sets it.
+ */
+async function resolveTouchedPaths(ctx: GateContext): Promise<string[]> {
+  if (ctx.touchedPaths) return ctx.touchedPaths;
+  const { stdout } = await exec(
+    "git",
+    ["show", "--name-only", "--pretty=format:", ctx.commitSha!],
+    { cwd: ctx.cwd },
+  );
+  return stdout.split("\n").filter((l) => l.length > 0);
+}
+
+/**
  * Builtin chain-load gate. Declared by any chain on the phase(s) that may
  * rewrite `.flume/chain.ts` (a self-modifying loop). On a commit that touched
  * `.flume/chain.ts`, it loads the post-commit file through the same
@@ -180,12 +199,7 @@ export const chainLoadGate: Gate = {
     if (!ctx.commitSha) {
       return { ok: false, message: "chain-load gate requires commitSha" };
     }
-    const { stdout } = await exec(
-      "git",
-      ["show", "--name-only", "--pretty=format:", ctx.commitSha],
-      { cwd: ctx.cwd },
-    );
-    const touched = stdout.split("\n").filter((l) => l.length > 0);
+    const touched = await resolveTouchedPaths(ctx);
     if (!touched.includes(CHAIN_REL_PATH.split(/[\\/]/).join("/"))) {
       return { ok: true, message: "chain.ts untouched — gate skipped" };
     }
@@ -348,12 +362,7 @@ export function writablePathsGate(
           message: "writable-paths gate requires commitSha",
         };
       }
-      const { stdout } = await exec(
-        "git",
-        ["show", "--name-only", "--pretty=format:", ctx.commitSha],
-        { cwd: ctx.cwd },
-      );
-      const touched = stdout.split("\n").filter((l) => l.length > 0);
+      const touched = await resolveTouchedPaths(ctx);
       // Ceiling check: phase-wide globs bind on every tick, scoped or not.
       const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));
       // Entry-scope check: a scoped tick's allowance is the entry's declared
