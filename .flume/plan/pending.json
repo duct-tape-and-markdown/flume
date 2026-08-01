@@ -1,47 +1,5 @@
 [
   {
-    "tag": "TIP-CLAIM-ADVISORY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "add a git-common-dir resolver (git rev-parse --git-common-dir) and the tip-claim primitive (exclusive-create wx, pid-liveness reclaim) mirroring liveLoopPid's shape (src/job.ts:269-287) - new code, no existing common-dir helper today"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "loop's start (787-823) acquires the tip claim alongside loop.pid, same exit/SIGINT/SIGTERM release hooks; loop and tick both refuse (exit 1) on detached HEAD before any tick per §4; the status block (664-671) reports the claim's holder pid or staleness alongside supervisor liveness"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Added entry per §7: advisory tip claim"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Advisory per-ref tip claim (§4): one flume writer per tip, keyed under <git-common-dir>/flume/tip-claims/<ref path>, mirroring the loop.pid lock's acquire/reclaim shape.",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "4. Tip claim - one flume writer per tip, advisory"
-    },
-    "tests": [
-      {
-        "path": "tests/git.test.ts",
-        "asserts": "acquire creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>; EEXIST + live pid refuses naming the holder; EEXIST + dead pid reclaims silently and retries; release removes the file"
-      },
-      {
-        "path": "tests/cli.test.ts",
-        "asserts": "two flume loops against different state roots on one branch - second refuses naming the holder pid; two loops from two worktrees on different branches both run; claim file gone after clean exit and after SIGTERM; flume loop on detached HEAD exits 1 before any tick; flume status reports the claim"
-      }
-    ],
-    "acceptance": "§4's acceptance list verbatim: two loops on one branch serialize with a named-holder refusal; two loops on different branches from different worktrees both run; claim file absent after clean exit/SIGTERM; a dead-pid claim reclaims silently; detached-HEAD loop exits 1 before any tick; tsc/vitest green.",
-    "notes": "No git-common-dir resolver exists in src/git.ts today. Mirrors src/job.ts:269-287 (liveLoopPid) and src/cli.ts:787-823 (loop.pid acquire/release) structurally; keying differs (per-ref vs per-state-root) so this is a sibling primitive, not a call-site reuse of liveLoopPid itself."
-  },
-  {
     "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
     "gate": {
       "kind": "open"
@@ -82,44 +40,6 @@
     ],
     "acceptance": "§5's acceptance verbatim: ref-advanced fixture reports tip-moved with no commit and retained agent output; unmoved-ref tick is unchanged; tip-moved is distinguishable in the tick verdict; tsc/vitest green.",
     "notes": "Architecturally split by path: fanout has a real harness-side commit step (cherryPick/commitPaths) to gate cleanly; singleton/fanout-worktree-direct agent commits already exist by the time the harness observes them (the agent runs `git commit` itself), so those need the guarded-revert idiom §5 explicitly cites as its own precedent, not a pre-commit gate. Functionally independent of TIP-CLAIM-ADVISORY - §5's backstop stands alone per spec."
-  },
-  {
-    "tag": "DOCS-JOB-EXTRACT-RETIRED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "docs/MIGRATING-0.11.md",
-          "description": "model docs/MIGRATING-0.8.md's shape (audience para, numbered upgrade sections, symptom-to-cause table, Non-goals close); cover integrate-or-abandon for live job/<name> branches via ordinary git then delete the branch, plus the extract-replacement recipe (side branch + operator integration) per §6"
-        }
-      ],
-      "edit": [
-        {
-          "path": "README.md",
-          "description": "rewrite the branch-is-the-job framing (103, 229-276) - jobs as coexisting state roots on whatever branch, no branch guidance beyond 'run on whatever branch you want the record on', worktrees as the parallelism recipe, extract's mention dropped"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "rewrite job new/run/rm/status (13, 73-126) off branch language; delete the job extract section (134-147) entirely"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "delete the Chain.harvest field doc (59, 77-80)"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "README.md/docs/CLI.md job-branch+extract sections rewritten, docs/CHAIN-AUTHORING.md drops harvest, new docs/MIGRATING-0.11.md ships the branch-integration and extract-replacement recipes (§6).",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "6. Docs"
-    },
-    "tests": [],
-    "acceptance": "grep -rin 'extract' README.md docs/CLI.md docs/CHAIN-AUTHORING.md is empty; MIGRATING-0.11.md contains the branch-integration and extract-replacement recipes (§6 acceptance verbatim).",
-    "notes": "docs/MIGRATING-0.8.md (only existing precedent) is the shape to model - audience para, numbered sections, symptom/cause table, Non-goals. This entry covers only the branch/extract half of §6; tip-claim/verify's doc facts are DOCS-TIP-CLAIM-VERIFY, since README/CLI.md need both edits independently."
   },
   {
     "tag": "DOCS-TIP-CLAIM-VERIFY",
@@ -331,36 +251,6 @@
     "tests": [],
     "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
     "notes": "LSP findReferences this tick: git.ts:45, :198, :226 each resolve to their own declaration alone. index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :211 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
-  },
-  {
-    "tag": "RUNTIME-IGNORES-LOOP-VACUITY-PIN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/job.test.ts",
-          "description": "the three `for (const entry of RUNTIME_IGNORES)` verdicts (151, 234, 497) show the judged set populated before reading it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Three .gitignore-merge tests read their verdict off a loop over RUNTIME_IGNORES - an emptied constant leaves each one green over zero assertions.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "tests": [
-      {
-        "path": "tests/job.test.ts",
-        "asserts": "each RUNTIME_IGNORES loop is preceded by a populated-set assertion, so an emptied constant fails the merge tests themselves instead of passing over nothing"
-      }
-    ],
-    "acceptance": "No assertion in tests/job.test.ts reads a verdict off a set it has not shown to be populated.",
-    "notes": "The pinned behavior (jobNew ignore-merge) survives v0.11 unchanged (job.ts:38/86/186); both JOB-BRANCH-GRAMMAR-RETIRED and JOB-EXTRACT-REMOVED have now landed, so this pin's three tests/job.test.ts line cites are re-verified against current HEAD (151, 234, 497) and it is unblocked, no further churn expected from this line."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
