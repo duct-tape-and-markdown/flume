@@ -1,43 +1,5 @@
 [
   {
-    "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "defaultCaptureFilename (262-264) discriminates per invocation, not by clock alone; the SessionCaptureOpts docstring (217-222) claims only what the code holds"
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "first coverage of the default-filename path - both capture tests today supply an explicit filename"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "withSessionCapture's default filename is clock-only, so two fanout captures opening in the same millisecond share one path and one transcript is silently lost.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "tests": [
-      {
-        "path": "tests/Agent.test.ts",
-        "asserts": "two withSessionCapture invocations with distinct cwds under a frozen clock (vi.setSystemTime) land in two files, each holding its own stream - fails on the pre-fix tree, where the second createWriteStream truncates the first"
-      }
-    ],
-    "acceptance": "Concurrent captures under a stopped clock produce one file per invocation; the docstring's no-collision claim is the one the test pins.",
-    "notes": "Untested today - both capture tests pass filename, and this repo's chain does too (.flume/chain.ts:316-320 appends the cwd basename), so the collision only reaches a downstream chain taking the default. The chain's own filename is the shape the default should have had. Chain-overridable default, so no boundary question."
-  },
-  {
     "tag": "RENDER-RELATIVIZE-SEPARATOR-BLIND",
     "gate": {
       "kind": "open"
