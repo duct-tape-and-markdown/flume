@@ -1,38 +1,5 @@
 [
   {
-    "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "lines 47-48, 142, 252 - state the condition or point at the pin"
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "lines 77 and 316-317 - same"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Prompt.ts neighborhood carries era-scoped narration: three 'byte-identical to past release' claims a test already pins, plus a clause citing two shipped-and-gone pending tags.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test already pins.",
-    "notes": "Pinned already, so prose shrinks to a pointer: Prompt.ts:142/:252 by tests/Prompt.test.ts:144; builtinGates.ts:77 by tests/Gate.test.ts:61. builtinGates.ts:316-317 (drifted again, by 008d5b9's hint-option insert) cites GATECONTEXT-REPOROOT-TESTS / CLI-JUNCTION-SAFE-ENTRY-TESTS, both shipped and unresolvable today. Prompt.ts:47-48 is the same shape - and v0.10 §3 rewrites that exact docstring, hence the block; re-read every line number after it lands. Prose-only; no behavior moves."
-  },
-  {
     "tag": "ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD",
     "gate": {
       "kind": "open"
