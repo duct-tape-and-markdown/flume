@@ -1,5 +1,43 @@
 [
   {
+    "tag": "FLUMEAPI-ERROR-CLASSES-MISSING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/flumeApi.ts",
+          "description": "FlumeApi interface (56-81) and buildFlumeApi() (93-117) gain the error classes chains branch on per §6: CjsContextLoadError, PendingParseFailure (both Dispatcher.ts), InlineExecRenderError (Prompt.ts), TipClaimHeldError (git.ts)"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "extend the §6 identity describe (~5188) with a case toBe-ing the api's four error-class fields against the real exports"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "FlumeApi omits the error classes chains branch on (§6 requires them); only gates/helpers/agent ctors made it into src/flumeApi.ts.",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "6. The chain is a plugin, not a consumer"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "buildFlumeApi()'s returned object carries CjsContextLoadError/PendingParseFailure/InlineExecRenderError/TipClaimHeldError, each toBe the real exported class - a chain catching one via api.X can branch with instanceof without a value import"
+      }
+    ],
+    "acceptance": "A chain factory can instanceof-branch on any of the four classes off the api parameter alone, no value import; tsc/vitest green.",
+    "notes": "Verified this tick (§6 audit): src/flumeApi.ts:56-117 has zero error classes despite spec's unconditional requirement; nothing branches on one yet. JobUsageError/JobResolutionConflictError excluded - CLI/job-internal, not chain-facing."
+  },
+  {
     "tag": "GATECONTEXT-TOUCHED-PATHS-DEDUP",
     "gate": {
       "kind": "open"
