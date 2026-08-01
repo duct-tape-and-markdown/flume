@@ -35,6 +35,30 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-07-31 — two windows-CI test failures, both engine defects (operator)
+
+From CI run 30675682946 (windows job), still red after the
+WIN32-FANOUT-WORKTREE-LONGPATH ship — these are two *different* defects:
+
+1. **writeRevertNote silently loses the note under Windows path limits.**
+   tests/Dispatcher.test.ts ~5522 (the TAG-LENGTH-BOUND-AGREEMENT-PIN
+   test): a revert note whose filename is within NAME_MAX=255 still
+   exceeds Windows' ~260 total-path limit inside a deep temp repo; the
+   write fails inside writeRevertNote's best-effort catch, the friction
+   dir is never created, and the test's readdir hits ENOENT. The engine's
+   TAG_MAX_LENGTH is per-component-correct and path-total-blind. Green on
+   POSIX, red on win32 — exactly the silent-note-loss the pin was built
+   to catch.
+2. **Tip-claim release never runs on win32 SIGTERM.** tests/cli.test.ts
+   "claim file (and loop.pid) are gone after SIGTERM" (v0.11 §4):
+   process.kill SIGTERM on Windows is TerminateProcess — exit/signal
+   handlers don't run, so the claim file and loop.pid survive. The
+   stale-reclaim path (pid-liveness) covers the *mechanism* — a dead pid
+   is reclaimed on next acquire — so this may be a test-expectation fix
+   (win32-conditional: assert stale-reclaimable rather than gone) rather
+   than an engine change. v0.11 §4's acceptance ("claim file gone after
+   SIGTERM") was written POSIX-blind; flag the spec wording alongside.
+
 ## 2026-07-31 — engine seams from the chain simplify review (operator)
 
 Three engine-side candidates surfaced by the 4-angle simplify pass on
