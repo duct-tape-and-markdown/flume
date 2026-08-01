@@ -1,38 +1,5 @@
 [
   {
-    "tag": "ERA-SCOPED-NARRATION-DISPATCHER-NEIGHBORHOOD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "lines 626-632, 2294, 2311, 2392-2393 - state the condition or point at the pin"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "lines 169-170 and 268-269 - same"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Dispatcher neighborhood carries era-scoped narration: three 'byte-identical to v0.7 §16' claims tests already pin, plus three sites narrating mechanisms that no longer exist.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "Each cited site states the condition that would change the decision or points at the test holding it; no prose restates a property a test pins or a mechanism the tree no longer has.",
-    "notes": "Pinned already: tests/Dispatcher.test.ts:4202 (undeclared abortThreshold still aborts on the 3rd consecutive tick), :4117 (quarantineScope default). Dispatcher.ts:626-632 narrates a deleted content-hash cache; 2392-2393 compares against the removed in-process loop. Phase.ts:169-170 'existing void-returning implementations are unaffected' is migration-era under the pre-1.0 clean-slate posture. Prose-only; no behavior moves."
-  },
-  {
     "tag": "DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED",
     "gate": {
       "kind": "open"
