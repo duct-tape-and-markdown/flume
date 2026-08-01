@@ -1,43 +1,5 @@
 [
   {
-    "tag": "BUILTINGATES-CMD-OVERRIDE-PNPM-SHAPED-ARGS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "PkgManagerOverride (120-122) gains optional args?: string[]; pkgManagerGate's build (137-154) composes cmd+args from the override instead of always using the fixed pnpm-shaped args array"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "cover an npm-shaped args override actually succeeding (e.g. cmd:'npm', args:['exec','--','tsc','--noEmit']) where today's cmd-only override fails with npm's own 'Unknown command'"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "tscGate/vitestGate/eslintGate's {cmd} override swaps only the binary; args stay pnpm-shaped, so {cmd:\"npm\"} fails npm's own \"Unknown command\" instead of running tsc/lint.",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Capability vs convention"
-    },
-    "tests": [
-      {
-        "path": "tests/builtinGates.test.ts",
-        "asserts": "tscGate({cmd:'npm', args:[...]}) (and eslintGate) actually run npm's real tsc/eslint invocation instead of npm's 'Unknown command' - fails on the pre-fix tree, where args stay hardcoded to pnpm's bare-bin shape regardless of cmd"
-      }
-    ],
-    "acceptance": "tscGate/vitestGate/eslintGate accept an args override alongside cmd; {cmd:'npm', args:[...]} produces a working npm invocation instead of npm's 'Unknown command <verb>'; default (no override) behavior stays byte-identical to today; tsc/vitest green.",
-    "notes": "Verified locally this tick: `npm tsc --noEmit` and `npm lint` fail with npm's \"Unknown command\" - npm has no pnpm/yarn-classic bare-bin invocation, while `npm exec -- tsc --noEmit` succeeds. So the cmd-only override (86789b8, this tick's commit-delta) can misreport an npm chain's gate as \"TypeScript errors\"/\"Lint errors\" when npm never ran tsc/eslint at all. vitestGate's `npm test --run` happens to work today (npm's test alias), with a deprecation warning."
-  },
-  {
     "tag": "SESSION-CAPTURE-DEFAULT-FILENAME-COLLIDES",
     "gate": {
       "kind": "open"
