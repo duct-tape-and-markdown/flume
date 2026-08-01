@@ -283,7 +283,7 @@
       "edit": [
         {
           "path": "src/git.ts",
-          "description": "delete softReset (41), commitAll (206), isDirty (234) and the commitPaths comment clause naming commitAll (219); the header's 'nine commands' count (4) goes with them - isDirty is the module's only `git status` consumer, so the count is 8 after this"
+          "description": "delete commitAll (206) and isDirty (234) and the commitPaths comment clause naming commitAll (219); softReset (41) stays - b89ebb4 gave it a live caller (Dispatcher.ts's revertTipMovedCommit); the header's 'nine commands' count still drops to 8 - isDirty was the module's only `git status` consumer"
         },
         {
           "path": "CHANGELOG.md",
@@ -292,14 +292,14 @@
       ],
       "retire": []
     },
-    "summary": "git.ts exports softReset, commitAll, and isDirty with zero consumers - LSP resolves one reference each, its own declaration.",
+    "summary": "git.ts exports commitAll and isDirty with zero consumers - LSP resolves one reference each, its own declaration.",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "An export earns its consumer"
     },
     "tests": [],
     "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
-    "notes": "LSP findReferences this tick: git.ts:41, :206, :234 each resolve to their own declaration alone (line numbers shifted by pinLongPaths landing this delta). index.ts does not re-export git.ts, so none is declared public surface. commitPaths superseded commitAll - the :219 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception). files.retire stays empty: the fence reads every element as a path."
+    "notes": "Narrowed this tick (audit, b89ebb4): softReset dropped from scope - Dispatcher.ts:1922's revertTipMovedCommit (RELEASE-v0.11 §5) is now a live caller, so deleting it would break the build. commitAll/isDirty remain zero-consumer per LSP findReferences; index.ts doesn't re-export git.ts, so neither is public surface. commitPaths superseded commitAll - the :219 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
   },
   {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
@@ -378,7 +378,7 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "extract the render-refused catch bodies (1048-1053 singleton, 1629-1634 fanout) into one shared private method beside classifyNoCommit (2213) that persists the §5 record and logs; each call site keeps constructing its own return shape, matching how classifyNoCommit's two callers already differ"
+          "description": "extract the render-refused catch bodies (singleton and fanout - re-locate by the buildRenderRefused call, line numbers drifted past b89ebb4's insert) into one shared private method beside classifyNoCommit that persists the §5 record and logs; each call site keeps constructing its own return shape, matching how classifyNoCommit's two callers already differ"
         },
         {
           "path": "tests/Dispatcher.test.ts",
@@ -391,7 +391,7 @@
       ],
       "retire": []
     },
-    "summary": "Dispatcher's render-refused catch (persist §5 record + log) is duplicated inline at both singleton (1038) and fanout (1617) callsites, instead of routing through classifyNoCommit's shared shape.",
+    "summary": "Dispatcher's render-refused catch (persist §5 record + log) is duplicated inline at both singleton and fanout callsites, instead of routing through classifyNoCommit's shared shape.",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "The fix lands at the mechanism"
@@ -403,7 +403,45 @@
       }
     ],
     "acceptance": "One shared private method persists the render-refused record and logs it; both singleton and fanout callsites call it instead of re-deriving the write+log inline; tsc/vitest green.",
-    "notes": "Verified this tick: classifyNoCommit (2213) is the shared method both runSingleton (1112) and the fanout path (1654) call for voluntary-bail/platform-preempt persist+log. render-refused (9dffc51) skips this precedent - duplicated inline at 1038-1065 (singleton) and 1617-1635 (fanout), each re-deriving writePriorAttempt+log.warn+return. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift."
+    "notes": "Verified this tick: classifyNoCommit is the shared method both runSingleton and the fanout path call for voluntary-bail/platform-preempt persist+log. render-refused (9dffc51) skips this precedent - duplicated inline at both callsites, each re-deriving writePriorAttempt+log.warn+return. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift. Line refs drifted past b89ebb4 - re-locate by name, not number."
+  },
+  {
+    "tag": "DISPATCHER-TIPMOVED-CHECK-UNSHARED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "extract the tip-verify-after-commit check (revParse the commit's parent, revertTipMovedCommit, writePriorAttempt(buildTipMoved), log.warn) shared by runSingleton (~1163-1181) and runFanoutEntry (~1809-1825) into one private helper beside revertTipMovedCommit (~1900); each call site keeps constructing its own return shape, same precedent classifyNoCommit's two callers already set"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "add the agreement pin beside the existing tip-verify describe (RELEASE-v0.11 §5) - singleton and fanout tip-moved paths persist byte-identical expectedTip/observedTip content and the same-shaped log line for equivalent input, driven through the one shared method"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Dispatcher's tip-verify-after-commit check (parent-check, revert, persist, log) is duplicated at runSingleton and runFanoutEntry instead of sharing one method - same shape as render-refused.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "singleton and fanout tip-moved paths persist byte-identical expectedTip/observedTip content and the same-shaped log line for equivalent input - a one-sided edit to either site's persisted record or log text breaks the pin"
+      }
+    ],
+    "acceptance": "One shared private method performs the parent-check/revert/persist/log sequence; both runSingleton and runFanoutEntry call it instead of re-deriving it inline; tsc/vitest green.",
+    "notes": "Audit finding, b89ebb4 (TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP): the new §5 check repeats DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED's exact shape - revertTipMovedCommit already shares the verify+reset mechanics, but the writePriorAttempt+log.warn wrapper around it is re-derived at both callsites. Identical today, so nothing fails pre-fix (the named exception); the pin catches a future one-sided drift. Consider landing together with the render-refused entry - same extraction site, same pattern."
   },
   {
     "tag": "LOOP-LOCK-SHARES-LIVELOOPPID",
