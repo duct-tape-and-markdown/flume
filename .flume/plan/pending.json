@@ -1,51 +1,8 @@
 [
   {
-    "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "record the tip sha at each tick-start read already in place (singleton preHead 1028, fanout-entry preHead ~1139, fanout preCherry 1316, pending-ledger preUpdate ~2295); re-verify immediately before each harness-driven commit call (cherryPick ~1318, commitPaths in commitPendingUpdate ~2303-2310) - moved ref aborts with no commit; for the agent's own direct commit (singleton/fanout-worktree), apply the existing guarded-revert idiom to any commit whose parent isn't the recorded tip, per §5's own cited precedent"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "TickOutcome/PriorAttempt gain the tip-moved fact per §5 as a sibling to NoCommitMode (53-57), not a fifth member - see notes"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "cover the §5 acceptance fixture: ref advances between agent completion and commit - tip-moved reported, no commit lands, working tree retains agent output; unmoved ref commits exactly as today"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Added entry per §7: tip-moved verify"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Tick commits only land on the tip they started on (§5) - a moved ref refuses the commit and reports tip-moved instead of gate-revert/voluntary-bail/platform-preempt.",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "5. Tip verify - commit only onto the tip the tick started on"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a fixture that advances the ref between agent completion and commit reports tip-moved, produces no commit, and leaves the agent's output on disk; an unmoved ref's tick commits exactly as before; the tip-moved outcome is distinguishable in the verdict a supervisor reads (superviseLoop's errored-tick classification, ~2497)"
-      }
-    ],
-    "acceptance": "§5's acceptance verbatim: ref-advanced fixture reports tip-moved with no commit and retained agent output; unmoved-ref tick is unchanged; tip-moved is distinguishable in the tick verdict; tsc/vitest green.",
-    "notes": "Architecturally split by path: fanout has a real harness-side commit step (cherryPick/commitPaths) to gate cleanly; singleton/fanout-worktree-direct agent commits already exist by the time the harness observes them (the agent runs `git commit` itself), so those need the guarded-revert idiom §5 explicitly cites as its own precedent, not a pre-commit gate. Functionally independent of TIP-CLAIM-ADVISORY - §5's backstop stands alone per spec."
-  },
-  {
     "tag": "DOCS-TIP-CLAIM-VERIFY",
     "gate": {
-      "kind": "blockedBy",
-      "tag": "TIP-VERIFY-COMMIT-ONLY-ONTO-STARTING-TIP"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
