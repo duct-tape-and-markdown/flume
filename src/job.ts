@@ -50,8 +50,9 @@ export const RUNTIME_IGNORES = [
  * (`.flume/jobs/<name>`) and one branch segment (`job/<name>`) — reject
  * anything that would escape either construction, before any dir or branch
  * is built. Returns the rejection reason, or `null` for a valid name.
- * (The creating verb is where shape is enforced; `--job` resolution trusts
- * its input — accepted debt from the JOB-RESOLUTION audit.)
+ * (The creating verb is where shape is enforced; `--job` resolution in
+ * `resolveStateDirs` (`src/cli.ts`) composes the flag straight into
+ * `.flume/jobs/<name>` without routing through this check.)
  */
 export function validateJobName(name: string): string | null {
   if (!name) return "job name is empty";

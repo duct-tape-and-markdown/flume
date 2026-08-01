@@ -135,6 +135,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `validateJobName`'s doc comment (`src/job.ts`) no longer cites the
+  shipped-and-gone `JOB-RESOLUTION` pending tag as live accepted debt; it now
+  names the current condition directly — `resolveStateDirs` (`src/cli.ts`)
+  composes `--job` straight into `.flume/jobs/<name>` without routing through
+  this check — so a sweep can evaluate it without chasing a closed pending
+  entry (`.claude/rules/engineering.md` §Narration is the ladder's bottom
+  rung).
 - `flume loop`'s cross-process lock now reads pidfile liveness through
   `liveLoopPid` (`src/job.ts`) instead of re-deriving the same
   read/parse/`process.kill(pid, 0)` sequence inline — the lock and `flume
