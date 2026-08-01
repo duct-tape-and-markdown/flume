@@ -67,6 +67,26 @@ CLAUDE.md pointer — zero engine. Sequencing: execute after the current
 release lines (0.10 sighted-render, 0.11 boundary line) are underway or
 shipped; the consolidation is human-surface work done in-session.
 
+## Decided, not yet executed — quality lenses in the loop
+
+Encode the /simplify review's four angles (reuse, simplification,
+efficiency, altitude) into the loop (ruling, 2026-07-31). The socket
+already exists: the posture sweep administers the posture pages, so the
+missing angles — **reuse** (re-implementation of an existing helper) and
+**efficiency** (wasted work per tick/wave) — enter as new sections of
+`.claude/rules/engineering.md`; altitude and simplification are already
+covered by engine-boundary and complexity-is-a-signal. A phrase delta
+then arms a full-domain rotation and the loop gains the behavior with
+zero engine or chain change.
+
+Open design half: the correctness-adjacency filing bar (same-day ruling)
+demotes exactly the findings these lenses produce. Resolve before
+arming — either a quality lane (pure-shape debt accumulates in commit
+bodies, batched into a dedicated quality wave at release cuts) or a bar
+carve-out for reuse findings that retire real drift risk. Sequencing:
+arm after the v0.11 boundary line ships, so the lenses don't polish code
+the demolition deletes.
+
 ## Beyond v0.1 — dependency-aware fanout
 
 Fanout intelligence stays partition-level, not orchestration-level. Today entries fan out disjoint-by-`Files:` — pure conflict-avoidance, with no notion of "entry B consumes entry A's output." The Pending schema already carries `blockedBy`/`deferred`; the next step is for the partitioner and dispatcher to *schedule waves by declared dependency*, not just file-disjointness — dependent entries serialize, independent ones still parallelize.
