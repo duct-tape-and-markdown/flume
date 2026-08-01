@@ -1986,6 +1986,10 @@ export class Dispatcher {
       }
     }
     await mkdir(dirname(path), { recursive: true });
+    // Fanout worktrees nest at least as deep as the job dir they're cloned
+    // for (v0.4 §6) — the identical win32 MAX_PATH gap job.ts's own baseline
+    // pin exists to spare.
+    await git.pinLongPaths(this.opts.repoRoot);
     await git.addWorktree({
       repoRoot: this.opts.repoRoot,
       path,

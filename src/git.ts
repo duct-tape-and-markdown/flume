@@ -71,6 +71,18 @@ export async function dropLastCommit(
   await run(cwd, ["reset", "--hard", "HEAD~1"]);
 }
 
+/**
+ * win32 MAX_PATH guard (v0.4 §6): repo-locally pin `core.longpaths` before
+ * any operation that nests paths deep enough to exceed it — a job dir
+ * (`.flume/jobs/<name>/...`) or a fanout worktree (nested at least as deep
+ * as the job dir it was cloned for). No-op off win32; idempotent (`git
+ * config` overwrites the same key without erroring on repeat calls).
+ */
+export async function pinLongPaths(repoRoot: string): Promise<void> {
+  if (process.platform !== "win32") return;
+  await run(repoRoot, ["config", "core.longpaths", "true"]);
+}
+
 export async function addWorktree(opts: {
   repoRoot: string;
   path: string;

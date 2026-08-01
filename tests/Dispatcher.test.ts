@@ -5525,3 +5525,45 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     expect(files[0]).toContain(tag);
   }, 20_000);
 });
+
+// win32 lane (v0.4 §6): fanout worktree paths nest as deep as job dirs and
+// hit the identical MAX_PATH gap job.ts's own baseline pin exists to spare
+// (mirrored coverage in tests/git.test.ts for the shared helper itself).
+// TAG-LENGTH-BOUND-AGREEMENT-PIN above is the real-world acceptance signal:
+// a long-tag worktree path is exactly what trips MAX_PATH first on the
+// windows CI lane when this pin is missing.
+describe.runIf(process.platform === "win32")(
+  "Dispatcher fanout — createWorktree pins core.longpaths (v0.4 §6)",
+  () => {
+    it("pins core.longpaths on repoRoot before git worktree add", async () => {
+      const entries = [makeEntry("W32-WT", ["src/w32.ts"])];
+      await writePending(fx.repo, entries);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+      const agent = fanoutAgent({
+        "w32-wt": (cwd) =>
+          writeAndCommit(cwd, "src/w32.ts", "ok\n", "build(W32-WT): ship"),
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+      expect(outcome.result?.shippedTags).toEqual(["W32-WT"]);
+
+      const { stdout } = await exec(
+        "git",
+        ["config", "--local", "--get", "core.longpaths"],
+        { cwd: fx.repo },
+      );
+      expect(stdout.trim()).toBe("true");
+    }, 30_000);
+  },
+);

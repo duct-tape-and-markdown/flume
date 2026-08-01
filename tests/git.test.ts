@@ -24,6 +24,7 @@ import {
   currentRefPath,
   dropLastCommit,
   gitCommonDir,
+  pinLongPaths,
   removeWorktree,
   revParse,
   tipClaimPath,
@@ -301,3 +302,31 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     expect(existsSync(claim.path)).toBe(false);
   });
 });
+
+// win32 lane (v0.4 §6): the core.longpaths pin only exists on Windows
+// hosts — assert it where it can actually run. Mirrors tests/job.test.ts's
+// §5a coverage of job.ts's baseline pin; this is the shared helper both
+// job.ts and Dispatcher's createWorktree now call.
+describe.runIf(process.platform === "win32")(
+  "pinLongPaths (v0.4 §6)",
+  () => {
+    it("pins core.longpaths repo-locally, idempotently", async () => {
+      await pinLongPaths(repo);
+      const { stdout } = await exec(
+        "git",
+        ["config", "--local", "--get", "core.longpaths"],
+        { cwd: repo },
+      );
+      expect(stdout.trim()).toBe("true");
+
+      // Re-run: pin idempotent, no error on repeat.
+      await pinLongPaths(repo);
+      const { stdout: again } = await exec(
+        "git",
+        ["config", "--local", "--get", "core.longpaths"],
+        { cwd: repo },
+      );
+      expect(again.trim()).toBe("true");
+    });
+  },
+);

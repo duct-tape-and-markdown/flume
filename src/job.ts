@@ -22,6 +22,7 @@ import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
+import { pinLongPaths } from "./git.js";
 import { parsePendingLoose } from "./PendingSchema.js";
 import type { ParseResult } from "./PendingSchema.js";
 
@@ -189,9 +190,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   );
 
   // 5. Job dirs nest deep; spare the operator MAX_PATH failures up front.
-  if (process.platform === "win32") {
-    await git(repoRoot, ["config", "core.longpaths", "true"]);
-  }
+  await pinLongPaths(repoRoot);
 
   // 6. Baseline-commit the seeded harness on the current HEAD so plan/build
   // produce clean deltas. The commit is pathspec-scoped: anything the

@@ -60,6 +60,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `Dispatcher.createWorktree` now pins `core.longpaths` on `repoRoot` before
+  `git worktree add`, closing a win32 MAX_PATH gap fanout worktrees hit
+  identically to job dirs (`job.ts` already pinned it for its own deep
+  paths; the two call sites now share one `pinLongPaths` helper in
+  `src/git.ts` instead of `job.ts` carrying a second inline implementation)
+  (v0.4 §6).
 - Inline-exec (`` !`cmd` ``) spans now reach `sh` through stdin instead of
   argv (`["-c", cmd]`), fixing corruption of any non-ASCII byte anywhere in
   the command on win32 — measured under MSYS2 `sh.exe`: quoting was not
