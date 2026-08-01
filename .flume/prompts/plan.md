@@ -48,7 +48,7 @@ Plan processes the **delta** between this tick and the last `plan:` commit. The 
 
 **Promote (unblock).** Trigger: any entry in `<pending-now>` with `gate.kind === "blockedBy"` whose `gate.tag` is no longer a tag in `<pending-now>`. Flip such entries to `gate.kind: "open"`. This is mechanical — process all of them.
 
-**Sweep (posture).** Trigger: commits past the `Posture swept through:` stamp in `<state>` touch the sweep domain (`src/`, `tests/`, `bin/`, `examples/`) or a posture page (`.claude/rules/{engineering,engine-boundary}.md`). Apply the posture pages to code that already exists — a ratified phrase governs nothing until it is swept. Mechanics, frontier, cursor, and stamp: `.claude/rules/posture-sweep.md`, which binds this dimension. One neighborhood per tick; an open rotation sets `Plan continues: yes`; quiet-on-clean advances the stamp alone.
+**Sweep (posture).** Trigger: commits past the `Posture swept through:` stamp in `<state>` touch the sweep domain (`src/`, `tests/`, `bin/`, `examples/`) or a posture page (`.claude/rules/{engineering,engine-boundary}.md`). Apply the posture pages to code that already exists — a ratified phrase governs nothing until it is swept. Mechanics, frontier, cursor, and stamp: `.claude/rules/posture-sweep.md`, which binds this dimension. One neighborhood per tick, and only on a tick where `<pending-now>` carries no pickable entry — the sweep yields to pickable work: while entries are pickable, hand off to build and leave the rotation untouched in `<state>` (frontier and cursor persist; coverage is deferred, never lost). An open rotation sets `Plan continues: yes` only once the queue is drained; quiet-on-clean advances the stamp alone.
 
 ## How much to do this tick
 
@@ -67,7 +67,7 @@ If the delta is small enough that you can meet the bar across every dimension, d
 
 Telegraphic: short enough that build can act on the entry without re-reading the spec.
 
-**Hard caps (zod-enforced; over-cap reverts the whole tick via `pendingParseGate`, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
+**Hard caps (zod-enforced; over-cap reverts the whole tick via the pending gate, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
 
 ## Artifact discipline
 

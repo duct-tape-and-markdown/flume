@@ -33,15 +33,26 @@ Covered is settled for the window. A later tick never re-sweeps or re-draws
 it, even where fresh judgment would cut the boundary differently — the cursor
 decides coverage, never re-derivation.
 
+## The sweep yields to pickable work
+
+An open rotation never holds the baton. While `<pending-now>` carries a
+pickable entry, plan hands off to build and sweeps nothing — the frontier
+and cursor persist untouched in state.md, and coverage is deferred, never
+lost. A neighborhood is swept only on a tick where nothing is pickable.
+
+**Why:** the sweep is insurance; shipped entries are the product. Insurance
+scheduled ahead of the product inverts the loop's economics.
+
 ## The rotation closes when the frontier empties
 
 Untouched modules never enter the frontier, so a quiet tree closes in one
 tick, never one tick per skip. **Quiet-on-clean is the normal verdict**,
 recorded by advancing the stamp alone.
 
-An armed or open rotation is a live plan job: from the tick a delta arms it
-until the frontier empties, `Plan continues: yes` carries it. Hibernation is
-the empty frontier's verdict alone.
+An armed or open rotation is a live plan job: it carries `Plan continues:
+yes` on ticks where it may advance (queue drained, above), and rides
+silently in state.md otherwise. Hibernation is the empty frontier's verdict
+alone.
 
 ## A violation counts only when verified on disk this tick
 
@@ -65,8 +76,16 @@ no-hits.
 
 ## Routing
 
-- Purely mechanical shape → a **pending entry**, `per` citing the owning
-  section of the posture page.
+The filing bar is **correctness-adjacency**: a finding becomes a queue
+entry only when the defect can change behavior, hide a failure, or leave a
+vacuous verdict over load-bearing machinery.
+
+- Correctness-adjacent, purely mechanical fix → a **pending entry**, `per`
+  citing the owning section of the posture page.
+- Pure shape — duplication, narration drift, style, a vacuity whose subject
+  is not load-bearing → an **accepted-debt line in the plan commit body**,
+  never an entry. A later rotation re-noting the same debt is cheaper than
+  a queue that grows faster than build drains it.
 - Needs a design decision → an **open question**, naming the section and the
   fork.
 
