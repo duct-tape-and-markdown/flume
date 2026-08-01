@@ -10,11 +10,11 @@ Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invoke
 
 The flag is a strict resolution authority: passing `--job` while `FLUME_DIR` or `FLUME_CONFIG_DIR` is explicitly set is a usage error (exit `2`). The env-var form composes instead of conflicting — on the loop → tick boundary the child inherits all three written-back vars, and the dir vars *are* the parent's canonical job resolution, so explicitly-set dirs win and the job name rides along.
 
-**Wrong-branch guard.** Under a job resolution, the mutating subcommands (`tick`, `loop`) commit to the working tree's HEAD, so before dispatch they assert `HEAD == job/<name>` and refuse otherwise (exit `1`, naming both branches). Read-only subcommands (`status`, `render`, `wake`, `sleep`) skip the check. Bare invocation — no flag, no `FLUME_JOB` — leaves the HEAD-is-truth contract untouched: commits land on whatever branch is checked out.
+The engine has no opinion on which branch a job runs on: the mutating subcommands (`tick`, `loop`) commit to whatever branch the working tree's HEAD is on, job-resolved or not — there is no dedicated `job/<name>` branch to assert or check out. Run on whatever branch you want the record on.
 
 ```sh
 flume --job docs-refresh status        # reads .flume/jobs/docs-refresh/awake/
-flume --job docs-refresh loop          # requires HEAD == job/docs-refresh
+flume --job docs-refresh loop          # commits land on whatever branch HEAD is on
 FLUME_JOB=docs-refresh flume tick      # identical resolution via env
 ```
 
@@ -71,16 +71,16 @@ flume render build --entry DOCS-CLI
 
 ## `flume job new <name>`
 
-Creates a job — branch `job/<name>` plus state root `.flume/jobs/<name>/`, both named by convention — from the current HEAD. If the branch already exists it is reused (checked out) rather than recreated. Then it loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). The job name must be a single path/branch segment; a name containing a path separator is rejected before any directory or branch is constructed.
+Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever branch that is. Loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). No branch is created or checked out. The job name must be a single path segment; a name containing a path separator is rejected before any directory is constructed.
 
 Every run (idempotent) also:
 
 - **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
 - **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
 - **Pins `core.longpaths true`** repo-locally on Windows.
-- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit), so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
+- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit) on the current HEAD, so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
 
-Stays on `job/<name>` when done — tune the harness, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, no chain at `<configDir>/chain.ts`, or a declared `seedDir` absent on disk).
+Leaves HEAD untouched — tune the state, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, no chain at `<configDir>/chain.ts`, or a declared `seedDir` absent on disk).
 
 ```sh
 flume job new docs-refresh            # seeds from the repo chain's Chain.seedDir, if declared
@@ -89,13 +89,12 @@ flume job new scratch                 # no seedDir declared: bare job, no warnin
 
 ## `flume job run <name> [--max N]`
 
-Runs a job. Three steps, the first two a preflight:
+Runs a job. Two steps, the first a preflight:
 
-1. **Assert-or-checkout `job/<name>`.** The branch must exist (error if not — create the job with `flume job new` first); it is checked out unless HEAD is already on it. Inside a linked worktree that already holds `job/<name>` (the concurrency recipe: `git worktree add .git/flume-jobs/<name> job/<name>`, then run from inside it) the assert passes and no checkout runs.
-2. **Wake the entry phase iff the baton is hibernating.** The entry phase is `chain.phases[0]` — a content-free convention, no hardcoded phase names. A non-hibernating baton is left untouched, so an interrupted job resumes mid-flight instead of being restarted from the top.
-3. **Run the standard loop under the job resolution.** From here this is exactly `flume --job <name> loop [--max N]`: same `loop.pid` lock in the job state root, same one-child-process-per-tick supervisor, same exit codes.
+1. **Wake the entry phase iff the baton is hibernating.** The entry phase is `chain.phases[0]` — a content-free convention, no hardcoded phase names. A non-hibernating baton is left untouched, so an interrupted job resumes mid-flight instead of being restarted from the top. No branch assertion — the engine has no opinion on which branch a state root runs on.
+2. **Run the standard loop under the job resolution.** From here this is exactly `flume --job <name> loop [--max N]`, on whatever branch HEAD is on: same `loop.pid` lock in the job state root, same one-child-process-per-tick supervisor, same exit codes.
 
-Exits `0` on hibernation, when `--max` (default 50) is hit, or on partial success (some entries shipped despite other ticks erroring); `1` on git or harness failure, while another live loop holds the job's lock, or when at least one tick errored **and** the run shipped nothing (v0.7 §4, amended); `2` on usage errors (missing `<name>`, or the job branch does not exist); `69` (`EX_MOUNT_DEAD`) when a child tick's chain fails to load — halts the run immediately rather than continuing; `78` when a child tick reports terminal misconfiguration (see `flume tick`). Any errored ticks are named in the completion summary regardless of exit code.
+Exits `0` on hibernation, when `--max` (default 50) is hit, or on partial success (some entries shipped despite other ticks erroring); `1` on git or harness failure, while another live loop holds the job's lock, or when at least one tick errored **and** the run shipped nothing (v0.7 §4, amended); `2` on usage errors (missing `<name>`); `69` (`EX_MOUNT_DEAD`) when a child tick's chain fails to load — halts the run immediately rather than continuing; `78` when a child tick reports terminal misconfiguration (see `flume tick`). Any errored ticks are named in the completion summary regardless of exit code.
 
 ```sh
 flume job new docs-refresh
@@ -104,47 +103,29 @@ flume job run docs-refresh --max 20
 
 ## `flume job rm <name>`
 
-The discard ending: throw the harness away, keep the work. Four steps:
+Throw the harness away, keep the work. Four steps:
 
 1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
-2. **`git rm -r .flume/jobs/<name>` + cleanup commit on `job/<name>`.** The branch is checked out first if HEAD is elsewhere (it must be free — git refuses if a linked worktree holds it; run rm from inside that worktree instead). The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index.
+2. **`git rm -r .flume/jobs/<name>` + cleanup commit on the current HEAD.** The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index. No branch is checked out or touched.
 3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
 4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
 
-The job branch survives, cleanup commit at its tip. Integration (merge or squash into a base branch) and branch deletion are the operator's acts, never rm's.
+The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.11.md`](MIGRATING-0.11.md) for the recipe when a job's work needs to move onto a clean branch first.
 
-Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a live loop or a git/filesystem failure; `2` on usage errors (missing `<name>`, or a `<name>` that names neither a `job/<name>` branch nor a job dir).
+Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a live loop or a git/filesystem failure; `2` on usage errors (missing `<name>`, or a `<name>` whose job dir does not exist).
 
 ```sh
-flume job rm docs-refresh          # after integrating job/docs-refresh, or to discard
-git branch -D job/docs-refresh     # yours, once the history is merged or unwanted
+flume job rm docs-refresh
 ```
 
 ## `flume job status`
 
 Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`); the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing.
 
-Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir that only exists on an un-checked-out `job/<name>` branch will not appear. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
+Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir that lives only on a branch other than the one checked out will not appear. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
 
 ```sh
 flume job status
 # docs-refresh  awake: build  pending: 3
 # scratch       hibernating   pending: 0
-```
-
-## `flume job extract <name> --onto <base> [--intake <path>]...`
-
-The clean-history ending: a deliverable branch on which harness commits never appear, for targets where squash rights are absent. All inputs are explicit at point of use — `--onto` is required, never guessed. Five steps:
-
-1. **Refuse if branch `<name>` already exists** — no clobber; the clean branch is named by the job, and a pre-existing branch of that name is someone's work (exit `1`). Also refused up front: uncommitted tracked changes (extract rewrites the checkout — fork, cherry-pick, possibly unwind), a live job loop (as with `rm`; a stale pidfile is reclaimed silently), and `job/<name>` checked out in another worktree — the §6 recipe worktree keeps holding it after its loop stops, and the branch deletion at step 5 would fail *after* the picks; `git worktree remove` it, or run extract from inside it (the current worktree is exempt — extract moves it off the branch itself).
-2. **Fork `<name>` off `--onto`, intake pass-through first.** Each `--intake` file is synced byte-exact to its state at the `job/<name>` tip, and the whole delta ships as one commit (`intake: pass-through from job/<name>`; no delta, no commit). Intake-first ordering keeps later cherry-picks from conflicting with plan-side appends to the same files. Then cherry-pick, oldest-first, the commits in `<base>..job/<name>` that touch any path outside `.flume/jobs/<name>` and outside the intake set. Harness-only and intake-only commits are never picked; a commit that mixes harness and non-harness paths is picked whole.
-3. **On cherry-pick failure: unwind** (exit `1`). The in-progress pick is aborted, the checkout returns to `job/<name>`, and the partial `<name>` branch is deleted. The job is untouched — extract is retryable, nothing lost.
-4. **Harvest the repo chain's declared `Chain.harvest` list** (job-dir-relative paths; loaded from `<configDir>/chain.ts` up front, alongside the other pre-flight checks) from the job branch tip (`git show`, not the worktree) to stdout for operator routing; a declared path that never existed on the branch is noted instead of printed. No `harvest` declared → nothing is harvested — there is no default list.
-5. **Consume the job**: delete `job/<name>`, remove the harness-dir remnants (the ignored runtime the checkout left behind; the `@dtmd/flume` link is unlinked, never followed), and `git worktree prune`. HEAD ends on `<name>` — the clean branch is yours to route.
-
-Exits `0` on success; `1` on the clobber/dirty-tree/live-loop/worktree-occupancy refusals, a git failure, or an unwound cherry-pick conflict; `2` on usage errors (missing `<name>` or `--onto`, a flag without a value, a `<name>` that is not a single segment, an `--onto` that resolves to no commit, or a `<name>` with no `job/<name>` branch to extract).
-
-```sh
-flume job extract docs-refresh --onto main --intake INTAKE.md
-git push origin docs-refresh       # harness-free history, ready for review
 ```

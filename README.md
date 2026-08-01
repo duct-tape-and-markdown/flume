@@ -100,9 +100,10 @@ out.
 
 Per-job variation is already served, twice over:
 
-- **A job is a branch.** Edit `.flume/chain.ts` on `job/<name>` and the
-  variation lives and dies with that branch — linked worktrees give
-  concurrent divergence, since each resolves its own checkout's chain.
+- **A job runs on whatever branch the operator checked out.** Edit
+  `.flume/chain.ts` there and the variation lives and dies with that
+  branch — linked worktrees give concurrent divergence, since each
+  resolves its own checkout's chain.
 - **A chain is code.** `FLUME_JOB` is written back into the environment
   before the chain loads, so one repo chain can dispatch on the job name
   itself.
@@ -224,19 +225,19 @@ is checked out when the loop starts is the branch the run ships to.
 
 ## Jobs
 
-A job is a branch plus a state root, both named by convention:
-`.flume/jobs/<name>/` (tracked; runtime subdirs gitignored) on branch
-`job/<name>`. The `flume job` verbs are thin sugar over the relocation seams
-above — `flume --job <name> <cmd>` (or `FLUME_JOB=<name>`) resolves
-`FLUME_DIR` to the job dir; `FLUME_CONFIG_DIR` stays at `<repoRoot>/.flume`
-(chains are repo-resident — see "Chain residency" above) unless you set it
-explicitly, which composes rather than conflicts. Only `--job` plus an
-explicit `FLUME_DIR` is a usage error — two authorities for one state root.
-The mutating subcommands (`tick`, `loop`) refuse to run unless HEAD is
-`job/<name>`. Everything a job does is expressible with the raw seams; the
-verbs just name the convention.
+A job is a state root, `.flume/jobs/<name>/` (tracked; runtime subdirs
+gitignored), on whatever branch the operator is on — nothing more. Multiple
+jobs coexist under one checkout by construction; there is no dedicated
+branch to create, assert, or check out. The `flume job` verbs are thin sugar
+over the relocation seams above — `flume --job <name> <cmd>` (or
+`FLUME_JOB=<name>`) resolves `FLUME_DIR` to the job dir; `FLUME_CONFIG_DIR`
+stays at `<repoRoot>/.flume` (chains are repo-resident — see "Chain
+residency" above) unless you set it explicitly, which composes rather than
+conflicts. Only `--job` plus an explicit `FLUME_DIR` is a usage error — two
+authorities for one state root. Everything a job does is expressible with
+the raw seams; the verbs just name the convention.
 
-The flow is **`new` → tune → `run` → `rm` or `extract`**:
+The flow is **`new` → tune → `run` → `rm`**:
 
 ```bash
 flume job new docs-refresh
@@ -245,42 +246,35 @@ flume job run docs-refresh --max 20
 flume job status                   # awake phases + pending count per job
 ```
 
-`job new` branches `job/<name>` off the current HEAD, loads the repo chain
-(no chain at `<configDir>/chain.ts` is a usage error — a job that could never
-`run` must not be creatable), and copies its declared `Chain.seedDir`, if
-any, into the state root verbatim, skip-existing — a re-run fills gaps (a
-stub added to the seed dir reaches jobs already created) without ever
-clobbering a worked file; see
+`job new` loads the repo chain (no chain at `<configDir>/chain.ts` is a
+usage error — a job that could never `run` must not be creatable), and
+copies its declared `Chain.seedDir`, if any, into the state root verbatim,
+skip-existing — a re-run fills gaps (a stub added to the seed dir reaches
+jobs already created) without ever clobbering a worked file; see
 [`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for what the chain
 declares versus what the runtime provisions unconditionally. No `seedDir`
 declared → a bare job, no warning: state accretes from ticks, and bare is
-legitimate. `job run` wakes the chain's entry phase — `chain.phases[0]`, by
-convention — iff the baton is hibernating (a mid-flight job resumes
-untouched), then runs the standard loop under the job resolution.
+legitimate. It baseline-commits the seeded state on the current HEAD; no
+branch is created or checked out. `job run` wakes the chain's entry phase —
+`chain.phases[0]`, by convention — iff the baton is hibernating (a
+mid-flight job resumes untouched), then runs the standard loop under the
+job resolution, on whatever branch HEAD is on.
 
-### Two endings
+### Ending a job
 
-A finished job ends one of two ways; both leave integration to you:
-
-- **`flume job rm <name>`** — the discard ending: throw the harness away,
-  keep the work. Removes the job dir with a cleanup commit on `job/<name>`;
-  the branch survives, harness commits and all. Right when you hold merge or
-  squash rights over the target and can integrate the branch yourself.
-- **`flume job extract <name> --onto <base> [--intake <path>]...`** — the
-  clean-history ending: fork `<name>` off `--onto` and cherry-pick over only
-  the non-harness commits, intake files passing through first as one commit.
-  Harness commits never appear on the result — for deliverables where squash
-  rights are absent. Before the job is consumed, extract harvests whatever
-  paths the repo chain declares via `Chain.harvest` (job-dir-relative) off
-  the job branch tip to stdout for operator routing — an undeclared or
-  absent `harvest` means nothing is harvested, no default. Extract consumes
-  the job (branch and harness dir are gone afterwards); a cherry-pick
-  conflict unwinds fully and leaves the job intact for retry.
+`flume job rm <name>` removes the job dir with a cleanup commit on the
+current HEAD: `git rm -r .flume/jobs/<name>` plus untracked-remnant sweep
+and `git worktree prune`. Refuses while the job's loop is live. The history
+the job produced — the commits it caused, on whatever branch it ran on —
+stays exactly where it landed; integrating or discarding that history is an
+ordinary git operation, the operator's to run. See
+[`docs/MIGRATING-0.11.md`](docs/MIGRATING-0.11.md) for the recipe when a
+job's work needs to move onto a clean branch before it ships.
 
 Full per-verb contracts — steps, refusals, exit codes — in
 [`docs/CLI.md`](docs/CLI.md).
 
-### Concurrent jobs: one working tree per job
+### Concurrent jobs: one working tree per tip
 
 **One loop per working tree.** Singleton ticks, fanout cherry-picks, and
 merge-gate reverts all mutate the working tree's HEAD; two loops in one
@@ -288,10 +282,11 @@ checkout race it. The `loop.pid` lock guards state roots, not working trees —
 per-job state roots mean two jobs' loops never share a lock, so HEAD
 occupancy is the operator-visible signal to respect.
 
-To run jobs concurrently, give each its own working tree:
+To run jobs concurrently, give each its own working tree — `git worktree`
+is the parallelism recipe, each on its own tip:
 
 ```bash
-git worktree add .git/flume-jobs/docs-refresh job/docs-refresh
+git worktree add -b docs-refresh-wip .git/flume-jobs/docs-refresh
 cd .git/flume-jobs/docs-refresh
 flume job run docs-refresh
 ```
@@ -320,6 +315,8 @@ follows enough usage signal to commit under semver.
   stays prose, what becomes JSON, non-goals.
 - [`docs/MIGRATING-0.8.md`](docs/MIGRATING-0.8.md) — upgrade checklist for a
   pre-0.8 chain moving onto `@dtmd/flume@0.8.0`.
+- [`docs/MIGRATING-0.11.md`](docs/MIGRATING-0.11.md) — upgrade checklist for
+  a bay with live `job/<name>` branches moving onto `@dtmd/flume@0.11.0`.
 - [`examples/minimal-chain.ts`](examples/minimal-chain.ts) — single-phase
   starter.
 - [`examples/cascade-chain.ts`](examples/cascade-chain.ts) — multi-phase

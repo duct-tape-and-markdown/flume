@@ -56,14 +56,13 @@ is the chain for every job in the repo, resolved fresh from whichever
 branch is checked out. See the README's "Chain residency" section for the
 full contract.
 
-### Chain-declared seed and harvest
+### Chain-declared seed
 
 There is no job-local chain, and no `--template` flag. `.flume/jobs/<name>/`
 holds job *state* only — job resolution never retargets `configDir` (see
 "Where the chain lives" above), so every job under this repo ticks the one
 chain at `.flume/chain.ts`, and that chain is the sole author of what a
-fresh job dir contains and what a dying one gives up. Two optional `Chain`
-fields carry the declaration:
+fresh job dir contains. One optional `Chain` field carries the declaration:
 
 - **`Chain.seedDir?: string`** — a `configDir`-relative directory (the
   `promptPath` idiom: stubs are real files beside the chain, e.g.
@@ -74,13 +73,6 @@ fields carry the declaration:
   and bare is legitimate. No interpolation and no seed-function form: the
   copy is dumb by design, and `chain.ts` is already code if you need
   logic.
-- **`Chain.harvest?: string[]`** — job-dir-relative paths `flume job
-  extract` reads off the dying job branch (`git show`, not the working
-  tree) and prints to stdout for operator routing, before the job is
-  consumed. Absent `harvest` → nothing is harvested. There is no default:
-  a default would re-house the exact domain opinion (`friction.md`,
-  `open-questions.md`, or whatever your chain cares about) that this field
-  exists to evict from the machinery.
 
 `flume job new` loads the repo chain before doing anything else — no chain
 at `<configDir>/chain.ts` is a usage error (a job that could never `run`
