@@ -13,6 +13,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Breaking
 
+- `GateContext.repoRoot` is no longer optional
+  (`.claude/rules/engineering.md` "Narration is the ladder's bottom rung" —
+  GATECONTEXT-REPOROOT-REQUIRED): every dispatcher-constructed context has
+  set it since v0.7 §6, so the `?` only let stale hand-built fixtures
+  compile. A hand-built `GateContext` (a gate's own test) must now set
+  `repoRoot`.
+
 - A chain module now default-exports a **factory**, `(api) => ({ chain })`,
   instead of a `Chain` object (v0.11 §6). Every engine value a chain
   composes with — gates, agent constructors, schema helpers, `git`

@@ -24,6 +24,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
     cwd,
     flumeDir: join(cwd, ".flume"),
+    repoRoot: cwd,
     phaseName: "test-phase",
     log: () => {},
     ...overrides,
@@ -297,18 +298,6 @@ describe("writablePathsGate — git-backed checks", () => {
     const result = await gate.run(ctx(repo));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/requires commitSha/);
-  });
-});
-
-describe("GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
-  it("passes through when set", () => {
-    const c = ctx(process.cwd(), { repoRoot: "/some/repo/root" });
-    expect(c.repoRoot).toBe("/some/repo/root");
-  });
-
-  it("stays undefined when omitted", () => {
-    const c = ctx(process.cwd());
-    expect(c.repoRoot).toBeUndefined();
   });
 });
 

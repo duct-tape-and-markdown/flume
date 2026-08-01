@@ -36,6 +36,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
     cwd,
     flumeDir: join(cwd, ".flume"),
+    repoRoot: cwd,
     phaseName: "test-phase",
     log: () => {},
     ...overrides,

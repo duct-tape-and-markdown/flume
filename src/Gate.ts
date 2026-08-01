@@ -45,11 +45,9 @@ export interface GateContext {
   /**
    * Absolute path of the working-tree root the gate is running in — in a
    * fanout tick, the worktree root; in a bare tick, the primary checkout
-   * (RELEASE-v0.7 §6). Optional so hand-built `GateContext` fixtures that
-   * predate this field keep compiling; every dispatcher-constructed context
-   * sets it.
+   * (RELEASE-v0.7 §6).
    */
-  repoRoot?: string;
+  repoRoot: string;
   /** Phase the gate is running for. */
   phaseName: string;
   /** SHA of the commit under inspection. */
