@@ -1,34 +1,5 @@
 [
   {
-    "tag": "GIT-DEAD-EXPORTS-RETIRE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "delete commitAll (206) and isDirty (234) and the commitPaths comment clause naming commitAll (219); softReset (41) stays - b89ebb4 gave it a live caller (Dispatcher.ts's revertTipMovedCommit); the header's 'nine commands' count still drops to 8 - isDirty was the module's only `git status` consumer"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "git.ts exports commitAll and isDirty with zero consumers - LSP resolves one reference each, its own declaration.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "An export earns its consumer"
-    },
-    "tests": [],
-    "acceptance": "src/git.ts holds only functions with a live caller; tsc and vitest green.",
-    "notes": "Narrowed this tick (audit, b89ebb4): softReset dropped from scope - Dispatcher.ts:1922's revertTipMovedCommit (RELEASE-v0.11 §5) is now a live caller, so deleting it would break the build. commitAll/isDirty remain zero-consumer per LSP findReferences; index.ts doesn't re-export git.ts, so neither is public surface. commitPaths superseded commitAll - the :219 comment naming it goes too. A deletion pins nothing decidably; the green suite is the proof (the named exception)."
-  },
-  {
     "tag": "ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD",
     "gate": {
       "kind": "open"
