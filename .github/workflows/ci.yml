@@ -367,5 +367,9 @@ jobs:
               'all attributable to the "files" allowlist)',
           );
           EOF
-          npm pack --dry-run --json > "$RUNNER_TEMP/pack.json"
+          # --ignore-scripts: prepack (pnpm build) writes a script banner to
+          # stdout ahead of npm's JSON; dist/ is already built by this job's
+          # earlier `pnpm build` step, so re-running it here is redundant and
+          # only corrupts the JSON npm pack --json emits.
+          npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/pack.json"
           node "$RUNNER_TEMP/check-pack.mjs" "$RUNNER_TEMP/pack.json"

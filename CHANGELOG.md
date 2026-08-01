@@ -138,6 +138,12 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   real filename lands on disk within NAME_MAX
   (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
   wrote").
+- CI's "npm pack file-set guard" step now passes `--ignore-scripts` to
+  `npm pack --dry-run --json`. `"prepack": "pnpm build"` writes a script
+  banner ahead of npm's JSON on stdout, so the guard's `JSON.parse` has
+  thrown on every CI run to date (spec/RELEASE-v0.1.md §4); the job's
+  earlier `pnpm build` step already produces `dist/`, so the redundant
+  prepack rebuild is skipped rather than routed around.
 
 ## [0.9.0] - 2026-07-31
 
