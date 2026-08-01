@@ -77,6 +77,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `snapshotRevertedFiles`'s `mkdir`/`writeFile` now route the snapshot
+  destination and its dirname through `toNamespacedPath`, the same idiom
+  `writeRevertNote`/`harvestFriction`/the friction counters above were fixed
+  with — here the win32 ~260-char total-path limit is driven by the
+  reverted commit's own diff depth rather than `chain.friction`, but the
+  unwrapped `join(dir, rel)` shape and the silently-swallowed best-effort
+  catch are identical: a deep repo path lost its §8 recovery snapshot
+  without any signal (v0.4 §6).
 - `Dispatcher.createWorktree` now pins `core.longpaths` on `repoRoot` before
   `git worktree add`, closing a win32 MAX_PATH gap fanout worktrees hit
   identically to job dirs (`job.ts` already pinned it for its own deep

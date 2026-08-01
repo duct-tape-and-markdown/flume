@@ -6052,5 +6052,73 @@ describe.runIf(process.platform === "win32")(
         await rm(stateRoot, { recursive: true, force: true });
       }
     }, 20_000);
+
+    it("snapshotRevertedFiles lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      // snapshotRevertedFiles runs on the singleton afterCommit-revert path
+      // (§8, e.g. a plan tick's schema-invalid pending.json) — unlike
+      // WRITEREVERTNOTE-A/HARVESTFRICTION-B above (fanout, depth from
+      // chain.friction), the depth driver here is the reverted commit's own
+      // diff path: snapshotRevertedFiles joins prior-attempts/<key>.reverted
+      // with whatever `git show --name-only` reports, unwrapped.
+      const baton = new Baton(join(fx.repo, ".flume"));
+      baton.wake("plan");
+
+      const failing: Gate = {
+        name: "boom-gate",
+        when: "afterCommit",
+        async run() {
+          return { ok: false, message: "boom said no" };
+        },
+      };
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [failing],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const deepRel = join(
+        "src",
+        ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        "deep.ts",
+      );
+      const agent: Agent = {
+        name: "deep-diff-singleton",
+        async invoke(inv) {
+          await writeAndCommit(
+            inv.cwd,
+            deepRel,
+            "ok\n",
+            "plan: touch a deeply-nested path",
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      };
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const preHead = await head(fx.repo);
+      const outcome = await dispatcher.tick();
+      expect(outcome.result?.committed).toBe(false);
+      expect(outcome.noCommit).toBe("gate-revert");
+      expect(await head(fx.repo)).toBe(preHead);
+
+      const snapshotPath = join(
+        fx.repo,
+        ".flume",
+        "prior-attempts",
+        "plan.reverted",
+        deepRel,
+      );
+      expect(snapshotPath.length).toBeGreaterThan(260);
+      expect(existsSync(snapshotPath)).toBe(true);
+      expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
+    }, 20_000);
   },
 );

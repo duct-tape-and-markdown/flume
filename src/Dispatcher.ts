@@ -2304,8 +2304,13 @@ export class Dispatcher {
           { cwd, maxBuffer: 16 * 1024 * 1024 },
         );
         const dest = join(dir, rel);
-        await mkdir(dirname(dest), { recursive: true });
-        await writeFile(dest, content, "utf8");
+        // win32 total-path limit (~260 chars, v0.4 §6): dest depth here is
+        // driven by the reverted diff's own path depth, not chain.friction,
+        // but it's the same join(dir, rel) unwrapped shape writeRevertNote/
+        // harvestFriction guard. toNamespacedPath prepends the \\?\
+        // extended-length prefix on win32 (no-op elsewhere), same idiom.
+        await mkdir(toNamespacedPath(dirname(dest)), { recursive: true });
+        await writeFile(toNamespacedPath(dest), content, "utf8");
       }
     } catch {
       // Recovery is best-effort by spec; never block or fail the revert path.
