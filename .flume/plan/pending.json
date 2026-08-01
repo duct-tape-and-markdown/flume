@@ -1,6 +1,6 @@
 [
   {
-    "tag": "WIN32-SWEEP-TESTS-VACUOUS-ON-BOTH-PLATFORMS",
+    "tag": "WIN32-SUITE-HONEST-ON-WINDOWS",
     "gate": {
       "kind": "open"
     },
@@ -10,16 +10,20 @@
       "edit": [
         {
           "path": "tests/Dispatcher.test.ts",
-          "description": "makeFixture (93-102) pins core.longpaths=true beside its existing core.autocrlf win32 pin - without it every fixture-driven `git add` of a >260-char path fails on Windows, so the win32 tests die in setup"
+          "description": "makeFixture (93-102) pins core.longpaths=true beside its core.autocrlf win32 pin - fixes the 3 SNAPSHOTREVERTEDFILES/clearPriorAttempt reds. Retire both WORKTREE-WIN32-PATH-TOTAL-LIMIT cases (operator ruling: the claim is untestable on win32, vacuous on Linux). Win32-skip the two max-length-tag fanout cases (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT, TAG-LENGTH-BOUND-AGREEMENT-PIN), citing the measured git worktree ceiling, so POSIX keeps the real agreement pin"
         },
         {
           "path": "tests/git.test.ts",
-          "description": "line 210-213's removeWorktree fallback assertion expects toNamespacedPath(path), not the raw path - production has namespaced it since REMOVEWORKTREE-WIN32-PATH-TOTAL-LIMIT and the assertion only stayed green because toNamespacedPath is identity on Linux"
+          "description": "removeWorktree fallback assertion (210-213) expects toNamespacedPath(path); production has namespaced it since REMOVEWORKTREE-WIN32-PATH-TOTAL-LIMIT and the raw-path assertion only stayed green because toNamespacedPath is identity on Linux"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the tip-claim SIGTERM case asserts the amended v0.11 §4 outcome: claim gone after SIGTERM on POSIX, surviving-and-stale-reclaimed on win32"
         }
       ],
       "retire": []
     },
-    "summary": "The WIN32-PATH-TOTAL-LIMIT sweep's own tests verify nothing on either platform: on Windows they die in fixture setup, on Linux the win32 semantics are absent.",
+    "summary": "The Windows suite is 9 red: tests assert win32 outcomes that are stale, unreachable, or false - a fixture gap, a stale assertion, and max-length tags git cannot provision a worktree for.",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A green verdict is proven non-vacuous"
@@ -27,15 +31,19 @@
     "tests": [
       {
         "path": "tests/Dispatcher.test.ts",
-        "asserts": "the SNAPSHOTREVERTEDFILES/PRIORATTEMPT win32 cases reach their gate-revert assertion instead of ending platform-preempt - fails on the pre-fix tree on Windows, where the fixture's git rejects the deep path and the stub agent's invoke rejects with it"
+        "asserts": "the three SNAPSHOTREVERTEDFILES/clearPriorAttempt win32 cases reach their gate-revert assertion instead of ending platform-preempt - fails on the pre-fix tree on Windows, where the fixture's git rejects the deep path and the stub agent's invoke rejects with it"
       },
       {
         "path": "tests/git.test.ts",
         "asserts": "removeWorktree's fallback rm receives the namespaced path - fails on the pre-fix tree on Windows, where the assertion compares \\\\?\\C:\\... against the raw path"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "asserts": "after SIGTERM the claim is absent on POSIX and present-but-stale-reclaimable on win32 - the amended §4 outcome, true on the platform it runs on rather than only on POSIX"
       }
     ],
-    "acceptance": "The three SNAPSHOTREVERTEDFILES/PRIORATTEMPT-class win32 cases and tests/git.test.ts's removeWorktree fallback pass under native Windows node; Linux stays green and byte-identical.",
-    "notes": "Diagnosed on a native Windows host, not derived. Proven in isolation: `git add` of a 375-char path fails 'Filename too long' with core.longpaths unset, succeeds with it set. makeFixture:96-102 pins autocrlf but not longpaths; writeAndCommit:145-149 shells that git add inside the stub agent, so its rejection lands as noCommit=platform-preempt and the tick never reaches the pinned code. GIT_CONFIG_GLOBAL injection turned 3 of 6 reds green, no src change. Other 3 differ - see open-questions.md."
+    "acceptance": "`pnpm test --run` is green on native Windows AND on Linux; no retired case leaves a dangling helper; every win32-skipped case names the measured git ceiling as its reason at the skip site.",
+    "notes": "Measured on this host: `git worktree add` fails at ~200-char worktree paths with \"fatal: '$GIT_DIR' too big\" - below MAX_PATH, unaffected by core.longpaths (190 OK, 220 FAIL). So toNamespacedPath cannot help, and TAG_MAX_LENGTH=216 (Linux NAME_MAX arithmetic) is unreachable through fanout on win32. Whole-suite vitest gates afterMerge, so all legs must land in ONE commit or every build tick reverts. Spec §4 amended for the SIGTERM leg."
   },
   {
     "tag": "WIN32-NAMESPACEDPATH-JOIN-UNSHARED",

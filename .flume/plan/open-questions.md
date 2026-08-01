@@ -9,90 +9,53 @@ Status markers:
 
 <!-- questions below this line -->
 
-## win32 path-limit tests assert outcomes a host's registry can fake green (v0.11)
+## A schema-valid tag can be unshippable through fanout on win32
 
 **PARKED**
 
-Diagnosed on a native Windows host, 2026-08-01. Two facts changed the shape of
-the original "the loop has no win32 oracle" finding:
+Measured on a native Windows host, 2026-08-01: `git worktree add` refuses a
+worktree path at roughly 200 characters with `fatal: '$GIT_DIR' too big` (190
+OK, 220 FAIL). It is **below** MAX_PATH, `core.longpaths=true` does not lift
+it, and no Node-side `toNamespacedPath` wrapping touches it — git builds that
+path itself.
 
-**An oracle exists for interactive sessions.** The operator's machine runs the
-suite under native Windows node 22 — all nine CI reds reproduce in ~25s. The
-gap is real only for the autonomous loop, which runs on Linux.
+`TAG_MAX_LENGTH = 255 - 39` is Linux `NAME_MAX` arithmetic. Fanout derives a
+worktree directory from `slugify(entry.tag)`, so on win32 a tag the schema
+accepts produces a worktree git cannot create. The engine behaves correctly
+when it happens — the wave reports a `provisionFailure` naming git's own error,
+which is *Loud or nothing* working — but the entry can never ship on that
+platform, and nothing upstream warns the author.
 
-**But it is a partial oracle, and that is the real problem.** The host carries
-`LongPathsEnabled=1`, so Node's `fs` writes a 368-char raw path without
-complaint. The thing the WIN32-PATH-TOTAL-LIMIT sweep actually shipped —
-wrapping paths in `toNamespacedPath` — is therefore a no-op here and cannot be
-falsified by any test that asserts an *outcome*. A host with the registry key
-unset would fail the same tests the sweep believes it fixed, and no host in the
-loop's reach can tell the difference.
-
-The sweep's tests are outcome-shaped ("the file landed", "the tick shipped").
-That shape makes them a function of host configuration rather than of the code
-under test. The one test in the tree that pins the *call* — `tests/git.test.ts`
-:210, asserting `rm` received the path — is the only one that caught the
-sweep's own change, and it caught it by going red.
+This is the residue of the WIN32-PATH-TOTAL-LIMIT sweep: the sweep read the
+symptom as a Node path-length problem and wrapped fs calls, when the binding
+constraint for the fanout legs was git's own buffer.
 
 Options:
 
-1. **Re-shape the win32 assertions to call-shape.** Spy the `fs` boundary and
-   assert it received a `\\?\`-prefixed path. Falsifiable on every host
-   including Linux, so the Linux loop regains a real signal and the registry
-   key stops mattering. Costs a rewrite of the sweep's ~7 test cases.
-2. **Keep outcome assertions, gate them win32-only** (`skipIf(!win32)`) and
-   accept that they prove nothing on a `LongPathsEnabled=1` host. Local green
-   becomes honest about *where* it ran, but never about *what* it proved.
-3. **Both** — call-shape for the wrapping itself, outcome for the handful of
-   cases where the wrap's effect is genuinely observable.
+1. **Bound the worktree directory name in the engine.** `createWorktree`
+   derives the directory from a length-capped slug (truncate + short hash of
+   the tag) instead of the raw tag. Any schema-valid tag becomes provisionable
+   on every platform; `pending.json`, logs, and the §5 record keep the full
+   tag. Passes the second-implementation test — every Windows chain hits this,
+   and none would want to choose otherwise.
+2. **Re-derive `TAG_MAX_LENGTH` from the tightest real constraint** rather than
+   Linux `NAME_MAX`. Honest everywhere, but a breaking schema change that
+   shortens tags for POSIX chains that never had the problem.
+3. **Leave it.** The failure is already loud, and 216-char tags are pathological
+   in practice. Costs: the schema's stated ceiling is not reachable on win32,
+   and the agreement pin that drives the ceiling through the real writer can
+   only run on POSIX.
 
-Recommended: (1), and it likely subsumes the standing
-`WIN32-NAMESPACEDPATH-JOIN-UNSHARED` entry — once the shared helper exists, one
-call-shape pin over it replaces the per-site outcome tests entirely.
+Recommended: (1). It is the only option that keeps the schema's ceiling
+meaningful without breaking POSIX chains, and it confines the fix to the one
+mechanism that owns the path.
 
-**Blocking on this question:** three reds remain after the fixture fix filed as
-`WIN32-SWEEP-TESTS-VACUOUS-ON-BOTH-PLATFORMS` (WORKTREE fresh-create, WORKTREE
-stale-cleanup, PRIORATTEMPT round-trip). They fail with a different symptom —
-nothing shipped, no record written — and were not diagnosed. Deriving a fix for
-them before this question resolves repeats the blind-wave failure the original
-inbox entry warned about.
-
-## `flume loop`'s tip claim can't literally go "gone after SIGTERM" on win32 (v0.11 §4)
-
-**NEEDS AMENDMENT**
-
-CI run 30675682946 (windows): tests/cli.test.ts's "claim file (and loop.pid)
-are gone after SIGTERM" is red. `process.kill` SIGTERM on Windows maps to
-`TerminateProcess` — no exit/signal handler runs, so the claim file and
-`loop.pid` survive by construction, on every Windows process, not just
-flume's. §4's stale-reclaim path (dead-pid liveness check on next acquire)
-already covers the mechanism a lost release needs: a stale claim is unusable
-by anyone but the next acquirer, who reclaims it. What can't be true on
-win32 is §4's literal acceptance text — "gone after SIGTERM" assumes a
-handler runs, which win32's `TerminateProcess` semantics rule out
-categorically. Not an engine gap; a platform fact, same shape as the
-already-parked "flume status last commit" question below.
-
-Options:
-
-1. **Amend §4's acceptance to a win32-conditional form** — "claim file gone
-   after clean exit and after SIGTERM on POSIX; reclaimed as stale (not
-   necessarily removed) after SIGTERM on win32." The test then asserts the
-   platform-appropriate outcome and goes green for a true reason.
-2. **Leave the spec text as-is, exempt win32 in the suite only**
-   (`it.skipIf`). Spec keeps a claim only POSIX satisfies; a wrong invariant
-   stands unflagged.
-3. **Force cleanup on win32 anyway** (a supervisor process, a Windows job
-   object). This repo's win32 story elsewhere (`core.longpaths`, spawn
-   discipline) sticks to Node/OS-native mechanisms; building a supervisor to
-   route around an OS primitive designed to prevent exactly this is the
-   "complicated solution chasing a tail" `collaboration.md` warns against.
-
-Recommended: (1) — the stale-reclaim mechanism is the actual cross-platform
-guarantee; the acceptance text should say what's true per platform instead
-of a claim only POSIX satisfies. Once amended, the test-expectation fix
-(win32-conditional assertion) is mechanical and files as a normal entry
-citing the amended section.
+Standing decisions already taken against this finding (operator, 2026-08-01):
+the two `WORKTREE-WIN32-PATH-TOTAL-LIMIT` cases are **retired** — the claim is
+untestable on win32 and vacuous on Linux. The two max-length-tag fanout cases
+(`PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT`, `TAG-LENGTH-BOUND-AGREEMENT-PIN`) are
+win32-skipped rather than retired, so POSIX keeps the real agreement pin; if
+(1) ships, both skips come off and the pin runs everywhere.
 
 ## `flume status` — v0.1 §3's "last commit" leg was never shipped
 
