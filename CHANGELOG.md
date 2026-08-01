@@ -16,7 +16,9 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 - A chain module now default-exports a **factory**, `(api) => ({ chain })`,
   instead of a `Chain` object (v0.11 §6). Every engine value a chain
   composes with — gates, agent constructors, schema helpers, `git`
-  read-helpers — arrives on that `api` parameter; a chain's only remaining
+  read-helpers, the error classes it branches on with `instanceof`
+  (`CjsContextLoadError`, `PendingParseFailure`, `InlineExecRenderError`,
+  `TipClaimHeldError`) — arrives on that `api` parameter; a chain's only remaining
   engine import is `import type`, which is erased at runtime. `agent` and
   `forkResolver` move from named module exports onto the factory's return
   (`{ chain, agent, forkResolver }`), because a named export cannot receive

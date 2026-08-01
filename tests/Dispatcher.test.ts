@@ -19,6 +19,7 @@ vi.mock("tsx/esm/api", async (importOriginal) => {
 import { tsImport } from "tsx/esm/api";
 import {
   CjsContextLoadError,
+  PendingParseFailure as realPendingParseFailure,
   Dispatcher,
   frictionCountLine,
   loadChainModule,
@@ -48,6 +49,7 @@ import {
   TAG_MAX_LENGTH,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
+import { InlineExecRenderError as realInlineExecRenderError } from "../src/Prompt.ts";
 import * as git from "../src/git.ts";
 
 const exec = promisify(execFile);
@@ -5206,6 +5208,39 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
       const gate = mod.chain.phases[0]!.gates[0];
       expect(gate).toBeDefined();
       expect(gate).toBe(realTscGate);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  // RELEASE-v0.11 §6 — the error classes a chain branches on with
+  // `instanceof` must ride the api parameter too, or a chain catching one
+  // has no way to identify it without a value import of its own. The
+  // factory stashes each into the phase's gates[] (a real ChainModule
+  // field that survives `loadChainModule`'s return, unlike an ad hoc key)
+  // so the test can compare against the engine's own exports by reference.
+  it("hands the chain factory the identity-same error classes the engine throws (§6)", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-errors-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default (api) => ({ chain: { phases: [{ name: "build", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [api.CjsContextLoadError, ` +
+          `api.PendingParseFailure, api.InlineExecRenderError, ` +
+          `api.TipClaimHeldError], handoff: () => [] }], humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      const gates = mod.chain.phases[0]!.gates;
+      expect(gates[0]).toBe(CjsContextLoadError);
+      expect(gates[1]).toBe(realPendingParseFailure);
+      expect(gates[2]).toBe(realInlineExecRenderError);
+      expect(gates[3]).toBe(git.TipClaimHeldError);
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }

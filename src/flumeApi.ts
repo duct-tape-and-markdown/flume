@@ -30,7 +30,8 @@ import {
   writablePathsGate,
   pendingGate,
 } from "./builtinGates.js";
-import { showNameOnly } from "./git.js";
+import { CjsContextLoadError, PendingParseFailure } from "./Dispatcher.js";
+import { showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
   composePendingList,
@@ -40,7 +41,7 @@ import {
   touchedPaths,
   isPickableNow,
 } from "./PendingSchema.js";
-import { renderPrompt } from "./Prompt.js";
+import { InlineExecRenderError, renderPrompt } from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
 
 /**
@@ -78,6 +79,11 @@ export interface FlumeApi {
   git: {
     showNameOnly: typeof showNameOnly;
   };
+  /** The error classes chains branch on with `instanceof`, no value import. */
+  CjsContextLoadError: typeof CjsContextLoadError;
+  PendingParseFailure: typeof PendingParseFailure;
+  InlineExecRenderError: typeof InlineExecRenderError;
+  TipClaimHeldError: typeof TipClaimHeldError;
 }
 
 /**
@@ -113,5 +119,9 @@ export function buildFlumeApi(): FlumeApi {
     partitionByFileOverlap,
     renderPrompt,
     git: { showNameOnly },
+    CjsContextLoadError,
+    PendingParseFailure,
+    InlineExecRenderError,
+    TipClaimHeldError,
   };
 }
