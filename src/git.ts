@@ -1,7 +1,7 @@
 /**
  * git — narrow shell wrapper around the subset of git operations the
  * dispatcher needs. We avoid simple-git or isomorphic-git to keep the
- * dependency surface minimal; nine commands is all we use.
+ * dependency surface minimal; eight commands is all we use.
  */
 
 import { execFile } from "node:child_process";
@@ -203,20 +203,7 @@ export async function cherryPickAbort(repoRoot: string): Promise<void> {
   }
 }
 
-export async function commitAll(opts: {
-  cwd: string;
-  message: string;
-  /** Allow an empty commit; used by harness chore commits when nothing changed. */
-  allowEmpty?: boolean;
-}): Promise<string> {
-  await run(opts.cwd, ["add", "-A"]);
-  const args = ["commit", "-m", opts.message];
-  if (opts.allowEmpty) args.push("--allow-empty");
-  await run(opts.cwd, args);
-  return revParse(opts.cwd);
-}
-
-/** Stage a specific set of paths and commit. Scoped alternative to commitAll. */
+/** Stage a specific set of paths and commit. */
 export async function commitPaths(opts: {
   cwd: string;
   message: string;
@@ -228,12 +215,6 @@ export async function commitPaths(opts: {
   await run(opts.cwd, ["add", "--", ...opts.paths]);
   await run(opts.cwd, ["commit", "-m", opts.message]);
   return revParse(opts.cwd);
-}
-
-/** True iff the working tree has uncommitted changes (staged or unstaged). */
-export async function isDirty(cwd: string): Promise<boolean> {
-  const { stdout } = await run(cwd, ["status", "--porcelain"]);
-  return stdout.length > 0;
 }
 
 /**

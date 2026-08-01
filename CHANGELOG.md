@@ -66,6 +66,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   will now fail its tick loudly instead. The error names every failing
   span's command text and stderr.
 
+### Removed
+
+- `src/git.ts`'s `commitAll` and `isDirty` (`.claude/rules/engineering.md`
+  "An export earns its consumer" — GIT-DEAD-EXPORTS-RETIRE): `commitPaths`
+  superseded `commitAll` and nothing ever called `isDirty`; LSP
+  `findReferences` on both resolved only their own declarations. Neither
+  was re-exported from `src/index.ts`.
+
 ### Added
 
 - `tscGate`, `vitestGate`, and `eslintGate` accept an optional `cmd`
