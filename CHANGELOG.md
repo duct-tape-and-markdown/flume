@@ -135,6 +135,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `resolveStateDirs`' job-resolution doc comment (`src/cli.ts`) now sits
+  directly above `resolveStateDirs` itself. It previously sat between
+  `JobResolutionConflictError` and `resolveRepoRoot`'s own doc comment,
+  separated by a blank line, so TypeScript attached it to nothing — hover on
+  `resolveStateDirs` showed the bare signature while the conflict rule, the
+  write-back rationale, and the `FLUME_JOB` composition case read as current
+  narration reaching no consumer (`.claude/rules/engineering.md` §Narration
+  is the ladder's bottom rung).
 - `validateJobName`'s doc comment (`src/job.ts`) no longer cites the
   shipped-and-gone `JOB-RESOLUTION` pending tag as live accepted debt; it now
   names the current condition directly — `resolveStateDirs` (`src/cli.ts`)

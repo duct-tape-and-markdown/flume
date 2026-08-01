@@ -83,6 +83,25 @@ function readPackageVersion(): string {
 export class JobResolutionConflictError extends Error {}
 
 /**
+ * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
+ * git applies to `.git/` (RELEASE-v0.7 §9). `cwd` itself counts as inside
+ * the bay: if its basename is `.flume`, the bay root is its parent, no walk
+ * needed. If no ancestor has a `.flume`, fall back to `cwd` unchanged so a
+ * first `flume job new` in a fresh, undocked repo still creates `.flume`
+ * there rather than reaching for an unrelated ancestor.
+ */
+export function resolveRepoRoot(cwd: string): string {
+  if (basename(cwd) === ".flume") return dirname(cwd);
+  let dir = cwd;
+  for (;;) {
+    if (existsSync(join(dir, ".flume"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return cwd;
+    dir = parent;
+  }
+}
+
+/**
  * Resolve the mutable-state root (`flumeDir`) and the chain+prompt dir
  * (`configDir`) from `env`, canonicalizing each to an **absolute** path, and
  * write the resolved values back into `env`.
@@ -111,26 +130,6 @@ export class JobResolutionConflictError extends Error {}
  * parent's canonical job resolution, so set dirs win and the job name rides
  * along for the branch guard and fanout namespacing.
  */
-
-/**
- * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
- * git applies to `.git/` (RELEASE-v0.7 §9). `cwd` itself counts as inside
- * the bay: if its basename is `.flume`, the bay root is its parent, no walk
- * needed. If no ancestor has a `.flume`, fall back to `cwd` unchanged so a
- * first `flume job new` in a fresh, undocked repo still creates `.flume`
- * there rather than reaching for an unrelated ancestor.
- */
-export function resolveRepoRoot(cwd: string): string {
-  if (basename(cwd) === ".flume") return dirname(cwd);
-  let dir = cwd;
-  for (;;) {
-    if (existsSync(join(dir, ".flume"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return cwd;
-    dir = parent;
-  }
-}
-
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
   repoRoot: string,
