@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "ENTRYWRITESCOPE-SHARED-UNION",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "Add shared entryPaths∪channelPaths union helper, exported." },
+        { "path": "src/Prompt.ts", "description": "effectiveFenceLines sources the fence union from the shared helper instead of its own spread (Prompt.ts:427)." },
+        { "path": "src/builtinGates.ts", "description": "writablePathsGate's entry-scope matchesAny sources from the same shared helper instead of its own spread (builtinGates.ts:438-441)." },
+        { "path": "tests/paths.test.ts", "description": "Unit-test the new union helper: dedup, empty-entry, empty-channel cases." },
+        { "path": "tests/Prompt.test.ts", "description": "Agreement case: rendered effective-fence lines agree with writablePathsGate's actual accepted scope for a shared phase/entry fixture." }
+      ],
+      "retire": []
+    },
+    "summary": "Prompt.ts effectiveFenceLines and builtinGates.ts writablePathsGate independently re-derive the same entryPaths∪channelPaths union — extract one shared computation.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Derived state is computed, never restated beside its source" },
+    "tests": [
+      { "path": "tests/paths.test.ts", "asserts": "shared union helper dedups entryPaths ∪ channelPaths, including empty-array cases" },
+      { "path": "tests/Prompt.test.ts", "asserts": "effective-fence render agrees with writablePathsGate's actual accepted scope for a shared phase/entry fixture — not just the comment's claim" }
+    ],
+    "acceptance": "renderPrompt's effective-fence bullets and writablePathsGate's accepted entry-scope both derive from one shared helper in src/paths.ts, with a test proving agreement rather than a comment asserting it.",
+    "notes": "src/Prompt.ts:417-436 comment claims the fence 'mirrors' writablePathsGate's union 'so the two can never state a different fence,' but nothing mechanical pins it — Prompt.ts:427 and builtinGates.ts:438-441 each spread entryPaths+channelPaths independently."
+  }
+]
