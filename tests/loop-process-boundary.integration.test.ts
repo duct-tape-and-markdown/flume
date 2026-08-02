@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
 import { CLI, TSX_CLI, hermeticEnv } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -177,7 +178,7 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
       new Baton(join(repo.dir, ".flume")).wake("beta");
 
       const t1 = await runTick(repo.dir);
-      expect(t1.code).toBe(78);
+      expect(t1.code).toBe(EX_TERMINAL_MISCONFIG);
       expect(t1.out).not.toMatch(/tick → beta/);
       expect(t1.out).toMatch(/unknown phases: beta/);
 
@@ -218,7 +219,7 @@ describe("§14 FLUME_JOB leak — hermeticEnv keeps a job resolution from leakin
       process.env.FLUME_JOB = "outer-job";
       try {
         const t = await runTick(repo.dir);
-        expect(t.code).toBe(78);
+        expect(t.code).toBe(EX_TERMINAL_MISCONFIG);
         expect(t.out).toMatch(/unknown phases: beta/);
         expect(t.out).not.toMatch(/refusing tick/);
       } finally {
@@ -295,7 +296,7 @@ describe("§3 Axis-C fail-fast — real `flume loop` over an orphaned awake flag
       const loop = await runLoop(repo.dir, hermeticEnv(), 3);
 
       // Fail-fast: one child, then stop — never --max, never "hibernating".
-      expect(loop.code).toBe(78);
+      expect(loop.code).toBe(EX_TERMINAL_MISCONFIG);
       expect(loop.out).toMatch(/terminal misconfiguration/);
       expect(loop.out).toMatch(/beta/);
       expect(loop.out).not.toMatch(/reached --max/);
@@ -328,7 +329,7 @@ describe("§4 mount-dead fail-fast — real `flume loop` over an unloadable chai
       const loop = await runLoop(repo.dir, hermeticEnv(), 3);
 
       // Fail-fast: one child, then stop — never --max.
-      expect(loop.code).toBe(69);
+      expect(loop.code).toBe(EX_MOUNT_DEAD);
       expect(loop.out).toMatch(/mount-dead/);
       expect(loop.out).not.toMatch(/reached --max/);
       expect(loop.out.match(/tick exited 69/g)).toHaveLength(1);
