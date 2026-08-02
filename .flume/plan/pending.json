@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "BACKLOG-GROOMER-GATE-ENOENT-UNTESTED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "Add a direct test on backlogGroomerChain.phases[0].gates[0] (backlogParseGate) — BACKLOG_PATH as a directory, gate.run(ctx) called directly (not via dispatcher.tick()) — asserting it rejects/throws the EISDIR error rather than returning ok:true 'absent'."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "backlogParseGate's ENOENT-narrowed catch is untested — the shipped fix's test only exercises groomAgent.invoke's catch; the gate's own catch site is never reached by any test.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fix ships the test that would have caught it"
+    },
+    "tests": [
+      {
+        "path": "tests/examples.integration.test.ts",
+        "asserts": "backlogParseGate.run rejects on a non-ENOENT BACKLOG.json read failure (path is a directory) instead of returning ok:true 'BACKLOG.json absent'."
+      }
+    ],
+    "acceptance": "New test passes on current tree (gate already narrowed by dc63faf) and would have failed pre-dc63faf, where the bare catch returned ok:true over EISDIR.",
+    "notes": "backlogParseGate runs only afterCommit (Dispatcher.ts:2164); dispatcher.tick() in the existing EISDIR test never reaches it because groomAgent.invoke throws first, pre-commit. Only a direct gate.run() call exercises this catch site."
+  }
+]
