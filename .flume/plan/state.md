@@ -10,4 +10,4 @@ Posture swept through: `6328078c54297e395a92bd2e466730017a808e34`
 
 Covered this rotation: `src/job.ts`, `tests/job.test.ts`, `src/Agent.ts`, `src/Gate.ts`, `src/paths.ts`, `src/Baton.ts`, `tests/Baton.test.ts`, `src/partition.ts`, `tests/partition.test.ts`, `src/Dispatcher.ts`, `src/index.ts`, `src/Phase.ts`, `src/flumeApi.ts`, `src/Prompt.ts`, `src/builtinGates.ts`, `src/PendingSchema.ts`, `src/setupWorktree.ts`, `src/cli.ts`, `src/git.ts`, `src/standardSchema.ts`, `tests/helpers/subprocess.ts`, `bin/flume`, `bin/flume.js`, `tests/builtinGates.test.ts`, `tests/Agent.test.ts`, `tests/paths.test.ts`, `examples/minimal-chain.ts`, `tests/Dispatcher.test.ts`, `tests/Gate.test.ts`, `tests/PendingSchema.test.ts`, `tests/Prompt.test.ts`
 
-Plan continues: yes — sweep rotation open, frontier non-empty
+Plan continues: no
