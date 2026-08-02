@@ -42,7 +42,7 @@ import { writablePathsGate } from "./builtinGates.js";
 // import participates safely in the builtinGates cycle — see its docstring.
 import { buildFlumeApi, type FlumeApi } from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { namespacedJoin } from "./paths.js";
+import { namespacedJoin, matchesAny } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
@@ -1595,7 +1595,7 @@ export class Dispatcher {
       // raw commit diff, not that folded signal, so reusing it here is safe.
       const declaredFiles = declaredPaths(r.entry);
       const touchesDeclaredFile = commitTouchedPaths.some((p) =>
-        declaredFiles.includes(p),
+        matchesAny(p, declaredFiles),
       );
       if (!touchesDeclaredFile) {
         this.log.warn(

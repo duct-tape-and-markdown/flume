@@ -227,6 +227,20 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   consumers now diverge only on which event/block types they keep
   (`.claude/rules/engineering.md` §The fix lands at the mechanism,
   DISPATCHER-STREAMJSON-PARSE-DUP).
+- `Dispatcher.ts`'s ship-detection check (§12, "does this cherry-picked
+  commit touch a declared file") now glob-matches `commitTouchedPaths`
+  against `declaredPaths(entry)` via `matchesAny`, the same matcher the
+  entry-scope write guard (`writablePathsGate` at the afterCommit gate loop)
+  already applies to that identical list. `matchesAny`/`globToRegex` move
+  from `src/builtinGates.ts` to `src/paths.ts` so both call sites share one
+  implementation. Previously the write guard glob-matched while ship
+  detection compared with `Array.includes` — a fanout entry that declared a
+  glob (`nodes/territory-*.json`) and shipped a matching file
+  (`nodes/territory-01.json`) passed the write guard, cherry-picked onto
+  trunk, then failed the literal-equality ship check and stayed pending
+  forever: landed work re-attempted every tick, never draining
+  (`.claude/rules/engineering.md` §The fix lands at the mechanism,
+  SHIPDETECT-LITERAL-VS-GLOB-DISAGREEMENT).
 - `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
   `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
   now route through `toNamespacedPath`, the same idiom the §8 reverted-prose

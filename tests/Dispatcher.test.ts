@@ -2360,6 +2360,57 @@ describe("Dispatcher fanout — ship detection requires a declared-files diff (�
     );
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   }, 20_000);
+
+  it("a glob-declaring entry whose commit touches a matching file ships (§12 matches the write guard's glob semantics)", async () => {
+    // Declares a glob, not a literal path — the same shape the entry-scope
+    // write guard (writablePathsGate via declaredPaths(entry)) already
+    // glob-matches at commit time. Ship detection must judge the same way.
+    await writePending(
+      fx.repo,
+      [makeEntry("GLOB-SHIP", ["nodes/territory-*.json"])],
+    );
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["nodes/**", "notes/**"],
+      entryChannelPaths: ["notes/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "glob-ship": async (cwd) => {
+        await mkdir(join(cwd, "nodes"), { recursive: true });
+        await writeFile(join(cwd, "nodes", "territory-01.json"), "{}\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(GLOB-SHIP): ship"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Pre-fix: declaredFiles.includes(p) compares "nodes/territory-*.json"
+    // against "nodes/territory-01.json" literally, never matches — the
+    // entry lands on trunk but stays pending forever (non-draining loop).
+    expect(outcome.result?.shippedTags).toEqual(["GLOB-SHIP"]);
+    expect(
+      await readFile(join(fx.repo, "nodes/territory-01.json"), "utf8"),
+    ).toBe("{}\n");
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
 });
 
 describe("Dispatcher fanout — empty pickable set", () => {

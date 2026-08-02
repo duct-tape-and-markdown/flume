@@ -19,6 +19,7 @@ import type { Phase } from "./Phase.js";
 // validates through the exact load path the runtime uses so the gate's
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
+import { matchesAny } from "./paths.js";
 import {
   parsePending,
   declaredPaths,
@@ -462,24 +463,4 @@ export function writablePathsGate(
       };
     },
   };
-}
-
-// ---------- glob matching ----------
-
-/**
- * Minimal glob matcher supporting `*`, `**`, and literal paths. We avoid a
- * dependency here so the harness has zero runtime deps beyond zod.
- */
-function matchesAny(path: string, globs: string[]): boolean {
-  return globs.some((g) => globToRegex(g).test(path));
-}
-
-function globToRegex(glob: string): RegExp {
-  // Order matters: replace `**` before `*` to avoid overlap.
-  const re = glob
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex specials
-    .replace(/\*\*/g, "::DOUBLESTAR::")
-    .replace(/\*/g, "[^/]*")
-    .replace(/::DOUBLESTAR::/g, ".*");
-  return new RegExp(`^${re}$`);
 }
