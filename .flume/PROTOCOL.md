@@ -10,7 +10,7 @@ Build re-validates each entry against the cited section (in the file its `per.pa
 
 ## Plan continuation marker
 
-Plan ticks process the *delta* since the last `plan:` commit. When the delta overflows what one tick can do well, plan writes `Plan continues: yes — <one-line reason>` into `state.md` and the harness re-wakes plan; `Plan continues: no` (or absence) hands to build (if pickable entries exist) or hibernates. The exact load-bearing predicate lives in `.flume/chain.ts` `plan.handoff`; the writer-side mandate in `.flume/prompts/plan.md`.
+Plan ticks process the *delta* since the last tick that did the work — each dimension windowed by its own stamp in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`), never by a `git log` grep, so a sliced dimension keeps its remainder. When the delta overflows what one tick can do well, plan writes `Plan continues: yes — <one-line reason>` into `state.md` and the harness re-wakes plan; `Plan continues: no` (or absence) hands to build (if pickable entries exist) or hibernates. The exact load-bearing predicate lives in `.flume/chain.ts` `plan.handoff`; the writer-side mandate in `.flume/prompts/plan.md`.
 
 ## Disk vs git log
 
