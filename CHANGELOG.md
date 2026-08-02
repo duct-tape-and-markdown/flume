@@ -166,6 +166,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `TickOutcome.terminal`, but a chain author had no barrel path to name them
   when typing their own handling of those fields.
 
+- `src/index.ts` re-exports `NoCommitMode` as a named type
+  (`.claude/rules/engineering.md` "An export earns its consumer" —
+  PROMPT-NOCOMMITMODE-UNEXPORTED): it was already the field type of
+  `TickVerdict.noCommit` / `TickOutcome.noCommit` / `TickResult.noCommit`,
+  but a chain author had no barrel path to name it when typing their own
+  handling of those fields.
+
 ### Fixed
 
 - `resolveStateDirs`' job-resolution doc comment (`src/cli.ts`) now sits

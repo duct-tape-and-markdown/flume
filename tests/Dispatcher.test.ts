@@ -57,6 +57,13 @@ import * as git from "../src/git.ts";
 // This import fails tsc if either drops from src/index.ts.
 import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts";
 
+// Barrel-export pin (engineering.md "An export earns its consumer"):
+// NoCommitMode is the field type of TickVerdict.noCommit / TickOutcome
+// .noCommit / TickResult.noCommit, so a chain author needs to be able to
+// name it from the package entry point. This import fails tsc if it drops
+// from src/index.ts.
+import type { NoCommitMode } from "../src/index.ts";
+
 const exec = promisify(execFile);
 
 const silent: Logger = {
@@ -7081,5 +7088,18 @@ describe("src/index.ts — ProvisionFailure/TerminalMisconfiguration barrel expo
 
     expect(provisionFailure.tag).toBe("SOME-ENTRY");
     expect(terminalMisconfiguration.kind).toBe("orphaned-awake");
+  });
+});
+
+describe("src/index.ts — NoCommitMode barrel export (PROMPT-NOCOMMITMODE-UNEXPORTED)", () => {
+  it("re-exports NoCommitMode as a named type a chain author can consume", () => {
+    // The imported type (line 65, from src/index.ts rather than
+    // src/Prompt.ts) is what a chain author would actually reach for to
+    // type their own handling of TickVerdict.noCommit / TickOutcome.noCommit
+    // / TickResult.noCommit — if it drops from the barrel this fails tsc,
+    // not just an LSP references check.
+    const noCommit: NoCommitMode = "gate-revert";
+
+    expect(noCommit).toBe("gate-revert");
   });
 });

@@ -58,7 +58,7 @@ export {
 
 export { partitionByFileOverlap } from "./partition.js";
 
-export { renderPrompt } from "./Prompt.js";
+export { renderPrompt, type NoCommitMode } from "./Prompt.js";
 
 export { type FlumeApi } from "./flumeApi.js";
 
