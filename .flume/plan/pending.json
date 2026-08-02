@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "BACKLOG-GROOMER-ENOENT-ONLY-SWALLOW",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/backlog-groomer-chain.ts",
+          "description": "groomAgent.invoke (readFileSync BACKLOG_PATH) and backlogParseGate.run (readFileSync BACKLOG_PATH) each catch-all and report 'nothing to groom' / ok:true on any error, not just missing-file. Narrow both to err.code === 'ENOENT', rethrow otherwise — matches existing convention (src/Baton.ts:56, src/builtinGates.ts:49, src/Agent.ts:173, src/Dispatcher.ts:2257)."
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "Add a case where BACKLOG_PATH exists as a directory (a real, non-ENOENT readFileSync failure) and assert the tick surfaces it instead of reporting 'no backlog' / gate ok:true."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Narrow backlog-groomer-chain's bare try/catch to ENOENT-only; other I/O errors are silently treated as 'no backlog', masking real failures.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      {
+        "path": "tests/examples.integration.test.ts",
+        "asserts": "a non-ENOENT BACKLOG.json read failure (path is a directory) propagates/fails the tick rather than being reported as 'no backlog to groom'."
+      }
+    ],
+    "acceptance": "New test fails on pre-fix tree (EISDIR swallowed as a no-op 'nothing to groom') and passes once both catch sites in examples/backlog-groomer-chain.ts narrow to ENOENT.",
+    "notes": "This file is the one users are told to copy verbatim into their own .flume/chain.ts (trailing block), so the swallow-all-errors pattern propagates to every downstream chain that copies it."
+  }
+]
