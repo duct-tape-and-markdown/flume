@@ -1,43 +1,5 @@
 [
   {
-    "tag": "WORKTREE-DIRNAME-LENGTH-BOUND",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "createWorktree (~2195-2242): the worktree path's directory component derives from a length-bounded name (truncated slugify(entry.tag) + short hash of the full tag) per §9; branch (~2203) and priorAttemptKey (~2253) keep the untruncated slug - only the fs directory is bounded"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "remove the win32 skipIf on TAG-LENGTH-BOUND-AGREEMENT-PIN (~6475) and the unconditional skip on PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT (~6970) so both run on every platform; add a case pinning two tags sharing a long common prefix to distinct worktree directories"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Changed: worktree dirname length bound line per §9"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "createWorktree derives a length-bounded worktree directory name instead of the raw tag slug, so any schema-valid tag provisions its fanout worktree on win32 (§9).",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "9. Worktree directory names are length-bounded"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "a TAG_MAX_LENGTH-tag fanout entry provisions and ships on win32 (no skip); two tags sharing a long common prefix get distinct worktree directories; the full tag still appears in the commit message and the §5 prior-attempt record; PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT round-trips on every platform"
-      }
-    ],
-    "acceptance": "TAG-LENGTH-BOUND-AGREEMENT-PIN and PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT run unskipped on every platform and pass; distinct-prefix tags get distinct worktree dirs; the full tag is unchanged everywhere else it's read.",
-    "notes": "Bound is an engine constant (not a chain knob) sized so <wtBase>/<namespace>/<dir> clears git's ~200-char win32 ceiling. Resolves the parked 'schema-valid tag unshippable on win32' open question - closed this tick."
-  },
-  {
     "tag": "ENTRYEXTENSION-STANDARD-SCHEMA",
     "gate": {
       "kind": "open"
