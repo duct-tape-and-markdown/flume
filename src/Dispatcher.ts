@@ -19,6 +19,7 @@ import {
 import { existsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { spawn, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   join,
   dirname,
@@ -433,6 +434,35 @@ type AgentTermination =
  */
 function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+}
+
+/**
+ * Length bound for `createWorktree`'s directory-name component only (§9,
+ * v0.11). `git worktree add` refuses a worktree path around 200 chars on
+ * win32 (`fatal: '$GIT_DIR' too big`) — below MAX_PATH, unaffected by
+ * `core.longpaths`, and unreachable by `toNamespacedPath`/`namespacedJoin`
+ * because git builds that path itself before any Node fs call sees it.
+ * `TAG_MAX_LENGTH` (`PendingSchema.ts`) sizes the schema off NAME_MAX (255),
+ * a wider ceiling, so a schema-valid tag's raw slug can already exceed this
+ * one. Chosen with room to spare under a `wtBase`/namespace prefix, not
+ * tuned to the measured ~200-char wall itself.
+ */
+const WORKTREE_DIRNAME_MAX = 48;
+
+/**
+ * `createWorktree`'s fs directory name for an entry's tag — truncated to
+ * `WORKTREE_DIRNAME_MAX` with a hash of the *full* tag appended so two tags
+ * sharing a long common prefix still land on distinct directories. Only the
+ * filesystem component is bounded: the branch name and the §5 prior-attempt
+ * key keep the untruncated `slugify(entry.tag)`, since neither is a git-
+ * constructed worktree path and both are already bounded by the schema's
+ * own `TAG_MAX_LENGTH`.
+ */
+export function worktreeDirName(tag: string): string {
+  const slug = slugify(tag);
+  if (slug.length <= WORKTREE_DIRNAME_MAX) return slug;
+  const hash = createHash("sha1").update(tag).digest("hex").slice(0, 10);
+  return `${slug.slice(0, WORKTREE_DIRNAME_MAX - hash.length - 1)}-${hash}`;
 }
 
 /** Cap a string to `max` chars, marking the elision so truncation is visible. */
@@ -2292,12 +2322,19 @@ export class Dispatcher {
       : join(this.flumeDir, "worktrees");
     // The path mirrors the branch namespacing: under a shared
     // FLUME_WORKTREES_DIR two jobs with identical tag slugs would otherwise
-    // collide on <base>/<slug>, and the stale-cleanup below would rm the
+    // collide on <base>/<dirName>, and the stale-cleanup below would rm the
     // OTHER job's live worktree. Namespaced unconditionally when set — the
     // redundant level under a default per-job base is harmless.
+    //
+    // The fs directory name is length-bounded (§9) — git itself refuses a
+    // worktree path around 200 chars on win32, below `TAG_MAX_LENGTH`'s
+    // NAME_MAX-derived ceiling — while `branch` above keeps the untruncated
+    // slug: the tag stays full-length everywhere except this one directory
+    // component.
+    const dirName = worktreeDirName(entry.tag);
     const path = this.opts.namespace
-      ? join(wtBase, this.opts.namespace, slug)
-      : join(wtBase, slug);
+      ? join(wtBase, this.opts.namespace, dirName)
+      : join(wtBase, dirName);
     if (existsSync(toNamespacedPath(path))) {
       // Stale from a prior crashed run; clean up.
       try {

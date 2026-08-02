@@ -512,6 +512,22 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `.flume/chain.ts`'s pre-adoption hand-rolled install step as the
   motivating example, since the chain now calls this helper directly. No
   behavior changes.
+- `Dispatcher.createWorktree`'s fanout worktree directory name is now
+  length-bounded (v0.11 §9 — WORKTREE-DIRNAME-LENGTH-BOUND): a new
+  `worktreeDirName` truncates `slugify(entry.tag)` to a fixed budget and
+  appends a short hash of the full tag, so two tags sharing a long common
+  prefix still land on distinct directories. `TAG_MAX_LENGTH` sizes the
+  schema off NAME_MAX (255), a wider ceiling than the one that matters
+  here — `git worktree add` itself refuses a worktree path around 200
+  chars on win32 (`fatal: '$GIT_DIR' too big`), below MAX_PATH and
+  unreachable by `toNamespacedPath` because git builds that path itself —
+  so a schema-valid tag's raw slug could already exceed it. Only the fs
+  directory name is bounded: the branch name and the §5 prior-attempt key
+  keep the untruncated slug, and the full tag is unchanged everywhere else
+  it's read (`pending.json`, commit messages, logs). `TAG-LENGTH-BOUND-
+  AGREEMENT-PIN` and `PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT`
+  (`tests/Dispatcher.test.ts`) come off their platform skips and now run
+  everywhere they're reachable.
 
 ## [0.9.0] - 2026-07-31
 

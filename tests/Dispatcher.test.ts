@@ -29,6 +29,7 @@ import {
   readTickVerdicts,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
+  worktreeDirName,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -227,7 +228,9 @@ function singleAgent(action: (cwd: string) => Promise<void>): Agent {
 
 /**
  * Fanout agent that dispatches to a per-worktree action by the cwd basename
- * (which equals the dispatcher's slug: tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-")).
+ * (which equals `worktreeDirName(tag)` — the dispatcher's slug,
+ * `tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-")`, unchanged for a tag
+ * short enough not to need §9's length bound).
  */
 function fanoutAgent(
   bySlug: Record<string, (cwd: string) => Promise<void>>,
@@ -6821,15 +6824,13 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     ).toBe(true);
   }, 20_000);
 
-  // win32-skip: this drives a TAG_MAX_LENGTH tag through real fanout, which
-  // provisions a git worktree keyed on the tag's slug. Measured on a real
-  // win32 host, `git worktree add` itself refuses around ~200-char worktree
-  // paths ("fatal: '$GIT_DIR' too big"), independent of core.longpaths —
-  // below win32's ~260-char total-path limit, so no namespacing fixes it.
-  // The tag-length ceiling this test pins is real and stays enforced on
-  // POSIX; on win32 the worktree never comes up, so the tick would fail on
-  // git's own ceiling rather than reach the assertion this test exists for.
-  it.skipIf(process.platform === "win32")(
+  // Runs on every platform (§9, v0.11): createWorktree derives the fanout
+  // worktree directory from a length-bounded name, not the raw tag slug, so
+  // a TAG_MAX_LENGTH tag no longer hits git's own ~200-char win32 worktree-
+  // path refusal ("fatal: '$GIT_DIR' too big"). The fanoutAgent key below
+  // is `worktreeDirName(tag)` — the bounded directory name — not the raw
+  // slug the tag would otherwise produce.
+  it(
     "a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)",
     async () => {
     const tag = "A".repeat(TAG_MAX_LENGTH);
@@ -6859,9 +6860,9 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
       friction: "friction",
     };
 
-    const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+    const dirName = worktreeDirName(tag);
     const agent = fanoutAgent({
-      [slug]: async (cwd) => {
+      [dirName]: async (cwd) => {
         await writeAndCommit(
           cwd,
           "src/tag-len.ts",
@@ -6893,18 +6894,68 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     },
     20_000,
   );
+
+  it("two tags sharing a long common prefix provision distinct worktree directories (WORKTREE-DIRNAME-LENGTH-BOUND)", async () => {
+    const prefix = "SHARED-PREFIX-".repeat(10);
+    const tagA = `${prefix}A`;
+    const tagB = `${prefix}B`;
+    await writePending(fx.repo, [
+      makeEntry(tagA, ["src/dirname-a.ts"]),
+      makeEntry(tagB, ["src/dirname-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dirA = worktreeDirName(tagA);
+    const dirB = worktreeDirName(tagB);
+    expect(dirA).not.toBe(dirB);
+
+    const agent = fanoutAgent({
+      [dirA]: async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/dirname-a.ts",
+          "ok\n",
+          `build(${tagA}): ship`,
+        );
+      },
+      [dirB]: async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/dirname-b.ts",
+          "ok\n",
+          `build(${tagB}): ship`,
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(new Set(outcome.result?.shippedTags)).toEqual(
+      new Set([tagA, tagB]),
+    );
+  }, 20_000);
 });
 
 // win32 lane (v0.4 §6): fanout worktree paths nest as deep as job dirs and
 // hit the identical MAX_PATH gap job.ts's own baseline pin exists to spare
 // (mirrored coverage in tests/git.test.ts for the shared helper itself).
-// TAG-LENGTH-BOUND-AGREEMENT-PIN above is win32-skipped, not a win32
-// acceptance signal: measured on a real win32 host, `git worktree add`
-// refuses a long-tag fanout path around ~200 chars — below MAX_PATH and
-// unaffected by core.longpaths — so that pin is unreachable through fanout
-// on this platform. The createWorktree/prior-attempt cases below stay deep
-// only via chain.friction/namespace nesting that fs operations (not `git
-// worktree add` itself) walk, which core.longpaths does cover.
+// TAG-LENGTH-BOUND-AGREEMENT-PIN above now runs on win32 too (§9, v0.11):
+// createWorktree's fanout worktree directory is length-bounded, so a
+// long-tag fanout path stays clear of the ~200-char wall `git worktree add`
+// itself refuses at — below MAX_PATH and unaffected by core.longpaths. The
+// createWorktree/prior-attempt cases below stay deep only via
+// chain.friction/namespace nesting that fs operations (not `git worktree
+// add` itself) walk, which core.longpaths does cover.
 describe.runIf(process.platform === "win32")(
   "Dispatcher fanout — createWorktree pins core.longpaths (v0.4 §6)",
   () => {
@@ -7317,14 +7368,12 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(snapDir)).toBe(false);
     }, 20_000);
 
-    // skip: same ceiling as TAG-LENGTH-BOUND-AGREEMENT-PIN (above the fanout
-    // suite) — a TAG_MAX_LENGTH tag used as the fanout key makes createWorktree
-    // provision a worktree at a path git itself refuses on a real win32 host
-    // (measured: `git worktree add` fails ~200 chars, "fatal: '$GIT_DIR' too
-    // big", below MAX_PATH and unaffected by core.longpaths). The tick would
-    // fail on that git refusal before ever reaching the §5 round-trip this
-    // test exists to pin.
-    it.skip("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+    // createWorktree's fanout worktree path is now bounded by
+    // worktreeDirName (§9, v0.11), so a TAG_MAX_LENGTH tag no longer hits
+    // git's own ~200-char win32 worktree-path refusal — this test reaches
+    // the §5 round-trip it exists to pin instead of failing on git's
+    // refusal first.
+    it("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
       // from the reverted commit's own diff path), the depth driver here is
       // the §5 record's own flat filename: priorAttemptPath is
@@ -7332,6 +7381,9 @@ describe.runIf(process.platform === "win32")(
       // only the fanout key (slugify(entry.tag), bounded by the real
       // TAG_PATTERN/TAG_MAX_LENGTH schema gate) can push it past 260 — the
       // longest tag the schema accepts, driven through the real writer.
+      // priorAttemptKey keeps the untruncated slug (§9) even though
+      // createWorktree's own directory name is now bounded, so this path is
+      // still as deep as before.
       const tag = "A".repeat(TAG_MAX_LENGTH);
       await writePending(fx.repo, [
         makeEntry(tag, ["src/priorattempt-w32.ts"]),
