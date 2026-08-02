@@ -5,18 +5,26 @@
  * `tag` (identity), `files` (the fence), `gate`/`dependsOnForks` (pickability),
  * `observedFiles` (dispatcher-maintained collision record). Everything else a
  * project wants on an entry is a **chain-declared extension**: each field is
- * declared once with both its zod schema and its prompt hint, and the engine
- * composes the merged validator and the rendered prompt schema from that
- * single declaration — so the prompt and the parser cannot drift.
+ * declared once with both its Standard Schema validator and its prompt hint,
+ * and the engine composes the adapted validator and the rendered prompt
+ * schema from that single declaration — so the prompt and the parser cannot
+ * drift.
  *
  * Single source of truth, four enforcement points:
- *   1. Validates plan-phase output at gate time (parse + zod).
+ *   1. Validates plan-phase output at gate time (parse + adapted validators).
  *   2. Injects itself into the plan prompt (renderSchemaForPrompt).
  *   3. Types the build-phase input (PendingEntry).
  *   4. Drives fanout partition via entry.files.edit[].path.
+ *
+ * The engine adapts each declared validator, never merges a chain-constructed
+ * schema object into its own graph (RELEASE-v0.11 §11) — `zod` here is a
+ * private engine dependency for the *core* fields only, not a channel a
+ * chain's own schema objects pass through.
  */
 
 import { z } from "zod";
+
+import type { StandardSchemaV1 } from "./standardSchema.js";
 
 // ---------- atoms ----------
 
@@ -142,14 +150,20 @@ export type PendingEntry = z.infer<typeof PendingEntryCore> &
 // ---------- chain-declared extension ----------
 
 /**
- * One chain-declared entry field: the zod schema that validates it and the
- * prompt hint that renders it. Declared once — `composePendingList` builds
- * the merged validator and `renderSchemaForPrompt` builds the rendered
- * schema block from the same record, so the two surfaces cannot drift.
+ * One chain-declared entry field: the Standard Schema (`~standard`)
+ * validator that validates it and the prompt hint that renders it. Declared
+ * once — `composePendingList` builds the adapted validator and
+ * `renderSchemaForPrompt` builds the rendered schema block from the same
+ * record, so the two surfaces cannot drift.
+ *
+ * Any library publishing `~standard` (zod ≥3.24, valibot, arktype, ...)
+ * satisfies this, as does a hand-written object — the engine never imports
+ * or merges the chain's schema, only calls its `~standard.validate` (v0.11
+ * §11).
  */
 export interface EntryExtensionField {
   /** Validates the field's value at parse time. */
-  schema: z.ZodTypeAny;
+  schema: StandardSchemaV1;
   /**
    * Rendered verbatim as the field's value in the prompt schema block:
    * `"<name>": <hint>`. Include quotes for string-shaped hints, e.g.
@@ -205,6 +219,76 @@ function withUniqueTagCheck<T extends z.ZodTypeAny>(
 }
 
 /**
+ * Thrown when a chain-declared `~standard.validate` returns a `Promise`.
+ * `parsePending` is synchronous and feeds decision and rewrite paths — a
+ * `Promise` read as a result object has no `issues`, so it would be treated
+ * as passing and accept the entry vacuously. This is a chain-config defect
+ * (the same class as an extension shadowing a core field), so the adapter
+ * throws it rather than folding it into `ParseResult.errors`: it surfaces at
+ * first parse, since asynchrony is only observable by calling `validate`
+ * (RELEASE-v0.11 §11).
+ */
+export class AsyncEntryExtensionValidatorError extends Error {
+  constructor(fieldName: string) {
+    super(
+      `entryExtension field "${fieldName}"'s ~standard.validate returned a ` +
+        `Promise; parsePending is synchronous and cannot await it. Declare ` +
+        `a synchronous Standard Schema validator for this field.`,
+    );
+    this.name = "AsyncEntryExtensionValidatorError";
+  }
+}
+
+function standardIssuePath(
+  path: StandardSchemaV1.Issue["path"],
+): PropertyKey[] {
+  return (path ?? []).map((segment) =>
+    typeof segment === "object" ? segment.key : segment,
+  );
+}
+
+/**
+ * Adapt a chain-declared Standard Schema validator into an engine-instance
+ * zod schema: a value-preserving position, never a bare check. Every
+ * downstream mechanic — strictness, entry-indexed error paths, the `tag`
+ * intersection floor — stays on the zod side; this is the one seam that
+ * calls into the chain's declared validator (RELEASE-v0.11 §11).
+ *
+ * `z.any().optional()` (rather than bare `z.any()`) is load-bearing: it
+ * marks the wrapping schema optional-in, so the enclosing `z.object` defers
+ * entirely to the validator's own verdict on an absent key instead of
+ * synthesizing its own "required" issue and dropping the validator's
+ * result — the mechanic `.default([])`-style fields on an absent key
+ * depend on.
+ */
+function adaptStandardSchemaField(
+  fieldName: string,
+  field: EntryExtensionField,
+): z.ZodTypeAny {
+  return z
+    .any()
+    .optional()
+    .transform((value, ctx) => {
+      const result = field.schema["~standard"].validate(value);
+      if (result instanceof Promise) {
+        throw new AsyncEntryExtensionValidatorError(fieldName);
+      }
+      if (result.issues) {
+        for (const issue of result.issues) {
+          ctx.issues.push({
+            code: "custom",
+            message: issue.message,
+            path: standardIssuePath(issue.path),
+            input: value,
+          });
+        }
+        return z.NEVER;
+      }
+      return result.value;
+    });
+}
+
+/**
  * Compose the core entry schema with a chain's extension declaration into
  * the list validator. Strict: fields neither core nor declared fail.
  * Throws on an extension that shadows a core field — that is a chain-config
@@ -213,9 +297,9 @@ function withUniqueTagCheck<T extends z.ZodTypeAny>(
  * `tag` is the one core field an extension MAY declare (v0.8 §3): a chain
  * wanting stricter grammar (e.g. an ALL-CAPS convention) than the engine's
  * mechanical-safety charset layers a refinement there. It composes as an
- * intersection — both the core pattern and the chain's schema must pass —
- * so a chain declaring `tag` narrows the grammar, it can never widen past
- * (or replace) the engine's mechanical floor.
+ * intersection — both the core pattern and the *adapted* chain validator
+ * must pass — so a chain declaring `tag` narrows the grammar, it can never
+ * widen past (or replace) the engine's mechanical floor.
  *
  * The composed list schema also enforces tag uniqueness across the queue —
  * mechanical safety (§3), not convention: the engine's own tag-keyed lookups
@@ -237,11 +321,13 @@ export function composePendingList(
   const shape = Object.fromEntries(
     Object.entries(extension)
       .filter(([name]) => name !== "tag")
-      .map(([name, field]) => [name, field.schema]),
+      .map(([name, field]) => [name, adaptStandardSchemaField(name, field)]),
   );
   const tagRefinement = extension.tag;
   if (tagRefinement) {
-    shape.tag = PendingEntryCore.shape.tag.and(tagRefinement.schema);
+    shape.tag = PendingEntryCore.shape.tag.and(
+      adaptStandardSchemaField("tag", tagRefinement),
+    );
   }
   // .extend on a strictObject stays strict: core + declared fields only.
   return withUniqueTagCheck(z.array(PendingEntryCore.extend(shape)));

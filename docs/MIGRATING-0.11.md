@@ -184,6 +184,34 @@ reads the chain looking for what still matters. `Chain.seedDir` and
 | `chain.ts must default-export a chain factory` | Your chain still default-exports a `Chain` object. Move it to the factory shape, per §2. |
 | A globally-invoked `flume` died with `ERR_MODULE_NOT_FOUND: Cannot find package '@dtmd/flume'` | Pre-0.11 shape: the chain resolved the engine by walk-up from its own directory, which cannot reach a global install. Fixed by §2 — the chain no longer resolves an engine at all. |
 | Unexplained `instanceof` failures, or a gate/agent behaving as if its module state were empty | Two engine copies in one process (pre-0.11). Fixed by §2. |
+| A `safeParse`/gate run threw `TypeError: Cannot read properties of undefined (reading 'traits')` from inside `zod`, naming neither your `entryExtension` field nor a version | The pre-0.11 failure §7 below retires: your bay's `zod` copy and the engine's `zod` copy skewed, and `composePendingList` used to merge your schema object directly into the engine's own graph. See §7 — no action needed, just an explanation if you've already hit this. |
+
+## 7. `entryExtension` validators: no migration step
+
+`EntryExtensionField.schema` widened from `z.ZodTypeAny` to `StandardSchemaV1`
+(v0.11 §11). Every zod schema already implements `~standard` (zod ≥3.24), so
+an existing `entryExtension` declaration compiles and parses exactly as
+before — there is nothing to change in `.flume/chain.ts`.
+
+What this retires: previously, `composePendingList` merged your declared zod
+objects directly into the engine's own zod schema graph
+(`PendingEntryCore.extend(...)`/`.and(...)`), which only worked while your
+bay's `zod` and the engine's `zod` were the same physical module copy. A
+skewed copy (observed: engine on `4.0.17`, bay on `3.25.76`) composed
+*silently* — no load-time error — and then threw
+`TypeError: Cannot read properties of undefined (reading 'traits')` from
+inside zod's own internals on every `safeParse`, escaping `parsePending`'s
+structured `ParseResult` contract entirely and naming neither the field nor
+the skew. The engine now *adapts* your declared validator (calls
+`~standard.validate` on it) instead of merging the object, so no chain-side
+zod copy ever enters the engine's schema graph again — the failure mode is
+closed by construction, not guarded against.
+
+If your extension's `tests: .default([])`-style field (or any field whose
+validator supplies a value for a key your plan output omits) behaves
+differently post-upgrade, that is unexpected — the adapter is
+value-preserving by design (RELEASE-v0.11.md §11) and file it as a bug, not
+a migration step.
 
 ## Non-goals
 

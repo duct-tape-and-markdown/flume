@@ -41,6 +41,8 @@ export {
 
 export { setupWorktree } from "./setupWorktree.js";
 
+export { type StandardSchemaV1 } from "./standardSchema.js";
+
 export {
   composePendingList,
   parsePending,

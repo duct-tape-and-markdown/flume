@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  AsyncEntryExtensionValidatorError,
   composePendingList,
   declaredPaths,
   isPickableNow,
@@ -15,6 +16,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
+import type { StandardSchemaV1 } from "../src/standardSchema.ts";
 
 const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
 
@@ -423,6 +425,278 @@ describe("tag uniqueness within the queue (v0.8 §3)", () => {
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     expect(result.entries).toHaveLength(2);
+  });
+});
+
+describe("entryExtension validators are adapted, not merged (v0.11 §11 — ENTRYEXTENSION-STANDARD-SCHEMA)", () => {
+  /**
+   * No zod anywhere in this describe block: a hand-rolled object
+   * implementing the Standard Schema protocol directly, so these tests
+   * prove library-independence (any `~standard` implementer works), not
+   * merely version-independence (any zod copy works).
+   */
+  function handStandardSchema<Output>(
+    validate: (
+      value: unknown,
+    ) => StandardSchemaV1.Result<Output> | Promise<StandardSchemaV1.Result<Output>>,
+  ): StandardSchemaV1<unknown, Output> {
+    return { "~standard": { version: 1, vendor: "hand-test", validate } };
+  }
+
+  it("accepts a conforming entry and actually invokes the foreign validators (vacuity pin)", () => {
+    const summaryCalls: unknown[] = [];
+    const perCalls: unknown[] = [];
+    const ext = {
+      summary: {
+        schema: handStandardSchema<string>((value) => {
+          summaryCalls.push(value);
+          if (typeof value !== "string" || value.length < 1) {
+            return { issues: [{ message: "summary must be non-empty" }] };
+          }
+          return { value };
+        }),
+        hint: `"..."`,
+      },
+      per: {
+        schema: handStandardSchema<{ path: string; section: string }>(
+          (value) => {
+            perCalls.push(value);
+            const v = value as { path?: unknown; section?: unknown };
+            const issues: StandardSchemaV1.Issue[] = [];
+            if (typeof v?.path !== "string" || v.path.length < 1) {
+              issues.push({ message: "path must be non-empty", path: ["path"] });
+            }
+            if (typeof v?.section !== "string" || v.section.length < 1) {
+              issues.push({
+                message: "section must be non-empty",
+                path: ["section"],
+              });
+            }
+            if (issues.length) return { issues };
+            return { value: v as { path: string; section: string } };
+          },
+        ),
+        hint: `{...}`,
+      },
+    } satisfies EntryExtension;
+
+    const result = parsePending(
+      JSON.stringify([
+        {
+          ...baseEntry,
+          gate: { kind: "open" },
+          summary: "do the thing",
+          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+        },
+      ]),
+      ext,
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    // Vacuity pin (engineering.md "A green verdict is proven non-vacuous"):
+    // prove the foreign validators were actually invoked, not skipped past.
+    expect(summaryCalls.length).toBeGreaterThan(0);
+    expect(perCalls.length).toBeGreaterThan(0);
+    expect(result.entries[0]!.summary).toBe("do the thing");
+    expect(result.entries[0]!.per).toEqual({
+      path: "spec/RELEASE-v0.1.md",
+      section: "5. Tests",
+    });
+  });
+
+  it("a field violation rejects carrying the foreign validator's own message at the entry-indexed path", () => {
+    const ext = {
+      summary: {
+        schema: handStandardSchema<string>((value) => {
+          if (typeof value !== "string" || value.length < 1) {
+            return {
+              issues: [
+                { message: "summary must be a non-empty string (hand-written)" },
+              ],
+            };
+          }
+          return { value };
+        }),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([{ ...baseEntry, gate: { kind: "open" }, summary: "" }]),
+      ext,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.index).toBe(0);
+    expect(result.errors[0]!.path).toBe("summary");
+    expect(result.errors[0]!.message).toBe(
+      "summary must be a non-empty string (hand-written)",
+    );
+  });
+
+  it("a nested violation rejects at the composed path ([0].per.path, not [0].per)", () => {
+    const ext = {
+      per: {
+        schema: handStandardSchema<{ path: string; section: string }>(
+          (value) => {
+            const v = value as { path?: unknown; section?: unknown };
+            if (typeof v?.path !== "string" || v.path.length < 1) {
+              return {
+                issues: [
+                  {
+                    message: "path must be non-empty (hand-written)",
+                    path: ["path"],
+                  },
+                ],
+              };
+            }
+            return { value: v as { path: string; section: string } };
+          },
+        ),
+        hint: `{...}`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, per: { path: "", section: "ok" } },
+      ]),
+      ext,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.index).toBe(0);
+    expect(result.errors[0]!.path).toBe("per.path");
+    expect(result.errors[0]!.message).toBe(
+      "path must be non-empty (hand-written)",
+    );
+  });
+
+  it("a chain tag refinement narrows and cannot widen the core floor", () => {
+    const allCaps = {
+      tag: {
+        schema: handStandardSchema<string>((value) => {
+          if (typeof value !== "string" || !/^[A-Z][A-Z0-9-]*$/.test(value)) {
+            return {
+              issues: [{ message: "tag must be ALL-CAPS (hand-written)" }],
+            };
+          }
+          return { value };
+        }),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+
+    const lowercase = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
+      ]),
+      allCaps,
+    );
+    expect(lowercase.ok).toBe(false);
+    expect(lowercase.errors.some((e) => e.path === "tag")).toBe(true);
+
+    const valid = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER-TRIAGE-MIG" },
+      ]),
+      allCaps,
+    );
+    expect(valid.ok, JSON.stringify(valid.errors)).toBe(true);
+
+    // A refinement that accepts everything still can't widen past the
+    // engine's mechanical floor — the core pattern forbids whitespace
+    // regardless of what the chain's own validator says.
+    const permitsAnything = {
+      tag: {
+        schema: handStandardSchema<string>((value) => ({ value: value as string })),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+    const stillRejected = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER TRIAGE" },
+      ]),
+      permitsAnything,
+    );
+    expect(stillRejected.ok).toBe(false);
+    expect(stillRejected.errors.some((e) => e.path === "tag")).toBe(true);
+  });
+
+  it("rejects a field the hand-written extension did not declare", () => {
+    const ext = {
+      summary: {
+        schema: handStandardSchema<string>((value) => ({ value: value as string })),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "open" }, summary: "x", extra: "nope" },
+      ]),
+      ext,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.message).toMatch(/extra/);
+  });
+
+  it("rejects a duplicate tag through the hand-written-extension-composed path", () => {
+    const ext = {
+      summary: {
+        schema: handStandardSchema<string>((value) => ({ value: value as string })),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, tag: "DUP-HAND", gate: { kind: "open" }, summary: "a" },
+        { ...baseEntry, tag: "DUP-HAND", gate: { kind: "open" }, summary: "b" },
+      ]),
+      ext,
+    );
+    expect(result.ok).toBe(false);
+    const tagErrors = result.errors.filter((e) => e.path === "tag");
+    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
+  });
+
+  it("a declared validator that supplies a value for an absent key materializes it in the parsed entry", () => {
+    // The drafting error this section caught: a verdict-only adapter passes
+    // every other case in this describe block while silently dropping this
+    // one — `tests` is entirely absent from the raw entry, and only the
+    // validator (not the raw JSON) knows the default is `[]`.
+    const ext = {
+      tests: {
+        schema: handStandardSchema<Array<{ path: string; asserts: string }>>(
+          (value) => {
+            if (value === undefined) return { value: [] };
+            if (!Array.isArray(value)) {
+              return { issues: [{ message: "tests must be an array" }] };
+            }
+            return { value: value as Array<{ path: string; asserts: string }> };
+          },
+        ),
+        hint: `[ { "path": "...", "asserts": "..." } ]`,
+      },
+    } satisfies EntryExtension;
+    const result = parsePending(
+      JSON.stringify([{ ...baseEntry, gate: { kind: "open" } }]),
+      ext,
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries[0]!.tests).toEqual([]);
+  });
+
+  it("an async validator's declaration is refused naming the field, rather than accepting the entry vacuously", () => {
+    const ext = {
+      summary: {
+        schema: handStandardSchema<string>(async (value) => ({
+          value: value as string,
+        })),
+        hint: `"..."`,
+      },
+    } satisfies EntryExtension;
+    const raw = JSON.stringify([
+      { ...baseEntry, gate: { kind: "open" }, summary: "x" },
+    ]);
+    expect(() => parsePending(raw, ext)).toThrow(AsyncEntryExtensionValidatorError);
+    expect(() => parsePending(raw, ext)).toThrow(/summary/);
   });
 });
 

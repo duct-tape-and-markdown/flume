@@ -1233,7 +1233,14 @@ it renders nothing else. Whatever additional fields your workflow wants on
 an entry — a summary, a spec citation, acceptance criteria — are yours to
 declare.
 
-Declare each field **once**, with both its zod schema and its prompt hint:
+Each field's declared type is a [Standard Schema](https://standardschema.dev)
+validator (`~standard`) — zod ≥3.24, valibot, and arktype all publish one, and
+a hand-written object works too. The engine never imports or merges your
+schema object into its own; it only calls `~standard.validate` on it at parse
+time. zod is what this doc's examples use because it's the ecosystem default,
+not because the engine requires it.
+
+Declare each field **once**, with both its validator and its prompt hint:
 
 ```ts
 import { z } from "zod";
@@ -1262,18 +1269,22 @@ const myChain: Chain = {
 The single declaration drives both enforcement surfaces, so the prompt and
 the parser cannot drift:
 
-- **Validation** — the dispatcher composes the core schema with your
-  declared fields; `parsePending(raw, entryExtension)` does the same in
-  your own gates. The composed schema is strict: a field that is neither
+- **Validation** — the dispatcher *adapts* each declared validator (calling
+  its `~standard.validate`, never merging its schema object) into the
+  composed entry schema; `parsePending(raw, entryExtension)` does the same
+  in your own gates. The composed schema is strict: a field that is neither
   core nor declared fails loudly. (Silent stripping is how plan-authored
   fields would get destroyed when the dispatcher rewrites `pending.json`
-  on ship.)
+  on ship.) A validator's `~standard.validate` must be synchronous —
+  `parsePending` cannot await it, and an async validator is refused at
+  first parse, naming the field.
 - **Rendering** — `renderSchemaForPrompt(entryExtension)` renders the core
   shape followed by each declared field as `"<name>": <hint>`, verbatim.
   Pass it through your plan phase's `promptArgs` exactly as before.
 
-To read a declared field with types in your chain code, narrow it through
-the same schema you declared:
+To read a declared field with types in your chain code, your own schema
+object is untouched — call `.parse()` on it exactly as you would outside
+flume, since you own that object and its concrete type:
 
 ```ts
 const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);

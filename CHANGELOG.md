@@ -528,6 +528,23 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   AGREEMENT-PIN` and `PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT`
   (`tests/Dispatcher.test.ts`) come off their platform skips and now run
   everywhere they're reachable.
+- `EntryExtensionField.schema` declares a [Standard
+  Schema](https://standardschema.dev) validator (`~standard`) instead of a
+  `z.ZodTypeAny` (v0.11 §11 — ENTRYEXTENSION-STANDARD-SCHEMA):
+  `composePendingList` now adapts each declared validator at the boundary
+  (calls `~standard.validate`, re-raises its issues at the entry-indexed/
+  composed path, carries its returned value forward) instead of merging the
+  chain's schema object into the engine's own zod graph via `.extend`/`.and`.
+  This removes the failure a merge could only guard, never close: a bay
+  whose zod copy diverges from the engine's threw an internal `TypeError`
+  from inside zod's own internals, past `parsePending`'s `ParseResult`
+  contract, naming neither the field nor the version skew. Existing zod
+  schemas already satisfy `StandardSchemaV1` — no chain edit needed. A
+  validator whose `~standard.validate` returns a `Promise` is refused,
+  naming the field, rather than accepted vacuously (a `Promise` read as a
+  result object has no `issues`). New type-only export: `StandardSchemaV1`
+  (`src/standardSchema.ts`, vendored, no runtime code). `zod` remains a
+  private engine dependency — not a peer, not re-exported on `FlumeApi`.
 
 ## [0.9.0] - 2026-07-31
 
