@@ -123,6 +123,14 @@ export interface JobNewOptions {
    */
   configDir?: string;
   log?: (line: string) => void;
+  /**
+   * Override for the seed commit's message (engine-boundary.md "Capability
+   * vs convention"). Called with the job name; `jobNew` commits with
+   * whatever string it returns. The `chore(flume): seed job ...` wording is
+   * this harness's own convention, not something every chain need adopt.
+   * Default (omitted): reproduces that exact text.
+   */
+  commitMessage?: (name: string) => string;
 }
 
 /**
@@ -202,14 +210,8 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   await git(repoRoot, ["add", "--", rel]);
   const staged = await git(repoRoot, ["status", "--porcelain", "--", rel]);
   if (staged.length > 0) {
-    await git(repoRoot, [
-      "commit",
-      "-q",
-      "-m",
-      `chore(flume): seed job ${name}`,
-      "--",
-      rel,
-    ]);
+    const message = opts.commitMessage?.(name) ?? `chore(flume): seed job ${name}`;
+    await git(repoRoot, ["commit", "-q", "-m", message, "--", rel]);
     log(`[flume] baseline commit on current HEAD`);
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
@@ -292,6 +294,14 @@ export interface JobRmOptions {
   repoRoot: string;
   name: string;
   log?: (line: string) => void;
+  /**
+   * Override for the cleanup commit's message (engine-boundary.md
+   * "Capability vs convention"). Called with the job name; `jobRm` commits
+   * with whatever string it returns. The `chore(flume): rm job ...` wording
+   * is this harness's own convention, not something every chain need adopt.
+   * Default (omitted): reproduces that exact text.
+   */
+  commitMessage?: (name: string) => string;
 }
 
 /**
@@ -334,14 +344,8 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
     await git(repoRoot, ["rm", "-q", "-r", "--", rel]);
     // Pathspec-scoped, like the seed commit: anything the operator staged
     // outside the job dir stays in the index instead of riding along.
-    await git(repoRoot, [
-      "commit",
-      "-q",
-      "-m",
-      `chore(flume): rm job ${name}`,
-      "--",
-      rel,
-    ]);
+    const message = opts.commitMessage?.(name) ?? `chore(flume): rm job ${name}`;
+    await git(repoRoot, ["commit", "-q", "-m", message, "--", rel]);
     log(`[flume] cleanup commit on current HEAD`);
   } else {
     log(`[flume] no tracked harness under ${rel}; nothing to commit`);

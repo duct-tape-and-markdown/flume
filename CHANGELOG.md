@@ -120,6 +120,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   can now choose its own ledger-commit wording. Omitting `commitMessage` is
   byte-identical to today's text.
 
+- `JobNewOptions` and `JobRmOptions` accept an optional `commitMessage`
+  (engine-boundary.md "Capability vs convention" —
+  JOB-SEED-RM-COMMIT-MESSAGE-HARDCODED): `jobNew`'s seed commit and `jobRm`'s
+  cleanup commit each call it with the job name and commit with whatever
+  string it returns, instead of the hardcoded `chore(flume): seed job ...` /
+  `chore(flume): rm job ...` text — the same gap `commitMessage` closed on
+  `DispatcherOptions`. Omitting `commitMessage` is byte-identical to today's
+  text.
+
 - An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
   (the ref HEAD resolves to) at start and releases it at exit — one flume
   writer per tip, visible from every worktree of one repository. The claim

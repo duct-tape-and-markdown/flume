@@ -480,6 +480,72 @@ describe("flume job new — real CLI on a scratch repo", () => {
   );
 });
 
+describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
+  it("a commitMessage override lands verbatim on jobNew's seed commit, receiving the job name", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({
+        repoRoot: repo.dir,
+        name: "cm1",
+        log: () => {},
+        commitMessage: (name) => `custom: seeded ${name}`,
+      });
+
+      const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
+      expect(subjects.split("\n")[0]).toBe("custom: seeded cm1");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omitting commitMessage reproduces jobNew's exact default seed-commit text", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "cm2", log: () => {} });
+
+      const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
+      expect(subjects.split("\n")[0]).toBe("chore(flume): seed job cm2");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("a commitMessage override lands verbatim on jobRm's cleanup commit, receiving the job name", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "cm3", log: () => {} });
+      await jobRm({
+        repoRoot: repo.dir,
+        name: "cm3",
+        log: () => {},
+        commitMessage: (name) => `custom: removed ${name}`,
+      });
+
+      const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
+      expect(subjects.split("\n")[0]).toBe("custom: removed cm3");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("omitting commitMessage reproduces jobRm's exact default cleanup-commit text", async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "cm4", log: () => {} });
+      await jobRm({ repoRoot: repo.dir, name: "cm4", log: () => {} });
+
+      const subjects = await gitOut(repo.dir, ["log", "--format=%s"]);
+      expect(subjects.split("\n")[0]).toBe("chore(flume): rm job cm4");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
 describe("flume job new — Chain.friction pass-through (§3)", () => {
   it(
     "a declared friction dir lands in a fresh job's .gitignore, forward-slashed and single-trailing-slashed",
