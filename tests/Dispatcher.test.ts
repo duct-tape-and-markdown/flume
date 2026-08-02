@@ -43,7 +43,7 @@ import {
   tscGate as realTscGate,
 } from "../src/builtinGates.ts";
 import type { Gate } from "../src/Gate.ts";
-import type { Chain, Phase, TickResult } from "../src/Phase.ts";
+import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import {
   parsePending,
   TAG_MAX_LENGTH,
@@ -4427,6 +4427,312 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     expect(singletonMatch![1]).toBe("plan");
     expect(fanoutMatch![1]).toBe("FANOUT-TWIN");
     expect(fanoutMatch![2]).toBe(singletonMatch![2]);
+  }, 20_000);
+});
+
+describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE-v0.11 §8)", () => {
+  it("singleton: shouldRun=false skips the agent entirely, produces no commit, and still hands off", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    const preHead = await head(fx.repo);
+
+    let invoked = false;
+    const agent: Agent = {
+      name: "must-not-run-when-declined",
+      async invoke() {
+        invoked = true;
+        throw new Error("shouldRun=false must never reach the agent");
+      },
+    };
+
+    let handoffCalls = 0;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: () => false,
+      handoff: () => {
+        handoffCalls++;
+        return ["build"];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.commitSha).toBeUndefined();
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(outcome.result?.gateResults).toEqual([]);
+
+    // Declined is its own fact — never folded into noCommit/voluntary-bail.
+    expect(outcome.declined).toBe(true);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.verdict?.declined).toBe(true);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.committed).toBe(false);
+    expect(outcome.verdict?.gateResults).toEqual([]);
+
+    // Baton mechanics unchanged: handoff still runs on the declined result,
+    // sleeps this phase, wakes whatever handoff names.
+    expect(handoffCalls).toBe(1);
+    expect(outcome.awakeAfter).toEqual(["build"]);
+    expect(baton.isAwake("plan")).toBe(false);
+    expect(baton.isAwake("build")).toBe(true);
+  });
+
+  it("singleton: shouldRun=true is byte-identical (mod content-addressed shas) to a phase declaring no shouldRun", async () => {
+    async function runOnce(shouldRun?: () => boolean) {
+      const local = await makeFixture();
+      try {
+        new Baton(join(local.repo, ".flume")).wake("plan");
+        const phase = makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          ...(shouldRun ? { shouldRun } : {}),
+        });
+        const chain: Chain = { phases: [phase], humanOnly: [] };
+        const agent = singleAgent(async (cwd) => {
+          await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+        });
+        const dispatcher = new Dispatcher({
+          chainLoader: staticLoader(chain),
+          repoRoot: local.repo,
+          configDir: local.configDir,
+          agent,
+          log: silent,
+        });
+        return await dispatcher.tick();
+      } finally {
+        await local.cleanup();
+      }
+    }
+
+    const declaredTrue = await runOnce(() => true);
+    const undeclared = await runOnce(undefined);
+
+    // Every fact both ticks produce is deterministic except the
+    // content-addressed commit sha (author/committer timestamps differ
+    // between the two independent commits) — blank those out before
+    // comparing the rest byte-for-byte.
+    const normalize = (o: unknown) =>
+      JSON.parse(JSON.stringify(o).replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>"));
+
+    expect(normalize(declaredTrue)).toEqual(normalize(undeclared));
+    expect(declaredTrue.declined).toBeUndefined();
+    expect(undeclared.declined).toBeUndefined();
+  });
+
+  it("singleton: an undeclared shouldRun leaves declined absent on both TickOutcome and TickVerdict", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "x\n", "plan: derive");
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.declined).toBeUndefined();
+    expect(outcome.verdict?.declined).toBeUndefined();
+  });
+
+  it("shouldRun sees the same TickContext promptArgs sees (singleton: pending)", async () => {
+    await writePending(fx.repo, [makeEntry("CTX-CHECK", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let shouldRunCtx: TickContext | undefined;
+    let promptArgsCtx: TickContext | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: (ctx) => {
+        shouldRunCtx = ctx;
+        return true;
+      },
+      promptArgs: (ctx) => {
+        promptArgsCtx = ctx;
+        return {};
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "x\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(shouldRunCtx).toBeDefined();
+    expect(shouldRunCtx).toBe(promptArgsCtx);
+    expect(shouldRunCtx?.pending?.map((e) => e.tag)).toEqual(["CTX-CHECK"]);
+  });
+
+  it("fanout: shouldRun=false on the assigned entry skips only that entry's agent invocation; entry stays pending, wave still hands off", async () => {
+    await writePending(fx.repo, [makeEntry("SHOULDRUN-FALSE", ["src/a.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    let invoked = false;
+    const agent = fanoutAgent({
+      "shouldrun-false": async () => {
+        invoked = true;
+      },
+    });
+
+    let handoffCalls = 0;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shouldRun: () => false,
+      handoff: () => {
+        handoffCalls++;
+        return ["plan"];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.declined).toBe(true);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.verdict?.declined).toBe(true);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.shippedTags).toEqual([]);
+
+    // Never invoked, never shipped — the entry stays pending.
+    expect(await readPendingFromDisk(fx.repo)).toHaveLength(1);
+
+    expect(handoffCalls).toBe(1);
+    expect(outcome.awakeAfter).toEqual(["plan"]);
+    expect(baton.isAwake("build")).toBe(false);
+    expect(baton.isAwake("plan")).toBe(true);
+  }, 20_000);
+
+  it("fanout: shouldRun is consulted per assigned entry — one entry declines while its sibling ships normally", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHOULDRUN-DECLINE", ["src/a.ts"]),
+      makeEntry("SHOULDRUN-SHIP", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const invoked: string[] = [];
+    const agent = fanoutAgent({
+      "shouldrun-decline": async () => {
+        invoked.push("SHOULDRUN-DECLINE");
+      },
+      "shouldrun-ship": async (cwd) => {
+        invoked.push("SHOULDRUN-SHIP");
+        await writeAndCommit(cwd, "src/b.ts", "ok\n", "build: ship");
+      },
+    });
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "SHOULDRUN-DECLINE",
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toEqual(["SHOULDRUN-SHIP"]);
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["SHOULDRUN-SHIP"]);
+    // A wave that ships can still carry `declined` for a declined sibling —
+    // the same coexistence `tipMoved` already establishes.
+    expect(outcome.declined).toBe(true);
+    expect(outcome.verdict?.declined).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual(["SHOULDRUN-SHIP"]);
+
+    const remaining = await readPendingFromDisk(fx.repo);
+    expect(remaining.map((e) => e.tag)).toEqual(["SHOULDRUN-DECLINE"]);
+  }, 20_000);
+
+  it("fanout: shouldRun sees the same TickContext promptArgs sees (assignedEntry)", async () => {
+    await writePending(fx.repo, [makeEntry("CTX-CHECK-FANOUT", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let shouldRunCtx: TickContext | undefined;
+    let promptArgsCtx: TickContext | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shouldRun: (ctx) => {
+        shouldRunCtx = ctx;
+        return true;
+      },
+      promptArgs: (ctx) => {
+        promptArgsCtx = ctx;
+        return {};
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "ctx-check-fanout": async (cwd) => {
+        await writeAndCommit(cwd, "src/a.ts", "x\n", "build: do");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(shouldRunCtx).toBeDefined();
+    expect(shouldRunCtx?.assignedEntry?.tag).toBe("CTX-CHECK-FANOUT");
+    expect(shouldRunCtx).toBe(promptArgsCtx);
   }, 20_000);
 });
 

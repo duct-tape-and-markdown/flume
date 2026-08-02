@@ -156,6 +156,23 @@ export interface Phase {
   handoff: (result: TickResult) => string[];
 
   /**
+   * Optional predicate the dispatcher consults before rendering the prompt
+   * or invoking the agent (RELEASE-v0.11 §8) — a capability with an
+   * injection point: the dispatcher supplies the skip, the chain supplies
+   * the reason (`engine-boundary.md`, *Capability vs convention*).
+   * Returning `false` ends the tick as a declined no-op: no agent
+   * invocation, no commit, `handoff` still runs so the chain can pass the
+   * baton on. Undeclared is unchanged behavior — a phase without
+   * `shouldRun` always runs, byte-identically to a phase whose `shouldRun`
+   * returns `true`.
+   *
+   * Sees the same `TickContext` `promptArgs` sees — no new plumbing. Must
+   * be synchronous and cheap: it runs before every invocation, so I/O
+   * belongs in the tick it would be trying to avoid.
+   */
+  shouldRun?: (ctx: TickContext) => boolean;
+
+  /**
    * Optional hook invoked after a fanout worktree is created, before the
    * agent runs. The chain config uses this to materialize gitignored files
    * the gates need — typically `node_modules` and `.env` — by symlinking

@@ -144,6 +144,7 @@ set. The full interface lives in `src/Phase.ts`. The fields that matter:
 | `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
 | `promptArgs`    | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                                       |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
+| `shouldRun`     | Optional predicate consulted before the agent is invoked. Returning `false` declines the tick — see below.                       |
 | `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. See §3. |
 | `teardownWorktree` | Optional fanout hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. See §3. |
 
@@ -202,6 +203,49 @@ promptArgs(ctx) {
 `TickContext` carries `cwd` (the worktree path), `assignedEntry` (fanout
 only), and `pending` (the full list, for singleton phases reasoning about
 queue state).
+
+### `shouldRun`: decline a tick before the invocation
+
+The motivating case: a plan phase whose `handoff` already knows how to read
+`pendingAfter.some((e) => e.gate.kind === "open")` to decide whether to wake
+`build`. Without `shouldRun`, that same "is there pickable work" question
+can only be answered *after* spending a full agent invocation — the agent
+re-derives the plan, concludes nothing changed, and commits nothing. On one
+measured 50-tick run, 14 plan ticks (28%) did exactly that. `shouldRun` lets
+the chain answer the question before the invocation, from the same
+`TickContext` `promptArgs` sees:
+
+```ts
+const plan: Phase = {
+  name: "plan",
+  // ...
+  shouldRun(ctx) {
+    // Decline when nothing changed since the plan's own last derive stamp —
+    // whatever cheap, synchronous check the chain already has for "is there
+    // new work to re-plan against".
+    return hasUnplannedChanges(ctx);
+  },
+  handoff(result) {
+    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
+    return hasPickable ? ["build"] : [];
+  },
+};
+```
+
+- **Undeclared is unchanged behavior.** A phase without `shouldRun` always
+  runs; a phase whose `shouldRun` returns `true` is byte-identical to one
+  declaring none.
+- **Returning `false` ends the tick as a declined no-op.** No agent
+  invocation, no commit — but `handoff` still runs on the unchanged prior
+  result, and the baton sleeps/wakes exactly as it would on any other
+  no-commit tick, so the chain can still pass the baton on.
+- **Synchronous, and cheap by contract.** It runs before every invocation —
+  once per tick for a singleton phase, once per assigned entry for a fanout
+  phase. A predicate needing I/O is doing too much; that work belongs in the
+  tick it is trying to avoid, not in the gate that decides whether to run it.
+- **A declined tick is a distinguishable fact**, not a silent no-op — it
+  reports its own outcome, separate from a voluntary bail (the agent ran and
+  refused) and from hibernation (nothing was awake).
 
 ## 2. Writing a custom Gate
 

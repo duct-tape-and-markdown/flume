@@ -159,6 +159,20 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   committing mid-tick, a pull moving the ref, and claim-less bare-tick
   collisions (running two ticks hot against one ref with no coordination).
 
+- `Phase.shouldRun` (v0.11 §8): an optional predicate the dispatcher
+  consults before rendering the prompt or invoking the agent — once per
+  tick for a singleton phase, once per assigned entry for a fanout phase.
+  Returning `false` ends the tick as a declined no-op (no agent invocation,
+  no commit) while `handoff` still runs and the baton sleeps/wakes as on
+  any other no-commit tick; a chain can now decline a tick it already knows
+  is a no-op (e.g. plan concluding nothing new needs re-deriving) without
+  spending an agent invocation to reach that same conclusion. Undeclared or
+  returning `true` is unchanged behavior. The decline is reported as its
+  own `declined` fact on `TickOutcome`/`TickVerdict` — a sibling to
+  `noCommit`/`tipMoved`, never a fifth `NoCommitMode` — distinguishable
+  from a voluntary bail (the agent ran and refused) and from hibernation
+  (nothing was awake).
+
 - `src/index.ts` re-exports `ProvisionFailure` and `TerminalMisconfiguration`
   as named types (`.claude/rules/engineering.md` "An export earns its
   consumer" — DISPATCHER-PROVISIONFAILURE-TERMINALMISCONFIG-UNEXPORTED): both

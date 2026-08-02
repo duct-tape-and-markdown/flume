@@ -219,6 +219,19 @@ export interface TickVerdict {
    * refused). Absent when nothing this tick touched hit the backstop.
    */
   tipMoved?: boolean;
+  /**
+   * RELEASE-v0.11 §8: set when this tick (or, for a fanout wave, any part
+   * of it) never invoked the agent because `phase.shouldRun` returned
+   * `false` — a sibling fact to `noCommit`/`tipMoved`, never a fifth
+   * `NoCommitMode`: the chain declined the tick outright, which is not one
+   * of the four causally-distinct no-commit classes (no agent ran, so
+   * nothing to classify) and not the tip-verify backstop (nothing raced).
+   * A wave can carry both `declined` and `shippedTags`/`committed: true`
+   * (one entry declined while its siblings ran and shipped) or `declined`
+   * alone with `committed: false` (every provisioned entry declined).
+   * Absent when nothing this tick touched hit a `shouldRun` refusal.
+   */
+  declined?: boolean;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: TickVerdictGateResult[];
   /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
@@ -241,6 +254,8 @@ type PhaseTickOutcome = {
   noCommit?: NoCommitMode;
   /** RELEASE-v0.11 §5: sibling to `noCommit` — see {@link TickVerdict.tipMoved}. */
   tipMoved?: boolean;
+  /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
+  declined?: boolean;
   provisionFailures?: ProvisionFailure[];
   /** Entry tags this wave provisioned a worktree/agent for (fanout only; §5); absent for a singleton phase. */
   tags?: string[];
@@ -919,6 +934,17 @@ export interface TickOutcome {
    */
   tipMoved?: boolean;
   /**
+   * RELEASE-v0.11 §8: set when this tick refused to invoke the agent
+   * because `phase.shouldRun` returned `false` — a sibling fact to
+   * `noCommit`/`tipMoved`, never a fifth `NoCommitMode`: the chain declined
+   * the tick before rendering the prompt, so there is no agent termination
+   * to classify and no ref race to blame. Distinguishable from
+   * `voluntary-bail` (the agent ran and refused) and from `hibernated`
+   * (nothing was awake) — a supervisor must be able to tell "the chain
+   * declined" from "the agent bailed" without reading session logs.
+   */
+  declined?: boolean;
+  /**
    * Axis-C terminal misconfiguration (§3) — sibling of `hibernated` /
    * `failed`, never a `NoCommitMode` member (no agent ran, no entry exists
    * to retry). Set when every awake flag names a phase the chain does not
@@ -1095,8 +1121,15 @@ export class Dispatcher {
         summary: err.message,
       };
     }
-    const { result, noCommit, tipMoved, provisionFailures, tags, mergeOutcomes } =
-      phaseOutcome;
+    const {
+      result,
+      noCommit,
+      tipMoved,
+      declined,
+      provisionFailures,
+      tags,
+      mergeOutcomes,
+    } = phaseOutcome;
 
     // §15: fold the already-computed no-commit classification into the
     // TickResult before handoff — a chain's `handoff` is the only place a
@@ -1115,7 +1148,14 @@ export class Dispatcher {
     const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
-    const summary = summarize(phase.name, result, allowed, noCommit, tipMoved);
+    const summary = summarize(
+      phase.name,
+      result,
+      allowed,
+      noCommit,
+      tipMoved,
+      declined,
+    );
 
     // v0.8 §5: the unified facts artifact — a pure value, built here so
     // `TickOutcome` carries everything the CLI's `tick` command needs to
@@ -1129,6 +1169,7 @@ export class Dispatcher {
       committed: result.committed,
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
+      ...(declined ? { declined } : {}),
       gateResults: [...result.gateResults] as TickVerdictGateResult[],
       shippedTags: [...result.shippedTags],
       mergeOutcomes: mergeOutcomes ?? [],
@@ -1145,6 +1186,7 @@ export class Dispatcher {
       verdict,
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
+      ...(declined ? { declined } : {}),
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
@@ -1167,6 +1209,25 @@ export class Dispatcher {
     const prior = await this.readPriorAttempt(key);
 
     const ctx: TickContext = { cwd, flumeDir: this.flumeDir, pending };
+
+    // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
+    // the agent — a chain can decline a tick without spending one. Sees the
+    // same ctx `promptArgs` sees; undeclared `shouldRun` runs unconditionally.
+    if (phase.shouldRun && !phase.shouldRun(ctx)) {
+      this.log.info(`[flume] ${phase.name}: declined (shouldRun) — no invocation`);
+      return {
+        result: {
+          phaseName: phase.name,
+          committed: false,
+          gateResults: [],
+          pendingAfter: pending,
+          shippedTags: [],
+          revertedTags: [],
+        },
+        declined: true,
+      };
+    }
+
     const args = phase.promptArgs?.(ctx) ?? {};
 
     let prompt: string;
@@ -1455,9 +1516,14 @@ export class Dispatcher {
     // same per-entry isolation §7b's afterMerge revert already established).
     let expectedTip = preHead;
     let waveTipMoved = false;
+    // RELEASE-v0.11 §8: mirrors `waveTipMoved` — a wave that declined at
+    // least one entry sets this even when it also shipped (entries
+    // `shouldRun` let through are unaffected by their siblings declining).
+    let waveDeclined = false;
 
     for (const r of perEntry) {
       if (r.tipMoved) waveTipMoved = true;
+      if (r.declined) waveDeclined = true;
       if (!r.committed || !r.commitSha) {
         // §13: an in-worktree afterCommit gate revert never reaches
         // cherry-pick, so it never touches trunk on its own — record its
@@ -1768,6 +1834,7 @@ export class Dispatcher {
       },
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
       ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
+      ...(waveDeclined ? { declined: waveDeclined } : {}),
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       tags: provisioned.map((e) => e.tag),
       mergeOutcomes,
@@ -1792,6 +1859,8 @@ export class Dispatcher {
     noCommit?: NoCommitMode;
     /** RELEASE-v0.11 §5: sibling to `noCommit`, set when this entry's own worktree commit landed on a moved tip. */
     tipMoved?: boolean;
+    /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
+    declined?: boolean;
     /**
      * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
      * before `dropLastCommit` discards it — set only on an in-worktree
@@ -1811,6 +1880,16 @@ export class Dispatcher {
       flumeDir: this.flumeDir,
       assignedEntry: entry,
     };
+
+    // RELEASE-v0.11 §8: same seam as the singleton callsite, scoped to this
+    // entry — sees the same ctx `promptArgs` sees.
+    if (phase.shouldRun && !phase.shouldRun(ctx)) {
+      this.log.info(
+        `[flume] ${entry.tag}: declined (shouldRun) — no invocation`,
+      );
+      return { entry, committed: false, gateResults: [], declined: true };
+    }
+
     const args = phase.promptArgs?.(ctx) ?? {};
 
     let prompt: string;
@@ -3072,6 +3151,7 @@ function summarize(
   awaking: string[],
   noCommit?: NoCommitMode,
   tipMoved?: boolean,
+  declined?: boolean,
 ): string {
   const parts: string[] = [phaseName];
   if (result.committed) {
@@ -3081,20 +3161,25 @@ function summarize(
       parts.push(`committed ${result.commitSha.slice(0, 8)}`);
     }
     // A wave can ship *and* hit the §5 backstop (some entries landed before
-    // the ref moved; the rest, or the trailing ledger commit, refused).
+    // the ref moved; the rest, or the trailing ledger commit, refused) or
+    // the §8 decline (some entries declined while their siblings ran).
     if (tipMoved) parts.push("(tip-moved for part of this tick)");
+    if (declined) parts.push("(declined for part of this tick)");
   } else {
     // The §6 mode in the one-liner is the logger record that lets a
     // voluntary-bail loop be told from a platform-preempt run without
-    // reading session logs. `tip-moved` (RELEASE-v0.11 §5) is reported the
-    // same way even though it is never a `NoCommitMode` — the one-liner is
-    // a rendering, not the typed fact itself.
+    // reading session logs. `tip-moved` (RELEASE-v0.11 §5) and `declined`
+    // (RELEASE-v0.11 §8) are reported the same way even though neither is
+    // ever a `NoCommitMode` — the one-liner is a rendering, not the typed
+    // fact itself.
     parts.push(
       tipMoved
         ? "no commit (tip-moved)"
-        : noCommit
-          ? `no commit (${noCommit})`
-          : "no commit",
+        : declined
+          ? "no commit (declined)"
+          : noCommit
+            ? `no commit (${noCommit})`
+            : "no commit",
     );
   }
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
