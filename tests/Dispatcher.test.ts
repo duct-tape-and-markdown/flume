@@ -3629,6 +3629,186 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 });
 
+// ---------- fanout wave-level noCommit precedence (§6, mixed causes) ----------
+
+// Dispatcher.ts:1836-1853: when a fanout wave ships nothing, the single
+// wave-level `noCommit` label is picked from the set of per-entry causes by
+// precedence gate-revert > render-refused > platform-preempt >
+// voluntary-bail. Every other test above drives one mode per wave in
+// isolation, so a swapped or dropped precedence branch is invisible to the
+// suite (engineering.md "A green verdict is proven non-vacuous"). These
+// tests build waves whose entries fail via ≥2 distinct causes at once and
+// pin the label at each boundary of the chain.
+//
+// `CMD` drives the shared prompt's inline-exec span per entry (rendered
+// before the agent is invoked): every tag except RENDER-FOUR resolves to a
+// no-op; RENDER-FOUR resolves to a command that fails, aborting only that
+// entry's render.
+function mixedCausePromptArgs(ctx: TickContext): Record<string, string> {
+  return {
+    CMD: ctx.assignedEntry?.tag === "RENDER-FOUR" ? "echo boom-detail 1>&2; exit 3" : "exit 0",
+  };
+}
+
+// A fanout agent whose behavior is keyed by slug, producing gate-revert
+// (commits, then the always-failing gate reverts it), platform-preempt
+// (non-zero exit), and voluntary-bail (clean exit, no commit). RENDER-FOUR
+// never reaches the agent — its render aborts first — so no case is
+// registered for it; an accidental invocation throws.
+const mixedCauseAgent: Agent = {
+  name: "mixed-cause-fanout",
+  async invoke(inv) {
+    const slug = basename(inv.cwd);
+    switch (slug) {
+      case "gate-one":
+        await writeAndCommit(inv.cwd, "src/a.ts", "x\n", "build(GATE-ONE): attempt");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      case "preempt-two":
+        return { exitCode: 137, stdout: "", stderr: "Killed" };
+      case "bail-three":
+        return { exitCode: 0, stdout: "bailing, nothing to commit\n", stderr: "" };
+      default:
+        throw new Error(`mixedCauseAgent: unexpected invocation for slug '${slug}'`);
+    }
+  },
+};
+
+const alwaysRevert: Gate = {
+  name: "always-revert",
+  when: "afterCommit",
+  async run() {
+    return { ok: false, message: "gate said no", details: "MIXED-CAUSE-REVERT" };
+  },
+};
+
+describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-entry causes (DISPATCHER-WAVE-NOCOMMIT-PRECEDENCE-TEST)", () => {
+  it("gate-revert + render-refused + platform-preempt + voluntary-bail in one wave → wave-level noCommit is gate-revert (top precedence)", async () => {
+    await writePending(fx.repo, [
+      makeEntry("GATE-ONE", ["src/a.ts"]),
+      makeEntry("RENDER-FOUR", ["src/d.ts"]),
+      makeEntry("PREEMPT-TWO", ["src/b.ts"]),
+      makeEntry("BAIL-THREE", ["src/c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    await writeFile(join(fx.configDir, "prompt.md"), "digest: !`{{CMD}}`\n", "utf8");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [alwaysRevert],
+      promptArgs: mixedCausePromptArgs,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const warnings: string[] = [];
+    const log: Logger = { info: () => {}, warn: (l) => warnings.push(l), error: () => {} };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: mixedCauseAgent,
+      log,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: all four distinct causes actually fired this wave, not
+    // just the winning one — otherwise "gate-revert wins" would be true
+    // vacuously of a wave that only ever produced gate-revert.
+    expect(warnings.some((w) => w.includes("GATE-ONE") && w.includes("commit reverted"))).toBe(true);
+    expect(warnings.some((w) => w.includes("RENDER-FOUR") && w.includes("render-refused"))).toBe(true);
+    expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.noCommit).toBe("gate-revert");
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    expect(await readPendingFromDisk(fx.repo)).toHaveLength(4);
+  }, 20_000);
+
+  it("render-refused + platform-preempt + voluntary-bail, no gate-revert → wave-level noCommit is render-refused", async () => {
+    await writePending(fx.repo, [
+      makeEntry("RENDER-FOUR", ["src/d.ts"]),
+      makeEntry("PREEMPT-TWO", ["src/b.ts"]),
+      makeEntry("BAIL-THREE", ["src/c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    await writeFile(join(fx.configDir, "prompt.md"), "digest: !`{{CMD}}`\n", "utf8");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: mixedCausePromptArgs,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const warnings: string[] = [];
+    const log: Logger = { info: () => {}, warn: (l) => warnings.push(l), error: () => {} };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: mixedCauseAgent,
+      log,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(warnings.some((w) => w.includes("RENDER-FOUR") && w.includes("render-refused"))).toBe(true);
+    expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("render-refused");
+    expect(outcome.verdict?.noCommit).toBe("render-refused");
+    expect(await readPendingFromDisk(fx.repo)).toHaveLength(3);
+  }, 20_000);
+
+  it("platform-preempt + voluntary-bail, no gate-revert/render-refused → wave-level noCommit is platform-preempt", async () => {
+    await writePending(fx.repo, [
+      makeEntry("PREEMPT-TWO", ["src/b.ts"]),
+      makeEntry("BAIL-THREE", ["src/c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const warnings: string[] = [];
+    const log: Logger = { info: () => {}, warn: (l) => warnings.push(l), error: () => {} };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: mixedCauseAgent,
+      log,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("platform-preempt");
+    expect(outcome.verdict?.noCommit).toBe("platform-preempt");
+    expect(await readPendingFromDisk(fx.repo)).toHaveLength(2);
+  }, 20_000);
+});
+
 describe("Dispatcher — tip verify: commit only onto the tick's starting tip (RELEASE-v0.11 §5)", () => {
   it("singleton: a commit whose parent isn't the recorded tip is soft-reverted — tip-moved, no commit lands, agent output stays on disk uncommitted", async () => {
     const preHead = await head(fx.repo);
