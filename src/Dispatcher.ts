@@ -782,6 +782,20 @@ export interface DispatcherOptions {
    * always starts with nothing quarantined. Default: nothing quarantined.
    */
   quarantinedSlugs?: ReadonlySet<string>;
+  /**
+   * Override for the pending-ledger commit's message (engine-boundary.md
+   * "Capability vs convention"). `commitPendingUpdate` calls this with the
+   * tags shipped this wave (empty when the wave only recorded merge-failure
+   * footprints) and the tags whose footprints were recorded, and commits
+   * pending.json with whatever string it returns. The `chore(flume): ship
+   * ...` / `chore(flume): record merge-failure footprints for ...` wording
+   * is this harness's own convention, not something every chain need adopt.
+   * Default (omitted): reproduces that exact text.
+   */
+  commitMessage?: (
+    shippedTags: readonly string[],
+    footprintTags: readonly string[],
+  ) => string;
 }
 
 /**
@@ -2673,12 +2687,15 @@ export class Dispatcher {
     }
     // Scoped to pending.json — `git add -A` would sweep up untracked worktree
     // metadata and unrelated user changes into the harness's chore commit.
+    const footprintTags = [...observed.keys()];
+    const message =
+      this.opts.commitMessage?.(shippedTags, footprintTags) ??
+      (shippedTags.length > 0
+        ? `chore(flume): ship ${shippedTags.join(", ")}`
+        : `chore(flume): record merge-failure footprints for ${footprintTags.join(", ")}`);
     const sha = await git.commitPaths({
       cwd: this.opts.repoRoot,
-      message:
-        shippedTags.length > 0
-          ? `chore(flume): ship ${shippedTags.join(", ")}`
-          : `chore(flume): record merge-failure footprints for ${[...observed.keys()].join(", ")}`,
+      message,
       paths: [this.pendingPath],
     });
     return { sha, tipMoved: false };

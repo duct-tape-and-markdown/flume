@@ -979,6 +979,131 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
   }, 20_000);
 });
 
+describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
+  it("a commitMessage override lands verbatim on the ledger ship commit, receiving the shipped tags", async () => {
+    await writePending(fx.repo, [makeEntry("SHIP-MSG", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "ship-msg": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "a\n", "build(SHIP-MSG): ship"),
+    });
+
+    let captured: [readonly string[], readonly string[]] | undefined;
+    const commitMessage = (
+      shippedTags: readonly string[],
+      footprintTags: readonly string[],
+    ): string => {
+      captured = [shippedTags, footprintTags];
+      return `chain-custom: shipped=${shippedTags.join(",")} footprint=${footprintTags.join(",")}`;
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      commitMessage,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-MSG"]);
+
+    const { stdout: subject } = await exec(
+      "git",
+      ["log", "-1", "--format=%s"],
+      { cwd: fx.repo },
+    );
+    expect(subject.trim()).toBe(
+      "chain-custom: shipped=SHIP-MSG footprint=",
+    );
+    expect(captured).toEqual([["SHIP-MSG"], []]);
+  }, 20_000);
+
+  it("omitting commitMessage reproduces today's exact ship-commit text", async () => {
+    await writePending(fx.repo, [makeEntry("SHIP-DEFAULT", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "ship-default": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "a\n", "build(SHIP-DEFAULT): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-DEFAULT"]);
+
+    const { stdout: subject } = await exec(
+      "git",
+      ["log", "-1", "--format=%s"],
+      { cwd: fx.repo },
+    );
+    expect(subject.trim()).toBe("chore(flume): ship SHIP-DEFAULT");
+  }, 20_000);
+
+  it("omitting commitMessage reproduces today's exact merge-failure-footprint text", async () => {
+    // Same FOOT-STRAY shape as the §13 footprint regression test above: an
+    // entry-fence overreach reverts the whole in-worktree commit, but the
+    // footprint still rides commitPendingUpdate's shippedTags=[] branch.
+    await writePending(fx.repo, [makeEntry("FOOT-DEFAULT", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "foot-default": async (cwd) => {
+        await writeFile(join(cwd, "src", "a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(FOOT-DEFAULT): overreach"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual([]);
+
+    const { stdout: subject } = await exec(
+      "git",
+      ["log", "-1", "--format=%s"],
+      { cwd: fx.repo },
+    );
+    expect(subject.trim()).toBe(
+      "chore(flume): record merge-failure footprints for FOOT-DEFAULT",
+    );
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
   it("creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean", async () => {
     const entries = [

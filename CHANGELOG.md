@@ -110,6 +110,16 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `failHint`. A hand-rolled fork had carried this text; the builtin dropped
   it. Omitting `hint` is byte-identical to today's messages.
 
+- `DispatcherOptions` accepts an optional `commitMessage` (engine-boundary.md
+  "Capability vs convention" — DISPATCHER-COMMIT-MESSAGE-PREFIX-HARDCODED):
+  `commitPendingUpdate` calls it with the tags shipped this wave (empty for a
+  footprint-only commit) and the tags whose merge-failure footprints were
+  recorded, and commits `pending.json` with whatever string it returns
+  instead of the hardcoded `chore(flume): ship ...` / `chore(flume): record
+  merge-failure footprints for ...` text — a chain that isn't Flume itself
+  can now choose its own ledger-commit wording. Omitting `commitMessage` is
+  byte-identical to today's text.
+
 - An advisory per-ref tip claim (v0.11 §4): `flume loop` claims the tip
   (the ref HEAD resolves to) at start and releases it at exit — one flume
   writer per tip, visible from every worktree of one repository. The claim
