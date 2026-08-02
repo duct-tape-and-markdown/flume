@@ -27,7 +27,9 @@ move between tips.
 a host, not a library consumer resolving its own copy. The engine calls
 the chain's factory with its own surface; the chain imports no engine
 value at runtime, so a second physical engine in one process stops
-being reachable. See §6.
+being reachable. See §6 — and §11, which applies the same ruling to the
+one dependency that survived it running the other way: the zod objects
+a chain hands the engine to merge into its own schema graph.
 
 **The chain decides whether a tick is worth spending.** The engine
 supplies the skip; the chain supplies the reason. Measured on a 50-tick
@@ -73,13 +75,15 @@ itself survives), and v0.6 §5 (`Chain.harvest` — extract's consumer
 dies with it). §6 additionally supersedes v0.2 §2's `agent` named
 export, v0.2 §3's default-export-a-`Chain` contract, and v0.3 §2's
 `ChainModule.forkResolver` bridge. §10 supersedes v0.1 §3's "last
-commit" clause. Frozen files stay frozen; this file is the ruling of
+commit" clause. §11 supersedes v0.8 §2's per-field zod schema as the
+declared type of an extension field. Frozen files stay frozen; this file is the ruling of
 record. v0.6 §2–3 (config/state residency and `--job`
 resolution) and v0.6.2 §6 (`Chain.friction`, minus its extract-harvest
 leg) survive unchanged.
 
 Blast radius: `src/job.ts`, `src/cli.ts`, `src/Dispatcher.ts`,
 `src/Phase.ts`, `src/git.ts`, `src/index.ts`, `src/builtinGates.ts`,
+`src/PendingSchema.ts`, new type-only `src/standardSchema.ts`,
 `tests/`, `examples/`, `README.md`, `docs/CLI.md`,
 `docs/CHAIN-AUTHORING.md`, new `docs/MIGRATING-0.11.md`, CHANGELOG.
 Net-negative line count is the expectation for the job removals; §6 is
@@ -103,7 +107,9 @@ loader hook, specifier rewrite, version handshake, or lockfile compare
 in service of §6; any engine-side scheduling *policy* (§8 ships the
 seam, never a default that skips anything); any change to
 `TAG_MAX_LENGTH` itself (§9 bounds the directory name, not the tag);
-any `flume status` verbosity flag.
+any `flume status` verbosity flag; any zod peer-dependency, `FlumeApi`
+re-export, or cross-copy version handshake (§11 removes the seam rather
+than guarding it).
 
 ## 2. A job is a state root
 
@@ -324,6 +330,14 @@ the suite green.
   that motivated it and stating the cheap-and-synchronous contract.
 - `docs/CLI.md` and `README.md`'s `status` lines match §10 — no doc
   claims `flume status` prints a commit.
+- `docs/CHAIN-AUTHORING.md` §10 states the extension field's declared
+  type as a Standard Schema validator (§11), keeping its zod example as
+  *an* implementation rather than the contract, and noting that a chain
+  calling `.parse()` on its own schema is unaffected.
+  `docs/MIGRATING-0.11.md` carries no §11 migration step — the widening
+  compiles existing chains as-is — but records the failure it retires:
+  an extension declared against a zod copy the engine does not share,
+  surfacing as an internal `TypeError` naming neither field nor version.
 
 Acceptance: `grep -rin 'extract' README.md docs/CLI.md
 docs/CHAIN-AUTHORING.md` is empty; MIGRATING-0.11 contains the
@@ -423,7 +437,128 @@ exactly that list and no more; `flume status` still exits 0 on a
 detached HEAD and in a repo with no commits; no doc claims `status`
 prints a commit.
 
-## 11. CHANGELOG
+## 11. The extension seam takes a validator, not a zod schema
+
+§6 removed the engine as a runtime dependency of the chain. One
+dependency survived it running the other way: the chain still
+constructs **zod** objects and hands them to the engine, which merges
+them into its own schema graph. `EntryExtensionField.schema` changes
+type from `z.ZodTypeAny` to `StandardSchemaV1`, and the engine adapts
+each declared validator at the boundary. No chain-constructed schema
+object enters an engine schema graph again.
+
+Why: `composePendingList` merges the chain's objects at exactly two
+lines — `PendingEntryCore.extend(shape)` and
+`PendingEntryCore.shape.tag.and(refinement.schema)`
+(`src/PendingSchema.ts:240`, `:244`; `renderSchemaForPrompt` reads only
+`hint`, never the schema). A merge reaches into zod's internal
+protocol, so it holds only while both sides are the same physical copy.
+Measured, engine on 4.0.17:
+
+- a bay on **4.4.3** composes and enforces correctly — a `^4.0.0` range
+  skew is benign;
+- a bay on **3.25.76** composes *silently*, then every `safeParse`
+  throws `TypeError: Cannot read properties of undefined (reading
+  'traits')` from inside zod. Because it **throws** rather than
+  returning a failed result, it escapes `parsePending`'s `ParseResult`
+  contract entirely: `readPending` never converts it to
+  `PendingParseFailure`, and `readPendingTolerant`'s declared
+  degradation (`Dispatcher.ts:2592`) is bypassed with it. Loud, but
+  naming neither the field nor the skew.
+
+And the merge buys the engine nothing. Extension fields are typed
+`unknown` on `PendingEntry` (`PendingSchema.ts:139-140`) — the chain
+narrows locally — so the engine derives no type information from the
+objects it merges. What its mechanics consume is a verdict and a value
+per field, plus the field *names* for `.extend`'s strict-unknown-key
+rejection — all three of which a validator protocol supplies without the
+engine ever holding the chain's object.
+Holding the object is the engine reaching past what it consumes
+(`engine-boundary.md`), and guarding the skew rather than removing it
+would be the shallow fix (`engineering.md`, *The fix lands at the
+mechanism*).
+
+Shape:
+
+- **`EntryExtensionField.schema: StandardSchemaV1`.** Standard Schema is
+  the cross-library validator protocol; zod ≥3.24, valibot, and arktype
+  all publish `~standard`. A chain may declare its fields with any of
+  them, or with a hand-written object.
+- **The engine adapts, never merges.** Each declared validator is
+  wrapped in an *engine-instance* schema that calls
+  `validator["~standard"].validate(value)`, re-raises the returned issues
+  with their own messages and paths, and **returns the validator's output
+  value** on success. Every downstream mechanic is unchanged: strictness,
+  entry-indexed error paths, the `tag` intersection floor, queue-wide tag
+  uniqueness, `ParseResult`'s shape.
+- **A validator produces a value, not just a verdict.** Standard Schema
+  returns `{ value }` on success precisely because validators transform —
+  defaults, coercion, trimming. The adapter is a value-preserving
+  position in the schema, never a bare check: `.flume/chain.ts:87`
+  declares `tests` as `.default([])`, and an adapter that forwarded only
+  the verdict would silently stop materializing it. Measured: the
+  verdict-only shape drops the key; the value-preserving shape yields
+  `tests: []` from both a 4.4.3 and a 3.25.76 bay.
+- **The `tag` floor keeps its meaning.** The engine's mechanical pattern
+  intersects with the *adapted* refinement, so a chain still only
+  narrows the grammar and can never widen past or replace the floor
+  (v0.8 §3, unchanged).
+- **An async validator is refused, loudly, naming the field.** Standard
+  Schema permits a `Promise`; `parsePending` is synchronous and feeds
+  decision and rewrite paths, and a `Promise` read as a result object has
+  no `issues` — it would **accept everything**. The refusal is a declared
+  error class thrown by the adapter, the same treatment
+  `composePendingList` already gives a core-field-shadowing extension: a
+  chain-config defect, not a pending.json defect, so it does not become a
+  `ParseResult` issue. It surfaces at first parse rather than at compose,
+  because asynchrony is only observable by calling. Measured: the throw
+  escapes zod rather than being swallowed into an issue, so the refusal
+  holds.
+- **`StandardSchemaV1` is vendored, not depended on** — a type-only
+  declaration carrying no runtime code, per the spec's own
+  published-to-be-copied posture. zod ships its own copy
+  (`zod/v4/core/standard-schema`), and the two unify structurally, so
+  vendoring costs a chain nothing and keeps flume's public type off a
+  deep import into another library's internals.
+- **`zod` stays a private engine `dependency`.** Not a peer, not
+  re-exported on `FlumeApi`. Both alternatives guard the skew instead of
+  removing it, both leave a bay free to reintroduce it by ignoring the
+  API, and both put a third-party library on flume's public surface —
+  freezing its major for every bay that declares an extension.
+
+Existing chains need no change: every zod schema already satisfies
+`StandardSchemaV1`, so this widens the declared type and compiles as-is.
+A chain calling `.parse()` on its **own** schema (`.flume/chain.ts:409`,
+`docs/CHAIN-AUTHORING.md` §10) is untouched — it owns that object and
+its concrete type.
+
+Blast radius: `src/PendingSchema.ts`, new type-only
+`src/standardSchema.ts`, `src/index.ts`, `tests/PendingSchema.test.ts`,
+`docs/CHAIN-AUTHORING.md` §10, `docs/MIGRATING-0.11.md`, CHANGELOG. No
+chain change: `.flume/chain.ts`, `examples/`, and
+`.github/workflows/ci.yml` compile untouched.
+
+Acceptance: the agreement gate drives the **real** `parsePending` over
+an extension whose validators are hand-written `~standard` objects built
+with no zod at all — proving library-independence, not merely
+version-independence — and asserts the whole verdict set: a conforming
+entry accepts; a field violation rejects carrying the foreign
+validator's own message at the entry-indexed path, and a nested one at
+its composed path (`[0].per.path`, not `[0].per`); a chain `tag`
+refinement narrows and cannot widen the core floor; an undeclared key
+rejects; a duplicate tag rejects. The pin carries its vacuity assertion
+— the foreign validator was actually invoked, not skipped past.
+
+Two pins beyond the verdict set, each failing on a plausible wrong
+implementation: **a declared field whose validator supplies a value for
+an absent key materializes it in the parsed entry** (the drafting error
+this section caught — a verdict-only adapter passes every other case in
+this list while silently dropping `.flume/chain.ts`'s `tests: []`), and
+**an async validator's declaration is refused naming the field** rather
+than accepting the entry vacuously. A chain declaring zod schemas parses
+byte-identically to today.
+
+## 12. CHANGELOG
 
 - 0.11.0 section: Breaking — the job branch convention (`job/<name>`)
   is retired; `flume job extract` and `Chain.harvest` are removed; the
@@ -449,5 +584,13 @@ prints a commit.
   `git worktree add` refuses a path around 200 characters (§9).
   **Removed** — `flume status` never printed a last commit and no longer
   claims to; supersedes v0.1 §3's third clause (§10).
+- Also in 0.11.0: **Changed** — a `Chain.entryExtension` field declares
+  its validator as a Standard Schema (`~standard`) rather than a zod
+  schema, and the engine adapts it instead of merging it. Existing zod
+  declarations satisfy the new type and need no edit; what goes away is
+  the failure where a chain's zod copy is not the engine's — previously
+  an internal `TypeError` thrown past `parsePending`'s structured-error
+  contract, naming neither the field nor the version skew. `zod` remains
+  a private engine dependency: not a peer, not re-exported (§11).
 - Version bump + `npm publish` stay human-performed at cut time.
 
