@@ -2,10 +2,11 @@
 
 ## 1. Purpose & scope
 
-Three rulings, one boundary. The first two (operator, 2026-07-31) draw
+Four rulings, one boundary. The first two (operator, 2026-07-31) draw
 the line between the engine and the implementation's git topology; the
 third (operator, 2026-08-01, §6) draws it between the engine and the
-chain's module graph:
+chain's module graph; the fourth (operator, 2026-08-01, §8) draws it
+between the engine and the decision to spend a tick at all:
 
 **The engine records, never navigates.** The engine's entire git
 surface is the tick record — one tick = one commit on the tip it was
@@ -27,6 +28,14 @@ a host, not a library consumer resolving its own copy. The engine calls
 the chain's factory with its own surface; the chain imports no engine
 value at runtime, so a second physical engine in one process stops
 being reachable. See §6.
+
+**The chain decides whether a tick is worth spending.** The engine
+supplies the skip; the chain supplies the reason. Measured on a 50-tick
+run: 14 plan ticks — 28% — spent a full agent invocation to conclude
+"the queue has pickable work, hand to build," a verdict computable from
+`pending.json` before any agent runs. The engine had no seam to say so —
+`handoff` runs after the tick, gates run after the commit, and nothing
+is consulted before the invocation. See §8.
 
 Why: the job apparatus (v0.5 §5, grown through v0.6.x) put the engine
 on the wrong side of its own boundary — branch grammar (`job/<name>`),
@@ -63,8 +72,9 @@ choreography, extract), v0.6 §4 (`job new`'s branch legs; seeding
 itself survives), and v0.6 §5 (`Chain.harvest` — extract's consumer
 dies with it). §6 additionally supersedes v0.2 §2's `agent` named
 export, v0.2 §3's default-export-a-`Chain` contract, and v0.3 §2's
-`ChainModule.forkResolver` bridge. Frozen files stay frozen; this file
-is the ruling of record. v0.6 §2–3 (config/state residency and `--job`
+`ChainModule.forkResolver` bridge. §10 supersedes v0.1 §3's "last
+commit" clause. Frozen files stay frozen; this file is the ruling of
+record. v0.6 §2–3 (config/state residency and `--job`
 resolution) and v0.6.2 §6 (`Chain.friction`, minus its extract-harvest
 leg) survive unchanged.
 
@@ -76,7 +86,11 @@ Net-negative line count is the expectation for the job removals; §6 is
 additive in the engine and subtractive in every chain. This repo's own
 `.flume/chain.ts` declares none of the removed job fields, but §6 does
 require a companion change to it — the dogfood chain moves to the
-factory shape in the same commit as the loader that calls it.
+factory shape in the same commit as the loader that calls it. §8 needs
+a second, separate companion change there (plan declaring `shouldRun`),
+but that one is not atomic with the engine: an undeclared `shouldRun`
+is unchanged behavior, so the seam ships first and the chain adopts it
+after.
 
 Explicitly not in this line: any engine verb that creates branches or
 worktrees; per-tick claims; mtime-heartbeat claim staleness
@@ -86,7 +100,10 @@ exist); commit-tree+update-ref CAS commits (the verify's residual
 check-to-commit window defends against race-timed adversaries the
 threat model doesn't contain); any replacement for `extract`; any
 loader hook, specifier rewrite, version handshake, or lockfile compare
-in service of §6.
+in service of §6; any engine-side scheduling *policy* (§8 ships the
+seam, never a default that skips anything); any change to
+`TAG_MAX_LENGTH` itself (§9 bounds the directory name, not the tag);
+any `flume status` verbosity flag.
 
 ## 2. A job is a state root
 
@@ -302,12 +319,111 @@ the suite green.
   the package that is running, or unexplained `instanceof` failures —
   so the doc is findable from the failure.
 
+- `docs/CHAIN-AUTHORING.md` additionally gains a `shouldRun` section
+  beside `handoff` (§8), leading with the yield-to-pickable-work case
+  that motivated it and stating the cheap-and-synchronous contract.
+- `docs/CLI.md` and `README.md`'s `status` lines match §10 — no doc
+  claims `flume status` prints a commit.
+
 Acceptance: `grep -rin 'extract' README.md docs/CLI.md
 docs/CHAIN-AUTHORING.md` is empty; MIGRATING-0.11 contains the
 branch-integration, extract-replacement, and chain-factory recipes;
-no doc shows a chain taking a *value* from an engine import.
+no doc shows a chain taking a *value* from an engine import; no doc
+claims `flume status` prints a commit.
 
-## 8. CHANGELOG
+## 8. `Phase.shouldRun` — decline before the invocation
+
+An optional predicate the dispatcher consults **before** rendering the
+prompt or invoking the agent. Returning `false` ends the tick as a
+declined no-op: no agent invocation, no commit, `handoff` still runs so
+the chain can pass the baton on.
+
+```ts
+shouldRun?: (ctx: TickContext) => boolean;
+```
+
+- **Undeclared is unchanged behavior.** A phase without `shouldRun`
+  always runs, byte-identically to today. A capability with an injection
+  point, not a policy: the engine supplies the skip, the chain supplies
+  the reason (`engine-boundary.md`, *Capability vs convention*).
+- **Context is what already exists.** `TickContext` carries `pending`
+  (all entries, for singleton phases that read the plan) and
+  `assignedEntry`. No new plumbing; the predicate sees what `promptArgs`
+  sees.
+- **Synchronous, and cheap by contract.** It runs before every
+  invocation. A predicate needing I/O is doing too much — that work
+  belongs in the tick it is trying to avoid.
+- **A declined tick is a distinguishable fact**, not a silent no-op: it
+  reports its own outcome in the tick summary/verdict, separate from
+  `voluntary-bail` (the agent ran and refused) and from hibernation
+  (nothing was awake). A supervisor must be able to tell "the chain
+  declined" from "the agent bailed" without reading session logs —
+  otherwise the fix hides exactly what it set out to expose.
+- **Baton mechanics unchanged.** The phase sleeps and `handoff` runs
+  exactly as on a no-commit tick.
+
+Acceptance: a phase whose `shouldRun` returns `false` produces no agent
+invocation (asserted against a stub agent that throws if called), no
+commit, and still hands off; the same phase returning `true` is
+byte-identical to a phase declaring none; a chain declaring no
+`shouldRun` anywhere reproduces today's tick counts exactly; the
+declined outcome is distinguishable in the verdict from
+`voluntary-bail`.
+
+## 9. Worktree directory names are length-bounded
+
+`createWorktree` derives the fanout worktree directory from
+`slugify(entry.tag)`. It instead derives a **length-bounded** name: the
+slug truncated to a fixed budget, plus a short hash of the full tag so
+distinct tags stay distinct.
+
+Why: `git worktree add` refuses a worktree path around 200 characters on
+win32 with `fatal: '$GIT_DIR' too big` — below MAX_PATH, unaffected by
+`core.longpaths`, and untouchable by Node-side `toNamespacedPath`
+because git builds that path itself. `TAG_MAX_LENGTH` is Linux
+`NAME_MAX` arithmetic (`255 - 39`), so the schema accepts tags whose
+fanout worktree cannot be provisioned on Windows. The engine already
+reports this loudly (a `provisionFailure` carrying git's own error) —
+but the entry can never ship on that platform, and nothing warns the
+author upstream.
+
+- The bound is an engine constant chosen so `<wtBase>/<namespace>/<dir>`
+  clears git's ceiling with room to spare — not a chain knob, because it
+  is a property of git, not of any implementation's taste.
+- **The tag itself is untouched.** `pending.json`, commit messages,
+  logs, the §5 prior-attempt record, and every tag-keyed lookup keep the
+  full tag. Only the directory name is bounded. Shortening the tag would
+  be a breaking schema change punishing POSIX chains for a
+  git-on-Windows limit.
+
+Acceptance: a fanout entry whose tag is `TAG_MAX_LENGTH` characters
+provisions and ships on win32; two tags sharing their first N characters
+get different worktree directories; the full tag still appears in the
+commit message and the entry's §5 record; the two win32-skipped cases in
+`tests/Dispatcher.test.ts` (`PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT`,
+`TAG-LENGTH-BOUND-AGREEMENT-PIN`) come off their skips and run on every
+platform.
+
+## 10. `flume status` — the "last commit" clause is retired
+
+v0.1 §3 says `status` prints "awake phases, pending entry count, last
+commit". The first two shipped; the third never did, and should not.
+`git log -1` already answers it, `engineering.md`'s *Derived state is
+computed, never restated beside its source* names "a HEAD sha beside
+git" as the shape to avoid, and printing it would give a command
+specced to always exit 0 its first failure mode outside `.flume/` (a
+detached HEAD, a repo with no commits).
+
+`flume status` owes: awake phases, pending entry count, supervisor
+liveness, tip claim state, and the chain-declared extras (friction count
+where declared and non-empty).
+
+Acceptance: `docs/CLI.md`, `HELP_TOP`, and `HELP_SUB.status` describe
+exactly that list and no more; `flume status` still exits 0 on a
+detached HEAD and in a repo with no commits; no doc claims `status`
+prints a commit.
+
+## 11. CHANGELOG
 
 - 0.11.0 section: Breaking — the job branch convention (`job/<name>`)
   is retired; `flume job extract` and `Chain.harvest` are removed; the
@@ -324,4 +440,14 @@ no doc shows a chain taking a *value* from an engine import.
   tip-moved verify (no commit onto a tip that moved mid-tick; reported
   as a tick fact). Existing `job/<name>` branches are the operator's to
   integrate — see MIGRATING-0.11.
+- Also in 0.11.0: **Added** — `Phase.shouldRun`, an optional predicate
+  consulted before the agent is invoked, so a chain can decline a tick
+  without spending one; a declined tick is reported as its own outcome,
+  distinct from a voluntary bail (§8). **Changed** — fanout worktree
+  directory names are length-bounded, the full tag preserved everywhere
+  it is read, so a max-length tag provisions on Windows where
+  `git worktree add` refuses a path around 200 characters (§9).
+  **Removed** — `flume status` never printed a last commit and no longer
+  claims to; supersedes v0.1 §3's third clause (§10).
 - Version bump + `npm publish` stay human-performed at cut time.
+
