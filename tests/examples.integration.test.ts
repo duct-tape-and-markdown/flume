@@ -26,6 +26,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import type { Agent } from "../src/Agent.ts";
+import type { GateContext } from "../src/Gate.ts";
 import type { Chain } from "../src/Phase.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
@@ -248,6 +249,36 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       // of the agent, classified "platform-preempt" — a non-work failure,
       // not a deliberate no-op.
       expect(outcome.noCommit).toBe("platform-preempt");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("backlogParseGate rejects a non-ENOENT BACKLOG.json read failure instead of reporting it absent", async () => {
+    // The gate runs `afterCommit` (Dispatcher.ts) and the agent test above
+    // never reaches it: groomAgent.invoke throws on the same EISDIR before
+    // any commit lands, so dispatcher.tick() bails pre-gate. Only a direct
+    // gate.run() call exercises the gate's own catch site
+    // (BACKLOG-GROOMER-GATE-ENOENT-UNTESTED).
+    const backlogParseGate = backlogGroomerChain.phases[0]!.gates[0]!;
+    const repo = await makeRepo();
+    try {
+      await mkdir(join(repo.dir, "BACKLOG.json"));
+
+      const ctx: GateContext = {
+        cwd: repo.dir,
+        flumeDir: join(repo.dir, ".flume"),
+        repoRoot: repo.dir,
+        phaseName: "groom",
+        log: () => {},
+      };
+
+      // Pre-fix: the bare catch swallowed EISDIR as ENOENT and resolved
+      // `{ ok: true, message: "BACKLOG.json absent ..." }`. Post-fix: the
+      // read error propagates out of the gate.
+      await expect(backlogParseGate.run(ctx)).rejects.toMatchObject({
+        code: "EISDIR",
+      });
     } finally {
       await repo.cleanup();
     }
