@@ -44,5 +44,143 @@
     ],
     "acceptance": "One glob matcher serves both the entry-scope write guard and ship detection; a glob-declaring entry that touches a matching file ships and drains; a commit touching only channel paths still lands channel-only; tsc/vitest green.",
     "notes": "Downstream report (0.9.0 dist), re-verified here. declaredPaths(entry) has two consumers that both judge real commit paths and disagree: Dispatcher.ts:2060 hands it to writablePathsGate as globs; Dispatcher.ts:1596-1599 compares it with Array.includes. Effect is a non-draining loop - commit on trunk, entry still pickable, next tick redoes landed work. matchesAny is module-private today, so sharing needs the move."
+  },
+  {
+    "tag": "PHASE-SHOULDRUN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "add optional shouldRun?(ctx: TickContext): boolean per §8 - decline before invocation, undeclared unchanged"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "consult phase.shouldRun before rendering/invoking (singleton ~1075, fanout path); false -> no agent call, no commit, baton-sleep/handoff still run (~1112-1116), verdict carries a declined fact as a TickVerdict/TickOutcome sibling (tipMoved's precedent ~1104-1146), never a 5th NoCommitMode variant"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "new shouldRun section beside handoff (~169), leads with the yield-to-pickable-work case, states the synchronous/cheap contract"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Added: Phase.shouldRun line per §8"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "shouldRun cases per acceptance below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Phase.shouldRun: an optional predicate the dispatcher consults before invoking the agent, so a chain can decline a tick without spending one (§8).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "8. `Phase.shouldRun` — decline before the invocation"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "shouldRun=false on a phase: a stub agent that throws if called never runs, no commit lands, handoff still runs (baton sleeps/wakes as usual); shouldRun=true is byte-identical to a phase declaring none; a chain declaring shouldRun nowhere reproduces today's tick counts exactly; the declined outcome reads distinct from voluntary-bail in the tick verdict"
+      }
+    ],
+    "acceptance": "A phase whose shouldRun returns false produces no agent invocation, no commit, and still hands off; true or undeclared is unchanged behavior; declined is distinguishable from voluntary-bail and from hibernation in the verdict.",
+    "notes": "TickContext already carries pending/assignedEntry (Phase.ts:32-47) - no new plumbing. Follow tipMoved's sibling-fact precedent on TickVerdict/TickOutcome rather than growing NoCommitMode."
+  },
+  {
+    "tag": "WORKTREE-DIRNAME-LENGTH-BOUND",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "createWorktree (~2195-2242): the worktree path's directory component derives from a length-bounded name (truncated slugify(entry.tag) + short hash of the full tag) per §9; branch (~2203) and priorAttemptKey (~2253) keep the untruncated slug - only the fs directory is bounded"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "remove the win32 skipIf on TAG-LENGTH-BOUND-AGREEMENT-PIN (~6475) and the unconditional skip on PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT (~6970) so both run on every platform; add a case pinning two tags sharing a long common prefix to distinct worktree directories"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Changed: worktree dirname length bound line per §9"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "createWorktree derives a length-bounded worktree directory name instead of the raw tag slug, so any schema-valid tag provisions its fanout worktree on win32 (§9).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "9. Worktree directory names are length-bounded"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a TAG_MAX_LENGTH-tag fanout entry provisions and ships on win32 (no skip); two tags sharing a long common prefix get distinct worktree directories; the full tag still appears in the commit message and the §5 prior-attempt record; PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT round-trips on every platform"
+      }
+    ],
+    "acceptance": "TAG-LENGTH-BOUND-AGREEMENT-PIN and PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT run unskipped on every platform and pass; distinct-prefix tags get distinct worktree dirs; the full tag is unchanged everywhere else it's read.",
+    "notes": "Bound is an engine constant (not a chain knob) sized so <wtBase>/<namespace>/<dir> clears git's ~200-char win32 ceiling. Resolves the parked 'schema-valid tag unshippable on win32' open question - closed this tick."
+  },
+  {
+    "tag": "ENTRYEXTENSION-STANDARD-SCHEMA",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "src/standardSchema.ts",
+          "description": "vendored type-only StandardSchemaV1 declaration per §11 - no runtime code, structurally unifies with zod's own ~standard"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "EntryExtensionField.schema: StandardSchemaV1 (was z.ZodTypeAny, ~152); composePendingList (~224-248) adapts each declared validator via ~standard.validate into an engine-instance schema - value-preserving, re-raises issues at entry-indexed/composed paths, refuses loudly (naming the field) a validator whose Promise result would read as accepting everything; tag intersection (~244) composes against the adapted refinement"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export the vendored StandardSchemaV1 type"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "agreement gate drives real parsePending over hand-written ~standard validators (no zod) per §11 acceptance"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "§10: declared type is a Standard Schema (~1182), zod example kept as an implementation not the contract; note a chain's own .parse() (~1235) is untouched"
+        },
+        {
+          "path": "docs/MIGRATING-0.11.md",
+          "description": "record the retired zod-copy-skew TypeError; no migration step - existing zod schemas already satisfy StandardSchemaV1"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Changed: entryExtension validator protocol line per §11"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "entryExtension field validators declare a Standard Schema (~standard) instead of a zod schema; the engine adapts rather than merges chain-constructed zod objects (§11).",
+    "per": {
+      "path": "spec/RELEASE-v0.11.md",
+      "section": "11. The extension seam takes a validator, not a zod schema"
+    },
+    "tests": [
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "hand-written ~standard validators (no zod) through real parsePending: a conforming entry accepts; a field violation rejects carrying the foreign validator's own message at the entry-indexed path, a nested one at [0].per.path; a chain tag refinement narrows and cannot widen the core floor; an undeclared key rejects; a duplicate tag rejects; a vacuity pin proves the foreign validator was actually invoked, not skipped past"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "a declared validator that supplies a value for an absent key materializes it in the parsed entry (chain.ts's tests:.default([]) case) - a verdict-only adapter fails this while passing every case above"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "asserts": "an async validator's declaration is refused naming the field, rather than accepting the entry vacuously"
+      }
+    ],
+    "acceptance": "composePendingList/parsePending accept any ~standard validator, not only zod; zod stays a private engine dependency (not peer, not re-exported); a chain declaring zod schemas parses byte-identically to today.",
+    "notes": "Closes the parked 'zod is a dependency, not a peer' open question with a different disposition than its own recommendation (peerDependency) - the spec instead removes the merge via an adapter (engine-boundary.md: holding the object reaches past what mechanics consume)."
   }
 ]
