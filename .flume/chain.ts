@@ -328,8 +328,14 @@ const factory: ChainFactory = (api) => {
   /**
    * Model pinned per phase: the seam exists so the tiers can diverge (plan
    * carries open-ended judgment; build executes decided entries). Both
-   * currently sonnet — a usage-budget ruling, not a collapse of the seam;
-   * re-pin via pending entry when either phase's needs diverge.
+   * currently sonnet — a usage-budget ruling, not a collapse of the seam.
+   *
+   * Retiring condition, and who acts on it: chain.ts is outside every phase
+   * lane, so **the operator re-pins here, in an interactive `chore(flume):`
+   * commit** — no tick can. The condition to re-read this on is observable
+   * in the session capture under `<FLUME_DIR>/sessions/`: plan ticks
+   * retrying past a gate, or build ticks reverting on work whose entry was
+   * unambiguous. Neither is a budget problem; both are a tier problem.
    */
   const planAgent = phaseAgent("sonnet");
   const buildAgent = phaseAgent("sonnet");
