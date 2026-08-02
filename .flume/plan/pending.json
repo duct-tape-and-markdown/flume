@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "DISPATCHER-WAVE-NOCOMMIT-PRECEDENCE-TEST",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Add fanout-wave test with mixed noCommit causes across entries, per engineering.md 'A green verdict is proven non-vacuous'."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Test the wave-level noCommit precedence (Dispatcher.ts:1836-1853) across mixed per-entry causes in one wave",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a fanout wave with entries failing via ≥2 different noCommit causes (e.g. voluntary-bail + platform-preempt, or voluntary-bail + gate-revert) resolves waveNoCommit per the documented precedence gate-revert > render-refused > platform-preempt > voluntary-bail"
+      }
+    ],
+    "acceptance": "New test constructs a mixed-cause fanout wave and asserts TickOutcome.noCommit matches the precedence order; fails on a pre-fix tree if the precedence branches at Dispatcher.ts:1844-1852 were reordered or dropped",
+    "notes": "Every existing test drives one noCommit mode per wave in isolation; superviseLoop:3007-3013 reads this wave label to classify erroredTicks, and voluntary-bail is the one mode explicitly excluded — an inverted precedence would silently drop a real platform/gate failure from the run summary."
+  }
+]
