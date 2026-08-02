@@ -1,51 +1,5 @@
 [
   {
-    "tag": "PHASE-SHOULDRUN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "add optional shouldRun?(ctx: TickContext): boolean per §8 - decline before invocation, undeclared unchanged"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "consult phase.shouldRun before rendering/invoking (singleton ~1075, fanout path); false -> no agent call, no commit, baton-sleep/handoff still run (~1112-1116), verdict carries a declined fact as a TickVerdict/TickOutcome sibling (tipMoved's precedent ~1104-1146), never a 5th NoCommitMode variant"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "new shouldRun section beside handoff (~169), leads with the yield-to-pickable-work case, states the synchronous/cheap contract"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "Added: Phase.shouldRun line per §8"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "shouldRun cases per acceptance below"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Phase.shouldRun: an optional predicate the dispatcher consults before invoking the agent, so a chain can decline a tick without spending one (§8).",
-    "per": {
-      "path": "spec/RELEASE-v0.11.md",
-      "section": "8. `Phase.shouldRun` — decline before the invocation"
-    },
-    "tests": [
-      {
-        "path": "tests/Dispatcher.test.ts",
-        "asserts": "shouldRun=false on a phase: a stub agent that throws if called never runs, no commit lands, handoff still runs (baton sleeps/wakes as usual); shouldRun=true is byte-identical to a phase declaring none; a chain declaring shouldRun nowhere reproduces today's tick counts exactly; the declined outcome reads distinct from voluntary-bail in the tick verdict"
-      }
-    ],
-    "acceptance": "A phase whose shouldRun returns false produces no agent invocation, no commit, and still hands off; true or undeclared is unchanged behavior; declined is distinguishable from voluntary-bail and from hibernation in the verdict.",
-    "notes": "TickContext already carries pending/assignedEntry (Phase.ts:32-47) - no new plumbing. Follow tipMoved's sibling-fact precedent on TickVerdict/TickOutcome rather than growing NoCommitMode."
-  },
-  {
     "tag": "WORKTREE-DIRNAME-LENGTH-BOUND",
     "gate": {
       "kind": "open"
