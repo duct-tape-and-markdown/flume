@@ -15,6 +15,29 @@ import { fileURLToPath } from "node:url";
 /** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
 const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Does inbox.md carry an undrained finding? Entries are `##` subsections
+ * below the file's own marker; everything above it is format documentation
+ * that also uses `##`, hence the slice.
+ *
+ * Read synchronously and cheaply (one small file) per v0.11 §8's contract,
+ * the same idiom `plan.handoff` already uses for state.md. Any failure
+ * returns `true`: plan's `shouldRun` treats an unreadable inbox as a reason
+ * to run the tick, never to skip it.
+ */
+function inboxHasEntries(): boolean {
+  try {
+    const text = readFileSync(
+      resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "inbox.md"),
+      "utf8",
+    );
+    const marker = text.indexOf("<!-- entries below this line");
+    return /^## /m.test(marker === -1 ? text : text.slice(marker));
+  } catch {
+    return true;
+  }
+}
+
 import type {
   Chain,
   Phase,
@@ -341,6 +364,31 @@ const factory: ChainFactory = (api) => {
     // validation and pre-checks every entry's declared files against build's
     // fence at plan time.
     gates: [pendingGate({ extension: entryExtension, targetFence: buildFence })],
+    /**
+     * v0.11 §8. Decline only a tick that provably has nothing to do but pass
+     * the baton: the queue already carries pickable work, so the sweep yields
+     * by rule (`posture-sweep.md`, *The sweep yields to pickable work*), and
+     * the inbox is empty, so there is nothing to drain.
+     *
+     * Audit and derive are **deferred, never lost**. A declined tick makes no
+     * commit, so `<commit-delta>`'s last-`plan:` window and `<spec-delta>`'s
+     * derive stamp both stay exactly where they were; the next tick that runs
+     * sees the whole backlog. Deferral is bounded — build drains the queue,
+     * nothing stays pickable forever, and the empty-queue tick runs in full.
+     *
+     * Not checked here: promotable `blockedBy` entries. An entry whose blocker
+     * has shipped reads as unpickable to the line below (its blocker is not in
+     * this tick's shipped set), so a queue of nothing but promotable entries
+     * takes the `return true` and plan runs. Adding a promote check would only
+     * make the predicate decline less often, for no correctness gain.
+     *
+     * Fails open everywhere it is unsure: an unreadable inbox runs the tick.
+     */
+    shouldRun(ctx: TickContext) {
+      const pending = ctx.pending ?? [];
+      if (!pending.some((e) => isPickableNow(e, new Set()))) return true;
+      return inboxHasEntries();
+    },
     promptArgs() {
       return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
     },
