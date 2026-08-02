@@ -9,6 +9,55 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `zod` is a dependency, not a peer — the entryExtension seam crosses copies
+
+**PARKED**
+
+A chain declares `entryExtension` with schemas built by **its** zod
+(`.flume/chain.ts:27`, both examples, and the recipe at
+`docs/CHAIN-AUTHORING.md:1195`). `composePendingList`
+(`src/PendingSchema.ts:224-242`) merges those objects into engine-constructed
+zod — `.extend()`, an intersection for `tag` — then `safeParse`s. Live zod
+objects built by one copy, consumed structurally by another. After v0.11 §6
+this is the **only** value import left in a chain.
+
+Measured 2026-08-01 with two physical copies, composing exactly as
+`composePendingList` does:
+
+| engine zod | chain zod | result |
+| --- | --- | --- |
+| 4.4.3 | 4.0.17 | **works** — chain's `.max(200)` and `tag` refinement both enforced |
+| 4.4.3 | 3.25.76 | **throws** at compose time: `Invalid element at key "<field>": expected a Zod schema` |
+
+**This is not §6's failure class, and the distinction is the point.** §6
+removed a *silent* degradation whose product was commits. This one is loud —
+it throws before any entry is parsed — and across zod 4 minors it does not
+occur at all (zod 4 carries an internal version tag; the interop looks
+deliberate). No silent mis-validation was reproducible in either direction.
+
+So this does not clear the correctness-adjacency filing bar as an entry. What
+is left is where the check *lives*:
+
+1. **Make `zod` a `peerDependency`.** A major mismatch then surfaces at
+   install time — the package manager's job — instead of at first tick. Moves
+   the check up `engineering.md`'s ladder from runtime to the most
+   deterministic layer that can express it. Cost: every bay must declare zod
+   itself, and that is a packaging change with downstream blast radius, which
+   is why this is a question.
+2. **Translate the error.** Wrap the raw compose-time throw in a refusal
+   naming the cause ("this chain's zod major differs from the engine's"), the
+   `CjsContextLoadError` precedent. Cheap, but leaves the failure late.
+3. **Leave it.** It is already loud and already stops the run.
+
+Recommended: (1), optionally with (2). Explicitly **not** recommended: putting
+`z` on `FlumeApi`. That idea's justification was correctness; the measurement
+above removes it, and what remains is "zero value imports in a chain" —
+tidiness, which `collaboration.md`'s complexity signal says not to build
+machinery for.
+
+Recorded so nobody re-runs the probe: the negative result (4.x↔4.x is fine) is
+the load-bearing half.
+
 ## A schema-valid tag can be unshippable through fanout on win32
 
 **PARKED**
@@ -136,6 +185,26 @@ problem, and it puts the cursor under the phase's own control. Worth noting
 the same race applies to `<commit-delta>` and `<pending-now>`; a stamp fixes
 only the spec leg, so whether the other two want the same treatment is part
 of the call.
+
+**The shape underneath, named (2026-08-01).** This is v0.11 §6's framing one
+layer up: the prompt is a plugin that **resolves its own inputs** instead of
+being handed them. All three spans independently shell
+`git log --grep='^plan:' -n 1` to re-derive the same cursor — the same
+"each side resolves its own copy" smell that `GATECONTEXT-TOUCHED-PATHS-DEDUP`
+just removed from the gates, where `chainLoadGate` and `writablePathsGate`
+each shelled `git show --name-only` rather than reading it off `GateContext`.
+
+The injection seam already exists: `promptArgs`. A chain that computed the
+window once and passed it in as a substituted value would collapse the three
+derivations to one, and remove any chance of the spans disagreeing within a
+single render.
+
+**But injection does not subsume option (1), and it should not be sold as
+doing so.** Handing the value in fixes duplication and intra-render
+inconsistency; it does not decide *which sha to diff from*, which is the
+actual defect above. The stamp is the cursor; injection is how the cursor
+reaches the prompt. They compose — pick (1) regardless, and treat the
+consolidation as a separate, smaller call.
 
 ## pendingGate — report both violation classes in one pass (inbox finding 3)
 
