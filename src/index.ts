@@ -70,6 +70,8 @@ export {
   type ChainFactory,
   type DispatcherOptions,
   type Logger,
+  type ProvisionFailure,
+  type TerminalMisconfiguration,
   type TickOutcome,
   type TickVerdict,
   type TickVerdictGateResult,

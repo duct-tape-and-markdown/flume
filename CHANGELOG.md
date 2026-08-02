@@ -159,6 +159,13 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   committing mid-tick, a pull moving the ref, and claim-less bare-tick
   collisions (running two ticks hot against one ref with no coordination).
 
+- `src/index.ts` re-exports `ProvisionFailure` and `TerminalMisconfiguration`
+  as named types (`.claude/rules/engineering.md` "An export earns its
+  consumer" — DISPATCHER-PROVISIONFAILURE-TERMINALMISCONFIG-UNEXPORTED): both
+  were already field types on the public `TickVerdict.provisionFailures` /
+  `TickOutcome.terminal`, but a chain author had no barrel path to name them
+  when typing their own handling of those fields.
+
 ### Fixed
 
 - `resolveStateDirs`' job-resolution doc comment (`src/cli.ts`) now sits

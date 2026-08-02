@@ -51,6 +51,11 @@ import {
 } from "../src/PendingSchema.ts";
 import { InlineExecRenderError as realInlineExecRenderError } from "../src/Prompt.ts";
 import * as git from "../src/git.ts";
+// Barrel-export pin (engineering.md "An export earns its consumer"): both
+// types are field types on the already-public TickVerdict/TickOutcome, so a
+// chain author needs to be able to name them from the package entry point.
+// This import fails tsc if either drops from src/index.ts.
+import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts";
 
 const exec = promisify(execFile);
 
@@ -7056,3 +7061,25 @@ describe.runIf(process.platform === "win32")(
     // "green verdict is non-vacuous" standard rules out rather than files.
   },
 );
+
+describe("src/index.ts — ProvisionFailure/TerminalMisconfiguration barrel export (DISPATCHER-PROVISIONFAILURE-TERMINALMISCONFIG-UNEXPORTED)", () => {
+  it("re-exports ProvisionFailure and TerminalMisconfiguration as named types a chain author can consume", () => {
+    // The imported types (line 58, from src/index.ts rather than
+    // src/Dispatcher.ts) are what a chain author would actually reach for to
+    // type their own handling of TickVerdict.provisionFailures / TickOutcome
+    // .terminal — if either drops from the barrel this fails tsc, not just
+    // an LSP references check.
+    const provisionFailure: ProvisionFailure = {
+      tag: "SOME-ENTRY",
+      signature: "worktree-create-failed",
+      message: "git worktree add failed: ...",
+    };
+    const terminalMisconfiguration: TerminalMisconfiguration = {
+      kind: "orphaned-awake",
+      phases: ["build"],
+    };
+
+    expect(provisionFailure.tag).toBe("SOME-ENTRY");
+    expect(terminalMisconfiguration.kind).toBe("orphaned-awake");
+  });
+});
