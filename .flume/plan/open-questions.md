@@ -9,6 +9,49 @@ Status markers:
 
 <!-- questions below this line -->
 
+## PLAN-SHOULDRUN — wire Phase.shouldRun into the plan phase (chain.ts amendment)
+
+**PARKED**
+
+`Phase.shouldRun` shipped this delta (v0.11 §8, 80cf11d) — the capability
+is literally motivated by "plan concludes hand-to-build with no derive
+needed" (measured 28% of ticks, docs/CHAIN-AUTHORING.md's own
+`hasUnplannedChanges` example). `.flume/chain.ts`'s `plan` phase
+(chain.ts:316-375) declares no `shouldRun`, so plan is still invoked on
+every wake even when nothing changed since the last `plan:` commit. This
+tick is a live instance: the immediately prior invocation did an exhaustive
+audit, found the tree byte-identical to the last plan commit, and
+voluntarily bailed with no commit — a cost `shouldRun` exists to avoid.
+
+`.flume/chain.ts` sits outside every phase's writable lane
+(`.claude/rules/spec-plan-build.md`; chain.ts:176-179: "harness surfaces
+... are outside every phase lane"), so this can't become a pending entry —
+it needs a human edit to chain.ts itself.
+
+Options:
+1. **Wire `shouldRun` on `plan`.** Decline when: spec-delta is empty, inbox
+   is empty, no `blockedBy` entry is newly unblockable, and pending-now has
+   no pickable entry to promote-check — mirroring, ahead of invocation, the
+   same no-op condition a bail already reaches post-hoc. The sweep
+   dimension complicates this: it can still have real work (next
+   neighborhood) even when derive/drain/promote are all quiet, so a naive
+   predicate would wrongly decline a tick the sweep needed. The predicate
+   needs to either read the sweep frontier synchronously too, or `shouldRun`
+   only ever declines when pending-now already carries a pickable entry
+   (sweep yields to pickable work anyway, so that path is always real
+   build-handoff work, never a sweep tick) — narrower but simpler, and closes
+   the exact case this tick hit (pending-now empty is the case with no
+   engine-verifiable "nothing changed" signal).
+2. **Leave undeclared.** A no-op invocation already exits cheap (voluntary
+   bail, no commit) — `shouldRun` is new, proven only in its own test
+   suite, not yet in this repo's own loop.
+
+Recommended: lean toward (1), scoped to the narrower predicate — decline
+only when pending-now has no pickable entry AND no dimension trigger fired
+(spec-delta empty, inbox empty, no promotable blockedBy) — since that's the
+one case a purely-mechanical check on already-injected context can decide
+without duplicating the sweep's own frontier logic.
+
 ## pendingGate — report both violation classes in one pass (inbox finding 3)
 
 **PARKED**
