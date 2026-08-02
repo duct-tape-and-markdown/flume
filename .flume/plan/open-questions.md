@@ -18,10 +18,10 @@ is literally motivated by "plan concludes hand-to-build with no derive
 needed" (measured 28% of ticks, docs/CHAIN-AUTHORING.md's own
 `hasUnplannedChanges` example). `.flume/chain.ts`'s `plan` phase
 (chain.ts:316-375) declares no `shouldRun`, so plan is still invoked on
-every wake even when nothing changed since the last `plan:` commit. This
-tick is a live instance: the immediately prior invocation did an exhaustive
-audit, found the tree byte-identical to the last plan commit, and
-voluntarily bailed with no commit — a cost `shouldRun` exists to avoid.
+every wake even when nothing changed since the last `plan:` commit. A prior
+tick was a live instance: an earlier invocation did an exhaustive audit,
+found the tree byte-identical to the last plan commit, and voluntarily
+bailed with no commit — a cost `shouldRun` exists to avoid.
 
 `.flume/chain.ts` sits outside every phase's writable lane
 (`.claude/rules/spec-plan-build.md`; chain.ts:176-179: "harness surfaces
@@ -95,7 +95,7 @@ surface.
 The gate half of this question shipped: `BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE`
 (86789b8/48a87df, cites `engine-boundary.md`'s *Capability vs convention*)
 gives `tscGate`/`vitestGate`/`eslintGate` an optional `cmd` override the
-chain supplies directly. This tick's audit found the override only closes
+chain supplies directly. A prior tick's audit found the override only closes
 the gap for pnpm/yarn-classic-shaped tools — args stay hardcoded to the
 bare-bin invocation, so `{cmd:"npm"}` fails npm's own "Unknown command" for
 tsc/lint; filed `BUILTINGATES-CMD-OVERRIDE-PNPM-SHAPED-ARGS` to close that.
