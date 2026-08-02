@@ -17,7 +17,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -215,6 +215,39 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       await expect(
         readFile(join(repo.dir, "SHIPPED.md"), "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("surfaces a non-ENOENT BACKLOG.json read failure instead of reporting 'nothing to groom'", async () => {
+    const repo = await makeRepo();
+    try {
+      // BACKLOG_PATH exists as a directory: readFileSync fails with EISDIR,
+      // a real I/O failure distinct from "file absent" (ENOENT). Pre-fix,
+      // the bare catch swallowed this as a clean "nothing to groom" bail
+      // (engineering.md "Loud or nothing").
+      await mkdir(join(repo.dir, "BACKLOG.json"));
+
+      const flumeDir = join(repo.dir, ".flume");
+      new Baton(flumeDir).wake("groom");
+
+      const dispatcher = new Dispatcher({
+        repoRoot: repo.dir,
+        configDir: EXAMPLES_DIR,
+        flumeDir,
+        agent: neverAgent,
+        chainLoader: async () => ({ chain: backlogGroomerChain }),
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(false);
+      // Pre-fix: EISDIR swallowed, agent exits clean with nothing done —
+      // classified "voluntary-bail". Post-fix: the read error propagates out
+      // of the agent, classified "platform-preempt" — a non-work failure,
+      // not a deliberate no-op.
+      expect(outcome.noCommit).toBe("platform-preempt");
     } finally {
       await repo.cleanup();
     }

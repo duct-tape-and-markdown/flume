@@ -112,7 +112,8 @@ const factory: ChainFactory = (api) => {
       let raw: string;
       try {
         raw = readFileSync(backlogPath, "utf8");
-      } catch {
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         return { exitCode: 0, stdout: "no BACKLOG.json; nothing to groom", stderr: "" };
       }
 
@@ -162,7 +163,8 @@ const factory: ChainFactory = (api) => {
       let raw: string;
       try {
         raw = readFileSync(join(ctx.cwd, BACKLOG_PATH), "utf8");
-      } catch {
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         return { ok: true, message: "BACKLOG.json absent (nothing groomed this tick)" };
       }
       const result = parsePending(raw, entryExtension);

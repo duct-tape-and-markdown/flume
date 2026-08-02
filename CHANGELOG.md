@@ -189,6 +189,16 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `examples/backlog-groomer-chain.ts`'s `groomAgent.invoke` and
+  `backlogParseGate.run` now narrow their `BACKLOG.json` read failures to
+  `ENOENT`, rethrowing anything else. Both previously caught every
+  `readFileSync` error — a directory at `BACKLOG.json`, a permissions
+  failure, any real I/O fault — and reported it identically to "file
+  absent," so the agent bailed clean with "nothing to groom" and the gate
+  reported `ok: true` over an error it never actually inspected. This file
+  is the one users are told to copy verbatim into their own `.flume/chain.ts`
+  (its trailing block), so the swallow propagated to every downstream chain
+  built from it (`.claude/rules/engineering.md` §Loud or nothing).
 - `flume job run <name> --max <value>` now validates `--max` is a finite,
   non-negative number in the `job run` branch itself (`src/cli.ts`), sharing
   the numeric parse with `flume loop`'s own `--max` check, instead of
