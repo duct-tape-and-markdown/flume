@@ -475,6 +475,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Changed
 
+- `Prompt.ts`'s `effectiveFenceLines` and `builtinGates.ts`'s
+  `writablePathsGate` each spread `entryPaths ∪ entryChannelPaths`
+  independently (`.claude/rules/engineering.md`, "Derived state is computed,
+  never restated beside its source" — ENTRYWRITESCOPE-SHARED-UNION); a doc
+  comment claimed the two "mirror" but nothing mechanical pinned it. Both now
+  call one `entryWriteScopeUnion` helper (`src/paths.ts`). No behavior
+  changes; `tests/Prompt.test.ts` adds an agreement case driving a real
+  render's fence through the real `writablePathsGate`.
 - Narration cleanup in `src/Prompt.ts` and `src/builtinGates.ts`
   (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung" —
   ERA-SCOPED-NARRATION-PROMPT-NEIGHBORHOOD): three "byte-identical to a past

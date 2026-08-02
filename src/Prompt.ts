@@ -34,6 +34,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 import type { Phase } from "./Phase.js";
+import { entryWriteScopeUnion } from "./paths.js";
 import { declaredPaths, type PendingEntry } from "./PendingSchema.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
@@ -418,13 +419,14 @@ function unscopedFenceLines(phase: Phase): string[] {
  * Scoped rendering (RELEASE-v0.7 §2): states the fence the write guard
  * actually enforces on this tick — `entry.files ∪ phase.entryChannelPaths` —
  * separately from `phase.writablePaths`, the outer ceiling both this fence
- * and the guard's ceiling check must clear. Mirrors the same union
- * `runAfterCommitGates` (`src/Dispatcher.ts`) builds for the `writablePathsGate`
- * entry-scope check, so the two can never state a different fence.
+ * and the guard's ceiling check must clear. Sources the union from
+ * `entryWriteScopeUnion` (`src/paths.ts`), the same helper the
+ * `writablePathsGate` entry-scope check consumes, so the two can never
+ * state a different fence.
  */
 function effectiveFenceLines(phase: Phase, entry: PendingEntry): string[] {
   const entryPaths = declaredPaths(entry);
-  const fence = [...new Set([...entryPaths, ...(phase.entryChannelPaths ?? [])])];
+  const fence = entryWriteScopeUnion(entryPaths, phase.entryChannelPaths ?? []);
   const ceilingLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
 
   return [

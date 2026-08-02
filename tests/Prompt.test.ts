@@ -15,9 +15,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { writablePathsGate } from "../src/builtinGates.ts";
+import type { GateContext } from "../src/Gate.ts";
+import { declaredPaths, type PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
-import type { PendingEntry } from "../src/PendingSchema.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -224,6 +226,82 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
       "Effective fence (your commit may touch exactly these; anything else reverts the commit whole):\n" +
         "  - src/only.ts\n",
     );
+  });
+});
+
+// Agreement case (ENTRYWRITESCOPE-SHARED-UNION, per engineering.md "Derived
+// state is computed, never restated beside its source"): the rendered
+// effective-fence bullets and writablePathsGate's actual accepted scope must
+// agree because both now source `entryPaths ∪ entryChannelPaths` from the
+// same `entryWriteScopeUnion` helper — not because a comment says so. This
+// drives the real renderer's output through the real gate rather than
+// comparing two hand-authored path lists, per "A seam gate reads what the
+// real writer wrote".
+describe("renderPrompt effective fence agrees with writablePathsGate's accepted scope", () => {
+  function gateCtx(overrides: Partial<GateContext> = {}): GateContext {
+    return {
+      cwd: dir,
+      flumeDir: "/state-root",
+      repoRoot: dir,
+      phaseName: "build",
+      commitSha: "deadbeef",
+      log: () => {},
+      ...overrides,
+    };
+  }
+
+  it("a path the rendered fence names is accepted by the gate; a ceiling-only path it omits is rejected", async () => {
+    const p = phase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "tests/**", "notes/**"],
+      entryChannelPaths: ["notes/open-questions.md"],
+      gates: [],
+    });
+    const e = entry({
+      files: {
+        new: [{ path: "src/New.ts", description: "new" }],
+        edit: [],
+        retire: [],
+      },
+    });
+
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "task body\n", "utf8");
+    const out = await renderPrompt({
+      phase: p,
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+      assignedEntry: e,
+    });
+
+    // Parse the fence back out of the real renderer's output.
+    const fenceStart = out.indexOf("Effective fence");
+    const ceilingStart = out.indexOf("Outer ceiling");
+    const fenceSection = out.slice(fenceStart, ceilingStart);
+    const renderedFence = [...fenceSection.matchAll(/^ {2}- (.+)$/gm)].map(
+      (m) => m[1]!,
+    );
+    expect(renderedFence).toEqual(["src/New.ts", "notes/open-questions.md"]);
+
+    const entryScope = {
+      entryPaths: declaredPaths(e),
+      channelPaths: p.entryChannelPaths ?? [],
+    };
+    const gate = writablePathsGate(p.writablePaths, entryScope);
+
+    for (const path of renderedFence) {
+      const result = await gate.run(gateCtx({ touchedPaths: [path] }));
+      expect(result.ok).toBe(true);
+    }
+
+    const rejected = await gate.run(
+      gateCtx({ touchedPaths: ["tests/unlisted.test.ts"] }),
+    );
+    expect(rejected.ok).toBe(false);
+    expect(rejected.details).toContain("tests/unlisted.test.ts");
   });
 });
 

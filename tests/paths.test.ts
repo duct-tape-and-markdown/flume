@@ -2,7 +2,7 @@ import { join, toNamespacedPath } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { namespacedJoin } from "../src/paths.ts";
+import { entryWriteScopeUnion, namespacedJoin } from "../src/paths.ts";
 
 // Mechanism pin (WIN32-NAMESPACEDPATH-JOIN-UNSHARED, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"):
@@ -41,5 +41,45 @@ describe("namespacedJoin — win32 MAX_PATH idiom, shared", () => {
     expect(namespacedJoin(...segments)).toBe(
       toNamespacedPath(join(...segments)),
     );
+  });
+});
+
+// Mechanism pin (ENTRYWRITESCOPE-SHARED-UNION, per
+// .claude/rules/engineering.md "Derived state is computed, never restated
+// beside its source"): `effectiveFenceLines` (src/Prompt.ts) and
+// `writablePathsGate` (src/builtinGates.ts) used to each spread
+// `entryPaths ∪ channelPaths` independently. This pins the shared union
+// helper's own behavior — dedup and both-empty-array shapes — so a future
+// one-sided edit to one call site can't silently diverge from the other's
+// union without also failing here.
+describe("entryWriteScopeUnion — entry.files ∪ entryChannelPaths, shared", () => {
+  it("dedups entries that appear in both entryPaths and channelPaths", () => {
+    expect(
+      entryWriteScopeUnion(
+        ["src/a.ts", "src/b.ts"],
+        ["src/b.ts", "notes/**"],
+      ),
+    ).toEqual(["src/a.ts", "src/b.ts", "notes/**"]);
+  });
+
+  it("dedups duplicates within entryPaths alone", () => {
+    expect(entryWriteScopeUnion(["src/a.ts", "src/a.ts"], [])).toEqual([
+      "src/a.ts",
+    ]);
+  });
+
+  it("empty entryPaths: union is exactly channelPaths", () => {
+    expect(entryWriteScopeUnion([], ["notes/**", "docs/**"])).toEqual([
+      "notes/**",
+      "docs/**",
+    ]);
+  });
+
+  it("empty channelPaths: union is exactly entryPaths", () => {
+    expect(entryWriteScopeUnion(["src/a.ts"], [])).toEqual(["src/a.ts"]);
+  });
+
+  it("both empty: union is empty", () => {
+    expect(entryWriteScopeUnion([], [])).toEqual([]);
   });
 });

@@ -19,7 +19,7 @@ import type { Phase } from "./Phase.js";
 // validates through the exact load path the runtime uses so the gate's
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
-import { matchesAny } from "./paths.js";
+import { entryWriteScopeUnion, matchesAny } from "./paths.js";
 import {
   parsePending,
   declaredPaths,
@@ -429,17 +429,20 @@ export function writablePathsGate(
       // Ceiling check: phase-wide globs bind on every tick, scoped or not.
       const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));
       // Entry-scope check: a scoped tick's allowance is the entry's declared
-      // paths ∪ the channel globs. Literal paths pass through the same glob
-      // matcher (specials are escaped, so a literal matches only itself).
+      // paths ∪ the channel globs, sourced from the same `entryWriteScopeUnion`
+      // helper `effectiveFenceLines` (`src/Prompt.ts`) renders for the agent.
+      // Literal paths pass through the same glob matcher (specials are
+      // escaped, so a literal matches only itself).
       const outsideScope = entryScope
-        ? touched.filter(
-            (p) =>
-              matchesAny(p, globs) &&
-              !matchesAny(p, [
-                ...entryScope.entryPaths,
-                ...entryScope.channelPaths,
-              ]),
-          )
+        ? (() => {
+            const scope = entryWriteScopeUnion(
+              entryScope.entryPaths,
+              entryScope.channelPaths,
+            );
+            return touched.filter(
+              (p) => matchesAny(p, globs) && !matchesAny(p, scope),
+            );
+          })()
         : [];
       if (outsideCeiling.length === 0 && outsideScope.length === 0) {
         return { ok: true, message: "writable paths respected" };
