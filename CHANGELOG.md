@@ -175,6 +175,15 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `flume job run <name> --max <value>` now validates `--max` is a finite,
+  non-negative number in the `job run` branch itself (`src/cli.ts`), sharing
+  the numeric parse with `flume loop`'s own `--max` check, instead of
+  deferring to the `loop` block the `job run` args rewrite into. A
+  non-numeric or negative value previously passed the `job run` branch's
+  weaker `!value || value.startsWith("-")` check, so `jobRun()`'s preflight
+  woke `chain.phases[0]` before the numeric check downstream in `loop`
+  finally rejected the value and printed `flume loop`'s usage line instead
+  of `job run`'s (`.claude/rules/engineering.md` §Loud or nothing).
 - `resolveStateDirs`' job-resolution doc comment (`src/cli.ts`) now sits
   directly above `resolveStateDirs` itself. It previously sat between
   `JobResolutionConflictError` and `resolveRepoRoot`'s own doc comment,

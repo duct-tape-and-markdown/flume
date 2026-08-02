@@ -858,6 +858,33 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
       await repo.cleanup();
     }
   }, 60_000);
+
+  it("real CLI: non-numeric/negative --max exits 2 with the job-run usage line and wakes nothing", async () => {
+    const repo = await makeRepo();
+    try {
+      const jobDir = await makeRunnableJob(repo.dir, "r4");
+
+      const nonNumeric = await runCli(repo.dir, [
+        "job",
+        "run",
+        "r4",
+        "--max",
+        "abc",
+      ]);
+      expect(nonNumeric.code).toBe(2);
+      expect(nonNumeric.out).toContain("usage: flume job run <name> [--max N]");
+      expect(nonNumeric.out).not.toContain("usage: flume loop");
+      expect(new Baton(jobDir).awake()).toEqual([]);
+
+      const negative = await runCli(repo.dir, ["job", "run", "r4", "--max", "-5"]);
+      expect(negative.code).toBe(2);
+      expect(negative.out).toContain("usage: flume job run <name> [--max N]");
+      expect(negative.out).not.toContain("usage: flume loop");
+      expect(new Baton(jobDir).awake()).toEqual([]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
 });
 
 // ---------- v0.5 §5c — `flume job rm` refusal + removal units ----------

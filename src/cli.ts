@@ -427,6 +427,17 @@ function wantsHelp(args: readonly string[]): boolean {
 }
 
 /**
+ * Shared `--max` numeric parse for `job run` (rewrites into `loop` below)
+ * and `loop` itself — a non-numeric or negative value must refuse identically
+ * on both surfaces, and `job run` must refuse before its preflight wakes the
+ * entry phase (v0.11 §2/§3), not after rewriting into `loop`.
+ */
+function parseMaxValue(value: string | undefined): number | null {
+  const parsed = value !== undefined ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
  * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
  * loop under a job resolution and is rewritten in `main()` before dispatch
  * reaches here. Usage-shaped failures exit 2, operational failures 1 —
@@ -599,11 +610,11 @@ async function main(): Promise<number> {
       const maxIdx = words.indexOf("--max");
       if (maxIdx >= 0) {
         const value = words[maxIdx + 1];
-        if (!value || value.startsWith("-")) {
+        if (parseMaxValue(value) === null) {
           console.error("usage: flume job run <name> [--max N]");
           return 2;
         }
-        maxArgs = ["--max", value];
+        maxArgs = ["--max", value as string];
         words.splice(maxIdx, 2);
       }
       const name = words[0];
@@ -817,8 +828,8 @@ async function main(): Promise<number> {
     let max = 50;
     if (maxIdx >= 0) {
       const value = rest[maxIdx + 1];
-      const parsed = value !== undefined ? Number(value) : NaN;
-      if (!Number.isFinite(parsed) || parsed < 0) {
+      const parsed = parseMaxValue(value);
+      if (parsed === null) {
         console.error("usage: flume loop [--max N]");
         return 2;
       }
