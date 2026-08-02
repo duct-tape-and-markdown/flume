@@ -1,51 +1,5 @@
 [
   {
-    "tag": "DISPATCHER-STREAMJSON-PARSE-DUP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "factor renderStreamJsonLine's line-parse + assistant-content-block extraction (351-385) into two shared helpers - parse-one-NDJSON-event, and content-blocks-of-type from an assistant event's message.content - exported for Dispatcher.ts"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "finalAgentMessage/assistantTurnText (2735-2789) call the shared Agent.ts helpers instead of re-deriving the same JSON.parse+type-dispatch+content-block-walk"
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "mechanism pin for the extracted helpers, beside the existing withTerminalRenderer describe (368)"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the existing stream-json voluntary-bail test (2985-3132) rides the refactor unchanged - proves it stays byte-identical"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "description": "changelogGate requires a line on any src/-touching commit"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Dispatcher's finalAgentMessage/assistantTurnText re-derive the same NDJSON line-parse and message.content block-walk that Agent.ts's renderStreamJsonLine already implements for terminal rendering.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "tests": [
-      {
-        "path": "tests/Agent.test.ts",
-        "asserts": "the extracted NDJSON-event-parse and content-blocks-of-type helpers are used by both renderStreamJsonLine (tool_use blocks) and a stand-in caller shaped like Dispatcher's text-block extraction - a one-sided change to either consumer's block-type filter doesn't touch the shared parse"
-      }
-    ],
-    "acceptance": "One shared pair of helpers in src/Agent.ts parses an NDJSON line and extracts message.content blocks by type; both withTerminalRenderer's renderStreamJsonLine and Dispatcher's finalAgentMessage/assistantTurnText call them instead of re-deriving the parse; tests/Dispatcher.test.ts:2985-3132 stays green unchanged; tsc/vitest green.",
-    "notes": "Sweep finding, tests/Dispatcher.test.ts neighborhood (Agent.ts read as its import). Re-verified this tick past 56d2c4e0's insert: Agent.ts:358-377 and Dispatcher.ts:2740-2789 both JSON.parse a line, check .type, and for \"assistant\" walk message.content[] by block .type - one keeps tool_use (rendering), the other text (bail message). Agent.ts already owns stream-json awareness via the decorator; re-deriving the parse in Dispatcher.ts is the duplication, not the awareness."
-  },
-  {
     "tag": "DISPATCHER-COMMIT-MESSAGE-PREFIX-HARDCODED",
     "gate": {
       "kind": "open"
