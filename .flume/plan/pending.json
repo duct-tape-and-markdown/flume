@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "tag": "PROMPT-NOCOMMITMODE-UNEXPORTED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/index.ts", "description": "re-export NoCommitMode as a type alongside renderPrompt, from ./Prompt.js" },
+        { "path": "tests/Dispatcher.test.ts", "description": "type-only import of NoCommitMode from src/index.js so a future drop fails tsc, mirroring the ProvisionFailure/TerminalMisconfiguration pin" }
+      ],
+      "retire": []
+    },
+    "summary": "index.ts omits NoCommitMode though the public TickVerdict.noCommit / TickOutcome.noCommit / TickResult.noCommit fields all carry it",
+    "per": { "path": ".claude/rules/engineering.md", "section": "An export earns its consumer" },
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "NoCommitMode is importable as a type from src/index.ts" }
+    ],
+    "acceptance": "NoCommitMode re-exported from src/index.ts; the new type-only import compiles under tsc",
+    "notes": "Posture sweep, src/index.ts neighborhood. Same defect class just shipped for ProvisionFailure/TerminalMisconfiguration (cb7667e): NoCommitMode (src/Prompt.ts:55) is the field type of three already-barrel-exported interfaces (TickVerdict, TickOutcome, TickResult) but has no barrel path of its own."
+  }
+]
