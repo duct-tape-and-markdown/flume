@@ -1803,7 +1803,13 @@ export class Dispatcher {
       } catch (err) {
         survivingPaths.push(wt.path);
       }
-      await git.deleteBranch(repoRoot, wt.branch);
+      try {
+        await git.deleteBranch(repoRoot, wt.branch);
+      } catch (err) {
+        this.log.warn(
+          `[flume] deleteBranch failed for ${wt.branch}: ${(err as Error).message}`,
+        );
+      }
     }
     this.log.info(
       `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,

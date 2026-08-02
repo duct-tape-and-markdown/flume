@@ -154,14 +154,24 @@ export async function pruneWorktrees(repoRoot: string): Promise<void> {
   await run(repoRoot, ["worktree", "prune"]);
 }
 
+/**
+ * Loud or nothing (engineering.md): only the expected-benign "branch
+ * doesn't exist" case is swallowed — git's own wording for it (`error:
+ * branch '<name>' not found.`). Any other failure (most commonly the
+ * branch still checked out in a worktree that survived removal) rethrows
+ * so the caller can surface it rather than losing it silently.
+ */
 export async function deleteBranch(
   repoRoot: string,
   branch: string,
 ): Promise<void> {
   try {
     await run(repoRoot, ["branch", "-D", branch]);
-  } catch {
-    // Branch may not exist; harmless.
+  } catch (err) {
+    const stderr = (err as NodeJS.ErrnoException & { stderr?: string })
+      .stderr;
+    if (typeof stderr === "string" && /not found/.test(stderr)) return;
+    throw err;
   }
 }
 

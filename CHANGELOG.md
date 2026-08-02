@@ -189,6 +189,16 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 
 ### Fixed
 
+- `git.deleteBranch` (`src/git.ts`) now narrows its catch to git's own
+  "not found" wording, rethrowing any other failure — most notably the
+  branch still checked out in a worktree that survived removal. It
+  previously swallowed every `git branch -D` failure, reporting a real
+  deletion failure identically to "branch already gone." The dispatcher's
+  teardown loop (`src/Dispatcher.ts`) now wraps the call and `log.warn`s
+  the branch name on rethrow, mirroring the loop's existing
+  `removeWorktree`/`teardownWorktree` warn pattern
+  (`.claude/rules/engineering.md` §Loud or nothing —
+  GITDELETEBRANCH-BROAD-SWALLOW).
 - `examples/backlog-groomer-chain.ts`'s `groomAgent.invoke` and
   `backlogParseGate.run` now narrow their `BACKLOG.json` read failures to
   `ENOENT`, rethrowing anything else. Both previously caught every

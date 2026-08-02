@@ -22,6 +22,7 @@ import {
   addWorktree,
   commitPaths,
   currentRefPath,
+  deleteBranch,
   dropLastCommit,
   gitCommonDir,
   liveTipClaimPid,
@@ -148,6 +149,33 @@ describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
 
     expect(await revParse(repo)).toBe(seedSha);
     expect(existsSync(join(repo, "own.txt"))).toBe(false);
+  });
+});
+
+/**
+ * GITDELETEBRANCH-BROAD-SWALLOW — deleteBranch's catch narrows to git's own
+ * "not found" wording (engineering.md "Loud or nothing"); every other
+ * failure — most commonly the branch still checked out in a worktree —
+ * rethrows instead of being swallowed.
+ */
+describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
+  it("resolves silently when the branch doesn't exist", async () => {
+    await expect(deleteBranch(repo, "no-such-branch")).resolves.toBeUndefined();
+  });
+
+  it("rejects when the branch is checked out in a worktree", async () => {
+    await exec("git", ["branch", "checked-out-elsewhere"], { cwd: repo });
+    const wtPath = join(repo, "wt-checked-out");
+    await addWorktree({
+      repoRoot: repo,
+      path: wtPath,
+      branch: "checked-out-elsewhere",
+      fromRef: "HEAD",
+    });
+
+    await expect(deleteBranch(repo, "checked-out-elsewhere")).rejects.toThrow(
+      /checked-out-elsewhere/,
+    );
   });
 });
 

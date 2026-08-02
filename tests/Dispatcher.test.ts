@@ -1298,6 +1298,67 @@ describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates 
 });
 
 /**
+ * GITDELETEBRANCH-BROAD-SWALLOW — the teardown loop wraps `git.deleteBranch`
+ * per §16's own removeWorktree/teardownWorktree pattern: a non-benign
+ * failure (branch.ts now rethrows past the "not found" case) is logged by
+ * branch name rather than lost, and the wave still ships.
+ */
+describe("Dispatcher fanout — teardown loop warns on deleteBranch failure (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("logs a warning naming the branch when deleteBranch rejects for a non-benign reason", async () => {
+    const entries = [makeEntry("BRANCH-WARN", ["src/branch-warn.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    vi.spyOn(git, "deleteBranch").mockRejectedValue(
+      new Error(
+        "Cannot delete branch 'flume/branch-warn' checked out at '/some/path'",
+      ),
+    );
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "branch-warn": (cwd) =>
+        writeAndCommit(
+          cwd,
+          "src/branch-warn.ts",
+          "x\n",
+          "build(BRANCH-WARN): ship",
+        ),
+    });
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The teardown loop's deleteBranch failure never blocks the ship.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["BRANCH-WARN"]);
+
+    expect(
+      warnings.some((w) => w.includes("flume/branch-warn")),
+    ).toBe(true);
+  });
+});
+
+/**
  * v0.5 §4 — job-scoped fanout branches. The namespace arrives as a
  * `DispatcherOptions.namespace` field (the CLI resolves it from `FLUME_JOB`);
  * with it set, worktree branches are `flume/<namespace>/<slug>`, so two jobs
