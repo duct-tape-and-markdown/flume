@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "tag": "DISPATCHER-PROVISIONFAILURE-TERMINALMISCONFIG-UNEXPORTED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/index.ts", "description": "re-export ProvisionFailure and TerminalMisconfiguration types alongside the TickVerdict/TickOutcome fields that carry them" },
+        { "path": "tests/Dispatcher.test.ts", "description": "type-only import of both from src/index.js so a future drop fails tsc, not just this LSP finding" }
+      ],
+      "retire": []
+    },
+    "summary": "index.ts omits ProvisionFailure/TerminalMisconfiguration though the public TickVerdict.provisionFailures / TickOutcome.terminal fields carry them",
+    "per": { "path": ".claude/rules/engineering.md", "section": "An export earns its consumer" },
+    "tests": [
+      { "path": "tests/Dispatcher.test.ts", "asserts": "ProvisionFailure and TerminalMisconfiguration are importable as types from src/index.ts" }
+    ],
+    "acceptance": "both types re-exported from src/index.ts; the new type-only import compiles under tsc",
+    "notes": "Posture sweep, src/Dispatcher.ts neighborhood. LSP findReferences: both interfaces have zero references outside Dispatcher.ts. Both are field types on already-public TickVerdict/TickOutcome — the types exist and are correct, only the barrel re-export is missing, so a chain author can't name them to type their own handling of those fields."
+  }
+]
