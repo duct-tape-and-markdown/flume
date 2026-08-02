@@ -1,1 +1,48 @@
-[]
+[
+  {
+    "tag": "SHIPDETECT-LITERAL-VS-GLOB-DISAGREEMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "matchesAny/globToRegex (473-483) move to a shared home so a second consumer can call them - src/paths.ts is the path-shaped module that already exists; builtinGates imports them back"
+        },
+        {
+          "path": "src/paths.ts",
+          "description": "receives the glob matcher as its shared home"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "ship detection (1596-1599) matches commitTouchedPaths against declaredPaths via the shared matcher instead of Array.includes - the same semantics the entry-scope write guard at 2060 already applies to the same declaredPaths(entry) list"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the agreement pin - a glob-declaring entry whose commit touches a real matching file ships instead of landing channel-only"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "changelogGate requires a line on any src/-touching commit"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Ship detection compares declared paths to commit paths with literal equality while the entry-scope write guard glob-matches the same list - a glob-declaring entry lands on trunk but never drains.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "asserts": "a fanout entry declaring a glob (e.g. nodes/territory-*.json) whose worktree commit touches a real matching file (nodes/territory-01.json) is reported merged and removed from pending.json - fails on the pre-fix tree, where Array.includes returns false and the entry is logged channel-only while its commit stays on trunk"
+      }
+    ],
+    "acceptance": "One glob matcher serves both the entry-scope write guard and ship detection; a glob-declaring entry that touches a matching file ships and drains; a commit touching only channel paths still lands channel-only; tsc/vitest green.",
+    "notes": "Downstream report (0.9.0 dist), re-verified here. declaredPaths(entry) has two consumers that both judge real commit paths and disagree: Dispatcher.ts:2060 hands it to writablePathsGate as globs; Dispatcher.ts:1596-1599 compares it with Array.includes. Effect is a non-draining loop - commit on trunk, entry still pickable, next tick redoes landed work. matchesAny is module-private today, so sharing needs the move."
+  }
+]
