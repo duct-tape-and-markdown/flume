@@ -343,6 +343,58 @@ export function withTerminalRenderer(
   };
 }
 
+/** One parsed `claude -p --output-format stream-json` NDJSON event. */
+export type NdjsonEvent = Record<string, unknown>;
+
+/**
+ * Result of {@link parseNdjsonLine}: `"blank"` for a whitespace-only line,
+ * `"parse-error"` for text that doesn't parse as JSON (carries the trimmed
+ * raw text so a caller can pass it through), `"non-object"` for JSON that
+ * parses but isn't an event object (e.g. a bare number or array), and
+ * `"event"` for a genuine stream-json event.
+ */
+export type NdjsonLineResult =
+  | { kind: "blank" }
+  | { kind: "parse-error"; raw: string }
+  | { kind: "non-object" }
+  | { kind: "event"; event: NdjsonEvent };
+
+/**
+ * Parse one line of a `claude -p --output-format stream-json` NDJSON
+ * transcript. Shared by {@link renderStreamJsonLine} (terminal rendering)
+ * and the dispatcher's voluntary-bail message extraction — both walk the
+ * same line-parse before diverging on which event/block types they keep.
+ */
+export function parseNdjsonLine(line: string): NdjsonLineResult {
+  const trimmed = line.trim();
+  if (!trimmed) return { kind: "blank" };
+  let evt: unknown;
+  try {
+    evt = JSON.parse(trimmed);
+  } catch {
+    return { kind: "parse-error", raw: trimmed };
+  }
+  if (!evt || typeof evt !== "object") return { kind: "non-object" };
+  return { kind: "event", event: evt as NdjsonEvent };
+}
+
+/**
+ * Blocks of `blockType` in a stream-json `assistant`/`user` event's
+ * `message.content[]` (e.g. `"tool_use"`, `"text"`). Non-array/missing
+ * `content` yields no blocks.
+ */
+export function contentBlocksOfType(
+  event: NdjsonEvent,
+  blockType: string,
+): Record<string, unknown>[] {
+  const msg = event.message as { content?: unknown } | undefined;
+  const content = Array.isArray(msg?.content) ? msg!.content : [];
+  return content.filter(
+    (c): c is Record<string, unknown> =>
+      !!c && typeof c === "object" && (c as Record<string, unknown>).type === blockType,
+  );
+}
+
 /**
  * Render one NDJSON line to a condensed terminal string, or null to drop it.
  * Non-JSON input is passed through verbatim (prefixed with the tag) so stray
@@ -353,27 +405,16 @@ function renderStreamJsonLine(
   tag: string,
   cwd: string,
 ): string | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-  let evt: unknown;
-  try {
-    evt = JSON.parse(trimmed);
-  } catch {
-    return `${tag} ${trimmed}`;
-  }
-  if (!evt || typeof evt !== "object") return null;
-  const e = evt as Record<string, unknown>;
+  const result = parseNdjsonLine(line);
+  if (result.kind === "blank" || result.kind === "non-object") return null;
+  if (result.kind === "parse-error") return `${tag} ${result.raw}`;
+  const e = result.event;
   const type = e.type;
 
   if (type === "assistant") {
-    const msg = e.message as { content?: unknown } | undefined;
-    const content = Array.isArray(msg?.content) ? msg!.content : [];
-    const lines: string[] = [];
-    for (const c of content) {
-      if (c && typeof c === "object" && (c as Record<string, unknown>).type === "tool_use") {
-        lines.push(`${tag} ${formatToolUse(c as ToolUseBlock, cwd)}`);
-      }
-    }
+    const lines = contentBlocksOfType(e, "tool_use").map(
+      (c) => `${tag} ${formatToolUse(c as unknown as ToolUseBlock, cwd)}`,
+    );
     return lines.length > 0 ? lines.join("\n") : null;
   }
 

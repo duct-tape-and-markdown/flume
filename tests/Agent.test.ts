@@ -14,7 +14,10 @@ import {
   claudeCode,
   withSessionCapture,
   withTerminalRenderer,
+  parseNdjsonLine,
+  contentBlocksOfType,
   type Agent,
+  type NdjsonEvent,
 } from "../src/Agent.ts";
 
 const spawnMock = vi.mocked(spawn);
@@ -581,5 +584,83 @@ describe("withTerminalRenderer", () => {
       onStdout: (chunk) => captured.push(chunk),
     });
     expect(captured.join("")).toBe("[T] warning: something off\n");
+  });
+});
+
+describe("parseNdjsonLine / contentBlocksOfType — shared NDJSON parse", () => {
+  it("distinguishes blank, unparseable, non-object, and event lines", () => {
+    expect(parseNdjsonLine("   ")).toEqual({ kind: "blank" });
+    expect(parseNdjsonLine("not json")).toEqual({
+      kind: "parse-error",
+      raw: "not json",
+    });
+    expect(parseNdjsonLine("42")).toEqual({ kind: "non-object" });
+    const line = JSON.stringify({ type: "assistant", message: { content: [] } });
+    expect(parseNdjsonLine(line)).toEqual({
+      kind: "event",
+      event: { type: "assistant", message: { content: [] } },
+    });
+  });
+
+  it("extracts content blocks by type, ignoring other block shapes", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "x" },
+          { type: "tool_use", name: "Bash", input: { command: "ls" } },
+          { type: "text", text: "hello" },
+          { type: "text", text: "world" },
+        ],
+      },
+    };
+    expect(contentBlocksOfType(event, "tool_use")).toEqual([
+      { type: "tool_use", name: "Bash", input: { command: "ls" } },
+    ]);
+    expect(contentBlocksOfType(event, "text")).toEqual([
+      { type: "text", text: "hello" },
+      { type: "text", text: "world" },
+    ]);
+  });
+
+  it("feeds both withTerminalRenderer's tool_use rendering and a Dispatcher-shaped text extractor off the same parsed event — a one-sided change to either consumer's block-type filter doesn't touch the shared parse", async () => {
+    // Stand-in for Dispatcher.ts's assistantTurnText: same shared helpers,
+    // a different block-type filter.
+    const assistantTurnTextStandIn = (e: NdjsonEvent): string =>
+      contentBlocksOfType(e, "text")
+        .filter((c) => typeof c.text === "string")
+        .map((c) => (c.text as string).trim())
+        .join("\n\n");
+
+    const line = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
+          { type: "text", text: "final prose" },
+        ],
+      },
+    });
+
+    const fake: Agent = {
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(line + "\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const rendered: string[] = [];
+    await withTerminalRenderer(fake).invoke({
+      cwd: "/work/foo",
+      prompt: "",
+      onStdout: (chunk) => rendered.push(chunk),
+    });
+    const out = rendered.join("");
+    expect(out).toContain("Bash(ls -la)");
+    expect(out).not.toContain("final prose");
+
+    const parsed = parseNdjsonLine(line);
+    if (parsed.kind !== "event") throw new Error("expected an event line");
+    expect(assistantTurnTextStandIn(parsed.event)).toBe("final prose");
   });
 });

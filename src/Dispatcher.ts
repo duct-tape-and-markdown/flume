@@ -33,7 +33,8 @@ import { promisify } from "node:util";
 
 import { tsImport } from "tsx/esm/api";
 
-import type { Agent } from "./Agent.js";
+import type { Agent, NdjsonEvent } from "./Agent.js";
+import { contentBlocksOfType, parseNdjsonLine } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
@@ -3127,16 +3128,9 @@ function finalAgentMessage(stdout: string): string {
   let lastAssistantText: string | undefined;
 
   for (const raw of stdout.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    let evt: unknown;
-    try {
-      evt = JSON.parse(line);
-    } catch {
-      continue; // a non-JSON line is not a stream-json event
-    }
-    if (!evt || typeof evt !== "object") continue;
-    const e = evt as Record<string, unknown>;
+    const parsed = parseNdjsonLine(raw);
+    if (parsed.kind !== "event") continue;
+    const e = parsed.event;
     if (typeof e.type !== "string") continue;
     sawStreamJson = true;
     if (e.type === "result") {
@@ -3160,20 +3154,10 @@ function finalAgentMessage(stdout: string): string {
  * Concatenated `text` blocks of one stream-json `assistant` event;
  * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
  */
-function assistantTurnText(e: Record<string, unknown>): string {
-  const msg = e.message as { content?: unknown } | undefined;
-  const content = Array.isArray(msg?.content) ? msg!.content : [];
-  const parts: string[] = [];
-  for (const c of content) {
-    if (
-      c &&
-      typeof c === "object" &&
-      (c as Record<string, unknown>).type === "text" &&
-      typeof (c as Record<string, unknown>).text === "string"
-    ) {
-      parts.push(((c as Record<string, unknown>).text as string).trim());
-    }
-  }
+function assistantTurnText(e: NdjsonEvent): string {
+  const parts = contentBlocksOfType(e, "text")
+    .filter((c) => typeof c.text === "string")
+    .map((c) => (c.text as string).trim());
   return parts.join("\n\n").trim();
 }
 

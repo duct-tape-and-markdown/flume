@@ -177,6 +177,14 @@ subheading per `spec/RELEASE-v0.1.md` §9.
   `file_path` instead of the relative path the tag beside it already
   shortens to, because the strip only recognized the POSIX separator
   (`.claude/rules/engineering.md` §The fix lands at the mechanism).
+- `Dispatcher.ts`'s voluntary-bail message extraction
+  (`finalAgentMessage`/`assistantTurnText`) now calls `src/Agent.ts`'s
+  `parseNdjsonLine`/`contentBlocksOfType` instead of re-deriving its own
+  NDJSON line-parse and `message.content` block-walk — the same parse
+  `withTerminalRenderer`'s stream-json rendering already implements. Both
+  consumers now diverge only on which event/block types they keep
+  (`.claude/rules/engineering.md` §The fix lands at the mechanism,
+  DISPATCHER-STREAMJSON-PARSE-DUP).
 - `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
   `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
   now route through `toNamespacedPath`, the same idiom the §8 reverted-prose
