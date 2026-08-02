@@ -10,7 +10,7 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "commitPendingUpdate's git.commitPaths call (2303-2310) takes its message from a new optional DispatcherOptions field (e.g. commitMessage), defaulting to today's exact 'chore(flume): ship ...' / 'chore(flume): record merge-failure footprints for ...' text"
+          "description": "commitPendingUpdate's git.commitPaths call (2676-2681) takes its message from a new optional DispatcherOptions field (e.g. commitMessage), defaulting to today's exact 'chore(flume): ship ...' / 'chore(flume): record merge-failure footprints for ...' text"
         },
         {
           "path": "tests/Dispatcher.test.ts",
@@ -35,6 +35,6 @@
       }
     ],
     "acceptance": "A chain can override the pending-ledger ship-commit message text; default (no override) behavior is byte-identical to today; tsc/vitest green.",
-    "notes": "Verified on disk this tick: Dispatcher.ts:2303-2310 hardcodes \"chore(flume): ship ...\" / \"chore(flume): record merge-failure footprints...\" with no override. job.ts:208/340 (re-verified post-JOB-EXTRACT-REMOVED) carry the identical literal but sit outside this neighborhood - a later sweep, not this entry's scope. DispatcherOptions already carries chain-overridable knobs of this shape (namespace, chainLoader)."
+    "notes": "Verified on disk this tick: Dispatcher.ts:2676-2681 (line-shifted from 2303-2310 by intervening extractions) hardcodes \"chore(flume): ship ...\" / \"chore(flume): record merge-failure footprints...\" with no override. job.ts:209/341 (shifted from 208/340) carry the same chore(flume) literal but sit outside this neighborhood - a later sweep, not this entry's scope. DispatcherOptions already carries chain-overridable knobs of this shape (namespace, chainLoader)."
   }
 ]

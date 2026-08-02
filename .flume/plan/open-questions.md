@@ -141,8 +141,8 @@ of the call.
 
 **PARKED**
 
-`pendingGate` (`src/builtinGates.ts:304-367`, v0.8 §6, drifted from :243-306
-by 86789b8's pkgManagerGate insert) calls `parsePending`,
+`pendingGate` (`src/builtinGates.ts:321-390`, v0.8 §6, drifted from :304-367
+by intervening inserts) calls `parsePending`,
 which is all-or-nothing over the whole entry array (`z.array(...).safeParse`)
 — a single entry's schema violation (e.g. an undeclared field) fails the
 entire parse with no `entries` to fence-check, so a sibling entry's fence
