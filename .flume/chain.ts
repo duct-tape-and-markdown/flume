@@ -185,11 +185,8 @@ const factory: ChainFactory = (api) => {
       "SECURITY.md",
       "AUTHORS.md",
 
-      // CI + dev-tooling dirs
+      // CI
       ".github/**",
-      ".changeset/**",
-      ".husky/**",
-      ".devcontainer/**",
 
       // Mandatory per-entry surfaces — one declaration, shared with
       // entryChannelPaths (the engine requires channel ⊆ writable).
