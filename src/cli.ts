@@ -55,10 +55,7 @@ import {
   type SuperviseResult,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
-import type { TickContext, Chain } from "./Phase.js";
-import { renderPrompt } from "./Prompt.js";
-import { parsePending } from "./PendingSchema.js";
-import type { PendingEntry } from "./PendingSchema.js";
+import type { Chain } from "./Phase.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -244,7 +241,7 @@ export function loopCompletionSummary(
   return `[flume] ${parts.join(" | ")}`;
 }
 
-const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "render"] as const;
+const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
@@ -257,8 +254,6 @@ Commands:
   loop [--max N]      Run ticks until hibernation (default cap 50).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
-  render <phase>      Print the rendered prompt for <phase> without invoking
-                      the agent.
   job new <name>      Seed .flume/jobs/<name>/ from the repo chain's declared
                       Chain.seedDir, if any (runtime .gitignore, baseline
                       commit on the current HEAD). No branch created.
@@ -372,20 +367,6 @@ Mark <phase> hibernating by removing .flume/awake/<phase>.
 Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument.
-`,
-  render: `Usage: flume render <phase> [--entry <tag>]
-
-Print the rendered prompt for <phase> to stdout without invoking the agent.
-Useful for dry-run inspection of prompt construction.
-
-Options:
-  --entry <tag>   For fanout phases, render the prompt for the pending entry
-                  with this tag. Defaults to the first entry whose gate is
-                  "open".
-
-Exit codes:
-  0   Success.
-  2   Missing or unknown <phase>; or --entry <tag> with no matching entry.
 `,
 };
 
@@ -817,8 +798,7 @@ async function main(): Promise<number> {
   // Dispatcher resolves .flume/chain.ts from configDir once at tick start
   // (one load per process — `flume loop` re-resolves by spawning a fresh
   // `flume tick` per iteration, §2); a chain.ts that exports `agent`
-  // overrides the default agent per tick. `render` resolves the chain
-  // directly (it inspects phases without invoking the agent).
+  // overrides the default agent per tick.
   const resolveChain = diskChainLoader(configDir);
   // §16 (RELEASE-v0.7): the `flume loop` supervisor's run-scoped quarantine
   // crosses the process boundary via this env var (set by
@@ -972,84 +952,6 @@ async function main(): Promise<number> {
     const completion = loopCompletionSummary(supervised);
     if (completion) console.log(completion);
     return loopExitCode(supervised);
-  }
-
-  if (cmd === "render") {
-    const phaseName = rest[0];
-    if (!phaseName) {
-      console.error("usage: flume render <phase> [--entry <tag>]");
-      return 2;
-    }
-    let chain: Chain;
-    try {
-      ({ chain } = await resolveChain());
-    } catch (err) {
-      if (err instanceof CjsContextLoadError) {
-        console.error(`[flume] ${err.message}`);
-        return 2;
-      }
-      throw err;
-    }
-    const phase = chain.phases.find((p) => p.name === phaseName);
-    if (!phase) {
-      console.error(`unknown phase: ${phaseName}`);
-      return 2;
-    }
-
-    const entryIdx = rest.indexOf("--entry");
-    const entryTag = entryIdx >= 0 ? rest[entryIdx + 1] : undefined;
-
-    const pendingPath = join(flumeDir, "plan", "pending.json");
-    let pending: PendingEntry[];
-    if (existsSync(pendingPath)) {
-      const r = parsePending(
-        readFileSync(pendingPath, "utf8"),
-        chain.entryExtension,
-      );
-      if (!r.ok) {
-        // Same reader `Dispatcher.tick()`'s decide-reads refuse on
-        // (engineering.md "Loud or nothing"): a queue that never resolved
-        // must not read as an empty one — render is a third reader of the
-        // same file, and rendering a prompt over `[]` would show the agent a
-        // queue that lost every real entry rather than the parse errors
-        // blocking it.
-        console.error(`pending.json invalid (${r.errors.length} errors):`);
-        for (const e of r.errors) {
-          console.error(`  [${e.index}] ${e.path}: ${e.message}`);
-        }
-        return 2;
-      }
-      pending = r.entries;
-    } else {
-      pending = [];
-    }
-
-    const ctx: TickContext = { cwd: repoRoot, flumeDir, pending };
-    if (phase.concurrency === "fanout") {
-      const target = entryTag
-        ? pending.find((e) => e.tag === entryTag)
-        : pending.find((e) => e.gate.kind === "open");
-      if (!target) {
-        console.error(
-          entryTag
-            ? `no entry with tag ${entryTag} in pending.json`
-            : `no open entries in pending.json; pass --entry <tag> to render a gated one`,
-        );
-        return 2;
-      }
-      ctx.assignedEntry = target;
-    }
-
-    const args = phase.promptArgs?.(ctx) ?? {};
-    const prompt = await renderPrompt({
-      phase,
-      flumeDir,
-      promptFile: join(configDir, phase.promptPath),
-      cwd: repoRoot,
-      args,
-    });
-    process.stdout.write(prompt);
-    return 0;
   }
 
   console.error(`unknown command: ${cmd}`);

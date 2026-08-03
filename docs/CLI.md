@@ -65,15 +65,6 @@ Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-
 flume sleep plan
 ```
 
-## `flume render <phase> [--entry <tag>]`
-
-Loads `.flume/chain.ts` and prints the rendered prompt for the named phase to stdout, without invoking the agent. For singleton phases the prompt is rendered from a tick context with the current `pending.json`. For fanout phases `render` selects the first entry whose gate is `open`, or — if `--entry <tag>` is given — the entry with that tag, so authors can preview the exact prompt a worktree run would receive. No commits, no baton edits, no agent calls; this is a dry-run inspection helper for iterating on `.flume/prompts/*.md` and `Phase.promptArgs`. Exits `0` on success; exits `2` if `<phase>` is missing or unknown, or if `--entry <tag>` matches no pending entry.
-
-```sh
-flume render plan
-flume render build --entry DOCS-CLI
-```
-
 ## `flume job new <name>`
 
 Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever branch that is. Loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). No branch is created or checked out. The job name must be a single path segment; a name containing a path separator is rejected before any directory is constructed.

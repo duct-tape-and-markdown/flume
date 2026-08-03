@@ -172,3 +172,26 @@ design call, not a bug with one obvious fix — flagging for a ruling.
 
 Per candidates: `spec/cli.md` *State-root and config-dir resolution*,
 `spec/chain.md` *Per-run artifacts belong under `FLUME_DIR`*.
+
+## CLI-RENDER-REMOVAL left smoke/doc sites outside its declared `files`
+
+CLI-RENDER-REMOVAL's `files` scoped to `src/cli.ts`, `docs/CLI.md`,
+`tests/cli.test.ts` only — but three more sites invoke or document the now-
+gone `flume render` subcommand and were out of that entry's fence:
+
+- `.github/workflows/ci.yml` ~L133: POSIX consumer-install smoke runs
+  `npx --no-install flume render notes >/dev/null` — will now exit 2
+  ("unknown command: render") and fail CI on the next run that touches this
+  workflow.
+- `scripts/smoke-install.mjs` ~L143: Windows-lane counterpart runs the
+  generated shim with `["render", "notes"]` — same failure mode.
+- `docs/CHAIN-AUTHORING.md` "### Dry-run" section (~L1033-1037): documents
+  `flume render <phase>` as the dry-run inspection tool; now describes
+  nothing that exists.
+
+Mechanical, correctness-adjacent (a real CI break) — recommend filing as a
+pending entry: swap both smoke checks to a read-only subcommand that still
+proves the installed shim runs and loads a real chain (`status` is the
+closest existing fit — it best-effort loads the chain, unlike `wake`/
+`sleep`), and remove or replace the Dry-run section in
+`docs/CHAIN-AUTHORING.md`.

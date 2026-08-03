@@ -318,6 +318,40 @@ describe("flume tick --help — exit-code list matches tickExitCode's range (CLI
 });
 
 /**
+ * CLI-RENDER-REMOVAL — `render` previewed with the wrong fence, the wrong
+ * prior-attempt state, and its own re-derivation of pickability that
+ * disagreed with the dispatcher's (operator ruling 2026-08-03). It is gone
+ * from the subcommand surface entirely, not merely undocumented.
+ */
+describe("flume render — removed from the subcommand surface (CLI-RENDER-REMOVAL)", () => {
+  it("is an unknown subcommand and exits 2", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-"));
+    try {
+      const { out, code } = await runCli(dir, ["render", "probe"]);
+      expect(code).toBe(2);
+      expect(out).toContain("unknown command: render");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no help text (flume --help, flume -h) names render", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-help-"));
+    try {
+      const long = await runCli(dir, ["--help"]);
+      expect(long.code).toBe(0);
+      expect(long.out).not.toContain("render");
+
+      const short = await runCli(dir, ["-h"]);
+      expect(short.code).toBe(0);
+      expect(short.out).not.toContain("render");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * v0.7 §4 amendment — `flume loop` / `job run`'s own exit-code decision at
  * the CLI/loop boundary: non-zero iff at least one child tick errored AND
  * the run shipped nothing; `terminal`/`mountDead` still propagate their own
@@ -526,90 +560,14 @@ describe("hermeticEnv — strips all three canonical FLUME_* vars", () => {
 });
 
 /**
- * v0.7 §5, render-command seam: `main()`'s `render` branch wraps
- * `resolveChain()` in its own try/catch for `CjsContextLoadError`
- * (`src/cli.ts`) — independent of, and exercised separately from,
- * Dispatcher.tick()'s `usageError` path (`tickExitCode` above,
- * `Dispatcher.test.ts`'s loadChainModule suite).
- *
- * `runCli` above cannot reproduce the bug: it boots the whole CLI through
- * tsx's own CLI entry (`tsx/dist/cli.mjs`), which registers ESM loader
- * hooks for the *entire* process, so the nested load of the fixture's
- * `.flume/chain.ts` parses fine regardless of the host's package.json
- * (verified by hand — same fixture, `runCli` exits 0). Production's real
- * shape (`bin/flume.js`) is a plain, non-tsx-bootstrapped `node` process
- * that calls `tsImport` only for that nested chain load — reproduced here
- * by building `dist/` once and spawning the compiled `dist/cli.js`
- * directly, matching `bin/flume.js`'s own invocation.
- */
-describe("flume render — CJS-context host refusal via the real CLI (v0.7 §5)", () => {
-  const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
-  const TSC_BIN = fileURLToPath(
-    new URL("../node_modules/typescript/bin/tsc", import.meta.url),
-  );
-  const DIST_CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
-
-  beforeAll(async () => {
-    await exec(process.execPath, [TSC_BIN, "-p", "tsconfig.build.json"], {
-      cwd: REPO_ROOT,
-    });
-  }, 60_000);
-
-  async function runDistCli(
-    cwd: string,
-    args: string[],
-  ): Promise<{ out: string; code: number }> {
-    try {
-      const { stdout, stderr } = await exec(process.execPath, [DIST_CLI, ...args], {
-        cwd,
-        env: hermeticEnv(),
-      });
-      return { out: stdout + stderr, code: 0 };
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string; code?: number };
-      return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-    }
-  }
-
-  it(
-    'a CJS-context host (package.json missing "type": "module") refuses render\'s chain load, naming the fix, and exits 2',
-    async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-cjs-render-"));
-      try {
-        await writeFile(
-          join(dir, "package.json"),
-          JSON.stringify({ name: "cjs-host", type: "commonjs" }),
-          "utf8",
-        );
-        await mkdir(join(dir, ".flume"), { recursive: true });
-        await writeFile(
-          join(dir, ".flume", "chain.ts"),
-          `import { join as pathJoin } from "node:path";\n` +
-            `export default { phases: [], humanOnly: [], _j: pathJoin };\n`,
-          "utf8",
-        );
-
-        const result = await runDistCli(dir, ["render", "probe"]);
-
-        expect(result.code).toBe(2);
-        expect(result.out).toContain("[flume]");
-        expect(result.out).toContain('"type": "module"');
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
-    },
-    30_000,
-  );
-});
-
-/**
  * CLI-JOBNEW-CJS-EXIT-CODE — `job new` is the outlier in the exit-code
  * contract cluster (spec/cli.md, "A CJS-context host is refused, never
  * relayed"): `runJobVerb`'s `new` catch checked only `JobUsageError`, so a
  * `CjsContextLoadError` thrown by `jobNew`'s own `loadChainModule` call fell
  * through to the operational branch — exit 1, refusal buried behind
  * `[flume] job new failed:`. `tick` already headlines the same error at exit
- * 2 (`render`'s describe block above); this asserts `job new` now matches.
+ * 2 (`CJS-context usage error` test above); this asserts `job new` now
+ * matches.
  */
 describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNEW-CJS-EXIT-CODE)", () => {
   const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -670,37 +628,6 @@ describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNE
     },
     30_000,
   );
-});
-
-/**
- * PENDING-PARSE-FAILURE-REFUSES, engineering.md "Loud or nothing" — `render`
- * is a third reader of pending.json alongside `Dispatcher.tick()`'s
- * decide/rewrite reads. Pre-fix, a parse failure printed the errors to
- * stderr and fell through to `ctx.pending = []`, then rendered the prompt
- * anyway — a plan/build agent would see an empty queue instead of the
- * parse errors blocking it.
- */
-describe("flume render — corrupt pending.json refuses instead of rendering over an empty queue (PENDING-PARSE-FAILURE-REFUSES)", () => {
-  it("writes no prompt to stdout and exits non-zero", async () => {
-    const repo = await makeJobRepo("main");
-    try {
-      await writeRepoConfig(repo.dir, minimalChainSrc());
-      const pendingPath = join(repo.dir, ".flume", "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
-      await writeFile(pendingPath, "{ not valid json", "utf8");
-
-      const r = await runCli(repo.dir, ["render", "probe"]);
-
-      expect(r.code).not.toBe(0);
-      // Combined stdout+stderr never carries the prompt body — had it
-      // rendered, this marker (from writeRepoConfig's default prompt
-      // content) would be present.
-      expect(r.out).not.toContain("job probe prompt");
-      expect(r.out).toContain("pending.json invalid");
-    } finally {
-      await repo.cleanup();
-    }
-  }, 60_000);
 });
 
 function supervisorPolicyChainSrc(policy?: {
@@ -1519,7 +1446,7 @@ async function writeRepoConfig(
 /**
  * A job-dir `chain.ts` that detonates on load. Inert by construction (§2):
  * the runtime never looks in the job dir for a chain, so any test that ticks
- * or renders past this file proves the repo chain is what loaded.
+ * or loops past this file proves the repo chain is what loaded.
  */
 const INERT_TRAP_CHAIN_SRC =
   `throw new Error("job-local chain.ts was loaded — chains are repo-resident (v0.6 §2)");\n`;
@@ -2200,14 +2127,16 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "read-only subcommands (status, wake, sleep, render) resolve state to the job root, chain + prompt load from repo .flume — a job-dir chain.ts is inert",
+    "read-only subcommands (status, wake, sleep) resolve state to the job root — a job-dir chain.ts is never consulted by them",
     async () => {
       const repo = await makeJobRepo("main"); // deliberately NOT job/foo
       try {
         await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
         const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         await mkdir(jobDir, { recursive: true });
-        // §2 inertness: if resolution ever looked here, render would explode.
+        // §2 inertness: configDir never follows --job, so status's
+        // best-effort chain load reaches the repo chain, never this trap —
+        // wake/sleep load no chain at all.
         await writeFile(join(jobDir, "chain.ts"), INERT_TRAP_CHAIN_SRC, "utf8");
 
         const status = await runCli(repo.dir, ["--job", "foo", "status"]);
@@ -2218,14 +2147,6 @@ describe("§3 job resolution — real CLI", () => {
         const wake = await runCli(repo.dir, ["--job", "foo", "wake", "probe"]);
         expect(wake.code).toBe(0);
         expect(existsSync(join(jobDir, "awake", "probe"))).toBe(true);
-
-        // render loads the REPO chain and its sibling prompts/ via the
-        // unchanged promptPath join (§3/§6 shared-prompt case) — the trap
-        // chain in the job dir never loads.
-        const render = await runCli(repo.dir, ["--job", "foo", "render", "probe"]);
-        expect(render.code).toBe(0);
-        expect(render.out).toContain("job probe prompt");
-        expect(render.out).not.toContain("job-local chain.ts was loaded");
 
         const sleep = await runCli(repo.dir, ["--job", "foo", "sleep", "probe"]);
         expect(sleep.code).toBe(0);
@@ -2288,10 +2209,6 @@ describe("§3 job resolution — real CLI", () => {
         // needs one before its first --job call.
         const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         await mkdir(jobDir, { recursive: true });
-
-        const render = await runCli(repo.dir, ["--job", "foo", "render", "probe"], env);
-        expect(render.code).toBe(0);
-        expect(render.out).toContain("env-dir prompt");
 
         new Baton(jobDir).wake("probe");
         const tick = await runCli(repo.dir, ["--job", "foo", "tick"], env);
