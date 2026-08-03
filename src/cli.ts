@@ -279,6 +279,9 @@ Options:
                       Config (chain.ts + prompts) stays at <repoRoot>/.flume —
                       chains are repo-resident; an explicit FLUME_CONFIG_DIR
                       composes. Conflicts with explicit FLUME_DIR (exit 2).
+                      Refuses (exit 2) if <name> names no existing state
+                      root — every command reached this way except
+                      \`job run\`, which may create one; use \`job new\`.
   -h, --help          Print this message.
   -v, --version       Print the flume version.
 
@@ -686,6 +689,19 @@ async function main(): Promise<number> {
       return 2;
     }
     throw err;
+  }
+
+  // `--job` / `FLUME_JOB` names an existing state root everywhere except
+  // `job new` (which creates it — routed above via `runJobVerb`, never
+  // reaches here) and `job run` (spec/jobs.md "`flume job run <name>`" — no
+  // existence precondition, by design: it may materialize a bare state
+  // root). `jobRunName` is what distinguishes the `job run` rewrite from a
+  // bare `--job`/`FLUME_JOB` use of `status`/`tick`/`loop`/`wake`/`sleep` —
+  // the flag alone can't carry that distinction, since `job run` reaches
+  // this same resolution by construction (above).
+  if (job !== undefined && jobRunName === undefined && !existsSync(flumeDir)) {
+    console.error(`[flume] no job '${job}': ${flumeDir} does not exist`);
+    return 2;
   }
 
   // `job run` preflight (v0.11 §2/§3): wake the entry phase iff hibernating.

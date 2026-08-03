@@ -980,7 +980,12 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
 
         // A different state root (--job other) than the planted claim's
         // holder — only the tip claim can refuse this pair; loop.pid never
-        // collides.
+        // collides. Pre-existing per CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT:
+        // --job now refuses a name with no state root before reaching the
+        // tip-claim contention this test exercises.
+        await mkdir(join(repo.dir, ".flume", "jobs", "other"), {
+          recursive: true,
+        });
         const r = await runCli(repo.dir, ["--job", "other", "loop", "--max", "0"]);
 
         expect(r.code).toBe(1);
@@ -2074,7 +2079,10 @@ describe("§3 job resolution — real CLI", () => {
         expect(conflict.out).toContain("one resolution authority");
 
         // The conflict narrowed to FLUME_DIR (§3): config beside --job
-        // composes instead of erroring.
+        // composes instead of erroring. Pre-existing per
+        // CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT: --job now refuses a
+        // name with no state root, so this composition probe needs one.
+        await mkdir(join(dir, ".flume", "jobs", "foo"), { recursive: true });
         const composed = await runCli(dir, ["--job", "foo", "status"], {
           ...hermeticEnv(),
           FLUME_CONFIG_DIR: dir,
@@ -2090,6 +2098,46 @@ describe("§3 job resolution — real CLI", () => {
       }
     },
     60_000,
+  );
+
+  it(
+    "--job <name> naming no existing state root refuses (exit 2), naming the job and the path, before status or tick ever run — creates no directory (CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const jobDir = join(repo.dir, ".flume", "jobs", "ghost");
+
+        const status = await runCli(repo.dir, ["--job", "ghost", "status"]);
+        expect(status.code).toBe(2);
+        expect(status.out).toContain("ghost");
+        expect(status.out).toContain(jobDir);
+        expect(existsSync(jobDir)).toBe(false);
+
+        const tick = await runCli(repo.dir, ["--job", "ghost", "tick"]);
+        expect(tick.code).toBe(2);
+        expect(tick.out).toContain("ghost");
+        expect(tick.out).toContain(jobDir);
+        expect(existsSync(jobDir)).toBe(false);
+
+        // FLUME_JOB alone (no flag) refuses identically (§3 parity).
+        const envOnly = await runCli(repo.dir, ["status"], {
+          ...hermeticEnv(),
+          FLUME_JOB: "ghost",
+        });
+        expect(envOnly.code).toBe(2);
+        expect(existsSync(jobDir)).toBe(false);
+
+        // `job new` is the sole verb permitted to create it — unaffected by
+        // the refusal above since it never reaches --job resolution.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const created = await runCli(repo.dir, ["job", "new", "ghost"]);
+        expect(created.code).toBe(0);
+        expect(existsSync(jobDir)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
   );
 
   it(
@@ -2235,12 +2283,16 @@ describe("§3 job resolution — real CLI", () => {
         await writeFile(join(cfg, "chain.ts"), jobEnvProbeChainSrc("probe"), "utf8");
         await writeFile(join(cfg, "prompts", "prompt.md"), "env-dir prompt\n", "utf8");
         const env = { ...hermeticEnv(), FLUME_CONFIG_DIR: cfg };
+        // Pre-existing per CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT: --job
+        // now refuses a name with no state root, so this composition probe
+        // needs one before its first --job call.
+        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
+        await mkdir(jobDir, { recursive: true });
 
         const render = await runCli(repo.dir, ["--job", "foo", "render", "probe"], env);
         expect(render.code).toBe(0);
         expect(render.out).toContain("env-dir prompt");
 
-        const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         new Baton(jobDir).wake("probe");
         const tick = await runCli(repo.dir, ["--job", "foo", "tick"], env);
         expect(tick.code).toBe(0);
