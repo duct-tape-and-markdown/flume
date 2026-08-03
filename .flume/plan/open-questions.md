@@ -71,3 +71,43 @@ Recommended: (2) unless a real chain hits the need — the sharper duplication
 smell (gates hardcoding `pnpm` with no override at all) is gone now that
 the cmd override shipped; what's left is a wrap-it-yourself gap, not an
 asymmetry.
+
+## ENGINE-BRANCH-VERBS-VS-NAVIGATION-RULING
+
+The navigation doctrine (`spec/loop.md`, *The engine records, never
+navigates*) states: "The engine never runs `checkout` or `branch`, and ships
+no branch grammar." The engine does both. `git.addWorktree` runs
+`worktree add -B <branch>`; `git.deleteBranch` runs `branch -D`; and
+`Dispatcher.createWorktree` constructs the grammar itself —
+`flume/<namespace>/<slug>`, or `flume/<slug>` unnamespaced.
+
+The `cherry-pick` half of this ruling was already amended once (d604d55) to
+declare fanout's merge as a named carve-out rather than leave it an unnoticed
+violation. The branch half was not, and it is the same shape: ephemeral refs
+the engine creates, uses, and deletes inside one wave, which no operator ever
+sees or chooses.
+
+Needs a human call because it is a doctrine question, not a code question —
+nothing is broken either way, but the corpus currently says one thing and
+ships another.
+
+Options:
+
+1. **Ratify as a second carve-out.** Amend the ruling the way cherry-pick was
+   amended: the prohibition scopes to refs the *operator* chose, and the
+   engine's own ephemeral `flume/**` names are recording, not navigating.
+   Cheapest, and consistent with how the first carve-out was settled. The
+   spec text already reads this way pending the call.
+2. **Tighten the ruling's wording instead.** Say the engine never runs
+   `checkout`, and never touches a ref outside `flume/**` — which is
+   checkable, and would let a gate or sweep lens enforce it rather than
+   leaving it prose.
+3. **Remove the branch usage.** `worktree add` can operate on a detached
+   HEAD, so the `-B` and the grammar could go. Real work, and it would cost
+   the readable `git worktree list` output the branch names currently give an
+   operator mid-wave.
+
+Recommended: (2). It ratifies the same behavior (1) does, but states the
+condition rather than the exception — so the claim becomes something a sweep
+can evaluate instead of prose that drifted once already
+(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).

@@ -4,7 +4,7 @@ The writing pipeline flows forward. Each layer has one author and one artifact h
 
 | Layer | Artifact | Author | Phase | Commit prefix |
 | ----- | -------- | ------ | ----- | ------------- |
-| spec  | `spec/**` (`RELEASE-v0.1.md`, future spec files), `.claude/rules/*.md` | human | — | (any) |
+| spec  | `spec/**` (topic files: loop, chain, prompt, pending, cli, jobs, worktrees), `.claude/rules/*.md` | human | — | (any) |
 | plan  | `.flume/plan/{pending.json,state.md,open-questions.md}`, `.flume/inbox.md` | plan tick (drains inbox) | `plan:` | `plan:` |
 | inbox | `.flume/inbox.md` — transient findings queue | external reviewers (humans; future review skills) | (any session) | (any) |
 | code  | `src/`, `tests/`, `bin/`, `examples/`, `docs/`, `vitest.config.ts`, `.env.example`, `.gitignore`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` | build tick | `build:` | `build:` |
@@ -13,7 +13,7 @@ Harness commits use `chore(flume):`.
 
 ## Directives
 
-- **`spec/` is the human's maintenance surface.** Autonomous flume phases (plan, build) never edit it — chain.ts writable-paths is the hard boundary. Interactive sessions edit `spec/RELEASE-v0.1.md` (or future spec files) *under explicit human direction*, with per-edit approval; the human is the author, the agent is the editor.
+- **`spec/` is the human's maintenance surface.** Autonomous flume phases (plan, build) never edit it — chain.ts writable-paths is the hard boundary. Interactive sessions edit `spec/*.md` *under explicit human direction*, with per-edit approval; the human is the author, the agent is the editor.
 - **pending.json is derived, not authored.** Plan re-derives it every tick from spec + open-questions + inbox + current src. Never hand-edit. Cross-tick context belongs in `.flume/plan/open-questions.md`.
 - **Open questions go in `.flume/plan/open-questions.md`, not in pending.json.** If a candidate plan entry can't carry a clean `per` cite into the spec, it's a question for a human.
 - **`.flume/inbox.md` is a transient queue, not a log.** External reviewers append findings; plan drains every tick. Each entry leaves the inbox by becoming a pending entry, an open question, or an accepted-debt note in the `plan:` commit body. Plan does NOT write to inbox — its self-audit findings route directly to pending/open-questions, with narrative in the commit body.

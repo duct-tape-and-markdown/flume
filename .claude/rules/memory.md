@@ -17,7 +17,7 @@ Flume ticks run autonomously via `claude -p`. Each iteration is a fresh process.
 | Per-phase prompts                               | `.flume/prompts/*.md`       |
 | Active plan + scratch state                     | `.flume/plan/*`             |
 | Findings inbox (transient queue)                | `.flume/inbox.md`           |
-| Ship-readiness target                           | `spec/RELEASE-v0.1.md`      |
+| Engine contract, by topic                       | `spec/*.md`                 |
 | Longer-range design intent                      | `docs/INTENT.md`            |
 
 The `.flume/plan/open-questions.md` file doubles as cross-tick scratch space — when a build tick learns something the next plan tick should know about (debt observed, surprising pattern, blocker), it writes that there.
@@ -26,4 +26,4 @@ The `.flume/plan/open-questions.md` file doubles as cross-tick scratch space —
 
 - Don't write to `~/.claude/projects/.../memory/`.
 - Don't read from there expecting context — none should exist; if any does, it's stale.
-- Don't fall back to auto-memory "just in case." Add a file under `.claude/rules/`, capture in `spec/RELEASE-v0.1.md` (human-edited), or note in `.flume/plan/open-questions.md` instead.
+- Don't fall back to auto-memory "just in case." Add a file under `.claude/rules/`, capture in `spec/*.md` (human-edited), or note in `.flume/plan/open-questions.md` instead.

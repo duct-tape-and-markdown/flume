@@ -6,7 +6,7 @@
 
 ## Source of truth
 
-**Read the spec corpus first** — `spec/RELEASE-*.md`. Each file is one release line's ship target: what must ship, the public API surface, tests, docs. The newest is the active plan target; earlier lines are frozen once shipped. Plan derives against whatever changed in `spec/` since the last `plan:` commit. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
+**Read the spec corpus first** — `spec/*.md`. One file per topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`), each describing what flume *is*, present tense. Not release targets: the corpus states current truth and the ship target together, so a section that no longer matches `src/` is a defect in one of them. Plan derives against whatever changed in `spec/` since its derive stamp. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
 
 This is flume operating on flume: `.flume/chain.ts` imports the runtime from `../src/` (this repo), not from `flume/` (a published dep). Breaking runtime changes must update chain.ts in the same commit.
 

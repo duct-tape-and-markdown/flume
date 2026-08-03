@@ -1,6 +1,6 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
-// Two lanes (RELEASE-v0.3 §17). The default run is the FAST lane — unit + fast
+// Two lanes (spec/worktrees.md: the integration lane). The default run is the FAST lane — unit + fast
 // tests — and is exactly what the build's `afterMerge` gate (`pnpm test` =
 // `vitest run`) invokes inside the fanout worktree, so it must stay fast and
 // worktree-safe. The INTEGRATION lane (`*.integration.test.ts`) spawns real

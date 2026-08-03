@@ -1,0 +1,361 @@
+# The chain
+
+A chain is the implementation flume runs: a single TypeScript module at
+`<configDir>/chain.ts` that declares phases, gates, agents, and a handful of
+engine-consumed fields. This file governs that seam — how the module is
+shaped and loaded, what the engine hands it, what it may declare back, and
+which obligations fall on the chain author rather than the runtime. The
+entry queue the chain's phases consume is `spec/pending.md`; tick lifecycle
+and supervisor mechanics are `spec/loop.md`; the subcommands that resolve
+`configDir` are `spec/cli.md`.
+
+## The chain is a plugin, not a consumer
+
+The engine hands the chain its API. `chain.ts` default-exports a **factory**
+the engine calls with its own surface; the chain imports no engine *value* at
+runtime.
+
+- The default export is `ChainFactory = (api: FlumeApi) => ChainModule`, where
+  `ChainModule` is `{ chain: Chain; agent?: Agent; forkResolver?: ForkResolver }`
+  (`src/Dispatcher.ts:ChainFactory`, `:ChainModule`). Everything a chain
+  previously supplied as a named module export rides the factory's return,
+  because a named export cannot receive the API.
+- `FlumeApi` (`src/flumeApi.ts:FlumeApi`) carries the runtime surface a chain
+  composes with — builtin gates, `setupWorktree`, the pending-schema helpers,
+  the agent constructors and decorators, read-only git helpers, and the error
+  classes chains branch on with `instanceof`. Each member is declared with
+  `typeof` against the real implementation, so the handed surface cannot drift
+  from what the engine exports: a signature change breaks at compile time
+  rather than at a consumer's tick. The object is built by
+  `src/flumeApi.ts:buildFlumeApi` and passed **by reference** — the identity-same
+  objects the dispatcher holds, never resolved a second time.
+- `buildFlumeApi` is a function, not a module-level constant, and that is
+  load-bearing: `src/index.ts` initializes `builtinGates` before `Dispatcher`
+  and `builtinGates` imports `Dispatcher` (a documented intentional cycle), so
+  a top-level object literal would read exports still in their temporal dead
+  zone. Property access is deferred into the call.
+- **Type-only imports stay.** `import type { Chain, FlumeApi } from "@dtmd/flume"`
+  is erased at runtime, so a types-only devDependency cannot execute and its
+  staleness cannot reach a tick.
+- A default export that is not a function is **refused** at load with a
+  usage-shaped error naming the migration — never accepted as a bare `Chain`
+  object. A factory that returns a thenable is refused too: the contract is
+  synchronous, and awaiting would silently accept a shape it does not carry.
+  Async work belongs in a phase hook, not at chain build time
+  (`src/Dispatcher.ts:loadChainModule`).
+- The engine's own dogfood chain runs under the same shape. No exemption for
+  the host repo.
+
+**Why:** a chain that writes `import { tscGate } from "@dtmd/flume"` is a
+*consumer* resolving its own copy by Node's walk-up from the chain's
+directory, so a second physical engine is reachable whenever the running
+engine is not the one the walk-up finds. Two shapes were field-traced: a
+globally-installed engine is structurally unreachable from the chain's import,
+so the run dies with a raw `ERR_MODULE_NOT_FOUND` naming the very package that
+is running; and with a local copy present the process runs **two engines** —
+the invoked dist drives the Dispatcher while the chain constructs
+Phase/Gate/Agent objects from the other copy, splitting `instanceof` and
+module-level state **at equal versions**, with nothing reporting it and commits
+as the output. The second rules the design: a silent degradation whose product
+is commits is what `engineering.md`'s *Loud or nothing* forbids, and a refusal
+would be the wrong fix — the condition should not be reachable. Removing the
+chain's runtime dependency removes it by construction, where a specifier
+rewrite or an identity check would only redirect or report it.
+
+`src/index.ts` remains the package's public surface for programmatic embedders
+(anyone constructing a `Dispatcher` directly) and for types. What changed is
+that chains stop taking *values* from it. No loader hook, specifier rewriting,
+version comparison, or lockfile check is part of this: it is an identity
+contract, not a version one (see `spec/cli.md` for the exec-local doctrine).
+
+> **Drift:** the publish-acceptance fixtures still author the pre-factory
+> shape — `.github/workflows/ci.yml`'s consumer-install smoke, its
+> second-reference-chain (backlog-groomer) smoke, and
+> `scripts/smoke-install.mjs:CHAIN_FIXTURE` all write a `chain.ts` that
+> value-imports engine symbols and `export default chain` — three fixtures,
+> all refused by `loadChainModule`. The published-package acceptance path
+> therefore does not exercise the factory contract it claims to.
+
+## Chain resolution is per-tick, and the tick is a fresh process
+
+The chain is resolved from `<configDir>/chain.ts` at the **start of every
+tick**. A tick that commits a rewritten `chain.ts` — new phases, handoff,
+`writablePaths`, gates — is governed by the new chain on the next tick,
+including a `chain.ts` change that rides a same-commit `src/` change.
+
+- **The mechanism is a process boundary.** `flume loop` is a supervisor that
+  spawns one `flume tick` child per iteration; the chain is resolved once, in
+  that child, at tick start. In-process re-resolution is *impossible* on the
+  supported toolchain and is not attempted: Node's ESM module registry is keyed
+  by resolved URL and non-evictable, so a fixed-path `chain.ts` is pinned to
+  its first evaluation for the life of the process — no content-hash query
+  string, `tsImport` namespace, or loader re-registration evicts it (verified
+  empirically on tsx 4.21 / Node 22.21; the plain-`import()` control proves it
+  is a Node-ESM constraint, not a `tsx` bug). An in-process loader also could
+  not pick up a `chain.ts` whose behavior moved into a same-commit `src/`
+  change, since those dependency modules are already evaluated. The process
+  boundary is therefore *the* mechanism, not an optimization.
+- **No memoization, no cache-bust.** `src/Dispatcher.ts:diskChainLoader` loads
+  once per call: there is exactly one resolution per process and nothing to
+  memoize across. Cost is one small `tsImport` of `chain.ts` per tick,
+  dominated by orders of magnitude by the agent invocation.
+- The chain is compiled in-process by `tsImport` (`tsx/esm/api`) rather than a
+  plain `await import()`, because Node refuses `.ts` under `node_modules` and a
+  consumer's `.flume/chain.ts` is a `.ts` file regardless of where flume lives.
+  The published `dist/cli.js` needs no node loader flag as a result.
+- `DispatcherOptions` accepts **no prebuilt `Chain`**; the dispatcher resolves
+  its own. `DispatcherOptions.chainLoader?: () => Promise<ChainModule>` replaces
+  the disk resolver wholesale and exists for **in-process test injection only**
+  (unit tests that call `tick()` directly, no subprocess), defaulting to
+  `diskChainLoader(configDir)`.
+- The supervisor carries no in-memory chain or phase state across ticks;
+  continuation and hibernation are read from disk between children. See
+  `spec/loop.md`.
+
+## A broken chain fails loudly, at two layers
+
+A rewritten `chain.ts` can be broken — syntax error, no default export, a
+default export that is not a factory, no `phases[]`. Two layers, both required.
+
+- **`chainLoadGate`** (`src/builtinGates.ts:chainLoadGate`), a builtin declared
+  by any phase that can write `chain.ts`. It runs `afterCommit`, skips as a
+  pass when the commit did not touch the chain, and otherwise validates by
+  calling the **real** `loadChainModule` on the committed file — the same
+  load+validate path the next tick's resolution takes, so the gate's verdict
+  cannot disagree with what resolution would do. On failure the tick fails its
+  gate, the revert path restores the commit, and `chain.ts` returns to its
+  last-good version. It is a builtin because `chain.ts` is universal to every
+  flume project and the load path it validates is the engine's own — the gate
+  calls the exact function resolution calls, so a chain-local reimplementation
+  could only diverge from it. `pendingGate` is likewise a builtin
+  (`src/builtinGates.ts:pendingGate`), parameterized by chain-supplied options;
+  the parameterization, not chain-locality, is what carries the convention.
+- **A CJS-context host is refused, not relayed.** When the load failure carries
+  the module-context signature — `Cannot use import statement outside a
+  module`, or an `ERR_MODULE_NOT_FOUND` whose path carries tsx's
+  percent-encoded `?namespace=` query
+  (`src/Dispatcher.ts:isCjsContextLoadFailure`, an empirical two-shape family)
+  — the engine refuses with a usage-shaped message naming the fix (`"type":
+  "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
+  exits **2**, not the mount-dead constant
+  (`src/Dispatcher.ts:CjsContextLoadError`, `src/cli.ts:tickExitCode`, which
+  checks it first). Matching is deliberately narrow: a genuinely missing
+  dependency must keep surfacing as itself, unshadowed. Supporting a
+  CJS-context host is declined; relaying a raw loader stack is the defect.
+- **Engine resolution failure.** If per-tick resolution throws for any other
+  reason and no gate caught it, the `flume tick` child exits with the
+  mount-dead exit constant and
+  a loud error; the supervisor never crashes on it. There is no in-process
+  "last-good chain" to retain — recovery is structural: a gated broken chain is
+  reverted and the next tick's fresh process reads the restored file, while an
+  *ungated* broken chain makes every subsequent tick fail loudly until it is
+  restored. Because a mount-dead run would otherwise burn the remaining `--max`
+  ticks re-hitting the same wall, the supervisor **aborts the run** on that
+  code instead of proceeding to the next iteration; see `spec/loop.md` for the
+  exit-code contract.
+
+**Containment is not recovery.** The layer above guarantees no crash and no bad
+persist. It becomes recovery only because the prior-outcome channel forwards
+the failure detail to the retrying tick (`spec/loop.md`): without it, a tick
+that writes a broken `chain.ts` is reverted, the next tick cannot see why,
+writes it the same way, and the loop reverts forever while looking alive.
+
+> **Drift:** `chainLoadGate` keys on the repo-relative literal
+> `.flume/chain.ts` (`src/builtinGates.ts:CHAIN_REL_PATH`), not on the
+> dispatcher's resolved `configDir`, and `GateContext` carries no `configDir`
+> to key on. Under an explicit `FLUME_CONFIG_DIR` the gate silently reports
+> "chain.ts untouched — gate skipped" for a chain it never validated. The site
+> declares the hardcoded path as the universal convention.
+
+## Chain residency — one chain per `.flume`
+
+The chain lives at `<configDir>/chain.ts`, and **job resolution never retargets
+`configDir`**. `--job`/`FLUME_JOB` moves only the state root (`flumeDir` →
+`<repoRoot>/.flume/jobs/<name>`); `configDir` stays `<repoRoot>/.flume`, or an
+explicit `FLUME_CONFIG_DIR`, which composes with a job
+(`src/cli.ts:resolveStateDirs`). There is no job-local chain.
+
+- **A `chain.ts` inside a job dir is inert, and stays unpoliced.** The runtime
+  never looks there; machinery does not police caller-owned content. No probe,
+  no warning, no refusal — the invariant is what resolution *is*, not a rule
+  to enforce.
+- **Per-job variation is already served**: a chain is code, and `FLUME_JOB` is
+  written back into the environment at CLI entry, before any chain load, so one
+  repo chain can dispatch on it. Operator-run worktrees give concurrent
+  divergence, each checkout resolving its own chain.
+- `promptPath` mechanics follow for free: it joins `configDir`
+  (`src/Dispatcher.ts`, `src/cli.ts`), and `configDir` is always the directory
+  the chain actually lives in — a shared chain finds its sibling `prompts/`
+  from any job, with no chain-dir token and no dynamic path computation.
+
+## Per-phase agent assignment
+
+`Phase.agent?: Agent` (`src/Phase.ts:Phase`). Per-tick resolution is
+`phase.agent ?? chainModule.agent ?? DispatcherOptions.agent`
+(`src/Dispatcher.ts`) — the chain-level override chain extended by one inner
+scope.
+
+Mechanism over sugar: the declared value is an `Agent`, not a model string, so
+it composes with decorators — a bare model string cannot express "same
+decorator stack, different model". A model-only variation is expressible as
+`claudeCode({ extraArgs: ["--model", "…"] })` inside the phase's agent value,
+and a chain-local helper amortizes re-stating the stack (the dogfood chain's
+`phaseAgent(model)` is the worked example). A `Phase.model` shortcut stays
+deferred until a second provider or demonstrated ergonomic pain exists.
+
+## `Chain.seedDir` — the declared job seed
+
+The chain declares what a newborn job contains; machinery materializes the
+declaration and holds no content opinion.
+
+- **`Chain.seedDir?: string`** (`src/Phase.ts:Chain`): a **configDir-relative**
+  directory — the `promptPath` idiom, so stubs are real files beside the chain
+  (e.g. `.flume/job-seed/`).
+- `flume job new` loads the repo chain first: no `<configDir>/chain.ts` is a
+  usage error (exit 2) — a job that could never `run` must not be creatable —
+  and a declared `seedDir` that is absent on disk is the same class of error,
+  checked **before** the state root is touched so a bad declaration leaves no
+  stray job dir (`src/job.ts:jobNew`).
+- The copy is **verbatim, skip-existing** (`cp` with `force: false`): a re-run
+  fills gaps — a stub added to the seed dir reaches existing jobs — and never
+  clobbers a worked file. No interpolation. This is what makes "idempotent on
+  re-run" true.
+- Absent `seedDir` → a bare job, **no warning**: state accretes from ticks, and
+  bare is legitimate. There is no seed default and no per-invocation template
+  flag; authority is a repo-declared fact.
+
+The rest of `job new`'s sequence — runtime ignores, longpaths pin, baseline
+commit on current HEAD — is `spec/jobs.md`.
+
+## `Chain.friction` — the declared friction channel
+
+**`Chain.friction?: string`** (`src/Phase.ts:Chain`): a **state-root-relative**
+directory naming the friction channel (e.g. `"friction"`), resolved against the
+resolved `flumeDir`, same idiom as `seedDir`.
+
+- Validated at chain load (`src/Dispatcher.ts:loadChainModule` →
+  `validateFrictionDeclaration`): must be relative and must resolve inside the
+  state root, else a usage-shaped error. The check is base-independent — it
+  resolves the declared path against a sentinel root and asks whether the
+  result still sits under it — because the real state root legitimately varies
+  per call site while "does this relative path escape whatever root it is
+  joined to" is a property of the path string alone.
+- The directory itself is created lazily by whichever engine write needs it
+  first; its absence is never an error.
+- **Undeclared disables the whole channel** — every friction-lifecycle
+  behavior stays off, and there is no default channel.
+- The engine guarantees the channel's lifecycle without ever reading its
+  content. Where the declaration is consumed: the runtime ignore set
+  (`spec/jobs.md`), the wave-teardown harvest and the revert note
+  (`spec/worktrees.md`, `spec/loop.md`), and the count line `flume status`,
+  `flume job status`, and the loop-end summary print when the channel is
+  declared and non-empty (`spec/cli.md`).
+
+## Supervisor policy is a chain-overridable default
+
+`Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?: number }`
+(`src/Phase.ts:Chain`). The engine's provisioning-failure policy — run-scoped
+quarantine of an entry slug whose worktree provisioning failed, and abort after
+three consecutive identical failure signatures — ships as **defaults, not
+behavior** (`src/Dispatcher.ts:superviseLoop`, `quarantineScope ?? "run"`,
+`abortThreshold ?? 3`). The CLI reads the block off the resolved chain and
+forwards it; a chain declaring nothing gets the defaults byte-identically.
+
+This is the policy-constant rule made concrete: retry counts, quarantine scope,
+and abort thresholds enter the engine only as chain-overridable defaults. The
+mechanism they tune is `spec/loop.md`.
+
+## Gate placement is the chain's decision
+
+Gates declare `when: "afterCommit" | "afterMerge"` (`src/Gate.ts:GatePhase`).
+The engine runs them where they say; **where to put them is chain-authoring
+doctrine**, and the default guidance is:
+
+- **Expensive correctness gates at `afterMerge`; cheap structural gates at
+  `afterCommit`.** N parallel heavy gates under fanout saturate the host, and a
+  flaky timeout under contention reverts clean commits. The dogfood chain
+  places `vitest` at `afterMerge` and `tscGate` at `afterCommit`
+  (`.flume/chain.ts`). Per-entry `afterMerge` revert isolation is what makes
+  this safe — a failure there reverts only the offending entry
+  (`spec/worktrees.md`).
+- **Gate on the safety property, never on byte-equality of generated
+  artifacts.** A byte-exact freshness gate fired on functionally-identical
+  output — virtual-store hashes leaking into a bundler's output produced
+  hundreds of pure-reorder diffs — and reverted clean commits, while the real
+  property was expressible directly (does the bundle resolve without reaching
+  outside itself). The engine's lever here is teaching, not enforcement: the
+  offending gate is always chain-owned.
+- A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
+  the dispatcher computes once per commit, instead of re-shelling
+  `git show --name-only` per gate.
+
+The complementary constraint — keeping the default test lane fast enough that
+an in-worktree gate does not time out, by naming real-subprocess tests
+`*.integration.test.ts` and excluding them from the default `vitest run` — is
+in `spec/worktrees.md`.
+
+## Per-run artifacts belong under `FLUME_DIR`
+
+The teardown promise — one `rm` removes the whole footprint — holds only if
+**every** mutable artifact lives under the state root. The runtime supplies
+that root; it does not own what a chain writes into it.
+
+- **The runtime canonicalizes.** After resolving `flumeDir` and `configDir`,
+  the CLI writes the resolved **absolute** paths back to `process.env.FLUME_DIR`
+  and `process.env.FLUME_CONFIG_DIR` (`src/cli.ts:resolveStateDirs`), so a chain
+  loaded later in the same process, and any spawned child, read one resolved
+  value instead of re-deriving a default or falling back to a coincidentally-equal
+  `configDir`. `FLUME_DIR` is a reliable, always-present source of truth.
+- **The chain author places.** A chain that captures sessions — or any other
+  per-run artifact — must place it under `process.env.FLUME_DIR` for the state
+  root to be self-contained. The dogfood chain's session capture is the
+  reference implementation: `resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions")`,
+  where the `??` leg is defensive only. An absolute path matters here: a fanout
+  tick runs inside the worktree base — `<flumeDir>/worktrees/` by default,
+  relocatable via `FLUME_WORKTREES_DIR`, namespaced per job — so a relative
+  session dir would be written into a worktree git later removes.
+- **The runtime does not own session-capture location.** It is a chain concern
+  by decision, not an omission — the runtime supplies the canonical root and
+  nothing more. A relocated state root is expected to live outside the working
+  tree, so no in-repo gitignore glob is added for it; the default
+  `<repoRoot>/.flume` stays ignored as it already is.
+
+## The package a chain loads through
+
+`src/index.ts` is the canonical export list — the shape consumers depend on,
+and the only thing the `exports` map resolves. Anything not re-exported there
+is internal and may break between minor versions. The inventory is not
+restated here; read the module.
+
+Durable packaging policy:
+
+- **Ship compiled output, not raw `.ts`.** Emit `.js` + `.d.ts` to `dist/` and
+  point `package.json` at the compiled tree — the broadly-compatible choice for
+  any consumer (pure Node, bundler, TS or JS project), and it removes a runtime
+  dependency on `tsx` for the package's own surface.
+- **ESM-only.** `"type": "module"`, Node 22+. `attw --pack . --profile esm-only`
+  is the accurate *profile* — the default profile's `CJSResolvesToESM` finding
+  is the expected shape, not a defect — but it runs non-blocking in CI while
+  the upstream crash stands; the binding declaration-shape check is the
+  consumer-install smoke.
+- **A strict, single-entry `exports` map.** `"."` only — no subpath patterns,
+  no `./internal/*` escape hatch; a consumer needing an internal export files
+  for promotion. The conditions are `types` then **`default`** — *not* `import`.
+  This is load-bearing: flume's own chain loader resolves the bare package
+  specifier through `tsImport`, which takes a require-ish resolution path, and
+  an `import`-only map fails it with `ERR_PACKAGE_PATH_NOT_EXPORTED` — breaking
+  the prescribed consumer pattern (`import … from "@dtmd/flume"` inside
+  `.flume/chain.ts`) while remaining invisible to tsc, vitest, and attw. Only a
+  consumer-install smoke catches it. `default` is the catch-all condition,
+  still one `"."` entry resolving to the one ESM build.
+- `"main"` and `"types"` are duplicated outside `"exports"` because npm only
+  shows the TS-package icon when top-level `"types"` is set.
+
+**Standing acceptance:** a fresh consumer project resolves and typechecks
+`import { … } from "@dtmd/flume"`; deep paths (`@dtmd/flume/src/Dispatcher.ts`,
+`@dtmd/flume/dist/Dispatcher.js`) fail at module resolution.
+
+> **Gap:** the loader contract's runtime half is only exercised by the
+> consumer-install smoke, whose chain fixture is pre-factory (see the drift
+> note above). Nothing currently proves a *published* package loads a
+> factory-shaped chain end to end.

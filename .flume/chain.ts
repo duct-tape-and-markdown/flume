@@ -20,7 +20,7 @@ const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
  * below the file's own marker; everything above it is format documentation
  * that also uses `##`, hence the slice.
  *
- * Read synchronously and cheaply (one small file) per v0.11 §8's contract,
+ * Read synchronously and cheaply (one small file) per `shouldRun`'s contract —
  * the same idiom `plan.handoff` already uses for state.md. Any failure
  * returns `true`: plan's `shouldRun` treats an unreadable inbox as a reason
  * to run the tick, never to skip it.
@@ -53,7 +53,7 @@ import type { EntryExtension } from "../src/PendingSchema.ts";
 
 
 
-// ---------- chain factory (RELEASE-v0.11 §6) ----------
+// ---------- chain factory (spec/chain.md: The chain is a plugin) ----------
 
 /**
  * The engine calls this with its own API. Every engine value below arrives
@@ -77,7 +77,7 @@ const factory: ChainFactory = (api) => {
     pendingGate,
     setupWorktree: installWorktreeDeps,
   } = api;
-  // ---------- entry extension (v0.8 §2) ----------
+  // ---------- entry extension (spec/pending.md: the chain-declared extension) ----------
 
   /**
    * Dogfood pending-entry fields beyond the engine core. Declared once: the
@@ -95,7 +95,7 @@ const factory: ChainFactory = (api) => {
         path: z.string().min(1),
         section: z.string().min(1),
       }),
-      hint: `{ "path": "spec/RELEASE-*.md (the spec or rule that justifies this work)", "section": "exact heading, no leading '## '" }`,
+      hint: `{ "path": "spec/{loop,chain,prompt,pending,cli,jobs,worktrees}.md or .claude/rules/*.md — whichever justifies this work", "section": "exact heading, no leading '## '" }`,
     },
     /**
      * Acceptance decomposed: one line per behavior the work must pin. The
@@ -127,7 +127,7 @@ const factory: ChainFactory = (api) => {
    * open-questions.md is the always-writable parking lane (collaboration
    * rule). Requiring these in entry.files turns one under-declaration into a
    * fence revert on otherwise-correct work; cross-entry collisions stay
-   * covered by per-entry afterMerge revert (§7b).
+   * covered by per-entry afterMerge revert (spec/worktrees.md).
    *
    * CHANGELOG.md is deliberately NOT here. It is not mandatory on every
    * entry — no gate demands it — so it stays an ordinary declared path: an
@@ -137,12 +137,13 @@ const factory: ChainFactory = (api) => {
   const channelPaths = [".flume/plan/open-questions.md", "tests/**"];
 
   /**
-   * Build's fence, hoisted so plan's `pendingGate` (v0.8 §6) can pre-check
+   * Build's fence, hoisted so plan's `pendingGate` can pre-check
    * every derived entry's declared files against the fence build will
    * actually enforce — an entry that can't survive it fails at plan time,
    * naming the paths, instead of burning a build tick into a revert.
-   * v0.4 §5: on a fanout tick the write guard narrows to the entry's declared
-   * files ∪ channelPaths; the phase globs below stay the outer ceiling.
+   * On a fanout tick the write guard narrows to the entry's declared files ∪
+   * channelPaths; the phase globs below stay the outer ceiling
+   * (spec/pending.md: the entry-scoped write guard).
    */
   const buildFence = {
     writablePaths: [
@@ -202,12 +203,19 @@ const factory: ChainFactory = (api) => {
   };
 
   /**
-   * Materialize node_modules in a fresh build worktree, then assert it: a
-   * failed setup parks the entry before the agent runs (dispatcher §16),
-   * where missing deps would otherwise surface post-agent as confusing
-   * tsc/vitest "cannot find module" noise. The engine helper is
+   * Materialize node_modules in a fresh build worktree, then assert it, so
+   * missing deps fail here rather than surfacing post-agent as confusing
+   * tsc/vitest "cannot find module" noise.
+   *
+   * The assertion throws, and a throw from this hook fails the whole tick —
+   * it does NOT park one entry. The dispatcher's per-entry provisioning
+   * isolation wraps `createWorktree` only; chain `setupWorktree` hooks run in
+   * an unguarded `Promise.all` after it (`Dispatcher.runFanout`). Stated
+   * because this docstring previously claimed the parking behavior and the
+   * spec inherited the claim; the gap between the isolation's scope and
+   * what it should cover is filed in `.flume/inbox.md`. The engine helper is
    * lockfile-aware (src/setupWorktree.ts; dogfood discipline
-   * RELEASE-v0.1.md §11); we do NOT symlink repoRoot/node_modules — pnpm
+   * spec/worktrees.md); we do NOT symlink repoRoot/node_modules — pnpm
    * deletes a symlinked node_modules on install (pnpm/pnpm#9973). The
    * sentinel derives from the worktree's own manifest, not a hardcoded dep.
    */
@@ -261,7 +269,7 @@ const factory: ChainFactory = (api) => {
         {
           // Sessions track the flume state dir (FLUME_DIR), so a relocated,
           // ephemeral dock owns its transcripts too and one `rm` removes the
-          // whole footprint (RELEASE-v0.3 §12). The CLI canonicalizes the
+          // whole footprint (spec/cli.md: state-root resolution). The CLI canonicalizes the
           // resolved root into FLUME_DIR; the `?? CHAIN_DIR` fallback is
           // defensive only. Absolute either way, so build (which runs in
           // <flumeDir>/worktrees/<tag>/) writes up into the state dir's
@@ -306,7 +314,7 @@ const factory: ChainFactory = (api) => {
       ".flume/plan/open-questions.md",
       ".flume/inbox.md",
       // NOTE: plan does NOT touch spec/. The spec corpus
-      // (spec/RELEASE-*.md) is human-directed, edited in-session not by a phase;
+      // (spec/*.md) is human-directed, edited in-session not by a phase;
       // if plan discovers ambiguity, it surfaces it via open-questions.md
       // for a human to fold back into the spec.
       //
@@ -317,12 +325,12 @@ const factory: ChainFactory = (api) => {
       // findings do NOT pass through inbox — they're written directly to
       // pending.json / open-questions.md, with narrative in the commit body.
     ],
-    // v0.8 §6: the builtin composes core + this chain's extension for
+    // The builtin composes core + this chain's extension for
     // validation and pre-checks every entry's declared files against build's
     // fence at plan time.
     gates: [pendingGate({ extension: entryExtension, targetFence: buildFence })],
     /**
-     * v0.11 §8. Decline only a tick that provably has nothing to do but pass
+     * Decline only a tick that provably has nothing to do but pass
      * the baton: the queue already carries pickable work, so the sweep yields
      * by rule (`posture-sweep.md`, *The sweep yields to pickable work*), and
      * the inbox is empty, so there is nothing to drain.
@@ -389,7 +397,7 @@ const factory: ChainFactory = (api) => {
     // against the same object build enforces — one declaration, no drift.
     writablePaths: buildFence.writablePaths,
     entryChannelPaths: buildFence.entryChannelPaths,
-    // §7a (RELEASE-v0.2.md): vitest runs afterMerge, not afterCommit. Under
+    // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
     // afterCommit — cheap, structural, catches type errors before merge.
@@ -421,7 +429,7 @@ const factory: ChainFactory = (api) => {
     handoff(result) {
       // Wake plan when the wave actually produced signal for it to audit:
       // shipped commits to reconcile, gate fires that imply MAINTAIN
-      // entries, or a voluntary bail (v0.7 §15) — the build prompt promises
+      // entries, or a voluntary bail — the build prompt promises
       // "plan re-derives next tick" on a park-and-bail, so plan must see it.
       // A true no-op wave (nothing pickable) carries no signal — hibernate.
       // Operator can `flume wake plan` to force a tick.
@@ -439,7 +447,7 @@ const factory: ChainFactory = (api) => {
   const flumeChain: Chain = {
     phases: [plan, build],
     entryExtension,
-    humanOnly: [], // no spec phase; spec corpus (spec/RELEASE-*.md) edited in-session, never by a phase
+    humanOnly: [], // no spec phase; spec corpus (spec/*.md) edited in-session, never by a phase
   };
 
   return { chain: flumeChain };

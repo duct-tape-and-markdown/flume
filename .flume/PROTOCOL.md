@@ -4,7 +4,7 @@ Runtime mechanics (baton, gates, handoff, pending schema) live in `.flume/chain.
 
 ## The chain
 
-`spec/RELEASE-*.md` → `.flume/plan/` → `src/` (+ `tests/`, `docs/`, etc.) → git log
+`spec/*.md` → `.flume/plan/` → `src/` (+ `tests/`, `docs/`, etc.) → git log
 
 Build re-validates each entry against the cited section (in the file its `per.path` names) before acting. The commit body says what kind of work the tick did — typically a sentence on the why. Harness-authored commits use `chore(flume):` (e.g. `chore(flume): ship TAG`).
 

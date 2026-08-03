@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  # win32 support lane (spec/RELEASE-v0.4.md §6): typecheck + full suite on
+  # win32 support lane (spec/cli.md: win32 portability): typecheck + full suite on
   # Windows. Single lane, no matrix (§8) — POSIX remains the primary target;
   # the publish-acceptance steps stay ubuntu-only in the `ci` job.
   windows:
@@ -31,7 +31,7 @@ jobs:
 
       - run: pnpm build
 
-      # Install smoke test (spec/RELEASE-v0.6.1.md §3): pack -> install ->
+      # Install smoke test (spec/cli.md: distribution): pack -> install ->
       # run the *generated* .cmd shim -> chain load. This is the lane that
       # would have caught the 0.6.0 sh.exe shim defect.
       - run: pnpm run smoke:install
@@ -68,7 +68,7 @@ jobs:
         # flume is intentionally ESM-only ("type":"module", Node 22+, exports
         # map with only a `default` condition per §2). The esm-only profile
         # suppresses CJSResolvesToESM, which is the expected/correct shape
-        # here, not a defect — see spec/RELEASE-v0.1.md §2.
+        # here, not a defect — see spec/chain.md: the package export contract.
         #
         # NON-BLOCKING: @arethetypeswrong/cli@0.18.2 crashes internally
         # ("Cannot read properties of undefined (reading 'filename')", exit 3)
@@ -322,7 +322,7 @@ jobs:
         # Fails on drift in EITHER direction: a path packed but not covered by
         # "files" (over-inclusion), or a "files" entry that packs nothing
         # (under-inclusion). "files" is the single source of truth — there is
-        # no .npmignore (spec/RELEASE-v0.1.md §8 L155; mechanic §4 L107).
+        # no .npmignore (spec/cli.md: distribution).
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/check-pack.mjs" <<'EOF'

@@ -5,7 +5,7 @@
 </commit-delta>
 
 <spec-delta>
-!`STAMP=$(grep -m1 '^Spec derived through:' .flume/plan/state.md 2>/dev/null | grep -o '[0-9a-f]\{7,40\}' | head -1); if [ -z "$STAMP" ]; then echo "(bootstrap: no derive stamp in state.md - read all of spec/RELEASE-*.md in full, the whole corpus is the delta, and stamp HEAD)"; elif ! git rev-parse --verify -q "$STAMP^{commit}" >/dev/null 2>&1; then echo "REFUSE: derive stamp $STAMP does not resolve to a commit. Derive nothing and advance nothing this tick; repair the stamp in state.md and say so in the commit body."; else echo "=== spec/ changes since the derive stamp $STAMP ==="; DIFF=$(git diff "$STAMP..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since the stamp)"; else echo "$DIFF" | head -400; fi; fi`
+!`STAMP=$(grep -m1 '^Spec derived through:' .flume/plan/state.md 2>/dev/null | grep -o '[0-9a-f]\{7,40\}' | head -1); if [ -z "$STAMP" ]; then echo "(bootstrap: no derive stamp in state.md - read all of spec/*.md in full, the whole corpus is the delta, and stamp HEAD)"; elif ! git rev-parse --verify -q "$STAMP^{commit}" >/dev/null 2>&1; then echo "REFUSE: derive stamp $STAMP does not resolve to a commit. Derive nothing and advance nothing this tick; repair the stamp in state.md and say so in the commit body."; else echo "=== spec/ changes since the derive stamp $STAMP ==="; DIFF=$(git diff "$STAMP..HEAD" -- spec/ 2>/dev/null); if [ -z "$DIFF" ]; then echo "(no spec changes since the stamp)"; else echo "$DIFF" | head -400; fi; fi`
 </spec-delta>
 
 <pending-now>
@@ -97,7 +97,7 @@ The harness will reject your commit if `pending.json` doesn't parse, or if you m
 
 For `per.path`, use the file each section was derived from — one plan round may span multiple release specs (e.g. an older line winding down while a newer one is active). Two citable corpora, both human-authored:
 
-- `spec/RELEASE-*.md` — what to ship. The default for Derive and most Audit findings.
+- `spec/*.md` — the engine contract by topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`). The default for Derive and most Audit findings.
 - `.claude/rules/*.md` — what shape it takes. Sweep findings and shape defects cite the owning rule section (`engineering.md`, `engine-boundary.md`); these need no release-line home, which is what unblocks shape work between lines.
 
 For `per.section`, use that file's exact section heading text without the leading `## `. The `per` cite must resolve in the file it names.
