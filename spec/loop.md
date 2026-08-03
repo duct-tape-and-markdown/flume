@@ -57,19 +57,21 @@ grow it into one.
 The engine's entire git surface is the tick record — the commits a tick produced,
 landed on the tip it was handed, plus the guarded revert its gates depend on, plus
 observational reads. *Navigation* — choosing which line of history the operator is
-on — belongs to the implementation. The engine never runs `checkout` or `branch`, and
-ships no branch grammar.
+on — belongs to the implementation.
 
-> **Drift:** the engine does run branch verbs, over a branch grammar it constructs
-> itself: `worktree add -B` (`git.addWorktree`) and `branch -D` (`git.deleteBranch`),
-> on the `flume/<namespace>/<slug>` names `Dispatcher.createWorktree` builds. The
-> ruling as written forbids that. The second carve-out below describes the shipped
-> behavior and is proposed, not ruled — ratifying or removing it is the operator's
-> call, carried in `.flume/plan/open-questions.md`.
+**The condition:** the engine never changes which ref HEAD points at, and never
+creates or deletes a ref outside `flume/**`. It freely advances and resets the tip it
+was handed — that is recording, and it is the whole point. What it never does is
+decide *which* tip you are on.
 
-Two carve-outs, named here so they are declared boundaries rather than unnoticed
-violations. Both are the engine recording a tick's own output, not moving a ref the
-operator chose:
+Stated as a condition rather than a list of forbidden verbs because the verb list
+drifted twice: it forbade `cherry-pick`, which the engine has always run, and then
+forbade `branch`, which it runs over its own ephemeral `flume/**` names. A condition
+can be evaluated by a sweep lens; an exception list only accumulates exceptions.
+
+Two consequences of the condition, spelled out because both look like violations of
+the older verb-list wording and are not. Both are the engine recording its own
+output:
 
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
   tip the tick started on, in order, with `cherry-pick --abort` on conflict

@@ -74,26 +74,22 @@ asymmetry.
 
 ## ENGINE-BRANCH-VERBS-VS-NAVIGATION-RULING
 
-**RESOLVED (operator, 2026-08-03) — option 2: state the condition.**
+**RESOLVED and LANDED (operator, 2026-08-03) — state the condition.**
 
-The navigation doctrine is reworded from a verb prohibition to a ref
-condition: **the engine never runs `checkout`, and never touches a ref
-outside `flume/**`.** It ratifies exactly the behavior a carve-out would
-(`git.addWorktree`'s `worktree add -B`, `git.deleteBranch`'s `branch -D`,
-over the `flume/<namespace>/<slug>` grammar `Dispatcher.createWorktree`
-builds) — but states a condition something can evaluate, instead of a second
-named exception beside cherry-pick.
+`spec/loop.md` now reads: *the engine never changes which ref HEAD points at,
+and never creates or deletes a ref outside `flume/**`.*
 
-Prose that names an exception drifts silently; prose that states a condition
-can be promoted to a sweep lens or a gate. This one already drifted once
-(`d604d55` fixed the cherry-pick half after the same contradiction went
-unnoticed), which is the argument.
+The predicate first proposed with this ruling — "never touches a ref outside
+`flume/**`" — was **wrong**, and the equilibrium audit caught it: the wave
+touches the trunk ref three ways (`git.cherryPick`, `git.hardResetTo`,
+`commitPendingUpdate` → `git.commitPaths`). The distinction is not which ref
+but which operation. Advancing and resetting the tip you were handed is
+recording; choosing a different tip is navigating.
 
-Pending: `spec/loop.md`'s *The engine records, never navigates* takes the new
-wording, and its branch-grammar `> **Drift:**` note is deleted — with the
-condition stated, there is no divergence left to note. The cherry-pick
-carve-out stays; it moves a ref inside `flume/**` too, so it satisfies the
-same condition rather than needing its own exception.
+Stated as a condition because the verb list drifted twice — first forbidding
+`cherry-pick`, which the engine has always run, then `branch`, which it runs
+over its own ephemeral names. A condition is evaluable by a sweep lens; an
+exception list only accrues exceptions.
 
 ## win32 CI lane says "full suite", runs the fast lane (inbox 2026-08-02)
 

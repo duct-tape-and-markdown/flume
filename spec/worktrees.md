@@ -11,8 +11,9 @@ is `spec/loop.md`; where gates are placed and what a chain declares is `spec/cha
 
 ## Fanout is the engine's declared navigation carve-out
 
-The engine records, never navigates (`spec/loop.md`). Both carve-outs declared there are fanout
-mechanics — the wave is what they serve, not one of them. These are their details:
+The engine records, never navigates (`spec/loop.md`): it never changes which ref HEAD points at,
+and never creates or deletes a ref outside `flume/**`. Fanout is where both halves of that
+condition are exercised — these are the details:
 
 - `git worktree add -B <branch> <path> <fromRef>` (`src/git.ts:addWorktree`), where `branch`
   is `flume/<namespace>/<slug>` when a namespace is set and `flume/<slug>` otherwise
