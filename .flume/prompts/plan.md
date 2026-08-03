@@ -38,7 +38,30 @@ Plan processes the **delta** since the last tick that did the work. Each dimensi
 
 **Audit (commit-delta).** Trigger: at least one commit in `<commit-delta>`. The window is the **audit stamp in `<state>`**, not the last `plan:` commit — plan can commit without auditing (a derive tick, a maintain tick, a cut that fell elsewhere), and keying on the commit would advance the window past commits nobody audited, permanently. The stamp advances only where auditing actually reached; see *Artifact discipline*. For each commit, cross-check the diff against the `per.section` it cites. Look for spec drift, missed cases, undertested logic, scope creep beyond `entry.files`, gate-bypass. Findings route to pending entries (with `per` cite), open questions (when human input is needed), or accepted-debt (one-line in commit body). **Do not write to inbox.md** — that's an external-contributor surface.
 
-**Derive (spec-delta or bootstrap).** Trigger: `<spec-delta>` shows changes, OR there is no derive stamp yet. The window is the **derive stamp in `<state>`**, not the last `plan:` commit — plan can commit without deriving (a maintain tick, a cut that fell elsewhere), and keying on the commit would advance the window past a spec change nobody acted on, permanently. The stamp advances only where derivation actually reached; see *Artifact discipline*. Decompose changed or added spec sections into pending entries. Each entry: `per.section` matches the heading verbatim (no `## ` prefix), `files.{new,edit,retire}` are exact paths verified against build's `writablePaths`, `blockedBy` is set if a prior entry must ship first, `acceptance` is one line that turns green. `files` is load-bearing (v0.4 §5): the fanout write guard reverts a build commit touching any path the entry didn't declare, so declare **every** path the work legitimately touches — incidentals included (a lockfile, a barrel export). Under-declaration is a plan defect, not a guard defect. **Never declare a path that rides `entryChannelPaths`** (`tests/**`, `.flume/plan/open-questions.md`): the channel already permits them, so the declaration buys nothing — and `files` is the fanout partitioner's disjointness input, so a path every entry declares makes every entry collide with every other and the wave serializes. Measured: one shared path declared by ~all entries cost 3.3× wave width across 50 historical queues (mean first batch 1.20 vs 3.94). **Do not declare `CHANGELOG.md`** — entries no longer write it at all; the release changelog is built from git history at the cut. **Tests ride the entry**: an entry that ships engine behavior carries its test coverage in the same entry — named in `tests[]`, what they prove in `tests[].asserts` — never as a follow-up entry the audit has to file. That is a scope mandate, not a declaration one: `tests[]` is where test work is committed to, while `tests/**` rides the channel and stays out of `files` per the rule above (operator ruling 2026-07-28: five `-TESTS` follow-ups in one line is a derivation defect, not diligence). Decompose into discrete, shippable units. If a single section would require many large entries, that's a signal the section is too broad — file an open question proposing a spec split instead.
+**Derive (spec-delta or bootstrap).** Trigger: `<spec-delta>` shows changes, OR there is no derive stamp yet. The window is the **derive stamp in `<state>`**, not the last `plan:` commit — plan can commit without deriving (a maintain tick, a cut that fell elsewhere), and keying on the commit would advance the window past a spec change nobody acted on, permanently. The stamp advances only where derivation actually reached; see *Artifact discipline*. Decompose changed or added spec sections into pending entries. Each entry: `per.section` matches the heading verbatim (no `## ` prefix), `files.{new,edit,retire}` are exact paths verified against build's `writablePaths`, `blockedBy` is set if a prior entry must ship first, `acceptance` is one line that turns green. `files` is a **prediction the scheduler consumes, not a permission** — where build may write is
+`phase.writablePaths` in the chain, never an entry's business (`spec/pending.md`, *`files` is a
+prediction the scheduler consumes*). Declare the paths the work will actually touch: exactly
+those, neither defensive nor aspirational.
+
+- **Exact paths, never globs.** The partitioner intersects declared paths as literal strings, so
+  a declared `tests/**` collides only with another literal `tests/**` and hides the real
+  collision underneath it. Name `tests/Dispatcher.test.ts`, not the glob.
+- **Include the test files the work touches.** Two entries editing the same test file genuinely
+  collide and *should* serialize; two editing different ones should not. Only exact declarations
+  let the partitioner tell those apart.
+- **Over-declaring costs wave width** — the partition treats every shared path as a collision.
+  Measured across 171 historical queues at `maxParallel: 4`: mean first-batch width was 1.99 as
+  declared, 3.17 with the one path that had entered substantially every entry removed, and 94 of
+  those queues were serialized to width 1 outright. **Under-declaring** costs at most a
+  cherry-pick conflict, which the dispatcher aborts and leaves pending for a retry.
+  > Until `Phase.scopeWritesToEntry` ships, the write guard still narrows to declared files on a
+  > scoped tick, so an under-declared path also reverts the commit. Accuracy satisfies both.
+
+**Tests ride the entry**: an entry that ships engine behavior carries its test coverage in the
+same entry — one line in `tests[]` per behavior the work must pin, stating the behavior only.
+Which file a test lands in is build's call, so it belongs in `files` (as an exact path) and never
+in `tests[]`. Never a follow-up entry the audit has to file (operator ruling 2026-07-28: five
+`-TESTS` follow-ups in one line is a derivation defect, not diligence). Decompose into discrete, shippable units. If a single section would require many large entries, that's a signal the section is too broad — file an open question proposing a spec split instead.
 
 **Drain (inbox).** Trigger: `<inbox>` non-empty. Each entry routes to one of: pending entry (with `per` cite), open question (parked), or accepted-debt (one-line in commit body). Remove drained entries; preserve the `inbox.md` header. The inbox is a queue, not a log.
 
@@ -59,11 +82,11 @@ If the delta is small enough that you can meet the bar across every dimension, d
 
 ## Field discipline
 
-`files[].description`, `tests[].asserts`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it.
+`files[].description`, `tests[]`, `acceptance`, and `notes` are pointers, not spec restatements (per `.claude/rules/collaboration.md` — *Match prose to the medium*). If `description` reads like *"Add X: if input matches /pattern/ then…"*, you're duplicating the spec; the right shape is *"Widen X per §N."* The `per` cite is the reader's path to mechanics — trust it.
 
 Telegraphic: short enough that build can act on the entry without re-reading the spec.
 
-**Hard caps (zod-enforced; over-cap reverts the whole tick via the pending gate, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[].asserts`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
+**Hard caps (zod-enforced; over-cap reverts the whole tick via the pending gate, no partial credit):** `summary` ≤200 chars, `notes` ≤500 chars. Not soft. `files[].description`, `tests[]`, and `acceptance` are uncapped — there ≤200 chars is the calibration anchor, not a gate.
 
 ## Artifact discipline
 
