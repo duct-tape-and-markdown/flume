@@ -111,3 +111,82 @@ Recommended: (2). It ratifies the same behavior (1) does, but states the
 condition rather than the exception — so the claim becomes something a sweep
 can evaluate instead of prose that drifted once already
 (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+
+## win32 CI lane says "full suite", runs the fast lane (inbox 2026-08-02)
+
+**PARKED**
+
+`.github/workflows/ci.yml`'s windows job comment claims "full suite" but runs
+`pnpm test`, which `vitest.config.ts` excludes `**/*.integration.test.ts`
+from. `pnpm test:integration` runs only in the ubuntu job, so
+`loop-process-boundary.integration.test.ts`, `job.integration.test.ts`, and
+`examples.integration.test.ts` (949 lines: subprocess spawn, worktree
+provisioning, exit-code boundaries) never run on win32 — the primary dev
+platform for this repo, and the platform the `.cmd`-shim spawn defect
+(`scripts/smoke-install.mjs`) and `execGate`'s win32 ENOENT shell-retry shim
+both came from. The two-lane split itself is declared and reasoned
+(`spec/worktrees.md`, *The default test lane must stay fast*); the "full
+suite" claim on top of it is not.
+
+Options:
+
+1. **Add `pnpm test:integration` to the windows lane.** Closes the real gap;
+   costs win32 CI minutes and imports whatever flakiness the integration lane
+   has on a slower runner.
+2. **Correct the comment to "fast lane"**, state integration is POSIX-only
+   and why. Cheap, honest, leaves the coverage gap standing.
+3. **Split**: run the integration lane on win32 non-blocking
+   (`continue-on-error`), the pattern the `attw` step already uses with its
+   reason named.
+
+Recommended: lean (1) — this is the primary dev platform, and the exact bug
+class the integration lane covers (subprocess/worktree spawn) is what has
+actually broken here before; (2) alone documents a real gap rather than
+closing it. Needs a call on CI-minutes cost, which is not decidable from the
+repo alone.
+
+## `plan/pending.json` path: one fact, two homes, and a chain-less tension (inbox 2026-08-02)
+
+**PARKED**
+
+`Dispatcher.ts:1038` hardcodes `join(this.flumeDir, "plan", "pending.json")`.
+`builtinGates.ts:323` makes the same path chain-overridable
+(`opts.pendingPath ?? join("plan", "pending.json")`). `cli.ts:721`,
+`cli.ts:959`, and `job.ts:439` each re-derive the literal a third way. A
+chain that overrides `pendingGate`'s path gets a gate reading one file and a
+dispatcher writing another — silent desync, not a theoretical risk.
+
+Researched before parking (`.claude/rules/collaboration.md`, *Inform before
+parking*): the second-implementation test (`.claude/rules/engine-boundary.md`)
+looks at first like it argues for unifying on the capability side — a
+single-phase chain (`examples/backlog-groomer-chain.ts`) plausibly wants a
+different layout. But `job.ts`'s pending-count read is explicitly a
+"chain-less informational read" — `cli.ts`'s status/job commands run without
+loading the chain by design, for speed and robustness, and a chain-supplied
+override lives inside the chain module those reads never touch. A real
+override could not reach the CLI's view without either loading the chain
+just to resolve one path (defeats the chain-less design) or accepting the
+desync that is already the observed defect. That tension suggests the
+override may have been added without accounting for the chain-less reads —
+the kind of upstream-decision flag `collaboration.md`'s *Complexity is a
+signal* names.
+
+Options:
+
+1. **Treat it as convention, not capability.** Drop `pendingGate`'s override,
+   fix `plan/pending.json` as the layout everywhere, one shared constant.
+   Closes the desync; costs nothing today since no chain in this repo (or
+   `examples/`) actually overrides it.
+2. **Keep it a capability end-to-end.** Add the override to
+   `DispatcherOptions` too, and give `cli.ts`/`job.ts` a way to know a job's
+   override without loading its chain — needs a place to record that outside
+   the chain module.
+3. **Split.** Capability for the chain-loaded write side (`Dispatcher` +
+   `pendingGate`, which must already agree); hardcode the CLI's chain-less
+   reads to the fixed convention, with the limitation documented.
+
+Recommended: lean (1) — the override is unused capability whose only
+observed effect so far is the desync bug itself, and the chain-less reads
+make full unification (2) structurally awkward. Still a call about removing
+capability someone deliberately added, so parked rather than decided here.
+Per candidate: `.claude/rules/engine-boundary.md` *Capability vs convention*.

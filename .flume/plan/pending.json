@@ -1,1 +1,114 @@
-[]
+[
+  {
+    "tag": "WORKTREES-SETUPHOOK-ISOLATION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runFanout's per-entry setupWorktree hook call gets the same per-entry isolation createWorktree already has: a throw records a provisionFailure and parks that entry instead of rejecting the whole Promise.all"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Guard runFanout's per-entry setupWorktree hook so one entry's throw parks that entry instead of crashing the whole wave.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Every `.git/worktrees` mutation is serialized; the agent fanout is not"
+    },
+    "tests": [
+      "a two-entry wave where one entry's setupWorktree hook throws still completes: the throwing entry is recorded in provisionFailures and stays pending, the other proceeds to runFanoutEntry",
+      "worktree/extraEnv indices stay aligned to the surviving entries after a sibling's hook failure is spliced out"
+    ],
+    "acceptance": "A setupWorktree hook throw on one entry of a multi-entry wave no longer crashes the tick; that entry is parked via provisionFailures exactly like a createWorktree failure, and siblings still ship.",
+    "notes": "inbox 2026-08-03. chain.ts's setupBuildWorktree docstring (~L210-217) documents this gap as current fact; chain.ts is outside every phase lane, so updating that docstring once this ships is an operator follow-up, not part of this entry."
+  },
+  {
+    "tag": "PENDING-SCOPEWRITESTOENTRY-OPTIN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "add scopeWritesToEntry?: boolean (default false); correct entryChannelPaths doc to describe entry narrowing as opt-in, not automatic on every scoped tick"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runAfterCommitGates passes the entry write-scope to writablePathsGate only when phase.scopeWritesToEntry is true; otherwise undefined, matching a singleton tick"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "prependHarnessBlock renders effectiveFenceLines only when phase.scopeWritesToEntry; otherwise unscopedFenceLines even with an assignedEntry"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Gate entry-scoped write narrowing behind Phase.scopeWritesToEntry (default false); dispatcher and prompt both respect it.",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "The entry-scoped write guard is opt-in, and off by default"
+    },
+    "tests": [
+      "a scoped tick on a phase with scopeWritesToEntry undeclared writes with the same allowance and renders the same fence as a singleton tick (writablePaths ceiling only)",
+      "a scoped tick on a phase with scopeWritesToEntry: true narrows to entry.files ∪ entryChannelPaths under writablePaths and the prompt renders the two-fence block — unchanged from today's behavior"
+    ],
+    "acceptance": "Phase.scopeWritesToEntry (default false) governs both the write guard and the prompt fence identically; flume's own chain (which declares nothing) gets containment-only on every tick, scoped or not.",
+    "notes": "Closes the two > **Drift:** notes in spec/pending.md and spec/prompt.md — one dispatcher ternary and one prompt fence choice, same mechanism. No .flume/chain.ts change needed; default false already matches flume's own expectation."
+  },
+  {
+    "tag": "CHAINTS-PREDICATE-COVERAGE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Add behavioral test coverage for chain.ts's four load-bearing predicates: plan.shouldRun, plan.handoff, build.handoff, setupBuildWorktree.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Declining a tick before the invocation"
+    },
+    "tests": [
+      "plan.shouldRun declines only when pending.json carries a pickable entry AND inbox.md is empty; runs on a non-empty inbox, a missing inbox.md, an empty queue, a parked-only queue, a live-blocked queue, a promotable-only queue, and undefined pending",
+      "plan.handoff's `Plan continues:` regex over state.md correctly drives re-wake vs handoff, including an absent line",
+      "build.handoff's wake condition, including the voluntary-bail leg",
+      "setupBuildWorktree's sentinel assertion throws when node_modules/<sentinel> is missing after install and passes when present"
+    ],
+    "acceptance": "The four predicates are driven through the real chain factory (loadChainModule + buildFlumeApi, as tests/examples.integration.test.ts already drives examples/), not a hand-copied reimplementation of chain.ts's logic.",
+    "notes": "inbox 2026-08-02, narrowed to the four predicates only — chain.ts's declarations (writablePaths, gate lists, entry extension) are out of scope, same as CLAUDE.md itself. tests/** rides the channel; no files declared."
+  },
+  {
+    "tag": "CLI-CHANGELOG-FROM-GIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "scripts/build-changelog.mjs",
+          "description": "derive the [Unreleased] section from git log since the last release tag, per spec/cli.md Versioning policy"
+        }
+      ],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "add a script entry invoking the changelog tool"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Add a release-time tool that derives the [Unreleased] changelog section from git history since the last release tag.",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "tests": [
+      "derives [Unreleased] content from the commit range since the last release tag, using build: commit subjects as entry tags and bodies as the why",
+      "a tag history that stops short of CHANGELOG.md's latest recorded version (tags at v0.6.2, CHANGELOG at 0.9.0) resolves via a defined fallback, not an assumption",
+      "a zero-commit range refuses loudly instead of emitting an empty [Unreleased] section",
+      "preserves the ### Breaking subheading convention for commits whose body marks a break"
+    ],
+    "acceptance": "Running the tool over real history produces a well-formed [Unreleased] section per spec/cli.md Versioning policy, and it refuses non-zero on a zero-commit range.",
+    "notes": "inbox 2026-08-03, successor to the reverted .changeset/ fragment approach (e87c007). Ships the tool only; running it at an actual release cut is separate."
+  }
+]
