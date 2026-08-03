@@ -3115,8 +3115,12 @@ export async function superviseLoop(
   // signature streak for the abort backstop. Both reset to empty on every
   // fresh `superviseLoop` call — quarantine never outlives the run.
   const quarantinedSlugs = new Set<string>();
-  let lastProvisionSignature: string | undefined;
-  let provisionFailureStreak = 0;
+  // Keyed by signature, not "the last one seen" — a tick's provisionFailures
+  // can carry several distinct signatures (a repo-level failure pushed first,
+  // then per-entry ones), and any of them can be the one that repeats every
+  // tick. Tracking only index 0 let a varying sibling there shadow a
+  // genuinely-repeating signature elsewhere in the list forever.
+  const provisionFailureStreaks = new Map<string, number>();
   for (let i = 0; i < maxTicks; i++) {
     const { exitCode } = await runTick(quarantinedSlugs);
     ticks++;
@@ -3184,17 +3188,27 @@ export async function superviseLoop(
         }
       }
     }
-    const thisSignature = provisionFailures[0]?.signature;
-    if (thisSignature && thisSignature === lastProvisionSignature) {
-      provisionFailureStreak++;
-    } else {
-      provisionFailureStreak = thisSignature ? 1 : 0;
-      lastProvisionSignature = thisSignature;
+    const thisSignatures = new Set(provisionFailures.map((f) => f.signature));
+    // A signature not repeated on this tick breaks its own streak — whether
+    // this tick had no provisioning failure at all, or had failures that
+    // just didn't include that particular signature.
+    for (const sig of [...provisionFailureStreaks.keys()]) {
+      if (!thisSignatures.has(sig)) provisionFailureStreaks.delete(sig);
     }
-    if (provisionFailureStreak >= abortThreshold) {
+    let abortSignature: string | undefined;
+    let abortCount = 0;
+    for (const sig of thisSignatures) {
+      const count = (provisionFailureStreaks.get(sig) ?? 0) + 1;
+      provisionFailureStreaks.set(sig, count);
+      if (count >= abortThreshold && count > abortCount) {
+        abortSignature = sig;
+        abortCount = count;
+      }
+    }
+    if (abortSignature) {
       log.error(
         `[flume] worktree provisioning failed with an identical signature ` +
-          `${provisionFailureStreak} consecutive ticks (${lastProvisionSignature}); ` +
+          `${abortCount} consecutive ticks (${abortSignature}); ` +
           `aborting after ${ticks} tick(s) instead of burning the remaining ` +
           `ticks against the same wall.`,
       );
@@ -3202,8 +3216,8 @@ export async function superviseLoop(
         ticks,
         hibernated: false,
         repeatedFailure: {
-          signature: lastProvisionSignature!,
-          count: provisionFailureStreak,
+          signature: abortSignature,
+          count: abortCount,
         },
         shippedTags: [...shippedTags],
         erroredTicks,

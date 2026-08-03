@@ -5985,6 +5985,65 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
+  it("aborts on a repeated signature buried behind a varying sibling at index 0 every tick", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    const REPEATED_SIGNATURE = "git worktree prune: fatal: not a git repository";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — worktree provisioning failed",
+            // The repo-level failure (untagged) always lands first in
+            // runFanout's push order; a distinct per-entry signature every
+            // tick sits at index 0 and must not shadow the one that's
+            // actually repeating behind it.
+            provisionFailures: [
+              {
+                tag: `VARYING-${calls}`,
+                signature: `EBUSY: resource busy or locked (attempt ${calls})`,
+                message: `EBUSY: resource busy or locked (attempt ${calls})`,
+              },
+              { signature: REPEATED_SIGNATURE, message: REPEATED_SIGNATURE },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log,
+    });
+
+    // Aborted on the 3rd consecutive occurrence of the buried signature,
+    // never burning to --max 10.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({
+      signature: REPEATED_SIGNATURE,
+      count: 3,
+    });
+    expect(errors.some((e) => e.includes(REPEATED_SIGNATURE))).toBe(true);
+  });
+
   it("a failure that clears on the next tick resets the streak — the backstop never trips", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
