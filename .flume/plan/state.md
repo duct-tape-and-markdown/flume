@@ -2,7 +2,7 @@
 
 ## Spec derive
 
-Spec derived through: `2941d9075f213b7dd7d7507c6d3808fcef68fe68`
+Spec derived through: `b622b15`
 
 ## Posture sweep
 
