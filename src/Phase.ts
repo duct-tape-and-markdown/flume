@@ -20,8 +20,9 @@ import type { NoCommitMode } from "./Prompt.js";
  *
  * - "fanout": the dispatcher picks N disjoint-by-Files: pending entries and
  *   runs N tick invocations in parallel worktrees. Build is the canonical
- *   fanout phase. Merging back into the trunk runs serially with a postMerge
- *   gate; failure reverts the wave.
+ *   fanout phase. Each entry's commit is cherry-picked onto the trunk and
+ *   gated individually; an afterMerge gate failure reverts only that
+ *   entry's commit, and the rest of the wave stays shipped.
  */
 export type Concurrency = "singleton" | "fanout";
 
@@ -150,7 +151,7 @@ export interface Phase {
    */
   scopeWritesToEntry?: boolean;
 
-  /** Gates that run at preCommit / postCommit / postMerge points. */
+  /** Gates that run at afterCommit / afterMerge points. */
   gates: Gate[];
 
   /**

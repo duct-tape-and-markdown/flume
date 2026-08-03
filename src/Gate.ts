@@ -20,9 +20,10 @@ export type GatePhase =
    */
   | "afterCommit"
   /**
-   * Runs after a fanout phase's worktree branches merge into the trunk.
-   * Failure reverts the merge wave on the trunk. Singleton phases never
-   * run afterMerge gates because they commit directly to the trunk.
+   * Runs after a fanout entry's worktree commit is cherry-picked onto the
+   * trunk. Failure reverts only that entry's commit — the rest of the wave
+   * stays shipped. Singleton phases never run afterMerge gates because they
+   * commit directly to the trunk.
    */
   | "afterMerge";
 
@@ -32,7 +33,7 @@ export type GatePhase =
  * side effects to disk operations inside `cwd`.
  */
 export interface GateContext {
-  /** Absolute path of the worktree (or trunk for postMerge gates). */
+  /** Absolute path of the worktree (or trunk for afterMerge gates). */
   cwd: string;
   /**
    * Absolute, resolved flume state root (`flumeDir`) — where the baton,
