@@ -36,10 +36,14 @@ Entry order is meaningful — top is next. An empty array is valid and means not
 `TAG_PATTERN` admits letters, digits, and `._()-`, length 1..`TAG_MAX_LENGTH`. No whitespace, no
 path separators. `TAG_MAX_LENGTH = 255 - 39`: 255 is the conservative shared filesystem
 `NAME_MAX`, and 39 is the fixed scaffolding `Dispatcher.writeRevertNote` wraps around a raw tag
-(`<stamp>--<tag>--reverted.md`) — the tightest raw-tag consumer. Every looser consumer
-(commit-message token, `slugify`d worktree/branch slug) is covered by that bound. The arithmetic
-lives at the writer, not in a second copy here, and is pinned against the real writer by a
-gate-revert on the longest tag the schema accepts.
+(`<stamp>--<tag>--reverted.md`) — the tightest raw-tag consumer. Every other tag-derived
+component (the commit-message token, and the `slugify`d branch name and prior-attempt key —
+`slugify` never lengthens) is looser, so this bound clears them too. It is not the only ceiling a
+tag meets: the worktree **directory** component answers to
+git's own win32 worktree-path wall, which is tighter than `NAME_MAX` and independent of it, so a
+schema-valid tag's raw slug can exceed it — `worktreeDirName` truncates and hashes to stay under
+(see spec/worktrees.md). The arithmetic lives at the writer, not in a second copy here, and is
+pinned against the real writer by a gate-revert on the longest tag the schema accepts.
 
 Queue-wide **tag uniqueness** is enforced by the composed list schema, and is mechanical too:
 `cli`'s find-by-tag and the dispatcher's `blockedBy`/`shippedTags` lookups key on the tag, so a
@@ -203,6 +207,11 @@ It is greedy: walk pending in order, place each entry in the first batch that ha
 a batch closes on capacity as well as on overlap. Not optimal by count, but stable and respectful
 of pending order (priority). The dispatcher runs `batch[0]`, then re-derives pending and partitions again.
 
+`maxParallel` comes from `DispatcherOptions.maxParallel` and **defaults to 4**. The CLI forwards
+no override, so a CLI-driven wave runs at most four agents concurrently; only a programmatic
+embedder changes it. The value is unvalidated: a non-positive one satisfies no batch's capacity
+test, so every entry opens its own batch and the wave runs a single entry rather than refusing.
+
 The disjointness input is deliberately **wider** than the fence input:
 
 ```
@@ -332,6 +341,12 @@ unchanged file fails. When the state root is relocated outside the repo, the led
 disk with no chore commit: an out-of-tree state root is invisible to git by construction, and the
 disk write alone carries the auto-unblock and footprints forward.
 
+The ledger commit's message is caller-overridable (`DispatcherOptions.commitMessage`, called with
+the tags this wave shipped and the tags whose footprints it recorded) — the
+`chore(flume): ship <tags>` / `chore(flume): record merge-failure footprints for <tags>` wording
+is a chain's convention, not the engine's, the same split `spec/jobs.md` states for the seed
+commit.
+
 ## `pendingGate` — validation and fence pre-check as an opt-in builtin
 
 `pendingGate(opts)` (`src/builtinGates.ts`) is an `afterCommit` gate a chain attaches to whichever
@@ -346,6 +361,12 @@ neither check attaches neither.
    phase passed as the value itself. An entry whose declaration cannot survive the consumer's
    fence fails **here, at the producer's own commit, naming the offending paths**, instead of
    being handed downstream as work guaranteed to revert.
+
+The gate runs on **every** commit of the phase it is attached to — it never consults the commit's
+touched paths — and an absent queue file fails it (`<pendingPath> missing after commit`), which
+reverts the commit. Attaching it to a phase whose ticks do not always leave a queue on disk
+therefore reverts every such tick. This is the opposite policy from `chainLoadGate`
+(see spec/chain.md), which skips-as-pass when the commit did not touch its artifact.
 
 The fence is read fresh on every run, never hoisted to construction, so a declaration-driven
 phase (writable paths backed by a per-job declaration read after the gate is built) is checked

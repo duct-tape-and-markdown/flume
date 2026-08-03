@@ -124,6 +124,12 @@ loop.pid
 Wake the chain's entry phase iff the job's baton is hibernating, then run the standard loop
 under the job resolution.
 
+- No existence precondition on `<name>`. `jobRun` validates the name's shape, then constructs
+  `new Baton(flumeDir)` — whose constructor `mkdir`s `awake/` recursively. A name never passed
+  to `job new` is not refused: it materializes a bare state root, wakes the entry phase there,
+  loops against it with no seed and no `pending.json`, and appears in `flume job status`
+  afterward. A job is a directory, not a registration (above), so there is no registry to
+  check against — `rm`'s refusal on an unknown name (below) does not generalize to `run`.
 - The entry phase is `chain.phases[0]` — the chain's first declared phase, content-free by
   decision. No phase name is hardcoded in the engine. A chain declaring no phases is an
   operational failure.
@@ -193,7 +199,15 @@ because nothing but the engine is present when a fanout worktree dies — see
 
 ## Usage errors are exit 2
 
-Every job verb splits its failures: `JobUsageError` — a bad name, a chainless repo, a declared
-`seedDir` absent on disk, an `rm` naming no job — maps to exit 2 at the CLI. Anything else (a
-live loop blocking `rm`, a git failure, a chain with no phases) is an operational failure,
-exit 1.
+Every job verb splits its failures: `JobUsageError` — a bad name, a `new` on a chainless repo,
+a declared `seedDir` absent on disk, an `rm` naming no job — maps to exit 2 at the CLI.
+Anything else (a live loop blocking `rm`, a git failure, a chain with no phases) is an
+operational failure, exit 1.
+
+The chainless case is `new`'s alone. `jobNew` guards `<configDir>/chain.ts` with an
+`existsSync` before loading it, because a job that could never `run` must not be creatable.
+`jobRun` calls `loadChainModule` unguarded, so on a chainless repo the loader's own plain
+error surfaces — exit 1. That diverges from reaching the same chainless repo
+through the loop, where a child tick's load failure is mount-dead and both
+`tick` and `loop` exit 69 (`spec/loop.md`, *Exit codes*). The preflight refuses
+before any tick exists to classify, so it has no mount-dead code to return.

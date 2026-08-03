@@ -23,9 +23,23 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
 - `render <phase> [--entry <tag>]` — print the rendered prompt for a phase to
   stdout without invoking the agent. For a fanout phase, `--entry <tag>`
-  selects the entry; the default is the first entry whose gate is `open`.
+  selects the entry; the default is the entry the next tick would pick, decided
+  by the dispatcher's own pickability rather than a second reading of the gate
+  field — a dry run that disagrees with the run it previews is worse than no
+  dry run.
 - `job new|run|rm|status` — lifecycle verbs over a job's state root
   (`spec/jobs.md`).
+
+> **Drift:** `render`'s default re-derives pickability as `gate.kind ===
+> "open"` (the `cmd === "render"` branch, `src/cli.ts`), where the dispatcher
+> filters through `isPickable` (`src/Dispatcher.ts`, reached from `runFanout`):
+> an unresolved `dependsOnForks` slug is unpickable whatever the gate says, a
+> `blockedBy` whose blocker has left pending *is* pickable, and so is a
+> `requiresCapability` the chain asserts. They disagree in both directions —
+> `render` shows an entry the tick would skip, and refuses with `no open
+> entries in pending.json` over a queue the tick has work in. Detection a
+> sibling surface already performs, re-derived beside it
+> (`engineering.md`'s *the fix lands at the mechanism*).
 
 Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent
@@ -50,6 +64,13 @@ contract in `spec/loop.md`.
 The runtime help text is the authoritative statement of the surface;
 `docs/CLI.md` carries one prose entry per subcommand covering exit semantics,
 side effects, and an example invocation.
+
+> **Drift:** two of the exit-2 cases above are missing from that text.
+> `HELP_SUB.tick` (`src/cli.ts`) lists 0/1/69/78 and omits the 2 that
+> `tickExitCode` returns whenever `TickOutcome.usageError` is set — the
+> CJS-context refusal. `HELP_SUB.render` names 2 only for a missing or unknown
+> phase and an unmatched `--entry`, not for the unparsable-`pending.json`
+> refusal the same branch performs.
 
 ## `flume status` owes exactly this
 
@@ -139,6 +160,15 @@ the supervisor's quarantine crosses the process boundary on (read back at
 `quarantinedSlugs`, `src/cli.ts`). No var is dropped or rewritten on the way
 down.
 
+> **Drift:** the guarantee does not reach the chain loads on the `job new` and
+> `job status` paths. `main()` (`src/cli.ts`) routes those verbs to
+> `runJobVerb` and returns before `resolveStateDirs` ever runs, so neither var
+> is resolved or written back — yet both branches load a real chain
+> (`job status` via `diskChainLoader`, `job new` via `jobNew` →
+> `loadChainModule`, which *invokes* the chain factory). A factory reading
+> `process.env.FLUME_DIR` sees whatever the caller's environment held, commonly
+> nothing, and its throw surfaces as `[flume] job new failed:` with exit 1.
+
 The teardown promise ("one `rm` removes the whole footprint") is only true if
 every mutable artifact lives under `flumeDir`, and the runtime does not own
 where a chain puts its per-run artifacts — session captures, scratch files. The
@@ -200,6 +230,15 @@ known: `Cannot use import statement outside a module`, and an
 query. Detection is deliberately conservative — a genuinely missing dependency
 must keep surfacing as itself, so when the signature does not match, the raw
 error shows through unshadowed.
+
+> **Drift:** `flume job new` exits 1 on this refusal, not 2. `jobNew`
+> (`src/job.ts`) calls `loadChainModule` directly; `runJobVerb`'s `new` catch
+> (`src/cli.ts`) tests only `JobUsageError`, and `CjsContextLoadError` is not
+> one, so it falls to the operational branch — the refusal prints behind
+> `[flume] job new failed:` instead of as the headline, and the process exits
+> 1. The two sibling surfaces do hold the rule: `render` catches
+> `CjsContextLoadError` explicitly, and `tick` routes it through
+> `TickOutcome.usageError` → `tickExitCode`.
 
 ## Exec-local invocation, and no version-coordination machinery
 
@@ -284,14 +323,16 @@ unrelated package.
   scaffolded chain — on both the POSIX and the Windows lane. A shim that does
   not start is invisible to every other check in the suite.
 
-  > **Drift:** both chain fixtures the acceptance drives — `CHAIN_FIXTURE` in
-  > `scripts/smoke-install.mjs` (Windows lane) and the heredoc `.flume/chain.ts`
-  > in the POSIX lane's consumer-install smoke — still end in
-  > `export default chain;` with `chain` a `Chain` object. `loadChainModule`
-  > (`src/Dispatcher.ts`) refuses a non-function default export outright, so
-  > the chain-load leg of the acceptance cannot pass as written. The
-  > guarantee above is the standard; the fixtures owe the migration to
-  > `export default (api) => ({ chain })`.
+  > **Drift:** every chain fixture CI installs the tarball against — three of
+  > them: `CHAIN_FIXTURE` in `scripts/smoke-install.mjs` (Windows lane), the
+  > heredoc `.flume/chain.ts` in the POSIX consumer-install smoke, and the
+  > heredoc in the POSIX second-reference-chain (backlog-groomer) smoke, which
+  > drives a real `wake` + `tick` and asserts on the committed result — still
+  > ends in `export default chain;` with `chain` a `Chain` object.
+  > `loadChainModule` (`src/Dispatcher.ts`) refuses a non-function default
+  > export outright, so the chain-load leg cannot pass as written on any of the
+  > three. The guarantee above is the standard; the fixtures owe the migration
+  > to `export default (api) => ({ chain })`.
 
 ## win32 is a supported host
 
@@ -318,12 +359,28 @@ Standing consequences:
   is asserted against literally; splitting a git *ref path* is that exception,
   not a violation.
 - **Total path length.** `join(...).length` can exceed win32's ~260-character
-  limit where no single component does — a worktree nested under a state root
-  nested under a job dir. `namespacedJoin` (`src/paths.ts`) pairs `join` with
-  `toNamespacedPath` (which prepends the `\\?\` extended-length prefix on
-  win32, a no-op elsewhere) and is the one home for that idiom; every path
-  built for an fs call goes through it. `job new` additionally pins
-  `core.longpaths` repo-locally on win32.
+  limit where no single component does — a chain-declared friction dir under a
+  job's state root, a fanout mirror dir, a revert-note filename. The idiom is
+  `join` paired with `toNamespacedPath`, which prepends the `\\?\`
+  extended-length prefix on win32 and is a no-op elsewhere. The bar is the
+  built path's **depth**, not every fs call: a path whose depth is bounded by
+  the runtime's own layout (`<flumeDir>/awake/<phase>`, `<flumeDir>/loop.pid`,
+  `.flume/jobs/<name>`) does not need it; a path extending a chain-declared or
+  entry-derived segment does. `namespacedJoin` (`src/paths.ts`) is the shared
+  helper: it joins and namespaces in one call, and passing it a single path is
+  a legitimate use — the join is a no-op and the namespacing is the point.
+
+  > **Drift:** which of the two forms a site uses is not a rule the code
+  > follows. Several sites call `namespacedJoin` on a path they already hold
+  > (`Dispatcher`'s mirror-drain `readdir`/`mkdir`, `writeRevertNote`'s `mkdir`,
+  > `job.ts:countFrictionFiles`), while `src/git.ts` and much of `Dispatcher`
+  > call `toNamespacedPath` directly on held paths. The two are interchangeable
+  > in effect; nothing enforces a split, and any stated one would be authored
+  > rather than observed.
+
+  `job new` additionally pins `core.longpaths` repo-locally on win32. The
+  ceiling `git worktree add` imposes is separate and unreachable by this idiom
+  — see `spec/worktrees.md`.
 - **Test-repo hygiene.** Temp git repos pin `core.autocrlf false` (and any
   future byte-sensitive config) so revert-path byte assertions survive
   host-level git config.

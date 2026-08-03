@@ -121,6 +121,14 @@ other.
   The tick record's meaning is advancing a named tip, and the claim keys on a ref.
   The refusal names the state plainly. `tick` refuses even though it takes no claim,
   so behavior is identical whether or not a loop wraps it.
+- **A git working tree is the precondition**, enforced by the same refusal. Both
+  commands resolve HEAD through `git.currentRefPath`, which returns `null` for a
+  detached HEAD, for a cwd that is not a repository, and for a `git` that fails to
+  run at all — `git symbolic-ref` exits non-zero in every case, and nothing
+  downstream distinguishes them.
+  > **Drift:** the refusal prints "HEAD is detached" for all three
+  > (`src/cli.ts`, the `tick` and `loop` branches), so a caller outside a repository
+  > is told about a state it is not in. The check is correct; only the message is.
 
 `flume status` reports supervisor liveness and the current tip's claim, observationally
 — see `spec/cli.md`.
@@ -136,10 +144,15 @@ The engine reports the fact; the chain owns what it means.
 
 What survives on disk depends on which leg refused. Where the dispatcher undoes a
 commit it observed (`Dispatcher.checkTipMoved`, singleton and per-entry), the undo is
-`reset --soft` (`revertTipMovedCommit`), so the agent's work stays in the working tree.
-Where a wave refuses *before* cherry-picking, no reset is involved: that entry's commit
-is still on its private worktree branch, which teardown removes along with the worktree.
-The entry stays pending either way; only the working-tree residue differs.
+`reset --soft` (`revertTipMovedCommit`) — but what that buys differs by leg. On the
+singleton leg the reset runs in the repository itself, so the agent's work stays in the
+working tree. On the per-entry leg it runs inside the entry's worktree, which the wave's
+teardown loop removes unconditionally (`git.removeWorktree`, `Dispatcher.runFanout`);
+the uncommitted work goes with it, and no snapshot is taken — `snapshotRevertedFiles`
+rides the afterCommit gate-revert leg only. Where a wave refuses *before* cherry-picking,
+no reset is involved: that entry's commit is still on its private worktree branch, which
+teardown removes along with the worktree. The entry stays pending in every case; only
+the residue differs.
 
 The check takes the shape the commit site allows:
 
@@ -148,12 +161,21 @@ The check takes the shape the commit site allows:
   the new commit's own *parent* against the recorded tip, and on mismatch soft-resets
   the commit away (`revertTipMovedCommit`, which itself refuses unless the current tip
   is the sha it observed). Run before any gate — a commit on the wrong parent is
-  refused regardless of what the gates would have said. A soft reset is what keeps the
-  agent's work in the working tree.
+  refused regardless of what the gates would have said. Soft rather than hard, so the
+  work survives wherever its working tree does (above).
   > **Note:** "re-read the ref before committing" describes the harness's own commits
   > only. An agent-made commit cannot be checked before it exists, so the guarantee
   > here is equivalent rather than identical: a commit whose parent is not the recorded
   > tip could not have been made on it, and is refused on that basis.
+
+  > **Drift:** the parent comparison decides a *single*-commit tick. An agent that
+  > makes two commits in one invocation produces `parent(C) = B`, which is not the
+  > recorded tip, so `Dispatcher.checkTipMoved` reads it as interference and
+  > `revertTipMovedCommit` soft-resets exactly one commit (`git.softReset(cwd, 1)`).
+  > B stays on the tip, un-gated: the tick sets `committed: false`, so
+  > `runAfterCommitGates` never runs. Nothing counts a tick's commits — the engine
+  > cannot tell this from an operator committing mid-tick, and one-commit-per-tick is
+  > asserted only in prompt prose.
 - **Harness-driven commits re-read the ref first.** A fanout wave checks the tip
   before each `cherry-pick` (`Dispatcher.runFanout`) and again before the
   pending-ledger commit (`commitPendingUpdate`, checked *before* the `writeFile` so a
@@ -164,6 +186,14 @@ The check takes the shape the commit site allows:
   shipped; every remaining entry in the wave hits the same refusal, since the
   interference does not undo itself. A wave can therefore report `tipMoved` together
   with `committed: true`.
+- **A ledger refusal after partial merges leaves the queue behind the tree.** When the
+  ref moves between a wave's last cherry-pick and the pending-ledger commit,
+  `commitPendingUpdate` returns `tipMoved` before the write, so `pending.json` still
+  lists entries whose commits are already on the tip — and `Dispatcher.runFanout` has
+  already cleared their prior-attempt slots (`clearPriorAttempt`) on the way in. The
+  next tick re-picks them as pickable and dispatches agents against work that shipped,
+  with no prior-attempt block to say so. The engine reports the fact; nothing
+  reconciles the queue against the tree.
 
 **Dropping a commit requires owning it.** `git.dropLastCommit(cwd, expectedSha)` — the
 guarded revert every gate failure depends on — refuses, naming both shas, unless the
@@ -186,6 +216,14 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
   that read the plan), `assignedEntry` (fanout). No new plumbing.
 - **Synchronous, and cheap by contract.** It runs before every invocation; a predicate
   needing I/O is doing work that belongs in the tick it is trying to avoid.
+- **What a decline saves depends on the concurrency.** A singleton decline
+  (`Dispatcher.runSingleton`) costs a `rev-parse` and the pending read, nothing else.
+  A fanout decline is per-entry and consulted inside `Dispatcher.runFanoutEntry`, with
+  `ctx.cwd` set to that entry's worktree — which means it runs *after* the whole batch
+  has been provisioned (`createWorktree`, serially) and after every `setupWorktree`
+  hook has completed, dependency install included. A declined fanout entry therefore
+  saves the agent invocation, not the worktree or its install; the worktree is built,
+  skipped, and torn down with the wave.
 - **A declined tick is a distinguishable fact**, never a silent no-op: `declined: true`
   on `TickOutcome` and on the tick verdict, separate from `voluntary-bail` (the agent
   ran and refused) and from hibernation (nothing was awake). A supervisor must be able
@@ -208,7 +246,7 @@ platform failures stop masquerading as agent failures:
 | --- | --- |
 | `gate-revert` | a commit was made and a gate reverted it |
 | `voluntary-bail` | the agent exited cleanly without committing — it refused a constraint rather than do the wrong thing |
-| `platform-preempt` | the agent process failed for non-work reasons (rate-limit, auth, per-tick timeout, dispatcher-killed) — explicitly **not** a defect in the work |
+| `platform-preempt` | the agent process failed for non-work reasons (rate-limit, auth, dispatcher-killed, or a per-tick timeout where one is set — below) — explicitly **not** a defect in the work |
 | `render-refused` | the prompt itself never resolved, so the agent was never invoked (`spec/prompt.md`) |
 
 Two facts sit **beside** this union and are never folded into it, because neither is a
@@ -217,6 +255,21 @@ about the work was at fault) and `declined` (no agent ran at all, so there is no
 classify). A nothing-pickable no-op carries no `noCommit` either — no agent was
 attempted.
 
+- **The four modes classify how a tick failed to produce a usable commit — nothing
+  else.** How the agent process ended is consulted only when the ref did not move:
+  `Dispatcher.runSingleton` and `runFanoutEntry` both `rev-parse` unconditionally after
+  the invocation and reach `classifyNoCommit` only in the no-commit branch. A commit the
+  agent made *before* a non-zero exit, an abort, or a spawn failure is honored like any
+  other — tip verify, the full afterCommit stack, cherry-pick, afterMerge, and it can
+  ship. `Dispatcher.AgentTermination` declares this deliberate: with a commit in hand,
+  how the process ended is irrelevant. Nothing records that the producing process died,
+  so a chain wanting that distinction must get it from the agent.
+- **No per-tick timeout ships.** `DispatcherOptions.tickTimeoutMs` is the only timeout
+  seam, and `Dispatcher.invokeAgent` forwards it only when set. The CLI constructs its
+  dispatcher without one and no chain field declares it, so under `flume tick` and
+  `flume loop` a hung agent blocks the tick — and the supervisor awaiting the child —
+  until the operator kills it. The `platform-preempt` timeout case is reachable only by
+  a programmatic embedder.
 - **The classification reaches the chain.** `TickResult.noCommit` (`src/Phase.ts`) is
   folded in before `phase.handoff(result)` runs, so a `handoff` can wake a sibling on a
   bail that `shippedTags`/`gateResults` alone cannot distinguish from a genuine no-op.
@@ -266,17 +319,40 @@ dispatcher-owned `<prior-attempt>` block:
 
 Every tick that actually runs a phase writes **one verdict artifact** carrying: phase
 name, entry tags provisioned, `committed`, the no-commit class, `tipMoved`/`declined`,
-every gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
+each gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
 verdict, its one-line `message`, and its captured `details` — where `writablePathsGate`
 lists the violating paths), shipped tags,
 each fanout entry's cherry-pick/merge fate with its footprint, any provisioning
 failures, and the tick's own one-line summary.
 
+- **Gate results stop at the first failure.** Both gate loops return on the first red
+  gate — `Dispatcher.runAfterCommitGates` and the afterMerge loop in
+  `Dispatcher.runFanout` — so `gateResults`, and the `<prior-attempt>` record derived
+  from it, end there. A gate absent from the list never ran; it did not pass.
+
+  Order is the chain's declaration order, with one engine-appended exception:
+  `writablePathsGate` runs **after** every chain-declared afterCommit gate
+  (`Dispatcher.runAfterCommitGates`). Combined with the short-circuit, a commit that
+  both breaches the fence and fails a chain gate reports only the chain gate — the
+  fence violation never reaches the `<prior-attempt>` record, so the retry rediscovers
+  it. On a fanout wave the list is every entry's results concatenated
+  (`Dispatcher.runFanout`), so absence is per-entry rather than per-tick, and one red
+  result can be followed by more from later entries.
 - **Two paths under the state dir.** `<flumeDir>/tick-verdict.json` holds this tick's
   verdict alone, cleared before the tick's own work begins so a tick that never reaches
   the write (chain-load failure, hibernation, terminal misconfiguration) leaves nothing
   the supervisor can misread as its own. `<flumeDir>/tick-verdicts.jsonl` appends every
   verdict, bounded to a rolling 200 — history, never cleared.
+  > **Drift:** two paths break this. (a) `flume tick`'s detached-HEAD refusal returns
+  > *above* the `clearTickVerdict` call (`src/cli.ts`, `tick` branch) — the one early
+  > return that leaves the previous tick's verdict on disk, so a loop whose HEAD is
+  > detached mid-run re-reads that stale record on every subsequent iteration.
+  > (b) `commitPendingUpdate`'s rewrite read is the strict `readPending()`, and its
+  > `PendingParseFailure` propagates out of `Dispatcher.runFanout` to `tick()`'s catch,
+  > which returns before the verdict is built — so a wave that provisioned N worktrees,
+  > ran N agents, cherry-picked their commits onto the tip and passed afterMerge writes
+  > no verdict at all. Its shipped tags never reach the run totals; the exit code (69)
+  > is the only trace that anything happened.
 - **The CLI writes it, not `Dispatcher.tick()`.** `tick()` returns the verdict as a
   pure value on `TickOutcome.verdict`; the `tick` command persists it
   (`writeTickVerdict`). A unit test calling `tick()` directly gains no untracked side
@@ -318,7 +394,8 @@ for the pending-parse leg when the refusal came from a decide-read — but
 rewrite read, which runs *after* a wave's cherry-picks have merged. A fanout tick can
 therefore exit 69 having run N agents and landed their work on trunk, with only the
 ledger rewrite refusing rather than deriving a rewrite from a parse it never trusted.
-Either way a fresh process reads the same unparseable file until a human fixes it.
+Either way a fresh process reads the same unparseable file until a human fixes it, and
+that leg writes no verdict at all (see *The tick verdict*).
 
 `flume loop` (and `job run`):
 
@@ -336,6 +413,13 @@ Either way a fresh process reads the same unparseable file until a human fixes i
 - **Tick-level agent failures do not halt the run.** A plain non-zero child exit is
   logged and the loop proceeds — the next tick is a fresh process. Only the classes
   above abort.
+  > **Drift:** `erroredTicks` accumulates only from on-disk verdicts, so a child that
+  > exits non-zero *without writing one* contributes nothing to the run's verdict — the
+  > CJS-context refusal (exit 2), the detached-HEAD refusal (exit 1), a chain-load
+  > failure, an uncaught throw out of `Dispatcher.tick`. `superviseLoop` warns and
+  > iterates; the baton is untouched by a refused tick, so a phase stays awake and the
+  > run burns every `--max` tick. `loopExitCode` then sees zero errored ticks and zero
+  > ships and returns 0 — a green exit over a run in which nothing succeeded.
 - `2` for a bad `--max` (missing, non-numeric, negative); no tick runs.
 
 The run-level totals (`shippedTags`, `erroredTicks`) accumulate across iterations from
@@ -386,6 +470,13 @@ exists to prevent. Two legs, not either alone:
   with a summary naming the repeated signature. This covers the non-entry-scoped class
   quarantine cannot isolate, generalizing the mount-dead abort past its class without
   touching its semantics. Any tick without a provisioning failure clears the streak.
+  > **Drift:** `superviseLoop` compares only `provisionFailures[0]?.signature` against
+  > the previous tick's, so a tick recording several failures contributes only its
+  > first. A signature repeating on every tick behind a varying sibling at index 0
+  > never accumulates a streak and never aborts. Multi-failure ticks are the normal
+  > shape, not an edge: `Dispatcher.runFanout` pushes a repo-level prune failure first,
+  > then one per failing `createWorktree` — and the untagged repo-level class, the one
+  > quarantine cannot isolate, is exactly what a tagged sibling at index 0 shadows.
 
 Both constants are **engine defaults, chain-overridable** — `supervisorPolicy.quarantineScope`
 (`"run"` default, `"none"` disables the quarantine leg while the backstop still fires)

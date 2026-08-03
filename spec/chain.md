@@ -73,8 +73,12 @@ contract, not a version one (see `spec/cli.md` for the exec-local doctrine).
 > second-reference-chain (backlog-groomer) smoke, and
 > `scripts/smoke-install.mjs:CHAIN_FIXTURE` all write a `chain.ts` that
 > value-imports engine symbols and `export default chain` — three fixtures,
-> all refused by `loadChainModule`. The published-package acceptance path
-> therefore does not exercise the factory contract it claims to.
+> all refused by `loadChainModule`. Those steps do not skip the contract, they
+> fail on it, by two different mechanisms. The two smoke fixtures are each
+> followed by a `render <phase>`, and `src/cli.ts`'s render branch rethrows any
+> load failure that is not a `CjsContextLoadError`. The backlog-groomer fixture
+> is followed by `wake` and `tick` instead, where the load failure is
+> mount-dead. Either way the step reddens under `set -euo pipefail`.
 
 ## Chain resolution is per-tick, and the tick is a fresh process
 
@@ -108,9 +112,10 @@ including a `chain.ts` change that rides a same-commit `src/` change.
   the disk resolver wholesale and exists for **in-process test injection only**
   (unit tests that call `tick()` directly, no subprocess), defaulting to
   `diskChainLoader(configDir)`.
-- The supervisor carries no in-memory chain or phase state across ticks;
-  continuation and hibernation are read from disk between children. See
-  `spec/loop.md`.
+- The supervisor carries no in-memory chain or phase state across ticks —
+  with one exception, `Chain.supervisorPolicy`, which it resolves once per run
+  (below); continuation and hibernation are read from disk between children.
+  See `spec/loop.md`.
 
 ## A broken chain fails loudly, at two layers
 
@@ -180,9 +185,10 @@ explicit `FLUME_CONFIG_DIR`, which composes with a job
   no warning, no refusal — the invariant is what resolution *is*, not a rule
   to enforce.
 - **Per-job variation is already served**: a chain is code, and `FLUME_JOB` is
-  written back into the environment at CLI entry, before any chain load, so one
-  repo chain can dispatch on it. Operator-run worktrees give concurrent
-  divergence, each checkout resolving its own chain.
+  written back into the environment when the state roots resolve
+  (`src/cli.ts:resolveStateDirs`), before the tick's chain load, so one repo
+  chain can dispatch on it. Operator-run worktrees give concurrent divergence,
+  each checkout resolving its own chain.
 - `promptPath` mechanics follow for free: it joins `configDir`
   (`src/Dispatcher.ts`, `src/cli.ts`), and `configDir` is always the directory
   the chain actually lives in — a shared chain finds its sibling `prompts/`
@@ -202,6 +208,49 @@ decorator stack, different model". A model-only variation is expressible as
 and a chain-local helper amortizes re-stating the stack (the dogfood chain's
 `phaseAgent(model)` is the worked example). A `Phase.model` shortcut stays
 deferred until a second provider or demonstrated ergonomic pain exists.
+
+## The agent seam
+
+An `Agent` is `{ name, invoke }` (`src/Agent.ts:Agent`) — an opaque value the
+chain supplies and the engine only calls. The engine never inspects it, so
+provider options and decorator composition are entirely the chain's.
+
+- **`claudeCode()` skips permissions by default.** `dangerouslySkipPermissions`
+  defaults to `true`, and the flag is appended to the argv whenever it is
+  (`src/Agent.ts:claudeCode`). The CLI's fallback agent is a bare
+  `claudeCode()` (`src/cli.ts`), so a chain that declares neither `Phase.agent`
+  nor `ChainModule.agent` runs every tick with permissions skipped. The other
+  defaults: `claude` off `PATH`, `outputFormat: "text"`, `extraArgs` appended
+  after the format flags.
+- **Decorators wrap an `Agent` and return one, and the stack order is
+  load-bearing.** `withTerminalRenderer` replaces `inv.onStdout`, so
+  `withSessionCapture` must sit **inside** it to tee the raw stream —
+  `withTerminalRenderer(withSessionCapture(claudeCode({ outputFormat:
+  "stream-json" }), { dir }))`. Inverted, the capture files the rendered
+  summary instead of the transcript.
+- **The renderer requires stream-json, and violating that is quiet.** It
+  forwards only `assistant` events' `tool_use` blocks and the final `result`
+  line; every other event is dropped, and a line that does not parse as JSON is
+  re-emitted verbatim with the tag prefix. An agent not producing stream-json
+  therefore has *all* of its output take the parse-error leg — output still
+  appears, so the misconfiguration reads as working. The site declares this
+  (`src/Agent.ts:withTerminalRenderer`); a refusal on repeated parse failure is
+  the standing alternative, not shipped.
+- **`withSessionCapture` tees stdout only.** It creates `opts.dir` on demand,
+  closes the stream on failure as well as success, and never captures stderr.
+  Its default filename is an ISO timestamp plus the invocation's `cwd`
+  basename, specifically so concurrent fanout invocations — distinct worktrees,
+  same clock tick — do not collide.
+
+Live agent output is operationally load-bearing (`spec/loop.md`), which is what
+makes a misassembled stack more than cosmetic: it blinds the operator without
+failing anything.
+
+> **Drift:** `src/Agent.ts:ClaudeCodeOptions` justifies the skip-permissions
+> default as "every Flume tick runs in a worktree the harness controls". A
+> singleton phase runs in the primary checkout (`spec/worktrees.md`), so the
+> rationale does not cover the case the default actually runs in for
+> singleton-only chains.
 
 ## `Chain.seedDir` — the declared job seed
 
@@ -261,6 +310,18 @@ behavior** (`src/Dispatcher.ts:superviseLoop`, `quarantineScope ?? "run"`,
 `abortThreshold ?? 3`). The CLI reads the block off the resolved chain and
 forwards it; a chain declaring nothing gets the defaults byte-identically.
 
+**The block is read once per run, not once per tick** — the one declaration
+outside the per-tick guarantee above. The supervisor resolves the chain in its
+own process before the first child (`src/cli.ts` loop branch) and
+`src/Dispatcher.ts:superviseLoop` binds `quarantineScope`/`abortThreshold`
+before entering the tick loop; nothing re-reads them between children. A tick
+that commits a changed `supervisorPolicy` is governed by the old values until
+the operator restarts `flume loop`, with no indication the new declaration was
+ignored. Run scope is the reason, not an oversight: the quarantine set and the
+consecutive-failure streak are run-scoped accounting that resets per
+`superviseLoop` call, so a mid-run policy change would rewrite the rules the
+accumulated counts were gathered under.
+
 This is the policy-constant rule made concrete: retry counts, quarantine scope,
 and abort thresholds enter the engine only as chain-overridable defaults. The
 mechanism they tune is `spec/loop.md`.
@@ -285,14 +346,82 @@ doctrine**, and the default guidance is:
   property was expressible directly (does the bundle resolve without reaching
   outside itself). The engine's lever here is teaching, not enforcement: the
   offending gate is always chain-owned.
+- **`afterMerge` runs only under fanout.** The merge loop
+  (`src/Dispatcher.ts:runFanout`) is the only site that executes those gates; a
+  singleton tick goes through `src/Dispatcher.ts:runAfterCommitGates` alone,
+  which selects `when === "afterCommit"`. An `afterMerge` gate declared on a
+  `concurrency: "singleton"` phase therefore never runs, and nothing refuses
+  the declaration at load. The placement guidance above presumes a fanout
+  phase; a singleton phase's only gate point is `afterCommit`.
 - A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
   the dispatcher computes once per commit, instead of re-shelling
   `git show --name-only` per gate.
 
-The complementary constraint — keeping the default test lane fast enough that
-an in-worktree gate does not time out, by naming real-subprocess tests
+> **Drift:** `src/Prompt.ts:prependHarnessBlock` renders `phase.gates`
+> unfiltered, so a singleton phase's `<harness>` block names an `afterMerge`
+> gate as enforcement the agent should expect when nothing will run it —
+> against `spec/prompt.md`'s claim that the block never misstates its own
+> enforcement.
+
+The complementary constraint — naming real-subprocess tests
 `*.integration.test.ts` and excluding them from the default `vitest run` — is
-in `spec/worktrees.md`.
+in `spec/worktrees.md`, which also records that the premise it was introduced
+under (an afterMerge gate running inside a freshly-installed worktree) no
+longer holds: that gate runs on the warm trunk.
+
+## What a gate receives
+
+`GateContext` (`src/Gate.ts:GateContext`) is the whole input surface. The
+dispatcher builds one per gate invocation; a gate treats it as read-only and
+confines side effects to disk inside `cwd`.
+
+- **`cwd` and `repoRoot` are the same value — the working tree the gate runs
+  in.** For a fanout phase's `afterCommit` gate that is the ephemeral worktree;
+  for a singleton `afterCommit` gate and for every `afterMerge` gate it is the
+  primary checkout. No field reaches the primary checkout from inside a
+  worktree, so a gate that needs the trunk belongs at `afterMerge`.
+- **`flumeDir`** is the absolute, resolved state root — how a gate reaches
+  state-relative paths without hardcoding `.flume/` or reading `process.env`.
+- **`commitSha` and `touchedPaths` are optional in the type and always set on a
+  dispatcher-built context.** The optionality exists for hand-built fixtures;
+  a builtin that falls back to its own `git show --name-only` is covering the
+  fixture case, never a real tick.
+- **`log`** is the harness-side output channel; a gate does not write to stdout
+  itself.
+
+## The builtin gates
+
+The set is deliberately small — the gates most chains reach for, so a chain
+does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
+`pendingGate` and `writablePathsGate` are `spec/pending.md`.
+
+- **`shellGate({ name, when, cmd, args, maxBuffer?, failHint?, env? })`** — the
+  escape hatch, and what the others are built from. Verdict is exit code alone.
+  On success `details` carries `stdout || stderr`; on failure `message` is
+  `failHint` (default `"<name> failed"`) and `details` carries the captured
+  output. `env` merges over `process.env` for the spawned command — the
+  injection point that keeps a chain from hand-forking the gate to inject one
+  variable.
+- **`maxBuffer` defaults to 16 MiB, and an overrun reads as a failing check.**
+  Exceeding it rejects the exec, and the same catch that reports a non-zero
+  exit reports this — so a command that would have passed reverts a clean
+  commit, with a buffer-overrun string as the details. A gate whose output can
+  be large raises the cap or quiets the command.
+- **`tscGate`, `vitestGate`, `eslintGate` are dual-identity**
+  (`src/builtinGates.ts:PkgManagerGate`): used bare (`gates: [tscGate]`) each
+  *is* a pnpm-flavored `Gate`; called with `{ cmd?, args? }` each returns the
+  same check through another package manager. `cmd` alone only suffices for a
+  binary that accepts pnpm's arg shape — npm has no bare `npm tsc --noEmit` and
+  needs the `args` override too. The chain supplies the binary, the engine
+  supplies the enforcement.
+- Gate binaries are spawned direct-then-shell-on-win32-`ENOENT`; the reason is
+  `.claude/rules/platform-facts.md`.
+
+> **Drift:** `src/index.ts` exports `shellGate`, `tscGate`, `vitestGate`, and
+> `eslintGate` as values but none of `ShellGateOptions`, `PkgManagerOverride`,
+> or `PkgManagerGate` as types — and `ShellGateOptions` is not exported from
+> `src/builtinGates.ts` at all. A consumer can call these gates but cannot name
+> the shape of what it passes them, unlike `PendingGateOptions` beside them.
 
 ## Per-run artifacts belong under `FLUME_DIR`
 
@@ -319,6 +448,16 @@ that root; it does not own what a chain writes into it.
   nothing more. A relocated state root is expected to live outside the working
   tree, so no in-repo gitignore glob is added for it; the default
   `<repoRoot>/.flume` stays ignored as it already is.
+
+> **Drift:** `main()` dispatches the job-management verbs
+> (`src/cli.ts:runJobVerb`) and returns before it reaches `resolveStateDirs`,
+> so `flume job new` and `flume job status` — each deriving `configDir` inline
+> and loading the chain from it — canonicalize nothing. A chain factory reading
+> `process.env.FLUME_DIR` under those verbs sees whatever the caller exported,
+> or nothing; the dogfood chain takes its `?? CHAIN_DIR` leg there, which the
+> bullet above calls defensive only. No tick runs under those verbs, so nothing
+> is misplaced today — what does not hold is the unqualified always-present
+> contract a chain author would build on.
 
 ## The package a chain loads through
 

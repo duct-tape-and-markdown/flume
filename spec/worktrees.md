@@ -36,6 +36,14 @@ The override exists for one measured vector: an agent whose `pwd` contains the r
 path as a prefix can derive the root and write there. Pointing `FLUME_WORKTREES_DIR` outside
 every repo-path prefix removes the prefix, and with it the inference.
 
+**The base must be flume-exclusive.** Before `worktree add`, `createWorktree` removes whatever
+sits at the computed `<base>/[<namespace>/]<dirName>` path if anything does — `git worktree
+remove --force` first (`src/git.ts:removeWorktree`), a recursive filesystem delete as the
+fallback. The test is existence of the path alone: nothing checks that the directory is a git
+worktree, that it belongs to this repo, or that it carries a flume marker. An operator who
+points `FLUME_WORKTREES_DIR` at a directory holding anything else loses that content the first
+time an entry's bounded directory name matches.
+
 Both the branch name and the directory path carry the job namespace when one is set. The path
 must, not just the branch: under a shared `FLUME_WORKTREES_DIR` two jobs with identical tag
 slugs would otherwise collide on `<base>/<dirName>`, and the stale-directory cleanup that runs
@@ -262,7 +270,8 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
 - Resolve the worktree-local mirror of the declared channel — the state root's repo-relative
   path, joined inside the worktree, joined with `chain.friction` — and **move** every file in
   it into the primary `<flumeDir>/<friction>/`, prefixing each filename with `<tag>--` for
-  provenance and collision-freedom against other waves and the primary's own files.
+  provenance and to separate sibling entries in the same wave from each other and from the
+  primary's own revert notes.
 - Across a device boundary (a relocated `FLUME_WORKTREES_DIR`) `rename` fails `EXDEV`; the
   harvest falls back to copy-then-remove.
 - This is a **move by harness code across the worktree boundary**, not an agent write. The
@@ -273,6 +282,15 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
 - **Harvest failure never aborts the wave.** An absent mirror dir is expected and silent;
   anything else (unreadable dir, locked file) is logged per item and the wave continues,
   leaving what could not move for the removal fallback to surface.
+
+> **Drift:** the delivery guarantee does not hold across waves for one tag.
+> `src/Dispatcher.ts:harvestFriction` composes the destination from the tag plus the
+> agent-chosen source filename with no exists-check, and `rename` — like the `EXDEV`
+> fallback's `copyFile` — replaces an existing destination silently. A retried entry whose
+> agent writes the same filename destroys the earlier, still-unread note.
+> `src/Dispatcher.ts:writeRevertNote`, writing into the same directory, stamps its filenames
+> and is collision-free by construction; the two writers disagree on whether uniqueness
+> matters.
 
 ## Worktree removal has a win32 fallback, unconditionally
 
@@ -294,26 +312,22 @@ commonly a branch still checked out in a worktree that survived removal) is surf
 
 ## The default test lane must stay fast
 
-The build's `afterMerge` gate runs `pnpm test` (= `vitest run`) **inside a fanout worktree**.
-Real-subprocess tests — spawning real `flume tick`/`loop` through `tsx`, real `git` — are fast
-standalone (~2 s measured) but in a freshly-installed worktree under full-suite parallel load
-their cold `tsx` starts exceed vitest's 30 s default and **revert clean commits**. That is an
-execution-environment artifact, not a chain-reload defect and not a hang.
+The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the **trunk**,
+not inside a worktree: `src/Dispatcher.ts:runFanout` builds the gate context with
+`cwd: repoRoot` once the entry's cherry-pick has landed. It runs once per cherry-picked entry,
+serially, so a wave of N entries pays the default lane N times before the tick ends.
 
-The suite therefore has two lanes:
+The suite has two lanes:
 
-- **Fast lane** — the default `vitest run`, exactly what the in-worktree gate invokes. It must
-  stay fast and worktree-safe.
-- **Integration lane** — anything spawning real subprocesses or needing a warm host. Marked by
-  the `*.integration.test.ts` filename convention and **excluded from the default run** by
-  `vitest.config.ts`, so the in-worktree gate never runs them. They run at the host — main
-  checkout, warm deps, no worktree — via `pnpm test:integration`, which selects the lane with
-  `VITEST_LANE=integration`.
+- **Fast lane** — the default `vitest run`, exactly what the `afterMerge` gate invokes. It must
+  stay fast, because its cost multiplies with wave width.
+- **Integration lane** — anything spawning real subprocesses: real `flume tick`/`loop` through
+  `tsx`, real `git`. Marked by the `*.integration.test.ts` filename convention and **excluded
+  from the default run** by `vitest.config.ts`, so the gate never runs them. They run via
+  `pnpm test:integration`, which selects the lane with `VITEST_LANE=integration`.
 
 Rejected, and worth not re-proposing:
 
-- **Raising the timeout.** The tests are ~2 s standalone; a bigger timeout masks nothing and
-  leaves the worktree hostility (cold `tsx` plus parallel contention) in place.
 - **Deleting the real-subprocess tests to fit the gate.** Integration coverage is relocated to
   where it is fast and reliable, never dropped.
 - A vitest workspace/projects split was judged heavier than the filename convention warrants.

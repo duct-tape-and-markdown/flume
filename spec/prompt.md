@@ -25,9 +25,17 @@ transformations in fixed order:
 The resulting block order is `<harness>`, then `<prior-attempt>` (if any), then the
 task body: what is enforced, then what failed last time, then the work.
 
+The order is a pipeline, not four independent passes: each stage reads the previous
+stage's output. A substituted value is therefore prompt text. Stage 2 scans the
+*substituted* text, so an inline-exec span carried in by a `promptArgs` value is
+executed, and — the same fact in the other direction — a span whose command contains a
+placeholder resolves, because the placeholder was already replaced when the span runs.
+The engine neither delimits nor escapes what it substitutes: whatever a value carries
+reaches the agent as prompt syntax, including text shaped like a structural block.
+
 Both structural blocks are **dispatcher-owned and structural** — there is no `{{token}}`
-for either in the prompt file, and no `promptArgs` key can produce or suppress one. A
-chain cannot opt out; a prompt file that never mentions them still gets them.
+for either in the prompt file, and no `promptArgs` key names, positions, or suppresses
+one. A chain cannot opt out; a prompt file that never mentions them still gets them.
 
 A placeholder with no matching arg is left verbatim in the text and then
 `substitutePlaceholders` throws, naming every missing key. The prompt is never sent with
@@ -124,13 +132,19 @@ happened instead of reconstructing a wall that may not exist.
 
 The block's render slot is the prompt-surface half of this contract: the slot is
 **absent entirely** on a first attempt (identity transform in
-`prependPriorAttemptBlock`), so it never carries a false signal, and it is cleared once
-an attempt ships. The carry is cross-process by construction — each tick is a fresh
-process with no in-memory handoff, so the record is persisted to disk and read back at
-the next render.
+`prependPriorAttemptBlock`), so the engine never fabricates a retry record, and it is
+cleared once an attempt ships. The carry is cross-process by construction — each tick is
+a fresh process with no in-memory handoff, so the record is persisted to disk and read
+back at the next render. That guarantee covers the engine's own block only: a chain
+whose substituted values carry block-shaped text produces a look-alike the engine
+neither adds nor removes (see *The render pipeline*).
 
 What is forwarded is a **bounded digest, not a transcript**: enough that the retry does
 not re-derive the same wall, never a session.
+
+`flume render <phase>` passes no `priorAttempt` (`src/cli.ts`, the `render` subcommand),
+so a preview always shows the first-attempt shape — the block is omitted even where a
+persisted record exists for that entry or phase.
 
 The mode union, its persistence, and what each mode means are owned by spec/loop.md; the
 render is the only part stated here. `render-refused` — the mode produced by this file's
