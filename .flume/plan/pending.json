@@ -1,45 +1,5 @@
 [
   {
-    "tag": "CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "add maxParallel?: number to Chain.supervisorPolicy, beside quarantineScope/abortThreshold"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runFanout/partition resolve maxParallel from chain.supervisorPolicy.maxParallel ?? DispatcherOptions.maxParallel ?? 4"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "forward the resolved value the same way quarantineScope/abortThreshold already are"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "cover the override and the byte-identical default"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "maxParallel is programmatic-only (DispatcherOptions) with no chain declaration, unlike its supervisorPolicy siblings quarantineScope and abortThreshold.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Supervisor policy is a chain-overridable default"
-    },
-    "tests": [
-      "a chain declaring supervisorPolicy.maxParallel overrides the DispatcherOptions default of 4",
-      "a chain declaring nothing gets maxParallel: 4 byte-identically to today"
-    ],
-    "acceptance": "maxParallel is a chain-overridable default alongside quarantineScope/abortThreshold, per engine-boundary.md's policy-constant rule.",
-    "notes": "inbox 2026-08-03. No new validation added: spec/pending.md's Fanout partition section already documents a non-positive maxParallel degrading to width-1 batches rather than wedging — only the missing chain-declaration surface is the defect."
-  },
-  {
     "tag": "WORKTREES-HARVESTFRICTION-COLLISION",
     "gate": {
       "kind": "open"
