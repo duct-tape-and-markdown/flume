@@ -158,13 +158,6 @@ derived from the worktree's own manifest rather than hardcoded (`.flume/chain.ts
 assertion at the tail of its `setupWorktree` hook, so a failed provision surfaces before the
 agent runs rather than as post-agent module-resolution noise).
 
-> **Drift:** per-entry provisioning isolation does not extend to the chain's hook. The
-> `provisionFailures` try/catch in `Dispatcher.runFanout` wraps `createWorktree` alone; the
-> `setupWorktree` hooks then run in an unguarded `Promise.all`, so a throw from one entry's hook
-> rejects the wave and fails the tick rather than parking that entry. The isolation contract
-> stated above under *Every `.git/worktrees` mutation is serialized* is therefore narrower in
-> code than in prose.
-
 > **Drift:** `Phase.setupWorktree`'s own JSDoc (`src/Phase.ts`) still describes the hook as
 > materializing `node_modules` and `.env` "by symlinking them from the main repo" — the exact
 > pattern this section prohibits for `node_modules` under pnpm.
@@ -187,14 +180,6 @@ the engine resets to the pre-cherry-pick tip, dropping **only that entry's commi
 This is what makes "expensive correctness gates at `afterMerge`" safe as default guidance
 (`spec/chain.md`): without it, one flaky merge-time gate reverts a whole wave of clean commits
 and the retry wave starts cold.
-
-> **Drift:** the `Concurrency` JSDoc (`src/Phase.ts`) still teaches the contract this section
-> retired — "Merging back into the trunk runs serially with a postMerge gate; failure reverts
-> the wave." Both halves are dead: wave-wide revert was replaced by the per-entry isolation
-> above, and `postMerge` is not a gate phase — `src/Gate.ts:GatePhase` is
-> `"afterCommit" | "afterMerge"`. The same retired vocabulary repeats on `Phase.gates` ("Gates
-> that run at preCommit / postCommit / postMerge points") and on `GateContext.cwd`
-> (`src/Gate.ts`, "or trunk for postMerge gates").
 
 ## An in-worktree revert still leaves a trunk footprint
 
@@ -284,14 +269,10 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
   anything else (unreadable dir, locked file) is logged per item and the wave continues,
   leaving what could not move for the removal fallback to surface.
 
-> **Drift:** the delivery guarantee does not hold across waves for one tag.
-> `src/Dispatcher.ts:harvestFriction` composes the destination from the tag plus the
-> agent-chosen source filename with no exists-check, and `rename` — like the `EXDEV`
-> fallback's `copyFile` — replaces an existing destination silently. A retried entry whose
-> agent writes the same filename destroys the earlier, still-unread note.
-> `src/Dispatcher.ts:writeRevertNote`, writing into the same directory, stamps its filenames
-> and is collision-free by construction; the two writers disagree on whether uniqueness
-> matters.
+- **The guarantee holds across retries.** `harvestFriction` stamps its destination
+  (`` `${tag}--${stamp}--${file.name}` ``), so a retried entry whose agent writes the same
+  filename cannot destroy the earlier, still-unread note. `writeRevertNote` writes into the
+  same directory on the same principle.
 
 ## Worktree removal has a win32 fallback, unconditionally
 

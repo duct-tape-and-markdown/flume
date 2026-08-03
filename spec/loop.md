@@ -124,13 +124,11 @@ other.
   The refusal names the state plainly. `tick` refuses even though it takes no claim,
   so behavior is identical whether or not a loop wraps it.
 - **A git working tree is the precondition**, enforced by the same refusal. Both
-  commands resolve HEAD through `git.currentRefPath`, which returns `null` for a
-  detached HEAD, for a cwd that is not a repository, and for a `git` that fails to
-  run at all — `git symbolic-ref` exits non-zero in every case, and nothing
-  downstream distinguishes them.
-  > **Drift:** the refusal prints "HEAD is detached" for all three
-  > (`src/cli.ts`, the `tick` and `loop` branches), so a caller outside a repository
-  > is told about a state it is not in. The check is correct; only the message is.
+  commands resolve HEAD through `git.currentRefPath`, which returns a discriminated
+  `CurrentRef`: `ref`, `detached`, `not-a-repository`, or `git-unavailable`. All
+  three failure kinds refuse, and the refusal names which one fired
+  (`describeRefFailure`) — a caller outside a repository is never told about a
+  detached HEAD it is not in.
 
 `flume status` reports supervisor liveness and the current tip's claim, observationally
 — see `spec/cli.md`.
@@ -170,14 +168,20 @@ The check takes the shape the commit site allows:
   > here is equivalent rather than identical: a commit whose parent is not the recorded
   > tip could not have been made on it, and is refused on that basis.
 
-  > **Drift:** the parent comparison decides a *single*-commit tick. An agent that
-  > makes two commits in one invocation produces `parent(C) = B`, which is not the
-  > recorded tip, so `Dispatcher.checkTipMoved` reads it as interference and
-  > `revertTipMovedCommit` soft-resets exactly one commit (`git.softReset(cwd, 1)`).
-  > B stays on the tip, un-gated: the tick sets `committed: false`, so
-  > `runAfterCommitGates` never runs. Nothing counts a tick's commits — the engine
-  > cannot tell this from an operator committing mid-tick, and one-commit-per-tick is
-  > asserted only in prompt prose.
+- **The revert measures the real span, and cannot attribute it.** A tick landing more
+  than one commit produces `parent(postHead) ≠ preHead` exactly as external
+  interference does, so `revertTipMovedCommit` counts the commits between the two
+  (`git.commitsSince`) and soft-resets all of them rather than assuming one. The
+  engine has no way to separate its own N commits from its own N−1 plus an
+  operator's: the evidence is identical.
+
+  The accepted consequence is that an operator commit landing inside the tip-verify
+  window is soft-reset alongside the tick's own. The reflog holds it, so nothing is
+  destroyed, but it leaves the tip. This is the deliberate trade — fully undoing a
+  multi-commit tick is the common case, while racing the tip claim is the case the
+  claim exists to discourage. It reverses if the dispatcher gains a way to count its
+  own commits as it makes them: the revert could then bound itself to its own span
+  and leave any excess in place.
 - **Harness-driven commits re-read the ref first.** A fanout wave checks the tip
   before each `cherry-pick` (`Dispatcher.runFanout`) and again before the
   pending-ledger commit (`commitPendingUpdate`, checked *before* the `writeFile` so a
@@ -345,16 +349,6 @@ failures, and the tick's own one-line summary.
   the write (chain-load failure, hibernation, terminal misconfiguration) leaves nothing
   the supervisor can misread as its own. `<flumeDir>/tick-verdicts.jsonl` appends every
   verdict, bounded to a rolling 200 — history, never cleared.
-  > **Drift:** two paths break this. (a) `flume tick`'s detached-HEAD refusal returns
-  > *above* the `clearTickVerdict` call (`src/cli.ts`, `tick` branch) — the one early
-  > return that leaves the previous tick's verdict on disk, so a loop whose HEAD is
-  > detached mid-run re-reads that stale record on every subsequent iteration.
-  > (b) `commitPendingUpdate`'s rewrite read is the strict `readPending()`, and its
-  > `PendingParseFailure` propagates out of `Dispatcher.runFanout` to `tick()`'s catch,
-  > which returns before the verdict is built — so a wave that provisioned N worktrees,
-  > ran N agents, cherry-picked their commits onto the tip and passed afterMerge writes
-  > no verdict at all. Its shipped tags never reach the run totals; the exit code (69)
-  > is the only trace that anything happened.
 - **The CLI writes it, not `Dispatcher.tick()`.** `tick()` returns the verdict as a
   pure value on `TickOutcome.verdict`; the `tick` command persists it
   (`writeTickVerdict`). A unit test calling `tick()` directly gains no untracked side
@@ -414,14 +408,10 @@ that leg writes no verdict at all (see *The tick verdict*).
   run shipped before hitting the wall (below).
 - **Tick-level agent failures do not halt the run.** A plain non-zero child exit is
   logged and the loop proceeds — the next tick is a fresh process. Only the classes
-  above abort.
-  > **Drift:** `erroredTicks` accumulates only from on-disk verdicts, so a child that
-  > exits non-zero *without writing one* contributes nothing to the run's verdict — the
-  > CJS-context refusal (exit 2), the detached-HEAD refusal (exit 1), a chain-load
-  > failure, an uncaught throw out of `Dispatcher.tick`. `superviseLoop` warns and
-  > iterates; the baton is untouched by a refused tick, so a phase stays awake and the
-  > run burns every `--max` tick. `loopExitCode` then sees zero errored ticks and zero
-  > ships and returns 0 — a green exit over a run in which nothing succeeded.
+  above abort. It still *counts*: a child exiting non-zero is an errored tick whether
+  or not it wrote a verdict, so a run of refused ticks — a CJS-context refusal, a
+  chain-load failure, an uncaught throw out of `Dispatcher.tick` — cannot burn every
+  `--max` tick and still exit green.
 - `2` for a bad `--max` (missing, non-numeric, negative); no tick runs.
 
 The run-level totals (`shippedTags`, `erroredTicks`) accumulate across iterations from
@@ -472,13 +462,10 @@ exists to prevent. Two legs, not either alone:
   with a summary naming the repeated signature. This covers the non-entry-scoped class
   quarantine cannot isolate, generalizing the mount-dead abort past its class without
   touching its semantics. Any tick without a provisioning failure clears the streak.
-  > **Drift:** `superviseLoop` compares only `provisionFailures[0]?.signature` against
-  > the previous tick's, so a tick recording several failures contributes only its
-  > first. A signature repeating on every tick behind a varying sibling at index 0
-  > never accumulates a streak and never aborts. Multi-failure ticks are the normal
-  > shape, not an edge: `Dispatcher.runFanout` pushes a repo-level prune failure first,
-  > then one per failing `createWorktree` — and the untagged repo-level class, the one
-  > quarantine cannot isolate, is exactly what a tagged sibling at index 0 shadows.
+  The streak is keyed by signature across the whole tick, not by the first failure
+  recorded — a multi-failure tick is the normal shape (`Dispatcher.runFanout` pushes a
+  repo-level prune failure first, then one per failing `createWorktree`), so a
+  signature repeating behind a varying sibling still accumulates.
 
 Both constants are **engine defaults, chain-overridable** — `supervisorPolicy.quarantineScope`
 (`"run"` default, `"none"` disables the quarantine leg while the backstop still fires)

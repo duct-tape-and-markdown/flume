@@ -68,18 +68,6 @@ that chains stop taking *values* from it. No loader hook, specifier rewriting,
 version comparison, or lockfile check is part of this: it is an identity
 contract, not a version one (see `spec/cli.md` for the exec-local doctrine).
 
-> **Drift:** the publish-acceptance fixtures still author the pre-factory
-> shape — `.github/workflows/ci.yml`'s consumer-install smoke, its
-> second-reference-chain (backlog-groomer) smoke, and
-> `scripts/smoke-install.mjs:CHAIN_FIXTURE` all write a `chain.ts` that
-> value-imports engine symbols and `export default chain` — three fixtures,
-> all refused by `loadChainModule`. Those steps do not skip the contract, they
-> fail on it, by two different mechanisms. The two smoke fixtures are each
-> followed by a `render <phase>`, and `src/cli.ts`'s render branch rethrows any
-> load failure that is not a `CjsContextLoadError`. The backlog-groomer fixture
-> is followed by `wake` and `tick` instead, where the load failure is
-> mount-dead. Either way the step reddens under `set -euo pipefail`.
-
 ## Chain resolution is per-tick, and the tick is a fresh process
 
 The chain is resolved from `<configDir>/chain.ts` at the **start of every
@@ -352,16 +340,12 @@ doctrine**, and the default guidance is:
   which selects `when === "afterCommit"`. An `afterMerge` gate declared on a
   `concurrency: "singleton"` phase therefore never runs, and nothing refuses
   the declaration at load. The placement guidance above presumes a fanout
-  phase; a singleton phase's only gate point is `afterCommit`.
+  phase; a singleton phase's only gate point is `afterCommit`, and
+  `prependHarnessBlock` filters the rendered gate list to match — the block
+  never names a gate that will not run.
 - A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
   the dispatcher computes once per commit, instead of re-shelling
   `git show --name-only` per gate.
-
-> **Drift:** `src/Prompt.ts:prependHarnessBlock` renders `phase.gates`
-> unfiltered, so a singleton phase's `<harness>` block names an `afterMerge`
-> gate as enforcement the agent should expect when nothing will run it —
-> against `spec/prompt.md`'s claim that the block never misstates its own
-> enforcement.
 
 The complementary constraint — naming real-subprocess tests
 `*.integration.test.ts` and excluding them from the default `vitest run` — is
@@ -416,12 +400,6 @@ does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
   supplies the enforcement.
 - Gate binaries are spawned direct-then-shell-on-win32-`ENOENT`; the reason is
   `.claude/rules/platform-facts.md`.
-
-> **Drift:** `src/index.ts` exports `shellGate`, `tscGate`, `vitestGate`, and
-> `eslintGate` as values but none of `ShellGateOptions`, `PkgManagerOverride`,
-> or `PkgManagerGate` as types — and `ShellGateOptions` is not exported from
-> `src/builtinGates.ts` at all. A consumer can call these gates but cannot name
-> the shape of what it passes them, unlike `PendingGateOptions` beside them.
 
 ## Per-run artifacts belong under `FLUME_DIR`
 

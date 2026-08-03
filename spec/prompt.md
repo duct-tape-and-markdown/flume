@@ -102,10 +102,6 @@ authoritative prompt surface never misstates its own enforcement — so a phase 
 narrows shows the narrowed fence, and a phase that does not shows the phase fence alone.
 Both come from the same computation the guard consumes, so neither can drift from it.
 
-> **Drift:** the dispatcher supplies the entry scope on every tick carrying an entry, so
-> the two-fence rendering is currently unconditional. Tracked with the guard's own drift
-> note in `spec/pending.md`.
-
 The union is computed once, in `entryWriteScopeUnion` (`src/paths.ts`), and consumed by
 both `effectiveFenceLines` (`src/Prompt.ts`, which renders it) and `writablePathsGate`
 (`src/builtinGates.ts`, which enforces it). The two can never state a different fence

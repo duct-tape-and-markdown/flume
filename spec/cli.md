@@ -45,10 +45,6 @@ The runtime help text is the authoritative statement of the surface;
 `docs/CLI.md` carries one prose entry per subcommand covering exit semantics,
 side effects, and an example invocation.
 
-> **Drift:** one exit-2 case above is missing from that text. `HELP_SUB.tick`
-> (`src/cli.ts`) lists 0/1/69/78 and omits the 2 that `tickExitCode` returns
-> whenever `TickOutcome.usageError` is set — the CJS-context refusal.
-
 ## `flume status` owes exactly this
 
 In printed order:
@@ -208,14 +204,10 @@ query. Detection is deliberately conservative — a genuinely missing dependency
 must keep surfacing as itself, so when the signature does not match, the raw
 error shows through unshadowed.
 
-> **Drift:** `flume job new` exits 1 on this refusal, not 2. `jobNew`
-> (`src/job.ts`) calls `loadChainModule` directly; `runJobVerb`'s `new` catch
-> (`src/cli.ts`) tests only `JobUsageError`, and `CjsContextLoadError` is not
-> one, so it falls to the operational branch — the refusal prints behind
-> `[flume] job new failed:` instead of as the headline, and the process exits
-> 1. The sibling surface does hold the rule: `tick` catches
-> `CjsContextLoadError` explicitly, and `tick` routes it through
-> `TickOutcome.usageError` → `tickExitCode`.
+Every surface that loads a chain holds the rule: `tick` routes the refusal through
+`TickOutcome.usageError` → `tickExitCode`, and `runJobVerb`'s `new` catch tests
+`CjsContextLoadError` ahead of its operational branch. Both print it as the headline
+and exit 2.
 
 ## Exec-local invocation, and no version-coordination machinery
 
@@ -300,16 +292,11 @@ unrelated package.
   scaffolded chain — on both the POSIX and the Windows lane. A shim that does
   not start is invisible to every other check in the suite.
 
-  > **Drift:** every chain fixture CI installs the tarball against — three of
-  > them: `CHAIN_FIXTURE` in `scripts/smoke-install.mjs` (Windows lane), the
-  > heredoc `.flume/chain.ts` in the POSIX consumer-install smoke, and the
-  > heredoc in the POSIX second-reference-chain (backlog-groomer) smoke, which
-  > drives a real `wake` + `tick` and asserts on the committed result — still
-  > ends in `export default chain;` with `chain` a `Chain` object.
-  > `loadChainModule` (`src/Dispatcher.ts`) refuses a non-function default
-  > export outright, so the chain-load leg cannot pass as written on any of the
-  > three. The guarantee above is the standard; the fixtures owe the migration
-  > to `export default (api) => ({ chain })`.
+  All three fixtures CI installs the tarball against — `CHAIN_FIXTURE` in
+  `scripts/smoke-install.mjs` (Windows lane), the POSIX consumer-install heredoc,
+  and the POSIX second-reference-chain (backlog-groomer) heredoc, which drives a
+  real `wake` + `tick` and asserts on the committed result — export the factory
+  form `loadChainModule` requires.
 
 ## win32 is a supported host
 

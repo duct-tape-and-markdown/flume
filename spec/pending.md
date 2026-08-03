@@ -272,13 +272,10 @@ substantially every entry, mean first-batch wave width fell from 3.17 to 1.99 at
 
 The capability stays because a chain may legitimately want blast-radius bounding on a risky
 entry, and because the mechanism is already correct — `writablePathsGate` takes its entry scope
-as an optional parameter and runs the ceiling check unconditionally. What changes is that the
-dispatcher stops supplying that parameter on every scoped tick and asks the phase instead.
-
-> **Drift:** the dispatcher currently supplies the entry scope unconditionally
-> (`Dispatcher.runAfterCommitGates` passes it whenever `assignedEntry` is set), so narrowing is
-> engine behavior rather than a chain declaration and `Phase.scopeWritesToEntry` does not exist
-> yet. Flume's own chain declares nothing and therefore expects containment-only.
+as an optional parameter and runs the ceiling check unconditionally. The dispatcher supplies
+that parameter only when the phase asks for it (`Dispatcher.runAfterCommitGates` consults
+`phase.scopeWritesToEntry`), so narrowing is a chain declaration rather than engine behavior.
+Flume's own chain declares nothing and is therefore containment-only.
 
 - **`Phase.entryChannelPaths?: string[]`** (default `[]`) — globs always writable on a scoped
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick
