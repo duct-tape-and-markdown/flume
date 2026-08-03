@@ -41,9 +41,16 @@ const RECORD_SEP = "\x1e";
 const LOG_FORMAT = `%H${FIELD_SEP}%s${FIELD_SEP}%b${RECORD_SEP}`;
 
 const BUILD_PAREN_TAG = /^build\(([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\):\s*(.+)$/;
+// Bracket pairs must match — `(TAG]` is not a valid tag delimiter, so the
+// two shapes are separate alternatives rather than independent open/close
+// character classes (which would accept mismatched pairs like `(TAG]`).
 const BUILD_TRAILING_TAG =
-  /^build:\s*(.+?)\s*[([]([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)[)\]]\s*$/;
+  /^build:\s*(.+?)\s*(?:\(([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\)|\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\])\s*$/;
 const BUILD_PLAIN = /^build:\s*(.+)$/;
+// Subjects that read as an attempted build: entry — used only to decide
+// whether a parse failure is loud-worthy (a malformed tag attempt) versus
+// an unrelated commit that legitimately isn't a build: entry.
+const BUILD_SUBJECT_ATTEMPT = /^build[:(]/;
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -113,7 +120,7 @@ function parseBuildSubject(subject) {
   if (m) return { tag: m[1], desc: m[2].trim() };
 
   m = BUILD_TRAILING_TAG.exec(subject);
-  if (m) return { tag: m[2], desc: m[1].trim() };
+  if (m) return { tag: m[2] ?? m[3], desc: m[1].trim() };
 
   m = BUILD_PLAIN.exec(subject);
   if (m) return { tag: null, desc: m[1].trim() };
@@ -161,16 +168,24 @@ export function deriveEntries(root, sinceSha) {
   const commits = parseCommits(raw);
 
   const entries = [];
+  const warnings = [];
   for (const commit of commits) {
     const parsed = parseBuildSubject(commit.subject);
-    if (!parsed) continue;
+    if (!parsed) {
+      if (BUILD_SUBJECT_ATTEMPT.test(commit.subject)) {
+        warnings.push(
+          `${commit.sha.slice(0, 12)} matches no declared tag shape, dropped from draft: ${commit.subject}`,
+        );
+      }
+      continue;
+    }
     const body = cleanBody(commit.body);
     entries.push({
       breaking: /^BREAKING:/im.test(body),
       text: formatEntry(parsed.desc, parsed.tag, body),
     });
   }
-  return { range, entries };
+  return { range, entries, warnings };
 }
 
 export function renderSection(entries) {
@@ -204,7 +219,11 @@ function main() {
   }
 
   const sinceSha = resolveLastRelease(root);
-  const { range, entries } = deriveEntries(root, sinceSha);
+  const { range, entries, warnings } = deriveEntries(root, sinceSha);
+
+  for (const warning of warnings) {
+    process.stderr.write(`[build-changelog] ${warning}\n`);
+  }
 
   if (entries.length === 0) {
     fail(

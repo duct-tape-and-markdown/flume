@@ -184,6 +184,56 @@ describe("build-changelog", () => {
     expect(out).not.toContain("Co-Authored-By");
   });
 
+  it("surfaces a build: subject matching none of the 3 declared tag shapes loudly instead of dropping it silently", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/kept.ts",
+      "export const kept = 1;\n",
+      "build: add kept feature (KEPT-FEATURE)",
+    );
+    // "build(...)" whose tag is lowercase matches none of the 3 declared
+    // shapes (paren-tag requires an uppercase tag; trailing-tag and plain
+    // both require a "build:" prefix, not "build(").
+    const malformedSha = await commit(
+      repo,
+      "src/malformed.ts",
+      "export const malformed = 1;\n",
+      "build(lowercase-tag): do something",
+    );
+
+    const { out, err, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    expect(out).toContain("KEPT-FEATURE");
+    expect(out).not.toContain("do something");
+    expect(err).toContain(malformedSha.slice(0, 12));
+    expect(err).toContain("build(lowercase-tag): do something");
+  });
+
+  it("rejects a mismatched bracket pair such as (TAG] instead of accepting it as tag TAG", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/mismatched.ts",
+      "export const mismatched = 1;\n",
+      "build: fix the widget (MISMATCHED-TAG]",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    // The subject still surfaces as an entry (falls back to the untagged
+    // shape) rather than vanishing, but the mismatched pair must not be
+    // parsed out as a clean tag.
+    expect(out).toContain("fix the widget (MISMATCHED-TAG]");
+    expect(out).not.toContain("- fix the widget (MISMATCHED-TAG)");
+  });
+
   it("ignores non-build: commits (plan:, chore:) when mining entries", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
     await git(repo, ["tag", "v1.0.0"]);
