@@ -4115,7 +4115,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
 });
 
 describe("Dispatcher — tip verify: commit only onto the tick's starting tip (RELEASE-v0.11 §5)", () => {
-  it("singleton: a commit whose parent isn't the recorded tip is soft-reverted — tip-moved, no commit lands, agent output stays on disk uncommitted", async () => {
+  it("singleton: an agent invocation that makes two commits has both undone by the tip-moved revert, not just the newest (LOOP-TIPMOVED-MULTICOMMIT-TICK)", async () => {
     const preHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -4124,9 +4124,12 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 
     let interloperSha = "";
     const agent = singleAgent(async (cwd) => {
-      // An operator (or a concurrent flume process) commits to trunk after
-      // the dispatcher already recorded `preHead` — the §5 race the tip
-      // verify exists to catch. The agent's own commit lands on top of it.
+      // Two commits in one invocation: the dispatcher only ever compares
+      // `postHead`'s own parent against the tip it recorded, so the first of
+      // the two — whether it's the agent's own or an operator's concurrent
+      // commit landing mid-tick — reads identically as "something sits
+      // between the recorded tip and postHead". Either way, nothing may be
+      // left on the tip un-gated.
       await writeAndCommit(
         cwd,
         "src/interloper.ts",
@@ -4157,13 +4160,64 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(outcome.verdict?.tipMoved).toBe(true);
     expect(outcome.summary).toContain("tip-moved");
 
-    // The interloper's own commit stands — real work must never be
-    // destroyed by the tip-verify revert. The agent's own commit refused.
-    expect(await head(fx.repo)).toBe(interloperSha);
-    expect(await head(fx.repo)).not.toBe(preHead);
+    // Both commits are undone — the tip lands back on exactly what the tick
+    // recorded at start, not on the first of the tick's own two commits.
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(await head(fx.repo)).not.toBe(interloperSha);
 
     // Agent output stays on disk, uncommitted — a soft reset, not the
-    // gate-revert path's hard reset.
+    // gate-revert path's hard reset — for the *whole* span, not only the
+    // newest commit.
+    expect(existsSync(join(fx.repo, "src", "interloper.ts"))).toBe(true);
+    expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
+      "agent-work\n",
+    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: fx.repo,
+    });
+    expect(status).toContain("plan-output.ts");
+    expect(status).toContain("interloper.ts");
+  }, 20_000);
+
+  it("singleton: a single-commit tick built on a stale base is soft-reverted by exactly one commit — unchanged from before multi-commit accounting", async () => {
+    // A commit sits ahead of the base the agent's own commit lands on (a
+    // worktree that never advanced past that base, or a rewind) — the
+    // recorded tip's own *parent* is where the agent's single commit
+    // actually landed. Distance from the recorded tip to the agent's commit
+    // is exactly one either way: only that one commit is undone.
+    const staleBase = await head(fx.repo);
+    await writeAndCommit(fx.repo, "src/trunk-advance.ts", "advance\n", "plan: advance");
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await exec("git", ["reset", "--hard", staleBase], { cwd });
+      await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.tipMoved).toBe(true);
+    expect(outcome.summary).toContain("tip-moved");
+
+    // Exactly one commit undone: the tip lands back on the stale base the
+    // agent's single commit actually landed on, not further back than that.
+    expect(await head(fx.repo)).toBe(staleBase);
+    expect(await head(fx.repo)).not.toBe(preHead);
+
     expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(true);
     expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
       "agent-work\n",

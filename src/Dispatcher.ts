@@ -2173,10 +2173,17 @@ export class Dispatcher {
    * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
    * fault, so it survives as uncommitted changes (§5 "agent output stays on
    * disk") rather than being discarded.
+   *
+   * `commitCount` is the number of commits standing between the recorded tip
+   * and `expectedSha` — the dispatcher never observes a tick's individual
+   * commits, only its start and end tip, so a tick that made more than one
+   * commit is undone in full rather than leaving every commit but the newest
+   * on the tip, un-gated.
    */
   private async revertTipMovedCommit(
     cwd: string,
     expectedSha: string,
+    commitCount: number,
   ): Promise<void> {
     const currentTip = await git.revParse(cwd);
     if (currentTip !== expectedSha) {
@@ -2186,7 +2193,7 @@ export class Dispatcher {
           `commit at the current tip, refusing to reset`,
       );
     }
-    await git.softReset(cwd, 1);
+    await git.softReset(cwd, commitCount);
   }
 
   /**
@@ -2209,7 +2216,11 @@ export class Dispatcher {
   ): Promise<boolean> {
     const parent = await git.revParse(cwd, `${postHead}^`);
     if (parent === preHead) return false;
-    await this.revertTipMovedCommit(cwd, postHead);
+    // More than one commit sits between the recorded tip and `postHead` —
+    // undo the whole span, not just `postHead` itself, so no un-gated
+    // commit is left behind on the tip.
+    const commitCount = await git.commitsSince(cwd, preHead, postHead);
+    await this.revertTipMovedCommit(cwd, postHead, commitCount);
     await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
     this.log.warn(
       `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${parent}`,

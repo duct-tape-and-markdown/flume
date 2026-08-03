@@ -42,6 +42,20 @@ export async function softReset(cwd: string, n: number): Promise<void> {
   await run(cwd, ["reset", "--soft", `HEAD~${n}`]);
 }
 
+/**
+ * Count of commits reachable from `to` but not from `from` (`git rev-list
+ * --count from..to`) — the depth a tip-verify revert must soft-reset to
+ * undo everything a tick produced, not just its newest commit.
+ */
+export async function commitsSince(
+  cwd: string,
+  from: string,
+  to: string,
+): Promise<number> {
+  const { stdout } = await run(cwd, ["rev-list", "--count", `${from}..${to}`]);
+  return Number(stdout);
+}
+
 /** Hard reset to a specific SHA. Discards working tree changes. */
 export async function hardResetTo(cwd: string, sha: string): Promise<void> {
   await run(cwd, ["reset", "--hard", sha]);
