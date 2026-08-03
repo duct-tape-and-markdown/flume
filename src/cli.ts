@@ -314,6 +314,9 @@ Exit codes:
   1   Harness error (unexpected exception), or HEAD is detached (v0.11 §4:
       the tick record's meaning is advancing a named tip; checkout a branch
       first). No claim is taken or checked — that's loop-level only.
+  2   Usage: the chain load failed with the CJS-context refusal — the host
+      repo's package.json (or the one beside .flume/chain.ts) lacks "type":
+      "module". Add it and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.

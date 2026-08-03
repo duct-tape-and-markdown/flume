@@ -302,6 +302,22 @@ describe("tickExitCode — §3 axis classification", () => {
 });
 
 /**
+ * CLI-HELP-TICK-MISSING-EXIT2 — `flume tick --help`'s documented exit-code
+ * list must cover `tickExitCode`'s actual range (0/1/2/69/78), so the 2 the
+ * CJS-context refusal returns (tested above) isn't a silent gap in the
+ * runtime help text.
+ */
+describe("flume tick --help — exit-code list matches tickExitCode's range (CLI-HELP-TICK-MISSING-EXIT2)", () => {
+  it("lists 0, 1, 2, 69, and 78", async () => {
+    const { out, code } = await runCli(process.cwd(), ["tick", "--help"]);
+    expect(code).toBe(0);
+    for (const exitCode of ["0 ", "1 ", "2 ", "69 ", "78 "]) {
+      expect(out).toContain(`\n  ${exitCode}`);
+    }
+  });
+});
+
+/**
  * v0.7 §4 amendment — `flume loop` / `job run`'s own exit-code decision at
  * the CLI/loop boundary: non-zero iff at least one child tick errored AND
  * the run shipped nothing; `terminal`/`mountDead` still propagate their own
