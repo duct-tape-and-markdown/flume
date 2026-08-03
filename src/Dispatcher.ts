@@ -889,6 +889,30 @@ export class PendingParseFailure extends Error {
 }
 
 /**
+ * Thrown in place of a plain {@link PendingParseFailure} when
+ * `commitPendingUpdate`'s rewrite read hits one inside `runFanout` — the
+ * ledger-rewrite drift `spec/loop.md` ("The tick verdict") names: by this
+ * point the wave's cherry-picks and afterMerge gates already landed
+ * `shippedTags` on trunk, so the verdict recording them must survive the
+ * throw rather than vanish with it. `tick()`'s `PendingParseFailure` catch
+ * checks for this subclass and folds `verdict` into the failed outcome it
+ * returns; a plain `PendingParseFailure` from a decide-read (no agent ran,
+ * nothing shipped) carries none, same as before. Not exported: thrown and
+ * caught entirely within this module, unlike `PendingParseFailure` itself
+ * (part of the gate-authoring API surface, `src/flumeApi.ts`) — this is the
+ * one internal leg of that failure class, never something a chain's gate
+ * needs to distinguish.
+ */
+class WaveLedgerParseFailure extends PendingParseFailure {
+  readonly verdict: TickVerdict;
+  constructor(errors: readonly ParseError[], verdict: TickVerdict) {
+    super(errors);
+    this.name = "WaveLedgerParseFailure";
+    this.verdict = verdict;
+  }
+}
+
+/**
  * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
  * deterministic, non-retryable, no agent ran. `kind` is a union open to
  * future Axis-C members; `"orphaned-awake"` (awake flags naming phases the
@@ -998,10 +1022,15 @@ export interface TickOutcome {
   /**
    * v0.8 §5: this tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
-   * `failed`, `usageError`, or `terminal`. The CLI's `tick` command persists
-   * this via `writeTickVerdict`; `Dispatcher.tick()` itself never writes to
-   * disk, so a plain unit test calling it directly gains no untracked side
-   * effect.
+   * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
+   * whose `commitPendingUpdate` rewrite hit a `PendingParseFailure`
+   * (`WaveLedgerParseFailure`) still ran a phase and shipped tags onto trunk
+   * before the ledger rewrite refused, so `failed: true` carries `verdict`
+   * too in that one case — every other `failed` path (chain resolution, a
+   * decide-read parse failure with no agent run) carries none. The CLI's
+   * `tick` command persists this via `writeTickVerdict`; `Dispatcher.tick()`
+   * itself never writes to disk, so a plain unit test calling it directly
+   * gains no untracked side effect.
    */
   verdict?: TickVerdict;
   /** Phase names awake after this tick. */
@@ -1142,13 +1171,19 @@ export class Dispatcher {
       // it from pending.json refused rather than deriving `[]` from a parse
       // it never trusted — either way this tick does no more work, and a
       // fresh process next tick reads the same unparseable file until a
-      // human fixes it.
+      // human fixes it. The exit code is unchanged either way (EX_MOUNT_DEAD,
+      // `failed: true`) — `WaveLedgerParseFailure`'s carried `verdict` only
+      // adds the record of what the wave shipped before the ledger rewrite
+      // refused; it never softens the refusal itself.
       this.log.error(`[flume] ${err.message}`);
       return {
         hibernated: false,
         failed: true,
         awakeAfter: this.baton.awake(),
         summary: err.message,
+        ...(err instanceof WaveLedgerParseFailure
+          ? { verdict: err.verdict }
+          : {}),
       };
     }
     const {
@@ -1366,6 +1401,42 @@ export class Dispatcher {
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
     };
+  }
+
+  /**
+   * Wave-level §6 no-commit cause, only meaningful when the wave shipped
+   * nothing usable — shared by the wave's normal-completion verdict and by
+   * `WaveLedgerParseFailure`'s partial verdict (engineering.md "Derived
+   * state is computed, never restated beside its source"), so a ledger
+   * refusal reports the same cause a clean completion would have. Precedence
+   * gate-revert > render-refused > platform-preempt > voluntary-bail:
+   * gate-revert means work was produced and lost (highest signal);
+   * render-refused (§3) is a real defect in the prompt/config, ranked above
+   * the non-defect classes; platform-preempt outranks voluntary-bail so a
+   * rate-limited wave is not misread as the agents bailing — §6's explicit
+   * "platform failures masquerade as agent failures" harm.
+   */
+  private waveNoCommitCause(
+    committedWave: boolean,
+    perEntry: readonly { noCommit?: NoCommitMode }[],
+    mergeReverted: readonly unknown[],
+  ): NoCommitMode | undefined {
+    if (committedWave) return undefined;
+    const modes = new Set<NoCommitMode>(
+      perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
+    );
+    // Per-entry afterMerge isolation (§7b) wrote a gate-revert §5 record for
+    // each merge-reverted entry; reflect that in the wave-level cause.
+    if (mergeReverted.length > 0) modes.add("gate-revert");
+    return modes.has("gate-revert")
+      ? "gate-revert"
+      : modes.has("render-refused")
+        ? "render-refused"
+        : modes.has("platform-preempt")
+          ? "platform-preempt"
+          : modes.has("voluntary-bail")
+            ? "voluntary-bail"
+            : undefined;
   }
 
   // ---------- fanout tick ----------
@@ -1734,6 +1805,16 @@ export class Dispatcher {
       expectedTip = mergedSha;
     }
 
+    // Computed here — ahead of `commitPendingUpdate` below — rather than
+    // after cleanup where the original single use lived, so a
+    // `WaveLedgerParseFailure` thrown out of that call can report the same
+    // gate results and committed-shape a clean completion would (read from
+    // two sites, never restated).
+    const allGateResults = perEntry
+      .flatMap((r) => r.gateResults)
+      .concat(mergeGateResults);
+    const committedWave = shipped.length > 0;
+
     // Update pending.json — remove shipped entries, record merge-failure
     // footprints — as one harness commit. `commitPendingUpdate` derives the
     // footprints straight off `mergeOutcomes`, the same records this wave's
@@ -1764,11 +1845,46 @@ export class Dispatcher {
       // worktrees are the accepted cost of refusing rather than proceeding;
       // the next `pruneWorktrees` call reclaims their metadata once a human
       // has fixed the file.
-      const update = await this.commitPendingUpdate(
-        shippedTags,
-        mergeOutcomes,
-        expectedTip,
-      );
+      let update: { sha: string; tipMoved: boolean };
+      try {
+        update = await this.commitPendingUpdate(
+          shippedTags,
+          mergeOutcomes,
+          expectedTip,
+        );
+      } catch (err) {
+        if (!(err instanceof PendingParseFailure)) throw err;
+        // spec/loop.md "The tick verdict — one facts artifact" drift (b):
+        // this wave's shipped tags are already real (cherry-picked and
+        // afterMerge-gated onto trunk above) — only the ledger rewrite
+        // refused. A thrown error is the only channel left once
+        // `commitPendingUpdate` never returns, so build the verdict this
+        // wave already has the facts for and carry it on the error for
+        // `tick()`'s `PendingParseFailure` catch to fold in, instead of
+        // discarding it the way a plain re-throw would.
+        const noCommit = this.waveNoCommitCause(
+          committedWave,
+          perEntry,
+          mergeReverted,
+        );
+        const verdict: TickVerdict = {
+          phaseName: phase.name,
+          tags: provisioned.map((e) => e.tag),
+          committed: committedWave,
+          ...(noCommit ? { noCommit } : {}),
+          ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
+          ...(waveDeclined ? { declined: waveDeclined } : {}),
+          gateResults: allGateResults as TickVerdictGateResult[],
+          shippedTags,
+          mergeOutcomes,
+          ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+          summary:
+            shippedTags.length > 0
+              ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${err.message})`
+              : `${phase.name}: pending-ledger rewrite refused (${err.message})`,
+        };
+        throw new WaveLedgerParseFailure(err.errors, verdict);
+      }
       const updSha = update.sha;
       if (updSha !== preUpdate) chorSha = updSha;
       if (update.tipMoved) {
@@ -1849,40 +1965,15 @@ export class Dispatcher {
       `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
     );
 
-    const allGateResults = perEntry
-      .flatMap((r) => r.gateResults)
-      .concat(mergeGateResults);
-
-    const committedWave = shipped.length > 0;
-
-    // Wave-level §6 cause, only when the wave shipped nothing usable.
-    // Per-entry modes are already persisted to each entry's own §5 record
-    // (the durable channel §6 mandates); this is the single representative
-    // label for the logger/TickOutcome. Precedence gate-revert >
-    // render-refused > platform-preempt > voluntary-bail: gate-revert means
-    // work was produced and lost (highest signal); render-refused (§3) is a
-    // real defect in the prompt/config, ranked above the non-defect classes;
-    // platform-preempt outranks voluntary-bail so a rate-limited wave is not
-    // misread as the agents bailing — §6's explicit "platform failures
-    // masquerade as agent failures" harm.
-    let waveNoCommit: NoCommitMode | undefined;
-    if (!committedWave) {
-      const modes = new Set<NoCommitMode>(
-        perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
-      );
-      // Per-entry afterMerge isolation (§7b) wrote a gate-revert §5 record
-      // for each merge-reverted entry; reflect that in the wave-level cause.
-      if (mergeReverted.length > 0) modes.add("gate-revert");
-      waveNoCommit = modes.has("gate-revert")
-        ? "gate-revert"
-        : modes.has("render-refused")
-          ? "render-refused"
-          : modes.has("platform-preempt")
-            ? "platform-preempt"
-            : modes.has("voluntary-bail")
-              ? "voluntary-bail"
-              : undefined;
-    }
+    // Wave-level §6 cause, only when the wave shipped nothing usable —
+    // `allGateResults`/`committedWave` were already computed above, ahead of
+    // `commitPendingUpdate`, so `WaveLedgerParseFailure`'s partial verdict
+    // could read them too.
+    const waveNoCommit = this.waveNoCommitCause(
+      committedWave,
+      perEntry,
+      mergeReverted,
+    );
 
     return {
       result: {

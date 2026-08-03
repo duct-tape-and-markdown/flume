@@ -2811,6 +2811,52 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // it — the concurrent corruption survives byte-for-byte.
     expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
   }, 20_000);
+
+  it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE: a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's rewrite read, still writes a tick verdict recording the shipped tags", async () => {
+    const entries = [makeEntry("SHIP-A", ["src/a.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+
+    // Same mechanism as the sibling test above: the agent corrupts
+    // pending.json mid-wave, after the decide-read that picked SHIP-A but
+    // before commitPendingUpdate's rewrite read runs. The cherry-pick and
+    // afterMerge gate (none declared, so trivially clean) both land before
+    // the corruption is ever read.
+    const corrupt = "{ corrupted mid-wave, not json";
+    const agent = fanoutAgent({
+      "ship-a": async (cwd) => {
+        await writeFile(pendingPath, corrupt, "utf8");
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The refusal itself is unchanged: exit-69-worthy failure, ledger left
+    // corrupt rather than overwritten with a rewrite derived from `[]`.
+    expect(outcome.failed).toBe(true);
+    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+
+    // The defect this test pins: the wave's shipped tags used to vanish
+    // with the thrown PendingParseFailure instead of reaching a verdict.
+    expect(outcome.verdict).toBeDefined();
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.tags).toEqual(["SHIP-A"]);
+    expect(outcome.verdict?.phaseName).toBe("build");
+  }, 20_000);
 });
 
 // ---------- foundations governor (§v0.3) ----------
