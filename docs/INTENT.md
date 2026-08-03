@@ -18,11 +18,13 @@ This split is load-bearing. Anything a prompt can drift on, the harness owns:
 - **Baton.** Filesystem flags at `.flume/awake/<phase>` signal what wakes next. Presence wakes; absence hibernates.
 - **Provenance.** Inter-layer references (workshop → spec → plan → code) are typed citations the harness can verify.
 
-### The commit is the transaction
+### Committed state is the loop's memory
 
-A tick's commit is the atomic unit of work, and `git reset --hard` is the only rollback primitive. This is why **pipeline state — `pending.json`, plan prose — is committed on purpose, not as bookkeeping**: committing it is what makes a gate-revert atomic (a malformed `pending.json` is reverted by the same machinery that reverts bad code) and what makes a half-finished tick recoverable (the prior commit is intact). The plan phase's whole reliability rests on this.
+Each tick reads the disk, does work, and commits. The next tick starts from what the last one left, and that accumulation **is** the mechanism: a chain converges by iterating against committed state, not by any single tick being correct. This is why **pipeline state — `pending.json`, plan prose — is committed on purpose, not as bookkeeping**: it is what the next iteration reads.
 
-A consequence for anything built on flume: a layer that wants *ephemeral* pipeline state (run, then leave no trace) cannot get there by **un**committing — that deletes the transaction the plan phase depends on. It gets there by **disposing of the commits**: confine them to a throwaway branch/ref and extract only the real deliverable at teardown. Disposable ≠ uncommitted. Where the committed state *lives* is relocatable (`flumeDir`); *that* it is committed is not.
+It follows that discarding a tick's commit discards *progress*, not merely a bad write. A revert is a real cost paid to keep the tree working — never a routine control-flow step, and never the price of a bookkeeping mismatch. Work that ran, passed its checks, and moved the tree toward the goal stays on the disk the next iteration reads. Where a harness must choose, it iterates again over imperfect state rather than resetting to clean state; the loop's job is to reach the end result, not to make each step conform to a prediction of it.
+
+A consequence for anything built on flume: a layer that wants *ephemeral* pipeline state (run, then leave no trace) cannot get there by **un**committing — that deletes the memory each iteration depends on. It gets there by **disposing of the commits**: confine them to a throwaway branch/ref and extract only the real deliverable at teardown. Disposable ≠ uncommitted. Where the committed state *lives* is relocatable (`flumeDir`); *that* it is committed is not.
 
 ## What stays prose
 
