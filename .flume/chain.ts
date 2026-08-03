@@ -44,7 +44,6 @@ import type {
   TickContext,
   WorktreeSetupContext,
 } from "../src/Phase.ts";
-import type { Gate } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
 
 import { z } from "zod";
@@ -77,7 +76,6 @@ const factory: ChainFactory = (api) => {
     shellGate,
     pendingGate,
     setupWorktree: installWorktreeDeps,
-    git: { showNameOnly },
   } = api;
   // ---------- entry extension (v0.8 §2) ----------
 
@@ -124,22 +122,18 @@ const factory: ChainFactory = (api) => {
 
   /**
    * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
-   * declarations: every behavior-changing entry edits tests, changelogGate
-   * demands a changelog record per src/ commit, and open-questions.md is the
-   * always-writable parking lane (collaboration rule). Requiring these in
-   * entry.files turns one under-declaration into a fence revert on
-   * otherwise-correct work; cross-entry collisions stay covered by per-entry
-   * afterMerge revert (§7b).
+   * declarations: every behavior-changing entry edits tests, and
+   * open-questions.md is the always-writable parking lane (collaboration
+   * rule). Requiring these in entry.files turns one under-declaration into a
+   * fence revert on otherwise-correct work; cross-entry collisions stay
+   * covered by per-entry afterMerge revert (§7b).
+   *
+   * CHANGELOG.md is deliberately NOT here. It is not mandatory on every
+   * entry — no gate demands it — so it stays an ordinary declared path: an
+   * entry that edits it says so, and serializes against other entries that
+   * do, which is correct.
    */
-  const channelPaths = [
-    ".flume/plan/open-questions.md",
-    "tests/**",
-    "CHANGELOG.md",
-    // Per-entry changelog fragments. `.changeset/<TAG>.md` is unique per
-    // entry by construction, so a wave writes N distinct files instead of
-    // N appends to one — see changelogGate for why that is load-bearing.
-    ".changeset/**",
-  ];
+  const channelPaths = [".flume/plan/open-questions.md", "tests/**"];
 
   /**
    * Build's fence, hoisted so plan's `pendingGate` (v0.8 §6) can pre-check
@@ -181,7 +175,8 @@ const factory: ChainFactory = (api) => {
       ".npmrc",
       ".env.example",
 
-      // User-facing root docs (CHANGELOG.md rides the channel)
+      // User-facing root docs
+      "CHANGELOG.md",
       "README.md",
       "LICENSE",
       "LICENSE.*",
@@ -236,74 +231,6 @@ const factory: ChainFactory = (api) => {
         `setupWorktree: node_modules/${sentinel} missing after install — dependency materialization failed`,
       );
     }
-  };
-
-  /**
-   * Every commit touching `src/` also carries a changelog record — either a
-   * per-entry fragment at `.changeset/<TAG>.md` (preferred) or a direct
-   * CHANGELOG.md edit.
-   *
-   * The fragment form exists for a measured reason. `CHANGELOG.md` is one
-   * shared append-only file, and this gate made every `src/` entry touch it,
-   * so every entry's declared `files` collided with every other entry's in
-   * `partitionByFileOverlap` — which reads `touchedPaths()`. Replaying the
-   * real partitioner over 50 historical queues: mean first-batch width 1.20
-   * as declared, 3.94 with `CHANGELOG.md` removed (+228%, at maxParallel 4).
-   * Stripping `tests/**` changed nothing; the shared changelog was the entire
-   * loss. A wave writing N distinct fragments neither collides at partition
-   * time nor conflicts at cherry-pick.
-   *
-   * The agreement check for this repo's loudest self-description seam
-   * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
-   * wrote"): a changelog hand-authored beside the diff it describes drifts
-   * silently, and a downstream bay reading it keeps workarounds it no longer
-   * needs. Chain-owned by construction — "every ship gets a line" is this
-   * repo's convention, not the engine's (`.claude/rules/engine-boundary.md`).
-   *
-   * The empty case is spelled, not inherited: a commit touching no `src/` file
-   * passes with its reason named, per the non-vacuity rule on the same page.
-   */
-  const changelogGate: Gate = {
-    name: "changelog covers src",
-    when: "afterCommit",
-    async run(ctx) {
-      if (!ctx.commitSha) {
-        return { ok: false, message: "changelog gate requires commitSha" };
-      }
-      const touched = await showNameOnly(ctx.cwd, ctx.commitSha);
-      const srcTouched = touched.filter((f) => f.startsWith("src/"));
-
-      if (srcTouched.length === 0) {
-        return {
-          ok: true,
-          message: "no src/ file in this commit; changelog line not required",
-        };
-      }
-      const fragments = touched.filter(
-        (f) => f.startsWith(".changeset/") && f.endsWith(".md"),
-      );
-      if (fragments.length > 0) {
-        return {
-          ok: true,
-          message: `changelog fragment present (${fragments.join(", ")}) for ${srcTouched.length} src/ file(s)`,
-        };
-      }
-      if (touched.includes("CHANGELOG.md")) {
-        return {
-          ok: true,
-          message: `changelog line present for ${srcTouched.length} src/ file(s)`,
-        };
-      }
-      return {
-        ok: false,
-        message:
-          `commit touches ${srcTouched.length} src/ file(s) but carries no changelog record — ` +
-          "write `.changeset/<TAG>.md` describing this change. It rides " +
-          "entryChannelPaths, so it needs no declaration in entry.files, and a " +
-          "per-entry filename keeps parallel entries from serializing on one file.",
-        details: srcTouched.join("\n"),
-      };
-    },
   };
 
   // ---------- agents ----------
@@ -470,7 +397,6 @@ const factory: ChainFactory = (api) => {
     // afterCommit — cheap, structural, catches type errors before merge.
     gates: [
       tscGate,
-      changelogGate,
       shellGate({
         name: "vitest",
         when: "afterMerge",

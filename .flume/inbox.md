@@ -35,32 +35,36 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
-## 2026-08-02 — assemble `.changeset/*.md` fragments into CHANGELOG.md at release (human)
+## 2026-08-03 — build the release changelog from git history (human)
 
-`71bb00f` moved build's changelog record from `CHANGELOG.md` to per-entry
-`.changeset/<TAG>.md` fragments, because one shared append-only file was
-costing 3.3x wave width (mean first batch 1.20 declared vs 3.94 stripped,
-replayed over 50 historical queues at maxParallel 4). Fragments now
-accumulate and nothing folds them back.
+`changelogGate` is removed (operator ruling): a per-commit presence check is
+the wrong layer for a release artifact, and the gate never verified what it
+claimed to. Its docstring called it the agreement check for this repo's
+"loudest self-description seam", but it only tested
+`touched.includes("CHANGELOG.md")` — a commit touching `src/` with an
+unrelated changelog line passed. Shape sold as truth
+(`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+wrote*).
 
-Needed: a release step that reads `.changeset/*.md`, appends their content
-under CHANGELOG.md's `[Unreleased]` (preserving the `### Breaking`
-subheading convention per `spec/RELEASE-v0.1.md` §9), and deletes the
-consumed fragments. `scripts/` and `CHANGELOG.md` are both in build's
-`writablePaths`, so this is a normal build entry.
+Needed: a release-time step that derives the changelog from git rather than
+accumulating it per tick. Input is the commit range since the last release
+tag; output is the `[Unreleased]` section, preserving the `### Breaking`
+subheading convention (`spec/RELEASE-v0.1.md` §9). `scripts/` and
+`CHANGELOG.md` are both in build's `writablePaths`.
 
-Two properties worth pinning in its tests: fragments are consumed exactly
-once (a re-run over an empty `.changeset/` is a no-op, not an error), and
-ordering is deterministic — the wave that produced them is unordered, so
-sort by filename rather than by directory read order.
+Design note for whoever files this: `build:` commit subjects carry the entry
+tag and the bodies carry the why, so the range is already structured —
+prefer reading those over re-deriving intent from diffs. Tags stopped at
+`v0.6.2` while CHANGELOG has `[0.8.0]`/`[0.9.0]`, so "since the last release
+tag" needs a defined fallback, not an assumption.
 
-Until it exists, CHANGELOG.md goes stale between releases while the
-fragments hold the truth. That is the intended interim state, not drift, but
-it should not outlive one release cut.
+Vacuity risk to pin in its tests: a range that resolves to zero commits must
+say so and refuse, never emit an empty section that reads as "no changes
+this release".
 
 Per candidate: `spec/RELEASE-v0.1.md` §9 (versioning policy — Breaking
-subheading) for the assembly contract; `.claude/rules/engineering.md` *Loud
-or nothing* for the consumed-exactly-once refusal.
+subheading); `.claude/rules/engineering.md` *A green verdict is proven
+non-vacuous* for the empty-range refusal.
 
 ## 2026-08-02 — `.flume/chain.ts` has zero behavioral coverage (human)
 
