@@ -60,7 +60,7 @@ async function execGate(
  * to the dispatcher on failure (and embedded in the next agent prompt's
  * gate-failure context).
  */
-interface ShellGateOptions {
+export interface ShellGateOptions {
   name: string;
   when: GatePhase;
   cmd: string;

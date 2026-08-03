@@ -31,6 +31,18 @@ import {
   vitestGate,
 } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
+// Barrel-export pin (engineering.md "An export earns its consumer",
+// CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call shellGate/tscGate/
+// vitestGate/eslintGate but, pre-fix, could not name the shape it passes
+// them — ShellGateOptions wasn't exported at all, and PkgManagerOverride /
+// PkgManagerGate weren't re-exported from src/index.ts alongside
+// PendingGateOptions. This import fails tsc if any of the three drops from
+// src/index.ts.
+import type {
+  ShellGateOptions,
+  PkgManagerOverride,
+  PkgManagerGate,
+} from "../src/index.ts";
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
@@ -414,3 +426,25 @@ describe.runIf(process.platform === "win32")(
     });
   },
 );
+
+describe("src/index.ts — ShellGateOptions/PkgManagerOverride/PkgManagerGate barrel export (CHAIN-EXPORT-GATE-OPTION-TYPES)", () => {
+  it("re-exports ShellGateOptions, PkgManagerOverride, and PkgManagerGate as named types a chain author can consume", () => {
+    // The imported types (line 41, from src/index.ts rather than
+    // src/builtinGates.ts) are what a chain author would actually reach for
+    // to name the shape it passes to shellGate/tscGate/vitestGate/eslintGate
+    // — if any drops from the barrel this fails tsc, not just an LSP
+    // references check.
+    const shellOpts: ShellGateOptions = {
+      name: "custom",
+      when: "afterCommit",
+      cmd: process.execPath,
+      args: ["-e", "process.exit(0)"],
+    };
+    const override: PkgManagerOverride = { cmd: "npm", args: ["run", "tsc"] };
+    const gate: PkgManagerGate = tscGate;
+
+    expect(shellOpts.name).toBe("custom");
+    expect(override.cmd).toBe("npm");
+    expect(gate.name).toBe("tsc");
+  });
+});

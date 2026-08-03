@@ -37,6 +37,9 @@ export {
   writablePathsGate,
   pendingGate,
   type PendingGateOptions,
+  type ShellGateOptions,
+  type PkgManagerOverride,
+  type PkgManagerGate,
 } from "./builtinGates.js";
 
 export { setupWorktree } from "./setupWorktree.js";
