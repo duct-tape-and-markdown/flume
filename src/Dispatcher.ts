@@ -3441,11 +3441,15 @@ function buildVoluntaryBail(stdout: string): VoluntaryBailAttempt {
  * with the refused constraint. When stdout parses as stream-json, lift the
  * agent's final message out of the transcript: the terminal `result` event's
  * `result` text (Claude Code puts the final assistant message there
- * verbatim), else the last `assistant` turn's concatenated text blocks. A
- * plain-text agent (`claudeCode({ outputFormat: "text" })`) emits no
- * stream-json events — its stdout already IS the final message, returned
- * unchanged. Either way the result is `tailBound` to `MAX_PRIOR_NOCOMMIT`:
- * a bail names its constraint at the tail of its closing message.
+ * verbatim), else the last `assistant` turn's concatenated text blocks. If
+ * stream-json was detected but neither event carried text, fall back to the
+ * raw transcript tail — never an empty string, which would silently drop
+ * the bail's refused constraint (`.claude/rules/engineering.md`, "Loud or
+ * nothing"). A plain-text agent (`claudeCode({ outputFormat: "text" })`)
+ * emits no stream-json events — its stdout already IS the final message,
+ * returned unchanged. Either way the result is `tailBound` to
+ * `MAX_PRIOR_NOCOMMIT`: a bail names its constraint at the tail of its
+ * closing message.
  */
 function finalAgentMessage(stdout: string): string {
   let sawStreamJson = false;
@@ -3472,7 +3476,12 @@ function finalAgentMessage(stdout: string): string {
     // Plain-text agent: stdout already IS the final message.
     return tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
   }
-  return tailBound(resultText ?? lastAssistantText ?? "", MAX_PRIOR_NOCOMMIT);
+  if (resultText !== undefined || lastAssistantText !== undefined) {
+    return tailBound((resultText ?? lastAssistantText) as string, MAX_PRIOR_NOCOMMIT);
+  }
+  // stream-json parsed but no result/assistant event carried text: fall back
+  // to the raw transcript tail rather than losing the bail's constraint.
+  return tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
 }
 
 /**

@@ -4011,6 +4011,70 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(retry).not.toContain('\\"text\\"');
   }, 20_000);
 
+  it("voluntary-bail under a stream-json agent with no result/assistant event: falls back to the bounded raw transcript, never an empty constraint", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    // A stdout that parses as stream-json (every line has a `type` field, so
+    // sawStreamJson flips true) but never emits a `result` or `assistant`
+    // event — e.g. the process was cut off after the `system`/`init` line.
+    // DISPATCHER-FINALAGENTMESSAGE-STREAMJSON-SILENT-EMPTY: pre-fix,
+    // finalAgentMessage tailBound'd the empty string here, and the retry
+    // prompt lost the bail entirely.
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const ndjson =
+      [
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s1",
+          model: "claude",
+          tools: ["Read", "Edit"],
+        },
+      ]
+        .map((o) => JSON.stringify(o))
+        .join("\n") + "\n";
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "bailing-stream-json-no-text-singleton",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        return { exitCode: 0, stdout: ndjson, stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+    expect(first.result?.committed).toBe(false);
+    expect(first.noCommit).toBe("voluntary-bail");
+
+    baton.wake("plan");
+    await dispatcher.tick();
+
+    expect(prompts.length).toBe(2);
+    const retry = prompts[1]!;
+    expect(retry).toContain("<prior-attempt>");
+    expect(retry).toContain(BAIL_INTRO);
+    expect(retry).toContain("Refused constraint");
+    // The raw transcript tail reached the retry prompt…
+    expect(retry).toContain('"type":"system"');
+    expect(retry).toContain("s1");
+    // …instead of the silent-empty placeholder the pre-fix tree produced.
+    expect(retry).not.toContain(
+      "agent exited cleanly without committing and produced no final message",
+    );
+  }, 20_000);
+
   it("platform-preempt: TickOutcome.noCommit==='platform-preempt'; retry prompt marks it not-a-defect with the failure class; first attempt empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
