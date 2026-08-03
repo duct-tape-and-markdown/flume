@@ -28,6 +28,7 @@ Execute the assigned entry. Implement completely — no placeholders, no stubs.
 - The acceptance criterion (`entry.acceptance`) must turn green.
 - Search before assuming "not implemented" (`rg`, `grep`).
 - New excluded directories update `tsconfig.json → exclude` AND `.gitignore` in the same commit.
+- If this commit touches `src/`, write your changelog record to **`.changeset/{{TAG}}.md`** — not `CHANGELOG.md`. Same content you would have added under `[Unreleased]` (a `### Breaking` heading when it belongs there). One file per entry is what lets a wave run parallel: a shared `CHANGELOG.md` makes every entry collide with every other at partition time and conflict at cherry-pick. It rides the channel, so it needs no declaration in `entry.files`.
 
 # OUTPUT
 

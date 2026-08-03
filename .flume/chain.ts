@@ -125,7 +125,7 @@ const factory: ChainFactory = (api) => {
   /**
    * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
    * declarations: every behavior-changing entry edits tests, changelogGate
-   * demands a CHANGELOG line per src/ commit, and open-questions.md is the
+   * demands a changelog record per src/ commit, and open-questions.md is the
    * always-writable parking lane (collaboration rule). Requiring these in
    * entry.files turns one under-declaration into a fence revert on
    * otherwise-correct work; cross-entry collisions stay covered by per-entry
@@ -135,6 +135,10 @@ const factory: ChainFactory = (api) => {
     ".flume/plan/open-questions.md",
     "tests/**",
     "CHANGELOG.md",
+    // Per-entry changelog fragments. `.changeset/<TAG>.md` is unique per
+    // entry by construction, so a wave writes N distinct files instead of
+    // N appends to one — see changelogGate for why that is load-bearing.
+    ".changeset/**",
   ];
 
   /**
@@ -235,7 +239,19 @@ const factory: ChainFactory = (api) => {
   };
 
   /**
-   * Every commit touching `src/` also touches CHANGELOG.md.
+   * Every commit touching `src/` also carries a changelog record — either a
+   * per-entry fragment at `.changeset/<TAG>.md` (preferred) or a direct
+   * CHANGELOG.md edit.
+   *
+   * The fragment form exists for a measured reason. `CHANGELOG.md` is one
+   * shared append-only file, and this gate made every `src/` entry touch it,
+   * so every entry's declared `files` collided with every other entry's in
+   * `partitionByFileOverlap` — which reads `touchedPaths()`. Replaying the
+   * real partitioner over 50 historical queues: mean first-batch width 1.20
+   * as declared, 3.94 with `CHANGELOG.md` removed (+228%, at maxParallel 4).
+   * Stripping `tests/**` changed nothing; the shared changelog was the entire
+   * loss. A wave writing N distinct fragments neither collides at partition
+   * time nor conflicts at cherry-pick.
    *
    * The agreement check for this repo's loudest self-description seam
    * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
@@ -263,6 +279,15 @@ const factory: ChainFactory = (api) => {
           message: "no src/ file in this commit; changelog line not required",
         };
       }
+      const fragments = touched.filter(
+        (f) => f.startsWith(".changeset/") && f.endsWith(".md"),
+      );
+      if (fragments.length > 0) {
+        return {
+          ok: true,
+          message: `changelog fragment present (${fragments.join(", ")}) for ${srcTouched.length} src/ file(s)`,
+        };
+      }
       if (touched.includes("CHANGELOG.md")) {
         return {
           ok: true,
@@ -272,9 +297,10 @@ const factory: ChainFactory = (api) => {
       return {
         ok: false,
         message:
-          `commit touches ${srcTouched.length} src/ file(s) but not CHANGELOG.md — ` +
-          "add the [Unreleased] entry describing this change. CHANGELOG.md rides " +
-          "entryChannelPaths, so it needs no declaration in entry.files.",
+          `commit touches ${srcTouched.length} src/ file(s) but carries no changelog record — ` +
+          "write `.changeset/<TAG>.md` describing this change. It rides " +
+          "entryChannelPaths, so it needs no declaration in entry.files, and a " +
+          "per-entry filename keeps parallel entries from serializing on one file.",
         details: srcTouched.join("\n"),
       };
     },
