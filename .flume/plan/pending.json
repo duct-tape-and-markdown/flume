@@ -1,32 +1,5 @@
 [
   {
-    "tag": "LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "build and persist a tick verdict recording the wave's shipped tags before commitPendingUpdate's PendingParseFailure propagates out of tick()'s catch"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A wave that cherry-picks and gates N entries clean, then hits a PendingParseFailure on the ledger rewrite, writes no verdict at all — shipped tags never reach the run totals.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The tick verdict — one facts artifact"
-    },
-    "tests": [
-      "a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's strict readPending, still writes a tick verdict recording the shipped tags"
-    ],
-    "acceptance": "A ledger-rewrite PendingParseFailure no longer discards a wave's verdict; the exit-69 refusal to write a corrupt ledger is unchanged, only the verdict loss is fixed.",
-    "notes": "equilibrium audit, wave durability cluster. Exit code stays 69; only the missing verdict is the defect."
-  },
-  {
     "tag": "LOOP-TIPMOVED-MULTICOMMIT-TICK",
     "gate": {
       "kind": "open"
@@ -84,33 +57,6 @@
     ],
     "acceptance": "The backstop tracks every distinct signature across a tick's provisionFailures, not only the first.",
     "notes": "equilibrium audit, wave durability cluster. runFanout pushes a repo-level prune failure first, then per-entry failures — the untagged repo-level class is exactly what a tagged sibling at index 0 shadows today."
-  },
-  {
-    "tag": "CLI-HELP-TICK-MISSING-EXIT2",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "HELP_SUB.tick lists exit code 2 alongside 0/1/69/78"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume tick --help omits exit code 2 (the CJS-context refusal) from its documented exit-code list.",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [
-      "flume tick --help lists exit code 2 for the CJS-context refusal alongside 0/1/69/78"
-    ],
-    "acceptance": "HELP_SUB.tick's exit-code list matches tickExitCode's actual range.",
-    "notes": "equilibrium audit, exit-code contract cluster."
   },
   {
     "tag": "CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT",
@@ -247,59 +193,5 @@
     ],
     "acceptance": "harvestFriction's destination naming is collision-free the way writeRevertNote's already is; its JSDoc no longer claims a guarantee the code didn't deliver.",
     "notes": "equilibrium audit, friction harvest + retired vocabulary cluster."
-  },
-  {
-    "tag": "WORKTREES-GATEPHASE-RETIRED-DOC",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "drop the Concurrency JSDoc's \"failure reverts the wave\" / postMerge wording; correct the Phase.gates doc's postMerge mention"
-        },
-        {
-          "path": "src/Gate.ts",
-          "description": "correct GateContext.cwd doc's \"or trunk for postMerge gates\" phrasing"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "src/Phase.ts and src/Gate.ts doc comments still teach wave-wide afterMerge revert and a postMerge gate phase — both retired by per-entry isolation and the afterCommit/afterMerge union.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Per-entry `afterMerge` revert isolation"
-    },
-    "tests": [],
-    "acceptance": "No doc comment in src/Phase.ts or src/Gate.ts describes wave-wide afterMerge revert or a postMerge gate phase.",
-    "notes": "equilibrium audit, friction harvest + retired vocabulary cluster. Doc-only, no behavior change."
-  },
-  {
-    "tag": "WORKTREES-VITESTCONFIG-COMMENT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "vitest.config.ts",
-          "description": "correct the header comment: the afterMerge gate runs pnpm test on the trunk (cwd: repoRoot), not inside the fanout worktree"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "vitest.config.ts's header comment claims the afterMerge gate runs inside the fanout worktree; it runs on the warm trunk.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "The default test lane must stay fast"
-    },
-    "tests": [],
-    "acceptance": "vitest.config.ts's header comment matches where the afterMerge gate actually runs.",
-    "notes": "equilibrium audit, friction harvest + retired vocabulary cluster. Doc-only, no behavior change."
   }
 ]
