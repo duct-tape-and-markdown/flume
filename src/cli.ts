@@ -11,7 +11,7 @@
  * the default `claudeCode()`.
  */
 
-import { resolve, join, dirname, basename } from "node:path";
+import { resolve, join, dirname, basename, isAbsolute } from "node:path";
 import {
   existsSync,
   mkdirSync,
@@ -81,6 +81,37 @@ function readPackageVersion(): string {
 export class JobResolutionConflictError extends Error {}
 
 /**
+ * An explicit `FLUME_DIR` that is already absolute and still carries a
+ * recognizable `<repo>/.flume(/jobs/<name>)?` shape — but for a repo other
+ * than this invocation's own resolved `repoRoot`. An already-absolute value
+ * is the canonicalization write-back's own shape (§12): the signature of a
+ * value a *different* flume process resolved and wrote back, inherited
+ * across a process/environment boundary that never should have crossed a
+ * repo, rather than typed fresh for this invocation. A relative `FLUME_DIR`
+ * is unambiguous — it resolves against *this* invocation's own cwd — so it
+ * never reaches this check.
+ */
+export class CrossRepoFlumeDirError extends Error {}
+
+/**
+ * Walk up from an absolute path looking for a `.flume` path segment,
+ * returning its parent — the repo root implied by a canonical
+ * `<repo>/.flume` or `<repo>/.flume/jobs/<name>` shape. `undefined` when no
+ * ancestor segment is named `.flume` (a deliberate out-of-tree relocation —
+ * spec/cli.md's "a relocated state root is expected to live outside the
+ * working tree" — carries no implied repo to check against).
+ */
+function impliedRepoRoot(absPath: string): string | undefined {
+  let dir = absPath;
+  for (;;) {
+    if (basename(dir) === ".flume") return dirname(dir);
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
  * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
  * git applies to `.git/` (RELEASE-v0.7 §9). `cwd` itself counts as inside
  * the bay: if its basename is `.flume`, the bay root is its parent, no walk
@@ -127,6 +158,16 @@ export function resolveRepoRoot(cwd: string): string {
  * the child sees all three written-back vars, and the dir vars *are* the
  * parent's canonical job resolution, so set dirs win and the job name rides
  * along for the branch guard and fanout namespacing.
+ *
+ * Cross-repo inheritance refusal: an already-absolute `FLUME_DIR` that still
+ * carries a `<repo>/.flume(/jobs/<name>)?` shape for a repo other than this
+ * call's `repoRoot` throws {@link CrossRepoFlumeDirError} rather than
+ * writing there — the shape observed 2026-08-03 when a nested `flume wake`
+ * inherited its parent process's `FLUME_DIR` instead of resolving fresh
+ * against its own cwd. A relative `FLUME_DIR` never triggers this: it
+ * resolves against this invocation's own cwd by construction, and a value
+ * with no `.flume` ancestor at all is a deliberate out-of-tree relocation
+ * (§12 above) with no implied repo to compare against.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
@@ -144,6 +185,18 @@ export function resolveStateDirs(
     : job
       ? join(repoRoot, ".flume", "jobs", job)
       : join(repoRoot, ".flume");
+  if (env.FLUME_DIR && isAbsolute(env.FLUME_DIR)) {
+    const impliedRoot = impliedRepoRoot(flumeDir);
+    if (impliedRoot !== undefined && resolve(impliedRoot) !== resolve(repoRoot)) {
+      throw new CrossRepoFlumeDirError(
+        `FLUME_DIR ${flumeDir} belongs to repo ${impliedRoot}, not this ` +
+          `invocation's resolved repo root ${repoRoot} — refusing to write ` +
+          `there (looks inherited from a different repo's flume process). ` +
+          `Unset FLUME_DIR, or pass --job <name> to resolve fresh against ` +
+          `this repo.`,
+      );
+    }
+  }
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
     : join(repoRoot, ".flume");
@@ -354,19 +407,26 @@ Exit codes:
   wake: `Usage: flume wake <phase>
 
 Mark <phase> awake by touching .flume/awake/<phase>. The next tick will
-schedule that phase.
+schedule that phase. Best-effort: loads .flume/chain.ts to check <phase>
+against its declared phases; a chain that fails to load never blocks the
+wake, only a chain that loads and doesn't declare <phase> does.
 
 Exit codes:
   0   Success.
-  2   Missing <phase> argument.
+  2   Missing <phase> argument, or <phase> names a phase the loaded chain
+      does not declare. No flag is written.
 `,
   sleep: `Usage: flume sleep <phase>
 
-Mark <phase> hibernating by removing .flume/awake/<phase>.
+Mark <phase> hibernating by removing .flume/awake/<phase>. Best-effort:
+loads .flume/chain.ts to check <phase> against its declared phases; a chain
+that fails to load never blocks the sleep, only a chain that loads and
+doesn't declare <phase> does.
 
 Exit codes:
   0   Success (no-op if already hibernating).
-  2   Missing <phase> argument.
+  2   Missing <phase> argument, or <phase> names a phase the loaded chain
+      does not declare.
 `,
 };
 
@@ -563,6 +623,27 @@ async function runJobVerb(
   }
 }
 
+/**
+ * `wake`/`sleep`'s best-effort chain load, mirroring `status`'s pattern
+ * (§3 above): a missing or broken chain must never block the marker
+ * mutation — there is nothing to validate the phase name against. Only a
+ * chain that loads *successfully* and does not declare `phase` among its
+ * `chain.phases` refuses. Reached with `configDir` (repo-resident, §2) —
+ * `--job` never retargets it, so a job-dir `chain.ts` is inert here exactly
+ * as it is for `status` and `tick`.
+ */
+async function chainRefusesPhase(
+  configDir: string,
+  phase: string,
+): Promise<boolean> {
+  try {
+    const { chain } = await diskChainLoader(configDir)();
+    return !chain.phases.some((p) => p.name === phase);
+  } catch {
+    return false;
+  }
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const repoRoot = resolveRepoRoot(process.cwd());
@@ -672,7 +753,10 @@ async function main(): Promise<number> {
   try {
     ({ flumeDir, configDir, job } = resolveStateDirs(process.env, repoRoot, jobFlag));
   } catch (err) {
-    if (err instanceof JobResolutionConflictError) {
+    if (
+      err instanceof JobResolutionConflictError ||
+      err instanceof CrossRepoFlumeDirError
+    ) {
       console.error(`[flume] ${err.message}`);
       return 2;
     }
@@ -790,6 +874,12 @@ async function main(): Promise<number> {
       console.error("usage: flume wake <phase>");
       return 2;
     }
+    if (await chainRefusesPhase(configDir, phase)) {
+      console.error(
+        `[flume] wake refuses: '${phase}' is not a phase this chain declares`,
+      );
+      return 2;
+    }
     new Baton(flumeDir).wake(phase);
     console.log(`woke ${phase}`);
     return 0;
@@ -799,6 +889,12 @@ async function main(): Promise<number> {
     const phase = rest[0];
     if (!phase) {
       console.error("usage: flume sleep <phase>");
+      return 2;
+    }
+    if (await chainRefusesPhase(configDir, phase)) {
+      console.error(
+        `[flume] sleep refuses: '${phase}' is not a phase this chain declares`,
+      );
       return 2;
     }
     new Baton(flumeDir).sleep(phase);

@@ -20,6 +20,7 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  CrossRepoFlumeDirError,
   JobResolutionConflictError,
   isInvokedDirectly,
   resolveRepoRoot,
@@ -180,6 +181,59 @@ describe("resolveStateDirs — §3 job resolution", () => {
     expect(configDir).toBe(inherited);
     expect(job).toBe("alpha");
     expect(env.FLUME_JOB).toBe("alpha");
+  });
+});
+
+/**
+ * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL — an already-absolute, inherited
+ * `FLUME_DIR` that still carries a `<repo>/.flume(/jobs/<name>)?` shape for a
+ * repo other than this call's `repoRoot` refuses rather than writing there.
+ * Observed on disk 2026-08-03: a nested `flume wake groom` in a CI-smoke
+ * scratch repo inherited its parent process's `FLUME_DIR`, landing
+ * `.flume/awake/groom` in the wrong repo's live baton.
+ */
+describe("resolveStateDirs — cross-repo FLUME_DIR inheritance refusal", () => {
+  const otherRepoFlumeDir = resolve("/other/repo/.flume");
+
+  it("an inherited (absolute) FLUME_DIR whose implied repo differs from repoRoot throws", () => {
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: otherRepoFlumeDir };
+    expect(() => resolveStateDirs(env, repoRoot)).toThrow(
+      CrossRepoFlumeDirError,
+    );
+    try {
+      resolveStateDirs(env, repoRoot);
+    } catch (err) {
+      expect((err as Error).message).toContain(otherRepoFlumeDir);
+      expect((err as Error).message).toContain(resolve("/other/repo"));
+      expect((err as Error).message).toContain(repoRoot);
+    }
+  });
+
+  it("the same shape under .flume/jobs/<name> also throws", () => {
+    const env: NodeJS.ProcessEnv = {
+      FLUME_DIR: resolve("/other/repo/.flume/jobs/alpha"),
+    };
+    expect(() => resolveStateDirs(env, repoRoot)).toThrow(
+      CrossRepoFlumeDirError,
+    );
+  });
+
+  it("an inherited FLUME_DIR whose implied repo matches repoRoot does not throw", () => {
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: resolve(join(repoRoot, ".flume")) };
+    expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
+  });
+
+  it("an out-of-tree relocation with no .flume ancestor at all composes (no implied repo to check)", () => {
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: resolve("/var/dock/state") };
+    expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
+  });
+
+  it("a relative FLUME_DIR never triggers the check, even if it would resolve under another repo's .flume", () => {
+    // Relative values resolve against THIS invocation's own cwd by
+    // construction — there is no "inherited" case for them, so the check
+    // is scoped to already-absolute values only (§12).
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: "../other/repo/.flume" };
+    expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
   });
 });
 
@@ -2344,9 +2398,9 @@ describe("§3 job resolution — real CLI", () => {
         await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
         const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         await mkdir(jobDir, { recursive: true });
-        // §2 inertness: configDir never follows --job, so status's
-        // best-effort chain load reaches the repo chain, never this trap —
-        // wake/sleep load no chain at all.
+        // §2 inertness: configDir never follows --job, so status's and
+        // wake/sleep's best-effort chain loads all reach the repo chain
+        // (which declares "probe"), never this job-dir trap.
         await writeFile(join(jobDir, "chain.ts"), INERT_TRAP_CHAIN_SRC, "utf8");
 
         const status = await runCli(repo.dir, ["--job", "foo", "status"]);
@@ -2492,5 +2546,125 @@ describe("§3 job resolution — real CLI", () => {
       }
     },
     60_000,
+  );
+});
+
+/**
+ * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL — end-to-end through the real CLI:
+ * an inherited FLUME_DIR pointing at a *different* repo's `.flume` refuses
+ * (exit 2) instead of writing there. Mirrors the 2026-08-03 incident: a
+ * nested `flume wake` inherited its parent's FLUME_DIR rather than
+ * resolving fresh against its own cwd.
+ */
+describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL)", () => {
+  it(
+    "a flume invocation with FLUME_DIR inherited from another repo's tick refuses instead of writing to it",
+    async () => {
+      const outer = await makeJobRepo("main");
+      const inner = await makeJobRepo("main");
+      try {
+        const outerFlumeDir = join(outer.dir, ".flume");
+        await mkdir(outerFlumeDir, { recursive: true });
+
+        const wake = await runCli(inner.dir, ["wake", "groom"], {
+          ...hermeticEnv(),
+          FLUME_DIR: outerFlumeDir,
+        });
+
+        expect(wake.code).toBe(2);
+        expect(wake.out).toContain(outerFlumeDir);
+        expect(wake.out).toContain(inner.dir);
+        expect(existsSync(join(outerFlumeDir, "awake", "groom"))).toBe(false);
+        expect(existsSync(join(inner.dir, ".flume"))).toBe(false);
+      } finally {
+        await outer.cleanup();
+        await inner.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
+/**
+ * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL, part 2 — `wake`/`sleep` refuse a
+ * phase absent from the loaded chain's declared phases, before the marker
+ * is ever written. Best-effort like `status`: a chain that fails to load
+ * never blocks either command.
+ */
+describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL)", () => {
+  it(
+    "flume wake <undeclared-phase> exits 2 and creates no flag",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc()); // declares "probe" only
+        const wake = await runCli(repo.dir, ["wake", "ghost"]);
+        expect(wake.code).toBe(2);
+        expect(wake.out).toContain("ghost");
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "ghost")),
+        ).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume sleep <undeclared-phase> exits 2",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc()); // declares "probe" only
+        const sleep = await runCli(repo.dir, ["sleep", "ghost"]);
+        expect(sleep.code).toBe(2);
+        expect(sleep.out).toContain("ghost");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "wake/sleep still succeed for a phase the chain declares",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const wake = await runCli(repo.dir, ["wake", "probe"]);
+        expect(wake.code).toBe(0);
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(true);
+
+        const sleep = await runCli(repo.dir, ["sleep", "probe"]);
+        expect(sleep.code).toBe(0);
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "wake proceeds (best-effort) when no chain is present at all to validate against",
+    async () => {
+      const repo = await makeJobRepo("main"); // no .flume/chain.ts written
+      try {
+        const wake = await runCli(repo.dir, ["wake", "anything"]);
+        expect(wake.code).toBe(0);
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "anything")),
+        ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
   );
 });
