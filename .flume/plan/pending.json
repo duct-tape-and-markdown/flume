@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "DISPATCHER-FINALAGENTMESSAGE-STREAMJSON-SILENT-EMPTY",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "finalAgentMessage (~L3450): when sawStreamJson is true but neither resultText nor lastAssistantText resolved, fall back to tailBound(raw stdout, MAX_PRIOR_NOCOMMIT) instead of tailBound(\"\", ...)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the fallback"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "finalAgentMessage silently returns \"\" for a §6 voluntary-bail when stdout parses as stream-json but no result/assistant event matches, losing the bail's refused constraint.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "tests": [
+      "a stdout that parses as stream-json (a line with a `type` field) but contains no `result` or `assistant` event yields the bounded raw stdout as the voluntary-bail message instead of an empty string"
+    ],
+    "acceptance": "finalAgentMessage falls back to tailBound(stdout, MAX_PRIOR_NOCOMMIT) when stream-json is detected but no text was extracted; the new test fails on the pre-fix tree.",
+    "notes": "Found sweeping src/Dispatcher.ts (posture-sweep.md). src/Agent.ts documents AgentResult.stdout as an opaque per-provider seam for future non-Claude agents; this closes the silent-empty defect without redesigning that seam — a fuller fix (provider-supplied extraction) is a separate design call, not filed."
+  }
+]
