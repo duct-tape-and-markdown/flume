@@ -256,6 +256,54 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
   });
 });
 
+describe("renderPrompt <harness> gate list matches what the tick actually runs (CHAIN-AFTERMERGE-SINGLETON-PROMPT-FILTER)", () => {
+  async function render(p: Phase): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "task body\n", "utf8");
+    return renderPrompt({
+      phase: p,
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+    });
+  }
+
+  it("a singleton phase declaring an afterMerge gate renders a harness block that does not name it", async () => {
+    const p = phase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [
+        { name: "tsc", when: "afterCommit", run: async () => ({ ok: true, message: "" }) },
+        { name: "vitest", when: "afterMerge", run: async () => ({ ok: true, message: "" }) },
+      ],
+    });
+
+    const out = await render(p);
+
+    expect(out).toContain("  - tsc (afterCommit)");
+    expect(out).not.toContain("vitest");
+    expect(out).not.toContain("afterMerge");
+  });
+
+  it("a fanout phase's harness block still names its afterMerge gates unchanged", async () => {
+    const p = phase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [
+        { name: "tsc", when: "afterCommit", run: async () => ({ ok: true, message: "" }) },
+        { name: "vitest", when: "afterMerge", run: async () => ({ ok: true, message: "" }) },
+      ],
+    });
+
+    const out = await render(p);
+
+    expect(out).toContain("  - tsc (afterCommit)");
+    expect(out).toContain("  - vitest (afterMerge)");
+  });
+});
+
 // Agreement case (ENTRYWRITESCOPE-SHARED-UNION, per engineering.md "Derived
 // state is computed, never restated beside its source"): the rendered
 // effective-fence bullets and writablePathsGate's actual accepted scope must
