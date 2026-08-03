@@ -30,6 +30,7 @@ import {
   liveTipClaimPid,
   tipClaimPath,
   TipClaimHeldError,
+  type CurrentRef,
 } from "./git.js";
 import {
   jobNew,
@@ -190,6 +191,26 @@ export function loopExitCode(result: SuperviseResult): number {
   return result.erroredTicks.length > 0 && result.shippedTags.length === 0
     ? 1
     : 0;
+}
+
+/**
+ * `tick` and `loop`'s pre-work refusal message for a `CurrentRef` that
+ * failed to name a ref — one branch per {@link CurrentRef} failure kind, so
+ * a caller outside a repository is told that, not "HEAD is detached"
+ * (v0.11 §4 drift). Exhaustive over the non-`"ref"` kinds; a new kind is a
+ * compile error here, not a silent fallthrough.
+ */
+function describeRefFailure(
+  ref: Exclude<CurrentRef, { kind: "ref" }>,
+): string {
+  switch (ref.kind) {
+    case "detached":
+      return "HEAD is detached — checkout a branch first";
+    case "not-a-repository":
+      return "not a git repository";
+    case "git-unavailable":
+      return `git failed to run (${ref.message})`;
+  }
 }
 
 /**
@@ -697,13 +718,13 @@ async function main(): Promise<number> {
     }
     // v0.11 §4: report the current tip's claim alongside supervisor
     // liveness, observational and best-effort — a detached HEAD (no ref to
-    // key the claim on) or an absent claim file both read as silence, the
-    // same precedent as the no-pidfile case above.
+    // key the claim on), a non-repository cwd, or a git invocation failure
+    // all read as silence, the same precedent as the no-pidfile case above.
     const headRefForStatus = await currentRefPath(repoRoot);
-    if (headRefForStatus !== null) {
+    if (headRefForStatus.kind === "ref") {
       const claimPath = tipClaimPath(
         await gitCommonDir(repoRoot),
-        headRefForStatus,
+        headRefForStatus.path,
       );
       if (existsSync(claimPath)) {
         const holder = await liveTipClaimPid(claimPath);
@@ -802,15 +823,14 @@ async function main(): Promise<number> {
     // below) must leave no record for `flume loop`'s supervisor to misread
     // as its own.
     await clearTickVerdict(flumeDir);
-    // v0.11 §4: tick and loop both refuse before any tick when HEAD is
-    // detached — the tick record's meaning is advancing a named tip, and
+    // v0.11 §4: tick and loop both refuse before any tick when HEAD does not
+    // name a ref — the tick record's meaning is advancing a named tip, and
     // the (loop-level) claim that guards it keys on a ref. A bare tick
     // takes no claim itself but still refuses here so the behavior is
     // identical whether or not a loop wraps it.
-    if ((await currentRefPath(repoRoot)) === null) {
-      console.error(
-        "[flume] tick refuses: HEAD is detached — checkout a branch first",
-      );
+    const tickHeadRef = await currentRefPath(repoRoot);
+    if (tickHeadRef.kind !== "ref") {
+      console.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);
       return 1;
     }
     const outcome = await dispatcher.tick();
@@ -836,15 +856,14 @@ async function main(): Promise<number> {
       }
       max = parsed;
     }
-    // v0.11 §4: refuse before any tick when HEAD is detached — the tip
-    // claim acquired below keys on the ref HEAD resolves to.
-    const headRef = await currentRefPath(repoRoot);
-    if (headRef === null) {
-      console.error(
-        "[flume] loop refuses: HEAD is detached — checkout a branch first",
-      );
+    // v0.11 §4: refuse before any tick when HEAD does not name a ref — the
+    // tip claim acquired below keys on the ref HEAD resolves to.
+    const headRefResult = await currentRefPath(repoRoot);
+    if (headRefResult.kind !== "ref") {
+      console.error(`[flume] loop refuses: ${describeRefFailure(headRefResult)}`);
       return 1;
     }
+    const headRef = headRefResult.path;
     // Cross-process loop lock: one supervisor per state root. A stale
     // pidfile (dead pid) is reclaimed; a live one refuses the second loop —
     // two supervisors against one state root race plan/build state. Lives

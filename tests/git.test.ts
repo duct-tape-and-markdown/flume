@@ -35,6 +35,17 @@ import {
 
 const exec = promisify(execFile);
 
+// Test-only unwrap: these tests set up a real repo on a real branch, so
+// `currentRefPath` always resolves a ref here — asserting that shape lets
+// the tip-claim tests below key off the resolved path directly.
+async function resolveRefPath(cwd: string): Promise<string> {
+  const ref = await currentRefPath(cwd);
+  if (ref.kind !== "ref") {
+    throw new Error(`expected a resolved ref, got ${ref.kind}`);
+  }
+  return ref.path;
+}
+
 let repo: string;
 
 beforeEach(async () => {
@@ -78,6 +89,50 @@ describe("revParse", () => {
 
   it("rejects when the ref does not exist", async () => {
     await expect(revParse(repo, "no-such-ref")).rejects.toThrow();
+  });
+});
+
+/**
+ * spec/loop.md, "The loop lock and the tip claim": `git symbolic-ref` exits
+ * non-zero for a detached HEAD, for a cwd outside any repository, and for a
+ * `git` invocation that never ran at all — three causally-distinct states
+ * `currentRefPath` must tell apart rather than folding into one `null`.
+ */
+describe("currentRefPath", () => {
+  it("resolves the branch ref on a normal checkout", async () => {
+    const ref = await currentRefPath(repo);
+    expect(ref.kind).toBe("ref");
+    if (ref.kind === "ref") {
+      expect(ref.path).toMatch(/^refs\/heads\//);
+    }
+  });
+
+  it("reports kind detached on a detached HEAD, distinct from a non-repository cwd", async () => {
+    await exec("git", ["checkout", "-q", "--detach"], { cwd: repo });
+    const ref = await currentRefPath(repo);
+    expect(ref).toEqual({ kind: "detached" });
+  });
+
+  it("reports kind not-a-repository for a cwd outside any git working tree", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "flume-non-repo-"));
+    try {
+      const ref = await currentRefPath(outside);
+      expect(ref).toEqual({ kind: "not-a-repository" });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("reports kind git-unavailable when the git process itself never runs", async () => {
+    // A cwd that doesn't exist on disk fails at spawn (ENOENT), the same
+    // shape node:child_process reports for a missing git binary — real
+    // spawn failure, not a mocked stand-in.
+    const missing = join(await mkdtemp(join(tmpdir(), "flume-missing-")), "gone");
+    const ref = await currentRefPath(missing);
+    expect(ref.kind).toBe("git-unavailable");
+    if (ref.kind === "git-unavailable") {
+      expect(ref.message.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -308,12 +363,11 @@ describe.runIf(process.platform === "win32")(
  */
 describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.11 §4)", () => {
   it("creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>, holding this process's pid", async () => {
-    const refPath = await currentRefPath(repo);
-    expect(refPath).not.toBeNull();
+    const refPath = await resolveRefPath(repo);
     const commonDir = await gitCommonDir(repo);
-    const expectedPath = tipClaimPath(commonDir, refPath!);
+    const expectedPath = tipClaimPath(commonDir, refPath);
 
-    const claim = await acquireTipClaim(repo, refPath!);
+    const claim = await acquireTipClaim(repo, refPath);
 
     expect(claim.path).toBe(expectedPath);
     expect(existsSync(claim.path)).toBe(true);
@@ -323,10 +377,10 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
   });
 
   it("refuses with TipClaimHeldError naming the holder pid when a live pid already holds the claim (EEXIST)", async () => {
-    const refPath = await currentRefPath(repo);
-    const first = await acquireTipClaim(repo, refPath!);
+    const refPath = await resolveRefPath(repo);
+    const first = await acquireTipClaim(repo, refPath);
 
-    const attempt = acquireTipClaim(repo, refPath!);
+    const attempt = acquireTipClaim(repo, refPath);
     await expect(attempt).rejects.toBeInstanceOf(TipClaimHeldError);
     await expect(attempt).rejects.toThrow(
       new RegExp(
@@ -341,9 +395,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
   });
 
   it("reclaims silently and retries when the recorded pid is dead, taking over the claim", async () => {
-    const refPath = await currentRefPath(repo);
+    const refPath = await resolveRefPath(repo);
     const commonDir = await gitCommonDir(repo);
-    const claimPath = tipClaimPath(commonDir, refPath!);
+    const claimPath = tipClaimPath(commonDir, refPath);
 
     // Harvest a genuinely dead pid: spawn a no-op node child and wait for it
     // to exit before planting it as the stale holder.
@@ -353,7 +407,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     await mkdir(dirname(claimPath), { recursive: true });
     await writeFile(claimPath, String(deadPid));
 
-    const claim = await acquireTipClaim(repo, refPath!);
+    const claim = await acquireTipClaim(repo, refPath);
 
     expect(claim.path).toBe(claimPath);
     // The dead holder's pid was overwritten by this call's own — proof the
@@ -364,8 +418,8 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
   });
 
   it("release removes the claim file", async () => {
-    const refPath = await currentRefPath(repo);
-    const claim = await acquireTipClaim(repo, refPath!);
+    const refPath = await resolveRefPath(repo);
+    const claim = await acquireTipClaim(repo, refPath);
     expect(existsSync(claim.path)).toBe(true);
 
     claim.release();

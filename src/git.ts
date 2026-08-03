@@ -240,16 +240,40 @@ export async function gitCommonDir(cwd: string): Promise<string> {
 }
 
 /**
- * The ref HEAD resolves to (e.g. `refs/heads/main`), or `null` when HEAD is
- * detached (or `cwd` is not a git repo at all) — `git symbolic-ref` exits
- * non-zero rather than naming a ref in either case.
+ * The three ways `git symbolic-ref --quiet HEAD` fails to name a ref,
+ * distinguished so a caller can refuse each with its own message instead of
+ * folding them into one "HEAD is detached" reading:
+ *
+ * - `detached` — a real repo, HEAD just isn't a symbolic ref. Git exits `1`.
+ * - `not-a-repository` — `cwd` isn't inside a git working tree at all. Git
+ *   exits `128` (its fatal-error convention) rather than `1`.
+ * - `git-unavailable` — the `git` process itself never ran (binary missing,
+ *   spawn failure) — a `node:child_process` spawn error, not a git exit
+ *   code, so its `code` is a string (e.g. `ENOENT`) rather than a number.
  */
-export async function currentRefPath(cwd: string): Promise<string | null> {
+export type CurrentRef =
+  | { kind: "ref"; path: string }
+  | { kind: "detached" }
+  | { kind: "not-a-repository" }
+  | { kind: "git-unavailable"; message: string };
+
+/**
+ * The ref HEAD resolves to (e.g. `refs/heads/main`), or the distinguished
+ * reason it could not be named — see `CurrentRef`. `git symbolic-ref` exits
+ * non-zero in all three failure cases; only its exit code (or the absence of
+ * one, on a spawn failure) tells them apart.
+ */
+export async function currentRefPath(cwd: string): Promise<CurrentRef> {
   try {
     const { stdout } = await run(cwd, ["symbolic-ref", "--quiet", "HEAD"]);
-    return stdout || null;
-  } catch {
-    return null;
+    return stdout ? { kind: "ref", path: stdout } : { kind: "detached" };
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === "number") {
+      return code === 1 ? { kind: "detached" } : { kind: "not-a-repository" };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: "git-unavailable", message };
   }
 }
 

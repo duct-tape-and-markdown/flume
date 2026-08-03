@@ -1077,6 +1077,27 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
+    // spec/loop.md, "The loop lock and the tip claim": `currentRefPath`
+    // returned `null` for a detached HEAD, a non-repository cwd, and a
+    // failing git invocation alike, so the refusal printed "HEAD is
+    // detached" even when the caller was never in a repository at all.
+    'flume tick outside a git repository reports that, not "HEAD is detached"',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-non-repo-"));
+      try {
+        const r = await runCli(dir, ["tick"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("not a git repository");
+        expect(r.out).not.toContain("HEAD is detached");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
     // spec/loop.md, "The tick verdict — one facts artifact": the
     // detached-HEAD refusal must clear a prior tick's stale verdict before
     // returning, not leave it for a loop's supervisor to misread as this
