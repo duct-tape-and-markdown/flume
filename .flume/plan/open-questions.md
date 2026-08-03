@@ -134,3 +134,67 @@ path, it arrives with a design that reaches the chain-less readers too.
 Pending: `spec/pending.md` states the path as fixed layout under `flumeDir`,
 one constant, no override.
 
+
+## SHIP-CLASSIFICATION-IS-THE-ENGINE-GUESSING
+
+Ship detection diffs a merged commit against the entry's **declared** `files`:
+zero overlap means not shipped. That makes `files` a contract, which is exactly
+the coupling the writablePaths ruling removed everywhere else — the last place
+an entry declaration is load-bearing rather than advisory.
+
+The operator's read: asserting success from paths committed is an overstep, and
+gates passing should mean shipped.
+
+Why gates alone do not close it: gates check *tree health*, not *work done*. The
+incident that produced this predicate was a build tick that wrote only a park
+note to `open-questions.md`, committed, passed tsc and vitest, and cleared its
+entry from the queue with nothing built. Gates-only reproduces that exactly.
+
+The real defect is that **parking is inferred rather than stated.** A no-commit
+bail has an explicit mode (`voluntary-bail`); a park that *does* commit has no
+signal, so the engine reverse-engineers intent from paths.
+
+Options:
+
+1. **Channel-only is not a ship.** Keep a path predicate but read it off
+   `phase.entryChannelPaths` — a phase declaration — rather than `entry.files`.
+   Closes the park case with no entry-level coupling. Fragile if channels are
+   later removed, and a park written outside a channel escapes it.
+2. **Explicit park signal.** Build states that it parked, the engine records the
+   fact, the path predicate is deleted. Cleanest, and it matches "the engine
+   reports facts, the chain interprets". Needs a channel that is not the commit
+   message — parsing commit prose for meaning is the engine reading payload it
+   should not.
+3. **Chain-interpreted ship.** The engine reports (commit landed, gates passed,
+   paths touched) and the chain decides. Most correct by the boundary rule, and
+   new surface for one use case — weigh the complexity signal.
+
+Recommended: (2), with (1) as the interim if a shape for the signal is not
+obvious. The zero-declared-files bug is filed separately and does not wait on
+this.
+
+## CLAUDECODE-SKIP-PERMISSIONS-DEFAULT
+
+`claudeCode()` passes `--dangerously-skip-permissions` by default. The rationale
+in `src/Agent.ts` is that every Flume tick runs in a worktree the harness
+controls — **false for singleton phases**, which run in the main checkout. This
+repo's own plan phase is that case, so the default's justification does not
+cover the phase it most affects.
+
+An operator call, because it is a safety posture rather than a bug: the flag is
+almost certainly wanted for autonomous operation, and the defect may be the
+rationale rather than the default.
+
+Options:
+
+1. **Keep the default, fix the rationale.** An autonomous tick cannot answer a
+   permission prompt, so a prompt is a hang; the fence and the gates are the
+   real containment, not the worktree. Cheapest, and probably true.
+2. **Default off, chains opt in.** Safest, and it breaks every existing chain on
+   upgrade for a risk none has hit.
+3. **On for fanout, off for singleton.** Matches the stated rationale exactly —
+   and silently varies behavior per phase, the kind of implicit rule this repo
+   keeps removing.
+
+Recommended: (1). The containment claim should name the fence and the gates,
+which are real, rather than the worktree, which is not always there.

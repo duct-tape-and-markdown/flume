@@ -21,25 +21,8 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `loop [--max N]` — ticks until hibernation or the cap (default 50), under a
   supervisor that spawns one fresh `flume tick` process per iteration.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
-- `render <phase> [--entry <tag>]` — print the rendered prompt for a phase to
-  stdout without invoking the agent. For a fanout phase, `--entry <tag>`
-  selects the entry; the default is the entry the next tick would pick, decided
-  by the dispatcher's own pickability rather than a second reading of the gate
-  field — a dry run that disagrees with the run it previews is worse than no
-  dry run.
 - `job new|run|rm|status` — lifecycle verbs over a job's state root
   (`spec/jobs.md`).
-
-> **Drift:** `render`'s default re-derives pickability as `gate.kind ===
-> "open"` (the `cmd === "render"` branch, `src/cli.ts`), where the dispatcher
-> filters through `isPickable` (`src/Dispatcher.ts`, reached from `runFanout`):
-> an unresolved `dependsOnForks` slug is unpickable whatever the gate says, a
-> `blockedBy` whose blocker has left pending *is* pickable, and so is a
-> `requiresCapability` the chain asserts. They disagree in both directions —
-> `render` shows an entry the tick would skip, and refuses with `no open
-> entries in pending.json` over a queue the tick has work in. Detection a
-> sibling surface already performs, re-derived beside it
-> (`engineering.md`'s *the fix lands at the mechanism*).
 
 Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent
@@ -55,22 +38,16 @@ Usage-shaped failures exit 2 uniformly: unknown command or job verb, a missing
 `<phase>` or `<name>`, an unknown phase, `--entry` with no matching entry, a
 `--max` that is missing, non-numeric, or negative (refused before any tick
 runs), a resolution-authority conflict (below), the CJS-context refusal
-(below), and `render` over a `pending.json` that exists but does not parse —
-it prints each parse error and refuses rather than rendering over an empty
-queue (`engineering.md`'s *loud or nothing*; `tick` maps the same unparsable
-queue to 69, per `spec/loop.md`). Everything else is the tick/loop exit-code
-contract in `spec/loop.md`.
+and the CJS-context refusal (below). Everything else is the tick/loop
+exit-code contract in `spec/loop.md`.
 
 The runtime help text is the authoritative statement of the surface;
 `docs/CLI.md` carries one prose entry per subcommand covering exit semantics,
 side effects, and an example invocation.
 
-> **Drift:** two of the exit-2 cases above are missing from that text.
-> `HELP_SUB.tick` (`src/cli.ts`) lists 0/1/69/78 and omits the 2 that
-> `tickExitCode` returns whenever `TickOutcome.usageError` is set — the
-> CJS-context refusal. `HELP_SUB.render` names 2 only for a missing or unknown
-> phase and an unmatched `--entry`, not for the unparsable-`pending.json`
-> refusal the same branch performs.
+> **Drift:** one exit-2 case above is missing from that text. `HELP_SUB.tick`
+> (`src/cli.ts`) lists 0/1/69/78 and omits the 2 that `tickExitCode` returns
+> whenever `TickOutcome.usageError` is set — the CJS-context refusal.
 
 ## `flume status` owes exactly this
 
@@ -236,7 +213,7 @@ error shows through unshadowed.
 > (`src/cli.ts`) tests only `JobUsageError`, and `CjsContextLoadError` is not
 > one, so it falls to the operational branch — the refusal prints behind
 > `[flume] job new failed:` instead of as the headline, and the process exits
-> 1. The two sibling surfaces do hold the rule: `render` catches
+> 1. The sibling surface does hold the rule: `tick` catches
 > `CjsContextLoadError` explicitly, and `tick` routes it through
 > `TickOutcome.usageError` → `tickExitCode`.
 

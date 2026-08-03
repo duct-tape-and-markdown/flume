@@ -116,12 +116,6 @@ consumer rather than a fixture. The unscoped byte shape is separately pinned.
 
 See spec/pending.md for `entry.files` and `phase.entryChannelPaths` themselves.
 
-> **Drift:** `flume render <phase>` resolves an entry into `ctx.assignedEntry` for
-> `promptArgs`, but does not pass `assignedEntry` to `renderPrompt` (`src/cli.ts`, the
-> `render` subcommand). A fanout phase previewed through `flume render` therefore prints
-> the unscoped fence — `writablePaths` — while the real tick prints the narrowed one.
-> The preview surface misstates the fence it exists to preview.
-
 ## The prior-attempt block
 
 When a previous tick for the same entry (fanout, keyed by tag) or phase (singleton,
@@ -141,10 +135,6 @@ neither adds nor removes (see *The render pipeline*).
 
 What is forwarded is a **bounded digest, not a transcript**: enough that the retry does
 not re-derive the same wall, never a session.
-
-`flume render <phase>` passes no `priorAttempt` (`src/cli.ts`, the `render` subcommand),
-so a preview always shows the first-attempt shape — the block is omitted even where a
-persisted record exists for that entry or phase.
 
 The mode union, its persistence, and what each mode means are owned by spec/loop.md; the
 render is the only part stated here. `render-refused` — the mode produced by this file's

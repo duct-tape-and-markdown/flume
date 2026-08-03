@@ -35,6 +35,119 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-08-03 — a tick that dies mid-flight reports a clean stop (operator)
+
+`superviseLoop` accumulates `erroredTicks` only from on-disk verdicts, so a
+child that exits non-zero *without writing one* is invisible to the run total,
+and `loopExitCode` returns 0.
+
+Two live paths reach it. A throwing chain hook (`gate.run`, `handoff`,
+`promptArgs`, `shouldRun`) propagates uncaught out of `Dispatcher.tick` — no
+verdict, and because `baton.sleep(phase)` already ran while `handoff` never
+reached the successor, **the baton is left empty**. `Baton.hibernating()` is
+then true, so the loop stops and reports a clean hibernation. Separately, a
+CJS-context host burns every `--max` tick and still exits 0.
+
+Disk-is-truth means the work is re-runnable; the defect is that nothing tells
+the operator to re-run. `spec/loop.md` *Exit codes* says the run never lies to
+CI, and here it does — the class `.claude/rules/engineering.md` (*Loud or
+nothing*) forbids outright.
+
+Smallest fix that closes both: the supervisor counts a non-zero child exit as
+an errored tick whether or not a verdict was written. Prefer that to wrapping
+every hook — a hook throwing is not itself wrong, the silence is.
+
+Per candidate: `spec/loop.md` *Exit codes*. Test: a child exiting non-zero with
+no verdict on disk makes the run exit non-zero.
+
+## 2026-08-03 — an entry declaring zero files can never ship (operator)
+
+`files.new`/`edit`/`retire` all default to `[]`, so an entry declaring nothing
+parses clean and is pickable. Ship detection then diffs the merged commit
+against `declaredPaths(entry)`, which is empty, so overlap is always zero and
+the entry is never classified shipped. It commits real work every wave, the
+work lands on trunk, and the entry stays at the head of the queue forever.
+
+A live loop, not a theoretical one — CHAINTS-PREDICATE-COVERAGE is in the queue
+right now with empty `files`, because its work is tests and those rode the
+channel.
+
+Two candidate fixes, not equivalent: require at least one declared path at the
+schema, or treat zero-declared as "the gates decide". The second composes with
+the ship-classification open question; the first is independent and cheap.
+Prefer the schema floor unless that question lands first.
+
+Per candidate: `spec/pending.md` *Ship detection requires a declared-files
+diff*. Test: an entry with empty `files` that commits inside the fence is
+either rejected at parse or classified shipped — never silently re-picked.
+
+## 2026-08-03 — three chain-surface gaps (operator)
+
+Independent and mechanical, grouped only because each is a one-line surface
+correction.
+
+- **`maxParallel` is programmatic-only and unvalidated.** `opts.maxParallel ?? 4`
+  in `Dispatcher`, no chain declaration and no floor — a declared `0` wedges the
+  wave silently. `.claude/rules/engine-boundary.md` says policy constants enter
+  as chain-overridable defaults, and `quarantineScope` / `abortThreshold`
+  already do. Make it a `supervisorPolicy` sibling; validate `>= 1`.
+- **An afterMerge gate on a singleton phase is silently inert**, but
+  `prependHarnessBlock` renders `phase.gates` unfiltered, so the prompt tells
+  the agent a gate will judge its commit when nothing will run it. Same class as
+  the fence narration overstating enforcement, and `spec/prompt.md` claims the
+  block never misstates its own enforcement. Filter the render, refuse at chain
+  load, or both.
+- **`claudeCode()`'s skip-permissions rationale is false.** The default itself
+  is an open question (parked); the comment justifying it is wrong today
+  regardless — it claims every tick runs in a harness-controlled worktree, which
+  singleton phases do not.
+
+Per candidates: `spec/chain.md` *Supervisor policy is a chain-overridable
+default* and *What a gate receives*; `spec/prompt.md` *The harness block*.
+
+## 2026-08-03 — `--job <name>` materializes a state root on any subcommand (operator)
+
+`--job typo` resolves `FLUME_DIR` to `.flume/jobs/typo` and the runtime creates
+it on first write, so a mistyped name on a *read* command becomes a real job
+directory that `flume job status` then lists as legitimate. Nothing refuses.
+
+`job new` is the creation verb. Every other subcommand under `--job <name>` (or
+`FLUME_JOB`) should refuse a name with no existing state root — usage error,
+exit 2, naming the job and the path it looked for. Silent materialization on a
+read path is the same degradation class as a substituted placeholder.
+
+Per candidate: `spec/jobs.md` *A job is a state root*, plus `spec/cli.md`
+*Subcommand surface* for the exit-2 list. Test: `flume --job nonexistent status`
+exits 2 and creates no directory; `flume job new nonexistent` still creates one.
+
+## 2026-08-03 — remove `flume render` (operator ruling)
+
+`render` is deleted, not repaired. Operator ruling 2026-08-03.
+
+It is a preview that lies. It never passes `assignedEntry`, so a scoped tick's
+prompt previews with the unscoped fence; it never passes `priorAttempt`, so a
+retry always previews as a first attempt; and its default entry pick re-derives
+pickability as `gate.kind === "open"`, disagreeing with `Dispatcher.isPickable`
+in both directions. Making it honest means threading the tick's whole setup path
+into a dry run — a second implementation of tick selection that will drift the
+same way again.
+
+It is also none of the four things the engine does: instantiate an agent, hand
+it a prompt, check the commit against configuration, decide where to spawn next.
+
+The validation use it actually served — "does chain.ts load and the template
+resolve" — is already covered: `flume status` loads the chain, and CI's smoke
+lanes drive a real `tick`.
+
+Remove: the `render` branch in `src/cli.ts` and its arg parsing, `HELP_SUB.render`
+and its `HELP_TOP` line, the render entry in `docs/CLI.md`, and every test
+asserting the subcommand. `renderPrompt` itself stays — it is the tick's own
+render path and a public export. Breaking CLI change; the changelog is built
+from git at the cut, so the commit body is the record.
+
+Per candidate: `spec/cli.md` *Subcommand surface*. Test: `flume render`
+is an unknown subcommand (exit 2), and no help text names it.
+
 ## 2026-08-03 — exit-code contract (5 defects) (equilibrium audit)
 
 Confirmed against `src/` during the spec/code equilibrium pass; each has a
