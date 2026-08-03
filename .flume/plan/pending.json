@@ -1,1 +1,99 @@
-[]
+[
+  {
+    "tag": "SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Drop the touchesDeclaredFile/declaredPaths ship gate in runFanout; classify shipped on commit-landed+gates-green, consulting the entry's AgentTermination (currently discarded once committed) for a stated park instead."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pin the ruling's acceptance cases."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Ship classification stops diffing declared files; ships on commit-landed+gates-green unless the agent's termination states a park (operator ruling, inbox 2026-08-03).",
+    "per": { "path": "spec/pending.md", "section": "Ship detection requires a declared-files diff" },
+    "tests": [
+      "an entry whose commit touches no declared file, with a clean termination and green gates, is classified shipped",
+      "an entry whose agent stated a park is not classified shipped"
+    ],
+    "acceptance": "runFanout's shipped/mergeOutcomes classification no longer reads declaredPaths(entry); AgentTermination reaches the ship-classification site instead of being discarded once a commit lands.",
+    "notes": "Reconcile with PENDING-ZERO-FILES-SCHEMA-FLOOR (shipped f9f7033/f3e2473, predates this window): its files-diff rationale is gone, but files still feeds partitionByFileOverlap, so the non-empty-files floor stays for that reason alone — don't restate the old rationale. Do not key off phase.entryChannelPaths; that's the same path-inference one layer over (ruling explicitly rejects it)."
+  },
+  {
+    "tag": "CLAUDECODE-SKIPPERMS-RATIONALE-REWRITE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "Rewrite ClaudeCodeOptions.dangerouslySkipPermissions' doc comment per operator ruling (inbox 2026-08-03): default stays true (autonomy requires it), but drop the false 'every tick runs in a harness-controlled worktree' claim."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rewrite claudeCode()'s skip-permissions doc comment to a bounded claim (fence+gates contain what lands, not host-level agent actions), not the false worktree-universality one.",
+    "per": { "path": "spec/chain.md", "section": "The agent seam" },
+    "tests": [],
+    "acceptance": "src/Agent.ts ClaudeCodeOptions.dangerouslySkipPermissions' doc states: the flag is required for autonomy; the fence and gates contain what lands in a commit; what an agent does to the host mid-tick is not contained.",
+    "notes": "Prose-only; default (true) unchanged (operator ruling, inbox 2026-08-03, option 1). Closes CLAUDECODE-SKIP-PERMISSIONS-DEFAULT. spec/chain.md carries the same gap as a Drift note (~line 237) but plan/build cannot edit spec/** (spec-plan-build.md); a human closes that note separately, same pattern as 5f4e449."
+  },
+  {
+    "tag": "CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "Move the resolveStateDirs call ahead of the `cmd === \"job\"` verb dispatch in main() so every subcommand — including job new/status/rm — inherits the same canonicalized flumeDir/configDir; stop runJobVerb/jobNew re-deriving configDir from raw process.env.FLUME_CONFIG_DIR."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Pin the ruling's acceptance case."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Resolve flumeDir/configDir once ahead of verb dispatch so job new/job status/job rm stop re-deriving configDir independently (operator ruling, inbox 2026-08-03, part 1).",
+    "per": { "path": "spec/cli.md", "section": "State-root and config-dir resolution" },
+    "tests": [
+      "a chain factory reading process.env.FLUME_DIR during job new sees the resolved state root, not the caller's raw environment"
+    ],
+    "acceptance": "No subcommand branch re-derives configDir/flumeDir from process.env directly; every branch reads the single resolveStateDirs() call made ahead of dispatch.",
+    "notes": "Do not synthesize a --job-shaped input from job new's positional <name> to route it through the existing post-dispatch call — that's a branch on a specific instance (engineering.md, 'The fix lands at the mechanism'). Move the call, don't special-case the verb."
+  },
+  {
+    "tag": "CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "resolveStateDirs refuses an inherited FLUME_DIR whose repo does not match this invocation's resolved repoRoot; wake/sleep load the chain (best-effort, like status) and refuse (exit 2) a phase the chain does not declare."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Pin both refusals."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "An inherited FLUME_DIR that crosses a repo root refuses instead of silently writing there; wake/sleep independently refuse an undeclared phase (operator ruling, inbox 2026-08-03, part 2).",
+    "per": { "path": "spec/cli.md", "section": "State-root and config-dir resolution" },
+    "tests": [
+      "a flume invocation with FLUME_DIR inherited from another repo's tick refuses instead of writing to it",
+      "flume wake <undeclared-phase> exits 2 and creates no flag",
+      "flume sleep <undeclared-phase> exits 2"
+    ],
+    "acceptance": "Cross-repo FLUME_DIR inheritance refuses (exit 2) with an explicit --job/--flume-dir override stated as the escape hatch; wake/sleep exit 2 on a phase absent from the loaded chain's declared phases.",
+    "notes": "Observed on disk 2026-08-03: .flume/awake/groom (examples/backlog-groomer-chain.ts's phase) appeared in this repo's live baton via a nested `flume wake groom` in a CI-smoke scratch repo, inherited FLUME_DIR overriding cwd. Also per spec/jobs.md 'A job is a state root'. Flag already cleared; no live consequence remains."
+  }
+]
