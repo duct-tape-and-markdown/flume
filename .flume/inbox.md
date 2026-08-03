@@ -35,6 +35,33 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-08-02 — assemble `.changeset/*.md` fragments into CHANGELOG.md at release (human)
+
+`71bb00f` moved build's changelog record from `CHANGELOG.md` to per-entry
+`.changeset/<TAG>.md` fragments, because one shared append-only file was
+costing 3.3x wave width (mean first batch 1.20 declared vs 3.94 stripped,
+replayed over 50 historical queues at maxParallel 4). Fragments now
+accumulate and nothing folds them back.
+
+Needed: a release step that reads `.changeset/*.md`, appends their content
+under CHANGELOG.md's `[Unreleased]` (preserving the `### Breaking`
+subheading convention per `spec/RELEASE-v0.1.md` §9), and deletes the
+consumed fragments. `scripts/` and `CHANGELOG.md` are both in build's
+`writablePaths`, so this is a normal build entry.
+
+Two properties worth pinning in its tests: fragments are consumed exactly
+once (a re-run over an empty `.changeset/` is a no-op, not an error), and
+ordering is deterministic — the wave that produced them is unordered, so
+sort by filename rather than by directory read order.
+
+Until it exists, CHANGELOG.md goes stale between releases while the
+fragments hold the truth. That is the intended interim state, not drift, but
+it should not outlive one release cut.
+
+Per candidate: `spec/RELEASE-v0.1.md` §9 (versioning policy — Breaking
+subheading) for the assembly contract; `.claude/rules/engineering.md` *Loud
+or nothing* for the consumed-exactly-once refusal.
+
 ## 2026-08-02 — `.flume/chain.ts` has zero behavioral coverage (human)
 
 `vitest.config.ts` includes `tests/**` only; no test imports `../.flume/chain.ts`.
