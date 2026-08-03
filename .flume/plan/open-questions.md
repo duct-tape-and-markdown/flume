@@ -74,119 +74,67 @@ asymmetry.
 
 ## ENGINE-BRANCH-VERBS-VS-NAVIGATION-RULING
 
-The navigation doctrine (`spec/loop.md`, *The engine records, never
-navigates*) states: "The engine never runs `checkout` or `branch`, and ships
-no branch grammar." The engine does both. `git.addWorktree` runs
-`worktree add -B <branch>`; `git.deleteBranch` runs `branch -D`; and
-`Dispatcher.createWorktree` constructs the grammar itself —
-`flume/<namespace>/<slug>`, or `flume/<slug>` unnamespaced.
+**RESOLVED (operator, 2026-08-03) — option 2: state the condition.**
 
-The `cherry-pick` half of this ruling was already amended once (d604d55) to
-declare fanout's merge as a named carve-out rather than leave it an unnoticed
-violation. The branch half was not, and it is the same shape: ephemeral refs
-the engine creates, uses, and deletes inside one wave, which no operator ever
-sees or chooses.
+The navigation doctrine is reworded from a verb prohibition to a ref
+condition: **the engine never runs `checkout`, and never touches a ref
+outside `flume/**`.** It ratifies exactly the behavior a carve-out would
+(`git.addWorktree`'s `worktree add -B`, `git.deleteBranch`'s `branch -D`,
+over the `flume/<namespace>/<slug>` grammar `Dispatcher.createWorktree`
+builds) — but states a condition something can evaluate, instead of a second
+named exception beside cherry-pick.
 
-Needs a human call because it is a doctrine question, not a code question —
-nothing is broken either way, but the corpus currently says one thing and
-ships another.
+Prose that names an exception drifts silently; prose that states a condition
+can be promoted to a sweep lens or a gate. This one already drifted once
+(`d604d55` fixed the cherry-pick half after the same contradiction went
+unnoticed), which is the argument.
 
-Options:
-
-1. **Ratify as a second carve-out.** Amend the ruling the way cherry-pick was
-   amended: the prohibition scopes to refs the *operator* chose, and the
-   engine's own ephemeral `flume/**` names are recording, not navigating.
-   Cheapest, and consistent with how the first carve-out was settled. The
-   spec text already reads this way pending the call.
-2. **Tighten the ruling's wording instead.** Say the engine never runs
-   `checkout`, and never touches a ref outside `flume/**` — which is
-   checkable, and would let a gate or sweep lens enforce it rather than
-   leaving it prose.
-3. **Remove the branch usage.** `worktree add` can operate on a detached
-   HEAD, so the `-B` and the grammar could go. Real work, and it would cost
-   the readable `git worktree list` output the branch names currently give an
-   operator mid-wave.
-
-Recommended: (2). It ratifies the same behavior (1) does, but states the
-condition rather than the exception — so the claim becomes something a sweep
-can evaluate instead of prose that drifted once already
-(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+Pending: `spec/loop.md`'s *The engine records, never navigates* takes the new
+wording, and its branch-grammar `> **Drift:**` note is deleted — with the
+condition stated, there is no divergence left to note. The cherry-pick
+carve-out stays; it moves a ref inside `flume/**` too, so it satisfies the
+same condition rather than needing its own exception.
 
 ## win32 CI lane says "full suite", runs the fast lane (inbox 2026-08-02)
 
-**PARKED**
+**RESOLVED (operator, 2026-08-03) — option 1: run the integration lane on win32.**
 
-`.github/workflows/ci.yml`'s windows job comment claims "full suite" but runs
-`pnpm test`, which `vitest.config.ts` excludes `**/*.integration.test.ts`
-from. `pnpm test:integration` runs only in the ubuntu job, so
-`loop-process-boundary.integration.test.ts`, `job.integration.test.ts`, and
-`examples.integration.test.ts` (949 lines: subprocess spawn, worktree
-provisioning, exit-code boundaries) never run on win32 — the primary dev
-platform for this repo, and the platform the `.cmd`-shim spawn defect
-(`scripts/smoke-install.mjs`) and `execGate`'s win32 ENOENT shell-retry shim
-both came from. The two-lane split itself is declared and reasoned
-(`spec/worktrees.md`, *The default test lane must stay fast*); the "full
-suite" claim on top of it is not.
+`pnpm test:integration` joins the windows job. win32 is the primary
+development platform here and is the origin of the exact bug class the
+integration lane covers — the `.cmd`-shim spawn defect and `execGate`'s
+ENOENT shell-retry shim both came from it. A lane that documents the gap
+(option 2) leaves the platform most likely to break the least covered.
 
-Options:
+CI-minutes cost accepted. If the lane proves flaky on the slower runner,
+that is a follow-up about the lane's reliability, not a reason to reopen
+this.
 
-1. **Add `pnpm test:integration` to the windows lane.** Closes the real gap;
-   costs win32 CI minutes and imports whatever flakiness the integration lane
-   has on a slower runner.
-2. **Correct the comment to "fast lane"**, state integration is POSIX-only
-   and why. Cheap, honest, leaves the coverage gap standing.
-3. **Split**: run the integration lane on win32 non-blocking
-   (`continue-on-error`), the pattern the `attw` step already uses with its
-   reason named.
+Pending: `spec/cli.md`'s win32 portability section states that the win32 lane
+runs both suites, so the claim the comment makes becomes one the config has
+to satisfy.
 
-Recommended: lean (1) — this is the primary dev platform, and the exact bug
-class the integration lane covers (subprocess/worktree spawn) is what has
-actually broken here before; (2) alone documents a real gap rather than
-closing it. Needs a call on CI-minutes cost, which is not decidable from the
-repo alone.
+## `plan/pending.json` path: one fact, two homes (inbox 2026-08-02)
 
-## `plan/pending.json` path: one fact, two homes, and a chain-less tension (inbox 2026-08-02)
+**RESOLVED (operator, 2026-08-03) — option 1: drop the override.**
 
-**PARKED**
+The `plan/pending.json` layout is convention, not capability. `pendingGate`'s
+`opts.pendingPath` override is removed and all five sites
+(`Dispatcher.ts`, `builtinGates.ts`, `cli.ts` x2, `job.ts`) resolve the path
+through one shared constant.
 
-`Dispatcher.ts:1038` hardcodes `join(this.flumeDir, "plan", "pending.json")`.
-`builtinGates.ts:323` makes the same path chain-overridable
-(`opts.pendingPath ?? join("plan", "pending.json")`). `cli.ts:721`,
-`cli.ts:959`, and `job.ts:439` each re-derive the literal a third way. A
-chain that overrides `pendingGate`'s path gets a gate reading one file and a
-dispatcher writing another — silent desync, not a theoretical risk.
+The override's only observed effect has been the desync it enables — a chain
+overriding it gets a gate reading one file while the dispatcher writes
+another. And it could never have been honest: `cli.ts`'s status and job
+commands read the pending count **without loading the chain**, by design, so
+a chain-supplied path is structurally unreachable from the surface that needs
+it most. That is the upstream flag `.claude/rules/collaboration.md`
+(*Complexity is a signal*) exists to catch — the capability was added without
+accounting for the chain-less reads.
 
-Researched before parking (`.claude/rules/collaboration.md`, *Inform before
-parking*): the second-implementation test (`.claude/rules/engine-boundary.md`)
-looks at first like it argues for unifying on the capability side — a
-single-phase chain (`examples/backlog-groomer-chain.ts`) plausibly wants a
-different layout. But `job.ts`'s pending-count read is explicitly a
-"chain-less informational read" — `cli.ts`'s status/job commands run without
-loading the chain by design, for speed and robustness, and a chain-supplied
-override lives inside the chain module those reads never touch. A real
-override could not reach the CLI's view without either loading the chain
-just to resolve one path (defeats the chain-less design) or accepting the
-desync that is already the observed defect. That tension suggests the
-override may have been added without accounting for the chain-less reads —
-the kind of upstream-decision flag `collaboration.md`'s *Complexity is a
-signal* names.
+Nothing in this repo or `examples/` overrides it, so removal costs nothing
+today. If a second implementation ever genuinely needs a relocatable pending
+path, it arrives with a design that reaches the chain-less readers too.
 
-Options:
+Pending: `spec/pending.md` states the path as fixed layout under `flumeDir`,
+one constant, no override.
 
-1. **Treat it as convention, not capability.** Drop `pendingGate`'s override,
-   fix `plan/pending.json` as the layout everywhere, one shared constant.
-   Closes the desync; costs nothing today since no chain in this repo (or
-   `examples/`) actually overrides it.
-2. **Keep it a capability end-to-end.** Add the override to
-   `DispatcherOptions` too, and give `cli.ts`/`job.ts` a way to know a job's
-   override without loading its chain — needs a place to record that outside
-   the chain module.
-3. **Split.** Capability for the chain-loaded write side (`Dispatcher` +
-   `pendingGate`, which must already agree); hardcode the CLI's chain-less
-   reads to the fixed convention, with the limitation documented.
-
-Recommended: lean (1) — the override is unused capability whose only
-observed effect so far is the desync bug itself, and the chain-less reads
-make full unification (2) structurally awkward. Still a call about removing
-capability someone deliberately added, so parked rather than decided here.
-Per candidate: `.claude/rules/engine-boundary.md` *Capability vs convention*.
