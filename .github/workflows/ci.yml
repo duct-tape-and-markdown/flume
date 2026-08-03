@@ -100,9 +100,8 @@ jobs:
           # published package (NOT ../src/ — that's the in-repo dogfood
           # path). The factory takes `shellGate` from its `api` parameter
           # rather than importing it as a value (spec/chain.md: "The chain is
-          # a plugin, not a consumer"); `flume render` below loads this file
-          # through tsx and would throw if the package's exports map didn't
-          # resolve in a fresh project.
+          # a plugin, not a consumer"); `flume status` below best-effort loads
+          # this file through tsx (spec/cli.md: "Chain-declared extras").
           cat > .flume/chain.ts <<'EOF'
           import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
 
@@ -130,7 +129,6 @@ jobs:
           # --no-install: the unscoped `flume` is an unrelated registry package
           # (§4) — fail loudly rather than silently run the wrong binary.
           npx --no-install flume status
-          npx --no-install flume render notes >/dev/null
 
       - name: Consumer type-resolution gate
         # attw's binding value: can a consumer's TS compiler resolve the

@@ -10,8 +10,8 @@
  *
  * Steps: npm pack the repo -> npm install the tarball into a scratch dir ->
  * run the shim `--version` -> scaffold a minimal chain-load fixture -> run
- * the shim `render <phase>`. Each step prints what it ran; the first
- * failing step aborts the run and is named in the error.
+ * the shim `status`. Each step prints what it ran; the first failing step
+ * aborts the run and is named in the error.
  */
 
 import { spawnSync } from "node:child_process";
@@ -140,12 +140,12 @@ try {
     PROMPT_FIXTURE,
   );
 
-  run("generated shim render notes", shimPath, ["render", "notes"], {
+  run("generated shim status", shimPath, ["status"], {
     cwd: consumerDir,
   });
 
   console.log(
-    "[smoke-install] OK — pack, install, shim --version, and shim render notes all passed",
+    "[smoke-install] OK — pack, install, shim --version, and shim status all passed",
   );
 } catch (err) {
   if (err instanceof SmokeStepError) {

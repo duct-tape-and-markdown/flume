@@ -1030,12 +1030,6 @@ attempt** (no false signal) and **cleared once an attempt ships clean**.
 Both the gate `message` and `details` feed it — write `details` for the
 retrying agent to read (concrete paths and line numbers beat narration).
 
-### Dry-run
-
-`flume render <phase>` evaluates the prompt without invoking the agent and
-prints it to stdout. For fanout phases, it uses the first pickable entry
-as `assignedEntry`.
-
 ## 6. The foundations governor (`forkResolver`)
 
 A `gate: open` entry means "schema-valid, not blocked by a sibling entry." It
