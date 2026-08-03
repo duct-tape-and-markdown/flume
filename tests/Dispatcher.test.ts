@@ -2975,6 +2975,76 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.verdict?.tags).toEqual(["SHIP-A"]);
     expect(outcome.verdict?.phaseName).toBe("build");
   }, 20_000);
+
+  it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE (multi-entry): a wave with one shipped and one declined entry still folds both facts into the verdict when the ledger rewrite fails", async () => {
+    const entries = [
+      makeEntry("SHIP-A", ["src/a.ts"]),
+      makeEntry("DECLINE-B", ["src/b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+
+    // Same corruption mechanism as the single-entry sibling above, but the
+    // wave now carries a second, declined entry (RELEASE-v0.11 §8's
+    // shouldRun seam) alongside the shipping one — the shape §"The tick
+    // verdict" drift (b) actually describes: `waveDeclined`, computed from
+    // the per-entry loop before `commitPendingUpdate` runs, must survive
+    // onto `WaveLedgerParseFailure`'s carried verdict exactly like
+    // `shippedTags` does, not just the trivial single-entry case.
+    const corrupt = "{ corrupted mid-wave, not json";
+    const invoked: string[] = [];
+    const agent = fanoutAgent({
+      "ship-a": async (cwd) => {
+        invoked.push("SHIP-A");
+        await writeFile(pendingPath, corrupt, "utf8");
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
+      },
+      "decline-b": async () => {
+        invoked.push("DECLINE-B");
+      },
+    });
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-B",
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // DECLINE-B never reached the agent; SHIP-A did and shipped.
+    expect(invoked).toEqual(["SHIP-A"]);
+
+    // The refusal itself is unchanged: exit-69-worthy failure, ledger left
+    // corrupt rather than overwritten with a rewrite derived from `[]`.
+    expect(outcome.failed).toBe(true);
+    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+
+    // The defect this test pins: a multi-entry wave's mixed outcomes —
+    // one shipped, one declined — must both fold into the verdict carried
+    // on the thrown WaveLedgerParseFailure, not just the shipped tag.
+    expect(outcome.verdict).toBeDefined();
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.tags).toEqual(
+      expect.arrayContaining(["SHIP-A", "DECLINE-B"]),
+    );
+    expect(outcome.verdict?.tags).toHaveLength(2);
+    expect(outcome.verdict?.declined).toBe(true);
+    expect(outcome.verdict?.phaseName).toBe("build");
+  }, 20_000);
 });
 
 // ---------- foundations governor (§v0.3) ----------

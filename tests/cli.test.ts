@@ -1238,6 +1238,153 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
 });
 
 /**
+ * A fanout chain whose agent, only for the `ship-a` worktree, corrupts
+ * `<flumeDir>/plan/pending.json` mid-invocation (same mechanism
+ * `tests/Dispatcher.test.ts`'s WaveLedgerParseFailure suite uses) and then
+ * commits its declared file — so `commitPendingUpdate`'s rewrite read hits
+ * an unparseable ledger after the cherry-pick and (gate-less) afterMerge
+ * pass have already landed. The `DECLINE-B` entry never reaches the agent:
+ * `shouldRun` declines it before invocation (RELEASE-v0.11 §8), so the wave
+ * carries one shipped and one declined entry through the same refusal.
+ */
+function ledgerRewriteFailureChainSrc(phaseName: string): string {
+  return (
+    `import { execFileSync } from "node:child_process";\n` +
+    `import { mkdirSync, writeFileSync } from "node:fs";\n` +
+    `import { basename, join } from "node:path";\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "ledger-rewrite failure probe",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "fanout",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `    shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-B",\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "ledger-rewrite-failure-probe",\n` +
+    `  async invoke(inv) {\n` +
+    `    const slug = basename(inv.cwd);\n` +
+    `    if (slug === "ship-a") {\n` +
+    `      const pendingPath = join(\n` +
+    `        process.env.FLUME_DIR ?? "",\n` +
+    `        "plan",\n` +
+    `        "pending.json",\n` +
+    `      );\n` +
+    `      writeFileSync(pendingPath, "{ corrupted mid-wave, not json", "utf8");\n` +
+    `      mkdirSync(join(inv.cwd, "src"), { recursive: true });\n` +
+    `      writeFileSync(join(inv.cwd, "src", "a.ts"), "from-A\\n", "utf8");\n` +
+    `      execFileSync("git", ["add", "--", "src/a.ts"], { cwd: inv.cwd });\n` +
+    `      execFileSync(\n` +
+    `        "git",\n` +
+    `        ["commit", "-q", "-m", "build(SHIP-A): ship"],\n` +
+    `        { cwd: inv.cwd },\n` +
+    `      );\n` +
+    `    }\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+/**
+ * spec/loop.md, "The tick verdict — one facts artifact" drift (b): a wave
+ * whose `commitPendingUpdate` rewrite hits a `PendingParseFailure` after its
+ * cherry-picks already landed writes the same `TickOutcome.verdict` a clean
+ * completion would — `tests/Dispatcher.test.ts` proves that in memory. What
+ * actually reaches disk depends on `src/cli.ts`'s `if (outcome.verdict)
+ * writeTickVerdict(...)` branch running regardless of `outcome.failed` —
+ * unverified until now, and only exercisable through the real `tick`
+ * subprocess (`Dispatcher.tick()` alone never writes the file). The wave
+ * here also mixes a shipped entry with a declined one, so both facts must
+ * survive onto the on-disk artifact, not just the shipped tag the existing
+ * single-entry suite already covers.
+ */
+describe("flume tick — tick-verdict.json on disk after a ledger-rewrite PendingParseFailure (LOOP-WAVE-VERDICT-MULTIENTRY-COVERAGE)", () => {
+  it(
+    "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits corrupt pending.json still writes the wave's verdict to tick-verdict.json",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, ledgerRewriteFailureChainSrc("build"));
+        const flumeDir = join(repo.dir, ".flume");
+        const pendingPath = join(flumeDir, "plan", "pending.json");
+        await mkdir(join(flumeDir, "plan"), { recursive: true });
+        await writeFile(
+          pendingPath,
+          JSON.stringify(
+            [
+              {
+                tag: "SHIP-A",
+                gate: { kind: "open" },
+                dependsOnForks: [],
+                files: {
+                  new: [],
+                  edit: [{ path: "src/a.ts", description: "edit" }],
+                  retire: [],
+                },
+              },
+              {
+                tag: "DECLINE-B",
+                gate: { kind: "open" },
+                dependsOnForks: [],
+                files: {
+                  new: [],
+                  edit: [{ path: "src/b.ts", description: "edit" }],
+                  retire: [],
+                },
+              },
+            ],
+            null,
+            2,
+          ) + "\n",
+          "utf8",
+        );
+        new Baton(flumeDir).wake("build");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        // Exit-69-worthy refusal — the ledger rewrite refused rather than
+        // deriving a rewrite from a parse it never trusted.
+        expect(r.code).toBe(EX_MOUNT_DEAD);
+        expect(await readFile(pendingPath, "utf8")).toBe(
+          "{ corrupted mid-wave, not json",
+        );
+
+        // The defect this test pins: the on-disk artifact, not just the
+        // in-memory outcome, must carry both the shipped tag and the
+        // declined sibling.
+        const verdictPath = join(flumeDir, "tick-verdict.json");
+        const verdict = JSON.parse(await readFile(verdictPath, "utf8")) as {
+          phaseName: string;
+          tags: string[];
+          committed: boolean;
+          declined?: boolean;
+          shippedTags: string[];
+          mergeOutcomes: { tag: string; outcome: string }[];
+        };
+
+        expect(verdict.phaseName).toBe("build");
+        expect(verdict.committed).toBe(true);
+        expect(verdict.shippedTags).toEqual(["SHIP-A"]);
+        expect([...verdict.tags].sort()).toEqual(["DECLINE-B", "SHIP-A"]);
+        expect(verdict.declined).toBe(true);
+        expect(verdict.mergeOutcomes).toEqual([
+          { tag: "SHIP-A", outcome: "merged" },
+        ]);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
+/**
  * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
  * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
  * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
