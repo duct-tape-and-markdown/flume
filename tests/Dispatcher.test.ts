@@ -5680,6 +5680,44 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.erroredTicks[0]).toContain("render-refused");
   });
 
+  /**
+   * LOOP-ERRORED-TICKS-SILENT-EXIT — a child can exit non-zero without ever
+   * reaching the verdict write: the CJS-context refusal (2), the
+   * detached-HEAD/harness-error refusal (1), an uncaught throw out of
+   * `Dispatcher.tick`. None of these are `EX_TERMINAL_MISCONFIG` (78) or
+   * `EX_MOUNT_DEAD` (69) — those fail-fast on their own axis — so before this
+   * fix they fell into the generic non-zero warn-and-continue branch and
+   * contributed nothing to `erroredTicks`: a run that never shipped anything
+   * and never wrote a single verdict still reported zero errored ticks.
+   */
+  it("a child exiting non-zero with no verdict written on disk is counted in the run's erroredTicks total", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("build"); // never slept → never hibernates
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      // No tick-verdict.json write at all — this is the "died before
+      // reaching the write" shape the fix targets.
+      return { exitCode: 1 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.shippedTags).toEqual([]);
+    expect(res.erroredTicks).toHaveLength(3);
+    for (const line of res.erroredTicks) {
+      expect(line).toContain("exited 1");
+    }
+  });
+
   it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     // The orphaned flag keeps hibernating() false — the stop must come from

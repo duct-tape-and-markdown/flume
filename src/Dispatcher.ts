@@ -3036,6 +3036,7 @@ export async function superviseLoop(
     // agent correctly declining and naming the constraint is not evidence
     // anything went wrong).
     const verdict = await readTickVerdict(flumeDir);
+    let countedAsErrored = false;
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
@@ -3054,6 +3055,7 @@ export async function superviseLoop(
                 .join("; ")}`
             : verdict.summary,
         );
+        countedAsErrored = true;
       }
     }
 
@@ -3154,6 +3156,20 @@ export async function superviseLoop(
         `[flume] tick process exited with code ${exitCode}; ` +
           `supervisor continuing (next tick is a fresh process)`,
       );
+      // LOOP-ERRORED-TICKS-SILENT-EXIT: a child that exits non-zero without
+      // ever reaching the verdict write — the CJS-context refusal (2), the
+      // detached-HEAD/harness-error refusal (1), an uncaught throw out of
+      // `Dispatcher.tick` — is still a tick that failed to do work. Left
+      // uncounted, `erroredTicks` stays empty and `loopExitCode` reads a run
+      // where nothing succeeded as a clean 0. Guarded on `countedAsErrored`
+      // so a tick whose verdict already flagged it (belt-and-suspenders, not
+      // reachable today since every verdict-errored path exits 0 via
+      // `tickExitCode`) isn't double-counted.
+      if (!countedAsErrored) {
+        erroredTicks.push(
+          `tick process exited ${exitCode} with no verdict written to disk`,
+        );
+      }
     }
     // Disk is truth: the child tick slept its phase and woke successors (or
     // didn't). No awake flags ⇒ hibernation. A failed tick does no baton

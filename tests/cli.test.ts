@@ -336,6 +336,30 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     expect(loopCompletionSummary(result)).toContain("voluntary-bail");
   });
 
+  // LOOP-ERRORED-TICKS-SILENT-EXIT: every tick refused before ever writing a
+  // verdict (the CJS-context refusal, the detached-HEAD/harness-error
+  // refusal, an uncaught throw) — `superviseLoop` now folds these into
+  // `erroredTicks` even with nothing on disk to read (Dispatcher.test.ts
+  // pins that accumulation). At this seam, the resulting shape — errored
+  // ticks present, nothing shipped — must still exit non-zero rather than
+  // read as a clean, silent 0.
+  it("every tick refused before writing a verdict and nothing shipped → 1", () => {
+    const result: SuperviseResult = {
+      ticks: 3,
+      hibernated: false,
+      shippedTags: [],
+      erroredTicks: [
+        "tick process exited 1 with no verdict written to disk",
+        "tick process exited 1 with no verdict written to disk",
+        "tick process exited 1 with no verdict written to disk",
+      ],
+    };
+    expect(loopExitCode(result)).toBe(1);
+    expect(loopCompletionSummary(result)).toContain(
+      "3 tick(s) errored",
+    );
+  });
+
   it("settled with nothing to do (no errors, nothing shipped) → 0, no completion summary", () => {
     const result: SuperviseResult = {
       ticks: 1,
