@@ -1,37 +1,5 @@
 [
   {
-    "tag": "LOOP-TIPMOVED-MULTICOMMIT-TICK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "checkTipMoved / revertTipMovedCommit account for a tick that produced more than one commit, not just the newest"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "softReset call site passes the tick's actual commit count instead of the hardcoded 1"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "An agent making two commits in one invocation trips checkTipMoved on parent-mismatch, and the soft-reset undoes only the newest — the first commit stays on the tip, un-gated.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Tip verify — commit only onto the tip the tick started on"
-    },
-    "tests": [
-      "an agent that makes two commits in one tick invocation has both undone by the tip-moved revert, not just the newest",
-      "a single-commit tick's tip-moved revert behavior is unchanged"
-    ],
-    "acceptance": "A multi-commit agent invocation on a tip-moved tick is fully reverted; no un-gated commit is left on the tip.",
-    "notes": "equilibrium audit, wave durability cluster. One-commit-per-tick is currently asserted only in prompt prose, not enforced — this closes the gap that assumption leaves."
-  },
-  {
     "tag": "LOOP-BACKSTOP-SIGNATURE-INDEX0-ONLY",
     "gate": {
       "kind": "open"
@@ -57,35 +25,6 @@
     ],
     "acceptance": "The backstop tracks every distinct signature across a tick's provisionFailures, not only the first.",
     "notes": "equilibrium audit, wave durability cluster. runFanout pushes a repo-level prune failure first, then per-entry failures — the untagged repo-level class is exactly what a tagged sibling at index 0 shadows today."
-  },
-  {
-    "tag": "CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the --job/FLUME_JOB resolution path refuses a name with no existing state root on every subcommand it reaches except job new; naming the job and the path it looked for; exit 2"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A mistyped --job <name> on status/tick/loop/wake/sleep silently materializes a real job directory instead of refusing.",
-    "per": {
-      "path": "spec/jobs.md",
-      "section": "A job is a state root"
-    },
-    "tests": [
-      "flume --job nonexistent status exits 2 and creates no directory",
-      "flume --job nonexistent tick exits 2 and creates no directory",
-      "flume job new nonexistent still creates the state root"
-    ],
-    "acceptance": "Every subcommand reached through --job/FLUME_JOB other than job new refuses a name with no existing state root, exit 2, naming the job and the path.",
-    "notes": "inbox 2026-08-03. job run <name> rewrites itself into --job <name> loop (spec/cli.md) and must stay exempt: spec/jobs.md's \"flume job run <name>\" section states its no-existence-precondition as intended, not drift — the refusal has to key off job-new-vs-everything-else, not the flag alone."
   },
   {
     "tag": "CLI-RENDER-REMOVAL",
