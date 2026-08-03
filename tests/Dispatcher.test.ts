@@ -7118,9 +7118,14 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     const outcome = await dispatcher.tick();
     expect(outcome.result?.shippedTags).toEqual(["FRICTION-A"]);
 
-    const harvested = join(fx.repo, ".flume", "friction", "FRICTION-A--note.md");
-    expect(existsSync(harvested)).toBe(true);
-    expect(await readFile(harvested, "utf8")).toBe(
+    const frictionDir = join(fx.repo, ".flume", "friction");
+    const files = await readdir(frictionDir);
+    expect(files.length).toBe(1);
+    // Tag-prefixed, timestamp-stamped, source-filename-suffixed — the stamp
+    // is what makes a same-named retry land beside this file instead of
+    // overwriting it.
+    expect(files[0]).toMatch(/^FRICTION-A--\d{4}-\d{2}-\d{2}T.*--note\.md$/);
+    expect(await readFile(join(frictionDir, files[0]!), "utf8")).toBe(
       "the loop wants owner input\n",
     );
 
@@ -7138,10 +7143,16 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
 
     const primaryFrictionDir = join(fx.repo, ".flume", "friction");
+    // The destination filename is now stamped (this entry) with the tick's
+    // clock, so a frozen clock is what makes the exact destination
+    // predictable enough to pre-seed a collision at it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+    const destName = "FRICTION-B--2024-01-01T00-00-00-000Z--note.md";
     // Pre-seed a directory at the exact destination the harvest would
     // rename into — rename(file, existing-dir) fails deterministically,
     // standing in for the locked-file / unreadable-dir class §4 calls out.
-    await mkdir(join(primaryFrictionDir, "FRICTION-B--note.md"), {
+    await mkdir(join(primaryFrictionDir, destName), {
       recursive: true,
     });
 
@@ -7173,14 +7184,19 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
       log,
     });
 
-    const outcome = await dispatcher.tick();
+    let outcome: Awaited<ReturnType<typeof dispatcher.tick>>;
+    try {
+      outcome = await dispatcher.tick();
+    } finally {
+      vi.useRealTimers();
+    }
 
     // The wave still ships despite the harvest failure.
     expect(outcome.result?.shippedTags).toEqual(["FRICTION-B"]);
     expect(warnings.some((w) => w.includes("note.md"))).toBe(true);
     // The pre-seeded destination is untouched — the failed move left it as-is.
     expect(
-      existsSync(join(primaryFrictionDir, "FRICTION-B--note.md")),
+      existsSync(join(primaryFrictionDir, destName)),
     ).toBe(true);
   }, 20_000);
 
@@ -7327,6 +7343,110 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
+  }, 20_000);
+
+  it("two harvests for the same tag with the same agent-chosen source filename land as two distinct files, neither overwriting the other", async () => {
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+    const frictionDir = join(fx.repo, ".flume", "friction");
+
+    // Two separate waves for the same tag (a re-derived retry, or simply the
+    // tag recurring), each writing a friction note under the identical
+    // agent-chosen filename `note.md`. Frozen at two distinct instants so
+    // the resulting stamps are deterministic and provably different — the
+    // collision this entry closes is exactly two such notes landing on the
+    // same destination.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+      await writePending(fx.repo, [
+        makeEntry("FRICTION-RETRY", ["src/friction-retry.ts"]),
+      ]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const agentFirst = fanoutAgent({
+        "friction-retry": async (cwd) => {
+          await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+          await writeFile(
+            join(cwd, ".flume", "friction", "note.md"),
+            "first attempt's note\n",
+          );
+          await writeAndCommit(
+            cwd,
+            "src/friction-retry.ts",
+            "one\n",
+            "build(FRICTION-RETRY): first attempt",
+          );
+        },
+      });
+
+      const dispatcherFirst = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: agentFirst,
+        log: silent,
+      });
+      const outcomeFirst = await dispatcherFirst.tick();
+      expect(outcomeFirst.result?.shippedTags).toEqual(["FRICTION-RETRY"]);
+
+      vi.setSystemTime(new Date("2024-01-02T00:00:00.000Z"));
+      // Land as a plan tick would — committed, not left dirty, so wave 2's
+      // rewrite (which reverts pending.json back to `[]`, byte-identical to
+      // wave 1's ship commit) has a real diff against HEAD to commit.
+      await writePending(fx.repo, [
+        makeEntry("FRICTION-RETRY", ["src/friction-retry-2.ts"]),
+      ]);
+      await exec("git", ["add", "--", ".flume/plan/pending.json"], {
+        cwd: fx.repo,
+      });
+      await exec("git", ["commit", "-q", "-m", "plan: re-derive FRICTION-RETRY"], {
+        cwd: fx.repo,
+      });
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const agentSecond = fanoutAgent({
+        "friction-retry": async (cwd) => {
+          await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+          await writeFile(
+            join(cwd, ".flume", "friction", "note.md"),
+            "second attempt's note\n",
+          );
+          await writeAndCommit(
+            cwd,
+            "src/friction-retry-2.ts",
+            "two\n",
+            "build(FRICTION-RETRY): second attempt",
+          );
+        },
+      });
+
+      const dispatcherSecond = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: agentSecond,
+        log: silent,
+      });
+      const outcomeSecond = await dispatcherSecond.tick();
+      expect(outcomeSecond.result?.shippedTags).toEqual(["FRICTION-RETRY"]);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const files = (await readdir(frictionDir)).sort();
+    expect(files.length).toBe(2);
+    for (const f of files) {
+      expect(f).toMatch(/^FRICTION-RETRY--\d{4}-\d{2}-\d{2}T.*--note\.md$/);
+    }
+    // Distinct destinations — neither harvest overwrote the other.
+    expect(files[0]).not.toBe(files[1]);
+
+    const contents = await Promise.all(
+      files.map((f) => readFile(join(frictionDir, f), "utf8")),
+    );
+    expect(contents).toContain("first attempt's note\n");
+    expect(contents).toContain("second attempt's note\n");
   }, 20_000);
 });
 
@@ -7863,9 +7983,10 @@ describe.runIf(process.platform === "win32")(
 
       const primaryFrictionDir = join(fx.repo, ".flume", deepFriction);
       expect(primaryFrictionDir.length).toBeGreaterThan(260);
-      const harvested = join(primaryFrictionDir, `${tag}--note.md`);
-      expect(existsSync(harvested)).toBe(true);
-      expect(await readFile(harvested, "utf8")).toBe(
+      const files = await readdir(primaryFrictionDir);
+      expect(files.length).toBe(1);
+      expect(files[0]).toMatch(new RegExp(`^${tag}--\\d{4}-\\d{2}-\\d{2}T.*--note\\.md$`));
+      expect(await readFile(join(primaryFrictionDir, files[0]!), "utf8")).toBe(
         "the loop wants owner input\n",
       );
     }, 20_000);

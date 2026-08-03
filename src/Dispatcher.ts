@@ -427,8 +427,9 @@ type AgentTermination =
  * tightest raw-tag consumer, `writeRevertNote`'s
  * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
  * component here (this `slug`/`createWorktree`'s worktree-dir and
- * branch-name, `harvestFriction`'s `` `${tag}--${file.name}` ``) is looser
- * and stays within filesystem NAME_MAX (255) by construction as a result.
+ * branch-name, `harvestFriction`'s `` `${tag}--${stamp}--${file.name}` ``)
+ * is looser and stays within filesystem NAME_MAX (255) by construction as a
+ * result.
  * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
  * "revert note to the friction channel (§5)", not asserted here.
  */
@@ -2360,10 +2361,14 @@ export class Dispatcher {
   /**
    * §4 (RELEASE-v0.6.2): before a fanout worktree is torn down, move every
    * file its declared friction channel holds into the primary friction dir,
-   * prefixed `<tag>--` for provenance and collision-freedom. Harvest is
-   * harness code crossing the worktree boundary (the sessions precedent),
-   * not an agent write — worktree agents still only ever write under their
-   * own `$PWD`.
+   * prefixed `<tag>--<stamp>--` for provenance and collision-freedom — the
+   * stamp (same `Date.toISOString()`-minus-punctuation idiom as
+   * `writeRevertNote`) means a retried entry whose agent reuses the same
+   * source filename lands beside the earlier note instead of silently
+   * replacing it, since neither `rename` nor the `EXDEV` fallback's
+   * `copyFile` refuse an existing destination. Harvest is harness code
+   * crossing the worktree boundary (the sessions precedent), not an agent
+   * write — worktree agents still only ever write under their own `$PWD`.
    *
    * Undeclared `chain.friction` — no-op. A relocated state root (`flumeDir`
    * outside the repo tree) has no worktree-local mirror to harvest from —
@@ -2420,9 +2425,14 @@ export class Dispatcher {
       return;
     }
 
+    // Stamped once per harvest call, not per file (§5's writeRevertNote
+    // precedent): siblings moved in the same call already disambiguate on
+    // file.name, and a shared stamp still separates this call's files from
+    // whatever a prior or later retry of the same tag harvests.
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     for (const file of files) {
       const src = join(mirrorDir, file.name);
-      const dest = join(primaryDir, `${tag}--${file.name}`);
+      const dest = join(primaryDir, `${tag}--${stamp}--${file.name}`);
       try {
         await rename(namespacedJoin(src), namespacedJoin(dest));
       } catch (err) {
