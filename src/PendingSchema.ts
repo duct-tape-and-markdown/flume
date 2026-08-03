@@ -125,11 +125,21 @@ const PendingEntryCore = z.strictObject({
      * incidentals (lockfile, barrel export) included. An entry that
      * under-declares is a plan defect, not a guard defect.
      */
-    files: z.object({
-      new: z.array(FileChange).default([]),
-      edit: z.array(FileChange).default([]),
-      retire: z.array(z.string().min(1)).default([]),
-    }),
+    files: z
+      .object({
+        new: z.array(FileChange).default([]),
+        edit: z.array(FileChange).default([]),
+        retire: z.array(z.string().min(1)).default([]),
+      })
+      .refine(
+        (f) => f.new.length + f.edit.length + f.retire.length > 0,
+        {
+          message:
+            "files.new/edit/retire must declare at least one path combined " +
+            "— an all-empty declaration can never be classified shipped " +
+            "(spec/pending.md § Ship detection requires a declared-files diff)",
+        },
+      ),
     /**
      * Dispatcher-maintained: actual paths a merge-reverted attempt touched,
      * unioned into the partition so a retry never rides the same wave as the

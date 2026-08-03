@@ -1106,6 +1106,83 @@ describe("renderSchemaForPrompt", () => {
   });
 });
 
+describe("files floor — at least one declared path (spec/pending.md § Ship detection requires a declared-files diff)", () => {
+  it("rejects an entry whose files.new/edit/retire are all empty", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          tag: "ZERO-FILES",
+          gate: { kind: "open" },
+          files: { new: [], edit: [], retire: [] },
+        },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "files")).toBe(true);
+  });
+
+  it("rejects an entry that omits files.new/edit/retire entirely (defaults collapse to all-empty)", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          tag: "ZERO-FILES-OMITTED",
+          gate: { kind: "open" },
+          files: {},
+        },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "files")).toBe(true);
+  });
+
+  it("parses clean when only files.new declares a path", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          tag: "ONLY-NEW",
+          gate: { kind: "open" },
+          files: {
+            new: [{ path: "src/only-new.ts", description: "new file" }],
+            edit: [],
+            retire: [],
+          },
+        },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  });
+
+  it("parses clean when only files.edit declares a path", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          tag: "ONLY-EDIT",
+          gate: { kind: "open" },
+          files: {
+            new: [],
+            edit: [{ path: "src/only-edit.ts", description: "edit file" }],
+            retire: [],
+          },
+        },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  });
+
+  it("parses clean when only files.retire declares a path", () => {
+    const result = parsePending(
+      JSON.stringify([
+        {
+          tag: "ONLY-RETIRE",
+          gate: { kind: "open" },
+          files: { new: [], edit: [], retire: ["src/only-retire.ts"] },
+        },
+      ]),
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  });
+});
+
 describe("parsePending — observedFiles survives the round-trip", () => {
   it("preserves the dispatcher-written footprint so a re-parse cannot strip it", () => {
     const entry = roundTrip({

@@ -92,14 +92,22 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
             tag: "rotate-secrets",
             gate: { kind: "requiresCapability", capability: "ops-access" },
             dependsOnForks: [],
-            files: {},
+            files: {
+              edit: [
+                { path: "ops/secrets.md", description: "rotate the listed secrets" },
+              ],
+            },
             reason: "needs ops access this chain does not assert",
           },
           {
             tag: "trim-notes-intro",
             gate: { kind: "open" },
             dependsOnForks: [],
-            files: {},
+            files: {
+              edit: [
+                { path: "README.md", description: "trim the intro paragraph" },
+              ],
+            },
             reason: "intro paragraph restates the title",
           },
         ];
@@ -179,7 +187,11 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
           tag: "rotate-secrets",
           gate: { kind: "requiresCapability", capability: "ops-access" },
           dependsOnForks: [],
-          files: {},
+          files: {
+            edit: [
+              { path: "ops/secrets.md", description: "rotate the listed secrets" },
+            ],
+          },
           reason: "needs ops access this chain does not assert",
         },
       ];

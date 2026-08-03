@@ -1043,7 +1043,7 @@ function pendingEntry(tag: string): object {
     summary: "a unit of work",
     per: { path: "spec/RELEASE-v0.5.md", section: "5d" },
     gate: { kind: "open" },
-    files: {},
+    files: { edit: [{ path: "src/example.ts", description: "the unit of work" }] },
     acceptance: "suite green",
   };
 }
