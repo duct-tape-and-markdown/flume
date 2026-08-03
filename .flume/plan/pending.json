@@ -1,32 +1,10 @@
 [
   {
-    "tag": "WORKTREES-SETUPHOOK-ISOLATION",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runFanout's per-entry setupWorktree hook call gets the same per-entry isolation createWorktree already has: a throw records a provisionFailure and parks that entry instead of rejecting the whole Promise.all"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Guard runFanout's per-entry setupWorktree hook so one entry's throw parks that entry instead of crashing the whole wave.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Every `.git/worktrees` mutation is serialized; the agent fanout is not"
-    },
-    "tests": [
-      "a two-entry wave where one entry's setupWorktree hook throws still completes: the throwing entry is recorded in provisionFailures and stays pending, the other proceeds to runFanoutEntry",
-      "worktree/extraEnv indices stay aligned to the surviving entries after a sibling's hook failure is spliced out"
-    ],
-    "acceptance": "A setupWorktree hook throw on one entry of a multi-entry wave no longer crashes the tick; that entry is parked via provisionFailures exactly like a createWorktree failure, and siblings still ship.",
-    "notes": "inbox 2026-08-03. chain.ts's setupBuildWorktree docstring (~L210-217) documents this gap as current fact; chain.ts is outside every phase lane, so updating that docstring once this ships is an operator follow-up, not part of this entry."
-  },
-  {
     "tag": "PENDING-SCOPEWRITESTOENTRY-OPTIN",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -58,67 +36,11 @@
     "notes": "Closes the two > **Drift:** notes in spec/pending.md and spec/prompt.md — one dispatcher ternary and one prompt fence choice, same mechanism. No .flume/chain.ts change needed; default false already matches flume's own expectation."
   },
   {
-    "tag": "CHAINTS-PREDICATE-COVERAGE",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        {
-          "path": "tests/chain.test.ts",
-          "description": "drives loadChainModule + buildFlumeApi against .flume/chain.ts to exercise the four predicates below"
-        }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "summary": "Add behavioral test coverage for chain.ts's four load-bearing predicates: plan.shouldRun, plan.handoff, build.handoff, setupBuildWorktree.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Declining a tick before the invocation"
-    },
-    "tests": [
-      "plan.shouldRun declines only when pending.json carries a pickable entry AND inbox.md is empty; runs on a non-empty inbox, a missing inbox.md, an empty queue, a parked-only queue, a live-blocked queue, a promotable-only queue, and undefined pending",
-      "plan.handoff's `Plan continues:` regex over state.md correctly drives re-wake vs handoff, including an absent line",
-      "build.handoff's wake condition, including the voluntary-bail leg",
-      "setupBuildWorktree's sentinel assertion throws when node_modules/<sentinel> is missing after install and passes when present"
-    ],
-    "acceptance": "The four predicates are driven through the real chain factory (loadChainModule + buildFlumeApi, as tests/examples.integration.test.ts already drives examples/), not a hand-copied reimplementation of chain.ts's logic.",
-    "notes": "inbox 2026-08-02, narrowed to the four predicates only — chain.ts's declarations (writablePaths, gate lists, entry extension) are out of scope, same as CLAUDE.md itself. Declares tests/chain.test.ts to satisfy PENDING-ZERO-FILES-SCHEMA-FLOOR's new non-empty-files floor."
-  },
-  {
-    "tag": "CLI-CHANGELOG-FROM-GIT",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        {
-          "path": "scripts/build-changelog.mjs",
-          "description": "derive the [Unreleased] section from git log since the last release tag, per spec/cli.md Versioning policy"
-        }
-      ],
-      "edit": [
-        {
-          "path": "package.json",
-          "description": "add a script entry invoking the changelog tool"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add a release-time tool that derives the [Unreleased] changelog section from git history since the last release tag.",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Versioning policy"
-    },
-    "tests": [
-      "derives [Unreleased] content from the commit range since the last release tag, using build: commit subjects as entry tags and bodies as the why",
-      "a tag history that stops short of CHANGELOG.md's latest recorded version (tags at v0.6.2, CHANGELOG at 0.9.0) resolves via a defined fallback, not an assumption",
-      "a zero-commit range refuses loudly instead of emitting an empty [Unreleased] section",
-      "preserves the ### Breaking subheading convention for commits whose body marks a break"
-    ],
-    "acceptance": "Running the tool over real history produces a well-formed [Unreleased] section per spec/cli.md Versioning policy, and it refuses non-zero on a zero-commit range.",
-    "notes": "inbox 2026-08-03, successor to the reverted .changeset/ fragment approach (e87c007). Ships the tool only; running it at an actual release cut is separate."
-  },
-  {
     "tag": "LOOP-ERRORED-TICKS-SILENT-EXIT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -143,7 +65,10 @@
   },
   {
     "tag": "LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -166,32 +91,11 @@
     "notes": "equilibrium audit, wave durability cluster. Exit code stays 69; only the missing verdict is the defect."
   },
   {
-    "tag": "LOOP-DETACHED-HEAD-STALE-VERDICT",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "tick command clears the previous tick-verdict.json before the detached-HEAD refusal returns, not after"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume tick's detached-HEAD refusal returns above clearTickVerdict, so a loop with a detached HEAD mid-run re-reads the previous tick's stale verdict every iteration.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The tick verdict — one facts artifact"
-    },
-    "tests": [
-      "flume tick against a detached HEAD clears tick-verdict.json before refusing, so a subsequent read finds no stale verdict"
-    ],
-    "acceptance": "The detached-HEAD refusal no longer leaves a prior tick's verdict on disk.",
-    "notes": "equilibrium audit, exit-code contract cluster. A stale provisioning-failure signature on the old verdict can otherwise drive provisionFailureStreak toward abortThreshold spuriously."
-  },
-  {
     "tag": "LOOP-CURRENTREFPATH-CONFLATES-STATES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -220,7 +124,10 @@
   },
   {
     "tag": "LOOP-TIPMOVED-MULTICOMMIT-TICK",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -249,7 +156,10 @@
   },
   {
     "tag": "LOOP-BACKSTOP-SIGNATURE-INDEX0-ONLY",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -273,7 +183,10 @@
   },
   {
     "tag": "PENDING-ZERO-FILES-SCHEMA-FLOOR",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -302,7 +215,10 @@
   },
   {
     "tag": "CLI-JOBNEW-CJS-EXIT-CODE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -326,7 +242,10 @@
   },
   {
     "tag": "CLI-HELP-TICK-MISSING-EXIT2",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -350,7 +269,10 @@
   },
   {
     "tag": "CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -376,7 +298,10 @@
   },
   {
     "tag": "CLI-RENDER-REMOVAL",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -409,7 +334,10 @@
   },
   {
     "tag": "CI-CHAIN-FIXTURES-FACTORY-MIGRATION",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -438,7 +366,10 @@
   },
   {
     "tag": "CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -475,7 +406,10 @@
   },
   {
     "tag": "CHAIN-AFTERMERGE-SINGLETON-PROMPT-FILTER",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -504,7 +438,10 @@
   },
   {
     "tag": "CHAIN-EXPORT-GATE-OPTION-TYPES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -536,7 +473,10 @@
   },
   {
     "tag": "WORKTREES-HARVESTFRICTION-COLLISION",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -564,7 +504,10 @@
   },
   {
     "tag": "WORKTREES-GATEPHASE-RETIRED-DOC",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -590,7 +533,10 @@
   },
   {
     "tag": "WORKTREES-VITESTCONFIG-COMMENT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
