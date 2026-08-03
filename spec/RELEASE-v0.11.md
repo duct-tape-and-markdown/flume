@@ -9,11 +9,22 @@ chain's module graph; the fourth (operator, 2026-08-01, §8) draws it
 between the engine and the decision to spend a tick at all:
 
 **The engine records, never navigates.** The engine's entire git
-surface is the tick record — one tick = one commit on the tip it was
-handed, plus the guarded revert its gates depend on, plus observational
-reads. Topology — branches, worktrees, merges, endings — belongs to the
-implementation. The engine never runs `checkout`, `branch`,
-`cherry-pick`, or `merge`, and ships no branch grammar.
+surface is the tick record — the commits a wave produced, landed on the
+tip it was handed, plus the guarded revert its gates depend on, plus
+observational reads. *Navigation* — choosing which line of history the
+operator is on: `checkout`, `branch`, branch grammar, endings — belongs
+to the implementation. The engine never runs `checkout` or `branch`, and
+ships no branch grammar.
+
+The engine does run `cherry-pick`, and that is recording, not
+navigating: a fanout wave's per-entry worktree commits are carried onto
+the tip the tick started on, in order, with `cherry-pick --abort` on
+conflict (`src/git.ts`, `Dispatcher.runFanout`). The tick's own output
+reaches the tick's own tip; no ref the operator chose is moved, created,
+or checked out. The distinction is *whose* history is touched, not which
+plumbing command is spelled — and the fanout merge is the one carve-out,
+named here so it is a declared boundary rather than an unnoticed
+violation.
 
 **The engine owns the tip its process runs on.** The tip (the ref HEAD
 resolves to) is the one resource the engine's commit mechanic consumes,
