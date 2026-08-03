@@ -450,10 +450,16 @@ function parseMaxValue(value: string | undefined): number | null {
  * loop under a job resolution and is rewritten in `main()` before dispatch
  * reaches here. Usage-shaped failures exit 2, operational failures 1 —
  * mirroring the JobUsageError split in the job verbs.
+ *
+ * `configDir` is the caller's single `resolveStateDirs()` result (§12/§14) —
+ * this function never re-derives it from `process.env.FLUME_CONFIG_DIR`, so
+ * a chain factory `status`/`new` loads sees the same canonicalized value
+ * every other subcommand does.
  */
 async function runJobVerb(
   args: readonly string[],
   repoRoot: string,
+  configDir: string,
 ): Promise<number> {
   const [verb, ...rest] = args;
 
@@ -467,9 +473,6 @@ async function runJobVerb(
       // on the repo-resident chain — load it here, best-effort (a missing or
       // broken chain must never fail `job status`, only silently withhold
       // the friction counts).
-      const configDir = process.env.FLUME_CONFIG_DIR
-        ? resolve(process.env.FLUME_CONFIG_DIR)
-        : join(repoRoot, ".flume");
       let frictionDir: string | undefined;
       try {
         const { chain } = await diskChainLoader(configDir)();
@@ -542,9 +545,6 @@ async function runJobVerb(
   }
 
   try {
-    const configDir = process.env.FLUME_CONFIG_DIR
-      ? resolve(process.env.FLUME_CONFIG_DIR)
-      : join(repoRoot, ".flume");
     await jobNew({ repoRoot, name, configDir });
     return 0;
   } catch (err) {
@@ -604,13 +604,18 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // `flume job <verb>` (v0.5 §5) — repo-level lifecycle verbs, routed before
-  // state-dir resolution: they operate on the repo and the job dir named by
-  // their argument, not on a resolved state root. `run` is the exception —
-  // it IS the standard loop under the job resolution (§5b-3), so it rewrites
-  // itself into `--job <name> loop [--max N]` and falls through; only its
-  // preflight (branch + entry-phase wake) runs before the loop, below.
+  // `flume job <verb>` (v0.5 §5). `run` is the exception — it IS the
+  // standard loop under the job resolution (§5b-3), so it rewrites itself
+  // into `--job <name> loop [--max N]` and falls through; only its preflight
+  // (branch + entry-phase wake) runs before the loop, below. The other verbs
+  // (`status`/`rm`/`new`) are stashed in `jobVerbArgs` and dispatched to
+  // `runJobVerb` *after* state-dir resolution below (§12/§14) — they operate
+  // on the repo and the job dir named by their own argument, not on a
+  // resolved state root, but they still need the single canonicalized
+  // `configDir` every other subcommand reads, not a re-derivation from raw
+  // `process.env.FLUME_CONFIG_DIR`.
   let jobRunName: string | undefined;
+  let jobVerbArgs: readonly string[] | undefined;
   if (cmd === "job") {
     if (wantsHelp(rest)) {
       process.stdout.write(HELP_JOB);
@@ -645,7 +650,7 @@ async function main(): Promise<number> {
       cmd = "loop";
       rest = maxArgs;
     } else {
-      return runJobVerb(rest, repoRoot);
+      jobVerbArgs = rest;
     }
   }
 
@@ -658,7 +663,9 @@ async function main(): Promise<number> {
   // Resolving here (not constructing) lets the values survive the
   // `loop` → `tick` process boundary — children inherit the (now
   // absolute-canonical) env vars — and lets a chain loaded later in this
-  // process read one authoritative state root.
+  // process read one authoritative state root. This runs ahead of every
+  // subcommand branch, `job status`/`rm`/`new` included, so none of them
+  // re-derives `configDir` independently.
   let flumeDir: string;
   let configDir: string;
   let job: string | undefined;
@@ -672,10 +679,14 @@ async function main(): Promise<number> {
     throw err;
   }
 
+  if (jobVerbArgs !== undefined) {
+    return runJobVerb(jobVerbArgs, repoRoot, configDir);
+  }
+
   // `--job` / `FLUME_JOB` names an existing state root everywhere except
   // `job new` (which creates it — routed above via `runJobVerb`, never
-  // reaches here) and `job run` (spec/jobs.md "`flume job run <name>`" — no
-  // existence precondition, by design: it may materialize a bare state
+  // reaches this guard) and `job run` (spec/jobs.md "`flume job run <name>`"
+  // — no existence precondition, by design: it may materialize a bare state
   // root). `jobRunName` is what distinguishes the `job run` rewrite from a
   // bare `--job`/`FLUME_JOB` use of `status`/`tick`/`loop`/`wake`/`sleep` —
   // the flag alone can't carry that distinction, since `job run` reaches

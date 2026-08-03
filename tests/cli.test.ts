@@ -2096,6 +2096,39 @@ function jobEnvProbeChainSrc(phaseName: string): string {
 }
 
 /**
+ * CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH — a chain whose factory (not a phase
+ * agent) records `process.env.FLUME_DIR` to `<cwd>/observed-flume-dir.json`
+ * at load time. `job new` invokes the factory synchronously
+ * (`loadChainModule`, `src/Dispatcher.ts`) before the job dir it creates
+ * exists, so the probe writes beside the repo root rather than under the
+ * still-nonexistent job dir.
+ */
+function jobNewEnvProbeChainSrc(): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default () => {\n` +
+    `  writeFileSync(\n` +
+    `    join(process.cwd(), "observed-flume-dir.json"),\n` +
+    `    JSON.stringify({ FLUME_DIR: process.env.FLUME_DIR }),\n` +
+    `  );\n` +
+    `  return { chain: {\n` +
+    `    phases: [{\n` +
+    `      name: "probe",\n` +
+    `      description: "",\n` +
+    `      promptPath: "prompts/prompt.md",\n` +
+    `      concurrency: "singleton",\n` +
+    `      writablePaths: ["**"],\n` +
+    `      gates: [],\n` +
+    `      handoff: () => [],\n` +
+    `    }],\n` +
+    `    humanOnly: [],\n` +
+    `  } };\n` +
+    `};\n`
+  );
+}
+
+/**
  * v0.5 §4 — a fanout chain whose agent records the branch of the worktree it
  * was invoked in to `<FLUME_DIR>/observed-branch.txt`. The agent commits
  * nothing (the tick falls through clean), so what lands in the file is purely
@@ -2202,11 +2235,41 @@ describe("§3 job resolution — real CLI", () => {
         expect(existsSync(jobDir)).toBe(false);
 
         // `job new` is the sole verb permitted to create it — unaffected by
-        // the refusal above since it never reaches --job resolution.
+        // the refusal above because it carries no --job flag of its own, so
+        // `job` stays undefined through resolution and the existence guard
+        // never fires (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH).
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const created = await runCli(repo.dir, ["job", "new", "ghost"]);
         expect(created.code).toBe(0);
         expect(existsSync(jobDir)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "job new resolves flumeDir/configDir ahead of dispatch: a chain factory reading process.env.FLUME_DIR sees the canonicalized value, not the caller's raw relative one (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, jobNewEnvProbeChainSrc());
+        const observedPath = join(repo.dir, "observed-flume-dir.json");
+
+        const created = await runCli(repo.dir, ["job", "new", "probejob"], {
+          ...hermeticEnv(),
+          FLUME_DIR: "tmp/relative-state",
+        });
+        expect(created.code).toBe(0);
+
+        const observed = JSON.parse(
+          await readFile(observedPath, "utf8"),
+        ) as { FLUME_DIR: string };
+        expect(observed.FLUME_DIR).toBe(resolve(repo.dir, "tmp/relative-state"));
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "probejob")),
+        ).toBe(true);
       } finally {
         await repo.cleanup();
       }
