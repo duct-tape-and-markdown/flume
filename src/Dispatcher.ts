@@ -807,7 +807,12 @@ export interface DispatcherOptions {
    */
   forkResolver?: (repoRoot: string) => (slug: string) => boolean;
   log?: Logger;
-  /** Max parallel ticks per fanout batch. Default 4. */
+  /**
+   * Max parallel ticks per fanout batch. Default 4. Overridable per chain via
+   * `Chain.supervisorPolicy.maxParallel` (`src/Phase.ts`), which `runFanout`
+   * prefers when declared — this option is the fallback below it, for a
+   * programmatic embedder that wants a floor the chain doesn't set.
+   */
   maxParallel?: number;
   /**
    * Wall-clock timeout per agent invocation in milliseconds. When exceeded,
@@ -1483,9 +1488,13 @@ export class Dispatcher {
     }
 
     const waveStart = Date.now();
-    const batches = partitionByFileOverlap(pickable, {
-      maxParallel: this.maxParallel,
-    });
+    // Chain-overridable default (engine-boundary.md's policy-constant rule):
+    // unlike quarantineScope/abortThreshold this needs no run-scoped binding
+    // in the CLI — `chain` here is this tick's freshly-resolved chain
+    // (tick() loads it once per process), so reading its declaration at the
+    // point of use is already byte-identical to a per-run bind.
+    const maxParallel = chain.supervisorPolicy?.maxParallel ?? this.maxParallel;
+    const batches = partitionByFileOverlap(pickable, { maxParallel });
     const batch = batches[0]!;
     this.log.info(
       `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,

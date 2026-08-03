@@ -637,6 +637,124 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+/**
+ * CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE — `Chain.supervisorPolicy.maxParallel`
+ * (`src/Phase.ts`) joins `quarantineScope`/`abortThreshold` as a
+ * chain-overridable default for `runFanout`'s batch width
+ * (`partitionByFileOverlap`, `src/partition.ts`). Unlike those two knobs this
+ * needs no `superviseLoop`/CLI pre-read: it is tick-scoped, not run-scoped —
+ * `runFanout` reads it straight off the chain the tick already resolved.
+ * Three disjoint, single-file entries make the batch-1 boundary observable
+ * via `shippedTags`/`pendingAfter`, the same seam the "two disjoint entries
+ * both ship" suite above exercises.
+ */
+describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch width (CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE)", () => {
+  it("a chain declaring supervisorPolicy.maxParallel: 2 ships only the first two of three disjoint entries", async () => {
+    const entries = [
+      makeEntry("MP-A", ["src/mp-a.ts"]),
+      makeEntry("MP-B", ["src/mp-b.ts"]),
+      makeEntry("MP-C", ["src/mp-c.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 2 },
+    };
+
+    const agent = fanoutAgent({
+      "mp-a": (cwd) =>
+        writeAndCommit(cwd, "src/mp-a.ts", "from-A\n", "build(MP-A): ship"),
+      "mp-b": (cwd) =>
+        writeAndCommit(cwd, "src/mp-b.ts", "from-B\n", "build(MP-B): ship"),
+      "mp-c": (cwd) =>
+        writeAndCommit(cwd, "src/mp-c.ts", "from-C\n", "build(MP-C): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      // DispatcherOptions.maxParallel deliberately unset — the chain's
+      // declaration is what's under test, not the embedder fallback.
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    // Batch 1 closes on capacity (2) even though a third disjoint entry was
+    // pickable — it stays pending for the next tick's fresh partition.
+    expect(outcome.result?.shippedTags).toEqual(["MP-A", "MP-B"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MP-C"]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "MP-C",
+    ]);
+  }, 20_000);
+
+  it("a chain declaring nothing gets maxParallel: 4 byte-identically to today", async () => {
+    const entries = [
+      makeEntry("MPD-A", ["src/mpd-a.ts"]),
+      makeEntry("MPD-B", ["src/mpd-b.ts"]),
+      makeEntry("MPD-C", ["src/mpd-c.ts"]),
+      makeEntry("MPD-D", ["src/mpd-d.ts"]),
+      makeEntry("MPD-E", ["src/mpd-e.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    // No supervisorPolicy at all — the undeclared-fields-fall-through case.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "mpd-a": (cwd) =>
+        writeAndCommit(cwd, "src/mpd-a.ts", "from-A\n", "build(MPD-A): ship"),
+      "mpd-b": (cwd) =>
+        writeAndCommit(cwd, "src/mpd-b.ts", "from-B\n", "build(MPD-B): ship"),
+      "mpd-c": (cwd) =>
+        writeAndCommit(cwd, "src/mpd-c.ts", "from-C\n", "build(MPD-C): ship"),
+      "mpd-d": (cwd) =>
+        writeAndCommit(cwd, "src/mpd-d.ts", "from-D\n", "build(MPD-D): ship"),
+      "mpd-e": (cwd) =>
+        writeAndCommit(cwd, "src/mpd-e.ts", "from-E\n", "build(MPD-E): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      // No DispatcherOptions.maxParallel either — proving the plain v0.2
+      // default (4) survives both undeclared surfaces unchanged.
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual([
+      "MPD-A",
+      "MPD-B",
+      "MPD-C",
+      "MPD-D",
+    ]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MPD-E"]);
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a tick-start snapshot (regression)", () => {
   it("ships one entry without clobbering a concurrent edit landed on an untouched entry mid-wave", async () => {
     // SHIP-PENDING-CLOBBER-BUG repro: a ship commit reintroduced a retired

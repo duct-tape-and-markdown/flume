@@ -313,5 +313,14 @@ export interface Chain {
      * supervisor aborts the run. Default 3.
      */
     abortThreshold?: number;
+    /**
+     * Max parallel ticks per fanout batch — overrides
+     * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`), whose own
+     * default is 4. Unlike `quarantineScope`/`abortThreshold` this is not
+     * run-scoped: the dispatcher already reloads `chain.ts` fresh every
+     * tick, so `runFanout` reads this straight off the tick's own resolved
+     * chain rather than a value bound once per run.
+     */
+    maxParallel?: number;
   };
 }
