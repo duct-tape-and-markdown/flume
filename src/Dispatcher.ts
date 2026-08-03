@@ -1479,17 +1479,37 @@ export class Dispatcher {
     // run). The return value MAY contribute extraEnv that the dispatcher
     // layers onto the agent invocation env (e.g. per-worktree DATABASE_URL
     // from a chain that provisioned an ephemeral DB at setup time).
+    //
+    // Isolated the same way `createWorktree` above isolates a per-entry
+    // failure (§16): a hook throw for one entry must not reject the
+    // `Promise.all` and crash the whole wave when its siblings' hooks
+    // succeeded. The worktree this entry got from `createWorktree` still
+    // exists and still needs teardown below, so `worktrees`/`provisioned`
+    // stay untouched (and index-aligned to each other) for that loop; only
+    // the set of entries handed to the agent excludes this one.
     const extraEnvByIndex: Array<Record<string, string> | undefined> =
       worktrees.map(() => undefined);
+    const setupFailedIndices = new Set<number>();
     if (phase.setupWorktree) {
       const setupResults = await Promise.all(
-        provisioned.map((entry, i) =>
-          phase.setupWorktree!({
-            worktreePath: worktrees[i]!.path,
-            repoRoot,
-            entryTag: entry.tag,
-          }),
-        ),
+        provisioned.map(async (entry, i) => {
+          try {
+            return await phase.setupWorktree!({
+              worktreePath: worktrees[i]!.path,
+              repoRoot,
+              entryTag: entry.tag,
+            });
+          } catch (err) {
+            const message = (err as Error).message;
+            const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+            provisionFailures.push({ tag: entry.tag, signature, message });
+            setupFailedIndices.add(i);
+            this.log.warn(
+              `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+            );
+            return undefined;
+          }
+        }),
       );
       for (let i = 0; i < setupResults.length; i++) {
         const r = setupResults[i];
@@ -1497,18 +1517,24 @@ export class Dispatcher {
       }
     }
 
-    // Run agent in each worktree concurrently.
+    // Run agent in each worktree concurrently — skipping any entry whose
+    // setupWorktree hook threw above. Its worktree/branch still get torn
+    // down in the cleanup loop below; it just never reaches the agent or
+    // cherry-pick, so it stays pending like any other provisioning failure.
     const perEntry = await Promise.all(
-      provisioned.map((entry, i) =>
-        this.runFanoutEntry(
-          phase,
-          entry,
-          worktrees[i]!,
-          agent,
-          chain,
-          extraEnvByIndex[i],
+      provisioned
+        .map((entry, i) => ({ entry, i }))
+        .filter(({ i }) => !setupFailedIndices.has(i))
+        .map(({ entry, i }) =>
+          this.runFanoutEntry(
+            phase,
+            entry,
+            worktrees[i]!,
+            agent,
+            chain,
+            extraEnvByIndex[i],
+          ),
         ),
-      ),
     );
 
     // Cherry-pick winners onto trunk in batch order, gating each at

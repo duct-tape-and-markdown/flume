@@ -1298,6 +1298,152 @@ describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates 
 });
 
 /**
+ * WORKTREES-SETUPHOOK-ISOLATION — mirrors the `createWorktree` isolation test
+ * above, one seam later: `phase.setupWorktree` throwing for one entry must
+ * not reject the `Promise.all` and crash the whole wave. Before this fix the
+ * hook ran unguarded, so this throw would propagate straight out of
+ * `runFanout` and fail the tick even though the sibling was perfectly
+ * pickable.
+ */
+describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WORKTREES-SETUPHOOK-ISOLATION)", () => {
+  it("the throwing entry is recorded in provisionFailures and stays pending; the other proceeds to runFanoutEntry", async () => {
+    const entries = [
+      makeEntry("FAIL-HOOK", ["src/fail-hook.ts"]),
+      makeEntry("OK-A", ["src/ok-a.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      setupWorktree: async (ctx) => {
+        if (ctx.entryTag === "FAIL-HOOK") {
+          throw new Error("setupWorktree boom for FAIL-HOOK");
+        }
+        return undefined;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    // `fanoutAgent` throws if invoked for a slug with no registered action —
+    // FAIL-HOOK's worktree must never reach the agent, so only "ok-a" is
+    // registered.
+    const agent = fanoutAgent({
+      "ok-a": (cwd) =>
+        writeAndCommit(cwd, "src/ok-a.ts", "A\n", "build(OK-A): ship"),
+    });
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The sibling shipped — the hook throw for FAIL-HOOK never reached it.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["OK-A"]);
+
+    // FAIL-HOOK is parked via provisionFailures exactly like a createWorktree
+    // failure — tagged, with a comparable signature — and stays pending.
+    expect(outcome.provisionFailures).toEqual([
+      expect.objectContaining({
+        tag: "FAIL-HOOK",
+        signature: expect.stringContaining("setupWorktree boom"),
+      }),
+    ]);
+    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+      (e) => e.tag,
+    );
+    expect(pendingTags).toEqual(["FAIL-HOOK"]);
+
+    expect(
+      warnings.some(
+        (w) => w.includes("FAIL-HOOK") && w.includes("setupWorktree hook failed"),
+      ),
+    ).toBe(true);
+  }, 30_000);
+
+  it("worktree/extraEnv indices stay aligned to the surviving entries after a sibling's hook failure is spliced out", async () => {
+    const entries = [
+      makeEntry("ENTRY-A", ["src/a.ts"]),
+      makeEntry("ENTRY-B", ["src/b.ts"]),
+      makeEntry("ENTRY-C", ["src/c.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      // ENTRY-B's hook throws; A and C each get an extraEnv value keyed to
+      // their own tag, so a misaligned splice (surviving entry fed the
+      // wrong neighbor's extraEnv/worktree) shows up as a mismatch below.
+      setupWorktree: async (ctx) => {
+        if (ctx.entryTag === "ENTRY-B") {
+          throw new Error("setupWorktree boom for ENTRY-B");
+        }
+        return { extraEnv: { WT_TAG: ctx.entryTag } };
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const invokedSlugs: string[] = [];
+    const seenExtraEnv: Record<string, string | undefined> = {};
+    const agent: Agent = {
+      name: "align-check-agent",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        invokedSlugs.push(slug);
+        seenExtraEnv[slug] = inv.extraEnv?.WT_TAG;
+        if (slug === "entry-a") {
+          await writeAndCommit(inv.cwd, "src/a.ts", "A\n", "build(ENTRY-A): ship");
+        } else if (slug === "entry-c") {
+          await writeAndCommit(inv.cwd, "src/c.ts", "C\n", "build(ENTRY-C): ship");
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invokedSlugs.slice().sort()).toEqual(["entry-a", "entry-c"]);
+    expect(seenExtraEnv["entry-a"]).toBe("ENTRY-A");
+    expect(seenExtraEnv["entry-c"]).toBe("ENTRY-C");
+
+    expect(outcome.result?.shippedTags?.slice().sort()).toEqual([
+      "ENTRY-A",
+      "ENTRY-C",
+    ]);
+    expect(outcome.provisionFailures).toEqual([
+      expect.objectContaining({ tag: "ENTRY-B" }),
+    ]);
+    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+      (e) => e.tag,
+    );
+    expect(pendingTags).toEqual(["ENTRY-B"]);
+  }, 30_000);
+});
+
+/**
  * GITDELETEBRANCH-BROAD-SWALLOW — the teardown loop wraps `git.deleteBranch`
  * per §16's own removeWorktree/teardownWorktree pattern: a non-benign
  * failure (branch.ts now rethrows past the "not found" case) is logged by
