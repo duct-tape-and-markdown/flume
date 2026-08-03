@@ -60,21 +60,26 @@ function run(step, cmd, args, opts = {}) {
   return result.stdout ?? "";
 }
 
-const CHAIN_FIXTURE = `import { shellGate } from "@dtmd/flume";
-import type { Chain, Phase } from "@dtmd/flume";
+const CHAIN_FIXTURE = `import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
 
-const notes: Phase = {
-  name: "notes",
-  description: "install smoke test",
-  promptPath: "prompts/notes.md",
-  concurrency: "singleton",
-  writablePaths: ["notes/**"],
-  gates: [shellGate({ name: "noop", when: "afterCommit", cmd: "true", args: [] })],
-  handoff: () => [],
+const factory: ChainFactory = (api) => {
+  const { shellGate } = api;
+
+  const notes: Phase = {
+    name: "notes",
+    description: "install smoke test",
+    promptPath: "prompts/notes.md",
+    concurrency: "singleton",
+    writablePaths: ["notes/**"],
+    gates: [shellGate({ name: "noop", when: "afterCommit", cmd: "true", args: [] })],
+    handoff: () => [],
+  };
+
+  const chain: Chain = { phases: [notes], humanOnly: [] };
+  return { chain };
 };
 
-const chain: Chain = { phases: [notes], humanOnly: [] };
-export default chain;
+export default factory;
 `;
 
 const PROMPT_FIXTURE = "Append a dated line to notes/journal.md.\n";
