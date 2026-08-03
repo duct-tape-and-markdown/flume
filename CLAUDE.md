@@ -17,6 +17,7 @@ This is flume operating on flume: `.flume/chain.ts` imports the runtime from `..
 - Runtime deps: `tsx` (loads chain.ts), `zod` (PendingSchema validation)
 
 Stack-specific conventions belong in `.claude/rules/<area>.md` and should be path-scoped where possible.
+**@.claude/rules/platform-facts.md** is the home for facts about the toolchain and host OS — a pnpm behavior, a git limit, a Node constraint, a measured platform failure. Each is external, so no test pins it and no type holds it; a code comment carrying one is a copy the harness should own instead, seen only by an agent that already opened that file.
 
 ## Workflow: Flume
 
