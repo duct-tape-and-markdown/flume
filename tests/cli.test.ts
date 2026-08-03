@@ -1077,6 +1077,48 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
+    // spec/loop.md, "The tick verdict — one facts artifact": the
+    // detached-HEAD refusal must clear a prior tick's stale verdict before
+    // returning, not leave it for a loop's supervisor to misread as this
+    // tick's own on every subsequent iteration.
+    "flume tick on detached HEAD clears a stale tick-verdict.json before refusing",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        await mkdir(flumeDir, { recursive: true });
+        const verdictPath = join(flumeDir, "tick-verdict.json");
+        await writeFile(
+          verdictPath,
+          JSON.stringify({
+            phaseName: "probe",
+            tags: [],
+            committed: false,
+            gateResults: [],
+            shippedTags: [],
+            mergeOutcomes: [],
+            summary: "stale verdict from a prior tick",
+          }),
+          "utf8",
+        );
+
+        await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
+        new Baton(flumeDir).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("HEAD is detached");
+        expect(existsSync(verdictPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
     "flume status reports the tip claim alongside supervisor liveness",
     async () => {
       const repo = await makeJobRepo("main");

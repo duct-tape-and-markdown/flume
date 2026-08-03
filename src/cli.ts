@@ -796,6 +796,12 @@ async function main(): Promise<number> {
   });
 
   if (cmd === "tick") {
+    // v0.8 §5: clear any stale verdict before this tick's own work — a tick
+    // that returns below without an agent having run (chain-load failure,
+    // hibernation, terminal misconfiguration, the detached-HEAD refusal
+    // below) must leave no record for `flume loop`'s supervisor to misread
+    // as its own.
+    await clearTickVerdict(flumeDir);
     // v0.11 §4: tick and loop both refuse before any tick when HEAD is
     // detached — the tick record's meaning is advancing a named tip, and
     // the (loop-level) claim that guards it keys on a ref. A bare tick
@@ -807,11 +813,6 @@ async function main(): Promise<number> {
       );
       return 1;
     }
-    // v0.8 §5: clear any stale verdict before this tick's own work — a tick
-    // that returns below without an agent having run (chain-load failure,
-    // hibernation, terminal misconfiguration) must leave no record for
-    // `flume loop`'s supervisor to misread as its own.
-    await clearTickVerdict(flumeDir);
     const outcome = await dispatcher.tick();
     console.log(outcome.summary);
     if (outcome.verdict) {
