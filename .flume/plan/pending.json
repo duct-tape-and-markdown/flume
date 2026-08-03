@@ -1,41 +1,5 @@
 [
   {
-    "tag": "PENDING-SCOPEWRITESTOENTRY-OPTIN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "add scopeWritesToEntry?: boolean (default false); correct entryChannelPaths doc to describe entry narrowing as opt-in, not automatic on every scoped tick"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runAfterCommitGates passes the entry write-scope to writablePathsGate only when phase.scopeWritesToEntry is true; otherwise undefined, matching a singleton tick"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "prependHarnessBlock renders effectiveFenceLines only when phase.scopeWritesToEntry; otherwise unscopedFenceLines even with an assignedEntry"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Gate entry-scoped write narrowing behind Phase.scopeWritesToEntry (default false); dispatcher and prompt both respect it.",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "The entry-scoped write guard is opt-in, and off by default"
-    },
-    "tests": [
-      "a scoped tick on a phase with scopeWritesToEntry undeclared writes with the same allowance and renders the same fence as a singleton tick (writablePaths ceiling only)",
-      "a scoped tick on a phase with scopeWritesToEntry: true narrows to entry.files ∪ entryChannelPaths under writablePaths and the prompt renders the two-fence block — unchanged from today's behavior"
-    ],
-    "acceptance": "Phase.scopeWritesToEntry (default false) governs both the write guard and the prompt fence identically; flume's own chain (which declares nothing) gets containment-only on every tick, scoped or not.",
-    "notes": "Closes the two > **Drift:** notes in spec/pending.md and spec/prompt.md — one dispatcher ternary and one prompt fence choice, same mechanism. No .flume/chain.ts change needed; default false already matches flume's own expectation."
-  },
-  {
     "tag": "LOOP-ERRORED-TICKS-SILENT-EXIT",
     "gate": {
       "kind": "open"
@@ -89,38 +53,6 @@
     ],
     "acceptance": "A ledger-rewrite PendingParseFailure no longer discards a wave's verdict; the exit-69 refusal to write a corrupt ledger is unchanged, only the verdict loss is fixed.",
     "notes": "equilibrium audit, wave durability cluster. Exit code stays 69; only the missing verdict is the defect."
-  },
-  {
-    "tag": "LOOP-CURRENTREFPATH-CONFLATES-STATES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "currentRefPath distinguishes a detached HEAD, a non-repository cwd, and a failing git invocation instead of returning null for all three"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "tick and loop branches print the message matching whichever of the three currentRefPath now reports"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "currentRefPath returns null for three distinct states; both CLI call sites print \"HEAD is detached\" for all of them, so a caller outside a repo is told about a state it isn't in.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
-    },
-    "tests": [
-      "currentRefPath distinguishes a detached HEAD from a non-repository cwd and from a git invocation failure",
-      "flume tick outside a git repository reports that, not \"HEAD is detached\""
-    ],
-    "acceptance": "The three null-producing cases are distinguishable at the call site and the CLI prints the correct message for each.",
-    "notes": "equilibrium audit, exit-code contract cluster."
   },
   {
     "tag": "LOOP-TIPMOVED-MULTICOMMIT-TICK",
@@ -180,38 +112,6 @@
     ],
     "acceptance": "The backstop tracks every distinct signature across a tick's provisionFailures, not only the first.",
     "notes": "equilibrium audit, wave durability cluster. runFanout pushes a repo-level prune failure first, then per-entry failures — the untagged repo-level class is exactly what a tagged sibling at index 0 shadows today."
-  },
-  {
-    "tag": "PENDING-ZERO-FILES-SCHEMA-FLOOR",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "require at least one declared path across files.new/files.edit/files.retire combined"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "cover the new floor"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "An entry declaring empty files parses clean, is pickable, and can never be classified shipped — it commits real work every wave and never leaves the queue.",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "Ship detection requires a declared-files diff"
-    },
-    "tests": [
-      "an entry whose files.new/edit/retire are all empty fails schema parse",
-      "an entry declaring at least one path in any of the three arrays still parses"
-    ],
-    "acceptance": "A zero-declared-files entry is rejected at parse instead of silently becoming unshippable forever.",
-    "notes": "inbox 2026-08-03. Independent of the open SHIP-CLASSIFICATION-IS-THE-ENGINE-GUESSING question — proceeding per that finding's own recommendation. CHAINTS-PREDICATE-COVERAGE's files were amended this tick to stay valid under the new floor."
   },
   {
     "tag": "CLI-JOBNEW-CJS-EXIT-CODE",
@@ -331,38 +231,6 @@
     ],
     "acceptance": "render is gone from src/cli.ts, docs/CLI.md, and tests/cli.test.ts; renderPrompt itself (src/Prompt.ts) is untouched — it is the tick's own render path and a public export.",
     "notes": "Operator ruling 2026-08-03, spec side already landed (76dc4807). Breaking CLI change; the changelog is git-mined at cut per spec/cli.md Versioning policy, so the commit body is the record."
-  },
-  {
-    "tag": "CI-CHAIN-FIXTURES-FACTORY-MIGRATION",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "scripts/smoke-install.mjs",
-          "description": "CHAIN_FIXTURE migrates export default chain to export default (api) => ({ chain })"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "description": "the consumer-install smoke heredoc and the second-reference-chain (backlog-groomer) smoke heredoc both migrate to the factory shape"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "All three CI-installed chain fixtures still export a bare Chain object; loadChainModule refuses a non-function default outright, so the chain-load leg of every install-smoke fails as written.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "The chain is a plugin, not a consumer"
-    },
-    "tests": [
-      "the packed-tarball install smoke's chain fixture loads under loadChainModule's factory contract on both the POSIX and Windows CI lanes",
-      "the backlog-groomer second-reference-chain smoke's wake+tick assertion passes against the factory-shaped fixture"
-    ],
-    "acceptance": "All three CI chain fixtures export default (api) => ({ chain }); the install-smoke steps pass without loadChainModule's non-function-export refusal.",
-    "notes": "equilibrium audit, resolution + surface gaps cluster. Currently reddens under set -euo pipefail — CI-visible, not merely latent."
   },
   {
     "tag": "CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE",
