@@ -1,33 +1,5 @@
 [
   {
-    "tag": "LOOP-ERRORED-TICKS-SILENT-EXIT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "superviseLoop counts a non-zero child exit as an errored tick even when the child wrote no on-disk verdict"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A tick that dies without writing a verdict (throwing hook, CJS refusal, detached-HEAD refusal) is invisible to erroredTicks, so a run where nothing succeeded can exit 0.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "tests": [
-      "a child exiting non-zero with no verdict written on disk is counted in the run's erroredTicks total",
-      "loopExitCode returns non-zero for a run where every tick refused before writing a verdict and nothing shipped"
-    ],
-    "acceptance": "superviseLoop increments erroredTicks for a non-zero child exit regardless of whether a tick verdict was written; loopExitCode reflects it.",
-    "notes": "inbox 2026-08-03. A throwing chain hook also leaves the baton empty (sleep ran, handoff never reached), so a hibernating loop currently reports clean success over a run that errored."
-  },
-  {
     "tag": "LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE",
     "gate": {
       "kind": "open"
@@ -112,33 +84,6 @@
     ],
     "acceptance": "The backstop tracks every distinct signature across a tick's provisionFailures, not only the first.",
     "notes": "equilibrium audit, wave durability cluster. runFanout pushes a repo-level prune failure first, then per-entry failures — the untagged repo-level class is exactly what a tagged sibling at index 0 shadows today."
-  },
-  {
-    "tag": "CLI-JOBNEW-CJS-EXIT-CODE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "runJobVerb's `new` catch checks CjsContextLoadError before the operational branch, headlines the refusal, and exits 2"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume job new exits 1 on the CJS-context refusal instead of the uniform 2, and buries it behind \"[flume] job new failed:\" instead of headlining it.",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "A CJS-context host is refused, never relayed"
-    },
-    "tests": [
-      "flume job new against a CJS-context host exits 2 with the usage-shaped refusal as the headline message"
-    ],
-    "acceptance": "job new's CJS-context refusal matches tick's: exit 2, refusal headlined, not wrapped in the operational-failure message.",
-    "notes": "equilibrium audit, exit-code contract cluster. tick already holds this rule (catches CjsContextLoadError explicitly); job new is the outlier."
   },
   {
     "tag": "CLI-HELP-TICK-MISSING-EXIT2",
@@ -271,73 +216,6 @@
     ],
     "acceptance": "maxParallel is a chain-overridable default alongside quarantineScope/abortThreshold, per engine-boundary.md's policy-constant rule.",
     "notes": "inbox 2026-08-03. No new validation added: spec/pending.md's Fanout partition section already documents a non-positive maxParallel degrading to width-1 batches rather than wedging — only the missing chain-declaration surface is the defect."
-  },
-  {
-    "tag": "CHAIN-AFTERMERGE-SINGLETON-PROMPT-FILTER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "prependHarnessBlock filters phase.gates to when === \"afterCommit\" for a singleton phase before rendering, matching what runAfterCommitGates actually selects"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "cover the filter"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A singleton phase's <harness> block names an afterMerge gate as enforcement when nothing will ever run it — the block renders phase.gates unfiltered.",
-    "per": {
-      "path": "spec/prompt.md",
-      "section": "The harness block"
-    },
-    "tests": [
-      "a singleton phase declaring an afterMerge gate renders a harness block that does not name it",
-      "a fanout phase's harness block still names its afterMerge gates unchanged"
-    ],
-    "acceptance": "The harness block never names a gate that cannot run under that tick's concurrency.",
-    "notes": "inbox 2026-08-03 + equilibrium audit (render preview diverges cluster), same defect filed twice. spec/chain.md's Gate placement section carries the sibling drift note."
-  },
-  {
-    "tag": "CHAIN-EXPORT-GATE-OPTION-TYPES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/builtinGates.ts",
-          "description": "export ShellGateOptions from its own module"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "add ShellGateOptions, PkgManagerOverride, and PkgManagerGate to the type export list, beside PendingGateOptions"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "a type-only import assertion covering the three"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "shellGate/tscGate/vitestGate/eslintGate are exported as values but a consumer cannot name the shape it passes them — ShellGateOptions isn't exported at all.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "The builtin gates"
-    },
-    "tests": [
-      "ShellGateOptions, PkgManagerOverride, and PkgManagerGate are importable via import type from @dtmd/flume"
-    ],
-    "acceptance": "A consumer can name the shape it passes to shellGate/tscGate/vitestGate/eslintGate the same way it already can for pendingGate.",
-    "notes": "equilibrium audit, resolution + surface gaps cluster."
   },
   {
     "tag": "WORKTREES-HARVESTFRICTION-COLLISION",
