@@ -561,6 +561,10 @@ async function runJobVerb(
     await jobNew({ repoRoot, name, configDir });
     return 0;
   } catch (err) {
+    if (err instanceof CjsContextLoadError) {
+      console.error(`[flume] ${err.message}`);
+      return 2;
+    }
     if (err instanceof JobUsageError) {
       console.error(`[flume] ${err.message}`);
       return 2;

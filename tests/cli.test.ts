@@ -587,6 +587,76 @@ describe("flume render — CJS-context host refusal via the real CLI (v0.7 §5)"
 });
 
 /**
+ * CLI-JOBNEW-CJS-EXIT-CODE — `job new` is the outlier in the exit-code
+ * contract cluster (spec/cli.md, "A CJS-context host is refused, never
+ * relayed"): `runJobVerb`'s `new` catch checked only `JobUsageError`, so a
+ * `CjsContextLoadError` thrown by `jobNew`'s own `loadChainModule` call fell
+ * through to the operational branch — exit 1, refusal buried behind
+ * `[flume] job new failed:`. `tick` already headlines the same error at exit
+ * 2 (`render`'s describe block above); this asserts `job new` now matches.
+ */
+describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNEW-CJS-EXIT-CODE)", () => {
+  const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+  const TSC_BIN = fileURLToPath(
+    new URL("../node_modules/typescript/bin/tsc", import.meta.url),
+  );
+  const DIST_CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+
+  beforeAll(async () => {
+    await exec(process.execPath, [TSC_BIN, "-p", "tsconfig.build.json"], {
+      cwd: REPO_ROOT,
+    });
+  }, 60_000);
+
+  async function runDistCli(
+    cwd: string,
+    args: string[],
+  ): Promise<{ out: string; code: number }> {
+    try {
+      const { stdout, stderr } = await exec(process.execPath, [DIST_CLI, ...args], {
+        cwd,
+        env: hermeticEnv(),
+      });
+      return { out: stdout + stderr, code: 0 };
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string; code?: number };
+      return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+    }
+  }
+
+  it(
+    'a CJS-context host (package.json missing "type": "module") refuses `job new`\'s chain load, headlining the fix, and exits 2',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-cjs-jobnew-"));
+      try {
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({ name: "cjs-host", type: "commonjs" }),
+          "utf8",
+        );
+        await mkdir(join(dir, ".flume"), { recursive: true });
+        await writeFile(
+          join(dir, ".flume", "chain.ts"),
+          `import { join as pathJoin } from "node:path";\n` +
+            `export default { phases: [], humanOnly: [], _j: pathJoin };\n`,
+          "utf8",
+        );
+
+        const result = await runDistCli(dir, ["job", "new", "probe"]);
+
+        expect(result.code).toBe(2);
+        expect(result.out).toContain("[flume]");
+        expect(result.out).toContain('"type": "module"');
+        expect(result.out).not.toContain("job new failed");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});
+
+/**
  * PENDING-PARSE-FAILURE-REFUSES, engineering.md "Loud or nothing" — `render`
  * is a third reader of pending.json alongside `Dispatcher.tick()`'s
  * decide/rewrite reads. Pre-fix, a parse failure printed the errors to
