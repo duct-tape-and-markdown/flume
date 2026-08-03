@@ -43,7 +43,7 @@ import { writablePathsGate } from "./builtinGates.js";
 // import participates safely in the builtinGates cycle — see its docstring.
 import { buildFlumeApi, type FlumeApi } from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { namespacedJoin, matchesAny } from "./paths.js";
+import { namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
@@ -135,7 +135,8 @@ export interface TickVerdictGateResult {
  * How a fanout entry's landed worktree commit fared once the wave tried to
  * put it on trunk (v0.8 §5's "cherry-pick/merge outcome"):
  *  - `merged`                cherry-picked, passed every afterMerge gate,
- *                            touched a declared file — counted shipped.
+ *                            and the agent's own termination never stated a
+ *                            park — counted shipped.
  *  - `cherry-pick-conflict`  the cherry-pick itself failed; entry stays
  *                            pending, no commit reached trunk.
  *  - `afterMerge-reverted`   landed, then an afterMerge gate failed; that
@@ -144,9 +145,12 @@ export interface TickVerdictGateResult {
  *                            gate (§13, RELEASE-v0.7); never reached
  *                            cherry-pick, so it never touched trunk on its
  *                            own.
- *  - `channel-only`          landed and passed every gate, but touched no
- *                            file the entry declared (§12) — stays on
- *                            trunk, entry stays pending (not a ship).
+ *  - `channel-only`          landed and passed every gate, but the agent's
+ *                            own clean termination stated a park (spec/
+ *                            pending.md "Ship detection requires a
+ *                            declared-files diff", ruling 2026-08-03) —
+ *                            stays on trunk, entry stays pending (not a
+ *                            ship).
  *  - `tip-moved`             the wave's own commit-onto-trunk step refused
  *                            because the ref moved since this wave started
  *                            or since its own last successful action
@@ -235,7 +239,7 @@ export interface TickVerdict {
   declined?: boolean;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: TickVerdictGateResult[];
-  /** Entry tags shipped by this tick (§12 declared-files diff already applied); empty for a singleton phase. */
+  /** Entry tags shipped by this tick (a stated-park termination already excluded); empty for a singleton phase. */
   shippedTags: string[];
   /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
   mergeOutcomes: TickVerdictMergeOutcome[];
@@ -406,12 +410,20 @@ const MAX_PRIOR_DIFFSTAT = 4 * 1024;
 const MAX_PRIOR_NOCOMMIT = 4 * 1024;
 
 /**
- * How an agent invocation ended — consulted by §6 classification ONLY when
- * the tick produced no commit. A clean exit with no commit is a
+ * How an agent invocation ended. A clean exit with no commit is a
  * voluntary-bail (the agent refused a constraint and said so in its final
  * message, captured here as `stdout`); any process failure is a
- * platform-preempt (not a defect in the work). When a commit landed, how the
- * process ended is irrelevant — the commit is honored regardless.
+ * platform-preempt (not a defect in the work) — §6 classification consults
+ * this distinction only when the tick produced no commit.
+ *
+ * When a commit lands, `runFanout`'s ship classification consults it too
+ * (spec/pending.md "Ship detection requires a declared-files diff", ruling
+ * 2026-08-03): a `clean` termination's final message is the agent's own
+ * account of what it did, so a stated park there still keeps the entry out
+ * of `shipped` even though its commit landed and its gates passed. A
+ * `process-failure` never "says" anything of its own — `failureClass` is
+ * engine-authored, not agent prose — so it never blocks shipping on that
+ * basis; a commit it left behind is honored exactly as a clean one would be.
  */
 type AgentTermination =
   | { kind: "clean"; stdout: string }
@@ -1723,9 +1735,8 @@ export class Dispatcher {
       // attributes the failure to *this* entry — it is the only delta
       // between `preCherry` and `mergedSha`.
       // Computed once per commit and shared across every gate this loop
-      // runs, and reused below for the footprint/declared-file checks that
-      // need the identical commit's touched paths — same dedup as
-      // runAfterCommitGates above.
+      // runs, and reused below as the `afterMerge-reverted` footprint — same
+      // dedup as runAfterCommitGates above.
       const commitTouchedPaths = await git.showNameOnly(repoRoot, mergedSha);
       let entryFailure:
         | { gate: string; message: string; details?: string }
@@ -1789,20 +1800,17 @@ export class Dispatcher {
         `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
       );
 
-      // §12: landing on trunk isn't shipping — a commit that only touches
-      // phase.entryChannelPaths (a park note, no implementation) must not
-      // clear the entry from pending.json. Diff against the entry's
-      // *declared* files.{new,edit,retire}, not touchedPaths() — that
-      // folds in observedFiles, a downstream footprint signal, not proof
-      // this diff shipped real work. `commitTouchedPaths` (above) is the
-      // raw commit diff, not that folded signal, so reusing it here is safe.
-      const declaredFiles = declaredPaths(r.entry);
-      const touchesDeclaredFile = commitTouchedPaths.some((p) =>
-        matchesAny(p, declaredFiles),
-      );
-      if (!touchesDeclaredFile) {
+      // Landing on trunk isn't shipping — but which commit "counts" is no
+      // longer a diff against entry.files (spec/pending.md "Ship detection
+      // requires a declared-files diff", ruling 2026-08-03: entry.files is a
+      // partition prediction, not a ship contract, and reading
+      // phase.entryChannelPaths instead is the same path-inference one layer
+      // over). The one party that knows whether this commit is the entry's
+      // finished work or a park note is the agent that made it — trust its
+      // own clean termination unless its final message says otherwise.
+      if (r.termination && statesPark(r.termination)) {
         this.log.warn(
-          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} touches no declared file — entry stays pending (channel-only commit)`,
+          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but the agent's own termination states a park — entry stays pending (channel-only commit)`,
         );
         mergeOutcomes.push({ tag: r.entry.tag, outcome: "channel-only" });
         continue;
@@ -2031,6 +2039,16 @@ export class Dispatcher {
      * the same way an `afterMerge` failure's footprint is fed in.
      */
     footprint?: string[];
+    /**
+     * Set only when this entry's own commit landed and passed its
+     * afterCommit gates — the wave loop's ship-classification site (spec/
+     * pending.md "Ship detection requires a declared-files diff", ruling
+     * 2026-08-03) reads it instead of diffing the commit against
+     * `declaredPaths(entry)`. Absent on every other return path: a no-commit
+     * or gate-reverted entry never reaches cherry-pick, so there is nothing
+     * for ship classification to consult.
+     */
+    termination?: AgentTermination;
   }> {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
@@ -2162,6 +2180,7 @@ export class Dispatcher {
       committed: true,
       commitSha: postHead,
       gateResults,
+      termination,
     };
   }
 
@@ -3408,6 +3427,26 @@ function summarize(
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
   return parts.join(" ");
+}
+
+/**
+ * Whether a fanout entry's own commit-landed termination states a park —
+ * `runFanout`'s ship-classification site (spec/pending.md "Ship detection
+ * requires a declared-files diff", ruling 2026-08-03). Matches the same
+ * vocabulary this repo's own prompts and rules already use for the concept
+ * (`.flume/prompts/build.md`'s "Park the … single-file committed park",
+ * `.claude/rules/collaboration.md`'s "Inform before parking") — a phrase an
+ * agent naming this outcome writes without prompting, not a marker the
+ * engine invented and asked for.
+ *
+ * A `process-failure` termination carries no message of its own
+ * (`failureClass` is engine-authored, never agent prose), so it never
+ * "states" anything and always returns `false` here — see {@link
+ * AgentTermination}.
+ */
+function statesPark(termination: AgentTermination): boolean {
+  if (termination.kind !== "clean") return false;
+  return /\bpark(?:ed|ing)?\b/i.test(finalAgentMessage(termination.stdout));
 }
 
 /**

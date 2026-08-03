@@ -1975,9 +1975,9 @@ describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
 
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
-    // Both fake agents write their declared file (so the §12 declared-files
-    // diff check is satisfied) plus a shared baseline file with different
-    // content. Declared paths are disjoint so partition packs them together;
+    // Both fake agents write their declared file plus a shared baseline file
+    // with different content. Declared paths are disjoint so partition packs
+    // them together;
     // the shared file is an entryChannelPaths allowance — the §5-era conflict
     // vector, since disjoint declared files can no longer collide directly.
     // The first cherry-pick succeeds; the second conflicts because trunk now
@@ -2637,9 +2637,13 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
   }, 20_000);
 });
 
-describe("Dispatcher fanout — ship detection requires a declared-files diff (§12)", () => {
-  it("channel-only commit cherry-picks onto trunk but its entry stays pending, out of shippedTags", async () => {
-    await writePending(fx.repo, [makeEntry("CHANNEL-ONLY", ["src/ok.ts"])]);
+describe("Dispatcher fanout — ship classification trusts the agent's own termination, not entry.files (spec/pending.md \"Ship detection requires a declared-files diff\", ruling 2026-08-03)", () => {
+  it("a commit touching no declared file still ships when the agent's clean termination never states a park", async () => {
+    // Pre-fix, this was the "channel-only" case: a commit outside the
+    // entry's declared files stayed pending forever. The path predicate is
+    // gone — a clean termination that never states a park ships regardless
+    // of what the diff touches.
+    await writePending(fx.repo, [makeEntry("NOTE-ONLY-SHIPS", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
@@ -2650,16 +2654,16 @@ describe("Dispatcher fanout — ship detection requires a declared-files diff (�
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    // Commit touches only the channel path — a park note, no implementation
-    // of the entry's declared src/ok.ts.
+    // Commit touches only the channel path, never src/ok.ts — and the
+    // agent's (default, empty) termination says nothing about parking.
     const agent = fanoutAgent({
-      "channel-only": async (cwd) => {
+      "note-only-ships": async (cwd) => {
         await mkdir(join(cwd, "notes"), { recursive: true });
-        await writeFile(join(cwd, "notes", "finding.md"), "parked\n");
+        await writeFile(join(cwd, "notes", "finding.md"), "context\n");
         await exec("git", ["add", "."], { cwd });
         await exec(
           "git",
-          ["commit", "-q", "-m", "build(CHANNEL-ONLY): park note"],
+          ["commit", "-q", "-m", "build(NOTE-ONLY-SHIPS): finding"],
           { cwd },
         );
       },
@@ -2676,23 +2680,12 @@ describe("Dispatcher fanout — ship detection requires a declared-files diff (�
 
     const outcome = await dispatcher.tick();
 
-    // Lands on trunk — cherry-pick is unconditional regardless of content.
     expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
-      "parked\n",
+      "context\n",
     );
-    // Not classified shipped: stays pending, out of shippedTags.
-    expect(outcome.result?.shippedTags).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
-      "CHANNEL-ONLY",
-    ]);
-    expect(
-      warnings.some(
-        (w) =>
-          w.includes("CHANNEL-ONLY") &&
-          w.includes("touches no declared file") &&
-          w.includes("channel-only commit"),
-      ),
-    ).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["NOTE-ONLY-SHIPS"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(warnings.some((w) => w.includes("states a park"))).toBe(false);
   }, 20_000);
 
   it("a normal ship that also touches channels/CHANGELOG is unaffected", async () => {
@@ -2708,7 +2701,7 @@ describe("Dispatcher fanout — ship detection requires a declared-files diff (�
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     // Ships the declared file and also touches an undeclared channel path —
-    // any overlap with declared files still ships, per §12.
+    // neither commit content nor entry.files bears on the outcome anymore.
     const agent = fanoutAgent({
       "normal-ship": async (cwd) => {
         await writeFile(join(cwd, "src", "ok.ts"), "ok\n");
@@ -2741,55 +2734,70 @@ describe("Dispatcher fanout — ship detection requires a declared-files diff (�
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   }, 20_000);
 
-  it("a glob-declaring entry whose commit touches a matching file ships (§12 matches the write guard's glob semantics)", async () => {
-    // Declares a glob, not a literal path — the same shape the entry-scope
-    // write guard (writablePathsGate via declaredPaths(entry)) already
-    // glob-matches at commit time. Ship detection must judge the same way.
-    await writePending(
-      fx.repo,
-      [makeEntry("GLOB-SHIP", ["nodes/territory-*.json"])],
-    );
+  it("an entry whose agent states a park in its final message is not classified shipped, even though its commit landed and gates passed", async () => {
+    await writePending(fx.repo, [makeEntry("STATED-PARK", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
       name: "build",
       concurrency: "fanout",
-      writablePaths: ["nodes/**", "notes/**"],
+      writablePaths: ["src/**", "notes/**"],
       entryChannelPaths: ["notes/**"],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    const agent = fanoutAgent({
-      "glob-ship": async (cwd) => {
-        await mkdir(join(cwd, "nodes"), { recursive: true });
-        await writeFile(join(cwd, "nodes", "territory-01.json"), "{}\n");
-        await exec("git", ["add", "."], { cwd });
+    // The commit touches the entry's own declared file — proof this isn't a
+    // path check wearing a new name. What keeps it pending is the agent's
+    // own final message, not the diff.
+    const agent: Agent = {
+      name: "parking-fanout",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        if (slug !== "stated-park") {
+          throw new Error(`parking-fanout: no action for slug '${slug}'`);
+        }
+        await writeFile(join(inv.cwd, "src", "ok.ts"), "partial\n");
+        await exec("git", ["add", "."], { cwd: inv.cwd });
         await exec(
           "git",
-          ["commit", "-q", "-m", "build(GLOB-SHIP): ship"],
-          { cwd },
+          ["commit", "-q", "-m", "build(STATED-PARK): partial progress"],
+          { cwd: inv.cwd },
         );
+        return {
+          exitCode: 0,
+          stdout:
+            "Parked: entry needs a design decision outside this tick's scope.\n",
+          stderr: "",
+        };
       },
-    });
+    };
 
+    const warnings: string[] = [];
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
-      log: silent,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
     });
 
     const outcome = await dispatcher.tick();
 
-    // Pre-fix: declaredFiles.includes(p) compares "nodes/territory-*.json"
-    // against "nodes/territory-01.json" literally, never matches — the
-    // entry lands on trunk but stays pending forever (non-draining loop).
-    expect(outcome.result?.shippedTags).toEqual(["GLOB-SHIP"]);
+    // Lands on trunk regardless — classification, not landing, is what
+    // a stated park changes (spec/worktrees.md "In-worktree gate reverts
+    // leave a trunk footprint" makes the same landed/classified split).
+    expect(await readFile(join(fx.repo, "src/ok.ts"), "utf8")).toBe(
+      "partial\n",
+    );
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "STATED-PARK",
+    ]);
     expect(
-      await readFile(join(fx.repo, "nodes/territory-01.json"), "utf8"),
-    ).toBe("{}\n");
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+      warnings.some(
+        (w) => w.includes("STATED-PARK") && w.includes("states a park"),
+      ),
+    ).toBe(true);
   }, 20_000);
 });
 
