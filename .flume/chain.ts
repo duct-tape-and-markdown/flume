@@ -97,16 +97,17 @@ const factory: ChainFactory = (api) => {
       }),
       hint: `{ "path": "spec/RELEASE-*.md (the spec or rule that justifies this work)", "section": "exact heading, no leading '## '" }`,
     },
+    /**
+     * Acceptance decomposed: one line per behavior the work must pin. The
+     * behavior only — which file the test lands in is build's call, and a
+     * declared path was both a second copy of `files` (91% overlap across the
+     * historical queue) and plan prescribing inside build's lane
+     * (`.claude/rules/spec-plan-build.md`). See `.flume/PROTOCOL.md`,
+     * *What an entry carries*.
+     */
     tests: {
-      schema: z
-        .array(
-          z.strictObject({
-            path: z.string().min(1),
-            asserts: z.string().min(1),
-          }),
-        )
-        .default([]),
-      hint: `[ { "path": "...", "asserts": "behavior" } ]`,
+      schema: z.array(z.string().min(1)).default([]),
+      hint: `[ "behavior this pins" ] — one per behavior; build picks the file`,
     },
     acceptance: {
       schema: z.string().min(1),
