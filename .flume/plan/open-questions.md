@@ -72,69 +72,6 @@ smell (gates hardcoding `pnpm` with no override at all) is gone now that
 the cmd override shipped; what's left is a wrap-it-yourself gap, not an
 asymmetry.
 
-## ENGINE-BRANCH-VERBS-VS-NAVIGATION-RULING
-
-**RESOLVED and LANDED (operator, 2026-08-03) — state the condition.**
-
-`spec/loop.md` now reads: *the engine never changes which ref HEAD points at,
-and never creates or deletes a ref outside `flume/**`.*
-
-The predicate first proposed with this ruling — "never touches a ref outside
-`flume/**`" — was **wrong**, and the equilibrium audit caught it: the wave
-touches the trunk ref three ways (`git.cherryPick`, `git.hardResetTo`,
-`commitPendingUpdate` → `git.commitPaths`). The distinction is not which ref
-but which operation. Advancing and resetting the tip you were handed is
-recording; choosing a different tip is navigating.
-
-Stated as a condition because the verb list drifted twice — first forbidding
-`cherry-pick`, which the engine has always run, then `branch`, which it runs
-over its own ephemeral names. A condition is evaluable by a sweep lens; an
-exception list only accrues exceptions.
-
-## win32 CI lane says "full suite", runs the fast lane (inbox 2026-08-02)
-
-**RESOLVED (operator, 2026-08-03) — option 1: run the integration lane on win32.**
-
-`pnpm test:integration` joins the windows job. win32 is the primary
-development platform here and is the origin of the exact bug class the
-integration lane covers — the `.cmd`-shim spawn defect and `execGate`'s
-ENOENT shell-retry shim both came from it. A lane that documents the gap
-(option 2) leaves the platform most likely to break the least covered.
-
-CI-minutes cost accepted. If the lane proves flaky on the slower runner,
-that is a follow-up about the lane's reliability, not a reason to reopen
-this.
-
-Pending: `spec/cli.md`'s win32 portability section states that the win32 lane
-runs both suites, so the claim the comment makes becomes one the config has
-to satisfy.
-
-## `plan/pending.json` path: one fact, two homes (inbox 2026-08-02)
-
-**RESOLVED (operator, 2026-08-03) — option 1: drop the override.**
-
-The `plan/pending.json` layout is convention, not capability. `pendingGate`'s
-`opts.pendingPath` override is removed and all five sites
-(`Dispatcher.ts`, `builtinGates.ts`, `cli.ts` x2, `job.ts`) resolve the path
-through one shared constant.
-
-The override's only observed effect has been the desync it enables — a chain
-overriding it gets a gate reading one file while the dispatcher writes
-another. And it could never have been honest: `cli.ts`'s status and job
-commands read the pending count **without loading the chain**, by design, so
-a chain-supplied path is structurally unreachable from the surface that needs
-it most. That is the upstream flag `.claude/rules/collaboration.md`
-(*Complexity is a signal*) exists to catch — the capability was added without
-accounting for the chain-less reads.
-
-Nothing in this repo or `examples/` overrides it, so removal costs nothing
-today. If a second implementation ever genuinely needs a relocatable pending
-path, it arrives with a design that reaches the chain-less readers too.
-
-Pending: `spec/pending.md` states the path as fixed layout under `flumeDir`,
-one constant, no override.
-
-
 ## SHIP-CLASSIFICATION-IS-THE-ENGINE-GUESSING
 
 Ship detection diffs a merged commit against the entry's **declared** `files`:
@@ -170,8 +107,8 @@ Options:
    new surface for one use case — weigh the complexity signal.
 
 Recommended: (2), with (1) as the interim if a shape for the signal is not
-obvious. The zero-declared-files bug is filed separately and does not wait on
-this.
+obvious. The zero-declared-files bug is filed separately
+(`PENDING-ZERO-FILES-SCHEMA-FLOOR`) and does not wait on this.
 
 ## CLAUDECODE-SKIP-PERMISSIONS-DEFAULT
 
@@ -198,3 +135,40 @@ Options:
 
 Recommended: (1). The containment claim should name the fence and the gates,
 which are real, rather than the worktree, which is not always there.
+
+Per: `spec/chain.md` *The agent seam* now carries this same rationale gap as a
+`> **Drift:**` note — the spec section to amend once this lands.
+
+## FLUME_DIR canonicalization skips `job new` and `job status`
+
+**PARKED**
+
+`main()` routes the `job` verbs to `runJobVerb` and returns before
+`resolveStateDirs` runs (`src/cli.ts`), so `job new` and `job status` never
+canonicalize or write back `FLUME_DIR`/`FLUME_CONFIG_DIR` — yet both load a
+real chain, and `job new`'s `loadChainModule` call *invokes* the chain
+factory. A factory reading `process.env.FLUME_DIR` (the dogfood chain's
+session-capture setup is the shipped example) sees whatever the caller's raw
+environment held, not the resolved job state root.
+
+No tick runs under either verb today, so nothing is misplaced in practice
+(`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*) — but the
+always-present contract a chain author builds against does not hold here.
+
+Options:
+
+1. **Route `job new`/`job status` through `resolveStateDirs` before loading
+   the chain.** Matches every other subcommand's guarantee. Needs care:
+   `job new` takes the job name positionally, not via `--job`, so the
+   resolution call needs the same `--job`-shaped input synthesized from the
+   positional arg.
+2. **Leave as-is, document the exception.** Cheapest — these two verbs
+   already resolve their own `configDir` inline and never run a tick, so the
+   gap is real but inert today. Risk: a future chain author trips on it the
+   first time a factory reads `FLUME_DIR` during `job new`.
+
+Recommended: lean toward (1) for consistency, but this is a resolution-authority
+design call, not a bug with one obvious fix — flagging for a ruling.
+
+Per candidates: `spec/cli.md` *State-root and config-dir resolution*,
+`spec/chain.md` *Per-run artifacts belong under `FLUME_DIR`*.

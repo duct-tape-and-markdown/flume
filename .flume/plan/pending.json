@@ -61,7 +61,12 @@
     "tag": "CHAINTS-PREDICATE-COVERAGE",
     "gate": { "kind": "open" },
     "files": {
-      "new": [],
+      "new": [
+        {
+          "path": "tests/chain.test.ts",
+          "description": "drives loadChainModule + buildFlumeApi against .flume/chain.ts to exercise the four predicates below"
+        }
+      ],
       "edit": [],
       "retire": []
     },
@@ -77,7 +82,7 @@
       "setupBuildWorktree's sentinel assertion throws when node_modules/<sentinel> is missing after install and passes when present"
     ],
     "acceptance": "The four predicates are driven through the real chain factory (loadChainModule + buildFlumeApi, as tests/examples.integration.test.ts already drives examples/), not a hand-copied reimplementation of chain.ts's logic.",
-    "notes": "inbox 2026-08-02, narrowed to the four predicates only — chain.ts's declarations (writablePaths, gate lists, entry extension) are out of scope, same as CLAUDE.md itself. tests/** rides the channel; no files declared."
+    "notes": "inbox 2026-08-02, narrowed to the four predicates only — chain.ts's declarations (writablePaths, gate lists, entry extension) are out of scope, same as CLAUDE.md itself. Declares tests/chain.test.ts to satisfy PENDING-ZERO-FILES-SCHEMA-FLOOR's new non-empty-files floor."
   },
   {
     "tag": "CLI-CHANGELOG-FROM-GIT",
@@ -110,5 +115,499 @@
     ],
     "acceptance": "Running the tool over real history produces a well-formed [Unreleased] section per spec/cli.md Versioning policy, and it refuses non-zero on a zero-commit range.",
     "notes": "inbox 2026-08-03, successor to the reverted .changeset/ fragment approach (e87c007). Ships the tool only; running it at an actual release cut is separate."
+  },
+  {
+    "tag": "LOOP-ERRORED-TICKS-SILENT-EXIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "superviseLoop counts a non-zero child exit as an errored tick even when the child wrote no on-disk verdict"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A tick that dies without writing a verdict (throwing hook, CJS refusal, detached-HEAD refusal) is invisible to erroredTicks, so a run where nothing succeeded can exit 0.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Exit codes — the run never lies to CI"
+    },
+    "tests": [
+      "a child exiting non-zero with no verdict written on disk is counted in the run's erroredTicks total",
+      "loopExitCode returns non-zero for a run where every tick refused before writing a verdict and nothing shipped"
+    ],
+    "acceptance": "superviseLoop increments erroredTicks for a non-zero child exit regardless of whether a tick verdict was written; loopExitCode reflects it.",
+    "notes": "inbox 2026-08-03. A throwing chain hook also leaves the baton empty (sleep ran, handoff never reached), so a hibernating loop currently reports clean success over a run that errored."
+  },
+  {
+    "tag": "LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "build and persist a tick verdict recording the wave's shipped tags before commitPendingUpdate's PendingParseFailure propagates out of tick()'s catch"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A wave that cherry-picks and gates N entries clean, then hits a PendingParseFailure on the ledger rewrite, writes no verdict at all — shipped tags never reach the run totals.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
+    "tests": [
+      "a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's strict readPending, still writes a tick verdict recording the shipped tags"
+    ],
+    "acceptance": "A ledger-rewrite PendingParseFailure no longer discards a wave's verdict; the exit-69 refusal to write a corrupt ledger is unchanged, only the verdict loss is fixed.",
+    "notes": "equilibrium audit, wave durability cluster. Exit code stays 69; only the missing verdict is the defect."
+  },
+  {
+    "tag": "LOOP-DETACHED-HEAD-STALE-VERDICT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "tick command clears the previous tick-verdict.json before the detached-HEAD refusal returns, not after"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume tick's detached-HEAD refusal returns above clearTickVerdict, so a loop with a detached HEAD mid-run re-reads the previous tick's stale verdict every iteration.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
+    "tests": [
+      "flume tick against a detached HEAD clears tick-verdict.json before refusing, so a subsequent read finds no stale verdict"
+    ],
+    "acceptance": "The detached-HEAD refusal no longer leaves a prior tick's verdict on disk.",
+    "notes": "equilibrium audit, exit-code contract cluster. A stale provisioning-failure signature on the old verdict can otherwise drive provisionFailureStreak toward abortThreshold spuriously."
+  },
+  {
+    "tag": "LOOP-CURRENTREFPATH-CONFLATES-STATES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "currentRefPath distinguishes a detached HEAD, a non-repository cwd, and a failing git invocation instead of returning null for all three"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "tick and loop branches print the message matching whichever of the three currentRefPath now reports"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "currentRefPath returns null for three distinct states; both CLI call sites print \"HEAD is detached\" for all of them, so a caller outside a repo is told about a state it isn't in.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "tests": [
+      "currentRefPath distinguishes a detached HEAD from a non-repository cwd and from a git invocation failure",
+      "flume tick outside a git repository reports that, not \"HEAD is detached\""
+    ],
+    "acceptance": "The three null-producing cases are distinguishable at the call site and the CLI prints the correct message for each.",
+    "notes": "equilibrium audit, exit-code contract cluster."
+  },
+  {
+    "tag": "LOOP-TIPMOVED-MULTICOMMIT-TICK",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "checkTipMoved / revertTipMovedCommit account for a tick that produced more than one commit, not just the newest"
+        },
+        {
+          "path": "src/git.ts",
+          "description": "softReset call site passes the tick's actual commit count instead of the hardcoded 1"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "An agent making two commits in one invocation trips checkTipMoved on parent-mismatch, and the soft-reset undoes only the newest — the first commit stays on the tip, un-gated.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — commit only onto the tip the tick started on"
+    },
+    "tests": [
+      "an agent that makes two commits in one tick invocation has both undone by the tip-moved revert, not just the newest",
+      "a single-commit tick's tip-moved revert behavior is unchanged"
+    ],
+    "acceptance": "A multi-commit agent invocation on a tip-moved tick is fully reverted; no un-gated commit is left on the tip.",
+    "notes": "equilibrium audit, wave durability cluster. One-commit-per-tick is currently asserted only in prompt prose, not enforced — this closes the gap that assumption leaves."
+  },
+  {
+    "tag": "LOOP-BACKSTOP-SIGNATURE-INDEX0-ONLY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "superviseLoop's consecutive-identical-failure backstop checks every signature in a tick's provisionFailures, not just index 0"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The abort backstop compares only provisionFailures[0]?.signature, so a repeated signature shadowed by a varying sibling at index 0 never accumulates a streak and never aborts.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Provisioning failures — quarantine, then abort"
+    },
+    "tests": [
+      "a repeated provisioning-failure signature buried behind a varying sibling at provisionFailures[0] on every tick still accumulates the consecutive-failure streak and aborts at the threshold"
+    ],
+    "acceptance": "The backstop tracks every distinct signature across a tick's provisionFailures, not only the first.",
+    "notes": "equilibrium audit, wave durability cluster. runFanout pushes a repo-level prune failure first, then per-entry failures — the untagged repo-level class is exactly what a tagged sibling at index 0 shadows today."
+  },
+  {
+    "tag": "PENDING-ZERO-FILES-SCHEMA-FLOOR",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "require at least one declared path across files.new/files.edit/files.retire combined"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "cover the new floor"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "An entry declaring empty files parses clean, is pickable, and can never be classified shipped — it commits real work every wave and never leaves the queue.",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "Ship detection requires a declared-files diff"
+    },
+    "tests": [
+      "an entry whose files.new/edit/retire are all empty fails schema parse",
+      "an entry declaring at least one path in any of the three arrays still parses"
+    ],
+    "acceptance": "A zero-declared-files entry is rejected at parse instead of silently becoming unshippable forever.",
+    "notes": "inbox 2026-08-03. Independent of the open SHIP-CLASSIFICATION-IS-THE-ENGINE-GUESSING question — proceeding per that finding's own recommendation. CHAINTS-PREDICATE-COVERAGE's files were amended this tick to stay valid under the new floor."
+  },
+  {
+    "tag": "CLI-JOBNEW-CJS-EXIT-CODE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "runJobVerb's `new` catch checks CjsContextLoadError before the operational branch, headlines the refusal, and exits 2"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume job new exits 1 on the CJS-context refusal instead of the uniform 2, and buries it behind \"[flume] job new failed:\" instead of headlining it.",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "A CJS-context host is refused, never relayed"
+    },
+    "tests": [
+      "flume job new against a CJS-context host exits 2 with the usage-shaped refusal as the headline message"
+    ],
+    "acceptance": "job new's CJS-context refusal matches tick's: exit 2, refusal headlined, not wrapped in the operational-failure message.",
+    "notes": "equilibrium audit, exit-code contract cluster. tick already holds this rule (catches CjsContextLoadError explicitly); job new is the outlier."
+  },
+  {
+    "tag": "CLI-HELP-TICK-MISSING-EXIT2",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "HELP_SUB.tick lists exit code 2 alongside 0/1/69/78"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume tick --help omits exit code 2 (the CJS-context refusal) from its documented exit-code list.",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "tests": [
+      "flume tick --help lists exit code 2 for the CJS-context refusal alongside 0/1/69/78"
+    ],
+    "acceptance": "HELP_SUB.tick's exit-code list matches tickExitCode's actual range.",
+    "notes": "equilibrium audit, exit-code contract cluster."
+  },
+  {
+    "tag": "CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the --job/FLUME_JOB resolution path refuses a name with no existing state root on every subcommand it reaches except job new; naming the job and the path it looked for; exit 2"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A mistyped --job <name> on status/tick/loop/wake/sleep silently materializes a real job directory instead of refusing.",
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "A job is a state root"
+    },
+    "tests": [
+      "flume --job nonexistent status exits 2 and creates no directory",
+      "flume --job nonexistent tick exits 2 and creates no directory",
+      "flume job new nonexistent still creates the state root"
+    ],
+    "acceptance": "Every subcommand reached through --job/FLUME_JOB other than job new refuses a name with no existing state root, exit 2, naming the job and the path.",
+    "notes": "inbox 2026-08-03. job run <name> rewrites itself into --job <name> loop (spec/cli.md) and must stay exempt: spec/jobs.md's \"flume job run <name>\" section states its no-existence-precondition as intended, not drift — the refusal has to key off job-new-vs-everything-else, not the flag alone."
+  },
+  {
+    "tag": "CLI-RENDER-REMOVAL",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "remove the render branch, its arg parsing, HELP_SUB.render, and its HELP_TOP line"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "remove the render entry"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "remove every assertion on the render subcommand; add the two tests below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Remove flume render per operator ruling 2026-08-03 — it previews with the wrong fence, the wrong prior-attempt state, and its own re-derivation of pickability that disagrees with the dispatcher's.",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "tests": [
+      "flume render is an unknown subcommand and exits 2",
+      "no help text (flume --help, flume -h) names render"
+    ],
+    "acceptance": "render is gone from src/cli.ts, docs/CLI.md, and tests/cli.test.ts; renderPrompt itself (src/Prompt.ts) is untouched — it is the tick's own render path and a public export.",
+    "notes": "Operator ruling 2026-08-03, spec side already landed (76dc4807). Breaking CLI change; the changelog is git-mined at cut per spec/cli.md Versioning policy, so the commit body is the record."
+  },
+  {
+    "tag": "CI-CHAIN-FIXTURES-FACTORY-MIGRATION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "CHAIN_FIXTURE migrates export default chain to export default (api) => ({ chain })"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "the consumer-install smoke heredoc and the second-reference-chain (backlog-groomer) smoke heredoc both migrate to the factory shape"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "All three CI-installed chain fixtures still export a bare Chain object; loadChainModule refuses a non-function default outright, so the chain-load leg of every install-smoke fails as written.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "The chain is a plugin, not a consumer"
+    },
+    "tests": [
+      "the packed-tarball install smoke's chain fixture loads under loadChainModule's factory contract on both the POSIX and Windows CI lanes",
+      "the backlog-groomer second-reference-chain smoke's wake+tick assertion passes against the factory-shaped fixture"
+    ],
+    "acceptance": "All three CI chain fixtures export default (api) => ({ chain }); the install-smoke steps pass without loadChainModule's non-function-export refusal.",
+    "notes": "equilibrium audit, resolution + surface gaps cluster. Currently reddens under set -euo pipefail — CI-visible, not merely latent."
+  },
+  {
+    "tag": "CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "add maxParallel?: number to Chain.supervisorPolicy, beside quarantineScope/abortThreshold"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runFanout/partition resolve maxParallel from chain.supervisorPolicy.maxParallel ?? DispatcherOptions.maxParallel ?? 4"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "forward the resolved value the same way quarantineScope/abortThreshold already are"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the override and the byte-identical default"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "maxParallel is programmatic-only (DispatcherOptions) with no chain declaration, unlike its supervisorPolicy siblings quarantineScope and abortThreshold.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Supervisor policy is a chain-overridable default"
+    },
+    "tests": [
+      "a chain declaring supervisorPolicy.maxParallel overrides the DispatcherOptions default of 4",
+      "a chain declaring nothing gets maxParallel: 4 byte-identically to today"
+    ],
+    "acceptance": "maxParallel is a chain-overridable default alongside quarantineScope/abortThreshold, per engine-boundary.md's policy-constant rule.",
+    "notes": "inbox 2026-08-03. No new validation added: spec/pending.md's Fanout partition section already documents a non-positive maxParallel degrading to width-1 batches rather than wedging — only the missing chain-declaration surface is the defect."
+  },
+  {
+    "tag": "CHAIN-AFTERMERGE-SINGLETON-PROMPT-FILTER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "prependHarnessBlock filters phase.gates to when === \"afterCommit\" for a singleton phase before rendering, matching what runAfterCommitGates actually selects"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "cover the filter"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A singleton phase's <harness> block names an afterMerge gate as enforcement when nothing will ever run it — the block renders phase.gates unfiltered.",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "The harness block"
+    },
+    "tests": [
+      "a singleton phase declaring an afterMerge gate renders a harness block that does not name it",
+      "a fanout phase's harness block still names its afterMerge gates unchanged"
+    ],
+    "acceptance": "The harness block never names a gate that cannot run under that tick's concurrency.",
+    "notes": "inbox 2026-08-03 + equilibrium audit (render preview diverges cluster), same defect filed twice. spec/chain.md's Gate placement section carries the sibling drift note."
+  },
+  {
+    "tag": "CHAIN-EXPORT-GATE-OPTION-TYPES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "export ShellGateOptions from its own module"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "add ShellGateOptions, PkgManagerOverride, and PkgManagerGate to the type export list, beside PendingGateOptions"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "a type-only import assertion covering the three"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "shellGate/tscGate/vitestGate/eslintGate are exported as values but a consumer cannot name the shape it passes them — ShellGateOptions isn't exported at all.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "The builtin gates"
+    },
+    "tests": [
+      "ShellGateOptions, PkgManagerOverride, and PkgManagerGate are importable via import type from @dtmd/flume"
+    ],
+    "acceptance": "A consumer can name the shape it passes to shellGate/tscGate/vitestGate/eslintGate the same way it already can for pendingGate.",
+    "notes": "equilibrium audit, resolution + surface gaps cluster."
+  },
+  {
+    "tag": "WORKTREES-HARVESTFRICTION-COLLISION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "harvestFriction stamps its destination filename so a retried entry's same-named source file can't silently overwrite an earlier still-unread note; correct the JSDoc's collision-freedom claim to match"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "cover the collision case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "harvestFriction composes its destination with no exists-check; rename/copyFile silently replace an existing file, so a retry can destroy an earlier, still-unread friction note.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Teardown harvest — the delivery guarantee"
+    },
+    "tests": [
+      "two harvests for the same tag with the same agent-chosen source filename land as two distinct files, neither overwriting the other"
+    ],
+    "acceptance": "harvestFriction's destination naming is collision-free the way writeRevertNote's already is; its JSDoc no longer claims a guarantee the code didn't deliver.",
+    "notes": "equilibrium audit, friction harvest + retired vocabulary cluster."
+  },
+  {
+    "tag": "WORKTREES-GATEPHASE-RETIRED-DOC",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "drop the Concurrency JSDoc's \"failure reverts the wave\" / postMerge wording; correct the Phase.gates doc's postMerge mention"
+        },
+        {
+          "path": "src/Gate.ts",
+          "description": "correct GateContext.cwd doc's \"or trunk for postMerge gates\" phrasing"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "src/Phase.ts and src/Gate.ts doc comments still teach wave-wide afterMerge revert and a postMerge gate phase — both retired by per-entry isolation and the afterCommit/afterMerge union.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Per-entry `afterMerge` revert isolation"
+    },
+    "tests": [],
+    "acceptance": "No doc comment in src/Phase.ts or src/Gate.ts describes wave-wide afterMerge revert or a postMerge gate phase.",
+    "notes": "equilibrium audit, friction harvest + retired vocabulary cluster. Doc-only, no behavior change."
+  },
+  {
+    "tag": "WORKTREES-VITESTCONFIG-COMMENT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "vitest.config.ts",
+          "description": "correct the header comment: the afterMerge gate runs pnpm test on the trunk (cwd: repoRoot), not inside the fanout worktree"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "vitest.config.ts's header comment claims the afterMerge gate runs inside the fanout worktree; it runs on the warm trunk.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "tests": [],
+    "acceptance": "vitest.config.ts's header comment matches where the afterMerge gate actually runs.",
+    "notes": "equilibrium audit, friction harvest + retired vocabulary cluster. Doc-only, no behavior change."
   }
 ]
