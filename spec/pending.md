@@ -102,16 +102,18 @@ mechanics consume is a verdict, a value, and the field *names* (for strict unkno
 — all three of which a validator protocol supplies without the engine ever holding the chain's
 object.
 
-## `files` is load-bearing — a plan-side obligation
+## `files` is a prediction the scheduler consumes
 
 `declaredPaths(entry)` is `files.new[].path ∪ files.edit[].path ∪ files.retire`. It is what the
-entry's author committed to, and four mechanics read it: the entry-scoped write guard, the
-prompt's effective-fence rendering, ship detection, and `pendingGate`'s fence pre-check (below).
+entry's author committed to. Four mechanics read it: the fanout partition (below), ship
+detection, `pendingGate`'s fence pre-check, and — only where a chain opts in — the entry-scoped
+write guard and the prompt's effective-fence rendering.
 
-Because the guard *enforces* it, the producer phase must declare **every** path the work
-legitimately touches — tests, incidentals (lockfile, barrel export) included. An entry that
-under-declares is a producer defect, not a guard defect. The rendered schema block states this
-obligation in the `files` hint, so the phase authoring entries reads it every tick.
+`files` is a **prediction, not a permission**. The producer declares what the work will touch —
+accurately, neither defensively nor aspirationally. Over-declaring costs wave width, because the
+partition treats a shared path as a collision; under-declaring costs at most a cherry-pick
+conflict, which the dispatcher aborts and leaves pending for a retry. Where a phase may write is
+`phase.writablePaths`, not any entry's business (see *The entry-scoped write guard is opt-in*).
 
 ## Pickability
 
@@ -233,18 +235,41 @@ All three land through the same wave-end `pending.json` rewrite, sourced from th
 records rather than a second bookkeeping map. A producer phase may carry or drop the field
 freely — the dispatcher rebuilds it on the next failure.
 
-## The entry-scoped write guard
+## The entry-scoped write guard is opt-in, and off by default
 
-On a fanout tick carrying an assigned entry, the post-commit write allowance narrows from the
-phase-wide union to:
+**`phase.writablePaths` is the containment boundary.** It is a standing fact about the phase —
+build writes code, a producer phase writes plan artifacts, neither writes spec — and it is
+enforced on every tick, scoped or not. That is the guard's whole default behavior.
+
+**Narrowing further to the assigned entry is a chain declaration**, `Phase.scopeWritesToEntry`,
+default `false`. Undeclared, a scoped tick's write allowance is byte-identical to a singleton
+tick's. Declared:
 
 ```
 declaredPaths(entry) ∪ phase.entryChannelPaths     — the fence
 with phase.writablePaths                            — the outer ceiling (both checks apply)
 ```
 
-Singleton ticks (no assigned entry) keep phase-wide scope unchanged and ignore
-`entryChannelPaths`.
+Why it is not the default: where a phase may write is a standing relationship between phases,
+and `writablePaths` is where a chain declares it. An entry is a *work item* — pushing the write
+allowance down into it makes the producer phase the authority over the consumer phase's
+implementation, which is the lane inversion `.claude/rules/spec-plan-build.md` forbids
+everywhere else. It also overloads one field with opposed pressures: `files` is simultaneously
+the fanout partition's disjointness key (which wants a narrow, honest declaration) and a
+permission whose under-statement reverts the commit (which wants a wide, defensive one). No
+producer can satisfy both, and the failure is measurable — when one shared path entered
+substantially every entry, mean first-batch wave width fell from 3.17 to 1.99 at
+`maxParallel: 4`.
+
+The capability stays because a chain may legitimately want blast-radius bounding on a risky
+entry, and because the mechanism is already correct — `writablePathsGate` takes its entry scope
+as an optional parameter and runs the ceiling check unconditionally. What changes is that the
+dispatcher stops supplying that parameter on every scoped tick and asks the phase instead.
+
+> **Drift:** the dispatcher currently supplies the entry scope unconditionally
+> (`Dispatcher.runAfterCommitGates` passes it whenever `assignedEntry` is set), so narrowing is
+> engine behavior rather than a chain declaration and `Phase.scopeWritesToEntry` does not exist
+> yet. Flume's own chain declares nothing and therefore expects containment-only.
 
 - **`Phase.entryChannelPaths?: string[]`** (default `[]`) — globs always writable on a scoped
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick

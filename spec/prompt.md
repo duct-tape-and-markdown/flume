@@ -76,8 +76,10 @@ the write fence, and the gates that run automatically after the commit — each 
 the phase's `writablePaths` under `Writable paths (anything else you modify will revert
 the commit)`. That is the whole fence, and it is exactly what the guard enforces.
 
-**Scoped ticks** — a fanout tick carrying an `assignedEntry` — render two fences,
-because the write guard enforces two independent checks:
+**Scoped ticks** — a fanout tick carrying an `assignedEntry` — render the same single
+fence, *unless* the phase opted into entry-scoped narrowing
+(`spec/pending.md`, *The entry-scoped write guard is opt-in*). Where it did, the block
+renders two fences, because the guard then enforces two independent checks:
 
 - **Effective fence**: `entry.files ∪ phase.entryChannelPaths`, stated as "your commit
   may touch exactly these; anything else reverts the commit whole".
@@ -87,9 +89,14 @@ because the write guard enforces two independent checks:
 When the union is empty the fence renders `(none)` — a fence permitting nothing, which
 the guard enforces literally: any path clearing the ceiling still reverts the commit.
 
-The narrowing exists because the guard's revert boundary on a scoped tick is a strict
-subset of `writablePaths`, and the engine's one authoritative prompt surface must not
-misstate its own enforcement exactly where it is narrowest.
+The narrowing renders only where it is enforced. The rule is that the engine's one
+authoritative prompt surface never misstates its own enforcement — so a phase that
+narrows shows the narrowed fence, and a phase that does not shows the phase fence alone.
+Both come from the same computation the guard consumes, so neither can drift from it.
+
+> **Drift:** the dispatcher supplies the entry scope on every tick carrying an entry, so
+> the two-fence rendering is currently unconditional. Tracked with the guard's own drift
+> note in `spec/pending.md`.
 
 The union is computed once, in `entryWriteScopeUnion` (`src/paths.ts`), and consumed by
 both `effectiveFenceLines` (`src/Prompt.ts`, which renders it) and `writablePathsGate`
