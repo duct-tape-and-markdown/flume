@@ -155,12 +155,38 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
     expect(out).not.toContain("Outer ceiling");
   });
 
-  it("scoped tick: names entry.files ∪ entryChannelPaths as the effective fence and writablePaths as the outer ceiling", async () => {
+  it("scoped tick (no assignedEntry): byte-identical to a singleton tick's rendering", async () => {
     const p = phase({
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**", "tests/**"],
       entryChannelPaths: [".flume/plan/open-questions.md"],
+      gates: [],
+    });
+    const e = entry({
+      files: {
+        new: [{ path: "src/New.ts", description: "new" }],
+        edit: [],
+        retire: [],
+      },
+    });
+
+    const out = await render(p, e);
+
+    expect(out).toContain(
+      "Writable paths (anything else you modify will revert the commit):",
+    );
+    expect(out).not.toContain("Effective fence");
+    expect(out).not.toContain("Outer ceiling");
+  });
+
+  it("scoped tick with scopeWritesToEntry: true: names entry.files ∪ entryChannelPaths as the effective fence and writablePaths as the outer ceiling", async () => {
+    const p = phase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "tests/**"],
+      entryChannelPaths: [".flume/plan/open-questions.md"],
+      scopeWritesToEntry: true,
       gates: [],
     });
     const e = entry({
@@ -202,6 +228,7 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
       gates: [],
     });
     const e = entry({
@@ -256,6 +283,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
       concurrency: "fanout",
       writablePaths: ["src/**", "tests/**", "notes/**"],
       entryChannelPaths: ["notes/open-questions.md"],
+      scopeWritesToEntry: true,
       gates: [],
     });
     const e = entry({

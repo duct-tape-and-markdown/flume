@@ -391,7 +391,7 @@ function prependHarnessBlock(
     `<harness>`,
     `Phase: ${phase.name}`,
     `Concurrency: ${phase.concurrency}`,
-    ...(assignedEntry
+    ...(assignedEntry && phase.scopeWritesToEntry
       ? effectiveFenceLines(phase, assignedEntry)
       : unscopedFenceLines(phase)),
     `Gates (run automatically after your commit):`,

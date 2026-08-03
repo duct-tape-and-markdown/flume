@@ -2187,16 +2187,19 @@ export class Dispatcher {
      * for the same commit (engineering.md "The fix lands at the mechanism"). */
     touchedPaths: string[];
   }> {
-    // Entry-scoped write guard (§5): a fanout tick's allowance narrows to the
-    // assigned entry's declared files ∪ the phase's channel globs, with the
-    // phase-wide globs as the outer ceiling. Singleton ticks (no entry) keep
-    // phase-wide scope. `observedFiles` is deliberately excluded — it feeds
-    // the partition, not the write allowance.
+    // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
+    // guard is opt-in, and off by default"): narrowing to the assigned
+    // entry's declared files ∪ the phase's channel globs is a chain
+    // declaration (`phase.scopeWritesToEntry`), not automatic on every
+    // scoped tick. Undeclared, a fanout tick's allowance is byte-identical
+    // to a singleton tick's — `writablePaths` alone. `observedFiles` is
+    // deliberately excluded even when scoping is on — it feeds the
+    // partition, not the write allowance.
     const gates: Gate[] = [
       ...phase.gates.filter((g) => g.when === "afterCommit"),
       writablePathsGate(
         phase.writablePaths,
-        assignedEntry
+        assignedEntry && phase.scopeWritesToEntry
           ? {
               entryPaths: declaredPaths(assignedEntry),
               channelPaths: phase.entryChannelPaths ?? [],

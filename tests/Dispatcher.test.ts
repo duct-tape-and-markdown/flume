@@ -1081,6 +1081,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -2106,6 +2107,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       concurrency: "fanout",
       writablePaths: ["src/**", "notes/**"],
       entryChannelPaths: ["notes/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -2140,6 +2142,52 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   }, 20_000);
 
+  it("scopeWritesToEntry undeclared: a fanout tick's write allowance is byte-identical to a singleton tick's — writablePaths ceiling only, entry.files ignored", async () => {
+    await writePending(fx.repo, [makeEntry("SCOPE-UNDECLARED", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      // scopeWritesToEntry not set — default false.
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // Commit touches the declared file AND an undeclared sibling that is
+    // inside phase.writablePaths but outside entry.files — ships because
+    // narrowing to the entry never engages without the opt-in.
+    const agent = fanoutAgent({
+      "scope-undeclared": async (cwd) => {
+        await writeFile(join(cwd, "src", "a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(SCOPE-UNDECLARED): ship"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["SCOPE-UNDECLARED"]);
+    expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe("a\n");
+    expect(await readFile(join(fx.repo, "src/stray.ts"), "utf8")).toBe(
+      "stray\n",
+    );
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+
   it("reverts a path outside entry scope but inside phase globs; the retry prompt names it", async () => {
     await writePending(fx.repo, [makeEntry("SCOPE-STRAY", ["src/a.ts"])]);
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -2149,6 +2197,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -2251,6 +2300,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -2307,6 +2357,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -2386,6 +2437,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -7048,6 +7100,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
     });
     const chain: Chain = {
       phases: [phase],

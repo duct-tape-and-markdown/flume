@@ -129,12 +129,26 @@ export interface Phase {
    * artifacts an entry never declares (e.g. a build phase that reports
    * findings into `.flume/plan/open-questions.md`).
    *
-   * On a fanout tick carrying an assignedEntry, the write guard narrows to
-   * the entry's `files.{new,edit,retire}` paths ∪ these globs, with
-   * `writablePaths` as the outer ceiling (both checks apply). Singleton
-   * ticks keep phase-wide scope and ignore this. Default `[]`.
+   * Only consulted when `scopeWritesToEntry` is `true`. On such a tick
+   * carrying an assignedEntry, the write guard narrows to the entry's
+   * `files.{new,edit,retire}` paths ∪ these globs, with `writablePaths` as
+   * the outer ceiling (both checks apply). Singleton ticks keep phase-wide
+   * scope and ignore this regardless. Default `[]`.
    */
   entryChannelPaths?: string[];
+
+  /**
+   * Opt in to narrowing a fanout tick's write allowance to the assigned
+   * entry (`declaredPaths(entry) ∪ entryChannelPaths`), with
+   * `writablePaths` as the outer ceiling both checks apply against. Default
+   * `false`: a scoped tick's write allowance and rendered prompt fence are
+   * then byte-identical to a singleton tick's — `writablePaths` alone,
+   * unconditionally enforced either way. Declaring `true` makes the
+   * producer phase's `files` declaration a second, narrower permission on
+   * top of that ceiling (spec/pending.md, *The entry-scoped write guard is
+   * opt-in, and off by default*).
+   */
+  scopeWritesToEntry?: boolean;
 
   /** Gates that run at preCommit / postCommit / postMerge points. */
   gates: Gate[];
