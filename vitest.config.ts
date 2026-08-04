@@ -6,16 +6,18 @@ import { configDefaults, defineConfig } from "vitest/config";
 // so its cost multiplies with wave width and it must stay fast. The
 // INTEGRATION lane (`*.integration.test.ts`) spawns real subprocesses and
 // needs a warm host; it is excluded from the default run and runs at the host
-// via `pnpm test:integration` (which sets VITEST_LANE).
-const integration = process.env.VITEST_LANE === "integration";
-
-export default defineConfig({
-  test: {
-    include: integration
-      ? ["tests/**/*.integration.test.ts"]
-      : ["tests/**/*.test.ts"],
-    exclude: integration
-      ? [...configDefaults.exclude]
-      : [...configDefaults.exclude, "**/*.integration.test.ts"],
-  },
+// via `pnpm test:integration`, which selects the lane through vitest's own
+// `--mode` flag — a portable CLI argument, not a POSIX-only env-var prefix.
+export default defineConfig(({ mode }) => {
+  const integration = mode === "integration";
+  return {
+    test: {
+      include: integration
+        ? ["tests/**/*.integration.test.ts"]
+        : ["tests/**/*.test.ts"],
+      exclude: integration
+        ? [...configDefaults.exclude]
+        : [...configDefaults.exclude, "**/*.integration.test.ts"],
+    },
+  };
 });

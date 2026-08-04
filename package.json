@@ -42,7 +42,7 @@
     "flume": "./bin/flume.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "VITEST_LANE=integration vitest run",
+    "test:integration": "vitest run --mode integration",
     "smoke:install": "node scripts/smoke-install.mjs",
     "changelog": "node scripts/build-changelog.mjs",
     "build": "tsc -p tsconfig.build.json",

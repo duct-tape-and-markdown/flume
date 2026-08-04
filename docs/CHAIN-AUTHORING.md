@@ -461,18 +461,24 @@ masks nothing and leaves the worktree-hostility in place):
 ```ts
 // vitest.config.ts — exclude the integration lane from the default (gate) run
 import { configDefaults, defineConfig } from "vitest/config";
-const integration = process.env.VITEST_LANE === "integration";
-export default defineConfig({
-  test: {
-    include: integration
-      ? ["tests/**/*.integration.test.ts"]
-      : ["tests/**/*.test.ts"],
-    exclude: integration
-      ? [...configDefaults.exclude]
-      : [...configDefaults.exclude, "**/*.integration.test.ts"],
-  },
+export default defineConfig(({ mode }) => {
+  const integration = mode === "integration";
+  return {
+    test: {
+      include: integration
+        ? ["tests/**/*.integration.test.ts"]
+        : ["tests/**/*.test.ts"],
+      exclude: integration
+        ? [...configDefaults.exclude]
+        : [...configDefaults.exclude, "**/*.integration.test.ts"],
+    },
+  };
 });
 ```
+
+Select the lane with `--mode integration` (`pnpm test:integration`) rather than
+an env-var prefix — `VITEST_LANE=integration vitest run` is POSIX-only shell
+syntax and fails under `cmd.exe`/PowerShell.
 
 Integration coverage is **preserved, relocated** — not dropped. The
 process-boundary guarantees still run, at the host where they are fast and
