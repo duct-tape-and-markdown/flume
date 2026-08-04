@@ -1106,33 +1106,21 @@ describe("renderSchemaForPrompt", () => {
   });
 });
 
-describe("files floor — at least one declared path (spec/pending.md § Ship detection requires a declared-files diff)", () => {
-  it("rejects an entry whose files.new/edit/retire are all empty", () => {
+describe("files — an all-empty declaration is not a floor (spec/pending.md § `files` is a prediction the scheduler consumes)", () => {
+  it("parses an entry with files: {} (all-empty new/edit/retire) and it is pickable", () => {
     const result = parsePending(
       JSON.stringify([
         {
           tag: "ZERO-FILES",
           gate: { kind: "open" },
-          files: { new: [], edit: [], retire: [] },
-        },
-      ]),
-    );
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.path === "files")).toBe(true);
-  });
-
-  it("rejects an entry that omits files.new/edit/retire entirely (defaults collapse to all-empty)", () => {
-    const result = parsePending(
-      JSON.stringify([
-        {
-          tag: "ZERO-FILES-OMITTED",
-          gate: { kind: "open" },
           files: {},
         },
       ]),
     );
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.path === "files")).toBe(true);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    const entry = result.entries[0]!;
+    expect(entry.files).toEqual({ new: [], edit: [], retire: [] });
+    expect(isPickableNow(entry, new Set())).toBe(true);
   });
 
   it("parses clean when only files.new declares a path", () => {
