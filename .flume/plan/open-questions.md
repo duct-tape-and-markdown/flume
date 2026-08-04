@@ -25,27 +25,64 @@ Options:
 
 No recommendation — option 2 is technically cleaner (exact provenance instead of a path-shape guess) but reopens a very recently-ruled decision and adds a fourth write-back var; option 1 is cheaper but pushes a foot-gun onto users. This is downstream of the shipped ruling's own scope, not an implementation slip, so it's parked rather than proposed unilaterally.
 
-## `statesPark`'s free-text scan misclassifies a partial park as a full one
+## Phase.shipped's harness half has no phase that can write it
 
-**Status: PARKED — the reproduction is no longer hypothetical**
+**Status: PARKED**
 
-Verified in-session 2026-08-04, on disk. The colliding vocabulary is not merely
-possible, it is *instructed*: `.flume/prompts/build.md` lines 26–27 twice direct a
-"single-file committed park", and `.claude/rules/collaboration.md` directs an agent
-to write an open question rather than decide a judgment call silently. A tick that
-ships its entry and also parks a question — the documented path — states "parked" in
-its final message and is classified `channel-only`. That was the confidence gap
-below; treat the mechanism as confirmed and only the fix shape as open.
+`spec/pending.md` *Ship detection trusts the agent's own account* (ruling 82c0a12,
+superseding the on-disk-declaration ruling 541174a before it) states the target
+cleanly: the engine sheds `statesPark`, its regex, and `channel-only` entirely, and
+gains one optional hook — `Phase.shipped?: (ctx: ShipContext) => boolean`, sibling of
+`shouldRun`/`handoff`. Undeclared means shipped on commit-landed + gates-green;
+declared and returning `false` means the entry stays pending.
 
-`spec/pending.md` *Ship detection trusts the agent's own account* now carries this as
-a `> **Drift:**` note, so the corpus states the weakness rather than implying the
-contract is fully carried.
+The ruling is explicit that this "ships with `.flume/chain.ts` in the same commit" —
+this repo's own chain must declare `shipped`, "or the original bug returns" — and
+that `.flume/prompts/build.md` "moves in the same commit too," calling the
+harness-surface-in-a-build-commit exception deliberate. That pairing isn't available
+to either autonomous phase:
 
-`f658e7d`'s `statesPark()` (`src/Dispatcher.ts`) matches `/\bpark(?:ed|ing)?\b/i` anywhere in the agent's final message to decide whether a landed, gate-green commit still counts as shipped. `.claude/rules/collaboration.md`'s "Inform before parking" instructs agents broadly to write *any* deferred judgment call to `open-questions.md` using park/parked language — not only the whole-entry-channel-only case `.flume/prompts/build.md` documents. A message like "Shipped the acceptance criteria; parked a follow-up idea about X in open-questions.md" would match the regex and classify a genuine ship as `channel-only`, reintroducing the non-draining-loop failure this same fix was meant to close — from the opposite direction (false negative instead of the old false positive on glob paths).
+- Build's own `writablePaths` (`buildFence` in `.flume/chain.ts`) excludes harness
+  surface by name — the comment there states "`.flume/{chain.ts,prompts/**}`,
+  `.claude/**` are outside every phase lane." Plan's `writablePaths` is narrower
+  still (only `.flume/plan/*` and `inbox.md`).
+- `.claude/rules/spec-plan-build.md`'s layer table doesn't list `.flume/chain.ts` or
+  `.flume/prompts/*.md` under any phase; per CLAUDE.md, "Harness commits use
+  `chore(flume):`" — interactive-only.
+- Landing the two halves as separate commits doesn't dodge this either. With
+  `Phase.shipped` undeclared, *every* landed+green commit classifies shipped —
+  including a park-only one. Any tick that runs between an engine-only commit and a
+  later interactive chain.ts commit reintroduces the exact bug this whole thread has
+  been fixing, from the permissive side this time.
 
-No test exercises a "ships real work and also mentions parking something unrelated" message — only a full-park case (`STATED-PARK` test, final message *is* the park statement) and a no-mention case are pinned. Confidence here is lower than the other three questions above: this is a plausible reproduction reasoned from the regex and the prompt/rule vocabulary, not one observed on disk.
+This also folds in the still-open `build.md` line-26 fix (it names the retired
+channel-path mechanism this same ruling replaces) — same commit, same reason, per the
+2026-08-04 inbox finding that filed it.
 
-Options if real: anchor the check tighter (e.g. only the message's own park-statement convention per `build.md`, not a bare substring anywhere) or leave as ruled and accept the risk as the tradeoff already made 2026-08-03. Parking rather than filing a pending entry because a fix here means re-litigating the just-shipped ruling's chosen detection shape, same as the question above.
+Supersedes and closes the prior open question here (`statesPark`'s free-text scan
+misclassifying a partial park) — that question was about hardening the regex; this
+ruling deletes the regex and `statesPark` outright, so hardening it is moot.
+
+Options:
+1. One interactive `chore(flume):` commit landing all of it at once — `src/`
+   (`Phase.shipped`, `ShipContext`, remove `statesPark`/`channel-only`) +
+   `.flume/chain.ts` (declare the predicate) + `.flume/prompts/build.md` (the
+   park-declaration instructions the predicate reads) — a human doing in one motion
+   what the ruling already calls a deliberate exception to the phase-lane split.
+   Zero regression window because there is only one commit.
+2. Split into a build-phase pending entry for the `src/` mechanism (ships first,
+   `Phase.shipped` undeclared) followed by a same-session interactive `chain.ts` +
+   `build.md` commit. Carries the regression window described above for however long
+   the two are apart.
+3. Widen `buildFence.writablePaths` to include `.flume/chain.ts`/`.flume/prompts/**`
+   (itself only doable via an interactive chain.ts edit) so a future build tick could
+   carry a paired harness+engine change autonomously — a bigger, standing loosening
+   of the phase-lane boundary than this one ruling calls for.
+
+Weak lean to option 1 for the zero-regression-window property, but this is a genuine
+process question about how a harness-surface change and its engine counterpart cross
+the phase boundary together — the kind of thing `collaboration.md`'s
+architectural-missteps caveat says to flag rather than silently route.
 
 ## `docs/MIGRATING-0.11.md`'s dead `spec/RELEASE-v0.11` cites: live guidance or historical record?
 
@@ -75,3 +112,27 @@ Options:
 2. Amend `posture-sweep.md` to say the neighborhood follows the *tested* subject regardless of domain, so `scripts/build-changelog.mjs` and `.flume/chain.ts` get read as context even though neither is otherwise in-domain.
 
 Recommend option 1 — the existing "immediate imports" language already permits reading whatever the sweeping agent judges relevant; the gap was that nobody flagged these two as frontier entries at all, not that the reading method needs a rule change.
+
+## Should a provider supply its own stream transcript extractor?
+
+**Status: PARKED**
+
+`AGENT-STREAMJSON-VOCAB-DEDUP` (pending.json) hoists the duplicated
+`assistant`/`result`/`is_error`/`subtype` literals out of `src/Agent.ts` and
+`src/Dispatcher.ts` into one shared, exported check — but both readers still hardcode
+Claude Code's NDJSON shape as the only vocabulary the engine understands, even though
+`spec/chain.md` *The agent seam* states an `Agent` is `{ name, invoke }`, opaque to
+the engine, generic over providers.
+
+Options:
+1. Leave the shared-but-hardcoded reader as-is while Claude Code is the only shipped
+   provider — the prior posture sweep's own judgment, and the
+   `.claude/rules/engine-boundary.md` second-implementation test isn't answerable
+   with a sample size of one.
+2. Have the chain's `Agent` supply its own transcript-extraction function (part of
+   the `Agent` value or a decorator), and the dispatcher calls that instead of
+   assuming stream-json shape — generalizes the mechanism per engine-boundary.md, but
+   is new capability surface with no second implementation asking for it yet.
+
+Recommend option 1 until a second provider exists; filing now only so the class has a
+name for the next sweep pass that finds it.

@@ -1,1 +1,72 @@
-[]
+[
+  {
+    "tag": "PENDING-SHIP-HEADING-CITES-REPOINT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "Repoint the three quoted-heading cites (MergeOutcome doc comment, the ship-classification note near AgentTermination, statesPark's own doc comment) from the retired heading to the current one." },
+        { "path": "tests/Dispatcher.test.ts", "description": "Repoint the describe title quoting the retired heading." }
+      ],
+      "retire": []
+    },
+    "summary": "Repoint stale quoted-heading cites of spec/pending.md's renamed ship-detection section.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "tests": ["no file under src/ or tests/ quotes the retired heading 'Ship detection requires a declared-files diff'"],
+    "acceptance": "grep for the retired heading string across src/ and tests/ returns zero matches",
+    "notes": "Mechanical string swap only, change nothing else. Current heading: 'Ship detection trusts the agent's own account' (spec/pending.md). Cites: Dispatcher.ts ~L150/420/2045, Dispatcher.test.ts ~L2640."
+  },
+  {
+    "tag": "GIT-DELETEBRANCH-LOCALIZED-STDERR",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/git.ts", "description": "deleteBranch: replace the /not found/.test(stderr) match on git's own message with a structural check (ref-existence probe or the delete's documented exit status) per Told, not inferred." },
+        { "path": "tests/git.test.ts", "description": "Pin deleteBranch as a no-op on a missing branch when git's stderr is not English." }
+      ],
+      "retire": []
+    },
+    "summary": "deleteBranch stops inferring 'branch missing' from git's localized stderr prose; keys off structure instead.",
+    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Told, not inferred" },
+    "tests": ["deleteBranch on a missing branch resolves without throwing regardless of git's configured output locale"],
+    "acceptance": "deleteBranch(repoRoot, missingBranch) is a no-op under a non-English git locale, verified structurally rather than by stderr pattern",
+    "notes": "src/git.ts:178-190. Ask git directly (rev-parse --verify / show-ref, or the delete's own exit status) rather than matching /not found/ against localized text. A platform-facts.md doc note is optional human follow-up — .claude/rules/** is outside build's writablePaths."
+  },
+  {
+    "tag": "AGENT-STREAMJSON-VOCAB-DEDUP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Agent.ts", "description": "Export the assistant/result/is_error/subtype event-type checks renderStreamJsonLine already computes, as shared helpers." },
+        { "path": "src/Dispatcher.ts", "description": "finalAgentMessage consumes the shared helpers from Agent.ts instead of re-testing the same literals independently." },
+        { "path": "tests/Agent.test.ts", "description": "Pin the shared helper's classification for representative assistant/result/error NDJSON lines." }
+      ],
+      "retire": []
+    },
+    "summary": "Hoist the duplicated stream-json event-type vocabulary out of Agent.ts and Dispatcher.ts into one shared, exported check.",
+    "per": { "path": "spec/chain.md", "section": "The agent seam" },
+    "tests": ["Agent.ts's renderer and Dispatcher's finalAgentMessage classify a given NDJSON line's event type through the same shared function, not two independent literal comparisons"],
+    "acceptance": "the 'assistant'/'result'/is_error/subtype literals appear once, in one exported location both readers import",
+    "notes": "Weakest/lowest-priority of the three breaches 82c0a12 filed — mechanical dedup only, per The fix lands at the mechanism (engineering.md). Whether a provider should supply its own transcript extractor is a separate design fork, parked as an open question rather than decided here."
+  },
+  {
+    "tag": "TEST-INTEGRATION-WIN32-PORTABLE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "package.json", "description": "test:integration selects the lane through a portable CLI argument instead of a POSIX-only 'VITEST_LANE=integration' env-var prefix." },
+        { "path": "vitest.config.ts", "description": "Branch lane selection on the portable selector instead of process.env.VITEST_LANE." },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "Update the VITEST_LANE mention (~L464) to match the new selector." }
+      ],
+      "retire": []
+    },
+    "summary": "test:integration runs on win32 instead of lifecycle-failing on the POSIX-only env-var prefix; selects the lane portably.",
+    "per": { "path": "spec/cli.md", "section": "win32 is a supported host" },
+    "tests": ["pnpm test:integration invokes the integration lane (only *.integration.test.ts) identically under PowerShell/cmd.exe and a POSIX shell"],
+    "acceptance": "pnpm test:integration runs vitest (no shell lifecycle failure) on win32 and still selects only the integration lane",
+    "notes": "e.g. vitest run --mode integration, vitest.config.ts reading the mode param instead of process.env.VITEST_LANE. spec/worktrees.md:309 quotes 'VITEST_LANE=integration' and goes stale once this lands — spec/ is outside build's lane, human follow-up needed. Whether win32 CI should then run this lane is a separate, unaddressed policy call."
+  }
+]

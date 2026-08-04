@@ -2,11 +2,11 @@
 
 ## Spec derive
 
-Spec derived through: `5f4e44980136d5d7c9a629157121e2ecb673ee5f`
+Spec derived through: `82c0a126f2a7fb20258e42e8cbd7c099b8ef7ffd`
 
 ## Audit
 
-Audited through: `cee911943c31372be227fc96490c6ce132123204`
+Audited through: `82c0a126f2a7fb20258e42e8cbd7c099b8ef7ffd`
 
 ## Posture sweep
 
