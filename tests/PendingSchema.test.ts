@@ -1039,9 +1039,22 @@ describe("renderSchemaForPrompt", () => {
     expect(bad.ok).toBe(false);
   });
 
+  function extractTagCharsetExtras(rendered: string): string {
+    const match = /"<letters\/digits\/([^\s]*?) only, no whitespace/.exec(
+      rendered,
+    );
+    const extras = match?.[1];
+    if (extras === undefined) {
+      throw new Error(
+        'rendered schema does not state the tag charset in the expected `<letters/digits/...only, no whitespace` shape — cannot derive the agreement check',
+      );
+    }
+    return extras;
+  }
+
   it("tag: every character the rendered charset admits is accepted by the real parser", () => {
-    // Rendered as "<letters/digits/._()- only, no whitespace, ...>".
-    const sample = "aZ9._()-";
+    const extras = extractTagCharsetExtras(renderSchemaForPrompt());
+    const sample = `aZ9${extras}`;
     const result = parsePending(
       JSON.stringify([{ ...baseEntry, tag: sample, gate: { kind: "open" } }]),
     );
@@ -1049,9 +1062,12 @@ describe("renderSchemaForPrompt", () => {
   });
 
   it("tag: whitespace, excluded by the rendered charset, is rejected by the real parser", () => {
+    const rendered = renderSchemaForPrompt();
+    expect(rendered).toContain("no whitespace");
+    const extras = extractTagCharsetExtras(rendered);
     const result = parsePending(
       JSON.stringify([
-        { ...baseEntry, tag: "has space", gate: { kind: "open" } },
+        { ...baseEntry, tag: `a ${extras}`, gate: { kind: "open" } },
       ]),
     );
     expect(result.ok).toBe(false);
