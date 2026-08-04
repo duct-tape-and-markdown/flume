@@ -37,8 +37,8 @@ a `--job` carrying no value refuses first.
 Usage-shaped failures exit 2 uniformly: unknown command or job verb, a missing
 `<phase>` or `<name>`, an unknown phase, `--entry` with no matching entry, a
 `--max` that is missing, non-numeric, or negative (refused before any tick
-runs), a resolution-authority conflict (below), the CJS-context refusal
-and the CJS-context refusal (below). Everything else is the tick/loop
+runs), a resolution-authority conflict (below), a cross-repo `FLUME_DIR`
+(below), and the CJS-context refusal (below). Everything else is the tick/loop
 exit-code contract in `spec/loop.md`.
 
 The runtime help text is the authoritative statement of the surface;
@@ -138,6 +138,23 @@ runs ahead of verb dispatch rather than inside the branches that happen to need 
 so `job new` and `job status` load their chain with the same resolved, written-back
 environment a tick would see. A factory reading `process.env.FLUME_DIR` during
 `job new` gets the resolved state root.
+
+**Cross-repo refusal.** `FLUME_DIR` is absolute and children inherit it, so a nested
+invocation in a *different* repository would otherwise write to the outer repo's control
+plane — the defect observed 2026-08-03, when a smoke lane run inside a tick planted an
+awake flag in the live baton. Provenance is therefore **stamped, never inferred**: the
+write-back also writes `FLUME_DIR_RESOLVED_FOR=<repoRoot>`, and `resolveStateDirs` refuses
+(`CrossRepoFlumeDirError`, exit 2) only when that stamp is present and disagrees with the
+freshly-resolved `repoRoot`. A value typed for this invocation carries no stamp and is never
+refused on that basis, whatever its path happens to contain. `.claude/rules/engine-boundary.md`
+*Told, not inferred*.
+
+> **Drift:** the stamp does not exist. `impliedRepoRoot` (`src/cli.ts`) instead walks an
+> absolute `FLUME_DIR` upward for a segment literally named `.flume` and refuses when that
+> segment's parent is not `repoRoot` — provenance reconstructed from a string. It misfires on a
+> deliberate relocation the section above sanctions: `FLUME_DIR=/mnt/state/.flume`, typed fresh
+> for this repo, is refused as inherited contamination. Shipped tests cover only a relocation
+> with no `.flume` ancestor, so the misclassifying case is unpinned.
 
 The teardown promise ("one `rm` removes the whole footprint") is only true if
 every mutable artifact lives under `flumeDir`, and the runtime does not own

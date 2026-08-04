@@ -214,13 +214,12 @@ const factory: ChainFactory = (api) => {
    * missing deps fail here rather than surfacing post-agent as confusing
    * tsc/vitest "cannot find module" noise.
    *
-   * The assertion throws, and a throw from this hook fails the whole tick —
-   * it does NOT park one entry. The dispatcher's per-entry provisioning
-   * isolation wraps `createWorktree` only; chain `setupWorktree` hooks run in
-   * an unguarded `Promise.all` after it (`Dispatcher.runFanout`). Stated
-   * because this docstring previously claimed the parking behavior and the
-   * spec inherited the claim; the gap between the isolation's scope and
-   * what it should cover is filed in `.flume/inbox.md`. The engine helper is
+   * The assertion throws, and a throw from this hook parks just this entry —
+   * the dispatcher's per-entry provisioning isolation covers chain
+   * `setupWorktree` hooks as well as `createWorktree`, so a failed provision
+   * records a ProvisionFailure and the rest of the wave continues
+   * (`spec/worktrees.md`, *Provisioning failure is isolated to the entry that
+   * hit it*). The engine helper is
    * lockfile-aware (src/setupWorktree.ts; dogfood discipline
    * spec/worktrees.md); we do NOT symlink repoRoot/node_modules — pnpm
    * deletes a symlinked node_modules on install (pnpm/pnpm#9973). The

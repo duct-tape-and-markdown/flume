@@ -306,7 +306,7 @@ The suite has two lanes:
 - **Integration lane** — anything spawning real subprocesses: real `flume tick`/`loop` through
   `tsx`, real `git`. Marked by the `*.integration.test.ts` filename convention and **excluded
   from the default run** by `vitest.config.ts`, so the gate never runs them. They run via
-  `pnpm test:integration`, which selects the lane with `VITEST_LANE=integration`.
+  `pnpm test:integration`, which selects the lane with `vitest run --mode integration`.
 
 Rejected, and worth not re-proposing:
 
