@@ -1,1 +1,46 @@
-[]
+[
+  {
+    "tag": "PHASE-SETUPWORKTREE-JSDOC-SYMLINK-DRIFT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "Phase.setupWorktree's JSDoc still recommends symlinking node_modules/.env from the main repo. Rewrite to describe install-based materialization instead, per the cited section."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Fix Phase.setupWorktree's JSDoc, which still tells chain authors to symlink node_modules — the exact anti-pattern spec/worktrees.md prohibits.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Never symlink `node_modules` into a worktree"
+    },
+    "tests": [],
+    "acceptance": "Phase.setupWorktree's JSDoc no longer mentions symlinking; describes materializing via install, matching spec/worktrees.md and .flume/chain.ts's actual setupWorktree hook.",
+    "notes": "spec/worktrees.md's 'Never symlink' section carries a `> Drift:` blockquote citing this exact staleness. Once this ships, that blockquote can be deleted, but only by a human/interactive spec edit — plan and build cannot touch spec/."
+  },
+  {
+    "tag": "DOCS-MIGRATING011-CITES-REPOINT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.11.md",
+          "description": "Repoint the three dead ../spec/RELEASE-v0.11.md links (§1 x2, §6) to the topic-file sections that now own those rulings, per the operator ruling cited in notes."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Repoint docs/MIGRATING-0.11.md's three dead spec/RELEASE-v0.11.md links to the topic-file sections that now own those rulings.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "No link in docs/MIGRATING-0.11.md targets spec/RELEASE-v0*; the §1 cites resolve into spec/jobs.md's 'A job is a state root' and the §6 cite resolves into spec/chain.md's 'The chain is a plugin, not a consumer'.",
+    "notes": "Operator ruling (drained from inbox, 2026-08-04): guide is live, not historical — 3 of 4 downstream @dtmd/flume consumers are still pre-0.11, caret-pinned. §1's branch-topology cites -> spec/jobs.md 'A job is a state root'; §6's factory-shape cite -> spec/chain.md 'The chain is a plugin, not a consumer'."
+  }
+]
