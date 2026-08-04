@@ -62,6 +62,22 @@ and keep the full value everywhere it is read.
 Separately, still pin `core.longpaths` repo-locally before creating worktrees —
 it covers the ordinary `MAX_PATH` cases this limit is not.
 
+## Windows MAX_PATH (~260 chars) breaks fs calls with no long component
+
+Node's `fs` calls fail past Windows' ~260-character **total** path length even
+where no single component is long — a worktree nested under a friction dir, a
+job dir under a state root, a revert snapshot under `prior-attempts/`.
+`toNamespacedPath` (`node:path`) prepends the `\\?\` extended-length prefix on
+win32 and is a no-op elsewhere, which lets those calls survive it.
+
+Any path built for an fs call wants `join` and `toNamespacedPath` together:
+`namespacedJoin` (`src/paths.ts`) is the shared idiom. Reach for it instead of
+a bare `join` — and instead of restating this fact in a new comment.
+
+This is **not** the `git worktree add` limit above. That one is git's own
+~200-char refusal, which `toNamespacedPath` cannot reach because git builds the
+path itself. This one is the general Node fs limit, which it does fix.
+
 ## Filesystem `NAME_MAX` is 255, and scaffolding eats into it
 
 Conservatively shared across ext4, APFS, and NTFS. Any identifier that becomes

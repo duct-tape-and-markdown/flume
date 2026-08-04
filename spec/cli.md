@@ -149,13 +149,6 @@ freshly-resolved `repoRoot`. A value typed for this invocation carries no stamp 
 refused on that basis, whatever its path happens to contain. `.claude/rules/engine-boundary.md`
 *Told, not inferred*.
 
-> **Drift:** the stamp does not exist. `impliedRepoRoot` (`src/cli.ts`) instead walks an
-> absolute `FLUME_DIR` upward for a segment literally named `.flume` and refuses when that
-> segment's parent is not `repoRoot` — provenance reconstructed from a string. It misfires on a
-> deliberate relocation the section above sanctions: `FLUME_DIR=/mnt/state/.flume`, typed fresh
-> for this repo, is refused as inherited contamination. Shipped tests cover only a relocation
-> with no `.flume` ancestor, so the misclassifying case is unpinned.
-
 The teardown promise ("one `rm` removes the whole footprint") is only true if
 every mutable artifact lives under `flumeDir`, and the runtime does not own
 where a chain puts its per-run artifacts — session captures, scratch files. The
