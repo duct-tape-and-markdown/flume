@@ -25,6 +25,53 @@ function succeeds() {
   }) as never);
 }
 
+async function withPlatform(
+  platform: NodeJS.Platform,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: platform });
+  try {
+    await fn();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
+}
+
+function enoentThenSucceeds() {
+  let calls = 0;
+  execFileMock.mockImplementation(((
+    _cmd: string,
+    _args: string[],
+    _opts: unknown,
+    cb: (err: Error | null, stdout: string, stderr: string) => void,
+  ) => {
+    calls += 1;
+    if (calls === 1) {
+      const err = new Error("spawn pnpm ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      cb(err, "", "");
+    } else {
+      cb(null, "", "");
+    }
+    return {} as never;
+  }) as never);
+}
+
+function failsWith(code: string) {
+  execFileMock.mockImplementation(((
+    _cmd: string,
+    _args: string[],
+    _opts: unknown,
+    cb: (err: Error | null, stdout: string, stderr: string) => void,
+  ) => {
+    const err = new Error(`spawn pnpm ${code}`) as NodeJS.ErrnoException;
+    err.code = code;
+    cb(err, "", "");
+    return {} as never;
+  }) as never);
+}
+
 describe("setupWorktree", () => {
   let dir: string;
 
@@ -96,5 +143,58 @@ describe("setupWorktree", () => {
     await expect(setupWorktree(dir)).rejects.toThrow(
       /frozen lockfile out of date/,
     );
+  });
+
+  it("spawns pnpm direct (no shell) when the direct spawn succeeds", async () => {
+    await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    succeeds();
+
+    await setupWorktree(dir);
+
+    expect(execFileMock).toHaveBeenCalledOnce();
+    const [, , opts] = execFileMock.mock.calls[0]!;
+    expect((opts as { shell?: boolean }).shell).toBeUndefined();
+  });
+
+  it("on win32, a direct-spawn ENOENT retries once through the shell and succeeds", async () => {
+    await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    enoentThenSucceeds();
+
+    await withPlatform("win32", async () => {
+      await expect(setupWorktree(dir)).resolves.toBeUndefined();
+    });
+
+    expect(execFileMock).toHaveBeenCalledTimes(2);
+    const [firstCmd, firstArgs, firstOpts] = execFileMock.mock.calls[0]!;
+    expect(firstCmd).toBe("pnpm");
+    expect(firstArgs).toEqual(["install", "--frozen-lockfile"]);
+    expect((firstOpts as { shell?: boolean }).shell).toBeUndefined();
+
+    const [secondCmd, secondArgs, secondOpts] = execFileMock.mock.calls[1]!;
+    expect(secondCmd).toBe("pnpm");
+    expect(secondArgs).toEqual(["install", "--frozen-lockfile"]);
+    expect((secondOpts as { shell?: boolean }).shell).toBe(true);
+  });
+
+  it("on non-win32, a direct-spawn ENOENT propagates without retrying through the shell", async () => {
+    await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    failsWith("ENOENT");
+
+    await withPlatform("linux", async () => {
+      await expect(setupWorktree(dir)).rejects.toThrow(/ENOENT/);
+    });
+
+    expect(execFileMock).toHaveBeenCalledOnce();
+  });
+
+  it("on win32, a non-ENOENT error propagates without retrying through the shell", async () => {
+    await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    failsWith("EACCES");
+
+    await withPlatform("win32", async () => {
+      await expect(setupWorktree(dir)).rejects.toThrow(/EACCES/);
+    });
+
+    expect(execFileMock).toHaveBeenCalledOnce();
   });
 });

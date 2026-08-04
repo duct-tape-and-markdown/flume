@@ -21,6 +21,32 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 
 /**
+ * execFile with a Windows shim fallback. Package-manager binaries (pnpm,
+ * npm) are .cmd shims on Windows, which Node refuses to spawn without a
+ * shell (CVE-2024-27980 hardening). A direct spawn is tried first so args
+ * keep exact quoting semantics; only a win32 ENOENT — the shim case —
+ * retries through the shell. Mirrors `builtinGates.ts`'s `execGate`.
+ */
+async function execInstall(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string },
+): Promise<void> {
+  try {
+    await execFileP(cmd, args, opts);
+  } catch (err) {
+    if (
+      process.platform === "win32" &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      await execFileP(cmd, args, { ...opts, shell: true });
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
  * Runs the install implied by whichever lockfile `dir` contains:
  * `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`; `package-lock.json`
  * → `npm ci`; both present → pnpm wins (flume's own convention); neither →
@@ -38,20 +64,12 @@ export async function setupWorktree(dir: string): Promise<void> {
   const hasNpmLock = existsSync(join(dir, "package-lock.json"));
 
   if (hasPnpmLock) {
-    // shell: pnpm is a .cmd shim on Windows; Node can't spawn those bare.
-    await execFileP("pnpm", ["install", "--frozen-lockfile"], {
-      cwd: dir,
-      shell: process.platform === "win32",
-    });
+    await execInstall("pnpm", ["install", "--frozen-lockfile"], { cwd: dir });
     return;
   }
 
   if (hasNpmLock) {
-    // Same .cmd-shim reasoning as pnpm above.
-    await execFileP("npm", ["ci"], {
-      cwd: dir,
-      shell: process.platform === "win32",
-    });
+    await execInstall("npm", ["ci"], { cwd: dir });
     return;
   }
 
