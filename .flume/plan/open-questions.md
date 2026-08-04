@@ -9,26 +9,6 @@ Status markers:
 
 <!-- questions below this line -->
 
-## spec/pending.md's "Ship detection requires a declared-files diff" now describes removed behavior
-
-**Status: NEEDS AMENDMENT**
-
-`f658e7d` (SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE) deleted the declared-files diff predicate from `runFanout`'s ship classification per an operator ruling, and the code/tests now correctly ship on commit-landed+gates-green unless the agent's own termination states a park. But `spec/pending.md:295-321`, section "Ship detection requires a declared-files diff", still states the *old* mechanism as current truth: "the dispatcher diffs the cherry-picked commit against the entry's declared `files.{new,edit,retire}`" — that diff no longer exists anywhere in `src/Dispatcher.ts`. Unlike the sibling ruling that same window (CLAUDECODE-SKIPPERMS-RATIONALE-REWRITE), whose commit explicitly left a pointer to the stale `spec/chain.md` Drift note for a human to close, this one didn't note the spec is now wrong — plan/build can't touch `spec/**` (`spec-plan-build.md`), so it's surfacing here instead.
-
-Options:
-1. Rewrite the section to describe the current mechanism (commit-landed + gates-green + no stated park), keeping the heading or renaming it to match.
-2. Add a `> **Drift:**` note (the pattern already used at `spec/chain.md:156/237/430`, `spec/cli.md:87/136`, etc.) pointing at the ruling and the new mechanism, deferring the full rewrite.
-
-Recommend option 1 — the section is short and the old mechanism is gone outright, not partially drifted, so a Drift note undersells how stale it is.
-
-## spec/cli.md's Drift note on job-verb state-dir resolution is now stale
-
-**Status: NEEDS AMENDMENT**
-
-`spec/cli.md:136-143` carries a `> **Drift:**` note: "the guarantee does not reach the chain loads on the `job new` and `job status` paths. `main()` ... routes those verbs to `runJobVerb` and returns before `resolveStateDirs` ever runs...". `e814195` (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH) fixed exactly this — `resolveStateDirs` now runs ahead of the job-verb dispatch and `runJobVerb` no longer re-derives `configDir` from raw env — but the commit didn't reference or close the note (contrast with `8d28a6f`, which explicitly says "The spec/chain.md Drift note citing the same gap is left for a human to close"). The note now describes a gap that no longer exists.
-
-Recommend: delete the Drift note (lines 136-143); the surrounding prose already states the current (now-true) guarantee.
-
 ## CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL's path-shape heuristic can misfire on a deliberate relocation
 
 **Status: PARKED**
@@ -45,9 +25,21 @@ Options:
 
 No recommendation — option 2 is technically cleaner (exact provenance instead of a path-shape guess) but reopens a very recently-ruled decision and adds a fourth write-back var; option 1 is cheaper but pushes a foot-gun onto users. This is downstream of the shipped ruling's own scope, not an implementation slip, so it's parked rather than proposed unilaterally.
 
-## `statesPark`'s free-text scan may misclassify a partial park as a full one (unverified, flagging for visibility)
+## `statesPark`'s free-text scan misclassifies a partial park as a full one
 
-**Status: PARKED**
+**Status: PARKED — the reproduction is no longer hypothetical**
+
+Verified in-session 2026-08-04, on disk. The colliding vocabulary is not merely
+possible, it is *instructed*: `.flume/prompts/build.md` lines 26–27 twice direct a
+"single-file committed park", and `.claude/rules/collaboration.md` directs an agent
+to write an open question rather than decide a judgment call silently. A tick that
+ships its entry and also parks a question — the documented path — states "parked" in
+its final message and is classified `channel-only`. That was the confidence gap
+below; treat the mechanism as confirmed and only the fix shape as open.
+
+`spec/pending.md` *Ship detection trusts the agent's own account* now carries this as
+a `> **Drift:**` note, so the corpus states the weakness rather than implying the
+contract is fully carried.
 
 `f658e7d`'s `statesPark()` (`src/Dispatcher.ts`) matches `/\bpark(?:ed|ing)?\b/i` anywhere in the agent's final message to decide whether a landed, gate-green commit still counts as shipped. `.claude/rules/collaboration.md`'s "Inform before parking" instructs agents broadly to write *any* deferred judgment call to `open-questions.md` using park/parked language — not only the whole-entry-channel-only case `.flume/prompts/build.md` documents. A message like "Shipped the acceptance criteria; parked a follow-up idea about X in open-questions.md" would match the regex and classify a genuine ship as `channel-only`, reintroducing the non-draining-loop failure this same fix was meant to close — from the opposite direction (false negative instead of the old false positive on glob paths).
 

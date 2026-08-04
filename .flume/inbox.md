@@ -35,6 +35,45 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-08-04 — repoint cites of the renamed ship-detection section (operator)
+
+`spec/pending.md`'s section **"Ship detection requires a declared-files diff"** is
+now **"Ship detection trusts the agent's own account"**. The old heading named the
+mechanism the 2026-08-03 ruling deleted, so a section describing the replacement
+could not keep it.
+
+Cites to repoint — all cite the heading as a quoted string:
+
+- `src/Dispatcher.ts` — the `MergeOutcome` doc comment (`channel-only` arm), the
+  ship-classification site in `runFanout`, and `statesPark`'s own doc comment.
+- `tests/Dispatcher.test.ts` — the describe title covering the stated-park case.
+
+Mechanical: swap the quoted heading, change nothing else. The ruling date already
+beside each cite stays.
+
+Per candidate: `.claude/rules/engineering.md` *Narration is the ladder's bottom rung*
+— a cite is narration, and one naming a heading that no longer exists cannot resolve.
+Test: no file under `src/` or `tests/` quotes "Ship detection requires a
+declared-files diff".
+
+## 2026-08-04 — `build.md` describes the retired channel-path ship mechanism (operator)
+
+`.flume/prompts/build.md` line 26 tells the agent that a committed park is safe
+because "the channel allows the path, and ship-detection keeps a channel-only commit
+from clearing the entry". Ship detection no longer reads channel paths — it reads the
+agent's own termination for a stated park (`spec/pending.md`, *Ship detection trusts
+the agent's own account*).
+
+The instruction still produces the right behavior, for the wrong stated reason, which
+makes it the weakest kind of prose: an agent reasoning from it about an unlisted case
+reasons from a mechanism that is gone.
+
+Harness surface, so this is an interactive `chore(flume):` rather than a build entry —
+filing it here so it is not lost, not so a build tick picks it up. Note it interacts
+with the parked `statesPark` question: if that question's fix changes how a park is
+stated, this paragraph is what tells the agent to state it, and the two should land
+together.
+
 ## 2026-08-04 — the integration suite has never run on Windows (operator)
 
 Two facts that only matter together:
