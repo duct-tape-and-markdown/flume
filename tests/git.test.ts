@@ -1,6 +1,13 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
@@ -8,13 +15,15 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Partial mock: everything passes through to the real implementation except
-// `rm`, which a single test below overrides once to simulate a removal
-// fallback that resolves without actually clearing the directory — the
-// deterministic, cross-platform stand-in for a locked-handle survivor that
-// even the bounded-retry fallback (§7) cannot clear.
+// `rm` and `unlink`. `rm` is overridden once by a single test below to
+// simulate a removal fallback that resolves without actually clearing the
+// directory — the deterministic, cross-platform stand-in for a
+// locked-handle survivor that even the bounded-retry fallback (§7) cannot
+// clear. `unlink` is overridden once by the tip-claim reclaim test to pin a
+// non-ENOENT failure rethrowing instead of being swallowed.
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, rm: vi.fn(actual.rm) };
+  return { ...actual, rm: vi.fn(actual.rm), unlink: vi.fn(actual.unlink) };
 });
 
 import {
@@ -415,6 +424,31 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
 
     claim.release();
+  });
+
+  it("rethrows a non-ENOENT unlink failure during dead-pid reclaim instead of retrying forever (GIT-TIPCLAIM-RECLAIM-UNLINK-NARROW-ENOENT)", async () => {
+    const refPath = await resolveRefPath(repo);
+    const commonDir = await gitCommonDir(repo);
+    const claimPath = tipClaimPath(commonDir, refPath);
+
+    // Harvest a genuinely dead pid, same setup as the reclaim test above, so
+    // the EEXIST branch takes the reclaim path rather than refusing outright.
+    const probe = exec(process.execPath, ["-e", ""]);
+    const deadPid = probe.child.pid;
+    await probe;
+    await mkdir(dirname(claimPath), { recursive: true });
+    await writeFile(claimPath, String(deadPid));
+
+    const unlinkErr = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    vi.mocked(unlink).mockImplementationOnce(() => Promise.reject(unlinkErr));
+
+    await expect(acquireTipClaim(repo, refPath)).rejects.toBe(unlinkErr);
+
+    // The stale claim file was never cleared — the rejection came from the
+    // unlink itself, not a retried create failing on some other path.
+    expect(await readFile(claimPath, "utf8")).toBe(String(deadPid));
   });
 
   it("release removes the claim file", async () => {

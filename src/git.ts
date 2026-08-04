@@ -372,11 +372,16 @@ export async function acquireTipClaim(
       // Dead pid — reclaim: unlink and retry the exclusive create. A
       // concurrent reclaimer may win the unlink race first; the retried
       // create's own possible EEXIST re-probes rather than assuming this
-      // call won.
+      // call won. Loud or nothing (engineering.md): only ENOENT (already
+      // gone — another reclaimer won the race) is swallowed; any other
+      // failure (e.g. EACCES) rethrows instead of spinning this loop
+      // forever.
       try {
         await unlink(toNamespacedPath(claimPath));
-      } catch {
-        // Already gone — another reclaimer won the race; retry the create.
+      } catch (unlinkErr) {
+        if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw unlinkErr;
+        }
       }
     }
   }
