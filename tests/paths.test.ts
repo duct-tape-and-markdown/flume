@@ -2,7 +2,7 @@ import { join, toNamespacedPath } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { entryWriteScopeUnion, namespacedJoin } from "../src/paths.ts";
+import { entryWriteScopeUnion, matchesAny, namespacedJoin } from "../src/paths.ts";
 
 // Mechanism pin (WIN32-NAMESPACEDPATH-JOIN-UNSHARED, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"):
@@ -81,5 +81,28 @@ describe("entryWriteScopeUnion — entry.files ∪ entryChannelPaths, shared", (
 
   it("both empty: union is empty", () => {
     expect(entryWriteScopeUnion([], [])).toEqual([]);
+  });
+});
+
+// Coverage gap (PATHS-MATCHESANY-SINGLE-STAR-UNTESTED, per spec/pending.md
+// "The entry-scoped write guard is opt-in, and off by default": "`*` and `**`
+// the only wildcards"). Every existing matchesAny caller (builtinGates.test.ts,
+// Prompt.test.ts) exercises only `**`, so the single-segment `*` boundary —
+// `[^/]*`, not `.*` — had zero coverage anywhere in the suite.
+describe("matchesAny — single-`*` is segment-bound, unlike `**`", () => {
+  it("a bare `*` matches a file within the same path segment", () => {
+    expect(matchesAny("src/a.ts", ["src/*.ts"])).toBe(true);
+  });
+
+  it("a bare `*` does not cross a `/` into a deeper segment", () => {
+    expect(matchesAny("src/sub/a.ts", ["src/*.ts"])).toBe(false);
+  });
+
+  it("`**` crosses `/` where a bare `*` would not, given the same path", () => {
+    expect(matchesAny("src/sub/a.ts", ["src/**.ts"])).toBe(true);
+  });
+
+  it("a bare `*` still matches the zero-deeper-segment case `**` also matches", () => {
+    expect(matchesAny("src/a.ts", ["src/**.ts"])).toBe(true);
   });
 });
