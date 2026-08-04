@@ -3516,7 +3516,7 @@ function finalAgentMessage(stdout: string): string {
  * Concatenated `text` blocks of one stream-json `assistant` event;
  * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
  */
-function assistantTurnText(e: NdjsonEvent): string {
+export function assistantTurnText(e: NdjsonEvent): string {
   const parts = contentBlocksOfType(e, "text")
     .filter((c) => typeof c.text === "string")
     .map((c) => (c.text as string).trim());

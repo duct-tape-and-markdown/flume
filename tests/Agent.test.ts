@@ -6,6 +6,7 @@ import { join, sep } from "node:path";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 import { spawn } from "node:child_process";
@@ -20,8 +21,8 @@ import {
   isResultEvent,
   isErrorResult,
   type Agent,
-  type NdjsonEvent,
 } from "../src/Agent.ts";
+import { assistantTurnText } from "../src/Dispatcher.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -627,14 +628,6 @@ describe("parseNdjsonLine / contentBlocksOfType — shared NDJSON parse", () => 
   });
 
   it("feeds both withTerminalRenderer's tool_use rendering and a Dispatcher-shaped text extractor off the same parsed event — a one-sided change to either consumer's block-type filter doesn't touch the shared parse", async () => {
-    // Stand-in for Dispatcher.ts's assistantTurnText: same shared helpers,
-    // a different block-type filter.
-    const assistantTurnTextStandIn = (e: NdjsonEvent): string =>
-      contentBlocksOfType(e, "text")
-        .filter((c) => typeof c.text === "string")
-        .map((c) => (c.text as string).trim())
-        .join("\n\n");
-
     const line = JSON.stringify({
       type: "assistant",
       message: {
@@ -664,7 +657,7 @@ describe("parseNdjsonLine / contentBlocksOfType — shared NDJSON parse", () => 
 
     const parsed = parseNdjsonLine(line);
     if (parsed.kind !== "event") throw new Error("expected an event line");
-    expect(assistantTurnTextStandIn(parsed.event)).toBe("final prose");
+    expect(assistantTurnText(parsed.event)).toBe("final prose");
   });
 });
 
