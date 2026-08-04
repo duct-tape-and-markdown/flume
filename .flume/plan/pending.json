@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "CLI-FLUMEDIR-PROVENANCE-STAMP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "resolveStateDirs writes FLUME_DIR_RESOLVED_FOR=<repoRoot> back per spec/cli.md's Cross-repo refusal paragraph; CrossRepoFlumeDirError trigger switches from impliedRepoRoot's path-shape walk to stamp-present-and-disagrees. impliedRepoRoot loses its only caller once the switch lands — remove it."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Rewrite the 'resolveStateDirs — cross-repo FLUME_DIR inheritance refusal' describe block (~line 195) and the CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL real-CLI integration test (~line 2559) around the stamp, including the Drift note's misfire repro."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Replace path-shape cross-repo FLUME_DIR detection with a stamped FLUME_DIR_RESOLVED_FOR provenance check",
+    "per": { "path": "spec/cli.md", "section": "State-root and config-dir resolution" },
+    "tests": [
+      "resolveStateDirs write-back sets FLUME_DIR_RESOLVED_FOR=<repoRoot> alongside FLUME_DIR/FLUME_CONFIG_DIR/FLUME_JOB",
+      "CrossRepoFlumeDirError fires only when FLUME_DIR_RESOLVED_FOR is present and disagrees with the freshly-resolved repoRoot",
+      "an absolute FLUME_DIR with no FLUME_DIR_RESOLVED_FOR stamp never throws regardless of its shape (misfire repro: FLUME_DIR=/mnt/state/.flume typed fresh for this repo)",
+      "the real-CLI integration test simulates genuine inheritance by passing the stamp, not a bare absolute FLUME_DIR"
+    ],
+    "acceptance": "resolveStateDirs (src/cli.ts) drives CrossRepoFlumeDirError off FLUME_DIR_RESOLVED_FOR presence+mismatch; the drift note's misfire repro no longer throws; tests/cli.test.ts's cross-repo describe blocks and the real-CLI integration test pass against the new stamp logic; pnpm tsc --noEmit and pnpm test green.",
+    "notes": "spec/cli.md's Drift note (just above 'The teardown promise' paragraph) has the misfire repro and confirms current impliedRepoRoot (src/cli.ts:104) is the sole caller — becomes dead code, remove it. Existing tests at tests/cli.test.ts:195-238 and :2559 assert the old path-shape behavior and must change, not just gain cases."
+  }
+]
