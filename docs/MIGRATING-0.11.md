@@ -18,15 +18,16 @@ longer check out or assert one, and `flume job extract` — along with its
 consumer, `Chain.harvest` — is removed outright. A job is now a state root,
 `.flume/jobs/<name>/`, on whatever branch the operator happens to be on;
 nothing in the engine has an opinion about branch topology. See
-[`RELEASE-v0.11.md` §1](../spec/RELEASE-v0.11.md) for the ruling this
-subtracts from (git remains the record; git *coordination* — branch
-grammar, mount choreography, a cherry-pick ending — was the engine
-absorbing convention, and it goes).
+[`spec/jobs.md` § A job is a state root](../spec/jobs.md#a-job-is-a-state-root)
+for the ruling this subtracts from (git remains the record; git
+*coordination* — branch grammar, mount choreography, a cherry-pick ending —
+was the engine absorbing convention, and it goes).
 
 Separately, **every chain must move to the factory shape**
-([`RELEASE-v0.11.md` §6](../spec/RELEASE-v0.11.md)). This one is not
-subtractive and not optional — it is the only change in this release that
-every bay must make, whether or not it ever touched `flume job`. See §2
+([`spec/chain.md` § The chain is a plugin, not a
+consumer](../spec/chain.md#the-chain-is-a-plugin-not-a-consumer)). This one
+is not subtractive and not optional — it is the only change in this release
+that every bay must make, whether or not it ever touched `flume job`. See §2
 below.
 
 The job removals themselves change no pending-entry schema and add no
@@ -219,5 +220,6 @@ This guide does not perform any downstream bay's branch integration —
 whether to merge, squash, or abandon a given `job/<name>` branch is a
 judgment call about that branch's content, made by whoever owns the target.
 It also does not add or recommend any replacement automation for `extract`;
-per [`RELEASE-v0.11.md` §1](../spec/RELEASE-v0.11.md), no such replacement
-is in scope for this line, and none is planned as engine surface.
+per [`spec/jobs.md` § A job is a state root](../spec/jobs.md#a-job-is-a-state-root),
+no such replacement is in scope for this line, and none is planned as engine
+surface.
