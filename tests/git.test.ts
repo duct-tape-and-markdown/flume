@@ -26,6 +26,52 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, rm: vi.fn(actual.rm), unlink: vi.fn(actual.unlink) };
 });
 
+// Partial mock, same shape as the fs/promises one above: every call passes
+// through to the real `execFile` (and its `util.promisify.custom`
+// implementation, which is what `src/git.ts`'s `promisify(execFile)` actually
+// invokes) except a single magic ref probed by the
+// GIT-DELETEBRANCH-LOCALIZED-STDERR test below. No real git build in this
+// environment ships a non-English catalog to test against (verified: a
+// French locale env does not change git's own message here), so this fakes
+// the one shape a localized git would produce — a `show-ref --verify` miss
+// carrying non-English stderr — without touching any other call.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const { promisify: nodePromisify } = await import("node:util");
+  const customPromisify = (
+    actual.execFile as unknown as Record<symbol, unknown>
+  )[nodePromisify.custom] as (
+    ...args: unknown[]
+  ) => Promise<{ stdout: string; stderr: string }>;
+  const execFileMock = vi.fn(actual.execFile) as unknown as typeof actual.execFile;
+  Object.defineProperty(execFileMock, nodePromisify.custom, {
+    configurable: true,
+    value: (...callArgs: unknown[]) => {
+      const gitArgs = callArgs[1] as string[] | undefined;
+      const targetsMissingBranch =
+        (gitArgs?.[0] === "show-ref" &&
+          gitArgs[3] === "refs/heads/localized-stderr-missing-branch") ||
+        (gitArgs?.[0] === "branch" &&
+          gitArgs[1] === "-D" &&
+          gitArgs[2] === "localized-stderr-missing-branch");
+      if (targetsMissingBranch) {
+        return Promise.reject(
+          Object.assign(
+            new Error("fatal : la référence demandée n'existe pas"),
+            {
+              code: 1,
+              stdout: "",
+              stderr: "fatal : la référence demandée n'existe pas",
+            },
+          ),
+        );
+      }
+      return customPromisify(...callArgs);
+    },
+  });
+  return { ...actual, execFile: execFileMock };
+});
+
 import {
   acquireTipClaim,
   addWorktree,
@@ -217,10 +263,10 @@ describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
 });
 
 /**
- * GITDELETEBRANCH-BROAD-SWALLOW — deleteBranch's catch narrows to git's own
- * "not found" wording (engineering.md "Loud or nothing"); every other
- * failure — most commonly the branch still checked out in a worktree —
- * rethrows instead of being swallowed.
+ * GITDELETEBRANCH-BROAD-SWALLOW — deleteBranch's catch narrows to the
+ * expected-benign "branch doesn't exist" case (engineering.md "Loud or
+ * nothing"); every other failure — most commonly the branch still checked
+ * out in a worktree — rethrows instead of being swallowed.
  */
 describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
   it("resolves silently when the branch doesn't exist", async () => {
@@ -240,6 +286,26 @@ describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
     await expect(deleteBranch(repo, "checked-out-elsewhere")).rejects.toThrow(
       /checked-out-elsewhere/,
     );
+  });
+});
+
+/**
+ * GIT-DELETEBRANCH-LOCALIZED-STDERR — the "branch doesn't exist" case above
+ * used to be detected by matching `/not found/` against git's own English
+ * stderr (engine-boundary.md "Told, not inferred": the engine has no
+ * business reconstructing a statement from prose it didn't author). A git
+ * configured to a non-English locale rephrases that message and the match
+ * silently stops firing. deleteBranch now probes `refs/heads/<branch>`
+ * structurally (`show-ref --verify --quiet`, keyed off the exit code) so
+ * the check holds regardless of what — if anything — lands on stderr. The
+ * `node:child_process` mock above fakes exactly that: a `show-ref --verify`
+ * miss on this branch's ref, carrying non-English stderr.
+ */
+describe("deleteBranch — locale-independent (GIT-DELETEBRANCH-LOCALIZED-STDERR)", () => {
+  it("no-ops on a missing branch even when git's stderr is not English", async () => {
+    await expect(
+      deleteBranch(repo, "localized-stderr-missing-branch"),
+    ).resolves.toBeUndefined();
   });
 });
 
