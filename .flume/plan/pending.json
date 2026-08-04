@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "tag": "PLATFORMFACTS-WIN32-MAXPATH-POINTERS",
+    "gate": {
+      "kind": "parked",
+      "reason": "Target section doesn't exist yet: platform-facts.md is human-authored (.claude/rules/** sits outside every phase's writablePaths per .flume/chain.ts) and needs the new win32 MAX_PATH section landed there first. See open-questions.md."
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "point the doc comment at platform-facts.md's new section; drop restated mechanics" },
+        { "path": "src/Dispatcher.ts", "description": "shrink the 4 win32 MAX_PATH comments (~L619, ~L2424, ~L2684, ~L2767) to pointers at platform-facts.md" },
+        { "path": "src/job.ts", "description": "shrink the win32 MAX_PATH comment (~L391) to a pointer at platform-facts.md" }
+      ],
+      "retire": []
+    },
+    "summary": "Point paths.ts/Dispatcher.ts/job.ts win32-MAX_PATH comments at platform-facts.md once its new section lands",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "tests": [],
+    "acceptance": "Each of the 6 comment sites cites platform-facts.md's new section instead of restating the ~260-char mechanism",
+    "notes": "Fact independently restated at 6 sites (paths.ts:2, Dispatcher.ts:619,2424,2684,2767, job.ts:391); tags WRITEREVERTNOTE/HARVESTFRICTION/FRICTIONCOUNT(x2)/SNAPSHOTREVERTEDFILES(x2)/PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT show per-site rediscovery."
+  }
+]
