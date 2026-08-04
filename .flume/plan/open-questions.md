@@ -42,6 +42,30 @@ Proposed addition to `spec/cli.md`'s *State-root and config-dir resolution*, aft
 Once that (or the human's preferred wording) lands, plan derives the `src/cli.ts` +
 `tests/cli.test.ts` pending entry next tick, citing it directly.
 
+## `spec/worktrees.md`'s `> Drift:` note on `Phase.setupWorktree`'s JSDoc is stale now that `189c1e7` fixed it
+
+**Status: NEEDS AMENDMENT**
+
+Audit of the `d8e4231..HEAD` window. `189c1e7` ("build: fix Phase.setupWorktree JSDoc's
+symlink-node_modules advice") shipped `PHASE-SETUPWORKTREE-JSDOC-SYMLINK-DRIFT` correctly:
+`src/Phase.ts`'s `setupWorktree` JSDoc now describes install-based materialization and states
+the symlink prohibition, matching `spec/worktrees.md`'s *Never symlink `node_modules` into a
+worktree* section verified against the current diff.
+
+That section's own `> Drift:` blockquote (`spec/worktrees.md:161-163`) now describes a bug that
+no longer exists:
+
+> "`Phase.setupWorktree`'s own JSDoc (`src/Phase.ts`) still describes the hook as materializing
+> `node_modules` and `.env` "by symlinking them from the main repo" — the exact pattern this
+> section prohibits for `node_modules` under pnpm."
+
+`spec/**` sits outside every phase's writable paths (`spec-plan-build.md`), so removing the
+stale blockquote needs a human-directed interactive edit — the same class as the two entries
+below and the ones `62bb03e`/`d8e4231` closed.
+
+Proposed: delete the `> **Drift:** ...` blockquote at `spec/worktrees.md:161-163` in full; no
+replacement text needed, the surrounding section already states the current rule.
+
 ## `.flume/chain.ts`'s `setupBuildWorktree` docstring describes a fanout-isolation gap that `0c0742c` already fixed
 
 **Status: NEEDS AMENDMENT**
