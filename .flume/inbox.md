@@ -35,6 +35,39 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-08-04 — the zero-files floor is convention-policing; it broke the second reference chain (CI, operator)
+
+CI run 30883726172 (`main`, first push of the 209-commit range) fails on
+**Second reference chain smoke (backlog-groomer)**. Everything else is green,
+including the whole Windows lane, `test:integration`, attw, and both
+consumer-install lanes.
+
+Cause, reproduced locally: `PENDING-ZERO-FILES-SCHEMA-FLOOR` requires at least
+one declared path per entry. The CI fixture's BACKLOG.json declares
+`"files": {}` on both items, so `parsePending` returns `ok: false`, the groom
+agent returns `exitCode: 1`, and `SHIPPED.md` is never written.
+
+**The floor should be dropped, not the fixture amended.** Its stated
+justification was that a zero-files entry can never be classified shipped —
+and `SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE` removed that failure entirely.
+What remains is the engine requiring a field its mechanics do not consume:
+`files` feeds `partitionByFileOverlap`, and a **singleton phase has no fanout
+to partition**. The backlog-groomer's entries are backlog items, not code
+changes; they have no files to declare and never will.
+
+That is `.claude/rules/engine-boundary.md` *Capability vs convention* verbatim —
+"the engine validates and interprets only what its mechanics consume.
+Enforcing shape on payload it never reads is convention-policing." The second
+reference chain exists to catch exactly this, and did.
+
+Retire the floor and the tests pinning it. If a chain wants the requirement it
+can assert it in its own `entryExtension`.
+
+Per candidate: `spec/pending.md` — the `files` section, whose framing as a
+prediction rather than a contract this restores. Test: an entry with
+`files: {}` parses clean and is pickable; the backlog-groomer smoke ships its
+top item.
+
 ## 2026-08-03 — twenty-one dead `spec/RELEASE-v0*` cites survive the flatten (operator)
 
 The flatten deleted `spec/RELEASE-v0.*.md`; the cites pointing at those files
