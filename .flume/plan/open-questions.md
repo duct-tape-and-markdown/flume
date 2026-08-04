@@ -54,3 +54,32 @@ No recommendation — option 2 is technically cleaner (exact provenance instead 
 No test exercises a "ships real work and also mentions parking something unrelated" message — only a full-park case (`STATED-PARK` test, final message *is* the park statement) and a no-mention case are pinned. Confidence here is lower than the other three questions above: this is a plausible reproduction reasoned from the regex and the prompt/rule vocabulary, not one observed on disk.
 
 Options if real: anchor the check tighter (e.g. only the message's own park-statement convention per `build.md`, not a bare substring anywhere) or leave as ruled and accept the risk as the tradeoff already made 2026-08-03. Parking rather than filing a pending entry because a fix here means re-litigating the just-shipped ruling's chosen detection shape, same as the question above.
+
+## `docs/MIGRATING-0.11.md`'s dead `spec/RELEASE-v0.11` cites: live guidance or historical record?
+
+**Status: PARKED**
+
+The inbox's flatten-orphan-cites finding flagged `docs/MIGRATING-0.11.md` and `docs/PRD-dock-collapse.md` as needing an explicit call rather than a blanket sweep, since `docs/` legitimately holds historical material (CLAUDE.md) but a migration guide "reads as live reference." Read both this tick to do that research before parking, per `collaboration.md`'s *Inform before parking*:
+
+- `docs/PRD-dock-collapse.md` opens "Status: **draft for review** (uncommitted). On acceptance, the normative content ingests into `spec/RELEASE-v0.5.md`; this document is the design record." — unambiguously self-declared historical. No entry filed; accepted as-is.
+- `docs/MIGRATING-0.11.md` reads as live directive prose ("every chain must move to the factory shape... not optional") with three dead links to `../spec/RELEASE-v0.11.md` (§1 twice, §6 once). Whether it's still live (a chain somewhere may still be pre-0.11) or has become historical (the 0.11 migration is long complete) is a product/timeline call this session can't settle from the repo alone — the research didn't yield a clear answer, so this is parked rather than guessed.
+
+Options:
+1. Treat as historical — leave as-is (or reframe to past tense); no cite repair needed.
+2. Treat as live — repoint its three cites to whichever topic file/section now owns each ruling (the branch-topology retraction, the factory-shape requirement), the same repair `FLATTEN-ORPHANED-RELEASE-CITES-REPOINT` does for tests/CHANGELOG.md.
+
+No recommendation — turns on whether any chain in the wild is still migrating to 0.11, which is outside this repo's visibility.
+
+## posture-sweep.md's "module" has no defined home for a domain test file whose subject lives outside the domain
+
+**Status: PARKED**
+
+Auditing `f6a9c12`'s sweep-rotation closure this tick found `tests/chain.test.ts` (subject: `.flume/chain.ts`) and `tests/build-changelog.test.ts` (subject: `scripts/build-changelog.mjs`) were touched inside the just-closed rotation's window (`9925212`..`e46b0d0`) but never entered any covered set. Every other touched `tests/*.test.ts` file in that window pairs 1:1 with a covered `src/` or `examples/` module and rides along as that module's "immediate import," so no tick has ever needed to list a `tests/` file standalone. These two have no `src/`/`examples/`/`bin/` pairing — their subjects sit in `.flume/` and `scripts/`, neither in the sweep domain — so the pairing convention never reaches them, and they went unswept for a full rotation despite `posture-sweep.md` stating the domain includes all of `tests/` unconditionally.
+
+Corrected this tick: reverted `Posture swept through` to `9925212` (the last rotation this audit can actually verify closed correctly) and carried the covered set forward unchanged, so the next sweep tick's frontier recomputation surfaces these two again. But `posture-sweep.md` itself doesn't say what a "frontier module" means for a domain file with no in-domain import to co-read — is the test file its own standalone neighborhood, or does covering it require also reading the out-of-domain file it tests?
+
+Options:
+1. Treat each such `tests/` file as its own standalone neighborhood — no imports to co-read, matches the "touched module → frontier" rule literally. No rule change needed.
+2. Amend `posture-sweep.md` to say the neighborhood follows the *tested* subject regardless of domain, so `scripts/build-changelog.mjs` and `.flume/chain.ts` get read as context even though neither is otherwise in-domain.
+
+Recommend option 1 — the existing "immediate imports" language already permits reading whatever the sweeping agent judges relevant; the gap was that nobody flagged these two as frontier entries at all, not that the reading method needs a rule change.

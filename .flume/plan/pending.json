@@ -1,1 +1,59 @@
-[]
+[
+  {
+    "tag": "PENDINGSCHEMA-DROPS-ZERO-FILES-FLOOR",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "Drop the files-floor .refine() (~lines 128-142) and its stale ship-classification-diff cite."
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "Replace the 'files floor' reject-tests (~lines 1109-1136) with a files:{} parses-ok+pickable case."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Retire the zero-files schema floor (PENDING-ZERO-FILES-SCHEMA-FLOOR): convention-policing per engine-boundary.md, breaking CI's backlog-groomer lane.",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "`files` is a prediction the scheduler consumes"
+    },
+    "tests": [
+      "an entry with files: {} (all-empty new/edit/retire) parses ok and is pickable"
+    ],
+    "acceptance": "parsePending accepts files: {}; the backlog-groomer smoke (tests/examples.integration.test.ts) ships its top BACKLOG.json item; pnpm test and pnpm tsc green.",
+    "notes": "Floor shipped in f9f7033, justified by the declared-files diff SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE (f658e7d) later removed — files feeds partitionByFileOverlap only, unread by a singleton phase. engine-boundary.md 'Capability vs convention'. If a chain wants the requirement, its own entryExtension can assert it."
+  },
+  {
+    "tag": "FLATTEN-ORPHANED-RELEASE-CITES-REPOINT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "tests/Gate.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/job.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/examples.integration.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/Dispatcher.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/partition.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/PendingSchema.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "tests/Prompt.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
+        { "path": "scripts/smoke-install.mjs", "description": "Repoint the one dead spec/RELEASE-v0.6.1.md cite (comment, ~line 8)." },
+        { "path": "CHANGELOG.md", "description": "Repoint the versioning-policy header (lines 9-10) to spec/cli.md § Versioning policy; repoint or drop the other 7 dead cites." }
+      ],
+      "retire": []
+    },
+    "summary": "Repoint or drop 31 dead spec/RELEASE-v0.* cites (flatten orphans) across tests/, scripts/smoke-install.mjs, CHANGELOG.md.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      "no file under tests/, src/, scripts/, or CHANGELOG.md references a path matching spec/RELEASE-v0"
+    ],
+    "acceptance": "A repo-wide search for 'spec/RELEASE-v0' across tests/, src/, scripts/, CHANGELOG.md returns zero hits; pnpm test green.",
+    "notes": "Inbox 2026-08-04 counted 21/7 test files + 9 CHANGELOG.md, missed scripts/smoke-install.mjs:8 (found on audit) — 31 total. CHANGELOG.md header (lines 9-10) confirmed maps to spec/cli.md § Versioning policy. Others: repoint to the topic file/section now owning the claim, or drop if the claim was retired — per-cite judgment, build's call. docs/{MIGRATING-0.11,PRD-dock-collapse}.md excluded — routed separately."
+  }
+]
