@@ -233,7 +233,7 @@ describe("chain-declared extension (v0.8 §2)", () => {
     ...baseEntry,
     gate: { kind: "open" },
     summary: "do the thing",
-    per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+    per: { path: "spec/pending.md", section: "5. Tests" },
   };
 
   it("accepts declared fields and round-trips their values", () => {
@@ -242,7 +242,7 @@ describe("chain-declared extension (v0.8 §2)", () => {
     const entry = result.entries[0]!;
     expect(entry.summary).toBe("do the thing");
     expect(entry.per).toEqual({
-      path: "spec/RELEASE-v0.1.md",
+      path: "spec/pending.md",
       section: "5. Tests",
     });
   });
@@ -375,14 +375,14 @@ describe("tag uniqueness within the queue (v0.8 §3)", () => {
           tag: "DUP-TAG",
           gate: { kind: "open" },
           summary: "first",
-          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+          per: { path: "spec/pending.md", section: "5. Tests" },
         },
         {
           ...baseEntry,
           tag: "DUP-TAG",
           gate: { kind: "open" },
           summary: "second",
-          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+          per: { path: "spec/pending.md", section: "5. Tests" },
         },
       ]),
       testExtension,
@@ -411,14 +411,14 @@ describe("tag uniqueness within the queue (v0.8 §3)", () => {
           tag: "TAG-ONE",
           gate: { kind: "open" },
           summary: "first",
-          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+          per: { path: "spec/pending.md", section: "5. Tests" },
         },
         {
           ...baseEntry,
           tag: "TAG-TWO",
           gate: { kind: "open" },
           summary: "second",
-          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+          per: { path: "spec/pending.md", section: "5. Tests" },
         },
       ]),
       testExtension,
@@ -486,7 +486,7 @@ describe("entryExtension validators are adapted, not merged (v0.11 §11 — ENTR
           ...baseEntry,
           gate: { kind: "open" },
           summary: "do the thing",
-          per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+          per: { path: "spec/pending.md", section: "5. Tests" },
         },
       ]),
       ext,
@@ -498,7 +498,7 @@ describe("entryExtension validators are adapted, not merged (v0.11 §11 — ENTR
     expect(perCalls.length).toBeGreaterThan(0);
     expect(result.entries[0]!.summary).toBe("do the thing");
     expect(result.entries[0]!.per).toEqual({
-      path: "spec/RELEASE-v0.1.md",
+      path: "spec/pending.md",
       section: "5. Tests",
     });
   });

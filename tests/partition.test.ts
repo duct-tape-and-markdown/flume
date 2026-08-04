@@ -10,7 +10,10 @@ function makeEntry(
   return {
     tag,
     summary: `entry ${tag}`,
-    per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+    per: {
+      path: "spec/pending.md",
+      section: "Fanout partition — disjoint touched paths",
+    },
     gate: { kind: "open" },
     dependsOnForks: [],
     files: {

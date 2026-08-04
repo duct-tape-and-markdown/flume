@@ -3816,7 +3816,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const CONSTRAINT =
-      "BAILED: entry.files names spec/RELEASE-v0.2.md, outside the build " +
+      "BAILED: entry.files names spec/loop.md, outside the build " +
       "phase writablePaths; not pivoting. Route as an open question.";
 
     const prompts: string[] = [];
@@ -3863,7 +3863,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).toContain(BAIL_INTRO);
     expect(prompts[1]).toContain("Refused constraint");
     expect(prompts[1]).toContain(
-      "spec/RELEASE-v0.2.md, outside the build phase writablePaths",
+      "spec/loop.md, outside the build phase writablePaths",
     );
     // …and ONLY that variant.
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
@@ -3884,7 +3884,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const CONSTRAINT =
-      "BAILED: entry.files names spec/RELEASE-v0.2.md and " +
+      "BAILED: entry.files names spec/loop.md and " +
       ".claude/rules/spec-plan-build.md, both outside the build phase " +
       "writablePaths. Not pivoting to a different path. Route as an open " +
       "question for a human.";
@@ -4002,7 +4002,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(retry).toContain(BAIL_INTRO);
     expect(retry).toContain("Refused constraint");
     expect(retry).toContain(
-      "spec/RELEASE-v0.2.md and .claude/rules/spec-plan-build.md",
+      "spec/loop.md and .claude/rules/spec-plan-build.md",
     );
     expect(retry).not.toContain(GATE_REVERT_INTRO);
     expect(retry).not.toContain(PREEMPT_INTRO);

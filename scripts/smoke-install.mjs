@@ -5,8 +5,9 @@
  * Exercises the *installed* package through npm's *generated* bin shims
  * (`node_modules/.bin/flume.cmd` on win32, `node_modules/.bin/flume`
  * elsewhere) — the exact surface that shipped broken in 0.6.0
- * (spec/RELEASE-v0.6.1.md §1/§3). Nothing else ran the installed package
- * through a generated shim before this existed.
+ * (spec/cli.md § Distribution, "Install acceptance is exercised, not
+ * asserted"). Nothing else ran the installed package through a generated
+ * shim before this existed.
  *
  * Steps: npm pack the repo -> npm install the tarball into a scratch dir ->
  * run the shim `--version` -> scaffold a minimal chain-load fixture -> run

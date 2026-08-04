@@ -564,7 +564,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
         ...validEntry,
         files: {
           new: [],
-          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          edit: [{ path: "spec/loop.md", description: "nope" }],
           retire: [],
         },
       },
@@ -573,7 +573,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     const result = await gate.run(ctx(dir));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/outside the target fence/);
-    expect(result.details ?? "").toContain("spec/RELEASE-v0.8.md");
+    expect(result.details ?? "").toContain("spec/loop.md");
     expect(result.details ?? "").toContain("SOME-TAG");
   });
 
@@ -638,7 +638,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
         gate: { kind: "parked", reason: "blocked on human decision" },
         files: {
           new: [],
-          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          edit: [{ path: "spec/loop.md", description: "nope" }],
           retire: [],
         },
       },
@@ -656,7 +656,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
         gate: { kind: "parked", reason: "blocked on human decision" },
         files: {
           new: [],
-          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          edit: [{ path: "spec/loop.md", description: "nope" }],
           retire: [],
         },
       },
@@ -677,7 +677,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
         gate: { kind: "parked", reason: "blocked on human decision" },
         files: {
           new: [],
-          edit: [{ path: "spec/RELEASE-v0.8.md", description: "nope" }],
+          edit: [{ path: "spec/loop.md", description: "nope" }],
           retire: [],
         },
       },

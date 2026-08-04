@@ -51,7 +51,7 @@ function entry(overrides: Partial<PendingEntry> = {}): PendingEntry {
   return {
     tag: "TEST-TAG",
     summary: "test entry",
-    per: { path: "spec/RELEASE-v0.1.md", section: "5. Tests" },
+    per: { path: "spec/pending.md", section: "5. Tests" },
     gate: { kind: "open" },
     dependsOnForks: [],
     files: { new: [], edit: [], retire: [] },

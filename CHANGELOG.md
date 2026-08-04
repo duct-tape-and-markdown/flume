@@ -6,8 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Pre-1.0: minor versions may introduce breaking changes to the public API surface
-(see `spec/RELEASE-v0.1.md` §2). Breaking changes land under a `### Breaking`
-subheading per `spec/RELEASE-v0.1.md` §9.
+(see `spec/cli.md` § Versioning policy). Breaking changes land under a
+`### Breaking` subheading per the same section.
 
 ## [Unreleased]
 
@@ -443,7 +443,7 @@ subheading per `spec/RELEASE-v0.1.md` §9.
 - CI's "npm pack file-set guard" step now passes `--ignore-scripts` to
   `npm pack --dry-run --json`. `"prepack": "pnpm build"` writes a script
   banner ahead of npm's JSON on stdout, so the guard's `JSON.parse` has
-  thrown on every CI run to date (spec/RELEASE-v0.1.md §4); the job's
+  thrown on every CI run to date (spec/cli.md § Distribution); the job's
   earlier `pnpm build` step already produces `dist/`, so the redundant
   prepack rebuild is skipped rather than routed around.
 - `writeRevertNote`, `harvestFriction`, `frictionCountLine`
@@ -882,7 +882,8 @@ pin — the schema split is breaking-first.
 
 Patch: the friction channel's lifecycle, guaranteed by the engine without
 ever reading its content, plus win32 worktree-teardown integrity. See
-`spec/RELEASE-v0.6.2.md`.
+`spec/chain.md` § `Chain.friction` — the declared friction channel and
+`spec/worktrees.md` § Worktree removal has a win32 fallback, unconditionally.
 
 ### Added
 
@@ -920,7 +921,7 @@ ever reading its content, plus win32 worktree-teardown integrity. See
 
 ## [0.6.1]
 
-Patch: the Windows install surface. See `spec/RELEASE-v0.6.1.md`.
+Patch: the Windows install surface. See `spec/cli.md` § win32 is a supported host.
 
 ### Fixed
 
@@ -940,7 +941,7 @@ Patch: the Windows install surface. See `spec/RELEASE-v0.6.1.md`.
 Static-`.flume` + thin jobs, the native shape: a chain is a repo-resident
 artifact, one chain per `.flume`, known by location, with job dirs holding
 only job state. Driven by the centercode-platform static-`.flume` dogfood.
-See `spec/RELEASE-v0.6.md`.
+See `spec/jobs.md`.
 
 ### Breaking
 
@@ -985,7 +986,7 @@ convention — `.flume/jobs/<name>/` on branch `job/<name>` — and a
 `flume job` verb family operates the lifecycle, so the wrapper repo the
 machinery used to live in retires. Consolidates the uncut v0.4 surface
 (0.4.0 was never published) with the v0.5 surface. See
-`spec/RELEASE-v0.4.md` and `spec/RELEASE-v0.5.md`.
+`spec/jobs.md`.
 
 ### Breaking
 
@@ -1100,7 +1101,8 @@ is skipped while any remains unresolved. Closes the build-laterally failure mode
 where the loop accreted surfaces on product/UX decisions it had itself flagged
 as open. Relocation: all mutable state (baton, pending, worktrees,
 prior-attempts) moves under one configurable `flumeDir`, so a harness can
-attach, run, and be torn down in a single `rm`. See `spec/RELEASE-v0.3.md`.
+attach, run, and be torn down in a single `rm`. See `spec/jobs.md` § A job
+is a state root.
 
 ### Breaking
 

@@ -1041,7 +1041,7 @@ function pendingEntry(tag: string): object {
   return {
     tag,
     summary: "a unit of work",
-    per: { path: "spec/RELEASE-v0.5.md", section: "5d" },
+    per: { path: "spec/jobs.md", section: "`flume job status`" },
     gate: { kind: "open" },
     files: { edit: [{ path: "src/example.ts", description: "the unit of work" }] },
     acceptance: "suite green",

@@ -11,9 +11,9 @@
  * header for why that's in-scope for a reference example, not a test-only
  * shortcut.
  *
- * Asserts the acceptance in spec/RELEASE-v0.8.md §7: the example completes
- * a tick cycle against a fixture repo with zero `src/` changes attributable
- * to it.
+ * Asserts the acceptance in spec/cli.md § Distribution ("Install acceptance
+ * is exercised, not asserted"): the example completes a tick cycle against
+ * a fixture repo with zero `src/` changes attributable to it.
  */
 
 import { execFile } from "node:child_process";
