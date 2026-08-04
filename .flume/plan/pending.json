@@ -1,47 +1,49 @@
 [
   {
-    "tag": "PENDINGSCHEMA-DROPS-ZERO-FILES-FLOOR",
-    "gate": { "kind": "open" },
+    "tag": "FLATTEN-ORPHANED-RELEASE-CITES-REPOINT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
         {
-          "path": "src/PendingSchema.ts",
-          "description": "Drop the files-floor .refine() (~lines 128-142) and its stale ship-classification-diff cite."
+          "path": "tests/Gate.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "tests/partition.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
         },
         {
           "path": "tests/PendingSchema.test.ts",
-          "description": "Replace the 'files floor' reject-tests (~lines 1109-1136) with a files:{} parses-ok+pickable case."
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "Repoint or drop dead spec/RELEASE-v0 cites."
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "Repoint the one dead spec/RELEASE-v0.6.1.md cite (comment, ~line 8)."
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Repoint the versioning-policy header (lines 9-10) to spec/cli.md § Versioning policy; repoint or drop the other 7 dead cites."
         }
-      ],
-      "retire": []
-    },
-    "summary": "Retire the zero-files schema floor (PENDING-ZERO-FILES-SCHEMA-FLOOR): convention-policing per engine-boundary.md, breaking CI's backlog-groomer lane.",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "`files` is a prediction the scheduler consumes"
-    },
-    "tests": [
-      "an entry with files: {} (all-empty new/edit/retire) parses ok and is pickable"
-    ],
-    "acceptance": "parsePending accepts files: {}; the backlog-groomer smoke (tests/examples.integration.test.ts) ships its top BACKLOG.json item; pnpm test and pnpm tsc green.",
-    "notes": "Floor shipped in f9f7033, justified by the declared-files diff SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE (f658e7d) later removed — files feeds partitionByFileOverlap only, unread by a singleton phase. engine-boundary.md 'Capability vs convention'. If a chain wants the requirement, its own entryExtension can assert it."
-  },
-  {
-    "tag": "FLATTEN-ORPHANED-RELEASE-CITES-REPOINT",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "tests/Gate.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/job.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/examples.integration.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/Dispatcher.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/partition.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/PendingSchema.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "tests/Prompt.test.ts", "description": "Repoint or drop dead spec/RELEASE-v0 cites." },
-        { "path": "scripts/smoke-install.mjs", "description": "Repoint the one dead spec/RELEASE-v0.6.1.md cite (comment, ~line 8)." },
-        { "path": "CHANGELOG.md", "description": "Repoint the versioning-policy header (lines 9-10) to spec/cli.md § Versioning policy; repoint or drop the other 7 dead cites." }
       ],
       "retire": []
     },
