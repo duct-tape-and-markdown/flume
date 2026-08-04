@@ -16,6 +16,9 @@ import {
   withTerminalRenderer,
   parseNdjsonLine,
   contentBlocksOfType,
+  isAssistantEvent,
+  isResultEvent,
+  isErrorResult,
   type Agent,
   type NdjsonEvent,
 } from "../src/Agent.ts";
@@ -662,5 +665,56 @@ describe("parseNdjsonLine / contentBlocksOfType — shared NDJSON parse", () => 
     const parsed = parseNdjsonLine(line);
     if (parsed.kind !== "event") throw new Error("expected an event line");
     expect(assistantTurnTextStandIn(parsed.event)).toBe("final prose");
+  });
+});
+
+describe("isAssistantEvent / isResultEvent / isErrorResult — shared event-type vocabulary", () => {
+  it("classifies assistant and result events, and rejects other event types", () => {
+    expect(isAssistantEvent({ type: "assistant" })).toBe(true);
+    expect(isAssistantEvent({ type: "result" })).toBe(false);
+    expect(isAssistantEvent({ type: "system", subtype: "init" })).toBe(false);
+
+    expect(isResultEvent({ type: "result" })).toBe(true);
+    expect(isResultEvent({ type: "assistant" })).toBe(false);
+  });
+
+  it("marks a result event as an error via is_error or a non-success subtype", () => {
+    expect(isErrorResult({ type: "result" })).toBe(false);
+    expect(isErrorResult({ type: "result", subtype: "success" })).toBe(false);
+    expect(isErrorResult({ type: "result", is_error: true })).toBe(true);
+    expect(isErrorResult({ type: "result", subtype: "error_max_turns" })).toBe(
+      true,
+    );
+  });
+
+  it("drives withTerminalRenderer's ERROR head and a Dispatcher-shaped result reader off the same isResultEvent/isErrorResult verdict — a one-sided change to either literal comparison would desync them", async () => {
+    const errorLine = JSON.stringify({
+      type: "result",
+      subtype: "error_max_turns",
+      num_turns: 1,
+      usage: {},
+    });
+
+    const fake: Agent = {
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(errorLine + "\n");
+        return { exitCode: 0, stdout: errorLine + "\n", stderr: "" };
+      },
+    };
+    const rendered: string[] = [];
+    await withTerminalRenderer(fake).invoke({
+      cwd: "/work/foo",
+      prompt: "",
+      onStdout: (chunk) => rendered.push(chunk),
+    });
+    expect(rendered.join("")).toContain("ERROR");
+
+    // Stand-in for Dispatcher.ts's finalAgentMessage result-event branch:
+    // same shared isResultEvent/isErrorResult, independent of the renderer.
+    const parsed = parseNdjsonLine(errorLine);
+    if (parsed.kind !== "event") throw new Error("expected an event line");
+    expect(isResultEvent(parsed.event)).toBe(true);
+    expect(isErrorResult(parsed.event)).toBe(true);
   });
 });

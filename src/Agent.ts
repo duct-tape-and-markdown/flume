@@ -398,6 +398,26 @@ export function contentBlocksOfType(
 }
 
 /**
+ * Stream-json event-type vocabulary, shared by every reader that classifies
+ * an NDJSON event: `renderStreamJsonLine` below and Dispatcher's
+ * `finalAgentMessage`. The `"assistant"`/`"result"` literals and the
+ * `is_error`/`subtype` error rule live here once so two readers can't drift
+ * on what counts as which event.
+ */
+export function isAssistantEvent(event: NdjsonEvent): boolean {
+  return event.type === "assistant";
+}
+
+export function isResultEvent(event: NdjsonEvent): boolean {
+  return event.type === "result";
+}
+
+/** A `result` event's `is_error`/non-`"success"` `subtype` marks failure. */
+export function isErrorResult(event: NdjsonEvent): boolean {
+  return Boolean(event.is_error) || Boolean(event.subtype && event.subtype !== "success");
+}
+
+/**
  * Render one NDJSON line to a condensed terminal string, or null to drop it.
  * Non-JSON input is passed through verbatim (prefixed with the tag) so stray
  * warnings or non-stream output still surface.
@@ -411,16 +431,15 @@ function renderStreamJsonLine(
   if (result.kind === "blank" || result.kind === "non-object") return null;
   if (result.kind === "parse-error") return `${tag} ${result.raw}`;
   const e = result.event;
-  const type = e.type;
 
-  if (type === "assistant") {
+  if (isAssistantEvent(e)) {
     const lines = contentBlocksOfType(e, "tool_use").map(
       (c) => `${tag} ${formatToolUse(c as unknown as ToolUseBlock, cwd)}`,
     );
     return lines.length > 0 ? lines.join("\n") : null;
   }
 
-  if (type === "result") {
+  if (isResultEvent(e)) {
     return `${tag} ${formatResult(e)}`;
   }
 
@@ -487,7 +506,7 @@ function formatResult(e: Record<string, unknown>): string {
   const to = num(usage.output_tokens);
   const cost = typeof e.total_cost_usd === "number" ? `$${e.total_cost_usd.toFixed(3)}` : "";
   const dur = typeof e.duration_ms === "number" ? `${(e.duration_ms / 1000).toFixed(1)}s` : "";
-  const head = e.is_error || (e.subtype && e.subtype !== "success") ? "ERROR" : "result";
+  const head = isErrorResult(e) ? "ERROR" : "result";
   const parts = [head, `${turns} turns`, `${formatTokens(ti)} in`, `${formatTokens(to)} out`, cost, dur].filter(
     (p) => p && p.length > 0,
   );

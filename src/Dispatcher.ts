@@ -35,7 +35,7 @@ import { promisify } from "node:util";
 import { tsImport } from "tsx/esm/api";
 
 import type { Agent, NdjsonEvent } from "./Agent.js";
-import { contentBlocksOfType, parseNdjsonLine } from "./Agent.js";
+import { contentBlocksOfType, isAssistantEvent, isResultEvent, parseNdjsonLine } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
@@ -3501,11 +3501,11 @@ function finalAgentMessage(stdout: string): string {
     const e = parsed.event;
     if (typeof e.type !== "string") continue;
     sawStreamJson = true;
-    if (e.type === "result") {
+    if (isResultEvent(e)) {
       if (typeof e.result === "string" && e.result.trim().length > 0) {
         resultText = e.result.trim();
       }
-    } else if (e.type === "assistant") {
+    } else if (isAssistantEvent(e)) {
       const text = assistantTurnText(e);
       if (text.length > 0) lastAssistantText = text;
     }
