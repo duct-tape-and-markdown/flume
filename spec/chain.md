@@ -203,6 +203,18 @@ An `Agent` is `{ name, invoke }` (`src/Agent.ts:Agent`) — an opaque value the
 chain supplies and the engine only calls. The engine never inspects it, so
 provider options and decorator composition are entirely the chain's.
 
+**The seam is opaque; the transcript reader is not.** One provider's NDJSON
+event vocabulary — `assistant`, `result`, `is_error`, `subtype` — is hardcoded
+in the engine, shared between the renderer and the voluntary-bail extractor. It
+has one home rather than two, but that home is engine code holding a provider's
+shape. This is accepted while Claude Code is the only shipped provider: the
+second-implementation test (`.claude/rules/engine-boundary.md`) cannot be
+answered from a sample of one, and a `transcript` hook invented against a single
+known consumer would encode that consumer's shape as everyone's. **The condition
+that reopens it is a second provider** — at that point the chain supplies its own
+extractor alongside its `Agent`, and the engine stops parsing streams entirely.
+Not a date, not a release: the appearance of the second implementation.
+
 - **`claudeCode()` skips permissions by default.** `dangerouslySkipPermissions`
   defaults to `true`, and the flag is appended to the argv whenever it is
   (`src/Agent.ts:claudeCode`). The CLI's fallback agent is a bare
