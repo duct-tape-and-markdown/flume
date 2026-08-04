@@ -26,18 +26,23 @@ export const TSX_CLI = fileURLToPath(
 
 /**
  * A copy of this process's env with the canonical FLUME_DIR /
- * FLUME_CONFIG_DIR / FLUME_JOB stripped, so a spawned CLI resolves the
- * caller's own temp dir/repo default — or the test's own explicit job
- * resolution — instead of inheriting this process's. Without this the
- * suite is not hermetic: run under a flume harness (whose canonicalized
- * env, including a job resolution, the vitest process inherits), the child
- * would escape the fixture and operate on the outer state root or branch.
+ * FLUME_CONFIG_DIR / FLUME_JOB / FLUME_DIR_RESOLVED_FOR stripped, so a
+ * spawned CLI resolves the caller's own temp dir/repo default — or the
+ * test's own explicit job resolution — instead of inheriting this process's.
+ * Without this the suite is not hermetic: run under a flume harness (whose
+ * canonicalized env, including a job resolution and its provenance stamp,
+ * the vitest process inherits), the child would either escape the fixture
+ * and operate on the outer state root/branch, or — once FLUME_DIR is
+ * overridden per-test but the stale stamp survives — misfire
+ * `CrossRepoFlumeDirError` against the outer repo it was actually stamped
+ * for (CLI-FLUMEDIR-PROVENANCE-STAMP).
  */
 export function hermeticEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.FLUME_DIR;
   delete env.FLUME_CONFIG_DIR;
   delete env.FLUME_JOB;
+  delete env.FLUME_DIR_RESOLVED_FOR;
   return env;
 }
 

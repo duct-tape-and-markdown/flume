@@ -11,7 +11,7 @@
  * the default `claudeCode()`.
  */
 
-import { resolve, join, dirname, basename, isAbsolute } from "node:path";
+import { resolve, join, dirname, basename } from "node:path";
 import {
   existsSync,
   mkdirSync,
@@ -81,35 +81,16 @@ function readPackageVersion(): string {
 export class JobResolutionConflictError extends Error {}
 
 /**
- * An explicit `FLUME_DIR` that is already absolute and still carries a
- * recognizable `<repo>/.flume(/jobs/<name>)?` shape — but for a repo other
- * than this invocation's own resolved `repoRoot`. An already-absolute value
- * is the canonicalization write-back's own shape (§12): the signature of a
- * value a *different* flume process resolved and wrote back, inherited
- * across a process/environment boundary that never should have crossed a
- * repo, rather than typed fresh for this invocation. A relative `FLUME_DIR`
- * is unambiguous — it resolves against *this* invocation's own cwd — so it
- * never reaches this check.
+ * A `FLUME_DIR_RESOLVED_FOR` stamp already present in the env that disagrees
+ * with this invocation's freshly-resolved `repoRoot` — provenance evidence
+ * that `FLUME_DIR` was canonicalized and written back by a *different*
+ * repo's flume process, then inherited across a process/environment
+ * boundary that never should have crossed a repo. Provenance is stamped,
+ * never inferred: a `FLUME_DIR` typed fresh for this invocation carries no
+ * stamp at all, so it is never refused on this basis regardless of what its
+ * path happens to look like.
  */
 export class CrossRepoFlumeDirError extends Error {}
-
-/**
- * Walk up from an absolute path looking for a `.flume` path segment,
- * returning its parent — the repo root implied by a canonical
- * `<repo>/.flume` or `<repo>/.flume/jobs/<name>` shape. `undefined` when no
- * ancestor segment is named `.flume` (a deliberate out-of-tree relocation —
- * spec/cli.md's "a relocated state root is expected to live outside the
- * working tree" — carries no implied repo to check against).
- */
-function impliedRepoRoot(absPath: string): string | undefined {
-  let dir = absPath;
-  for (;;) {
-    if (basename(dir) === ".flume") return dirname(dir);
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
 
 /**
  * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
@@ -159,15 +140,16 @@ export function resolveRepoRoot(cwd: string): string {
  * parent's canonical job resolution, so set dirs win and the job name rides
  * along for the branch guard and fanout namespacing.
  *
- * Cross-repo inheritance refusal: an already-absolute `FLUME_DIR` that still
- * carries a `<repo>/.flume(/jobs/<name>)?` shape for a repo other than this
- * call's `repoRoot` throws {@link CrossRepoFlumeDirError} rather than
+ * Cross-repo inheritance refusal: provenance is stamped, never inferred
+ * (spec/cli.md, "State-root and config-dir resolution"). The write-back
+ * below stamps `FLUME_DIR_RESOLVED_FOR=<repoRoot>` alongside the dirs; a
+ * later call that inherits an env already carrying that stamp for a
+ * *different* repo throws {@link CrossRepoFlumeDirError} rather than
  * writing there — the shape observed 2026-08-03 when a nested `flume wake`
  * inherited its parent process's `FLUME_DIR` instead of resolving fresh
- * against its own cwd. A relative `FLUME_DIR` never triggers this: it
- * resolves against this invocation's own cwd by construction, and a value
- * with no `.flume` ancestor at all is a deliberate out-of-tree relocation
- * (§12 above) with no implied repo to compare against.
+ * against its own cwd. The refusal fires only when the stamp is present and
+ * disagrees; a `FLUME_DIR` typed fresh for this invocation carries no
+ * stamp and is never refused on that basis, whatever its path looks like.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
@@ -179,29 +161,30 @@ export function resolveStateDirs(
       `--job ${jobFlag} conflicts with explicit FLUME_DIR: one resolution authority — drop --job or unset the env`,
     );
   }
+  if (
+    env.FLUME_DIR_RESOLVED_FOR &&
+    resolve(env.FLUME_DIR_RESOLVED_FOR) !== resolve(repoRoot)
+  ) {
+    throw new CrossRepoFlumeDirError(
+      `FLUME_DIR ${env.FLUME_DIR} was resolved for repo ${env.FLUME_DIR_RESOLVED_FOR}, ` +
+        `not this invocation's resolved repo root ${repoRoot} — refusing to ` +
+        `write there (inherited from a different repo's flume process). ` +
+        `Unset FLUME_DIR, or pass --job <name> to resolve fresh against ` +
+        `this repo.`,
+    );
+  }
   const job = jobFlag ?? (env.FLUME_JOB || undefined);
   const flumeDir = env.FLUME_DIR
     ? resolve(env.FLUME_DIR)
     : job
       ? join(repoRoot, ".flume", "jobs", job)
       : join(repoRoot, ".flume");
-  if (env.FLUME_DIR && isAbsolute(env.FLUME_DIR)) {
-    const impliedRoot = impliedRepoRoot(flumeDir);
-    if (impliedRoot !== undefined && resolve(impliedRoot) !== resolve(repoRoot)) {
-      throw new CrossRepoFlumeDirError(
-        `FLUME_DIR ${flumeDir} belongs to repo ${impliedRoot}, not this ` +
-          `invocation's resolved repo root ${repoRoot} — refusing to write ` +
-          `there (looks inherited from a different repo's flume process). ` +
-          `Unset FLUME_DIR, or pass --job <name> to resolve fresh against ` +
-          `this repo.`,
-      );
-    }
-  }
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
     : join(repoRoot, ".flume");
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
+  env.FLUME_DIR_RESOLVED_FOR = resolve(repoRoot);
   if (job) env.FLUME_JOB = job;
   return { flumeDir, configDir, job };
 }

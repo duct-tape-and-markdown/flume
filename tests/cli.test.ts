@@ -56,6 +56,8 @@ describe("resolveStateDirs", () => {
     // Canonicalized back into the env for later chain loads / spawned children.
     expect(env.FLUME_DIR).toBe(expected);
     expect(env.FLUME_CONFIG_DIR).toBe(expected);
+    // The provenance stamp rides every write-back alongside the dirs (CLI-FLUMEDIR-PROVENANCE-STAMP).
+    expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(repoRoot));
   });
 
   it("resolves a set-but-relative FLUME_DIR / FLUME_CONFIG_DIR to absolute and writes it back", () => {
@@ -129,6 +131,7 @@ describe("resolveStateDirs — §3 job resolution", () => {
     expect(env.FLUME_DIR).toBe(jobDir);
     expect(env.FLUME_CONFIG_DIR).toBe(repoConfig);
     expect(env.FLUME_JOB).toBe("alpha");
+    expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(repoRoot));
   });
 
   it("FLUME_JOB set directly (no flag) is honored identically", () => {
@@ -168,12 +171,15 @@ describe("resolveStateDirs — §3 job resolution", () => {
     // resolution, so they win, and the job name survives for the fanout
     // namespace (v0.5 §4).
     // resolve() drive-qualifies on win32 — the untouched assertion needs a
-    // true absolute input.
+    // true absolute input. The parent's write-back stamps
+    // FLUME_DIR_RESOLVED_FOR alongside the dirs, and it agrees with this
+    // (same-repo) child's freshly-resolved repoRoot — composes, no throw.
     const inherited = resolve(jobDir);
     const env: NodeJS.ProcessEnv = {
       FLUME_JOB: "alpha",
       FLUME_DIR: inherited,
       FLUME_CONFIG_DIR: inherited,
+      FLUME_DIR_RESOLVED_FOR: resolve(repoRoot),
     };
     const { flumeDir, configDir, job } = resolveStateDirs(env, repoRoot);
 
@@ -181,22 +187,29 @@ describe("resolveStateDirs — §3 job resolution", () => {
     expect(configDir).toBe(inherited);
     expect(job).toBe("alpha");
     expect(env.FLUME_JOB).toBe("alpha");
+    expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(repoRoot));
   });
 });
 
 /**
- * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL — an already-absolute, inherited
- * `FLUME_DIR` that still carries a `<repo>/.flume(/jobs/<name>)?` shape for a
- * repo other than this call's `repoRoot` refuses rather than writing there.
+ * CLI-FLUMEDIR-PROVENANCE-STAMP — cross-repo `FLUME_DIR` inheritance refuses
+ * off a stamped `FLUME_DIR_RESOLVED_FOR`, never off the path's shape.
  * Observed on disk 2026-08-03: a nested `flume wake groom` in a CI-smoke
  * scratch repo inherited its parent process's `FLUME_DIR`, landing
- * `.flume/awake/groom` in the wrong repo's live baton.
+ * `.flume/awake/groom` in the wrong repo's live baton. The retired
+ * path-shape detection (`impliedRepoRoot`) misfired on a deliberate
+ * relocation typed fresh for this repo — spec/cli.md's drift note, closed
+ * by this stamp (told, not inferred: `.claude/rules/engine-boundary.md`).
  */
-describe("resolveStateDirs — cross-repo FLUME_DIR inheritance refusal", () => {
+describe("resolveStateDirs — cross-repo FLUME_DIR provenance-stamp refusal", () => {
   const otherRepoFlumeDir = resolve("/other/repo/.flume");
+  const otherRepoRoot = resolve("/other/repo");
 
-  it("an inherited (absolute) FLUME_DIR whose implied repo differs from repoRoot throws", () => {
-    const env: NodeJS.ProcessEnv = { FLUME_DIR: otherRepoFlumeDir };
+  it("a FLUME_DIR_RESOLVED_FOR stamp that disagrees with the freshly-resolved repoRoot throws", () => {
+    const env: NodeJS.ProcessEnv = {
+      FLUME_DIR: otherRepoFlumeDir,
+      FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+    };
     expect(() => resolveStateDirs(env, repoRoot)).toThrow(
       CrossRepoFlumeDirError,
     );
@@ -204,34 +217,40 @@ describe("resolveStateDirs — cross-repo FLUME_DIR inheritance refusal", () => 
       resolveStateDirs(env, repoRoot);
     } catch (err) {
       expect((err as Error).message).toContain(otherRepoFlumeDir);
-      expect((err as Error).message).toContain(resolve("/other/repo"));
+      expect((err as Error).message).toContain(otherRepoRoot);
       expect((err as Error).message).toContain(repoRoot);
     }
   });
 
-  it("the same shape under .flume/jobs/<name> also throws", () => {
+  it("a stamp that agrees with the freshly-resolved repoRoot does not throw", () => {
     const env: NodeJS.ProcessEnv = {
-      FLUME_DIR: resolve("/other/repo/.flume/jobs/alpha"),
+      FLUME_DIR: resolve(join(repoRoot, ".flume")),
+      FLUME_DIR_RESOLVED_FOR: resolve(repoRoot),
     };
-    expect(() => resolveStateDirs(env, repoRoot)).toThrow(
-      CrossRepoFlumeDirError,
-    );
-  });
-
-  it("an inherited FLUME_DIR whose implied repo matches repoRoot does not throw", () => {
-    const env: NodeJS.ProcessEnv = { FLUME_DIR: resolve(join(repoRoot, ".flume")) };
     expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
   });
 
-  it("an out-of-tree relocation with no .flume ancestor at all composes (no implied repo to check)", () => {
+  it("an absolute FLUME_DIR with no FLUME_DIR_RESOLVED_FOR stamp never throws, whatever its shape (misfire repro)", () => {
+    // Under the retired path-shape detection, an absolute FLUME_DIR whose
+    // path happened to end in a `.flume` segment for what looks like a
+    // different repo was refused even when typed fresh for THIS repo.
+    // `/mnt/state/.flume` is exactly that shape — a deliberate relocation,
+    // no stamp — and must compose.
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: resolve("/mnt/state/.flume") };
+    expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
+  });
+
+  it("an other-repo-shaped FLUME_DIR with no stamp at all never throws either", () => {
+    const env: NodeJS.ProcessEnv = { FLUME_DIR: otherRepoFlumeDir };
+    expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
+  });
+
+  it("an out-of-tree relocation with no .flume ancestor at all composes", () => {
     const env: NodeJS.ProcessEnv = { FLUME_DIR: resolve("/var/dock/state") };
     expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
   });
 
-  it("a relative FLUME_DIR never triggers the check, even if it would resolve under another repo's .flume", () => {
-    // Relative values resolve against THIS invocation's own cwd by
-    // construction — there is no "inherited" case for them, so the check
-    // is scoped to already-absolute values only (§12).
+  it("a relative FLUME_DIR resolves against this invocation's own cwd and carries no stamp, so it never triggers the check", () => {
     const env: NodeJS.ProcessEnv = { FLUME_DIR: "../other/repo/.flume" };
     expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
   });
@@ -2550,15 +2569,48 @@ describe("§3 job resolution — real CLI", () => {
 });
 
 /**
- * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL — end-to-end through the real CLI:
- * an inherited FLUME_DIR pointing at a *different* repo's `.flume` refuses
- * (exit 2) instead of writing there. Mirrors the 2026-08-03 incident: a
- * nested `flume wake` inherited its parent's FLUME_DIR rather than
- * resolving fresh against its own cwd.
+ * CLI-FLUMEDIR-PROVENANCE-STAMP — end-to-end through the real CLI: an
+ * inherited `FLUME_DIR_RESOLVED_FOR` stamp pointing at a *different* repo
+ * refuses (exit 2) instead of writing there. Mirrors the 2026-08-03
+ * incident: a nested `flume wake` inherited its parent's `FLUME_DIR` rather
+ * than resolving fresh against its own cwd. The stamp — not the path's
+ * shape — is what makes this genuine inheritance: the outer process's own
+ * `resolveStateDirs` write-back is what would have set
+ * `FLUME_DIR_RESOLVED_FOR=<outer.dir>` alongside `FLUME_DIR` in the first
+ * place, so a bare absolute `FLUME_DIR` with no stamp does not reproduce it.
  */
-describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL)", () => {
+describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (CLI-FLUMEDIR-PROVENANCE-STAMP)", () => {
   it(
-    "a flume invocation with FLUME_DIR inherited from another repo's tick refuses instead of writing to it",
+    "a flume invocation inheriting another repo's FLUME_DIR + FLUME_DIR_RESOLVED_FOR stamp refuses instead of writing to it",
+    async () => {
+      const outer = await makeJobRepo("main");
+      const inner = await makeJobRepo("main");
+      try {
+        const outerFlumeDir = join(outer.dir, ".flume");
+        await mkdir(outerFlumeDir, { recursive: true });
+
+        const wake = await runCli(inner.dir, ["wake", "groom"], {
+          ...hermeticEnv(),
+          FLUME_DIR: outerFlumeDir,
+          FLUME_DIR_RESOLVED_FOR: outer.dir,
+        });
+
+        expect(wake.code).toBe(2);
+        expect(wake.out).toContain(outerFlumeDir);
+        expect(wake.out).toContain(outer.dir);
+        expect(wake.out).toContain(inner.dir);
+        expect(existsSync(join(outerFlumeDir, "awake", "groom"))).toBe(false);
+        expect(existsSync(join(inner.dir, ".flume"))).toBe(false);
+      } finally {
+        await outer.cleanup();
+        await inner.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a bare absolute FLUME_DIR shaped like another repo's .flume, with no stamp, composes rather than refusing (misfire repro)",
     async () => {
       const outer = await makeJobRepo("main");
       const inner = await makeJobRepo("main");
@@ -2571,11 +2623,8 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
           FLUME_DIR: outerFlumeDir,
         });
 
-        expect(wake.code).toBe(2);
-        expect(wake.out).toContain(outerFlumeDir);
-        expect(wake.out).toContain(inner.dir);
-        expect(existsSync(join(outerFlumeDir, "awake", "groom"))).toBe(false);
-        expect(existsSync(join(inner.dir, ".flume"))).toBe(false);
+        expect(wake.code).toBe(0);
+        expect(existsSync(join(outerFlumeDir, "awake", "groom"))).toBe(true);
       } finally {
         await outer.cleanup();
         await inner.cleanup();
