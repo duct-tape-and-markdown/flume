@@ -134,7 +134,14 @@ const factory: ChainFactory = (api) => {
    * entry that edits it says so, and serializes against other entries that
    * do, which is correct.
    */
-  const channelPaths = [".flume/plan/open-questions.md", "tests/**"];
+  /**
+   * The single-file park build commits when an entry cannot ship — read back
+   * by `build.shipped` below, written per `prompts/build.md`. One constant so
+   * the instruction and the predicate cannot name different files.
+   */
+  const PARK_FILE = ".flume/plan/open-questions.md";
+
+  const channelPaths = [PARK_FILE, "tests/**"];
 
   /**
    * Build's fence, hoisted so plan's `pendingGate` can pre-check
@@ -397,6 +404,24 @@ const factory: ChainFactory = (api) => {
     // against the same object build enforces — one declaration, no drift.
     writablePaths: buildFence.writablePaths,
     entryChannelPaths: buildFence.entryChannelPaths,
+    /**
+     * This chain's own answer to "did that commit finish the work?"
+     * (`spec/pending.md`, *Ship detection trusts the agent's own account*).
+     * The engine reports facts and holds no notion of a park — the vocabulary
+     * and the convention are ours, and `prompts/build.md` is the other half:
+     * it instructs a **single-file committed park** into open-questions.md
+     * when an entry cannot ship, and this reads exactly that shape back.
+     *
+     * Deliberately not "touched only `entryChannelPaths`": `tests/**` is a
+     * channel, so that predicate would misclassify an entry whose work *is*
+     * tests — a real case (CHAINTS-PREDICATE-COVERAGE shipped that way).
+     * Only the park file itself, and nothing else, is a park.
+     */
+    shipped: ({ touchedPaths }) =>
+      !(
+        touchedPaths.length > 0 &&
+        touchedPaths.every((p) => p === PARK_FILE)
+      ),
     // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays

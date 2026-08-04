@@ -325,15 +325,6 @@ The chain that wants a park concept owns both halves of it: the prompt telling i
 declare one, and the predicate reading that declaration. One author, no seam across the engine
 boundary for the two to drift across.
 
-> **Drift:** `Phase.shipped` does not exist. `statesPark` (`src/Dispatcher.ts`) instead matches
-> `/park(?:ed|ing)?/i` against the agent's final message, held in
-> `AgentTermination.stdout`, and the outcome is named `channel-only` after a mechanism that no
-> longer decides it. The regex cannot separate *"I parked this entry"* from *"I shipped this
-> entry and parked an open question"* — the second being the path `.flume/prompts/build.md` and
-> `.claude/rules/collaboration.md` instruct — so a tick that ships real work and mentions
-> parking never leaves the queue. The rewrite is a subtraction: the engine sheds the pattern,
-> the vocabulary, and the opinion, and gains one optional hook.
-
 No new no-commit mode. The no-commit taxonomy classifies ticks that produced no usable commit;
 this sits downstream of a commit that did land, cherry-picked clean, and passed its gates. See
 spec/loop.md for the taxonomy and the verdict artifact, and spec/worktrees.md for the

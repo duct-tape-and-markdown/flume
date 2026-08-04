@@ -145,12 +145,12 @@ export interface TickVerdictGateResult {
  *                            gate (§13, RELEASE-v0.7); never reached
  *                            cherry-pick, so it never touched trunk on its
  *                            own.
- *  - `channel-only`          landed and passed every gate, but the agent's
- *                            own clean termination stated a park (spec/
+ *  - `not-shipped`           landed and passed every gate, but the phase's
+ *                            own `shipped` predicate returned false (spec/
  *                            pending.md "Ship detection trusts the agent's
- *                            own account", ruling 2026-08-03) —
- *                            stays on trunk, entry stays pending (not a
- *                            ship).
+ *                            own account") — commit stays on trunk, entry
+ *                            stays pending. The engine records the chain's
+ *                            verdict and holds no vocabulary for its reason.
  *  - `tip-moved`             the wave's own commit-onto-trunk step refused
  *                            because the ref moved since this wave started
  *                            or since its own last successful action
@@ -163,7 +163,7 @@ export type MergeOutcome =
   | "cherry-pick-conflict"
   | "afterMerge-reverted"
   | "afterCommit-reverted"
-  | "channel-only"
+  | "not-shipped"
   | "tip-moved";
 
 /**
@@ -172,7 +172,7 @@ export type MergeOutcome =
  * on the outcomes that never landed cleanly on trunk (`cherry-pick-conflict`,
  * `afterMerge-reverted`, `afterCommit-reverted`) where a captured diff
  * exists; absent when the outcome carries no footprint of its own (`merged`,
- * `channel-only`, or a best-effort capture that failed). `commitPendingUpdate`
+ * `not-shipped`, or a best-effort capture that failed). `commitPendingUpdate`
  * sources a wave's footprint commit from this same field (v0.8 §5: "now
  * generated from the same verdict record rather than separate capture") —
  * no independently-maintained observed-files map.
@@ -239,7 +239,7 @@ export interface TickVerdict {
   declined?: boolean;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: TickVerdictGateResult[];
-  /** Entry tags shipped by this tick (a stated-park termination already excluded); empty for a singleton phase. */
+  /** Entry tags shipped by this tick (entries the phase's `shipped` predicate rejected already excluded); empty for a singleton phase. */
   shippedTags: string[];
   /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
   mergeOutcomes: TickVerdictMergeOutcome[];
@@ -1800,19 +1800,24 @@ export class Dispatcher {
         `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
       );
 
-      // Landing on trunk isn't shipping — but which commit "counts" is no
-      // longer a diff against entry.files (spec/pending.md "Ship detection
-      // requires a declared-files diff", ruling 2026-08-03: entry.files is a
-      // partition prediction, not a ship contract, and reading
-      // phase.entryChannelPaths instead is the same path-inference one layer
-      // over). The one party that knows whether this commit is the entry's
-      // finished work or a park note is the agent that made it — trust its
-      // own clean termination unless its final message says otherwise.
-      if (r.termination && statesPark(r.termination)) {
+      // Landing on trunk isn't shipping, and the engine does not decide
+      // which of the two this is. It reports facts; the chain interprets
+      // (spec/pending.md "Ship detection trusts the agent's own account";
+      // engine-boundary.md "Told, not inferred"). Undeclared means shipped.
+      const shipVerdict =
+        phase.shipped?.({
+          entry: r.entry,
+          mergedSha,
+          touchedPaths: commitTouchedPaths,
+          gateResults: [...r.gateResults, ...mergeGateResults],
+          worktreePath: r.worktreePath,
+          repoRoot,
+        }) ?? true;
+      if (!shipVerdict) {
         this.log.warn(
-          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but the agent's own termination states a park — entry stays pending (channel-only commit)`,
+          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped returned false — commit stays on trunk, entry stays pending`,
         );
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "channel-only" });
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "not-shipped" });
         continue;
       }
 
@@ -2032,6 +2037,8 @@ export class Dispatcher {
     tipMoved?: boolean;
     /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
     declined?: boolean;
+    /** This entry's worktree, still on disk when the merge loop classifies it — `ShipContext.worktreePath`. */
+    worktreePath: string;
     /**
      * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
      * before `dropLastCommit` discards it — set only on an in-worktree
@@ -2068,7 +2075,7 @@ export class Dispatcher {
       this.log.info(
         `[flume] ${entry.tag}: declined (shouldRun) — no invocation`,
       );
-      return { entry, committed: false, gateResults: [], declined: true };
+      return { entry, committed: false, gateResults: [], declined: true, worktreePath: wt.path };
     }
 
     const args = phase.promptArgs?.(ctx) ?? {};
@@ -2089,7 +2096,7 @@ export class Dispatcher {
       // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
       // this entry — the agent for this entry is never invoked.
       await this.persistRenderRefused(key, entry.tag, err);
-      return { entry, committed: false, gateResults: [], noCommit: "render-refused" };
+      return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path };
     }
 
     const preHead = await git.revParse(wt.path);
@@ -2118,7 +2125,7 @@ export class Dispatcher {
         postHead,
       );
       if (tipMoved) {
-        return { entry, committed: false, gateResults: [], tipMoved: true };
+        return { entry, committed: false, gateResults: [], tipMoved: true, worktreePath: wt.path };
       }
     }
 
@@ -2130,7 +2137,7 @@ export class Dispatcher {
       // must be legible without reading session logs).
       const mode = await this.classifyNoCommit(key, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
-      return { entry, committed: false, gateResults, noCommit: mode };
+      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path };
     }
 
     const verdict = await this.runAfterCommitGates(
@@ -2171,6 +2178,7 @@ export class Dispatcher {
         committed: false,
         gateResults,
         noCommit: "gate-revert",
+        worktreePath: wt.path,
         ...(footprint ? { footprint } : {}),
       };
     }
@@ -2181,6 +2189,7 @@ export class Dispatcher {
       commitSha: postHead,
       gateResults,
       termination,
+      worktreePath: wt.path,
     };
   }
 
@@ -3427,26 +3436,6 @@ function summarize(
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
   return parts.join(" ");
-}
-
-/**
- * Whether a fanout entry's own commit-landed termination states a park —
- * `runFanout`'s ship-classification site (spec/pending.md "Ship detection
- * trusts the agent's own account", ruling 2026-08-03). Matches the same
- * vocabulary this repo's own prompts and rules already use for the concept
- * (`.flume/prompts/build.md`'s "Park the … single-file committed park",
- * `.claude/rules/collaboration.md`'s "Inform before parking") — a phrase an
- * agent naming this outcome writes without prompting, not a marker the
- * engine invented and asked for.
- *
- * A `process-failure` termination carries no message of its own
- * (`failureClass` is engine-authored, never agent prose), so it never
- * "states" anything and always returns `false` here — see {@link
- * AgentTermination}.
- */
-function statesPark(termination: AgentTermination): boolean {
-  if (termination.kind !== "clean") return false;
-  return /\bpark(?:ed|ing)?\b/i.test(finalAgentMessage(termination.stdout));
 }
 
 /**

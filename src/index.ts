@@ -21,6 +21,7 @@ export type {
   Concurrency,
   Phase,
   TickContext,
+  ShipContext,
   TickResult,
   WorktreeSetupContext,
   WorktreeSetupResult,

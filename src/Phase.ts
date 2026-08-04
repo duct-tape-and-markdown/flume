@@ -27,6 +27,31 @@ import type { NoCommitMode } from "./Prompt.js";
 export type Concurrency = "singleton" | "fanout";
 
 /**
+ * Facts about one fanout entry whose commit landed on trunk and passed every
+ * gate, handed to {@link Phase.shipped} so the chain can decide whether it
+ * counts as shipped.
+ *
+ * Everything here is something the dispatcher already holds at that moment —
+ * no work is done to build it. In particular `worktreePath` is still on disk:
+ * teardown runs after the merge loop, so a chain that wants to read something
+ * its own agent wrote can, without the engine knowing such a file exists.
+ */
+export interface ShipContext {
+  /** The entry being classified, as it appears in `pending.json`. */
+  entry: PendingEntry;
+  /** Sha of this entry's commit as cherry-picked onto trunk. */
+  mergedSha: string;
+  /** Repo-relative paths the merged commit touched (`git show --name-only`). */
+  touchedPaths: readonly string[];
+  /** This entry's own gate results — `afterCommit` in the worktree, then `afterMerge` on trunk. */
+  gateResults: readonly { gate: string; ok: boolean; message: string }[];
+  /** Absolute path to the entry's worktree, still present. */
+  worktreePath: string;
+  /** Repo root — the trunk checkout the commit landed on. */
+  repoRoot: string;
+}
+
+/**
  * Context handed to a phase's `promptArgs` builder when constructing the
  * agent invocation for one tick.
  */
@@ -186,6 +211,27 @@ export interface Phase {
    * belongs in the tick it would be trying to avoid.
    */
   shouldRun?: (ctx: TickContext) => boolean;
+
+  /**
+   * Optional predicate deciding whether a fanout entry whose commit landed
+   * and passed every gate counts as **shipped** — i.e. leaves the queue.
+   *
+   * Undeclared means shipped: a commit that landed on trunk with green
+   * gates removes its entry. That is the whole behavior for a chain with no
+   * notion of a commit that lands without finishing the work.
+   *
+   * Returning `false` records the entry `not-shipped`: the commit stays on
+   * trunk, the entry stays in `pending.json`. The engine holds no vocabulary
+   * for *why* — a park, a partial, a deliberate hand-off are one chain's
+   * words for one chain's workflow (`engine-boundary.md`, *Told, not
+   * inferred*). It reports the facts in {@link ShipContext}; the chain
+   * decides.
+   *
+   * Synchronous, like `shouldRun` and `handoff`. It runs once per merged
+   * entry, so a cheap `readFileSync` is fine and anything heavier is not.
+   * Singleton phases never call it — they carry no entry to classify.
+   */
+  shipped?: (ctx: ShipContext) => boolean;
 
   /**
    * Optional hook invoked after a fanout worktree is created, before the

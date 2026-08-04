@@ -2637,12 +2637,11 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
   }, 20_000);
 });
 
-describe("Dispatcher fanout — ship classification trusts the agent's own termination, not entry.files (spec/pending.md \"Ship detection trusts the agent's own account\", ruling 2026-08-03)", () => {
-  it("a commit touching no declared file still ships when the agent's clean termination never states a park", async () => {
-    // Pre-fix, this was the "channel-only" case: a commit outside the
-    // entry's declared files stayed pending forever. The path predicate is
-    // gone — a clean termination that never states a park ships regardless
-    // of what the diff touches.
+describe("Dispatcher fanout — ship classification is the chain's call, not the engine's (spec/pending.md \"Ship detection trusts the agent's own account\")", () => {
+  it("a commit touching no declared file still ships when the phase declares no `shipped` predicate", async () => {
+    // A commit outside the entry's declared files once stayed pending
+    // forever. No path predicate remains, and an undeclared `shipped` means
+    // shipped regardless of what the diff touches.
     await writePending(fx.repo, [makeEntry("NOTE-ONLY-SHIPS", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -2685,7 +2684,9 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
     );
     expect(outcome.result?.shippedTags).toEqual(["NOTE-ONLY-SHIPS"]);
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-    expect(warnings.some((w) => w.includes("states a park"))).toBe(false);
+    expect(warnings.some((w) => w.includes("shipped returned false"))).toBe(
+      false,
+    );
   }, 20_000);
 
   it("a normal ship that also touches channels/CHANGELOG is unaffected", async () => {
@@ -2701,7 +2702,7 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     // Ships the declared file and also touches an undeclared channel path —
-    // neither commit content nor entry.files bears on the outcome anymore.
+    // with no `shipped` predicate, neither bears on the outcome.
     const agent = fanoutAgent({
       "normal-ship": async (cwd) => {
         await writeFile(join(cwd, "src", "ok.ts"), "ok\n");
@@ -2734,8 +2735,13 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   }, 20_000);
 
-  it("an entry whose agent states a park in its final message is not classified shipped, even though its commit landed and gates passed", async () => {
-    await writePending(fx.repo, [makeEntry("STATED-PARK", ["src/ok.ts"])]);
+  it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (engine-boundary.md \"Told, not inferred\")", async () => {
+    // Fails on the pre-fix tree: `statesPark` matched /park(?:ed|ing)?/i
+    // against this message and classified a genuine ship as channel-only, so
+    // the entry never left the queue. The instructed workflow produces
+    // exactly this message — build.md tells an agent to park an open
+    // question, collaboration.md tells it to raise judgment calls that way.
+    await writePending(fx.repo, [makeEntry("SHIPS-AND-MENTIONS-PARK", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
@@ -2746,9 +2752,62 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    // The commit touches the entry's own declared file — proof this isn't a
-    // path check wearing a new name. What keeps it pending is the agent's
-    // own final message, not the diff.
+    const agent: Agent = {
+      name: "ships-and-mentions-park",
+      async invoke(inv) {
+        await writeFile(join(inv.cwd, "src", "ok.ts"), "done\n");
+        await exec("git", ["add", "."], { cwd: inv.cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(SHIPS-AND-MENTIONS-PARK): ship it"],
+          { cwd: inv.cwd },
+        );
+        return {
+          exitCode: 0,
+          stdout:
+            "Shipped the acceptance criteria. Also parked a follow-up question in open-questions.md.\n",
+          stderr: "",
+        };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["SHIPS-AND-MENTIONS-PARK"]);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+  }, 20_000);
+
+  it("an entry the phase's own `shipped` predicate rejects is not classified shipped, even though its commit landed and gates passed", async () => {
+    await writePending(fx.repo, [makeEntry("STATED-PARK", ["src/ok.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "notes/**"],
+      entryChannelPaths: ["notes/**"],
+      // The chain's convention, not the engine's: this one calls a commit
+      // touching only `notes/park.md` unfinished. The engine has no such
+      // notion and never inspects the message below.
+      shipped: ({ touchedPaths }) =>
+        !(
+          touchedPaths.length > 0 &&
+          touchedPaths.every((p) => p === "notes/park.md")
+        ),
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // The agent's final message says "Parked" in prose — deliberately, to
+    // prove the engine no longer reads it. What keeps the entry pending is
+    // the chain's predicate reading the commit's own shape.
     const agent: Agent = {
       name: "parking-fanout",
       async invoke(inv) {
@@ -2756,11 +2815,12 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
         if (slug !== "stated-park") {
           throw new Error(`parking-fanout: no action for slug '${slug}'`);
         }
-        await writeFile(join(inv.cwd, "src", "ok.ts"), "partial\n");
+        await mkdir(join(inv.cwd, "notes"), { recursive: true });
+        await writeFile(join(inv.cwd, "notes", "park.md"), "blocked\n");
         await exec("git", ["add", "."], { cwd: inv.cwd });
         await exec(
           "git",
-          ["commit", "-q", "-m", "build(STATED-PARK): partial progress"],
+          ["commit", "-q", "-m", "build(STATED-PARK): park the conflict"],
           { cwd: inv.cwd },
         );
         return {
@@ -2783,11 +2843,11 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
 
     const outcome = await dispatcher.tick();
 
-    // Lands on trunk regardless — classification, not landing, is what
-    // a stated park changes (spec/worktrees.md "In-worktree gate reverts
-    // leave a trunk footprint" makes the same landed/classified split).
-    expect(await readFile(join(fx.repo, "src/ok.ts"), "utf8")).toBe(
-      "partial\n",
+    // Lands on trunk regardless — the predicate changes classification, not
+    // landing (spec/worktrees.md "In-worktree gate reverts leave a trunk
+    // footprint" makes the same landed/classified split).
+    expect(await readFile(join(fx.repo, "notes/park.md"), "utf8")).toBe(
+      "blocked\n",
     );
     expect(outcome.result?.shippedTags).toEqual([]);
     expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
@@ -2795,7 +2855,7 @@ describe("Dispatcher fanout — ship classification trusts the agent's own termi
     ]);
     expect(
       warnings.some(
-        (w) => w.includes("STATED-PARK") && w.includes("states a park"),
+        (w) => w.includes("STATED-PARK") && w.includes("shipped returned false"),
       ),
     ).toBe(true);
   }, 20_000);
