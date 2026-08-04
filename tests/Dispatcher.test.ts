@@ -2637,7 +2637,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
   }, 20_000);
 });
 
-describe("Dispatcher fanout — ship classification trusts the agent's own termination, not entry.files (spec/pending.md \"Ship detection requires a declared-files diff\", ruling 2026-08-03)", () => {
+describe("Dispatcher fanout — ship classification trusts the agent's own termination, not entry.files (spec/pending.md \"Ship detection trusts the agent's own account\", ruling 2026-08-03)", () => {
   it("a commit touching no declared file still ships when the agent's clean termination never states a park", async () => {
     // Pre-fix, this was the "channel-only" case: a commit outside the
     // entry's declared files stayed pending forever. The path predicate is

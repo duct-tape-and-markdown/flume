@@ -147,8 +147,8 @@ export interface TickVerdictGateResult {
  *                            own.
  *  - `channel-only`          landed and passed every gate, but the agent's
  *                            own clean termination stated a park (spec/
- *                            pending.md "Ship detection requires a
- *                            declared-files diff", ruling 2026-08-03) —
+ *                            pending.md "Ship detection trusts the agent's
+ *                            own account", ruling 2026-08-03) —
  *                            stays on trunk, entry stays pending (not a
  *                            ship).
  *  - `tip-moved`             the wave's own commit-onto-trunk step refused
@@ -417,7 +417,7 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
  * this distinction only when the tick produced no commit.
  *
  * When a commit lands, `runFanout`'s ship classification consults it too
- * (spec/pending.md "Ship detection requires a declared-files diff", ruling
+ * (spec/pending.md "Ship detection trusts the agent's own account", ruling
  * 2026-08-03): a `clean` termination's final message is the agent's own
  * account of what it did, so a stated park there still keeps the entry out
  * of `shipped` even though its commit landed and its gates passed. A
@@ -2042,7 +2042,7 @@ export class Dispatcher {
     /**
      * Set only when this entry's own commit landed and passed its
      * afterCommit gates — the wave loop's ship-classification site (spec/
-     * pending.md "Ship detection requires a declared-files diff", ruling
+     * pending.md "Ship detection trusts the agent's own account", ruling
      * 2026-08-03) reads it instead of diffing the commit against
      * `declaredPaths(entry)`. Absent on every other return path: a no-commit
      * or gate-reverted entry never reaches cherry-pick, so there is nothing
@@ -3432,7 +3432,7 @@ function summarize(
 /**
  * Whether a fanout entry's own commit-landed termination states a park —
  * `runFanout`'s ship-classification site (spec/pending.md "Ship detection
- * requires a declared-files diff", ruling 2026-08-03). Matches the same
+ * trusts the agent's own account", ruling 2026-08-03). Matches the same
  * vocabulary this repo's own prompts and rules already use for the concept
  * (`.flume/prompts/build.md`'s "Park the … single-file committed park",
  * `.claude/rules/collaboration.md`'s "Inform before parking") — a phrase an
