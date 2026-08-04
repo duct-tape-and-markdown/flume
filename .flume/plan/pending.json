@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "PENDINGSCHEMA-TAG-CHARSET-SEAM-GATE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "Derive the tag-charset seam-gate tests from renderSchemaForPrompt()'s actual output per engineering.md, not a hand-copied literal."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Fix tag-charset seam-gate tests to read the real rendered hint instead of a hand-copied literal sample.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "tag charset accepted by parsePending is extracted from renderSchemaForPrompt()'s actual output, not a hardcoded sample string",
+      "tag charset rejected by parsePending (whitespace) is extracted from renderSchemaForPrompt()'s actual output, not a hardcoded literal"
+    ],
+    "acceptance": "Both 'tag: every character...' and 'tag: whitespace...' tests (tests/PendingSchema.test.ts:1042-1058) derive their input from parsing renderSchemaForPrompt()'s hint text, the way extractCharBound already does for the numeric bound, so a coreTagHint charset edit without a matching TAG_PATTERN change fails these tests.",
+    "notes": "Found sweeping tests/PendingSchema.test.ts neighborhood. coreTagHint literal at src/PendingSchema.ts:480, TAG_PATTERN at src/PendingSchema.ts:96 — currently two hand-synced copies with no test tying them together."
+  }
+]
