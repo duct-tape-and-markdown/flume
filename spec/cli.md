@@ -133,14 +133,11 @@ the supervisor's quarantine crosses the process boundary on (read back at
 `quarantinedSlugs`, `src/cli.ts`). No var is dropped or rewritten on the way
 down.
 
-> **Drift:** the guarantee does not reach the chain loads on the `job new` and
-> `job status` paths. `main()` (`src/cli.ts`) routes those verbs to
-> `runJobVerb` and returns before `resolveStateDirs` ever runs, so neither var
-> is resolved or written back — yet both branches load a real chain
-> (`job status` via `diskChainLoader`, `job new` via `jobNew` →
-> `loadChainModule`, which *invokes* the chain factory). A factory reading
-> `process.env.FLUME_DIR` sees whatever the caller's environment held, commonly
-> nothing, and its throw surfaces as `[flume] job new failed:` with exit 1.
+The guarantee reaches every subcommand, including the job verbs: `resolveStateDirs`
+runs ahead of verb dispatch rather than inside the branches that happen to need it,
+so `job new` and `job status` load their chain with the same resolved, written-back
+environment a tick would see. A factory reading `process.env.FLUME_DIR` during
+`job new` gets the resolved state root.
 
 The teardown promise ("one `rm` removes the whole footprint") is only true if
 every mutable artifact lives under `flumeDir`, and the runtime does not own

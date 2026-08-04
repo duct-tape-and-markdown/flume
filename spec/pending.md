@@ -292,28 +292,38 @@ Flume's own chain declares nothing and is therefore containment-only.
   outside the entry's fence — and names the offending paths, which reach the retrying tick
   through the `<prior-attempt>` block's gate details (see spec/loop.md).
 
-## Ship detection requires a declared-files diff
+## Ship detection trusts the agent's own account
 
-Landing on the trunk is not shipping. A commit that only writes an `entryChannelPaths` file — a
-park note, no implementation — passes every check on that path, and classifying it as shipped
+Landing on the trunk is not shipping. A commit that only writes a park note — the conflict
+recorded, no implementation — passes every check on that path, and classifying it as shipped
 would remove a never-built entry from the queue.
 
-Before an entry joins `shipped`, the dispatcher diffs the cherry-picked commit against the
-entry's **declared** `files.{new,edit,retire}` — `declaredPaths`, deliberately not
-`touchedPaths()`, which folds in `observedFiles`, itself a downstream artifact of prior
-collisions rather than evidence that *this* diff shipped work. The commit diff is the one the
-gate loop already computed for this commit, not a second `git show --name-only`.
+The only party that knows which of the two a commit is, is the agent that made it. So after the
+cherry-pick and every `afterMerge` gate, the dispatcher asks that agent's own clean termination:
+if its final message states a park, the outcome is `channel-only` and the entry stays pending;
+otherwise the entry ships.
 
-- **Zero overlap → not shipped.** The entry is not added to `shipped`/`shippedTags` and stays in
-  `pending.json` exactly as it is on disk — the absence of a removal, not a new write.
-- **Any overlap → shipped**, including a real ship that also touches channels alongside its
-  declared files. The predicate refuses only the zero-declared-files case.
-- **The commit still lands.** This gates *classification*, not *landing*: channel content must
+- **Nothing is inferred from paths.** Not `entry.files`, which is a partition prediction rather
+  than a ship contract (above), and not `phase.entryChannelPaths` either — reading a phase's
+  scratch globs instead would be the same path-inference one layer over.
+- **A process failure never states anything.** Only a `clean` termination carries agent prose;
+  a `process-failure`'s `failureClass` is engine-authored, so it is never read as a park.
+- **The commit still lands.** This gates *classification*, not *landing*: park content must
   still reach the trunk. Only whether the entry leaves the queue changes.
-- **The refusal is logged distinctly** (`touches no declared file — entry stays pending
-  (channel-only commit)`), paired with the cherry-pick line, and recorded as a `channel-only`
-  merge outcome in the tick verdict — so the wave log and the verdict both separate
-  landed-but-not-shipped from landed-and-shipped.
+- **The refusal is logged distinctly** (`the agent's own termination states a park — entry stays
+  pending (channel-only commit)`), paired with the cherry-pick line, and recorded as a
+  `channel-only` merge outcome in the tick verdict — so the wave log and the verdict both
+  separate landed-but-not-shipped from landed-and-shipped.
+
+> **Drift:** the detection is a free-text scan — `statesPark` (`src/Dispatcher.ts`) matches
+> `/\bpark(?:ed|ing)?\b/i` against the final message. It cannot distinguish *"I parked this
+> entry"* from *"I shipped this entry and parked an open question about X"*, and the second is
+> the documented workflow: `.flume/prompts/build.md` instructs a committed park, and
+> `.claude/rules/collaboration.md` instructs an agent to write an open question rather than
+> decide a judgment call silently. A tick that ships real work and mentions parking anything is
+> therefore classified `channel-only`, never leaves the queue, and is re-picked every wave —
+> the same never-shippable loop the declared-files predicate produced, reached by a different
+> route. The contract above is right; the evidence it reads is too weak to carry it.
 
 No new no-commit mode. The no-commit taxonomy classifies ticks that produced no usable commit;
 this sits downstream of a commit that did land, cherry-picked clean, and passed its gates. See
