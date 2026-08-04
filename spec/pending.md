@@ -300,42 +300,39 @@ Landing on the trunk is not shipping. A commit that only writes a park note — 
 recorded, no implementation — passes every check on that path, and classifying it as shipped
 would remove a never-built entry from the queue.
 
-The only party that knows which of the two a commit is, is the agent that made it. So the agent
-**declares** it, on disk, and the engine reads that declaration.
+Whether a landed commit is finished work or a park note is a question the engine cannot answer
+and does not try to. It reports facts; the chain interprets them.
 
-- **The declaration is an artifact, not a message.** A per-entry file at a path the engine
-  names, inside that entry's own worktree, written by the agent and read by the dispatcher
-  before teardown. It joins `RUNTIME_IGNORES` (`spec/jobs.md`), so it is gitignored by
-  machinery and can never reach a commit.
-- **Absent means shipped.** No declaration is the common case and needs no ceremony: an entry
-  whose commit landed and whose gates passed ships.
-- **Present and well-formed means parked.** The outcome is `channel-only`, the entry stays in
-  `pending.json`, and the declaration's stated reason is recorded with it.
-- **Present and malformed refuses.** A declaration the engine cannot parse fails the entry
-  loudly rather than defaulting either way — a park that fails to register silently ships a
-  never-built entry, which is the failure this whole section exists to prevent.
-- **Nothing is inferred, and nothing is scanned.** Not from paths — `entry.files` is a
-  partition prediction rather than a ship contract (above), and `phase.entryChannelPaths`
-  would be the same path-inference one layer over. And not from the agent's output stream:
-  interpreting prose the engine happens to hold in memory is state carried in the engine
-  rather than read off disk, which this project does not do.
-- **The commit still lands.** This gates *classification*, not *landing*: park content must
-  still reach the trunk. Only whether the entry leaves the queue changes.
-- **The refusal is logged distinctly** (`the agent's own termination states a park — entry stays
-  pending (channel-only commit)`), paired with the cherry-pick line, and recorded as a
-  `channel-only` merge outcome in the tick verdict — so the wave log and the verdict both
-  separate landed-but-not-shipped from landed-and-shipped.
+`Phase.shipped?: (ctx: ShipContext) => boolean` is the injection point — a sibling of
+`shouldRun` and `handoff`, synchronous like both. `ShipContext` carries what the engine already
+holds at that moment: the entry, the merged sha, the commit's touched paths, the gate results,
+and the entry's worktree path *before teardown* — so a chain that wants to read something its
+own agent wrote can, without the engine knowing such a thing exists.
 
-> **Drift:** no such artifact exists yet. `statesPark` (`src/Dispatcher.ts`) instead matches
+- **Undeclared means shipped.** A commit that landed and passed its gates ships. This is the
+  whole behavior for a chain with no park concept, and it needs no ceremony to get it.
+- **Declared means the chain decides.** Returning `false` records the entry as `not-shipped`:
+  it stays in `pending.json`, and the commit stays on trunk.
+- **The engine holds no vocabulary for why.** Not "park", not "channel-only" — those are one
+  chain's words for one chain's workflow. The engine records that the chain said no.
+- **The commit still lands either way.** This gates *classification*, not *landing*.
+- **Nothing is inferred.** Not from paths — `entry.files` is a partition prediction rather than
+  a ship contract (above), and a phase's channel globs would be the same inference one layer
+  over. Not from the agent's output stream, which is state the engine is holding rather than
+  state on disk. See `.claude/rules/engine-boundary.md` *Told, not inferred*.
+
+The chain that wants a park concept owns both halves of it: the prompt telling its agent how to
+declare one, and the predicate reading that declaration. One author, no seam across the engine
+boundary for the two to drift across.
+
+> **Drift:** `Phase.shipped` does not exist. `statesPark` (`src/Dispatcher.ts`) instead matches
 > `/park(?:ed|ing)?/i` against the agent's final message, held in
-> `AgentTermination.stdout`. Two defects, one root. It cannot distinguish *"I parked this
-> entry"* from *"I shipped this entry and parked an open question about X"* — and the second is
-> the documented workflow, since `.flume/prompts/build.md` instructs a committed park and
-> `.claude/rules/collaboration.md` instructs an open question over a silent judgment call — so a
-> tick that ships real work and mentions parking is classified `channel-only`, never leaves the
-> queue, and is re-picked every wave. And it reads a transient stream the engine is holding
-> rather than a durable artifact, which is the same border breach in miniature: state living in
-> the process instead of on the disk the next tick reads.
+> `AgentTermination.stdout`, and the outcome is named `channel-only` after a mechanism that no
+> longer decides it. The regex cannot separate *"I parked this entry"* from *"I shipped this
+> entry and parked an open question"* — the second being the path `.flume/prompts/build.md` and
+> `.claude/rules/collaboration.md` instruct — so a tick that ships real work and mentions
+> parking never leaves the queue. The rewrite is a subtraction: the engine sheds the pattern,
+> the vocabulary, and the opinion, and gains one optional hook.
 
 No new no-commit mode. The no-commit taxonomy classifies ticks that produced no usable commit;
 this sits downstream of a commit that did land, cherry-picked clean, and passed its gates. See

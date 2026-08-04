@@ -35,55 +35,76 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
-## 2026-08-04 — replace `statesPark`'s free-text scan with an on-disk declaration (operator ruling)
+## 2026-08-04 — ship classification becomes a chain predicate; the engine sheds the opinion (operator ruling)
 
-**Ruling: the park signal becomes a structured artifact the agent writes to disk.**
-`spec/pending.md` *Ship detection trusts the agent's own account* now states the
-target; its `> **Drift:**` note states what the code does today. Derive against the
-section, not against this entry's prose.
+Supersedes the on-disk-declaration entry filed earlier today, which relocated the
+opinion instead of removing it. `spec/pending.md` *Ship detection trusts the agent's
+own account* states the target; derive against the section.
 
-Two defects, one root — the engine is deciding from a transient stream it happens to
-be holding:
+**A subtraction plus one hook.** Remove `statesPark`, its regex, and every read of
+`termination` at the classification site; remove `channel-only` as engine vocabulary.
+Add `Phase.shipped?: (ctx: ShipContext) => boolean`, sibling of `shouldRun`/`handoff`
+and synchronous like both. Undeclared → shipped on commit-landed + gates-green.
+Declared and returning `false` → recorded `not-shipped`, entry stays pending, commit
+stays on trunk.
 
-1. `/park(?:ed|ing)?/i` over the final message cannot separate "I parked this
-   entry" from "I shipped this entry and parked an open question". The second is the
-   **instructed** path (`.flume/prompts/build.md` lines 26–27,
-   `.claude/rules/collaboration.md` *Inform before parking*), so a tick that ships
-   real work and mentions parking is classified `channel-only`, never leaves the
-   queue, and is re-picked every wave.
-2. `AgentTermination.stdout` is process state. Disk is state here; reading intent out
-   of memory is a border breach regardless of how good the pattern is.
+`ShipContext` carries only what the dispatcher already holds there: the entry, the
+merged sha, the commit's touched paths, the gate results, and the worktree path
+**before teardown** — the last so a chain can read what its own agent wrote without
+the engine knowing such a file exists.
 
-Contract to build, as the spec section states it:
+**Ships with `.flume/chain.ts` in the same commit.** The engine stops protecting
+against the incident that created this predicate — a tick that commits only a park
+note, passes gates, and clears its entry — so this repo's chain must declare
+`shipped` and implement that check, or the original bug returns. `.flume/prompts/
+build.md` moves in the same commit too: the chain now owns both halves, the prompt
+telling the agent how to declare a park and the predicate reading it. Harness surface
+in a build commit is deliberate here; say so in the body.
 
-- A per-entry file at a path **the engine names**, inside that entry's own worktree.
-  The agent writes it; the dispatcher reads it before teardown. No cross-boundary
-  write — the agent still writes only under its own `$PWD` (`spec/worktrees.md`).
-- The path's directory joins `RUNTIME_IGNORES` (`src/job.ts`, `spec/jobs.md`
-  *Runtime ignores*), so it is gitignored by machinery and can never ride a commit.
-- **Absent → shipped.** The common case needs no ceremony.
-- **Well-formed → `channel-only`**, entry stays pending, stated reason recorded with
-  the merge outcome.
-- **Malformed → refuse loudly.** Never default either way: a park that fails to
-  register silently ships a never-built entry, which is the failure the section
-  exists to prevent (`.claude/rules/engineering.md` *Loud or nothing*).
-- Delete `statesPark` and stop reading `termination` at the classification site.
+Per: `spec/pending.md` *Ship detection trusts the agent's own account*,
+`.claude/rules/engine-boundary.md` *Told, not inferred*. Tests: a phase with no
+`shipped` ships on commit-landed + gates-green; a declared predicate returning
+`false` leaves the entry pending with its commit on trunk; an agent whose final
+message mentions parking is **shipped** when no predicate is declared.
 
-Pick the exact path and the artifact's shape at the mechanism — the spec deliberately
-states the seam and its guarantees, not a filename.
+## 2026-08-04 — `deleteBranch` decides from git's English stderr (operator)
 
-**Ships with `.flume/prompts/build.md` in the same commit.** The prompt is what tells
-an agent how to park, and today it both instructs the old channel-path rationale and
-never mentions the declaration. A fix that lands the reader without the writer leaves
-every park undeclared and every parked entry silently shipped — strictly worse than
-the bug. That prompt is harness surface, so this entry is the exception that touches
-it; note it in the commit body.
+`src/git.ts:deleteBranch` swallows a failure when `/not found/.test(stderr)` — a regex
+over **git's own localized message**. Under any non-English `LANG`/`LC_ALL` the match
+misses and the catch rethrows, so a teardown that should be a silent no-op fails the
+tick instead. Not hypothetical: git ships translations and honours the locale.
 
-Per: `spec/pending.md` *Ship detection trusts the agent's own account*. Tests: an
-agent that ships and whose final message mentions parking something unrelated is
-classified **shipped**; an agent that writes the declaration is classified
-`channel-only` and stays pending; a malformed declaration fails loudly rather than
-resolving to either.
+`.claude/rules/engine-boundary.md` *Told, not inferred* — and unlike
+`isCjsContextLoadFailure` a few hundred lines away, which matches V8 prose because V8
+offers nothing else and **declares that at the site**, this one has a structured
+alternative: ask whether the ref exists (`git rev-parse --verify` / `show-ref`) and
+branch on that, or key on the documented exit status. Prose is not the only signal
+here, so reading it is a choice.
+
+Per candidate: `.claude/rules/platform-facts.md` is where the *fact* about git's
+localized output belongs once this lands. Test: `deleteBranch` on a missing branch is
+a no-op when git's stderr is not English.
+
+## 2026-08-04 — Claude Code's stream-json vocabulary is hardcoded in generic engine code (operator)
+
+`"assistant"` / `"result"` / `is_error` / `subtype` — one provider's NDJSON event
+names — are branched on in `src/Agent.ts` (~L416, L423, L490) **and again** in
+`src/Dispatcher.ts:finalAgentMessage` (~L3504, L3508). Two copies of one provider's
+vocabulary, both in code that is otherwise generic over agents.
+
+The posture sweep already noticed this and deferred it as "a real design fork but
+premature with only one shipped provider" — a fair call then. Filing now because the
+class has a name: `.claude/rules/engine-boundary.md` *Told, not inferred*, plus the
+sweep's standing *embedded provider knowledge* lens.
+
+Weakest of today's three, and the routing is the actual question: the duplication
+across two modules is fixable now under *The fix lands at the mechanism* regardless,
+while "should a provider supply its own transcript extractor" stays a design fork
+worth parking rather than guessing. Split it that way unless the fork resolves
+cheaply.
+
+Per candidates: `spec/chain.md` *The agent seam*. Test: the event vocabulary has one
+home; a change to it cannot leave the two readers disagreeing.
 
 ## 2026-08-04 — repoint cites of the renamed ship-detection section (operator)
 
