@@ -158,10 +158,6 @@ derived from the worktree's own manifest rather than hardcoded (`.flume/chain.ts
 assertion at the tail of its `setupWorktree` hook, so a failed provision surfaces before the
 agent runs rather than as post-agent module-resolution noise).
 
-> **Drift:** `Phase.setupWorktree`'s own JSDoc (`src/Phase.ts`) still describes the hook as
-> materializing `node_modules` and `.env` "by symlinking them from the main repo" — the exact
-> pattern this section prohibits for `node_modules` under pnpm.
-
 ## Per-entry `afterMerge` revert isolation
 
 Each entry's worktree commit is cherry-picked onto the tip individually and gated individually
