@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "SETUPWORKTREE-CMD-SHIM-SHELL-NOT-ENOENT-GATED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/setupWorktree.ts",
+          "description": "Try direct execFile first, retry with shell only on a win32 ENOENT, per platform-facts.md — currently sets shell:true unconditionally on win32 for both the pnpm and npm branches."
+        },
+        {
+          "path": "tests/setupWorktree.test.ts",
+          "description": "Pin the ENOENT-gated fallback: direct spawn used when it doesn't ENOENT; shell retry only fires on a win32 ENOENT and non-ENOENT errors propagate without retry."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "setupWorktree.ts spawns pnpm/npm with shell:true unconditionally on win32 instead of the direct-spawn-then-ENOENT-only-fallback platform-facts.md documents.",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Node refuses to spawn a `.cmd` shim without a shell"
+    },
+    "tests": [
+      "direct spawn is used and succeeds without going through a shell",
+      "a win32 ENOENT retries through the shell; a non-ENOENT error propagates without retry"
+    ],
+    "acceptance": "setupWorktree's two execFileP call sites try a direct spawn first and fall back to shell:true only on a win32 ENOENT; new tests fail on the pre-fix unconditional shell:true and pass after.",
+    "notes": "Sibling precedent already in tree: src/builtinGates.ts's execGate implements exactly this fallback for the same CVE-2024-27980 shim problem. Sharing that helper instead of re-deriving a divergent version is preferred (engineering.md 'The fix lands at the mechanism') but not required if inlining the same catch shape is simpler."
+  }
+]
