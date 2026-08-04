@@ -236,9 +236,12 @@ export interface Phase {
   /**
    * Optional hook invoked after a fanout worktree is created, before the
    * agent runs. The chain config uses this to materialize gitignored files
-   * the gates need — typically `node_modules` and `.env` — by symlinking
-   * them from the main repo. Singleton phases run in the main repo and do
-   * not invoke this.
+   * the gates need — typically `node_modules` via a real install (the
+   * exported `setupWorktree` helper runs the install a lockfile implies)
+   * and `.env` via a copy. Never symlink `node_modules` from the main
+   * repo: pnpm deletes a symlinked `node_modules` on install, breaking the
+   * pattern the first time a fanout entry installs. Singleton phases run
+   * in the main repo and do not invoke this.
    *
    * Returning `{ extraEnv }` injects those vars into the agent invocation
    * for this worktree, layered on top of the harness's `process.env`. Use
