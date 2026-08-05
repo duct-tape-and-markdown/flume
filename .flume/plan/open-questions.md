@@ -84,6 +84,27 @@ from the second and third re-confirmations (hold this `NEEDS AMENDMENT` entry ou
 `pending.json`, or otherwise stop re-deriving it as pickable, until the human edit lands) is
 now repeated a third time and still not acted on.
 
+**Re-confirmed on a fifth build tick (still unresolved):** verified via `git log --oneline --
+.flume/chain.ts` that no commit has touched the file since `7c93565` (a `spec:` commit, before
+this entry's first park) — `.flume/chain.ts:396-406`'s `build` phase is byte-identical to the
+first re-park: `entryChannelPaths: buildFence.entryChannelPaths` set, no `scopeWritesToEntry`
+anywhere on the phase. Did not re-run the full implement/test/revert cycle this time — the
+first four ticks already reproduced the identical `vitest` failure against an unchanged input,
+and a fifth mechanical reproduction of the same fact tells nobody anything the fourth didn't.
+`.flume/chain.ts` remains outside every phase's `writablePaths`; option (1) — a human adding
+`scopeWritesToEntry: true` at `.flume/chain.ts:405` — is still the only unblock, and still
+requires a human/interactive `chore(flume):` commit no autonomous tick can make.
+
+This is the fifth identical re-park of an entry whose disposition has not changed since the
+first tick. The process-improvement ask (hold a `NEEDS AMENDMENT`-blocked entry out of
+`pending.json`, or otherwise stop re-deriving it as pickable, until its blocker clears) has now
+been raised on ticks two, three, and four and acted on zero times — each raise cost a full
+agent invocation to re-arrive at a conclusion already on record. Flagging explicitly: if plan's
+re-derivation logic has no mechanism to suppress a `NEEDS AMENDMENT` open question from
+`pending.json`, that gap is itself worth an entry, separate from this one — the current loop
+shape spends one build tick per iteration proving the same one-line human edit is still
+outstanding, with no cheaper path than a human applying it.
+
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
