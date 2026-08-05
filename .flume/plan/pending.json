@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "job-status-nonenoent-read-hides-siblings",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "In jobStatus's per-job map (~L458), catch a non-ENOENT readPendingLoose throw per-job (mirror the existing null/'unparsable' convention) instead of letting it escape the whole enumeration — matches this file's own JobStatus.pending doc comment and spec/jobs.md's 'one broken plan never hides the others'."
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "Cover a multi-job jobStatus() call where one job's pending.json read fails non-ENOENT: that job's row reads unparsable, sibling jobs still list normally."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "e9e2864's readPendingLoose rethrow escapes jobStatus's per-job map — one job's non-ENOENT pending.json read failure now aborts flume job status for every job",
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "`flume job status`"
+    },
+    "tests": [
+      "jobStatus(repoRoot) returns every job's row when exactly one job's pending.json read fails non-ENOENT; the failing job's own row reads as unparsable, sibling jobs are unaffected"
+    ],
+    "acceptance": "A non-ENOENT pending.json read failure for one job under .flume/jobs/ never removes sibling jobs from flume job status output",
+    "notes": "Found sweeping src/job.ts (stamp 8312b25). e9e2864 made readPendingLoose rethrow non-ENOENT failures; jobStatus's per-job map has no per-job catch, so one job's throw escapes the whole enumeration — runJobVerb's try/catch (cli.ts) wraps the aggregate call, not each job. Contradicts JobStatus.pending's own doc comment and spec/jobs.md's 'one broken plan never hides the others'. tests/job.test.ts:1211 pins the single-job-throws shape but never covers siblings."
+  }
+]
