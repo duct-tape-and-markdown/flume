@@ -1,72 +1,10 @@
 [
   {
-    "tag": "loop-generalize-failure-backstop",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Widen the provision-only signature streak to stage-tagged (provision/merge/gate) accounting per spec/loop.md — TickVerdict gains merge cherry-pick-conflict and gate-revert signatures alongside provisionFailures; superviseLoop's quarantine + consecutive-identical backstop key off stage-tagged signature, not provision alone."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Extend the §16 superviseLoop suite to cover merge- and gate-stage quarantine/backstop, sibling to the existing provision-only cases."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Generalize the consecutive-identical-failure backstop and per-entry quarantine past provisioning to merge and gate stages",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Repeated identical failures — quarantine, then abort"
-    },
-    "tests": [
-      "a merge-stage cherry-pick-conflict is recorded on the verdict with a stage-tagged signature",
-      "a gate revert is recorded with a signature derived from gate name + failure output",
-      "per-entry quarantine crosses to a tagged merge or gate failure, not provision-only",
-      "three consecutive ticks with an identical stage-tagged signature abort at abortThreshold, for merge and gate same as provision today",
-      "a voluntary bail or park never joins the accounting",
-      "a tick recording no failure of a class clears that class's streak",
-      "existing provision-only §16 cases still pass unchanged"
-    ],
-    "acceptance": "superviseLoop aborts non-zero on 3 consecutive identical merge- or gate-stage signatures exactly as it already does for provisioning, with per-entry quarantine covering all three stages",
-    "notes": "Resolves the parked 'Merge-stage failure backstop' architecture fork — spec/loop.md already ratified one mechanism, one abortThreshold. Reuse MAX_PROVISION_SIGNATURE's bound/trim idiom for the new signatures rather than duplicating it; rename if it now covers all three stages."
-  },
-  {
-    "tag": "cli-check-verb",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "Add `flume check`: parsePending the working tree's pending.json, fence-check every entry, exit EX_DATAERR (65) naming entry + offending paths on refusal, 0 clean."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Cover check's parse-refusal, fence-refusal, and clean-pass exit paths."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add `flume check` — validate working-tree pending.json (parse + fence arithmetic) without spending an agent",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [
-      "a parsePending schema violation exits EX_DATAERR naming the entry",
-      "an entry declaring a path outside the consumer phase's fence exits EX_DATAERR naming entry + offending paths",
-      "a clean pending.json exits 0",
-      "check mutates no baton flag and invokes no agent"
-    ],
-    "acceptance": "flume check exits 65 naming entry/paths on a fence or parse violation, 0 on a clean pending.json, with no agent spawned",
-    "notes": "Resolves the parked 'flume check' question — reuse builtinGates.ts's pendingGate fence arithmetic (declaredPaths/matchesAny/entryWriteScopeUnion), don't reimplement it. Resolve the consumer phase's fence the way .flume/chain.ts wires buildFence into pendingGate's targetFence."
-  },
-  {
     "tag": "cli-friction-verb",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -97,7 +35,10 @@
   },
   {
     "tag": "cli-log-verb",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
