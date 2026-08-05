@@ -1,39 +1,5 @@
 [
   {
-    "tag": "cli-friction-verb",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "Add `flume friction [name]`: bare lists the declared channel's notes (filename, size, mtime); with name, prints that note's bytes verbatim. Undeclared Chain.friction refuses usage-shaped, exit 2."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Cover list, cat-by-name, undeclared-channel refusal, and declared-but-absent-dir empty-list cases."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add `flume friction [name]` read verb — list or cat the declared friction channel's notes, uninterpreted",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [
-      "bare friction lists declared channel notes (filename, size, mtime)",
-      "friction <name> prints that note's bytes verbatim",
-      "undeclared Chain.friction refuses usage-shaped, exit 2, naming the missing declaration",
-      "a declared-but-absent friction dir lists empty, exits 0"
-    ],
-    "acceptance": "flume friction [name] lists/cats the declared channel per spec/cli.md, refusing usage-shaped when undeclared",
-    "notes": "Resolves the parked 'Friction read verbs' question — spec/chain.md's Chain.friction section already moved to 'interpreting' (not 'reading') its content, licensing this read verb. Mirror src/cli.ts's existing job-status friction-dir resolution (~L519) rather than re-deriving it."
-  },
-  {
     "tag": "cli-log-verb",
     "gate": {
       "kind": "open"
