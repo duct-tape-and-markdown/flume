@@ -288,7 +288,9 @@ Flume's own chain declares nothing and is therefore containment-only.
   `effectiveFenceLines` (`src/Prompt.ts`), which renders it into the tick's `<harness>` block.
   The stated fence and the enforced fence cannot differ, because they are the same computation.
   Path matching is `matchesAny` (`src/paths.ts`) — regex specials escaped, `*` and `**` the only
-  wildcards, so a declared literal path matches only itself.
+  wildcards, so a declared literal path matches only itself. `matchesAny` rides `FlumeApi`
+  (`spec/chain.md`), so a chain predicate over the same globs shares the enforcing matcher
+  instead of hand-rolling one.
 - **Failure semantics are the phase guard's**: whole-commit revert. The violation message
   distinguishes the two failure modes — outside the ceiling, versus inside the ceiling but
   outside the entry's fence — and names the offending paths, which reach the retrying tick

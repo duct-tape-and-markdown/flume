@@ -22,7 +22,10 @@ runtime.
   because a named export cannot receive the API.
 - `FlumeApi` (`src/flumeApi.ts:FlumeApi`) carries the runtime surface a chain
   composes with — builtin gates, `setupWorktree`, the pending-schema helpers,
-  the agent constructors and decorators, read-only git helpers, and the error
+  the agent constructors and decorators, the path-glob matcher `matchesAny`
+  (`src/paths.ts` — the same matcher the write fence enforces with, so chain
+  path policy such as a shipped predicate never hand-rolls a second grammar
+  beside the engine's), read-only git helpers, and the error
   classes chains branch on with `instanceof`. Each member is declared with
   `typeof` against the real implementation, so the handed surface cannot drift
   from what the engine exports: a signature change breaks at compile time
@@ -67,6 +70,38 @@ rewrite or an identity check would only redirect or report it.
 that chains stop taking *values* from it. No loader hook, specifier rewriting,
 version comparison, or lockfile check is part of this: it is an identity
 contract, not a version one (see `spec/cli.md` for the exec-local doctrine).
+
+## A dead declaration is refused at load
+
+A chain field whose only consumer is statically unreachable from the rest of
+the same declaration is a defect in the chain, and the loader refuses it with
+a usage-shaped error naming the field and the declaration that disarms it
+(`src/Dispatcher.ts:loadChainModule`) — never loaded silently. Config the
+engine will never consult is stale narration wearing declaration syntax: it
+reads as live policy while governing nothing, and nobody is told.
+
+The decidable instances, each checkable from the declaration alone, no tick
+required:
+
+- **`phase.entryChannelPaths` without `phase.scopeWritesToEntry: true`.** The
+  channel allowance is only consulted on a scoped tick (`spec/pending.md`,
+  *The entry-scoped write guard is opt-in, and off by default*), so without
+  the flag the globs govern nothing. The field-traced shape is a chain
+  migrated across the narrowing-becomes-opt-in flip that kept its channel
+  paths and missed the new flag — quietly running under the wider fence the
+  old default would have narrowed.
+- **A gate declaring `when: "afterMerge"` on a `concurrency: "singleton"`
+  phase.** The merge loop is the only site that executes those gates, and a
+  singleton phase never enters it (*Gate placement is the chain's decision*,
+  below).
+
+The bar is static deadness, never disuse: an empty `entryChannelPaths: []` on
+a scoped phase and an `afterMerge` gate on a fanout phase both load. The
+engine is not policing convention here — it refuses only a declaration its
+own mechanics provably cannot reach, which is knowledge no chain owns. And
+refusal, not a warning, is the shape (`engineering.md`, *Loud or nothing*): a
+warning is a marker someone must remember to inspect, and the operator of an
+autonomous loop reads exit codes, not scrollback.
 
 ## Chain resolution is per-tick, and the tick is a fresh process
 
@@ -302,29 +337,46 @@ resolved `flumeDir`, same idiom as `seedDir`.
 
 ## Supervisor policy is a chain-overridable default
 
-`Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?: number }`
-(`src/Phase.ts:Chain`). The engine's provisioning-failure policy — run-scoped
-quarantine of an entry slug whose worktree provisioning failed, and abort after
-three consecutive identical failure signatures — ships as **defaults, not
-behavior** (`src/Dispatcher.ts:superviseLoop`, `quarantineScope ?? "run"`,
-`abortThreshold ?? 3`). The CLI reads the block off the resolved chain and
-forwards it; a chain declaring nothing gets the defaults byte-identically.
+`Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
+number; maxParallel?: number; tickTimeoutMs?: number }` (`src/Phase.ts:Chain`).
+The engine's loop policy — run-scoped quarantine of an entry slug whose
+worktree provisioning failed, abort after three consecutive identical failure
+signatures, fanout batch width, and the per-invocation wall-clock cap — ships
+as **defaults, not behavior** (`src/Dispatcher.ts:superviseLoop`,
+`quarantineScope ?? "run"`, `abortThreshold ?? 3`; `runFanout`,
+`maxParallel ?? 4`; `tickTimeoutMs` default unset — no cap). A chain declaring
+nothing gets the defaults byte-identically.
 
-**The block is read once per run, not once per tick** — the one declaration
-outside the per-tick guarantee above. The supervisor resolves the chain in its
-own process before the first child (`src/cli.ts` loop branch) and
-`src/Dispatcher.ts:superviseLoop` binds `quarantineScope`/`abortThreshold`
-before entering the tick loop; nothing re-reads them between children. A tick
-that commits a changed `supervisorPolicy` is governed by the old values until
-the operator restarts `flume loop`, with no indication the new declaration was
-ignored. Run scope is the reason, not an oversight: the quarantine set and the
-consecutive-failure streak are run-scoped accounting that resets per
-`superviseLoop` call, so a mid-run policy change would rewrite the rules the
-accumulated counts were gathered under.
+**The block's fields split by read scope, and the split is principled:**
 
-This is the policy-constant rule made concrete: retry counts, quarantine scope,
-and abort thresholds enter the engine only as chain-overridable defaults. The
-mechanism they tune is `spec/loop.md`.
+- **`quarantineScope`/`abortThreshold` are read once per run** — the one
+  declaration outside the per-tick guarantee above. The supervisor resolves
+  the chain in its own process before the first child (`src/cli.ts` loop
+  branch) and `src/Dispatcher.ts:superviseLoop` binds both before entering the
+  tick loop; nothing re-reads them between children. A tick that commits a
+  changed value is governed by the old one until the operator restarts
+  `flume loop`, with no indication the new declaration was ignored. Run scope
+  is the reason, not an oversight: the quarantine set and the
+  consecutive-failure streak are run-scoped accounting that resets per
+  `superviseLoop` call, so a mid-run change would rewrite the rules the
+  accumulated counts were gathered under.
+- **`maxParallel` and `tickTimeoutMs` are read per tick**, straight off the
+  tick's own resolved chain (`runFanout`,
+  `chain.supervisorPolicy?.maxParallel ?? this.maxParallel`; `tickTimeoutMs`
+  the same shape against `DispatcherOptions.tickTimeoutMs`). Neither
+  accumulates run-scoped state, so there is nothing a mid-run change would
+  corrupt — the per-tick chain reload governs.
+
+`tickTimeoutMs` is the wall-clock cap `DispatcherOptions.tickTimeoutMs`
+already enforces per agent invocation (exceeded → the invocation is aborted
+and the tick records the abort; `src/Dispatcher.ts`). Before it rode
+`supervisorPolicy`, the dispatcher supported the cap but a CLI-driven chain
+had no way to set it — the only runaway brake on an autonomous loop was an
+operator watching verdict lines.
+
+This is the policy-constant rule made concrete: retry counts, quarantine
+scope, abort thresholds, batch width, and timeouts enter the engine only as
+chain-overridable defaults. The mechanism they tune is `spec/loop.md`.
 
 ## Gate placement is the chain's decision
 
@@ -350,11 +402,12 @@ doctrine**, and the default guidance is:
   (`src/Dispatcher.ts:runFanout`) is the only site that executes those gates; a
   singleton tick goes through `src/Dispatcher.ts:runAfterCommitGates` alone,
   which selects `when === "afterCommit"`. An `afterMerge` gate declared on a
-  `concurrency: "singleton"` phase therefore never runs, and nothing refuses
-  the declaration at load. The placement guidance above presumes a fanout
-  phase; a singleton phase's only gate point is `afterCommit`, and
-  `prependHarnessBlock` filters the rendered gate list to match — the block
-  never names a gate that will not run.
+  `concurrency: "singleton"` phase could therefore never run, so the loader
+  refuses the declaration (*A dead declaration is refused at load*, above).
+  The placement guidance above presumes a fanout phase; a singleton phase's
+  only gate point is `afterCommit`, and `prependHarnessBlock` filters the
+  rendered gate list to match — the block never names a gate that will not
+  run.
 - A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
   the dispatcher computes once per commit, instead of re-shelling
   `git show --name-only` per gate.

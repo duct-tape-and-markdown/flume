@@ -21,7 +21,7 @@ Stack-specific conventions belong in `.claude/rules/<area>.md` and should be pat
 
 ## Workflow: Flume
 
-Two autonomous phases (plan, build) sharing one TypeScript dispatcher. Chain config in `.flume/chain.ts`; per-phase prompts in `.flume/prompts/{plan,build}.md`. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm exec flume` (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`, `render`). Plan output is structured JSON at `.flume/plan/pending.json`; prose at `.flume/plan/{state,open-questions}.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
+Two autonomous phases (plan, build) sharing one TypeScript dispatcher. Chain config in `.flume/chain.ts`; per-phase prompts in `.flume/prompts/{plan,build}.md`. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm exec flume` (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`). Plan output is structured JSON at `.flume/plan/pending.json`; prose at `.flume/plan/{state,open-questions}.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
 
 Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
