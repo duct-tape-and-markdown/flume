@@ -69,6 +69,21 @@ recommended unblock. The re-offering cost flagged above is now three ticks deep;
 plan actually act on the suggestion (hold `NEEDS AMENDMENT` entries out of `pending.json`,
 or otherwise stop re-deriving this one as pickable) rather than re-confirming it a fourth time.
 
+**Re-confirmed on a fourth build tick (still unresolved):** implemented `validateDeadDeclarations`
+(sibling to `validateFrictionDeclaration`, called from `loadChainModule`) plus the three test
+cases exactly as specified, then ran `pnpm exec vitest run tests/chain.test.ts` before
+committing. Identical failure: `phase "build" declares entryChannelPaths without
+scopeWritesToEntry: true`, thrown from the new validator, sourced from
+`.flume/chain.ts:396-405`, still unchanged since the first park three ticks ago. Reverted the
+`src/`/`tests/` edit and parked again rather than land a doomed commit — the `vitest` afterMerge
+gate would revert it regardless. `.flume/chain.ts` remains outside every phase's
+`writablePaths`; the one-line human fix (option 1, `.flume/chain.ts:405`) is still the
+recommended unblock and still requires a human/interactive `chore(flume):` commit, which no
+autonomous tick can make. This is the fourth identical re-park — the process-improvement ask
+from the second and third re-confirmations (hold this `NEEDS AMENDMENT` entry out of
+`pending.json`, or otherwise stop re-deriving it as pickable, until the human edit lands) is
+now repeated a third time and still not acted on.
+
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
