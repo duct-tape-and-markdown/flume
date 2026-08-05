@@ -60,6 +60,15 @@ stack + entry extension + park predicates as individually exported pieces, no wr
 both dogfood chains onto them — as a scoped research spike before anything bigger. Needs your
 buy-in to start.
 
+**Answered (2026-08-05, human sign-off via interactive session):** the kill-switch first step
+is approved as scoped above — diff-and-extract with API-parameterized pieces only (no engine
+value imports; the addendum's constraint is binding), no `presetChain` wrapper, no packaging
+decision. The packaging/home fork (subpath vs sibling package, versioning story) stays parked
+pending the residual-diff verdict. **Not derivable yet**: the port-proof half needs the temper
+repo, and scheduling that cross-repo work is operator-owned — plan should hold this out of
+`pending.json` until the operator opens the window, deriving only the in-repo extraction when
+that happens.
+
 ## Verdict read-side in the CLI (`flume log`-shaped verb)
 
 Status: PARTIALLY ADDRESSED
