@@ -9,102 +9,6 @@ Status markers:
 
 <!-- questions below this line -->
 
-## DEADDECL-LOAD-REFUSAL ships an engine rule the real `.flume/chain.ts` fails today
-
-Status: NEEDS AMENDMENT
-
-Build tick attempting `DEADDECL-LOAD-REFUSAL` (`loadChainModule` refuses `entryChannelPaths`
-without `scopeWritesToEntry: true`, and an `afterMerge` gate on a `concurrency: "singleton"`
-phase, per `spec/chain.md` "A dead declaration is refused at load"). Implemented the refusal in
-`src/Dispatcher.ts` exactly as the entry specifies, then ran the suite before committing.
-
-`tests/chain.test.ts:72` loads the **real** `.flume/chain.ts` via `loadChainModule` (the
-agreement-gate pattern, `engineering.md`). That chain's `build` phase (`.flume/chain.ts:396-405`)
-is exactly the field-traced defect the spec section names: `entryChannelPaths:
-buildFence.entryChannelPaths` (non-empty — `[PARK_FILE, "tests/**"]`) with no
-`scopeWritesToEntry` anywhere on the phase. With the refusal in place, `loadChainModule` throws
-on this repo's own chain, `tests/chain.test.ts` fails, and the commit's own `vitest` gate
-(afterMerge) reverts it. Confirmed empirically — implemented the change, ran
-`pnpm exec vitest run tests/chain.test.ts`, watched it fail with the new error naming `build` and
-`entryChannelPaths`, then reverted before committing.
-
-The fix on the chain side is one line — add `scopeWritesToEntry: true` to the `build` phase
-declaration at `.flume/chain.ts:396-405` (its `entryChannelPaths` already union with
-`entry.files` correctly; the flag is the only thing missing). But `.flume/chain.ts` sits outside
-every phase's `writablePaths` — `spec-plan-build.md`: "harness surfaces
-(`.flume/{chain.ts,prompts/**}`, `.claude/**`) are outside every phase lane," human-only. No
-autonomous plan or build tick can make that edit, so the engine-side entry cannot ship first
-without breaking the loop's own dogfood chain on the very next tick (chain load failure is
-mount-dead, not a gated revert — `spec/chain.md` "A broken chain fails loudly, at two layers").
-
-This isn't a spec ambiguity — the spec's own field-traced example describes this exact shape.
-It's a sequencing gap: the spec section implies both the engine rule and the chain fix land
-together, but the pipeline gives no phase authority to do both in one tick. Options:
-1. A human adds `scopeWritesToEntry: true` to `.flume/chain.ts:405` directly (one line), then
-   `DEADDECL-LOAD-REFUSAL` ships clean on a later tick.
-2. Amend `spec-plan-build.md` to carve out a narrow build-writable exception for this one line,
-   which is a bigger, worse-precedent change for a one-line fix.
-
-Recommend (1) — it's the one-line human edit the spec already prescribes as correct chain
-authoring, and it unblocks this entry without touching the phase-lane boundary. Once it lands,
-re-derive `DEADDECL-LOAD-REFUSAL` (still fully specified, unchanged) as pickable again.
-
-**Re-confirmed on a second build tick (still unresolved):** `.flume/chain.ts:396-405`'s `build`
-phase is unchanged — `entryChannelPaths` still set, `scopeWritesToEntry` still absent. Reran the
-same implementation against the current tree: `pnpm test` reproduces the identical
-`tests/chain.test.ts:72` failure, same error naming `build` and `entryChannelPaths`. Parking
-again rather than re-landing a commit that only re-derives what's already documented above; the
-disposition and recommendation are unchanged. Plan is re-deriving this entry as pickable each
-tick despite the open question's status — worth checking whether plan should hold a
-`NEEDS AMENDMENT` entry out of `pending.json` until it flips to resolved, or whether re-offering
-it every tick (and re-parking every tick) is the intended cost of leaving it pickable.
-
-**Re-confirmed on a third build tick (still unresolved):** same reproduction —
-`pnpm exec vitest run tests/chain.test.ts` throws `phase 'build' declares entryChannelPaths
-without scopeWritesToEntry: true` from the new `validateNoDeadDeclarations` at load, sourced
-from `.flume/chain.ts:396-405`, unchanged since the first park. `.flume/chain.ts` is still
-outside this tick's `writablePaths`. Parking again rather than shipping a doomed commit; option
-(1) — a human adding `scopeWritesToEntry: true` at `.flume/chain.ts:405` — remains the
-recommended unblock. The re-offering cost flagged above is now three ticks deep; recommend
-plan actually act on the suggestion (hold `NEEDS AMENDMENT` entries out of `pending.json`,
-or otherwise stop re-deriving this one as pickable) rather than re-confirming it a fourth time.
-
-**Re-confirmed on a fourth build tick (still unresolved):** implemented `validateDeadDeclarations`
-(sibling to `validateFrictionDeclaration`, called from `loadChainModule`) plus the three test
-cases exactly as specified, then ran `pnpm exec vitest run tests/chain.test.ts` before
-committing. Identical failure: `phase "build" declares entryChannelPaths without
-scopeWritesToEntry: true`, thrown from the new validator, sourced from
-`.flume/chain.ts:396-405`, still unchanged since the first park three ticks ago. Reverted the
-`src/`/`tests/` edit and parked again rather than land a doomed commit — the `vitest` afterMerge
-gate would revert it regardless. `.flume/chain.ts` remains outside every phase's
-`writablePaths`; the one-line human fix (option 1, `.flume/chain.ts:405`) is still the
-recommended unblock and still requires a human/interactive `chore(flume):` commit, which no
-autonomous tick can make. This is the fourth identical re-park — the process-improvement ask
-from the second and third re-confirmations (hold this `NEEDS AMENDMENT` entry out of
-`pending.json`, or otherwise stop re-deriving it as pickable, until the human edit lands) is
-now repeated a third time and still not acted on.
-
-**Re-confirmed on a fifth build tick (still unresolved):** verified via `git log --oneline --
-.flume/chain.ts` that no commit has touched the file since `7c93565` (a `spec:` commit, before
-this entry's first park) — `.flume/chain.ts:396-406`'s `build` phase is byte-identical to the
-first re-park: `entryChannelPaths: buildFence.entryChannelPaths` set, no `scopeWritesToEntry`
-anywhere on the phase. Did not re-run the full implement/test/revert cycle this time — the
-first four ticks already reproduced the identical `vitest` failure against an unchanged input,
-and a fifth mechanical reproduction of the same fact tells nobody anything the fourth didn't.
-`.flume/chain.ts` remains outside every phase's `writablePaths`; option (1) — a human adding
-`scopeWritesToEntry: true` at `.flume/chain.ts:405` — is still the only unblock, and still
-requires a human/interactive `chore(flume):` commit no autonomous tick can make.
-
-This is the fifth identical re-park of an entry whose disposition has not changed since the
-first tick. The process-improvement ask (hold a `NEEDS AMENDMENT`-blocked entry out of
-`pending.json`, or otherwise stop re-deriving it as pickable, until its blocker clears) has now
-been raised on ticks two, three, and four and acted on zero times — each raise cost a full
-agent invocation to re-arrive at a conclusion already on record. Flagging explicitly: if plan's
-re-derivation logic has no mechanism to suppress a `NEEDS AMENDMENT` open question from
-`pending.json`, that gap is itself worth an entry, separate from this one — the current loop
-shape spends one build tick per iteration proving the same one-line human edit is still
-outstanding, with no cheaper path than a human applying it.
-
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
@@ -192,3 +96,50 @@ comment), so no autonomous plan or build tick can fix its own prompt — this ne
 Recommend simply dropping the "Until ... ships" qualifier: the sentence's substance (accuracy
 satisfies both over- and under-declaration) holds regardless of `scopeWritesToEntry`'s
 declaration state, so the caveat can likely be cut rather than reworded.
+
+## Build tick double-wrote into trunk's `open-questions.md` — traced to agent behavior, not engine plumbing
+
+Status: NEEDS AMENDMENT
+
+Inbox 2026-08-05 incident: a worktree build tick wrote its park note to both its worktree's copy
+of `.flume/plan/open-questions.md` (committed) and the trunk checkout's copy (left uncommitted),
+dirtying trunk and refusing the dispatcher's cherry-pick — correctly, but the loop then spun
+(~$0.75/tick across 7 ticks).
+
+Investigated every engine seam this tick: `Dispatcher.runFanoutEntry` sets `ctx.cwd = wt.path`
+and passes it unchanged through `renderPrompt`/`invokeAgent` (`src/Dispatcher.ts:2106-2149`) to
+`Agent.ts`'s `claudeCode()`, which spawns the real `claude` binary with that `cwd`
+(`src/Agent.ts:143-149`) — so the agent's own env-context "working directory" line is correctly
+worktree-scoped for a fanout tick, not stale or hardcoded. `.flume/prompts/build.md` and
+`.flume/chain.ts`'s `PARK_FILE` both reference `.flume/plan/open-questions.md` as a bare relative
+string; `{{FLUME_DIR}}` (the one absolute-path template `renderPrompt` carries, trunk-anchored)
+is unused in `build.md`'s park instruction. Every checked seam is clean.
+
+Most likely remaining explanation: the agent itself constructed an absolute trunk path
+mid-session (e.g. from `git worktree list --porcelain`'s output, which lists every worktree's
+absolute path including trunk's) and used that literal path for a second `Edit` — agent
+behavior, not an engine defect.
+
+Recommend: add one line to `.flume/prompts/build.md`'s park instruction — never construct or use
+an absolute path for the park file (or any channel path); always use the bare relative path
+`.flume/plan/open-questions.md`. `.flume/prompts/**` sits outside every phase's `writablePaths`,
+so this needs a human edit; no autonomous tick can apply it.
+
+## Merge-stage failure backstop — provisioning's consecutive-identical-signature abort doesn't cover cherry-pick failures
+
+Status: PARKED
+
+Inbox 2026-08-05 incident (second seam, same incident): the same cherry-pick failure repeated
+every loop iteration with no brake, burning a full agent invocation per lap.
+`spec/loop.md`'s *Provisioning failures — quarantine, then abort* scopes the
+consecutive-identical-signature backstop (`supervisorPolicy.abortThreshold`, default 3) strictly
+to pre-tick `ProvisionFailure`s — `src/Dispatcher.ts:3195-3306`'s accounting is keyed off
+`provisionFailures`/`ProvisionFailure.signature` alone. A cherry-pick conflict at merge time
+produces no `ProvisionFailure` and isn't tracked by this streak at all.
+
+This is an architecture fork, not a decidable derivation: does the abort-backstop mechanism
+generalize to a failure-signature class spanning both provisioning and merge-stage failures (one
+accounting path, one `abortThreshold`), or does merge-stage get its own separate scheme?
+Recommend the former — one mechanism, one policy knob, keyed by failure-class-tagged signature —
+but this reshapes `spec/loop.md`'s scoping and `Dispatcher.ts`'s `superviseLoop` accounting, so
+it needs sign-off before it's derivable into a pending entry.
