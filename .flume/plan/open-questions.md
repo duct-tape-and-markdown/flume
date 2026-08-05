@@ -9,6 +9,46 @@ Status markers:
 
 <!-- questions below this line -->
 
+## DEADDECL-LOAD-REFUSAL ships an engine rule the real `.flume/chain.ts` fails today
+
+Status: NEEDS AMENDMENT
+
+Build tick attempting `DEADDECL-LOAD-REFUSAL` (`loadChainModule` refuses `entryChannelPaths`
+without `scopeWritesToEntry: true`, and an `afterMerge` gate on a `concurrency: "singleton"`
+phase, per `spec/chain.md` "A dead declaration is refused at load"). Implemented the refusal in
+`src/Dispatcher.ts` exactly as the entry specifies, then ran the suite before committing.
+
+`tests/chain.test.ts:72` loads the **real** `.flume/chain.ts` via `loadChainModule` (the
+agreement-gate pattern, `engineering.md`). That chain's `build` phase (`.flume/chain.ts:396-405`)
+is exactly the field-traced defect the spec section names: `entryChannelPaths:
+buildFence.entryChannelPaths` (non-empty — `[PARK_FILE, "tests/**"]`) with no
+`scopeWritesToEntry` anywhere on the phase. With the refusal in place, `loadChainModule` throws
+on this repo's own chain, `tests/chain.test.ts` fails, and the commit's own `vitest` gate
+(afterMerge) reverts it. Confirmed empirically — implemented the change, ran
+`pnpm exec vitest run tests/chain.test.ts`, watched it fail with the new error naming `build` and
+`entryChannelPaths`, then reverted before committing.
+
+The fix on the chain side is one line — add `scopeWritesToEntry: true` to the `build` phase
+declaration at `.flume/chain.ts:396-405` (its `entryChannelPaths` already union with
+`entry.files` correctly; the flag is the only thing missing). But `.flume/chain.ts` sits outside
+every phase's `writablePaths` — `spec-plan-build.md`: "harness surfaces
+(`.flume/{chain.ts,prompts/**}`, `.claude/**`) are outside every phase lane," human-only. No
+autonomous plan or build tick can make that edit, so the engine-side entry cannot ship first
+without breaking the loop's own dogfood chain on the very next tick (chain load failure is
+mount-dead, not a gated revert — `spec/chain.md` "A broken chain fails loudly, at two layers").
+
+This isn't a spec ambiguity — the spec's own field-traced example describes this exact shape.
+It's a sequencing gap: the spec section implies both the engine rule and the chain fix land
+together, but the pipeline gives no phase authority to do both in one tick. Options:
+1. A human adds `scopeWritesToEntry: true` to `.flume/chain.ts:405` directly (one line), then
+   `DEADDECL-LOAD-REFUSAL` ships clean on a later tick.
+2. Amend `spec-plan-build.md` to carve out a narrow build-writable exception for this one line,
+   which is a bigger, worse-precedent change for a one-line fix.
+
+Recommend (1) — it's the one-line human edit the spec already prescribes as correct chain
+authoring, and it unblocks this entry without touching the phase-lane boundary. Once it lands,
+re-derive `DEADDECL-LOAD-REFUSAL` (still fully specified, unchanged) as pickable again.
+
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
