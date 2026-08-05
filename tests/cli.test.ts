@@ -2923,3 +2923,76 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 });
+
+/**
+ * `flume friction [name]` (spec/cli.md §Subcommand surface) — the read verb
+ * over `Chain.friction`. Reuses `minimalChainSrc` from the §6 friction-line
+ * fixtures above: declaring `friction` and leaving it undeclared are both
+ * already exercised there for `flume status`; these tests hold the CLI
+ * surface itself, not the count-line helper it shares nothing with.
+ */
+describe("flume friction (spec/cli.md §Subcommand surface)", () => {
+  it("bare lists the declared channel's notes — filename, size, mtime", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      await writeFile(join(frictionDir, "b.md"), "longer note b body\n");
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(0);
+      // "note a\n" is 7 bytes; the ISO-8601 mtime carries a literal "T" and
+      // trailing "Z" regardless of host timezone.
+      expect(r.out).toMatch(/a\.md\s+7\s+\d{4}-\d{2}-\d{2}T.*Z/);
+      expect(r.out).toContain("b.md");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("friction <name> prints that note's bytes verbatim", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      const body = "line one\nline two, no trailing newline";
+      await writeFile(join(frictionDir, "note.md"), body);
+
+      const r = await runCli(repo.dir, ["friction", "note.md"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toBe(body);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("refuses usage-shaped (exit 2) naming Chain.friction when the chain declares no channel", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(2);
+      expect(r.out).toContain("Chain.friction");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("a declared-but-absent friction dir lists empty and exits 0", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      // No .flume/friction dir created — never written by any tick yet.
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(0);
+      expect(r.out.trim()).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+});

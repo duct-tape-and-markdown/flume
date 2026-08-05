@@ -11,16 +11,19 @@
  * the default `claudeCode()`.
  */
 
-import { resolve, join, dirname, basename } from "node:path";
+import { resolve, join, dirname, basename, relative, sep, isAbsolute } from "node:path";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
   unlinkSync,
 } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { Dirent } from "node:fs";
 
 import { Baton } from "./Baton.js";
 import {
@@ -57,7 +60,7 @@ import {
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
 import { parsePending, declaredPaths } from "./PendingSchema.js";
-import { matchesAny, entryWriteScopeUnion } from "./paths.js";
+import { matchesAny, entryWriteScopeUnion, namespacedJoin } from "./paths.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -288,7 +291,15 @@ export function loopCompletionSummary(
   return `[flume] ${parts.join(" | ")}`;
 }
 
-const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "check"] as const;
+const SUBCOMMANDS = [
+  "status",
+  "tick",
+  "loop",
+  "wake",
+  "sleep",
+  "check",
+  "friction",
+] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
@@ -304,6 +315,9 @@ Commands:
   check               Validate the working tree's plan/pending.json — parse
                       plus fence arithmetic against the consumer (fanout)
                       phase's declared fence — without spending an agent.
+  friction [name]     List (bare) the declared friction channel's notes —
+                      filename, size, mtime — or, with <name>, print that
+                      note's bytes verbatim. Never interpreted.
   job new <name>      Seed .flume/jobs/<name>/ from the repo chain's declared
                       Chain.seedDir, if any (runtime .gitignore, baseline
                       commit on the current HEAD). No branch created.
@@ -447,6 +461,26 @@ Exit codes:
        Naming the offending entry (and paths, for a fence violation).
   69   Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
        other reason. Nothing was checked — fix the chain and re-run.
+`,
+  friction: `Usage: flume friction [name]
+
+Bare: list the declared friction channel's (Chain.friction) notes — one line
+per file directly under the channel dir, as "<filename>  <size>  <mtime>".
+With <name>: print that note's bytes verbatim to stdout — the channel's
+content is never interpreted, only moved, counted, listed, or printed
+(spec/chain.md, "Chain.friction"). Read-only: no baton flag is touched, no
+agent runs.
+
+Exit codes:
+  0   Success — including a declared channel whose directory doesn't exist
+      yet (empty list) and a bare list against an empty channel.
+  2   Usage: Chain.friction is undeclared, extra arguments were given, or
+      <name> names no file directly under the channel dir (including a name
+      that would resolve outside it). Also: the chain failed to load with
+      the CJS-context refusal — the host repo's package.json (or the one
+      beside .flume/chain.ts) lacks "type": "module".
+  69  Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
+      other reason. Nothing was read — fix the chain and re-run.
 `,
 };
 
@@ -991,6 +1025,84 @@ async function main(): Promise<number> {
     console.log(
       `plan/pending.json valid (${parsed.entries.length} entries), fence check passed`,
     );
+    return 0;
+  }
+
+  if (cmd === "friction") {
+    const name = rest[0];
+    if (rest.length > 1) {
+      console.error("usage: flume friction [name]");
+      return 2;
+    }
+
+    let chain: Chain;
+    try {
+      ({ chain } = await diskChainLoader(configDir)());
+    } catch (err) {
+      if (err instanceof CjsContextLoadError) {
+        console.error(`[flume] ${err.message}`);
+        return 2;
+      }
+      console.error(
+        `[flume] friction: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_MOUNT_DEAD;
+    }
+
+    // Output is never interpreted — the engine's lifecycle guarantee over
+    // the channel (spec/chain.md, "Chain.friction") is interpretation-
+    // freedom, not read-freedom (spec/cli.md, "Subcommand surface"); this
+    // verb only moves bytes, it never derives meaning from them.
+    if (chain.friction === undefined) {
+      console.error(
+        "[flume] friction refuses: this chain does not declare Chain.friction",
+      );
+      return 2;
+    }
+    const frictionDir = join(flumeDir, chain.friction);
+
+    if (name !== undefined) {
+      // A user-supplied leaf must resolve inside the declared dir — reject
+      // a "../" escape the same shape validateFrictionDeclaration (loadChainModule)
+      // already refuses for the chain's own declaration.
+      const candidate = resolve(frictionDir, name);
+      const rel = relative(frictionDir, candidate);
+      const escapes = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+      let bytes: Buffer | undefined;
+      if (!escapes) {
+        try {
+          bytes = readFileSync(namespacedJoin(frictionDir, name));
+        } catch {
+          bytes = undefined;
+        }
+      }
+      if (bytes === undefined) {
+        console.error(
+          `[flume] friction: no note named '${name}' in '${chain.friction}'`,
+        );
+        return 2;
+      }
+      process.stdout.write(bytes);
+      return 0;
+    }
+
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(namespacedJoin(frictionDir), { withFileTypes: true });
+    } catch {
+      // Declared-but-absent dir lists empty (spec/cli.md): the directory is
+      // created lazily by whichever engine write needs it first, so its
+      // absence here is a legitimate, silent, zero-note state.
+      return 0;
+    }
+    const files = entries
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort();
+    for (const fileName of files) {
+      const stats = statSync(namespacedJoin(frictionDir, fileName));
+      console.log(`${fileName}  ${stats.size}  ${stats.mtime.toISOString()}`);
+    }
     return 0;
   }
 
