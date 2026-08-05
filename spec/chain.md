@@ -328,12 +328,15 @@ resolved `flumeDir`, same idiom as `seedDir`.
   first; its absence is never an error.
 - **Undeclared disables the whole channel** — every friction-lifecycle
   behavior stays off, and there is no default channel.
-- The engine guarantees the channel's lifecycle without ever reading its
-  content. Where the declaration is consumed: the runtime ignore set
+- The engine guarantees the channel's lifecycle without ever **interpreting**
+  its content — chains own what a note means; the engine may move, count,
+  list, or print bytes verbatim, and never derives a decision from them.
+  Where the declaration is consumed: the runtime ignore set
   (`spec/jobs.md`), the wave-teardown harvest and the revert note
-  (`spec/worktrees.md`, `spec/loop.md`), and the count line `flume status`,
+  (`spec/worktrees.md`, `spec/loop.md`), the count line `flume status`,
   `flume job status`, and the loop-end summary print when the channel is
-  declared and non-empty (`spec/cli.md`).
+  declared and non-empty, and the `flume friction` read verb
+  (`spec/cli.md`).
 
 ## Supervisor policy is a chain-overridable default
 

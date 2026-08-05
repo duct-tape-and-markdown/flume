@@ -23,6 +23,32 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
 - `job new|run|rm|status` — lifecycle verbs over a job's state root
   (`spec/jobs.md`).
+- `log [-n N] [--json]` — observational; prints the last N tick verdicts
+  (default 10) from `tick-verdicts.jsonl` via `readTickVerdicts`, oldest
+  first. The human form is fixed-format lines carrying only fields the
+  verdict record already holds (phase, committed, gate results, shipped
+  tags, merge outcomes); `--json` emits the records verbatim as JSONL, one
+  per line, for a supervising agent. **Facts only, never reclassified**:
+  park/bail vocabulary is the chain's, so `log` prints what the record
+  states and nothing derived (`engine-boundary.md`, *Told, not inferred*).
+  No verdicts file → prints nothing, exits 0. Mutates nothing.
+- `check` — validates the working tree's `pending.json` without spending an
+  agent: the real parse (`parsePending`, the same decode a tick's resolution
+  takes) plus fence arithmetic for every entry — declared paths against the
+  consumer phase's declared fence, the same `entryWriteScopeUnion`/
+  `matchesAny` computation the write guard enforces. Read-only; touches no
+  baton flag and invokes nothing. A parse or fence refusal exits
+  `EX_DATAERR` (65), naming the entry and the offending paths — the same
+  refusal the next tick would have bought with an invocation. Scope is
+  deliberately the engine's own mechanics alone: chain gates need a tick's
+  `GateContext` and do not run here.
+- `friction [name]` — bare, lists the declared friction channel's notes
+  (filename, size, mtime); with `name`, prints that note's bytes verbatim.
+  Output is **never interpreted** — the engine's lifecycle guarantee over
+  the channel (`spec/chain.md`) is interpretation-freedom, not
+  read-freedom, and this verb is the count line's sibling. An undeclared
+  channel refuses usage-shaped (exit 2) naming the missing `Chain.friction`
+  declaration; a declared-but-absent directory lists empty, exits 0.
 
 Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent

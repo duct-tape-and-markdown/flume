@@ -442,30 +442,48 @@ declare. `kind` is a union open to future members; each arrives with its own spe
   into a silent clean stop. The human inspects, then `flume sleep <phase>` or fixes the
   chain.
 
-## Provisioning failures — quarantine, then abort
+## Repeated identical failures — quarantine, then abort
 
-A pre-tick worktree provisioning failure (sweep or create) never reaches agent
-invocation, so it is not a no-commit mode; it is recorded as a `ProvisionFailure`
-(signature, and the entry tag when one can be blamed) on the verdict. A deterministic
-one repeats identically every tick, which is the same burn shape the mount-dead abort
-exists to prevent. Two legs, not either alone:
+A deterministic failure repeats identically every tick — the burn shape the mount-dead
+abort exists to prevent, and after the invocation each lap is paid at full agent price.
+The accounting therefore covers **every per-entry failure fact the verdict records**,
+keyed by stage-tagged signature:
+
+- **provision** — a pre-tick worktree provisioning failure (sweep or create), recorded
+  as a `ProvisionFailure` (signature, and the entry tag when one can be blamed). Never
+  reaches agent invocation, so it is not a no-commit mode.
+- **merge** — a cherry-pick failure at the merge stage (a conflict, or a dirty trunk
+  refusing the pick), recorded with the entry tag it kept pending.
+- **gate** — a gate revert, signature derived from the gate's name and failure output.
+  A retry that genuinely attempts something different produces different output and
+  breaks the streak by construction; only byte-identical repetition accumulates, and
+  output noise that defeats equality merely makes the brake conservative.
+
+A voluntary bail or park never joins the accounting — an agent correctly declining and
+naming its constraint is not evidence anything went wrong. A signature is the bounded,
+trimmed failure message used as an **opaque equality key**: compared, never parsed, so
+no stage's message grammar becomes engine-read prose (`engine-boundary.md`, *Told, not
+inferred*).
+
+Two legs, not either alone:
 
 - **Per-entry quarantine.** The supervisor quarantines the failing entry's slug for the
   remainder of the run: the entry stays in `pending.json` untouched, other entries keep
   dispatching. The quarantine crosses to each child via `FLUME_QUARANTINED_SLUGS`. It
   is run-scoped — a fresh run retries the slug, so a transient hold costs at most the
-  rest of one batch — and logged distinctly (tag, failure signature) so the skip is
-  visible, never silent. Only a *tagged* failure quarantines; a repo-level one no entry
-  can be blamed for falls to the backstop.
-- **Consecutive-identical-failure backstop.** If the same failure signature repeats
-  three consecutive ticks with no successful tick between them, the run aborts non-zero
-  with a summary naming the repeated signature. This covers the non-entry-scoped class
-  quarantine cannot isolate, generalizing the mount-dead abort past its class without
-  touching its semantics. Any tick without a provisioning failure clears the streak.
-  The streak is keyed by signature across the whole tick, not by the first failure
-  recorded — a multi-failure tick is the normal shape (`Dispatcher.runFanout` pushes a
-  repo-level prune failure first, then one per failing `createWorktree`), so a
-  signature repeating behind a varying sibling still accumulates.
+  rest of one batch — and logged distinctly (tag, stage, failure signature) so the skip
+  is visible, never silent. Only a *tagged* failure quarantines; a repo-level one no
+  entry can be blamed for falls to the backstop.
+- **Consecutive-identical-failure backstop.** If the same stage-tagged signature
+  repeats three consecutive ticks with no clearing tick between them, the run aborts
+  non-zero with a summary naming the repeated signature. This covers the
+  non-entry-scoped class quarantine cannot isolate, generalizing the mount-dead abort
+  past its class without touching its semantics. Any tick recording no failure of the
+  class clears the streaks. The streak is keyed by signature across the whole tick, not
+  by the first failure recorded — a multi-failure tick is the normal shape
+  (`Dispatcher.runFanout` pushes a repo-level prune failure first, then one per failing
+  `createWorktree`), so a signature repeating behind a varying sibling still
+  accumulates.
 
 Both constants are **engine defaults, chain-overridable** — `supervisorPolicy.quarantineScope`
 (`"run"` default, `"none"` disables the quarantine leg while the backstop still fires)
