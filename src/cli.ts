@@ -56,8 +56,19 @@ import {
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
+import { parsePending, declaredPaths } from "./PendingSchema.js";
+import { matchesAny, entryWriteScopeUnion } from "./paths.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * sysexits.h `EX_DATAERR` — a declared-world inconsistency the caller can
+ * classify from the exit status alone (`platform-facts.md`, "Exit codes come
+ * from sysexits.h"). `flume check`'s only non-zero exit: a `pending.json`
+ * that fails to parse or that declares a path outside the consumer phase's
+ * fence.
+ */
+const EX_DATAERR = 65;
 
 /**
  * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
@@ -277,7 +288,7 @@ export function loopCompletionSummary(
   return `[flume] ${parts.join(" | ")}`;
 }
 
-const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep"] as const;
+const SUBCOMMANDS = ["status", "tick", "loop", "wake", "sleep", "check"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
@@ -290,6 +301,9 @@ Commands:
   loop [--max N]      Run ticks until hibernation (default cap 50).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
+  check               Validate the working tree's plan/pending.json — parse
+                      plus fence arithmetic against the consumer (fanout)
+                      phase's declared fence — without spending an agent.
   job new <name>      Seed .flume/jobs/<name>/ from the repo chain's declared
                       Chain.seedDir, if any (runtime .gitignore, baseline
                       commit on the current HEAD). No branch created.
@@ -410,6 +424,29 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, or <phase> names a phase the loaded chain
       does not declare.
+`,
+  check: `Usage: flume check
+
+Validate the working tree's plan/pending.json without spending an agent:
+the real parse (the same decode a tick's resolution takes, against the
+loaded chain's declared entryExtension) plus fence arithmetic for every
+entry — declared paths against the consumer (fanout-concurrency) phase's
+writablePaths ∪ entryChannelPaths, the same computation the write guard
+enforces. Read-only: no baton flag is touched, no agent runs, and chain
+gates never run — only the engine's own parse + fence mechanics.
+
+Exit codes:
+  0    Pending queue parses clean and every entry's declared files survive
+       the consumer phase's fence (also 0 when plan/pending.json is absent
+       — nothing to check).
+  2    The chain failed to load with the CJS-context refusal — the host
+       repo's package.json (or the one beside .flume/chain.ts) lacks
+       "type": "module". Add it and re-run.
+  65   Data error (EX_DATAERR): plan/pending.json fails schema validation,
+       or an entry declares a path outside the consumer phase's fence.
+       Naming the offending entry (and paths, for a fence violation).
+  69   Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
+       other reason. Nothing was checked — fix the chain and re-run.
 `,
 };
 
@@ -882,6 +919,78 @@ async function main(): Promise<number> {
     }
     new Baton(flumeDir).sleep(phase);
     console.log(`slept ${phase}`);
+    return 0;
+  }
+
+  if (cmd === "check") {
+    let chain: Chain;
+    try {
+      ({ chain } = await diskChainLoader(configDir)());
+    } catch (err) {
+      if (err instanceof CjsContextLoadError) {
+        console.error(`[flume] ${err.message}`);
+        return 2;
+      }
+      console.error(
+        `[flume] check: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_MOUNT_DEAD;
+    }
+
+    const pendingPath = join(flumeDir, "plan", "pending.json");
+    let raw: string;
+    try {
+      raw = readFileSync(pendingPath, "utf8");
+    } catch {
+      console.log("plan/pending.json absent — nothing to check");
+      return 0;
+    }
+
+    const parsed = parsePending(raw, chain.entryExtension);
+    if (!parsed.ok) {
+      console.error(
+        `[flume] check: plan/pending.json has ${parsed.errors.length} schema violation(s)`,
+      );
+      for (const e of parsed.errors) {
+        console.error(`  [${e.index}] ${e.path}: ${e.message}`);
+      }
+      return EX_DATAERR;
+    }
+
+    // The consumer of the queue is whichever phase(s) pick from pending —
+    // fanout concurrency is the sole site that does (Phase.ts, "Concurrency";
+    // spec/pending.md, "Selection is the sole site; a singleton phase does
+    // not pick from pending"). Mirrors how .flume/chain.ts wires build's own
+    // writablePaths/entryChannelPaths as plan's pendingGate targetFence —
+    // for a chain with one fanout phase this is byte-identical to that
+    // fence, derived from the phase declaration instead of a chain-side
+    // constant.
+    const consumerPhases = chain.phases.filter((p) => p.concurrency === "fanout");
+    const fence = entryWriteScopeUnion(
+      consumerPhases.flatMap((p) => p.writablePaths),
+      consumerPhases.flatMap((p) => p.entryChannelPaths ?? []),
+    );
+    const violations = parsed.entries
+      .map((entry) => ({
+        tag: entry.tag,
+        offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
+      }))
+      .filter((v) => v.offending.length > 0);
+    if (violations.length > 0) {
+      console.error(
+        `[flume] check: ${violations.length} pending entr${
+          violations.length === 1 ? "y" : "ies"
+        } declare files outside the consumer phase's fence`,
+      );
+      for (const v of violations) {
+        console.error(`  [${v.tag}] ${v.offending.join(", ")}`);
+      }
+      return EX_DATAERR;
+    }
+
+    console.log(
+      `plan/pending.json valid (${parsed.entries.length} entries), fence check passed`,
+    );
     return 0;
   }
 

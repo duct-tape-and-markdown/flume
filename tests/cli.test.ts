@@ -2717,3 +2717,209 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
     30_000,
   );
 });
+
+// ---------- flume check (spec/cli.md §Subcommand surface, cli-check-verb) ----------
+
+/**
+ * A two-phase chain — singleton "plan" plus fanout "build" — carrying
+ * caller-chosen `writablePaths`/`entryChannelPaths` on `build`. `build`
+ * is the consumer phase `flume check`'s fence arithmetic reads (the sole
+ * fanout-concurrency phase, the sole kind that ever picks from `pending` —
+ * `Phase.ts` "Concurrency", `spec/pending.md` "Selection is the sole site").
+ */
+function fanoutCheckChainSrc(
+  buildWritablePaths: string[],
+  buildChannelPaths: string[] = [],
+): string {
+  return (
+    `export default () => ({ chain: {\n` +
+    `  phases: [\n` +
+    `    {\n` +
+    `      name: "plan",\n` +
+    `      description: "",\n` +
+    `      promptPath: "prompts/prompt.md",\n` +
+    `      concurrency: "singleton",\n` +
+    `      writablePaths: [".flume/plan/**"],\n` +
+    `      gates: [],\n` +
+    `      handoff: () => [],\n` +
+    `    },\n` +
+    `    {\n` +
+    `      name: "build",\n` +
+    `      description: "",\n` +
+    `      promptPath: "prompts/prompt.md",\n` +
+    `      concurrency: "fanout",\n` +
+    `      writablePaths: ${JSON.stringify(buildWritablePaths)},\n` +
+    `      entryChannelPaths: ${JSON.stringify(buildChannelPaths)},\n` +
+    `      scopeWritesToEntry: true,\n` +
+    `      gates: [],\n` +
+    `      handoff: () => [],\n` +
+    `    },\n` +
+    `  ],\n` +
+    `  humanOnly: [],\n` +
+    `} });\n`
+  );
+}
+
+async function writeCheckPending(root: string, entries: unknown[]): Promise<void> {
+  await mkdir(join(root, ".flume", "plan"), { recursive: true });
+  await writeFile(
+    join(root, ".flume", "plan", "pending.json"),
+    JSON.stringify(entries, null, 2) + "\n",
+    "utf8",
+  );
+}
+
+describe("flume check (spec/cli.md §Subcommand surface)", () => {
+  it("exits EX_DATAERR naming the entry on a parsePending schema violation", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "BAD",
+          gate: { kind: "bogus" },
+          dependsOnForks: [],
+          files: { new: [], edit: [], retire: [] },
+        },
+      ]);
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(65);
+      expect(r.out).toContain("schema violation");
+      expect(r.out).toContain("[0]");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("exits EX_DATAERR naming entry + offending paths on a fence violation", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "OUT-OF-FENCE",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [
+              { path: "docs/readme.md", description: "outside build's fence" },
+            ],
+            retire: [],
+          },
+        },
+      ]);
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(65);
+      expect(r.out).toContain("outside the consumer phase's fence");
+      expect(r.out).toContain("OUT-OF-FENCE");
+      expect(r.out).toContain("docs/readme.md");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("exits 0 on a clean pending.json", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(
+        repo.dir,
+        fanoutCheckChainSrc(["src/**"], ["tests/**"]),
+      );
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "CLEAN",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [
+              { path: "src/a.ts", description: "inside build's writablePaths" },
+              {
+                path: "tests/a.test.ts",
+                description: "inside build's entryChannelPaths",
+              },
+            ],
+            retire: [],
+          },
+        },
+      ]);
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("valid (1 entries)");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("exits 0 when plan/pending.json is absent — nothing to check", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(0);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("mutates no baton flag and invokes no agent", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "CLEAN",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [{ path: "src/a.ts", description: "clean" }],
+            retire: [],
+          },
+        },
+      ]);
+      const pendingPath = join(repo.dir, ".flume", "plan", "pending.json");
+      const before = await readFile(pendingPath, "utf8");
+
+      const r = await runCli(repo.dir, ["check"]);
+
+      expect(r.code).toBe(0);
+      // No Baton constructed — unlike `status`, whose Baton() call mkdirs
+      // awake/ as a side effect even for an all-hibernating read.
+      expect(existsSync(join(repo.dir, ".flume", "awake"))).toBe(false);
+      // Read-only: pending.json itself is byte-identical afterward.
+      expect(await readFile(pendingPath, "utf8")).toBe(before);
+      // No worktree/agent machinery ever ran.
+      expect(existsSync(join(repo.dir, ".flume", "worktrees"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("exits mount-dead (69) when no chain resolves to check the consumer fence against", async () => {
+    const repo = await makeJobRepo("main"); // no .flume/chain.ts written
+    try {
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(69);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("--help short-circuits before any chain load or side effect", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const r = await runCli(repo.dir, ["check", "--help"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("Usage: flume check");
+      expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+});
