@@ -29,6 +29,7 @@ import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../sr
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
+import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 
 const CHAIN_PATH = fileURLToPath(new URL("../.flume/chain.ts", import.meta.url));
@@ -310,5 +311,11 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
     };
 
     await expect(build.setupWorktree!(ctx)).resolves.toBeUndefined();
+  });
+});
+
+describe("buildFlumeApi().matchesAny", () => {
+  it("is the same matcher src/paths.ts exports, not a second copy", () => {
+    expect(buildFlumeApi().matchesAny).toBe(matchesAny);
   });
 });

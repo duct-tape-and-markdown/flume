@@ -37,6 +37,7 @@ import {
 } from "./Dispatcher.js";
 import { showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
+import { matchesAny } from "./paths.js";
 import {
   composePendingList,
   parsePending,
@@ -78,6 +79,7 @@ export interface FlumeApi {
   touchedPaths: typeof touchedPaths;
   isPickableNow: typeof isPickableNow;
   partitionByFileOverlap: typeof partitionByFileOverlap;
+  matchesAny: typeof matchesAny;
   renderPrompt: typeof renderPrompt;
   readTickVerdicts: typeof readTickVerdicts;
   /** Read-only git helpers a chain gate may need. */
@@ -122,6 +124,7 @@ export function buildFlumeApi(): FlumeApi {
     touchedPaths,
     isPickableNow,
     partitionByFileOverlap,
+    matchesAny,
     renderPrompt,
     readTickVerdicts,
     git: { showNameOnly },
