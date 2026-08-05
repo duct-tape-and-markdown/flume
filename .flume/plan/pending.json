@@ -1,41 +1,5 @@
 [
   {
-    "tag": "DEADDECL-LOAD-REFUSAL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Add load-time refusal in loadChainModule (~L678-745), sibling to validateFrictionDeclaration (~L581-601): usage-shaped error for (a) a phase declaring entryChannelPaths without scopeWritesToEntry:true, (b) a concurrency:singleton phase declaring an afterMerge gate."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Add refusal tests for both dead-declaration shapes, mirroring the existing absolute-path friction refusal test (~L7020)."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "loadChainModule refuses two dead declarations at load: entryChannelPaths w/o scopeWritesToEntry, and an afterMerge gate on a singleton phase",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "A dead declaration is refused at load"
-    },
-    "tests": [
-      "loadChainModule throws a usage-shaped error naming the field when a phase declares entryChannelPaths without scopeWritesToEntry:true",
-      "loadChainModule throws a usage-shaped error naming the gate and phase when a concurrency:singleton phase declares an afterMerge gate",
-      "a scoped phase with entryChannelPaths (scopeWritesToEntry:true) and a fanout phase with an afterMerge gate both still load"
-    ],
-    "acceptance": "Both dead-declaration shapes throw at loadChainModule with a usage-shaped, field-naming error; the two still-live shapes (entryChannelPaths on a scoped phase; afterMerge on a fanout phase) load unchanged.",
-    "notes": "Static deadness bar only, per spec. Verified today's runtime evidence both shapes are silently dead: entryChannelPaths only reached via `assignedEntry && phase.scopeWritesToEntry` (Dispatcher.ts:2342-2346); afterMerge gates only filtered inside fanout's per-entry isolation (Dispatcher.ts:1643), never reached by a singleton tick.",
-    "observedFiles": [
-      ".flume/plan/open-questions.md"
-    ]
-  },
-  {
     "tag": "SUPERVISORPOLICY-TICKTIMEOUTMS",
     "gate": {
       "kind": "open"
