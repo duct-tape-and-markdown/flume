@@ -2990,6 +2990,33 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
+  it("friction <name> with a nested path segment is refused the same as a missing note", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      const nestedDir = join(frictionDir, "sub");
+      await mkdir(nestedDir, { recursive: true });
+      // The file genuinely exists on disk — the refusal must come from scope
+      // (not a direct child of the declared dir), matching the bare list's
+      // direct-children enumeration and --help's stated "direct under the
+      // channel dir" restriction, not from the file being absent.
+      await writeFile(join(nestedDir, "note.md"), "nested body");
+
+      const nested = await runCli(repo.dir, ["friction", "sub/note.md"]);
+      const missing = await runCli(repo.dir, ["friction", "does-not-exist.md"]);
+      expect(nested.code).toBe(2);
+      expect(nested.code).toBe(missing.code);
+      expect(nested.out).toContain("no note named 'sub/note.md'");
+
+      // Consistent with bare list: a nested note is never enumerated either.
+      const bare = await runCli(repo.dir, ["friction"]);
+      expect(bare.out).not.toContain("note.md");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
   it("refuses usage-shaped (exit 2) naming Chain.friction when the chain declares no channel", async () => {
     const repo = await makeJobRepo("main");
     try {

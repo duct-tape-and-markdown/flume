@@ -11,7 +11,7 @@
  * the default `claudeCode()`.
  */
 
-import { resolve, join, dirname, basename, relative, sep, isAbsolute } from "node:path";
+import { resolve, join, dirname, basename } from "node:path";
 import {
   existsSync,
   mkdirSync,
@@ -1152,14 +1152,15 @@ async function main(): Promise<number> {
     const frictionDir = join(flumeDir, chain.friction);
 
     if (name !== undefined) {
-      // A user-supplied leaf must resolve inside the declared dir — reject
-      // a "../" escape the same shape validateFrictionDeclaration (loadChainModule)
-      // already refuses for the chain's own declaration.
+      // A user-supplied name must name a direct child of the declared dir —
+      // the same scope the bare list enumerates and --help documents. This
+      // also rejects a "../" escape the same shape validateFrictionDeclaration
+      // (loadChainModule) already refuses for the chain's own declaration;
+      // a nested path is refused identically, not resolved.
       const candidate = resolve(frictionDir, name);
-      const rel = relative(frictionDir, candidate);
-      const escapes = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+      const isDirectChild = dirname(candidate) === resolve(frictionDir);
       let bytes: Buffer | undefined;
-      if (!escapes) {
+      if (isDirectChild) {
         try {
           bytes = readFileSync(namespacedJoin(frictionDir, name));
         } catch {
