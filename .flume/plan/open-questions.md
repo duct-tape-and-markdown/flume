@@ -49,6 +49,16 @@ Recommend (1) — it's the one-line human edit the spec already prescribes as co
 authoring, and it unblocks this entry without touching the phase-lane boundary. Once it lands,
 re-derive `DEADDECL-LOAD-REFUSAL` (still fully specified, unchanged) as pickable again.
 
+**Re-confirmed on a second build tick (still unresolved):** `.flume/chain.ts:396-405`'s `build`
+phase is unchanged — `entryChannelPaths` still set, `scopeWritesToEntry` still absent. Reran the
+same implementation against the current tree: `pnpm test` reproduces the identical
+`tests/chain.test.ts:72` failure, same error naming `build` and `entryChannelPaths`. Parking
+again rather than re-landing a commit that only re-derives what's already documented above; the
+disposition and recommendation are unchanged. Plan is re-deriving this entry as pickable each
+tick despite the open question's status — worth checking whether plan should hold a
+`NEEDS AMENDMENT` entry out of `pending.json` until it flips to resolved, or whether re-offering
+it every tick (and re-parking every tick) is the intended cost of leaving it pickable.
+
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
