@@ -1,6 +1,6 @@
 {
   "name": "@dtmd/flume",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "A disciplined harness for AI-derivation pipelines. Disk-is-truth, stateless ticks, structured handoff, sandbox-optional.",
   "keywords": [
     "claude",
@@ -31,6 +31,9 @@
   "files": [
     "dist",
     "bin",
+    "docs",
+    "!docs/PRD-*.md",
+    "examples",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

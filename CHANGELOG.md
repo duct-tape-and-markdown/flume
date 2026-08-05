@@ -11,6 +11,30 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-05
+
+### Fixed
+
+- The published tarball now carries `docs/` and `examples/`. `package.json`'s
+  `files` allowlist covered only `dist`, `bin`, `README.md`, `LICENSE`, and
+  `CHANGELOG.md`, so every relative link in the two shipped markdown files
+  dead-ended inside `node_modules` — including
+  [`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md), which 0.10.0's own
+  changelog heading instructs the reader to consult *before* bumping their
+  pin. A consumer upgrading from `0.6.x` or `0.9.0` could not reach the guide
+  from the artifact they installed. `docs/PRD-*.md` stays out: a draft design
+  record is not consumer material.
+
+- CI's npm-pack file-set guard understands negated `files` entries. It
+  attributed every entry as an exact path or a directory prefix, so a `"!"`
+  entry matched nothing packed and tripped the under-inclusion check. A
+  negation is now held to the opposite bar — it must match something on disk
+  (a negation that excludes nothing is stale narration reading as a live
+  exclusion) and that match must be absent from the tarball (or npm did not
+  honor it). Verified against all three cases: a live negation passes, a
+  stale one fails, and a leaked one fails
+  (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
+
 ## [0.10.0] - 2026-08-04
 
 The successor to `0.9.0`. No `0.10`/`0.11` split was ever published — the

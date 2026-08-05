@@ -334,17 +334,47 @@ jobs:
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/check-pack.mjs" <<'EOF'
-          import { readFileSync } from "node:fs";
+          import { readFileSync, readdirSync } from "node:fs";
 
           const pack = JSON.parse(readFileSync(process.argv[2], "utf8"));
           const packed = (pack[0]?.files ?? []).map((f) => f.path).sort();
 
-          const allow = (JSON.parse(readFileSync("package.json", "utf8")).files ?? [])
+          const entries = (JSON.parse(readFileSync("package.json", "utf8")).files ?? [])
             .map((e) => e.replace(/\/+$/, ""));
+
+          // "files" supports negated entries ("!docs/PRD-*.md"), which subtract
+          // from a broader entry rather than contributing paths of their own.
+          // They are held to the opposite bar: a negation must exclude
+          // something that exists, or it is stale narration passing green.
+          const allow = entries.filter((e) => !e.startsWith("!"));
+          const deny = entries
+            .filter((e) => e.startsWith("!"))
+            .map((e) => e.slice(1));
+
+          const globToRe = (g) =>
+            new RegExp(
+              "^" +
+                g
+                  .split("*")
+                  .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+                  .join("[^/]*") +
+                "$",
+            );
+
+          const onDisk = (dir) => {
+            let out = [];
+            for (const e of readdirSync(dir, { withFileTypes: true })) {
+              const p = dir + "/" + e.name;
+              if (e.isDirectory()) out = out.concat(onDisk(p));
+              else out.push(p);
+            }
+            return out;
+          };
 
           // npm always packs package.json regardless of "files"; it is not an
           // allowlist entry. Every other packed path must be attributable to
-          // exactly one "files" entry (exact file, or directory prefix).
+          // exactly one positive "files" entry (exact file, or directory
+          // prefix).
           const attributable = (p) =>
             p === "package.json" ||
             allow.some((r) => p === r || p.startsWith(r + "/"));
@@ -354,7 +384,26 @@ jobs:
             (r) => !packed.some((p) => p === r || p.startsWith(r + "/")),
           );
 
-          if (stray.length || empty.length) {
+          // A negation that matched nothing on disk excludes nothing: the
+          // subtraction it claims to perform is vacuous, and the entry reads
+          // as a live exclusion while doing no work.
+          const vacuous = deny.filter((g) => {
+            const re = globToRe(g);
+            const root = g.includes("/") ? g.slice(0, g.lastIndexOf("/")) : ".";
+            let candidates;
+            try {
+              candidates = onDisk(root);
+            } catch {
+              return true;
+            }
+            return !candidates.some((p) => re.test(p));
+          });
+
+          // ...and one that matched on disk must actually be absent from the
+          // tarball, or npm did not honor it.
+          const leaked = packed.filter((p) => deny.some((g) => globToRe(g).test(p)));
+
+          if (stray.length || empty.length || vacuous.length || leaked.length) {
             if (stray.length) {
               console.error('over-inclusion — packed but not in "files":');
               for (const p of stray) console.error("  + " + p);
@@ -362,6 +411,14 @@ jobs:
             if (empty.length) {
               console.error('under-inclusion — in "files" but nothing packed:');
               for (const r of empty) console.error("  - " + r);
+            }
+            if (leaked.length) {
+              console.error('negation not honored — packed despite a "!" entry:');
+              for (const p of leaked) console.error("  + " + p);
+            }
+            if (vacuous.length) {
+              console.error('vacuous negation — "!" entry matches nothing on disk:');
+              for (const g of vacuous) console.error("  ! " + g);
             }
             console.error(
               '\npackage.json "files" is the single source of truth; ' +
@@ -372,7 +429,8 @@ jobs:
 
           console.log(
             `npm pack file-set guard: OK (${packed.length} files packed, ` +
-              'all attributable to the "files" allowlist)',
+              `all attributable to the "files" allowlist; ` +
+              `${deny.length} negation(s) verified non-vacuous)`,
           );
           EOF
           # --ignore-scripts: prepack (pnpm build) writes a script banner to
