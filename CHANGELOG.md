@@ -11,6 +11,104 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-05
+
+The first *published* 0.11 — the `v0.11 §N` labels cited in the 0.10.0
+section below remain planning labels from the pre-flatten spec corpus and
+do not refer to this release. Upgrading a 0.10.x chain: read
+[`docs/MIGRATING-0.11.md`](docs/MIGRATING-0.11.md) — its § 1 names a check
+to run **before** bumping the pin. From any earlier pin, do
+[`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) first.
+
+### Breaking
+
+- **A dead declaration is refused at chain load** (`spec/chain.md`, *A dead
+  declaration is refused at load*). Two statically decidable shapes that
+  previously loaded silently now fail with a usage-shaped error naming the
+  field and the declaration that disarms it:
+  - `phase.entryChannelPaths` without `phase.scopeWritesToEntry: true` — the
+    channel allowance is only consulted on a scoped tick, so without the
+    flag the globs govern nothing. Field-traced as the unmigrated-0.9 shape
+    (a chain that kept its channel paths across the narrowing-becomes-opt-in
+    flip and silently ran under the wider fence) — in both downstream
+    consumers *and* this repo's own dogfood chain.
+  - a gate declaring `when: "afterMerge"` on a `concurrency: "singleton"`
+    phase — the merge loop is the only site that executes those gates, and
+    a singleton phase never enters it.
+
+  The bar is static deadness, never disuse: an empty `entryChannelPaths: []`
+  on a scoped phase and an `afterMerge` gate on a fanout phase both still
+  load. Fix by deciding what the dead declaration meant: add the missing
+  flag (restoring your pre-0.10 narrowing intent), or delete the dead lines.
+
+### Added
+
+- `Chain.supervisorPolicy.tickTimeoutMs` — the per-invocation wall-clock cap
+  `DispatcherOptions.tickTimeoutMs` already enforced is now chain-settable,
+  read per tick off the resolved chain like `maxParallel`. Previously a
+  CLI-driven chain had no way to set it, leaving autonomous loops with no
+  runaway brake short of an operator watching verdict lines.
+- `flume log [-n N] [--json]` — read verb over `tick-verdicts.jsonl`: the
+  last N tick verdicts (default 10) as fixed-format lines, or verbatim JSONL
+  under `--json` for a supervising agent. Prints only facts the verdict
+  records carry — park/bail vocabulary stays the chain's.
+- `flume check` — validates the working tree's `pending.json` without
+  spending an agent: the real parse plus fence arithmetic against the
+  consumer phase's declared fence, exiting `EX_DATAERR` (65) with the entry
+  and offending paths on refusal. Deliberately engine-mechanics only; chain
+  gates need a tick's `GateContext` and do not run here.
+- `flume friction [name]` — lists the declared friction channel's notes, or
+  prints one verbatim. The engine's lifecycle guarantee over the channel is
+  interpretation-freedom, not read-freedom (`spec/chain.md`); an undeclared
+  channel refuses usage-shaped.
+- `matchesAny` rides `FlumeApi` — chain path policy (a `shipped` predicate,
+  a fence-adjacent gate) now shares the same glob matcher the write fence
+  enforces with, instead of hand-rolling a second grammar beside it.
+- `flume job new` ends by printing the next step (`flume job run <name>`),
+  closing the first-run trap where a seeded-but-never-woken job greets its
+  operator with "no phases awake; hibernating".
+
+### Changed
+
+- **The repeated-identical-failure backstop covers every per-entry failure
+  fact the verdict records** — provisioning, merge-stage (cherry-pick), and
+  gate reverts — keyed by stage-tagged signature (`spec/loop.md`, *Repeated
+  identical failures — quarantine, then abort*). Previously only
+  provisioning failures were tracked, so a deterministic cherry-pick
+  conflict re-bought a full agent invocation every lap with no brake
+  (field-traced: seven paid laps on one dirty-trunk conflict).
+  `supervisorPolicy.quarantineScope`/`abortThreshold` govern all three
+  stages; voluntary parks never join the accounting. A run that previously
+  spun forever on a deterministic merge/gate failure now quarantines the
+  entry or aborts at the threshold.
+
+### Fixed
+
+- **The fanout collector no longer orphans a multi-commit entry** (downstream
+  report, 0.10.1). Per-entry tip verify now checks **ancestry of the
+  recorded base** instead of parent equality, so an agent that commits and
+  keeps working — a tidy-up commit, a test fix — produces a completed entry
+  whose whole span gates and cherry-picks, not a `tip moved (no commit)`
+  refusal whose soft-reset the worktree teardown then destroys. A genuine
+  non-descent refusal (something rewrote the private branch) now names both
+  shas — previously the log printed only the observed HEAD's *parent*,
+  reading the agent's own work as the intruder and leaving the span's tip
+  undiscoverable — and lands in the tick verdict as its own dropped-work
+  merge-outcome fact instead of silence (`spec/loop.md`, *Tip verify*,
+  per-leg split). The singleton trunk leg keeps parent equality and its
+  declared full-span trade; its ambiguity premise holds only on a shared ref.
+- A run whose every tick fails purely at the merge stage now exits non-zero:
+  merge failures that ship nothing join the errored-tick accounting, per
+  `spec/loop.md`'s exit-code contract ("the run never lies to CI"). CI that
+  previously saw exit 0 from such a run will now — correctly — fail.
+- `flume job status` reports a job whose `pending.json` read fails
+  (permissions, a directory at that path) as unparsable in that job's row
+  instead of silently absent, and one broken job no longer hides its
+  siblings.
+- `Baton`'s fs calls route through `namespacedJoin`, so wake/sleep markers
+  survive Windows' ~260-char total path limit under a deep state root or
+  per-job dir.
+
 ## [0.10.1] - 2026-08-05
 
 ### Fixed
