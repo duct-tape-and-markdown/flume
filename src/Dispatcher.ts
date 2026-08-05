@@ -713,9 +713,9 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
   if (typeof factory !== "function") {
     throw new Error(
       `${path} must default-export a chain factory: (api) => ({ chain }). ` +
-        `Default-exporting a Chain object is the pre-0.11 shape — wrap it in a ` +
+        `Default-exporting a Chain object is the pre-0.10 shape — wrap it in a ` +
         `factory and take engine values from the parameter instead of importing ` +
-        `them (see docs/MIGRATING-0.11.md).`,
+        `them (see docs/MIGRATING-0.10.md § 2).`,
     );
   }
 

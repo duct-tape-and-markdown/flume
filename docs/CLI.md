@@ -106,7 +106,7 @@ Throw the harness away, keep the work. Four steps:
 3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
 4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
 
-The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.11.md`](MIGRATING-0.11.md) for the recipe when a job's work needs to move onto a clean branch first.
+The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.10.md`](MIGRATING-0.10.md) § 5 for the recipe when a job's work needs to move onto a clean branch first.
 
 Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a live loop or a git/filesystem failure; `2` on usage errors (missing `<name>`, or a `<name>` whose job dir does not exist).
 

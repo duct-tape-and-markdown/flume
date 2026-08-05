@@ -308,7 +308,7 @@ and `git worktree prune`. Refuses while the job's loop is live. The history
 the job produced — the commits it caused, on whatever branch it ran on —
 stays exactly where it landed; integrating or discarding that history is an
 ordinary git operation, the operator's to run. See
-[`docs/MIGRATING-0.11.md`](docs/MIGRATING-0.11.md) for the recipe when a
+[`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) § 5 for the recipe when a
 job's work needs to move onto a clean branch before it ships.
 
 Full per-verb contracts — steps, refusals, exit codes — in
@@ -354,10 +354,10 @@ follows enough usage signal to commit under semver.
 
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
-- [`docs/MIGRATING-0.8.md`](docs/MIGRATING-0.8.md) — upgrade checklist for a
-  pre-0.8 chain moving onto `@dtmd/flume@0.8.0`.
-- [`docs/MIGRATING-0.11.md`](docs/MIGRATING-0.11.md) — upgrade checklist for
-  a bay with live `job/<name>` branches moving onto `@dtmd/flume@0.11.0`.
+- [`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) — upgrade checklist for
+  any chain on `0.2.x`, `0.6.x`, or `0.9.0` moving onto
+  `@dtmd/flume@0.10.0`. Routing table up front; work only the sections your
+  starting version needs.
 - [`examples/minimal-chain.ts`](examples/minimal-chain.ts) — single-phase
   starter.
 - [`examples/cascade-chain.ts`](examples/cascade-chain.ts) — multi-phase

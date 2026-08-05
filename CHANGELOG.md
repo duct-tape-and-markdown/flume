@@ -11,6 +11,16 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-04
+
+The successor to `0.9.0`. No `0.10`/`0.11` split was ever published — the
+`v0.10`/`v0.11` labels cited throughout this section are *planning* labels
+from the pre-flatten spec corpus (`spec/RELEASE-v0.*.md`), not released
+versions. Upgrading an existing chain from any earlier pin: read
+[`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) — it carries a routing
+table by starting version, and its § 3 has a step that must land **before**
+the pin bump.
+
 ### Breaking
 
 - `GateContext.repoRoot` is no longer optional
@@ -41,7 +51,7 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   them *at equal versions*, nothing reporting it, and commits as the
   output. It also fixes a globally-invoked engine dying with a raw
   `ERR_MODULE_NOT_FOUND` for the package that was executing. New exports:
-  `FlumeApi`, `ChainFactory`. See `docs/MIGRATING-0.11.md` §2.
+  `FlumeApi`, `ChainFactory`. See `docs/MIGRATING-0.10.md` §2.
 
 - The `job/<name>` branch convention is retired from `job new`/`run`/`rm`
   (v0.11 §2/§3): `job new` no longer creates or checks out a branch — it
@@ -73,6 +83,72 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   will now fail its tick loudly instead. The error names every failing
   span's command text and stderr.
 
+- Entry-scoped write narrowing is now an explicit chain opt-in,
+  `Phase.scopeWritesToEntry` (default `false`), instead of automatic engine
+  behavior on every fanout tick with an assigned entry
+  (PENDING-SCOPEWRITESTOENTRY-OPTIN). Undeclared, a fanout tick's rendered
+  fence and its `writablePathsGate` see the phase's `writablePaths` ceiling
+  only — byte-identical to a singleton tick's. Declared `true`, behavior is
+  what every fanout tick got before: `declaredPaths(entry) ∪
+  entryChannelPaths` as the fence, `writablePaths` as the outer ceiling.
+  **A chain that relied on the old automatic narrowing must declare
+  `scopeWritesToEntry: true` on the consuming phase.** Where a phase may
+  write is a standing phase/phase relationship, not a producer entry's
+  business; the old default also forced `files` to serve two opposed masters
+  — a narrow, honest declaration for the fanout partition's disjointness key
+  and a wide, defensive one to avoid reverting the commit — at a measured
+  cost of mean first-batch wave width falling from 3.17 to 1.99 at
+  `maxParallel: 4`.
+
+- Ship classification no longer inspects which paths a commit touched. An
+  entry ships when its commit landed and its gates passed; anything beyond
+  that is the chain's call, through a new optional
+  `Phase.shipped(ctx: ShipContext): boolean` predicate consulted after the
+  merge (SHIP-CLASSIFICATION-DROPS-PATH-PREDICATE). The engine previously
+  diffed the cherry-picked commit against `declaredPaths(entry)` and kept a
+  zero-overlap entry pending, which made `entry.files` load-bearing for
+  shipping; it is now a partition prediction and a fence input only. The
+  `MergeOutcome` member for the not-shipped case is renamed `channel-only` →
+  `not-shipped`. **A chain that wants a park signal declares one** — this
+  repo's own chain returns `false` when a commit's only changed file is its
+  park file. There is no engine-side default beyond "landed and green ships"
+  (`.claude/rules/engine-boundary.md`, "Told, not inferred").
+
+- `flume render` is removed (CLI-RENDER-REMOVAL). It previewed with the
+  wrong fence, the wrong prior-attempt state, and its own re-derivation of
+  pickability that disagreed with the dispatcher's — three ways to show an
+  operator a prompt the next tick would not send. There is no replacement
+  subcommand. `renderPrompt` (`src/Prompt.ts`) is untouched and stays a
+  public export: it is the tick's own render path.
+
+- An inherited cross-repo `FLUME_DIR` is refused (`CrossRepoFlumeDirError`,
+  exit 2 — CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL). `FLUME_DIR` is absolute
+  and child processes inherit it, so a nested `flume` invocation in a
+  *different* repository wrote to the outer repo's control plane — observed
+  on disk when a CI-smoke run inside a tick planted an awake flag in this
+  repo's live baton. Provenance is **stamped, never inferred**: the
+  environment write-back now also sets `FLUME_DIR_RESOLVED_FOR=<repoRoot>`,
+  and the refusal fires only when a pre-existing stamp disagrees with the
+  freshly-resolved `repoRoot`. A value typed fresh for this invocation
+  carries no stamp and is never refused on that basis, whatever its path
+  shape. Separately, `wake`/`sleep` now load the chain best-effort (the
+  pattern `status` already uses) and refuse (exit 2) a phase absent from its
+  declared phases, before touching the awake marker.
+
+- `--job` / `FLUME_JOB` naming a state root that does not exist is refused
+  at the resolution seam (exit 2 —
+  CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT) instead of silently
+  materializing `.flume/jobs/<name>`, which turned a typo into a bare,
+  unseeded job dir. Only `job new` creates a job. `job run` stays exempt —
+  `spec/jobs.md` states its no-existence-precondition as intended.
+
+- `flume tick` and `flume loop` no longer report every `git symbolic-ref`
+  failure as a detached HEAD (LOOP-CURRENTREFPATH-CONFLATES-STATES).
+  `currentRefPath` returns a `CurrentRef` union (`ref` | `detached` |
+  `not-a-repository` | `git-unavailable`) in place of `string | null`, and
+  each kind prints its own message — invoking flume outside a repository
+  used to be told about a state it wasn't in.
+
 ### Removed
 
 - `src/git.ts`'s `commitAll` and `isDirty` (`.claude/rules/engineering.md`
@@ -80,6 +156,10 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   superseded `commitAll` and nothing ever called `isDirty`; LSP
   `findReferences` on both resolved only their own declarations. Neither
   was re-exported from `src/index.ts`.
+
+- The `flume render` subcommand, its arg parsing, its `HELP_SUB.render` and
+  `HELP_TOP` entries, and its `docs/CLI.md` section (CLI-RENDER-REMOVAL) —
+  see Breaking above.
 
 ### Added
 
@@ -187,6 +267,47 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   but a chain author had no barrel path to name it when typing their own
   handling of those fields.
 
+- `Phase.scopeWritesToEntry` — see Breaking above.
+
+- `Phase.shipped` and the `ShipContext` it receives (the entry, the merged
+  sha, the commit's touched paths, the gate results, the still-present
+  worktree path, and the repo root) — see Breaking above.
+
+- `Chain.supervisorPolicy.maxParallel` (CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE):
+  fanout batch width was `DispatcherOptions`-only, the one `supervisorPolicy`
+  sibling `quarantineScope`/`abortThreshold` didn't share, so a chain author
+  had no way to raise or lower it without a code change to the embedder.
+  `runFanout` prefers the chain's declaration over
+  `DispatcherOptions.maxParallel` (still the embedder-facing floor, default
+  4). Unlike its siblings it needs no CLI wiring: batch width carries no
+  cross-tick state, so `runFanout` reads it straight off the chain the
+  dispatcher already resolved for that tick.
+
+- `ShellGateOptions`, `PkgManagerOverride`, and `PkgManagerGate` are exported
+  types (CHAIN-EXPORT-GATE-OPTION-TYPES). `shellGate`/`tscGate`/`vitestGate`/
+  `eslintGate` shipped as values with no way for a consumer to name the shape
+  it passes them; all three now sit on `src/index.ts`'s type export list
+  alongside `PendingGateOptions`.
+
+- `pnpm run changelog` (`scripts/build-changelog.mjs`) mines an
+  `## [Unreleased]` draft from git history at cut time
+  (CLI-CHANGELOG-FROM-GIT), per `spec/cli.md`'s Versioning policy — the
+  changelog is a release artifact mined at the cut, not a per-commit
+  obligation. It prints to stdout for a human to curate and never writes
+  `CHANGELOG.md` itself. The release boundary is `CHANGELOG.md`'s own
+  top-most `## [X.Y.Z]` heading resolved via `git log -S`, deliberately not
+  the latest git tag, since a repo can cut releases without ever pushing one.
+  Entries come from `build:` commits; a `BREAKING:` body line routes an entry
+  under `### Breaking`. A subject that reads as a `build:` entry but matches
+  no declared tag shape warns on stderr rather than vanishing from the draft,
+  and a mismatched bracket pair (`(TAG]`) no longer yields a bogus tag
+  (CLI-CHANGELOG-SILENT-TAG-DROP).
+
+- `flume tick --help` lists exit 2 (CLI-HELP-TICK-MISSING-EXIT2), which
+  `tickExitCode` has always returned when `TickOutcome.usageError` is set —
+  the CJS-context refusal. The help text was silent on the one usage-shaped
+  tick failure a caller can hit.
+
 ### Fixed
 
 - `git.deleteBranch` (`src/git.ts`) now narrows its catch to git's own
@@ -261,20 +382,12 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   consumers now diverge only on which event/block types they keep
   (`.claude/rules/engineering.md` §The fix lands at the mechanism,
   DISPATCHER-STREAMJSON-PARSE-DUP).
-- `Dispatcher.ts`'s ship-detection check (§12, "does this cherry-picked
-  commit touch a declared file") now glob-matches `commitTouchedPaths`
-  against `declaredPaths(entry)` via `matchesAny`, the same matcher the
-  entry-scope write guard (`writablePathsGate` at the afterCommit gate loop)
-  already applies to that identical list. `matchesAny`/`globToRegex` move
-  from `src/builtinGates.ts` to `src/paths.ts` so both call sites share one
-  implementation. Previously the write guard glob-matched while ship
-  detection compared with `Array.includes` — a fanout entry that declared a
-  glob (`nodes/territory-*.json`) and shipped a matching file
-  (`nodes/territory-01.json`) passed the write guard, cherry-picked onto
-  trunk, then failed the literal-equality ship check and stayed pending
-  forever: landed work re-attempted every tick, never draining
-  (`.claude/rules/engineering.md` §The fix lands at the mechanism,
-  SHIPDETECT-LITERAL-VS-GLOB-DISAGREEMENT).
+- `matchesAny`/`globToRegex` move from `src/builtinGates.ts` to
+  `src/paths.ts`, so the entry-scope write guard and every other glob
+  consumer share one matcher instead of re-deriving it
+  (`.claude/rules/engineering.md` §The fix lands at the mechanism). The
+  ship-detection call site that motivated the move is gone — see the
+  ship-classification entry under Breaking.
 - `readPriorAttempt`'s `existsSync`/`readFile`, `writePriorAttempt`'s
   `mkdir`/`writeFile`, and `clearPriorAttempt`'s `rm` on `priorAttemptPath`
   now route through `toNamespacedPath`, the same idiom the §8 reverted-prose
@@ -373,9 +486,9 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   starts) and the rewrite a ship wave derives (`commitPendingUpdate`) now
   refuse — the tick returns a `failed` outcome (the `EX_MOUNT_DEAD` class)
   instead of reporting nothing pickable and hibernating clean, or
-  committing `[]` over the whole file. `flume render` refuses the same way
-  instead of printing the parse errors and rendering a prompt over an
-  empty queue anyway (`.claude/rules/engineering.md`, "Loud or nothing").
+  committing `[]` over the whole file (`.claude/rules/engineering.md`,
+  "Loud or nothing"). A tolerant reader survives only for the two
+  `pendingAfter` report reads, declared at both call sites.
 - `pendingGate`'s fence pre-check no longer reads `touchedPaths()`, which
   folds in dispatcher-written `observedFiles` — a footprint signal, not a
   declaration. An entry whose declared `files` all clear the target fence
@@ -492,6 +605,86 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   today — the fix is the shared computation, pinned in
   `tests/Dispatcher.test.ts` against a future one-sided edit
   (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+- `superviseLoop` counts a non-zero child exit as an errored tick whenever
+  the verdict step didn't already classify that tick as errored
+  (LOOP-ERRORED-TICKS-SILENT-EXIT). A child can exit non-zero without ever
+  reaching the verdict write — the CJS-context refusal (2), the
+  detached-HEAD/harness-error refusal (1), an uncaught throw out of
+  `Dispatcher.tick` — and none of those trip the `EX_TERMINAL_MISCONFIG` or
+  `EX_MOUNT_DEAD` fail-fast legs. A run where every tick refused before
+  writing anything could exit 0 and tell CI it succeeded.
+- A wave's verdict survives a ledger-rewrite `PendingParseFailure`
+  (LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE). `commitPendingUpdate`'s
+  rewrite read is the strict reader; when it threw after a wave had already
+  cherry-picked and `afterMerge`-gated its entries onto trunk, the throw
+  propagated to `tick()`'s catch, which returned a failed outcome with no
+  verdict at all — the shipped tags were real and on trunk but never reached
+  the on-disk artifact, so run totals never counted them and only the exit
+  code showed anything had happened. `runFanout` now throws a
+  `WaveLedgerParseFailure` carrying the verdict the wave had already
+  computed. The refusal itself (exit 69, `pending.json` left untouched) is
+  unchanged.
+- A tip-moved revert undoes the tick's whole commit span, not just the newest
+  commit (LOOP-TIPMOVED-MULTICOMMIT-TICK). `checkTipMoved` compared only
+  `postHead`'s immediate parent and the revert hardcoded a one-commit soft
+  reset, so an agent invocation that landed two or more commits in one tick
+  left the earlier ones on the tip — un-gated, with `committed: false` hiding
+  that anything had shipped. `git.commitsSince` now measures the real span
+  and both sites thread the count through to `softReset`; a single-commit
+  tick still resets by one, byte-identical to before.
+- The consecutive-identical-failure abort backstop tracks every provisioning
+  failure signature, not just index 0 (LOOP-BACKSTOP-SIGNATURE-INDEX0-ONLY).
+  A signature repeating on every tick behind a varying sibling at index 0
+  never accumulated a streak and never aborted — and multi-failure ticks are
+  the normal shape, since `runFanout` pushes an untagged repo-level prune
+  failure ahead of one per failing `createWorktree`. A per-signature streak
+  map replaces the single last-signature/streak pair.
+- `harvestFriction` stamps its destination filename
+  (WORKTREES-HARVESTFRICTION-COLLISION). It composed the destination from
+  `${tag}--${file.name}` with no exists-check ahead of `rename` or the
+  `EXDEV` `copyFile` fallback — both silently replace. A tag recurring across
+  waves whose agent reused a friction filename destroyed the earlier,
+  still-unread note the moment the second harvest landed. `writeRevertNote`,
+  writing into the same directory, already stamped its filenames; the two
+  writers now agree.
+- `git.deleteBranch` keys its missing-branch check off git's exit code rather
+  than regex-matching `/not found/` against git's stderr prose — English
+  wording `git.ts` never asked git to guarantee, which a non-English locale
+  rephrases into an unhandled rejection. `git show-ref --verify --quiet`
+  signals existence through its exit code alone
+  (`.claude/rules/engine-boundary.md`, "Told, not inferred").
+- `acquireTipClaim`'s dead-pid reclaim narrows its `unlink` catch to
+  `ENOENT`. It previously swallowed any unlink failure, so a persistent
+  non-`ENOENT` failure (`EACCES`, say) spun the retry loop indefinitely
+  instead of surfacing the error — a confident hang in place of a
+  diagnosable error (`.claude/rules/engineering.md`, "Loud or nothing").
+- `flume tick` clears `tick-verdict.json` before the detached-HEAD refusal,
+  not after. A loop whose HEAD went detached mid-run kept re-reading the
+  previous tick's stale verdict on every subsequent iteration, and a stale
+  provisioning-failure signature on it could drive `provisionFailureStreak`
+  toward `abortThreshold` for reasons unrelated to the current tick.
+- A throw from a chain's `setupWorktree` hook is isolated to the offending
+  fanout entry instead of failing the whole tick. The dispatcher's per-entry
+  provisioning isolation wrapped `createWorktree` only, while chain hooks ran
+  in an unguarded `Promise.all` after it; a failed provision now records a
+  `ProvisionFailure` and the rest of the wave continues.
+- `setupWorktree`'s install gates its shell fallback on a win32 `ENOENT`
+  instead of routing every win32 install through `cmd.exe`'s parser
+  unconditionally — the direct-spawn-first discipline `execGate` already
+  applies to the same gate-binary problem
+  (`.claude/rules/platform-facts.md`, CVE-2024-27980).
+- `flume job new` exits 2 and headlines a CJS-context refusal
+  (CLI-JOBNEW-CJS-EXIT-CODE). `runJobVerb`'s `new` catch tested only
+  `JobUsageError`, so a `CjsContextLoadError` fell through to the operational
+  branch — exit 1, buried behind "[flume] job new failed:". `tick` already
+  special-cased it; `job new` was the outlier in the exit-code contract
+  (`spec/cli.md`, "A CJS-context host is refused, never relayed").
+- State dirs resolve once ahead of job-verb dispatch
+  (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH). `job status`/`rm`/`new` routed to
+  `runJobVerb` before `resolveStateDirs` ever ran, so each re-derived
+  `configDir` from raw `process.env.FLUME_CONFIG_DIR` independently, and any
+  chain factory those verbs loaded saw the caller's unresolved environment
+  instead of the canonicalized write-back value every other subcommand gets.
 
 ### Changed
 
@@ -573,6 +766,13 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
   result object has no `issues`). New type-only export: `StandardSchemaV1`
   (`src/standardSchema.ts`, vendored, no runtime code). `zod` remains a
   private engine dependency — not a peer, not re-exported on `FlumeApi`.
+
+- `pnpm test:integration` selects its lane with `vitest run --mode
+  integration` instead of a `VITEST_LANE=integration` env-var prefix. The
+  prefix is POSIX-only shell syntax, so the integration lane could not run at
+  all on win32 — a supported host (`spec/cli.md`). `--mode` is a portable CLI
+  argument that reaches `vitest.config.ts` through `defineConfig`'s
+  functional form (`({ mode }) => ...`) instead of `process.env`.
 
 ## [0.9.0] - 2026-07-31
 
@@ -657,7 +857,7 @@ Two lines cut together (0.7.0 was never published): **v0.7 "the truth
 line"** — the engine never misstates what it will do or did — and
 **v0.8 "the boundary line"** — the engine ships mechanism, never
 convention. Upgrading an existing chain: read
-[`docs/MIGRATING-0.8.md`](docs/MIGRATING-0.8.md) **before** bumping the
+[`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) § 3 **before** bumping the
 pin — the schema split is breaking-first.
 
 ### Breaking

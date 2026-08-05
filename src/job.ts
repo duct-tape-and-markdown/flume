@@ -7,7 +7,7 @@
  * chain-owned. `new`/`run`/`rm` construct, assert, and checkout no branch.
  * The clean-history ending (`extract`) is removed (v0.11 §3) — a side
  * branch plus ordinary git is the operator's recipe now, documented in
- * `docs/MIGRATING-0.11.md`.
+ * `docs/MIGRATING-0.10.md` § 5.
  *
  * `src/cli.ts` routes `flume job <verb>` here. Git access is a local thin
  * wrapper: the verbs speak porcelain (`add`, `commit`, `rm`, `config`), a
