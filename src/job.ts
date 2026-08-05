@@ -216,6 +216,11 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   } else {
     log(`[flume] harness already baselined; nothing to commit`);
   }
+
+  // Next-step pointer: a fresh job's first tick otherwise greets the
+  // operator with "no phases awake; hibernating" (job run wakes the entry
+  // phase, above) — name the command that actually starts it.
+  log(`[flume] next: flume job run ${name}`);
 }
 
 export interface JobRunOptions {

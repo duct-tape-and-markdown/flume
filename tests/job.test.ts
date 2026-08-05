@@ -216,6 +216,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         const r = await runCli(repo.dir, ["job", "new", "t1"]);
         expect(r.code).toBe(0);
         expect(r.out).toContain("baseline commit on current HEAD");
+        expect(r.out).toContain("flume job run t1");
 
         // 1. No branch created — HEAD stays on whatever the operator started
         // on (v0.11 §2/§3).
