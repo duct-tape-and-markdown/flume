@@ -59,6 +59,16 @@ tick despite the open question's status — worth checking whether plan should h
 `NEEDS AMENDMENT` entry out of `pending.json` until it flips to resolved, or whether re-offering
 it every tick (and re-parking every tick) is the intended cost of leaving it pickable.
 
+**Re-confirmed on a third build tick (still unresolved):** same reproduction —
+`pnpm exec vitest run tests/chain.test.ts` throws `phase 'build' declares entryChannelPaths
+without scopeWritesToEntry: true` from the new `validateNoDeadDeclarations` at load, sourced
+from `.flume/chain.ts:396-405`, unchanged since the first park. `.flume/chain.ts` is still
+outside this tick's `writablePaths`. Parking again rather than shipping a doomed commit; option
+(1) — a human adding `scopeWritesToEntry: true` at `.flume/chain.ts:405` — remains the
+recommended unblock. The re-offering cost flagged above is now three ticks deep; recommend
+plan actually act on the suggestion (hold `NEEDS AMENDMENT` entries out of `pending.json`,
+or otherwise stop re-deriving this one as pickable) rather than re-confirming it a fourth time.
+
 ## `flume check` — validate pending.json without spending an agent
 
 Status: PARKED
