@@ -412,12 +412,13 @@ function countFrictionFiles(dir: string): number {
  * validated, no extension composed — never a write path). Any other read
  * failure (permission denied, a path too long for the platform, …) is
  * rethrown rather than folded into the absent case
- * (`.claude/rules/engineering.md`, "Loud or nothing") — both call sites
- * (`flume status` and `flume job status` (`src/cli.ts`)) already wrap their
- * read in a try/catch that reports the failure and exits non-zero, so
- * rethrowing surfaces it there instead of reading as "nothing pending". The
- * one probe both surfaces call, so a corrupt file reads "unparsable"
- * identically on either surface.
+ * (`.claude/rules/engineering.md`, "Loud or nothing") — rethrowing lets each
+ * caller decide how to surface it: `flume status` (`src/cli.ts`) has a
+ * single job in scope, so its own try/catch reports the failure and exits
+ * non-zero; `jobStatus`, below, has siblings in scope, so it catches per-job
+ * instead and reads the failing job as "unparsable" without aborting the
+ * enumeration. The one probe both surfaces call, so a corrupt file reads
+ * "unparsable" identically on either surface.
  */
 export function readPendingLoose(pendingPath: string): ParseResult {
   let raw: string;
@@ -455,8 +456,17 @@ export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
       const awake = existsSync(join(jobDir, "awake"))
         ? new Baton(jobDir).awake()
         : [];
-      const parsed = readPendingLoose(join(jobDir, "plan", "pending.json"));
-      const pending = parsed.ok ? parsed.entries.length : null;
+      // readPendingLoose rethrows a non-ENOENT read failure (permission
+      // denied, a path too long for the platform, …) — a per-job read error
+      // must not abort the enumeration for every sibling job, so it reads
+      // as unparsable here rather than escaping the map.
+      let pending: number | null;
+      try {
+        const parsed = readPendingLoose(join(jobDir, "plan", "pending.json"));
+        pending = parsed.ok ? parsed.entries.length : null;
+      } catch {
+        pending = null;
+      }
       const frictionCount =
         frictionDir !== undefined
           ? countFrictionFiles(join(jobDir, frictionDir))

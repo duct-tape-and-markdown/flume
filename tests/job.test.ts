@@ -1208,15 +1208,29 @@ describe("jobStatus — §5d enumeration units", () => {
     }
   });
 
-  it("jobStatus propagates a non-ENOENT pending.json read failure for a job instead of reading it as pending: 0", async () => {
+  it("jobStatus reads a non-ENOENT pending.json read failure for one job as unparsable instead of throwing, and never hides sibling jobs (job-status-nonenoent-read-hides-siblings)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
-      const planDir = join(dir, ".flume", "jobs", "broken", "plan");
+      const jobs = join(dir, ".flume", "jobs");
+
+      // "broken": pending.json exists but its parent dir loses traversal
+      // permission, so the read fails EACCES — not ENOENT.
+      const planDir = join(jobs, "broken", "plan");
       await mkdir(planDir, { recursive: true });
       await writeFile(join(planDir, "pending.json"), "[]");
       await chmod(planDir, 0o000);
 
-      expect(() => jobStatus(dir)).toThrow();
+      // "healthy": an ordinary, readable sibling job.
+      await mkdir(join(jobs, "healthy", "plan"), { recursive: true });
+      await writeFile(
+        join(jobs, "healthy", "plan", "pending.json"),
+        JSON.stringify([pendingEntry("H-ONE")]),
+      );
+
+      expect(jobStatus(dir)).toEqual([
+        { name: "broken", awake: [], pending: null },
+        { name: "healthy", awake: [], pending: 1 },
+      ]);
     } finally {
       await chmod(join(dir, ".flume", "jobs", "broken", "plan"), 0o755).catch(
         () => {},
