@@ -2720,11 +2720,13 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
 
   it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (engineering.md 'the fix lands at the mechanism')", async () => {
     // Same FOOT-STRAY shape as the footprint test above, but pinned on the
-    // git call count: runAfterCommitGates already shells out to
-    // `git show --name-only` once per commit to build the touchedPaths every
-    // afterCommit gate reads. The fanout caller re-deriving the identical
-    // commit's footprint via a second showNameOnly call is the duplicate
-    // this test catches if it's ever reintroduced.
+    // git call count: runAfterCommitGates already shells out to `git diff
+    // --name-only` once per entry to build the whole-span touchedPaths every
+    // afterCommit gate reads (spec/loop.md "Tip verify", per-entry leg — the
+    // span's cumulative footprint, not just the newest commit's). The
+    // fanout caller re-deriving the identical span's footprint via a second
+    // diffNameOnly call is the duplicate this test catches if it's ever
+    // reintroduced.
     await writePending(fx.repo, [makeEntry("FOOT-STRAY", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -2757,7 +2759,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       log: silent,
     });
 
-    const showNameOnlySpy = vi.spyOn(git, "showNameOnly");
+    const diffNameOnlySpy = vi.spyOn(git, "diffNameOnly");
 
     const outcome = await dispatcher.tick();
 
@@ -2773,7 +2775,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     // The reverted commit's touched paths are computed exactly once — inside
     // runAfterCommitGates' own gate-loop capture — and reused by the fanout
     // caller's §13 footprint grab, not re-derived via a second git call.
-    expect(showNameOnlySpy).toHaveBeenCalledTimes(1);
+    expect(diffNameOnlySpy).toHaveBeenCalledTimes(1);
   }, 20_000);
 
   it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
@@ -4799,7 +4801,15 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 
-  it("fanout: an entry's own worktree commit whose parent isn't the tip it was provisioned from is soft-reverted — tip-moved, never reaches cherry-pick, entry stays pending", async () => {
+  it("fanout: an entry's worktree commit stacks two commits, both descending from the recorded base — ancestry holds, whole span ships (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
+    // Pre-fix bug (field report, inbox 2026-08-05): the per-entry leg used
+    // to apply the singleton's parent-equality check to this private
+    // worktree branch, which misread an agent that commits, keeps working,
+    // and commits again as an interloper's own commit — soft-resetting a
+    // completed entry and letting teardown destroy all trace. Ancestry
+    // (spec/loop.md "Tip verify", per-entry leg) reads this correctly: the
+    // recorded base is still an ancestor of the observed HEAD, so the whole
+    // two-commit span is a completed entry, not interference.
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -4807,9 +4817,6 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 
     const agent = fanoutAgent({
       "test-a": async (cwd) => {
-        // Something rewrote this entry's own (private, per-tick) worktree
-        // branch out from under the agent mid-run — the same race, scoped
-        // to the worktree's own tip rather than trunk's.
         await writeAndCommit(
           cwd,
           "src/interloper.ts",
@@ -4831,12 +4838,92 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 
     const outcome = await dispatcher.tick();
 
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["TEST-A"]);
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      { tag: "TEST-A", outcome: "merged" },
+    ]);
+
+    // Entry shipped — gone from pending.json, both commits landed on trunk,
+    // both files present (gates ran over the whole span's footprint, and
+    // cherry-pick carried both commits, in order).
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(existsSync(join(fx.repo, "src", "interloper.ts"))).toBe(true);
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src", "a.ts"), "utf8")).toBe(
+      "from-A\n",
+    );
+    // The newest commit is the wave's own pending-ledger update; the two
+    // commits beneath it are the entry's whole span, cherry-picked in order.
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "3"],
+      { cwd: fx.repo },
+    );
+    expect(log.trim().split("\n").slice(1)).toEqual([
+      "build(TEST-A): ship",
+      "external: concurrent commit",
+    ]);
+  }, 20_000);
+
+  it("fanout: an entry's worktree commit is rewritten out from under the agent (base is no longer an ancestor of HEAD) — refuses, naming both shas, lands a dropped-work merge outcome (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
+    await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let recordedBase = "";
+    let observedHead = "";
+    const agent = fanoutAgent({
+      "test-a": async (cwd) => {
+        recordedBase = await head(cwd);
+        // The worktree branch is hard-reset to an unrelated commit and then
+        // built on — the recorded base is no longer an ancestor of the
+        // observed HEAD, unlike the "stacks two commits" case above where
+        // the base stays reachable throughout.
+        await exec("git", ["checkout", "--orphan", "rewritten"], { cwd });
+        await exec("git", ["reset", "--hard"], { cwd });
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+        observedHead = await head(cwd);
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.tipMoved).toBe(true);
     expect(outcome.verdict?.tipMoved).toBe(true);
     expect(outcome.verdict?.noCommit).toBeUndefined();
-    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+    // The dropped-work fact, distinguishable from a parked/no-op entry —
+    // never silence a partial ship summary papers over.
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      { tag: "TEST-A", outcome: "dropped-work" },
+    ]);
+
+    // Both shas named — the recorded base and the observed HEAD, never the
+    // HEAD's parent alone (which would read the agent's own top commit as
+    // the intruder).
+    const record = await readFile(
+      join(fx.repo, ".flume", "prior-attempts", "test-a.json"),
+      "utf8",
+    );
+    const parsed = JSON.parse(record);
+    expect(parsed.mode).toBe("tip-moved");
+    expect(parsed.expectedTip).toBe(recordedBase);
+    expect(parsed.observedTip).toBe(observedHead);
 
     // Entry stays pending, byte-identical — nothing shipped or cherry-picked.
     expect(await readPendingFromDisk(fx.repo)).toEqual([
@@ -4955,11 +5042,14 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
   }, 20_000);
 });
 
-describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOVED-CHECK-UNSHARED)", () => {
-  it("both callsites persist same-shaped §5 records and emit a same-shaped log line for equivalent input, driven through the one shared method", async () => {
-    // ---- singleton — same race as the tip-verify describe's first test:
-    // an interloper commit lands on trunk after preHead is recorded, then
-    // the agent's own commit stacks on top of it.
+describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, checks diverge by leg (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", () => {
+  it("both legs persist same-shaped §5 records and log through the same template, but the singleton leg names its commit's parent while the per-entry leg names the observed HEAD itself", async () => {
+    // ---- singleton — parent-equality, unchanged by the per-entry split: an
+    // interloper commit lands on trunk after preHead is recorded, then the
+    // agent's own commit stacks on top of it. The commit's own parent (the
+    // interloper's sha) is what the singleton leg names as "found" — the
+    // most it can honestly claim on a shared ref (spec/loop.md "Tip
+    // verify", singleton leg).
     const singletonPreHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const singletonPhase = makePhase({ name: "plan", concurrency: "singleton" });
@@ -4995,12 +5085,18 @@ describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOV
       join(fx.repo, ".flume", "prior-attempts", "plan.json"),
       "utf8",
     );
+    // The singleton leg's "found" is the commit's own parent, not its own
+    // top commit — the agent's `plan-output.ts` commit sha never appears.
+    expect(JSON.parse(singletonRecord).observedTip).toBe(singletonInterloperSha);
 
-    // ---- fanout — same race, scoped to the entry's own worktree, as the
-    // tip-verify describe's fanout test. A fresh fixture: the singleton
-    // portion above leaves its repo's working tree dirty (the soft-reset
-    // agent output survives uncommitted, §5 "agent output stays on disk"),
-    // and fanout worktree provisioning wants a clean starting repo.
+    // ---- fanout — ancestry, on a per-entry worktree branch rewritten out
+    // from under the agent (the recorded base is no longer an ancestor of
+    // the observed HEAD), so this leg refuses too — but on a genuinely
+    // different check than the singleton's parent equality. A fresh
+    // fixture: the singleton portion above leaves its repo's working tree
+    // dirty (the soft-reset agent output survives uncommitted, §5 "agent
+    // output stays on disk"), and fanout worktree provisioning wants a
+    // clean starting repo.
     const fx2 = await makeFixture();
     try {
       await writePending(fx2.repo, [makeEntry("FANOUT-TWIN", ["src/a.ts"])]);
@@ -5012,17 +5108,15 @@ describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOV
       });
       const fanoutChain: Chain = { phases: [fanoutPhase], humanOnly: [] };
       const fanoutPreHead = await head(fx2.repo);
-      let fanoutInterloperSha = "";
+      let fanoutRecordedBase = "";
+      let fanoutObservedHead = "";
       const fanoutAgentInst = fanoutAgent({
         "fanout-twin": async (cwd) => {
-          await writeAndCommit(
-            cwd,
-            "src/interloper.ts",
-            "external\n",
-            "external: concurrent commit",
-          );
-          fanoutInterloperSha = await head(cwd);
+          fanoutRecordedBase = await head(cwd);
+          await exec("git", ["checkout", "--orphan", "rewritten"], { cwd });
+          await exec("git", ["reset", "--hard"], { cwd });
           await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(FANOUT-TWIN): ship");
+          fanoutObservedHead = await head(cwd);
         },
       });
       const fanoutWarnings: string[] = [];
@@ -5042,31 +5136,39 @@ describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOV
       const fanoutOutcome = await fanoutDispatcher.tick();
 
       expect(fanoutOutcome.tipMoved).toBe(true);
+      expect(fanoutRecordedBase).toBe(fanoutPreHead);
       const fanoutRecord = await readFile(
         join(fx2.repo, ".flume", "prior-attempts", "fanout-twin.json"),
         "utf8",
       );
+      // The per-entry leg's "found" is the observed HEAD itself — the
+      // agent's own top commit — never its parent, which on an orphan
+      // branch doesn't even exist.
+      expect(JSON.parse(fanoutRecord).observedTip).toBe(fanoutObservedHead);
 
       // §5 record shape (mode + field names + JSON formatting) is
-      // byte-identical for equivalent input — a one-sided edit to either
-      // callsite's persisted record breaks this pin once the two sides'
-      // real, necessarily-distinct SHAs are normalized out.
+      // byte-identical for equivalent input, even though the two legs run
+      // different checks and the "found" sha means something different per
+      // leg — a one-sided edit to either callsite's persisted record breaks
+      // this pin once the two sides' real, necessarily-distinct SHAs are
+      // normalized out.
       const normalize = (raw: string, expectedTip: string, observedTip: string) =>
         raw
           .split(expectedTip)
           .join("<EXPECTED>")
           .split(observedTip)
           .join("<OBSERVED>");
-      expect(normalize(fanoutRecord, fanoutPreHead, fanoutInterloperSha)).toBe(
+      expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
         normalize(singletonRecord, singletonPreHead, singletonInterloperSha),
       );
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
 
-      // Both callsites log through the same template —
+      // Both legs log through the same template —
       // "[flume] <label>: tip moved (no commit) — expected <sha>, found <sha>"
       // — with only the label (phase name vs. entry tag) and the shas
-      // (necessarily distinct per side) differing.
+      // (necessarily distinct per side, and per-leg-distinct in meaning)
+      // differing.
       expect(singletonWarnings).toHaveLength(1);
       expect(fanoutWarnings).toHaveLength(1);
       const shape =
@@ -5080,7 +5182,7 @@ describe("Dispatcher tip-moved — singleton/fanout agreement (DISPATCHER-TIPMOV
       expect(singletonMatch![2]).toBe(singletonPreHead);
       expect(singletonMatch![3]).toBe(singletonInterloperSha);
       expect(fanoutMatch![2]).toBe(fanoutPreHead);
-      expect(fanoutMatch![3]).toBe(fanoutInterloperSha);
+      expect(fanoutMatch![3]).toBe(fanoutObservedHead);
     } finally {
       await fx2.cleanup();
     }

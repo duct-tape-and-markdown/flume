@@ -193,6 +193,17 @@ export interface TickVerdictGateResult {
  *                            (RELEASE-v0.11 §5) — never reached cherry-pick,
  *                            entry stays pending for a fresh retry against
  *                            the new tip.
+ *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
+ *                            check refused (spec/loop.md "Tip verify",
+ *                            per-entry leg): this entry's worktree commit
+ *                            was soft-reset because its recorded base was no
+ *                            longer an ancestor of the observed HEAD — never
+ *                            reached cherry-pick either, but distinct from
+ *                            `tip-moved` above, which is the *shared trunk*
+ *                            racing during this wave's own merge step. A
+ *                            sibling fact so a dropped per-entry commit
+ *                            never lands as silence a partial ship summary
+ *                            papers over.
  */
 export type MergeOutcome =
   | "merged"
@@ -200,7 +211,8 @@ export type MergeOutcome =
   | "afterMerge-reverted"
   | "afterCommit-reverted"
   | "not-shipped"
-  | "tip-moved";
+  | "tip-moved"
+  | "dropped-work";
 
 /**
  * One fanout entry's {@link MergeOutcome}, as recorded in a {@link
@@ -1817,9 +1829,18 @@ export class Dispatcher {
     let waveDeclined = false;
 
     for (const r of perEntry) {
-      if (r.tipMoved) waveTipMoved = true;
+      if (r.tipMoved) {
+        waveTipMoved = true;
+        // RELEASE-v0.11 §5 (per-entry leg): this entry's own ancestry check
+        // refused before ever reaching cherry-pick — a real, dropped-work
+        // fact, not silence a partial ship summary would otherwise paper
+        // over (spec/loop.md "Tip verify"). Distinct from the wave-level
+        // `tip-moved` outcome pushed below, which is the shared trunk racing
+        // during this wave's own merge step.
+        mergeOutcomes.push({ tag: r.entry.tag, outcome: "dropped-work" });
+      }
       if (r.declined) waveDeclined = true;
-      if (!r.committed || !r.commitSha) {
+      if (!r.committed || !r.commitSha || !r.spanBase) {
         // §13: an in-worktree afterCommit gate revert never reaches
         // cherry-pick, so it never touches trunk on its own — record its
         // captured footprint here so commitPendingUpdate below lands it on
@@ -1852,7 +1873,12 @@ export class Dispatcher {
         continue;
       }
       try {
-        await git.cherryPick(repoRoot, r.commitSha);
+        // The per-entry leg's ancestry check already cleared the whole
+        // `spanBase..commitSha` span as one completed entry — cherry-pick
+        // the whole range, in order, not just the newest commit (spec/
+        // loop.md "N commits are completion"). Equivalent to a single-sha
+        // pick when the span holds exactly one commit.
+        await git.cherryPickRange(repoRoot, r.spanBase, r.commitSha);
       } catch (err) {
         const message = (err as Error).message;
         this.log.warn(
@@ -1860,7 +1886,7 @@ export class Dispatcher {
         );
         let footprint: string[] | undefined;
         try {
-          footprint = await git.showNameOnly(repoRoot, r.commitSha);
+          footprint = await git.diffNameOnly(repoRoot, r.spanBase, r.commitSha);
         } catch {
           // Footprint capture is best-effort; the retry just partitions on
           // declared files as before.
@@ -1889,11 +1915,18 @@ export class Dispatcher {
 
       // Gate this entry's merged commit. The first failing afterMerge gate
       // attributes the failure to *this* entry — it is the only delta
-      // between `preCherry` and `mergedSha`.
+      // between `preCherry` and `mergedSha`, which now may span more than
+      // one cherry-picked commit (spec/loop.md "N commits are completion") —
+      // diffed as a range rather than `mergedSha`'s own single-commit show,
+      // so an earlier commit in the span isn't missed.
       // Computed once per commit and shared across every gate this loop
       // runs, and reused below as the `afterMerge-reverted` footprint — same
       // dedup as runAfterCommitGates above.
-      const commitTouchedPaths = await git.showNameOnly(repoRoot, mergedSha);
+      const commitTouchedPaths = await git.diffNameOnly(
+        repoRoot,
+        preCherry,
+        mergedSha,
+      );
       let entryFailure:
         | { gate: string; message: string; details?: string }
         | undefined;
@@ -2195,6 +2228,14 @@ export class Dispatcher {
     entry: PendingEntry;
     committed: boolean;
     commitSha?: string;
+    /**
+     * RELEASE-v0.11 §5 (per-entry leg): the tip this entry's worktree was
+     * provisioned from — the ancestry check's recorded base, and the range
+     * start the wave loop cherry-picks and diffs from (`base..commitSha`,
+     * spec/loop.md "N commits are completion"). Set alongside `commitSha`
+     * on every path that reaches a commit; absent otherwise.
+     */
+    spanBase?: string;
     gateResults: GateResultEntry[];
     /** §6 mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
@@ -2286,13 +2327,15 @@ export class Dispatcher {
     let committed = postHead !== preHead;
 
     if (committed) {
-      // RELEASE-v0.11 §5 tip verify: same idiom as the singleton callsite —
-      // the agent commits directly in this worktree, so verify after the
-      // fact that its commit's parent is the tip this entry's worktree was
-      // provisioned from. The worktree's own branch is private to this
-      // entry/tick, so a mismatch here means something reset or rewrote it
-      // out from under the agent mid-run, not routine external traffic.
-      const tipMoved = await this.checkTipMoved(
+      // RELEASE-v0.11 §5 tip verify, per-entry leg (spec/loop.md "Tip
+      // verify"): the agent commits directly in this worktree, so verify
+      // after the fact — but ancestry, not parent equality. The worktree's
+      // own branch is private to this entry/tick, so an agent that commits,
+      // keeps working, and commits again has produced a completed multi-
+      // commit entry, not interference; only a base that is no longer an
+      // ancestor of the observed HEAD means something reset or rewrote the
+      // branch out from under the agent.
+      const tipMoved = await this.checkTipMovedPerEntry(
         wt.path,
         entry.tag,
         key,
@@ -2315,11 +2358,16 @@ export class Dispatcher {
       return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path };
     }
 
+    // The ancestry check above cleared the whole base..postHead span as one
+    // completed entry (spec/loop.md "N commits are completion") — gate the
+    // span's cumulative footprint, not just postHead's own single-commit
+    // diff, so a gate can't miss what an earlier commit in the span touched.
     const verdict = await this.runAfterCommitGates(
       phase,
       wt.path,
       postHead,
       entry,
+      preHead,
     );
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
@@ -2367,6 +2415,7 @@ export class Dispatcher {
       entry,
       committed: true,
       commitSha: postHead,
+      spanBase: preHead,
       gateResults,
       termination,
       worktreePath: wt.path,
@@ -2376,12 +2425,9 @@ export class Dispatcher {
   // ---------- helpers ----------
 
   /**
-   * RELEASE-v0.11 §5 tip verify, for a commit the agent made itself
-   * (singleton, or a fanout entry's per-worktree commit — the dispatcher
-   * never sees the moment of commit in either case, so it verifies after the
-   * fact: the commit's own parent must be the tip this tick recorded at
-   * start). `expectedSha` is `postHead`, the commit this call's own caller
-   * just observed.
+   * RELEASE-v0.11 §5 tip verify's guarded revert, for a commit the agent
+   * made itself. `expectedSha` is `postHead`, the commit this call's own
+   * caller just observed.
    *
    * Mirrors `git.dropLastCommit`'s guarded-revert idiom — §5 cites it as its
    * own precedent — reconfirming the tip is still `expectedSha` immediately
@@ -2392,16 +2438,22 @@ export class Dispatcher {
    * fault, so it survives as uncommitted changes (§5 "agent output stays on
    * disk") rather than being discarded.
    *
-   * `commitCount` is the number of commits standing between the recorded tip
-   * and `expectedSha` — the dispatcher never observes a tick's individual
-   * commits, only its start and end tip, so a tick that made more than one
-   * commit is undone in full rather than leaving every commit but the newest
-   * on the tip, un-gated.
+   * The two legs undo different spans (spec/loop.md "Tip verify"), so the
+   * target is a discriminated union rather than one shape:
+   *  - `commitCount` — the singleton leg's shared-ref span, counted from the
+   *    recorded tip to `expectedSha` (`git.commitsSince`). The dispatcher
+   *    never observes a tick's individual commits, only its start and end
+   *    tip, so a tick that made more than one commit is undone in full
+   *    rather than leaving every commit but the newest on the tip, un-gated.
+   *  - `resetToSha` — the per-entry leg's private-ref span. The recorded
+   *    base is not necessarily an ancestor of `expectedSha` (that is exactly
+   *    what its ancestry check failed on), so a commit *count* back from
+   *    `expectedSha` does not apply; the target is the recorded base itself.
    */
   private async revertTipMovedCommit(
     cwd: string,
     expectedSha: string,
-    commitCount: number,
+    target: { commitCount: number } | { resetToSha: string },
   ): Promise<void> {
     const currentTip = await git.revParse(cwd);
     if (currentTip !== expectedSha) {
@@ -2411,19 +2463,26 @@ export class Dispatcher {
           `commit at the current tip, refusing to reset`,
       );
     }
-    await git.softReset(cwd, commitCount);
+    if ("commitCount" in target) {
+      await git.softReset(cwd, target.commitCount);
+    } else {
+      await git.softResetTo(cwd, target.resetToSha);
+    }
   }
 
   /**
-   * RELEASE-v0.11 §5 tip verify, run after a commit is observed: checks the
-   * commit's own parent against the tip this tick recorded at start, and on
-   * a mismatch reverts it (via {@link revertTipMovedCommit}), persists the
-   * §5 record, and logs — the one shared shape both the singleton and
-   * fanout callsites route through (engineering.md "The fix lands at the
-   * mechanism"), the same way {@link classifyNoCommit} and
-   * {@link persistRenderRefused} already centralize their persist+log.
-   * Each callsite still builds its own return shape from the boolean this
-   * returns. `label` is the phase name (singleton) or entry tag (fanout).
+   * RELEASE-v0.11 §5 tip verify — singleton leg (spec/loop.md "Tip verify",
+   * "Singleton leg — shared ref, parent equality, full-span revert"). On the
+   * trunk, the engine has no way to separate its own N commits from its own
+   * N−1 plus an operator's — the evidence is identical — so the check is
+   * parent equality: the commit's own parent must be the tip this tick
+   * recorded at start. On a mismatch the whole span between the recorded tip
+   * and `postHead` reverts (via {@link revertTipMovedCommit}), never just
+   * the newest commit.
+   *
+   * Unchanged by the per-entry leg's split into {@link
+   * checkTipMovedPerEntry}: the ambiguity this check exists for is a
+   * property of the shared ref, which the private per-entry ref never has.
    */
   private async checkTipMoved(
     cwd: string,
@@ -2438,10 +2497,46 @@ export class Dispatcher {
     // undo the whole span, not just `postHead` itself, so no un-gated
     // commit is left behind on the tip.
     const commitCount = await git.commitsSince(cwd, preHead, postHead);
-    await this.revertTipMovedCommit(cwd, postHead, commitCount);
+    await this.revertTipMovedCommit(cwd, postHead, { commitCount });
     await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
     this.log.warn(
       `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
+    );
+    return true;
+  }
+
+  /**
+   * RELEASE-v0.11 §5 tip verify — per-entry leg (spec/loop.md "Tip verify",
+   * "Per-entry leg — private ref, ancestry, N commits are completion"). An
+   * entry's worktree branch has exactly one legitimate writer: this tick's
+   * agent. The singleton leg's ambiguity premise does not transfer, and
+   * neither does its equality check: an agent that commits, keeps working,
+   * and commits again has produced a *completed entry*, not interference.
+   * The check is ancestry — the recorded base must be an ancestor of the
+   * observed HEAD — so a multi-commit span never trips this on its own
+   * account; `runFanoutEntry`'s caller runs the whole span's gates and
+   * cherry-picks it like any single-commit entry once this returns `false`.
+   *
+   * Refusal fires only when the base is *not* an ancestor of `postHead`,
+   * which on a private branch means something reset or rewrote it out from
+   * under the agent. Both the log line and the persisted record name
+   * `postHead` itself as the observed tip — never `postHead`'s parent alone,
+   * which would read the agent's own work as the intruder and leave the top
+   * commit undiscoverable (the flume 0.10.1 field trace this split closes).
+   */
+  private async checkTipMovedPerEntry(
+    cwd: string,
+    label: string,
+    key: string,
+    preHead: string,
+    postHead: string,
+  ): Promise<boolean> {
+    const ancestor = await git.isAncestor(cwd, preHead, postHead);
+    if (ancestor) return false;
+    await this.revertTipMovedCommit(cwd, postHead, { resetToSha: preHead });
+    await this.writePriorAttempt(key, buildTipMoved(preHead, postHead));
+    this.log.warn(
+      `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${postHead}`,
     );
     return true;
   }
@@ -2496,6 +2591,15 @@ export class Dispatcher {
     cwd: string,
     commitSha: string,
     assignedEntry?: PendingEntry,
+    /**
+     * RELEASE-v0.11 §5 (per-entry leg): when set, touched paths are the
+     * cumulative `spanBase..commitSha` diff rather than `commitSha`'s own
+     * single-commit diff — the per-entry leg's whole-span gate (spec/loop.md
+     * "N commits are completion"). Absent for the singleton leg, which the
+     * parent-equality check restricts to exactly one commit per tick, so its
+     * single-commit diff is already the whole span.
+     */
+    spanBase?: string,
   ): Promise<{
     ok: boolean;
     /** First failing gate, structured so callers can persist a §5 record. */
@@ -2530,7 +2634,9 @@ export class Dispatcher {
     // chainLoadGate and writablePathsGate read it off the context instead of
     // each shelling out its own `git show --name-only` for the same commit
     // (engineering.md "The fix lands at the mechanism").
-    const commitTouchedPaths = await git.showNameOnly(cwd, commitSha);
+    const commitTouchedPaths = spanBase
+      ? await git.diffNameOnly(cwd, spanBase, commitSha)
+      : await git.showNameOnly(cwd, commitSha);
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
       const r: GateResult = await gate.run({
@@ -3765,9 +3871,15 @@ function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
 
 /**
  * Build the RELEASE-v0.11 §5 tip-moved record: the ref this tick found
- * immediately before it would have committed didn't match the tip it
- * recorded at tick start. A sibling to the §6 builders above, never a
- * `NoCommitMode` — see {@link TipMovedAttempt}.
+ * didn't match the tip it recorded at tick start. A sibling to the §6
+ * builders above, never a `NoCommitMode` — see {@link TipMovedAttempt}.
+ *
+ * `observedTip` means something different per leg (spec/loop.md "Tip
+ * verify"): the singleton leg passes the mismatched commit's own parent (the
+ * ambiguity it can't resolve further), while the per-entry leg passes
+ * `postHead` itself — the true observed HEAD, never its parent, so the
+ * agent's own top commit stays discoverable rather than reading as the
+ * intruder.
  */
 function buildTipMoved(expectedTip: string, observedTip: string): TipMovedAttempt {
   return { mode: "tip-moved", expectedTip, observedTip };

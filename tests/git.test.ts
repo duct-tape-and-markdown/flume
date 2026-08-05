@@ -75,15 +75,19 @@ vi.mock("node:child_process", async (importOriginal) => {
 import {
   acquireTipClaim,
   addWorktree,
+  cherryPickRange,
   commitPaths,
   currentRefPath,
   deleteBranch,
+  diffNameOnly,
   dropLastCommit,
   gitCommonDir,
+  isAncestor,
   liveTipClaimPid,
   pinLongPaths,
   removeWorktree,
   revParse,
+  softResetTo,
   tipClaimPath,
   TipClaimHeldError,
 } from "../src/git.ts";
@@ -259,6 +263,164 @@ describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
 
     expect(await revParse(repo)).toBe(seedSha);
     expect(existsSync(join(repo, "own.txt"))).toBe(false);
+  });
+});
+
+describe("isAncestor (spec/loop.md 'Tip verify', per-entry leg)", () => {
+  it("reports true when ancestor is a real ancestor of descendant, however many commits back", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "one.txt"), "1");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "one"], { cwd: repo });
+    await writeFile(join(repo, "two.txt"), "2");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "two"], { cwd: repo });
+    const tip = await revParse(repo);
+
+    expect(await isAncestor(repo, base, tip)).toBe(true);
+  });
+
+  it("reports true for a sha compared against itself (non-strict ancestry)", async () => {
+    const sha = await revParse(repo);
+    expect(await isAncestor(repo, sha, sha)).toBe(true);
+  });
+
+  it("reports false when the two shas diverged — neither descends from the other", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "left.txt"), "left");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "left branch"], { cwd: repo });
+    const left = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", base], { cwd: repo });
+    await writeFile(join(repo, "right.txt"), "right");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "right branch"], { cwd: repo });
+    const right = await revParse(repo);
+
+    expect(await isAncestor(repo, left, right)).toBe(false);
+  });
+
+  it("rethrows a failure the probe cannot explain rather than reading it as 'not an ancestor'", async () => {
+    await expect(
+      isAncestor(repo, "not-a-real-sha", await revParse(repo)),
+    ).rejects.toThrow();
+  });
+});
+
+describe("softResetTo (spec/loop.md 'Tip verify', per-entry leg)", () => {
+  it("moves HEAD to the target sha while leaving the abandoned commits' content as uncommitted working-tree state", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "dropped.txt"), "dropped content");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "to be soft-reset away"], {
+      cwd: repo,
+    });
+
+    await softResetTo(repo, base);
+
+    expect(await revParse(repo)).toBe(base);
+    expect(existsSync(join(repo, "dropped.txt"))).toBe(true);
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
+    expect(status).toContain("dropped.txt");
+  });
+
+  it("resets to a target that is not an ancestor of the current tip, without throwing", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "left.txt"), "left");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "left branch"], { cwd: repo });
+    const left = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", base], { cwd: repo });
+    await writeFile(join(repo, "right.txt"), "right");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "right branch"], { cwd: repo });
+
+    expect(await isAncestor(repo, left, await revParse(repo))).toBe(false);
+    await expect(softResetTo(repo, left)).resolves.toBeUndefined();
+    expect(await revParse(repo)).toBe(left);
+  });
+});
+
+describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
+  it("returns the cumulative footprint across a multi-commit span, not just the newest commit", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "one.txt"), "1");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "one"], { cwd: repo });
+    await writeFile(join(repo, "two.txt"), "2");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "two"], { cwd: repo });
+    const tip = await revParse(repo);
+
+    expect((await diffNameOnly(repo, base, tip)).sort()).toEqual([
+      "one.txt",
+      "two.txt",
+    ]);
+  });
+
+  it("returns an empty array when the two shas are identical", async () => {
+    const sha = await revParse(repo);
+    expect(await diffNameOnly(repo, sha, sha)).toEqual([]);
+  });
+});
+
+describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
+  it("replays every commit in the range onto the current tip, in order", async () => {
+    // A fanout entry's worktree branch shares the main repo's object
+    // database (a linked worktree, not a clone) — mirrored here with a
+    // sibling branch in the same repo rather than a separate clone, so the
+    // range's commits are reachable from `repo` the way they would be from
+    // a real worktree branch.
+    const base = await revParse(repo);
+    await exec("git", ["checkout", "-q", "-b", "entry-branch"], { cwd: repo });
+    await writeFile(join(repo, "first.txt"), "first");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "first"], { cwd: repo });
+    await writeFile(join(repo, "second.txt"), "second");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "second"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", base], { cwd: repo });
+    expect(existsSync(join(repo, "first.txt"))).toBe(false);
+
+    await cherryPickRange(repo, base, head);
+
+    expect(existsSync(join(repo, "first.txt"))).toBe(true);
+    expect(existsSync(join(repo, "second.txt"))).toBe(true);
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "2"],
+      { cwd: repo },
+    );
+    expect(log.trim().split("\n")).toEqual(["second", "first"]);
+  });
+
+  it("cherry-picks a single-commit range identically to the plain single-sha form", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "solo.txt"), "solo");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "solo"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", "-b", "target", base], {
+      cwd: repo,
+    });
+    expect(existsSync(join(repo, "solo.txt"))).toBe(false);
+
+    await cherryPickRange(repo, base, head);
+
+    expect(existsSync(join(repo, "solo.txt"))).toBe(true);
+    const { stdout: subject } = await exec(
+      "git",
+      ["show", "-s", "--format=%s", "HEAD"],
+      { cwd: repo },
+    );
+    expect(subject.trim()).toBe("solo");
   });
 });
 

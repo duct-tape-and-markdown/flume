@@ -62,6 +62,78 @@ export async function hardResetTo(cwd: string, sha: string): Promise<void> {
 }
 
 /**
+ * Soft reset directly to a specific sha, rather than a commit count back
+ * from HEAD. Used by the per-entry tip-verify leg (spec/loop.md "Tip
+ * verify"): unlike the trunk leg's `softReset`, the target here is the
+ * recorded base itself, which on a refusal is not necessarily an ancestor of
+ * the current tip (that is exactly what the ancestry check failed on) — so
+ * counting commits back from HEAD does not apply. `reset --soft` accepts any
+ * commit-ish regardless of ancestry: it moves the branch ref and index,
+ * leaving the working tree (and therefore the abandoned commits' content) in
+ * place as uncommitted state.
+ */
+export async function softResetTo(cwd: string, sha: string): Promise<void> {
+  await run(cwd, ["reset", "--soft", sha]);
+}
+
+/**
+ * Files touched across a commit range (`git diff --name-only from to`) — the
+ * cumulative footprint of a per-entry fanout span (spec/loop.md "Tip
+ * verify", per-entry leg: "N commits are completion"), as opposed to
+ * {@link showNameOnly}'s single-commit diff. `from` need not be an ancestor
+ * of `to`; git diffs the two trees directly either way.
+ */
+export async function diffNameOnly(
+  cwd: string,
+  from: string,
+  to: string,
+): Promise<string[]> {
+  const { stdout } = await run(cwd, ["diff", "--name-only", from, to]);
+  return stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Whether `ancestor` is a (non-strict) ancestor of `descendant` — `git
+ * merge-base --is-ancestor`, exit code `0` for yes and `1` for no. Any other
+ * exit code (bad revision, not a repository) rethrows rather than being
+ * read as "not an ancestor" (`engine-boundary.md` "Told, not inferred": a
+ * failure the probe cannot explain is not silently folded into its negative
+ * case).
+ */
+export async function isAncestor(
+  cwd: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  try {
+    await run(cwd, ["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code === 1) return false;
+    throw err;
+  }
+}
+
+/**
+ * Cherry-pick every commit in `(base, head]` onto the current tip, in order
+ * — a fanout entry's whole span (spec/loop.md "Tip verify", per-entry leg),
+ * not just its newest commit. Equivalent to a single-commit cherry-pick when
+ * the range holds exactly one commit, so this is the one cherry-pick
+ * primitive the dispatcher needs — no separate single-sha form beside it.
+ */
+export async function cherryPickRange(
+  repoRoot: string,
+  base: string,
+  head: string,
+): Promise<void> {
+  await run(repoRoot, ["cherry-pick", `${base}..${head}`]);
+}
+
+/**
  * Drop the most recent commit and its working-tree changes.
  *
  * `expectedSha` names the commit this call itself created — the caller's
@@ -219,10 +291,6 @@ export async function showNameOnly(
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
-}
-
-export async function cherryPick(repoRoot: string, sha: string): Promise<void> {
-  await run(repoRoot, ["cherry-pick", sha]);
 }
 
 /**
