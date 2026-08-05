@@ -51,6 +51,7 @@ import {
   type PendingEntry,
 } from "../src/PendingSchema.ts";
 import { InlineExecRenderError as realInlineExecRenderError } from "../src/Prompt.ts";
+import { loopExitCode } from "../src/cli.ts";
 import * as git from "../src/git.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer"): both
 // types are field types on the already-public TickVerdict/TickOutcome, so a
@@ -6350,6 +6351,142 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     ).toBe(true);
     // The supervisor never clears the flag either — diagnosability over tidiness.
     expect(baton.isAwake("ghost")).toBe(true);
+  });
+});
+
+/**
+ * spec/loop.md "Exit codes — the run never lies to CI": fa03a39 generalized
+ * the §16 backstop to the merge stage (`mergeFailures` on the verdict) but
+ * left this accounting provision-only — a wave that ships nothing because
+ * every entry hit a cherry-pick conflict recorded `mergeFailures` with no
+ * `gate-revert`/`platform-preempt`/`render-refused`/`tipMoved` and no
+ * `provisionFailures`, so it fell through every leg of the `errored` formula
+ * and the run could burn every `--max` tick wedged on merge conflicts while
+ * `loopExitCode` still read 0. Sibling coverage to the provisioning-only
+ * errored-accounting tests above, same `runTick` fixture idiom.
+ */
+describe("superviseLoop — merge-stage-only failure counts as errored (loop-merge-failure-errored-accounting)", () => {
+  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+
+  it("a tick recording only mergeFailures with zero shippedTags and no gate revert is counted in erroredTicks", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — merge failed",
+            mergeFailures: [
+              {
+                tag: "CONFLICT-A",
+                signature: "cherry-pick conflict in src/shared.ts",
+                message: "error: could not apply ...: conflict in src/shared.ts",
+              },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(1);
+    expect(res.shippedTags).toEqual([]);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("merge failed");
+    expect(res.erroredTicks[0]).toContain("CONFLICT-A");
+  });
+
+  it("loopExitCode returns non-zero for a run whose every tick fails purely at the merge stage", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("build"); // never slept → never hibernates
+
+    // A distinct signature every tick, so this isolates the errored-tick
+    // accounting fix from the separate §16 consecutive-identical-signature
+    // backstop (which would independently force a non-zero exit at 3).
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      const signature = `cherry-pick conflict in src/file-${calls}.ts`;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            summary: "build: no commit — merge failed",
+            mergeFailures: [
+              { tag: `CONFLICT-${calls}`, signature, message: signature },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(3);
+    expect(res.repeatedFailure).toBeUndefined();
+    expect(res.shippedTags).toEqual([]);
+    expect(res.erroredTicks).toHaveLength(3);
+    expect(loopExitCode(res)).not.toBe(0);
+  });
+
+  it("a mergeFailure alongside a successful ship in the same wave stays out of erroredTicks (partial success remains exit 0)", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: true,
+            shippedTags: ["OK-A"],
+            summary: "build shipped OK-A",
+            mergeFailures: [
+              {
+                tag: "CONFLICT-B",
+                signature: "cherry-pick conflict in src/shared.ts",
+                message: "error: could not apply ...: conflict in src/shared.ts",
+              },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.shippedTags).toEqual(["OK-A"]);
+    expect(res.erroredTicks).toHaveLength(0);
+    expect(loopExitCode(res)).toBe(0);
   });
 });
 

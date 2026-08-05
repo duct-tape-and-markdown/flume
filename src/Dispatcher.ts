@@ -3369,30 +3369,38 @@ export async function superviseLoop(
     // is `gate-revert`/`platform-preempt`/`render-refused` (RELEASE-v0.10
     // §3: the prompt itself was broken), `tipMoved` (RELEASE-v0.11 §5: the
     // ref moved out from under this tick — worth surfacing even on a wave
-    // that also shipped something, unlike the provisioning leg below, since
-    // it signals something else is writing to this ref), or a provisioning
-    // failure that left nothing shipped — never a `voluntary-bail` (the
-    // agent correctly declining and naming the constraint is not evidence
-    // anything went wrong).
+    // that also shipped something, unlike the provisioning/merge legs below,
+    // since it signals something else is writing to this ref), or a
+    // provisioning or merge (cherry-pick) failure that left nothing shipped
+    // — never a `voluntary-bail` (the agent correctly declining and naming
+    // the constraint is not evidence anything went wrong).
     const verdict = await readTickVerdict(flumeDir);
     let countedAsErrored = false;
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
+      const verdictMergeFailures = verdict.mergeFailures ?? [];
       const errored =
         verdict.noCommit === "gate-revert" ||
         verdict.noCommit === "platform-preempt" ||
         verdict.noCommit === "render-refused" ||
         verdict.tipMoved === true ||
         (verdictProvisionFailures.length > 0 &&
-          verdict.shippedTags.length === 0);
+          verdict.shippedTags.length === 0) ||
+        (verdictMergeFailures.length > 0 && verdict.shippedTags.length === 0);
       if (errored) {
         erroredTicks.push(
           verdictProvisionFailures.length > 0
             ? `${verdict.summary} — worktree provisioning failed: ${verdictProvisionFailures
                 .map((f) => (f.tag ? `${f.tag} (${f.signature})` : f.signature))
                 .join("; ")}`
-            : verdict.summary,
+            : verdictMergeFailures.length > 0
+              ? `${verdict.summary} — merge failed: ${verdictMergeFailures
+                  .map((f) =>
+                    f.tag ? `${f.tag} (${f.signature})` : f.signature,
+                  )
+                  .join("; ")}`
+              : verdict.summary,
         );
         countedAsErrored = true;
       }
