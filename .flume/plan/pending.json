@@ -1,39 +1,69 @@
 [
   {
     "tag": "DEADDECL-LOAD-REFUSAL",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "Add load-time refusal in loadChainModule (~L678-745), sibling to validateFrictionDeclaration (~L581-601): usage-shaped error for (a) a phase declaring entryChannelPaths without scopeWritesToEntry:true, (b) a concurrency:singleton phase declaring an afterMerge gate." },
-        { "path": "tests/Dispatcher.test.ts", "description": "Add refusal tests for both dead-declaration shapes, mirroring the existing absolute-path friction refusal test (~L7020)." }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Add load-time refusal in loadChainModule (~L678-745), sibling to validateFrictionDeclaration (~L581-601): usage-shaped error for (a) a phase declaring entryChannelPaths without scopeWritesToEntry:true, (b) a concurrency:singleton phase declaring an afterMerge gate."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Add refusal tests for both dead-declaration shapes, mirroring the existing absolute-path friction refusal test (~L7020)."
+        }
       ],
       "retire": []
     },
     "summary": "loadChainModule refuses two dead declarations at load: entryChannelPaths w/o scopeWritesToEntry, and an afterMerge gate on a singleton phase",
-    "per": { "path": "spec/chain.md", "section": "A dead declaration is refused at load" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "A dead declaration is refused at load"
+    },
     "tests": [
       "loadChainModule throws a usage-shaped error naming the field when a phase declares entryChannelPaths without scopeWritesToEntry:true",
       "loadChainModule throws a usage-shaped error naming the gate and phase when a concurrency:singleton phase declares an afterMerge gate",
       "a scoped phase with entryChannelPaths (scopeWritesToEntry:true) and a fanout phase with an afterMerge gate both still load"
     ],
     "acceptance": "Both dead-declaration shapes throw at loadChainModule with a usage-shaped, field-naming error; the two still-live shapes (entryChannelPaths on a scoped phase; afterMerge on a fanout phase) load unchanged.",
-    "notes": "Static deadness bar only, per spec. Verified today's runtime evidence both shapes are silently dead: entryChannelPaths only reached via `assignedEntry && phase.scopeWritesToEntry` (Dispatcher.ts:2342-2346); afterMerge gates only filtered inside fanout's per-entry isolation (Dispatcher.ts:1643), never reached by a singleton tick."
+    "notes": "Static deadness bar only, per spec. Verified today's runtime evidence both shapes are silently dead: entryChannelPaths only reached via `assignedEntry && phase.scopeWritesToEntry` (Dispatcher.ts:2342-2346); afterMerge gates only filtered inside fanout's per-entry isolation (Dispatcher.ts:1643), never reached by a singleton tick.",
+    "observedFiles": [
+      ".flume/plan/open-questions.md"
+    ]
   },
   {
     "tag": "SUPERVISORPOLICY-TICKTIMEOUTMS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Phase.ts", "description": "Add tickTimeoutMs?: number to Chain.supervisorPolicy (~L349-374), sibling to maxParallel; per-tick read, not run-scoped." },
-        { "path": "src/Dispatcher.ts", "description": "Thread chain into runSingleton (~L1283, call site ~L1182). Read chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs at both invokeAgent call sites (~L1345 singleton, ~L2103 fanout — chain already in scope via runFanoutEntry's chain param), mirroring runFanout's maxParallel pattern (~L1509)." },
-        { "path": "tests/Dispatcher.test.ts", "description": "Add per-tick tickTimeoutMs override tests (singleton + fanout) and a neither-knob-declared byte-identical-defaults case, mirroring the existing maxParallel test." }
+        {
+          "path": "src/Phase.ts",
+          "description": "Add tickTimeoutMs?: number to Chain.supervisorPolicy (~L349-374), sibling to maxParallel; per-tick read, not run-scoped."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Thread chain into runSingleton (~L1283, call site ~L1182). Read chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs at both invokeAgent call sites (~L1345 singleton, ~L2103 fanout — chain already in scope via runFanoutEntry's chain param), mirroring runFanout's maxParallel pattern (~L1509)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Add per-tick tickTimeoutMs override tests (singleton + fanout) and a neither-knob-declared byte-identical-defaults case, mirroring the existing maxParallel test."
+        }
       ],
       "retire": []
     },
     "summary": "Add tickTimeoutMs to Chain.supervisorPolicy; read per-tick (chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs) at both invokeAgent call sites",
-    "per": { "path": "spec/chain.md", "section": "Supervisor policy is a chain-overridable default" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Supervisor policy is a chain-overridable default"
+    },
     "tests": [
       "a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a singleton phase's agent invocation",
       "a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a fanout entry's agent invocation",
@@ -43,55 +73,36 @@
     "notes": "tickTimeoutMs is the existing DispatcherOptions cap (Dispatcher.ts:837,1071,1084,2280-2282), already enforced but until now unreachable from a chain/CLI-driven loop — no runaway brake on autonomous loops. Per-tick scope because nothing accumulates across ticks, unlike quarantine/abort."
   },
   {
-    "tag": "FLUMEAPI-MATCHESANY",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/flumeApi.ts", "description": "Import matchesAny from ./paths.js; add matchesAny: typeof matchesAny to the FlumeApi interface (~L61-92) and to buildFlumeApi()'s returned object (~L104-133)." },
-        { "path": "tests/chain.test.ts", "description": "Assert buildFlumeApi().matchesAny is the same matchesAny src/paths.ts exports." }
-      ],
-      "retire": []
-    },
-    "summary": "Add matchesAny to FlumeApi so a chain's path policy shares the engine's fence-enforcing matcher instead of hand-rolling a second grammar",
-    "per": { "path": "spec/chain.md", "section": "The chain is a plugin, not a consumer" },
-    "tests": ["FlumeApi exposes matchesAny identical to src/paths.ts's export"],
-    "acceptance": "buildFlumeApi().matchesAny === matchesAny imported directly from src/paths.ts; a chain.ts can reference api.matchesAny with no separate import.",
-    "notes": "matchesAny already exported (src/paths.ts:26) and already the fence-enforcing matcher (writablePathsGate); this only surfaces it on FlumeApi."
-  },
-  {
     "tag": "PLATFORMFACTS-WIN32-MAXPATH-POINTERS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/paths.ts", "description": "point the doc comment at platform-facts.md's new section; drop restated mechanics" },
-        { "path": "src/Dispatcher.ts", "description": "shrink the 4 win32 MAX_PATH comments (~L619, ~L2424, ~L2684, ~L2767) to pointers at platform-facts.md" },
-        { "path": "src/job.ts", "description": "shrink the win32 MAX_PATH comment (~L391) to a pointer at platform-facts.md" }
+        {
+          "path": "src/paths.ts",
+          "description": "point the doc comment at platform-facts.md's new section; drop restated mechanics"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "shrink the 4 win32 MAX_PATH comments (~L619, ~L2424, ~L2684, ~L2767) to pointers at platform-facts.md"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "shrink the win32 MAX_PATH comment (~L391) to a pointer at platform-facts.md"
+        }
       ],
       "retire": []
     },
     "summary": "Point paths.ts/Dispatcher.ts/job.ts win32-MAX_PATH comments at platform-facts.md's new section",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [],
     "acceptance": "Each of the 6 comment sites cites platform-facts.md's new section instead of restating the ~260-char mechanism",
     "notes": "Unblocked by bba7748: platform-facts.md now carries 'Windows MAX_PATH (~260 chars) breaks fs calls with no long component'. Fact was independently restated at 6 sites; tags WRITEREVERTNOTE/HARVESTFRICTION/FRICTIONCOUNT(x2)/SNAPSHOTREVERTEDFILES(x2)/PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT show per-site rediscovery."
-  },
-  {
-    "tag": "JOBNEW-RUN-POINTER",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/job.ts", "description": "In jobNew (~L152-217), after the baseline-commit log lines, add a final log naming `flume job run <name>` as the next command." },
-        { "path": "tests/job.test.ts", "description": "Assert jobNew's log output includes the job run pointer." }
-      ],
-      "retire": []
-    },
-    "summary": "job new's success log ends with a next-step line pointing at `flume job run <name>`, closing the first-run hibernate-silently gap",
-    "per": { "path": "spec/jobs.md", "section": "`flume job new <name>` — seed a state root" },
-    "tests": ["jobNew logs a next-step line naming `flume job run <name>`"],
-    "acceptance": "flume job new <name>'s final log line names `flume job run <name>` as the next command.",
-    "notes": "Inbox 2026-08-05: without this, a fresh job's first tick greets the operator with 'no phases awake; hibernating'. job run already wakes the entry phase (job.ts:269); this only adds the pointer line."
   }
 ]
