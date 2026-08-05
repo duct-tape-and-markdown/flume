@@ -601,6 +601,45 @@ function validateFrictionDeclaration(chain: Chain): void {
 }
 
 /**
+ * Refuse the two decidable dead-declaration shapes (§2, *A dead declaration
+ * is refused at load*): a chain field whose only consumer is statically
+ * unreachable from the rest of the same declaration. Both are checkable from
+ * the declaration alone, no tick required, so the loader — not a tick —
+ * refuses them.
+ *
+ * - `phase.entryChannelPaths` is only consulted on a scoped tick
+ *   (`phase.scopeWritesToEntry === true`); declared without the flag it
+ *   governs nothing. Emptiness doesn't matter — `[]` on a scoped phase is
+ *   live (it just adds no extra globs); the field's *presence* without the
+ *   flag is what's dead.
+ * - An `afterMerge` gate on a `concurrency: "singleton"` phase: the merge
+ *   loop (`runFanout`) is the only site that runs `afterMerge` gates, and a
+ *   singleton tick never reaches it (`runAfterCommitGates` alone).
+ */
+function validateNoDeadDeclarations(chain: Chain): void {
+  for (const phase of chain.phases) {
+    if (phase.entryChannelPaths !== undefined && !phase.scopeWritesToEntry) {
+      throw new Error(
+        `phase '${phase.name}' declares entryChannelPaths without scopeWritesToEntry: true; ` +
+          `entryChannelPaths is only consulted on a scoped tick, so it governs nothing here. ` +
+          `Set scopeWritesToEntry: true on '${phase.name}', or remove entryChannelPaths.`,
+      );
+    }
+    if (phase.concurrency === "singleton") {
+      const deadGate = phase.gates.find((g) => g.when === "afterMerge");
+      if (deadGate) {
+        throw new Error(
+          `phase '${phase.name}' is concurrency: "singleton" but declares gate '${deadGate.name}' ` +
+            `with when: "afterMerge"; the merge loop never runs for a singleton phase, so this ` +
+            `gate never executes. Change '${deadGate.name}' to when: "afterCommit", or make ` +
+            `'${phase.name}' a fanout phase.`,
+        );
+      }
+    }
+  }
+}
+
+/**
  * The friction count line shared by `flume status`, `flume job status`, and
  * the loop-end summary (§6, v0.6.2): count of files directly under the
  * declared friction dir, resolved against `stateRoot` — whichever state
@@ -738,6 +777,7 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
     );
   }
   validateFrictionDeclaration(chain);
+  validateNoDeadDeclarations(chain);
   const result: ChainModule = { chain };
   if (module.agent) result.agent = module.agent;
   if (module.forkResolver) result.forkResolver = module.forkResolver;

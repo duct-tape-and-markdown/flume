@@ -7188,6 +7188,80 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   });
 });
 
+describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL, §2)", () => {
+  it("refuses entryChannelPaths declared without scopeWritesToEntry: true, naming the field", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-channel-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default () => ({ chain: { phases: [{ name: "build", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+          `writablePaths: ["**"], entryChannelPaths: [".flume/plan/open-questions.md"], ` +
+          `gates: [], handoff: () => [] }], humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+        /'build'.*entryChannelPaths.*scopeWritesToEntry/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an afterMerge gate on a concurrency: singleton phase, naming the gate and phase", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-aftermerge-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default () => ({ chain: { phases: [{ name: "plan", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [{ name: "dead-merge-gate", ` +
+          `when: "afterMerge", run: async () => ({ ok: true, message: "x" }) }], ` +
+          `handoff: () => [] }], humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+        /'plan'.*'dead-merge-gate'.*afterMerge/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("still loads the two live shapes: entryChannelPaths on a scoped phase, and an afterMerge gate on a fanout phase", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-live-"));
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default () => ({ chain: { phases: [` +
+          `{ name: "build", description: "", promptPath: "prompt.md", ` +
+          `concurrency: "fanout", writablePaths: ["**"], entryChannelPaths: [], ` +
+          `scopeWritesToEntry: true, gates: [{ name: "live-merge-gate", ` +
+          `when: "afterMerge", run: async () => ({ ok: true, message: "x" }) }], ` +
+          `handoff: () => [] }` +
+          `], humanOnly: [] } });\n`,
+        "utf8",
+      );
+
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      expect(mod.chain.phases).toHaveLength(1);
+      expect(mod.chain.phases[0]!.entryChannelPaths).toEqual([]);
+      expect(mod.chain.phases[0]!.gates[0]!.when).toBe("afterMerge");
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+});
+
 /**
  * v0.7 §5 — a CJS-context host (package.json lacking `"type": "module"`)
  * must refuse chain load with a usage-shaped `CjsContextLoadError`, not
