@@ -54,8 +54,9 @@ those, neither defensive nor aspirational.
   declared, 3.17 with the one path that had entered substantially every entry removed, and 94 of
   those queues were serialized to width 1 outright. **Under-declaring** costs at most a
   cherry-pick conflict, which the dispatcher aborts and leaves pending for a retry.
-  > Until `Phase.scopeWritesToEntry` ships, the write guard still narrows to declared files on a
-  > scoped tick, so an under-declared path also reverts the commit. Accuracy satisfies both.
+  > The write guard narrows to declared files on a scoped tick (this chain declares
+  > `scopeWritesToEntry: true`), so an under-declared path also reverts the commit. Accuracy
+  > satisfies both.
 
 **Tests ride the entry**: an entry that ships engine behavior carries its test coverage in the
 same entry — one line in `tests[]` per behavior the work must pin, stating the behavior only.
