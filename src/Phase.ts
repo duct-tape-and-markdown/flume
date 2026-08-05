@@ -371,5 +371,14 @@ export interface Chain {
      * chain rather than a value bound once per run.
      */
     maxParallel?: number;
+    /**
+     * Wall-clock timeout per agent invocation in milliseconds — overrides
+     * `DispatcherOptions.tickTimeoutMs` (`src/Dispatcher.ts`), whose own
+     * default is unset (no cap). Same per-tick scope as `maxParallel`: the
+     * dispatcher already reloads `chain.ts` fresh every tick, so both call
+     * sites read this straight off the tick's own resolved chain rather than
+     * a value bound once per run.
+     */
+    tickTimeoutMs?: number;
   };
 }

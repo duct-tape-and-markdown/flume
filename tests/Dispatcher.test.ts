@@ -755,6 +755,140 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
   }, 20_000);
 });
 
+/**
+ * SUPERVISORPOLICY-TICKTIMEOUTMS — `Chain.supervisorPolicy.tickTimeoutMs`
+ * (`src/Phase.ts`) joins `maxParallel` as a per-tick chain-overridable
+ * default: both `runSingleton` and `runFanoutEntry` read it straight off the
+ * tick's own resolved chain at their `invokeAgent` call sites, rather than
+ * binding it once per run like `quarantineScope`/`abortThreshold`. The
+ * override doesn't gate ship/no-ship, so it's observed the only way it can
+ * be — a recording agent captures the `timeoutMs` `agent.invoke` actually
+ * received.
+ */
+describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invocation cap (SUPERVISORPOLICY-TICKTIMEOUTMS)", () => {
+  it("a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a singleton phase's agent invocation", async () => {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "singleton",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { tickTimeoutMs: 999 },
+    };
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let seenTimeoutMs: number | undefined;
+    const agent: Agent = {
+      name: "timeout-capture-singleton",
+      async invoke(inv) {
+        seenTimeoutMs = inv.timeoutMs;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      // DispatcherOptions.tickTimeoutMs deliberately set to something else —
+      // the chain's declaration must win, not this fallback.
+      tickTimeoutMs: 5_000,
+    });
+
+    await dispatcher.tick();
+
+    expect(seenTimeoutMs).toBe(999);
+  });
+
+  it("a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a fanout entry's agent invocation", async () => {
+    const entries = [makeEntry("TTMS-A", ["src/ttms-a.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { tickTimeoutMs: 777 },
+    };
+
+    let seenTimeoutMs: number | undefined;
+    const agent: Agent = {
+      name: "timeout-capture-fanout",
+      async invoke(inv) {
+        seenTimeoutMs = inv.timeoutMs;
+        await writeAndCommit(
+          inv.cwd,
+          "src/ttms-a.ts",
+          "from-A\n",
+          "build(TTMS-A): ship",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      // DispatcherOptions.tickTimeoutMs deliberately set to something else —
+      // the chain's declaration must win, not this fallback.
+      tickTimeoutMs: 5_000,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["TTMS-A"]);
+    expect(seenTimeoutMs).toBe(777);
+  }, 20_000);
+
+  it("a chain declaring neither maxParallel nor tickTimeoutMs still gets the DispatcherOptions defaults, byte-identical", async () => {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "singleton",
+      gates: [],
+    });
+    // No supervisorPolicy at all — the undeclared-fields-fall-through case.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let seenTimeoutMs: number | undefined;
+    const agent: Agent = {
+      name: "timeout-capture-default",
+      async invoke(inv) {
+        seenTimeoutMs = inv.timeoutMs;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      tickTimeoutMs: 4_242,
+    });
+
+    await dispatcher.tick();
+
+    // No chain override, so DispatcherOptions.tickTimeoutMs survives
+    // unchanged — the same fallback `maxParallel`'s "declaring nothing"
+    // case above pins.
+    expect(seenTimeoutMs).toBe(4_242);
+  });
+});
+
 describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a tick-start snapshot (regression)", () => {
   it("ships one entry without clobbering a concurrent edit landed on an untouched entry mid-wave", async () => {
     // SHIP-PENDING-CLOBBER-BUG repro: a ship commit reintroduced a retired

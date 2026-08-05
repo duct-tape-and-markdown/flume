@@ -872,7 +872,11 @@ export interface DispatcherOptions {
    * the underlying agent process is aborted; the dispatcher logs a warning
    * and the tick continues with whatever the agent committed (typically
    * nothing, so the phase falls through with `committed: false`). Default:
-   * unset — a hung agent will block the tick indefinitely.
+   * unset — a hung agent will block the tick indefinitely. Overridable per
+   * chain via `Chain.supervisorPolicy.tickTimeoutMs` (`src/Phase.ts`), which
+   * both `runSingleton` and `runFanoutEntry` prefer when declared — this
+   * option is the fallback below it, for a programmatic embedder that wants
+   * a cap the chain doesn't set.
    */
   tickTimeoutMs?: number;
   /**
@@ -1219,7 +1223,7 @@ export class Dispatcher {
     try {
       phaseOutcome =
         phase.concurrency === "singleton"
-          ? await this.runSingleton(phase, agent)
+          ? await this.runSingleton(phase, agent, chain)
           : await this.runFanout(phase, agent, chain, forkResolver);
     } catch (err) {
       if (!(err instanceof PendingParseFailure)) throw err;
@@ -1323,6 +1327,7 @@ export class Dispatcher {
   private async runSingleton(
     phase: Phase,
     agent: Agent,
+    chain: Chain,
   ): Promise<PhaseTickOutcome> {
     const cwd = this.opts.repoRoot;
     const preHead = await git.revParse(cwd);
@@ -1382,7 +1387,15 @@ export class Dispatcher {
       };
     }
 
-    const termination = await this.invokeAgent(phase, cwd, prompt, agent);
+    const tickTimeoutMs =
+      chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
+    const termination = await this.invokeAgent(
+      phase,
+      cwd,
+      prompt,
+      agent,
+      tickTimeoutMs,
+    );
 
     const postHead = await git.revParse(cwd);
     let committed = postHead !== preHead;
@@ -2140,11 +2153,14 @@ export class Dispatcher {
     }
 
     const preHead = await git.revParse(wt.path);
+    const tickTimeoutMs =
+      chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
     const termination = await this.invokeAgent(
       phase,
       wt.path,
       prompt,
       agent,
+      tickTimeoutMs,
       extraEnv,
     );
     const postHead = await git.revParse(wt.path);
@@ -2311,15 +2327,14 @@ export class Dispatcher {
     cwd: string,
     prompt: string,
     agent: Agent,
+    tickTimeoutMs: number | undefined,
     extraEnv?: Record<string, string>,
   ): Promise<AgentTermination> {
     try {
       const result = await agent.invoke({
         cwd,
         prompt,
-        ...(this.tickTimeoutMs !== undefined
-          ? { timeoutMs: this.tickTimeoutMs }
-          : {}),
+        ...(tickTimeoutMs !== undefined ? { timeoutMs: tickTimeoutMs } : {}),
         onStdout: (chunk) => process.stdout.write(chunk),
         onStderr: (chunk) => process.stderr.write(chunk),
         ...(extraEnv ? { extraEnv } : {}),
