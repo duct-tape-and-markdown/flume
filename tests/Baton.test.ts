@@ -1,10 +1,13 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+
+const BATON_SRC_PATH = fileURLToPath(new URL("../src/Baton.ts", import.meta.url));
 
 let repoRoot: string;
 let flumeDir: string;
@@ -97,6 +100,32 @@ describe("Baton — missing directory", () => {
     new Baton(flumeDir);
     const second = new Baton(flumeDir);
     expect(second.awake()).toEqual([]);
+  });
+});
+
+describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
+  // toNamespacedPath is a no-op on POSIX, so the roundtrip tests above pass
+  // identically whether Baton routes through namespacedJoin or a bare join.
+  // Pin the source shape directly per PendingSchema.test.ts's precedent for
+  // this kind of platform fact.
+  const src = readFileSync(BATON_SRC_PATH, "utf8");
+
+  it("imports namespacedJoin from ./paths.js", () => {
+    expect(src).toMatch(/import\s*\{\s*namespacedJoin\s*\}\s*from\s*"\.\/paths\.js"/);
+  });
+
+  it("routes every fs call (mkdirSync/existsSync/writeFileSync/rmSync/readdirSync) through namespacedJoin, never a bare join", () => {
+    const fsCalls = ["mkdirSync", "existsSync", "writeFileSync", "rmSync", "readdirSync"];
+
+    for (const fn of fsCalls) {
+      const callSites = [...src.matchAll(new RegExp(`\\b${fn}\\(`, "g"))];
+      expect(callSites.length).toBeGreaterThan(0);
+
+      for (const call of callSites) {
+        const rest = src.slice(call.index! + call[0].length);
+        expect(rest.startsWith("namespacedJoin(")).toBe(true);
+      }
+    }
   });
 });
 

@@ -11,6 +11,8 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { namespacedJoin } from "./paths.js";
+
 /**
  * Filesystem-flag mechanism for which phases wake next. Presence of
  * `<flumeDir>/awake/<name>` wakes the named phase on the next tick; absence
@@ -27,30 +29,30 @@ export class Baton {
   /** @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`). */
   constructor(flumeDir: string) {
     this.dir = join(flumeDir, "awake");
-    mkdirSync(this.dir, { recursive: true });
+    mkdirSync(namespacedJoin(this.dir), { recursive: true });
   }
 
   /** Phases currently awake, sorted by name for stable iteration. */
   awake(): string[] {
-    return readdirSync(this.dir)
+    return readdirSync(namespacedJoin(this.dir))
       .filter((name) => !name.startsWith("."))
       .sort();
   }
 
   /** True iff the named phase has an awake flag. */
   isAwake(name: string): boolean {
-    return existsSync(join(this.dir, name));
+    return existsSync(namespacedJoin(this.dir, name));
   }
 
   /** Idempotent: create the flag if missing. */
   wake(name: string): void {
-    writeFileSync(join(this.dir, name), "", { flag: "a" });
+    writeFileSync(namespacedJoin(this.dir, name), "", { flag: "a" });
   }
 
   /** Idempotent: remove the flag if present. */
   sleep(name: string): void {
     try {
-      rmSync(join(this.dir, name));
+      rmSync(namespacedJoin(this.dir, name));
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") throw err;
