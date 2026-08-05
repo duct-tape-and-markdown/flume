@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "tag": "BATON-WIN32-PATH-TOTAL-LIMIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Baton.ts", "description": "Wrap fs-call paths with namespacedJoin per platform-facts.md" },
+        { "path": "tests/Baton.test.ts", "description": "Pin namespacedJoin usage on Baton's fs calls" }
+      ],
+      "retire": []
+    },
+    "summary": "Baton's mkdirSync/existsSync/writeFileSync/rmSync build paths via bare join; wrap with namespacedJoin (win32 MAX_PATH fix)",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Windows MAX_PATH (~260 chars) breaks fs calls with no long component"
+    },
+    "tests": [
+      "Baton's fs calls (mkdirSync/existsSync/writeFileSync/rmSync/readdirSync) route through namespacedJoin, not bare join"
+    ],
+    "acceptance": "Baton.ts imports namespacedJoin from ./paths.js and uses it for every path passed to an fs call; new test fails on the pre-fix tree and passes after",
+    "notes": "Same idiom already applied at job.ts, cli.ts, Dispatcher.ts consumer sites; Baton is the awake-flag mechanism (harness's only mutable state outside commits), so a deep flumeDir/job dir hits this for real."
+  }
+]
