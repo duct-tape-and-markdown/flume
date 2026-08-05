@@ -277,7 +277,10 @@ entry, and because the mechanism is already correct — `writablePathsGate` take
 as an optional parameter and runs the ceiling check unconditionally. The dispatcher supplies
 that parameter only when the phase asks for it (`Dispatcher.runAfterCommitGates` consults
 `phase.scopeWritesToEntry`), so narrowing is a chain declaration rather than engine behavior.
-Flume's own chain declares nothing and is therefore containment-only.
+Flume's own chain declares `scopeWritesToEntry: true` on its build phase with
+`PARK_FILE`/`tests/**` as the channel (`.flume/chain.ts`) — restored by hand after the
+opt-in flip left its channel declaration dead, the very shape the load refusal
+(`spec/chain.md`, *A dead declaration is refused at load*) now catches at load.
 
 - **`Phase.entryChannelPaths?: string[]`** (default `[]`) — globs always writable on a scoped
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick
