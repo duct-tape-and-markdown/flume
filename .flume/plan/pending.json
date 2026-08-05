@@ -1,42 +1,5 @@
 [
   {
-    "tag": "SUPERVISORPOLICY-TICKTIMEOUTMS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Add tickTimeoutMs?: number to Chain.supervisorPolicy (~L349-374), sibling to maxParallel; per-tick read, not run-scoped."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Thread chain into runSingleton (~L1283, call site ~L1182). Read chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs at both invokeAgent call sites (~L1345 singleton, ~L2103 fanout — chain already in scope via runFanoutEntry's chain param), mirroring runFanout's maxParallel pattern (~L1509)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Add per-tick tickTimeoutMs override tests (singleton + fanout) and a neither-knob-declared byte-identical-defaults case, mirroring the existing maxParallel test."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add tickTimeoutMs to Chain.supervisorPolicy; read per-tick (chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs) at both invokeAgent call sites",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Supervisor policy is a chain-overridable default"
-    },
-    "tests": [
-      "a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a singleton phase's agent invocation",
-      "a chain-declared supervisorPolicy.tickTimeoutMs overrides DispatcherOptions.tickTimeoutMs for a fanout entry's agent invocation",
-      "a chain declaring neither maxParallel nor tickTimeoutMs still gets the DispatcherOptions defaults, byte-identical"
-    ],
-    "acceptance": "invokeAgent's spawned timeoutMs reflects the tick's own resolved chain.supervisorPolicy?.tickTimeoutMs at both call sites, read fresh per tick like maxParallel — not bound once per run like quarantineScope/abortThreshold.",
-    "notes": "tickTimeoutMs is the existing DispatcherOptions cap (Dispatcher.ts:837,1071,1084,2280-2282), already enforced but until now unreachable from a chain/CLI-driven loop — no runaway brake on autonomous loops. Per-tick scope because nothing accumulates across ticks, unlike quarantine/abort."
-  },
-  {
     "tag": "PLATFORMFACTS-WIN32-MAXPATH-POINTERS",
     "gate": {
       "kind": "open"
