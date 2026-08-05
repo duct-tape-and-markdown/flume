@@ -447,7 +447,7 @@ export async function readTickVerdicts(
       // a corrupt line is skipped, not fatal to the rest of the history
     }
   }
-  return verdicts.slice(-n);
+  return n === 0 ? [] : verdicts.slice(-n);
 }
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */

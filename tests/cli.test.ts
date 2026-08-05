@@ -3109,6 +3109,22 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
+  it("-n 0 prints nothing and exits 0, not the full history", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const verdicts = Array.from({ length: 5 }, (_, i) =>
+        makeVerdict({ phaseName: `phase-${i}` }),
+      );
+      await writeTickVerdictsLog(repo.dir, verdicts);
+
+      const r = await runCli(repo.dir, ["log", "-n", "0"]);
+      expect(r.code).toBe(0);
+      expect(r.out.trim()).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
   it("--json emits the TickVerdict records verbatim as JSONL, one per line", async () => {
     const repo = await makeJobRepo("main");
     try {
