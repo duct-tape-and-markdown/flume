@@ -35,6 +35,7 @@ import {
   EX_MOUNT_DEAD,
   type TickOutcome,
   type SuperviseResult,
+  type TickVerdict,
 } from "../src/Dispatcher.ts";
 import { CLI, TSX_CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
@@ -2991,6 +2992,164 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["friction"]);
       expect(r.code).toBe(0);
       expect(r.out.trim()).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+});
+
+// ---------- flume log (spec/cli.md §Subcommand surface, cli-log-verb) ----------
+
+/**
+ * A minimal, otherwise-valid `TickVerdict` — `writeTickVerdict`'s own shape
+ * (`src/Dispatcher.ts`), constructed by hand here since `flume log` reads
+ * `tick-verdicts.jsonl` directly rather than driving a real tick to produce
+ * one (a real tick's plumbing is exercised in Dispatcher.test.ts; this suite
+ * holds the CLI read-side alone).
+ */
+function makeVerdict(
+  overrides: Partial<TickVerdict> & { phaseName: string },
+): TickVerdict {
+  return {
+    tags: [],
+    committed: false,
+    gateResults: [],
+    shippedTags: [],
+    mergeOutcomes: [],
+    summary: `${overrides.phaseName} placeholder`,
+    ...overrides,
+  };
+}
+
+/** Write `tick-verdicts.jsonl` directly under `<root>/.flume` — the log `readTickVerdicts` (`src/Dispatcher.ts`) reads, oldest first, top to bottom. */
+async function writeTickVerdictsLog(
+  root: string,
+  verdicts: TickVerdict[],
+): Promise<void> {
+  await mkdir(join(root, ".flume"), { recursive: true });
+  await writeFile(
+    join(root, ".flume", "tick-verdicts.jsonl"),
+    verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n",
+    "utf8",
+  );
+}
+
+describe("flume log (spec/cli.md §Subcommand surface)", () => {
+  it("default prints the last 10 verdicts oldest-first as fixed-format lines", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const verdicts = Array.from({ length: 12 }, (_, i) =>
+        makeVerdict({
+          phaseName: `phase-${i}`,
+          committed: true,
+          gateResults: [{ gate: "tsc", ok: true, message: "" }],
+          shippedTags: [`tag-${i}`],
+          mergeOutcomes: [{ tag: `tag-${i}`, outcome: "merged" }],
+        }),
+      );
+      await writeTickVerdictsLog(repo.dir, verdicts);
+
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(0);
+      const lines = r.out.trim().split("\n");
+      expect(lines).toHaveLength(10);
+      // Last 10 of 12, oldest first — verdicts[2]..verdicts[11] in order.
+      for (let i = 0; i < 10; i++) {
+        const idx = i + 2;
+        expect(lines[i]).toContain(`phase-${idx}`);
+        expect(lines[i]).toContain("committed=true");
+        expect(lines[i]).toContain("tsc:ok");
+        expect(lines[i]).toContain(`tag-${idx}`);
+        expect(lines[i]).toContain("merged");
+      }
+      // The two oldest, dropped by the default cap, never appear.
+      expect(r.out).not.toContain("phase-0 ");
+      expect(r.out).not.toContain("phase-1 ");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("-n N overrides the count", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const verdicts = Array.from({ length: 5 }, (_, i) =>
+        makeVerdict({ phaseName: `phase-${i}` }),
+      );
+      await writeTickVerdictsLog(repo.dir, verdicts);
+
+      const r = await runCli(repo.dir, ["log", "-n", "2"]);
+      expect(r.code).toBe(0);
+      const lines = r.out.trim().split("\n");
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toContain("phase-3");
+      expect(lines[1]).toContain("phase-4");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("--json emits the TickVerdict records verbatim as JSONL, one per line", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const verdicts = [
+        makeVerdict({
+          phaseName: "build",
+          committed: true,
+          gateResults: [{ gate: "tsc", ok: true, message: "clean" }],
+          shippedTags: ["TAG-A"],
+          mergeOutcomes: [{ tag: "TAG-A", outcome: "merged" }],
+        }),
+        makeVerdict({
+          phaseName: "plan",
+          committed: false,
+          noCommit: "voluntary-bail",
+        }),
+      ];
+      await writeTickVerdictsLog(repo.dir, verdicts);
+
+      const r = await runCli(repo.dir, ["log", "--json"]);
+      expect(r.code).toBe(0);
+      const lines = r.out.trim().split("\n");
+      expect(lines).toHaveLength(2);
+      expect(JSON.parse(lines[0]!)).toEqual(verdicts[0]);
+      expect(JSON.parse(lines[1]!)).toEqual(verdicts[1]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("no tick-verdicts.jsonl prints nothing and exits 0", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(0);
+      expect(r.out.trim()).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("mutates no baton flag", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeTickVerdictsLog(repo.dir, [makeVerdict({ phaseName: "build" })]);
+
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(0);
+      expect(existsSync(join(repo.dir, ".flume", "awake"))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("--help short-circuits before any side effect", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const r = await runCli(repo.dir, ["log", "--help"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("Usage: flume log");
+      expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
     } finally {
       await repo.cleanup();
     }

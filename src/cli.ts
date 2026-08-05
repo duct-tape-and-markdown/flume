@@ -51,11 +51,13 @@ import {
   superviseLoop,
   clearTickVerdict,
   writeTickVerdict,
+  readTickVerdicts,
   CjsContextLoadError,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
   type SuperviseResult,
+  type TickVerdict,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
@@ -297,6 +299,7 @@ const SUBCOMMANDS = [
   "loop",
   "wake",
   "sleep",
+  "log",
   "check",
   "friction",
 ] as const;
@@ -312,6 +315,9 @@ Commands:
   loop [--max N]      Run ticks until hibernation (default cap 50).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
+  log [-n N] [--json] Print the last N tick verdicts (default 10) from
+                      tick-verdicts.jsonl, oldest first — a human table by
+                      default, or --json for the records verbatim as JSONL.
   check               Validate the working tree's plan/pending.json — parse
                       plus fence arithmetic against the consumer (fanout)
                       phase's declared fence — without spending an agent.
@@ -439,6 +445,21 @@ Exit codes:
   2   Missing <phase> argument, or <phase> names a phase the loaded chain
       does not declare.
 `,
+  log: `Usage: flume log [-n N] [--json]
+
+Print the last N tick verdicts (default 10) from tick-verdicts.jsonl, oldest
+first. The human form is one fixed-format line per verdict, carrying only
+fields the record already holds: phase, committed, gate results, shipped
+tags, merge outcomes — facts only, never reclassified (park/bail vocabulary
+is the chain's, not the engine's). --json emits the TickVerdict records
+verbatim as JSONL, one per line, for a supervising agent. Read-only: no
+baton flag is touched, no agent runs.
+
+Exit codes:
+  0   Success — including no tick-verdicts.jsonl on disk (prints nothing).
+  2   Usage: unknown or extra arguments, or -n is missing, non-numeric, or
+      negative. No verdicts are read.
+`,
   check: `Usage: flume check
 
 Validate the working tree's plan/pending.json without spending an agent:
@@ -557,6 +578,27 @@ function wantsHelp(args: readonly string[]): boolean {
 function parseMaxValue(value: string | undefined): number | null {
   const parsed = value !== undefined ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * `flume log`'s human-form line for one `TickVerdict` — the exact five field
+ * groups spec/cli.md's "Subcommand surface" names for that form: phase,
+ * committed, gate results, shipped tags, merge outcomes. A rendering of
+ * those fields alone, nothing derived or reclassified from them — no
+ * park/bail vocabulary, which is the chain's own reading, not engine
+ * vocabulary (engine-boundary.md, "Told, not inferred").
+ */
+export function formatTickVerdictLine(v: TickVerdict): string {
+  const gates = v.gateResults
+    .map((g) => `${g.gate}:${g.ok ? "ok" : "FAIL"}`)
+    .join(",");
+  const merge = v.mergeOutcomes
+    .map((m) => `${m.tag}:${m.outcome}`)
+    .join(",");
+  return (
+    `${v.phaseName}  committed=${v.committed}  gates=[${gates}]  ` +
+    `shipped=[${v.shippedTags.join(",")}]  merge=[${merge}]`
+  );
 }
 
 /**
@@ -953,6 +995,37 @@ async function main(): Promise<number> {
     }
     new Baton(flumeDir).sleep(phase);
     console.log(`slept ${phase}`);
+    return 0;
+  }
+
+  if (cmd === "log") {
+    const words = [...rest];
+    let jsonMode = false;
+    const jsonIdx = words.indexOf("--json");
+    if (jsonIdx >= 0) {
+      jsonMode = true;
+      words.splice(jsonIdx, 1);
+    }
+    let n = 10;
+    const nIdx = words.indexOf("-n");
+    if (nIdx >= 0) {
+      const parsed = parseMaxValue(words[nIdx + 1]);
+      if (parsed === null) {
+        console.error("usage: flume log [-n N] [--json]");
+        return 2;
+      }
+      n = parsed;
+      words.splice(nIdx, 2);
+    }
+    if (words.length > 0) {
+      console.error("usage: flume log [-n N] [--json]");
+      return 2;
+    }
+
+    const verdicts = await readTickVerdicts(flumeDir, n);
+    for (const v of verdicts) {
+      console.log(jsonMode ? JSON.stringify(v) : formatTickVerdictLine(v));
+    }
     return 0;
   }
 
