@@ -1,74 +1,10 @@
 [
   {
-    "tag": "loop-merge-failure-errored-accounting",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Add mergeFailures.length>0 && shippedTags.length===0 to the per-tick errored check (~L3381-3388) alongside the existing provisionFailures leg, per spec/loop.md's 'non-zero iff at least one tick errored AND zero entries shipped'."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Cover a wave where every entry hits a merge (cherry-pick) failure, nothing ships, no gate revert/tipMove — assert the tick lands in erroredTicks and loopExitCode is non-zero."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Fix superviseLoop: a merge-stage-only failure tick (ships nothing, no gate revert) never joins erroredTicks, so a run stuck on merge conflicts can exit 0",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "tests": [
-      "a tick recording only mergeFailures with zero shippedTags and no gate revert is counted in erroredTicks",
-      "loopExitCode returns non-zero for a run whose every tick fails purely at the merge stage",
-      "a tick with a mergeFailure alongside a successful ship in the same wave stays out of erroredTicks (partial success remains exit 0)"
-    ],
-    "acceptance": "superviseLoop counts a nothing-shipped merge-failure tick as errored, so loopExitCode is non-zero per spec/loop.md's exit-code contract",
-    "notes": "Found via plan-tick audit of fa03a39 (generalized §16 backstop to merge/gate stages but left the separate errored-tick/exit-code accounting provision-only). mergeReverted only tracks afterMerge-gate reverts, not cherry-pick conflicts — that's the gap."
-  },
-  {
-    "tag": "cli-pending-read-swallows-errors",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "Narrow check's bare catch (~L1046-1052) to ENOENT only; report other readFileSync failures loudly (non-zero, name the error) instead of 'plan/pending.json absent'. Use namespacedJoin per platform-facts.md."
-        },
-        {
-          "path": "src/job.ts",
-          "description": "readPendingLoose (~L416-419) relies on existsSync, which returns false on any stat error, not just ENOENT — distinguish and surface non-ENOENT failures rather than reading them as an empty valid pending list."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Cover check surfacing a non-ENOENT read failure loudly rather than as absent."
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "Cover readPendingLoose surfacing a non-ENOENT failure rather than an empty valid parse."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "check's pending.json read and job.ts's readPendingLoose collapse any read failure (perm-denied, long-path) to 'absent', not just ENOENT — a silent false-green",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "tests": [
-      "check's pendingPath read distinguishes ENOENT (prints 'absent', exits 0) from another read failure (reports it, does not exit 0 silently)",
-      "readPendingLoose distinguishes ENOENT (empty valid list) from another stat/read failure"
-    ],
-    "acceptance": "Neither check nor readPendingLoose reads a non-ENOENT filesystem failure as file-absence; both surface it per engineering.md's 'Loud or nothing'",
-    "notes": "Found via posture sweep of src/cli.ts (rotation opened this tick, prior stamp 8312b25). One root defect, two sites sharing a probe — job.ts's own doc comment: 'the one probe flume status and flume job status both call'."
-  },
-  {
     "tag": "cli-log-n-zero-prints-all",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -96,7 +32,10 @@
   },
   {
     "tag": "cli-friction-name-scope-mismatch",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
