@@ -2868,6 +2868,26 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
+  it("exits EX_IOERR naming the error on a non-ENOENT pending.json read failure, instead of reading it as absent", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+      // A directory in place of pending.json reproduces a non-ENOENT read
+      // failure (EISDIR) without relying on permission bits a root-run test
+      // could bypass (`.claude/rules/engineering.md`, "Loud or nothing").
+      await mkdir(join(repo.dir, ".flume", "plan", "pending.json"), {
+        recursive: true,
+      });
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(74);
+      expect(r.out).not.toContain("absent");
+      expect(r.out).toContain("failed to read");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
   it("mutates no baton flag and invokes no agent", async () => {
     const repo = await makeJobRepo("main");
     try {

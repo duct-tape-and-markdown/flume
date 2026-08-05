@@ -407,15 +407,29 @@ function countFrictionFiles(dir: string): number {
 
 /**
  * Chain-less informational read of a pending.json at `pendingPath`: absent
- * reads as the empty, valid list (nothing planned is nothing pending);
- * present reads through `parsePendingLoose` (core fields validated, no
- * extension composed — never a write path). The one probe `flume status`
- * and `flume job status` (`src/cli.ts`) both call, so a corrupt file reads
- * "unparsable" identically on either surface.
+ * (`ENOENT`) reads as the empty, valid list (nothing planned is nothing
+ * pending); present reads through `parsePendingLoose` (core fields
+ * validated, no extension composed — never a write path). Any other read
+ * failure (permission denied, a path too long for the platform, …) is
+ * rethrown rather than folded into the absent case
+ * (`.claude/rules/engineering.md`, "Loud or nothing") — both call sites
+ * (`flume status` and `flume job status` (`src/cli.ts`)) already wrap their
+ * read in a try/catch that reports the failure and exits non-zero, so
+ * rethrowing surfaces it there instead of reading as "nothing pending". The
+ * one probe both surfaces call, so a corrupt file reads "unparsable"
+ * identically on either surface.
  */
 export function readPendingLoose(pendingPath: string): ParseResult {
-  if (!existsSync(pendingPath)) return { ok: true, entries: [], errors: [] };
-  return parsePendingLoose(readFileSync(pendingPath, "utf8"));
+  let raw: string;
+  try {
+    raw = readFileSync(namespacedJoin(pendingPath), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ok: true, entries: [], errors: [] };
+    }
+    throw err;
+  }
+  return parsePendingLoose(raw);
 }
 
 /**

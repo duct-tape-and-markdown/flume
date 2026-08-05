@@ -11,7 +11,15 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -25,6 +33,7 @@ import {
   jobRun,
   jobStatus,
   JobUsageError,
+  readPendingLoose,
   RUNTIME_IGNORES,
   validateJobName,
 } from "../src/job.ts";
@@ -1155,6 +1164,63 @@ describe("jobStatus — §5d enumeration units", () => {
         { name: "broken", awake: [], pending: null },
       ]);
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("readPendingLoose reads an absent (ENOENT) pending.json as the empty, valid list", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const pendingPath = join(dir, "plan", "pending.json");
+      expect(readPendingLoose(pendingPath)).toEqual({
+        ok: true,
+        entries: [],
+        errors: [],
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("readPendingLoose rethrows a non-ENOENT stat/read failure instead of reading it as absent — existsSync collapses any stat error, not just ENOENT, to false (JOB-READPENDINGLOOSE-NARROW-ENOENT)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const planDir = join(dir, "plan");
+      await mkdir(planDir, { recursive: true });
+      const pendingPath = join(planDir, "pending.json");
+      await writeFile(pendingPath, "[]");
+      // Strip traversal permission on the parent dir: stat(pendingPath) now
+      // fails with EACCES — the file exists but can't be reached — not
+      // ENOENT (`.claude/rules/engineering.md`, "Loud or nothing").
+      await chmod(planDir, 0o000);
+
+      let caught: NodeJS.ErrnoException | undefined;
+      try {
+        readPendingLoose(pendingPath);
+      } catch (err) {
+        caught = err as NodeJS.ErrnoException;
+      }
+      expect(caught).toBeDefined();
+      expect(caught?.code).not.toBe("ENOENT");
+    } finally {
+      await chmod(join(dir, "plan"), 0o755).catch(() => {});
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("jobStatus propagates a non-ENOENT pending.json read failure for a job instead of reading it as pending: 0", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const planDir = join(dir, ".flume", "jobs", "broken", "plan");
+      await mkdir(planDir, { recursive: true });
+      await writeFile(join(planDir, "pending.json"), "[]");
+      await chmod(planDir, 0o000);
+
+      expect(() => jobStatus(dir)).toThrow();
+    } finally {
+      await chmod(join(dir, ".flume", "jobs", "broken", "plan"), 0o755).catch(
+        () => {},
+      );
       await rm(dir, { recursive: true, force: true });
     }
   });

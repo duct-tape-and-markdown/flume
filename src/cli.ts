@@ -76,6 +76,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const EX_DATAERR = 65;
 
 /**
+ * sysexits.h `EX_IOERR` — I/O failed on a file known to exist (permission
+ * denied, a path too long for the platform, …), distinct from `ENOENT`
+ * (`.claude/rules/engineering.md`, "Loud or nothing": a stat failure other
+ * than absence must never read as "nothing to check").
+ */
+const EX_IOERR = 74;
+
+/**
  * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
  * dist/ in the published tarball — both layouts put it at `../package.json`).
  */
@@ -482,6 +490,9 @@ Exit codes:
        Naming the offending entry (and paths, for a fence violation).
   69   Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
        other reason. Nothing was checked — fix the chain and re-run.
+  74   I/O error (EX_IOERR): plan/pending.json exists but could not be read
+       (permission denied, a path too long for the platform, …). Naming
+       the underlying error.
 `,
   friction: `Usage: flume friction [name]
 
@@ -1047,10 +1058,16 @@ async function main(): Promise<number> {
     const pendingPath = join(flumeDir, "plan", "pending.json");
     let raw: string;
     try {
-      raw = readFileSync(pendingPath, "utf8");
-    } catch {
-      console.log("plan/pending.json absent — nothing to check");
-      return 0;
+      raw = readFileSync(namespacedJoin(pendingPath), "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        console.log("plan/pending.json absent — nothing to check");
+        return 0;
+      }
+      console.error(
+        `[flume] check: plan/pending.json failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
     }
 
     const parsed = parsePending(raw, chain.entryExtension);
