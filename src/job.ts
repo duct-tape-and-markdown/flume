@@ -393,10 +393,10 @@ export interface JobStatus {
 /** Files (not subdirs) directly under `dir`; 0 when `dir` is absent or unreadable. */
 function countFrictionFiles(dir: string): number {
   try {
-    // win32 total-path limit (~260 chars, v0.4 §6): dir joins a job dir
-    // onto chain.friction, the same construction writeRevertNote and
-    // harvestFriction guard in Dispatcher.ts. namespacedJoin (src/paths.ts)
-    // is the shared idiom.
+    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a job
+    // dir onto chain.friction, the same construction writeRevertNote and
+    // harvestFriction guard in Dispatcher.ts use. namespacedJoin
+    // (src/paths.ts) is the shared idiom.
     return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
       (e) => e.isFile(),
     ).length;

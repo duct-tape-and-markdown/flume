@@ -655,7 +655,7 @@ export async function frictionCountLine(
   if (chain.friction === undefined) return undefined;
   let entries: Dirent[];
   try {
-    // win32 total-path limit (~260 chars, v0.4 §6): same join(stateRoot,
+    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
     // chain.friction) construction writeRevertNote and harvestFriction
     // guard below — namespacedJoin (src/paths.ts) is the shared idiom.
     entries = await readdir(namespacedJoin(stateRoot, chain.friction), {
@@ -2476,11 +2476,9 @@ export class Dispatcher {
     const mirrorDir = join(worktreePath, stateRootRel, chain.friction);
     let entries: Dirent[];
     try {
-      // win32 total-path limit (~260 chars, v0.4 §6): mirrorDir nests a
-      // worktree path (itself at least as deep as the job dir, v0.4 §6's
-      // own createWorktree comment) under chain.friction, so it can exceed
-      // MAX_PATH even where no single component does. namespacedJoin
-      // (src/paths.ts) is the shared idiom — same as writeRevertNote below.
+      // win32 MAX_PATH (`.claude/rules/platform-facts.md`): mirrorDir nests
+      // a worktree path under chain.friction. namespacedJoin (src/paths.ts)
+      // is the shared idiom — same as writeRevertNote below.
       entries = await readdir(namespacedJoin(mirrorDir), {
         withFileTypes: true,
       });
@@ -2736,11 +2734,10 @@ export class Dispatcher {
           { cwd, maxBuffer: 16 * 1024 * 1024 },
         );
         const dest = join(dir, rel);
-        // win32 total-path limit (~260 chars, v0.4 §6): dest depth here is
-        // driven by the reverted diff's own path depth, not chain.friction,
-        // but it's the same join(dir, rel) unwrapped shape writeRevertNote/
-        // harvestFriction guard. toNamespacedPath prepends the \\?\
-        // extended-length prefix on win32 (no-op elsewhere), same idiom.
+        // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth
+        // here is driven by the reverted diff's own path depth, not
+        // chain.friction, but it's the same join(dir, rel) unwrapped shape
+        // writeRevertNote/harvestFriction guard use — same idiom.
         await mkdir(toNamespacedPath(dirname(dest)), { recursive: true });
         await writeFile(toNamespacedPath(dest), content, "utf8");
       }
@@ -2819,11 +2816,9 @@ export class Dispatcher {
       const { subject, body } = await this.capturedCommitMessage(cwd, sha);
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const primaryDir = join(this.flumeDir, chain.friction);
-      // win32 total-path limit (~260 chars, v0.4 §6): TAG_MAX_LENGTH bounds
-      // only the filename component, not the friction dir's full depth.
-      // namespacedJoin (src/paths.ts) is the shared idiom — the mkdir/
-      // writeFile below survive a full path past MAX_PATH even when the
-      // per-component bound holds.
+      // win32 MAX_PATH (`.claude/rules/platform-facts.md`): TAG_MAX_LENGTH
+      // bounds only the filename component, not the friction dir's full
+      // depth. namespacedJoin (src/paths.ts) is the shared idiom.
       await mkdir(namespacedJoin(primaryDir), { recursive: true });
       const lines = [
         `# Gate revert: ${failure.gate}`,
