@@ -403,6 +403,13 @@ const factory: ChainFactory = (api) => {
     // against the same object build enforces — one declaration, no drift.
     writablePaths: buildFence.writablePaths,
     entryChannelPaths: buildFence.entryChannelPaths,
+    // Entry-scoped narrowing on, completing this chain's own migration
+    // across the flip that made it opt-in — buildFence's comment and the
+    // pendingGate pre-check were both written assuming it; without the flag
+    // the channel declaration above is the dead config the load refusal
+    // (spec/chain.md, *A dead declaration is refused at load*) exists to
+    // catch.
+    scopeWritesToEntry: true,
     /**
      * This chain's own answer to "did that commit finish the work?"
      * (`spec/pending.md`, *Ship detection trusts the agent's own account*).
