@@ -93,6 +93,12 @@ const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
  * §16 (RELEASE-v0.7): one pre-tick worktree provisioning failure — the
  * dispatcher never reached the agent for the affected entry (or, for a
  * repo-level failure, for any entry this tick).
+ *
+ * The exported name is pinned by `src/index.ts`'s barrel export and by
+ * `tests/Dispatcher.test.ts`'s barrel-export pin, so it stays `ProvisionFailure`
+ * — provision-stage only — even though {@link MergeFailure} and
+ * {@link GateFailure} below now share its exact shape for the two stages
+ * spec/loop.md's "Repeated identical failures" generalized the backstop to.
  */
 export interface ProvisionFailure {
   /**
@@ -115,8 +121,38 @@ export interface ProvisionFailure {
   message: string;
 }
 
-/** Bound on a persisted {@link ProvisionFailure.signature} — a comparison key, not a transcript. */
-const MAX_PROVISION_SIGNATURE = 500;
+/**
+ * A merge-stage failure (spec/loop.md "Repeated identical failures — quarantine,
+ * then abort"): a cherry-pick conflict, or a dirty trunk refusing the pick, that
+ * kept an entry's already-agent-committed worktree work off trunk. Always
+ * entry-scoped — unlike a provisioning failure, a cherry-pick failure always has
+ * a specific entry's commit as its target — so `tag` is required rather than
+ * optional.
+ */
+export interface MergeFailure {
+  tag: string;
+  /** Same comparison-key contract as {@link ProvisionFailure.signature}. */
+  signature: string;
+  message: string;
+}
+
+/**
+ * A gate-stage failure (spec/loop.md "Repeated identical failures — quarantine,
+ * then abort"): an afterCommit or afterMerge gate that reverted a commit,
+ * `signature` derived from the gate's own name plus its failure output. `tag`
+ * is absent for a singleton phase's own gate revert (no entry to quarantine —
+ * it falls to the consecutive-failure backstop alone) and present for a
+ * fanout entry/wave gate revert.
+ */
+export interface GateFailure {
+  tag?: string;
+  /** Same comparison-key contract as {@link ProvisionFailure.signature}. */
+  signature: string;
+  message: string;
+}
+
+/** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
+const MAX_FAILURE_SIGNATURE = 500;
 
 /**
  * One gate's result as recorded in a {@link TickVerdict} — unlike
@@ -249,6 +285,18 @@ export interface TickVerdict {
    * entries. Absent/empty when the tick hit none.
    */
   provisionFailures?: ProvisionFailure[];
+  /**
+   * §16 (generalized past provisioning, spec/loop.md "Repeated identical
+   * failures"): merge-stage cherry-pick-conflict failures this tick recorded.
+   * Absent/empty when the tick hit none.
+   */
+  mergeFailures?: MergeFailure[];
+  /**
+   * §16 (generalized past provisioning): gate-stage failures — an afterCommit
+   * or afterMerge gate revert — this tick recorded. Absent/empty when the
+   * tick hit none.
+   */
+  gateFailures?: GateFailure[];
   /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
   summary: string;
 }
@@ -262,6 +310,10 @@ type PhaseTickOutcome = {
   /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
   declined?: boolean;
   provisionFailures?: ProvisionFailure[];
+  /** §16 (generalized) — see {@link TickVerdict.mergeFailures}. */
+  mergeFailures?: MergeFailure[];
+  /** §16 (generalized) — see {@link TickVerdict.gateFailures}. */
+  gateFailures?: GateFailure[];
   /** Entry tags this wave provisioned a worktree/agent for (fanout only; §5); absent for a singleton phase. */
   tags?: string[];
   /** Fanout only (§5): each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
@@ -492,6 +544,15 @@ function bound(s: string, max: number): string {
 function tailBound(s: string, max: number): string {
   if (s.length <= max) return s;
   return `[truncated ${s.length - max} chars]…\n` + s.slice(s.length - max);
+}
+
+/**
+ * {@link GateFailure.signature}: derived from the gate's own name plus its
+ * failure output, so two different gates failing with the same message text
+ * (or the same gate failing with two different messages) never collide.
+ */
+function gateFailureSignature(failure: { gate: string; message: string }): string {
+  return bound(`${failure.gate}: ${failure.message}`.trim(), MAX_FAILURE_SIGNATURE);
 }
 
 // ---------- public surface ----------
@@ -1082,6 +1143,17 @@ export interface TickOutcome {
    */
   provisionFailures?: ProvisionFailure[];
   /**
+   * §16 (generalized past provisioning) — see {@link TickVerdict.mergeFailures}.
+   * Present only when the tick hit at least one; absent on a singleton tick or
+   * a fanout wave with no cherry-pick conflict.
+   */
+  mergeFailures?: MergeFailure[];
+  /**
+   * §16 (generalized past provisioning) — see {@link TickVerdict.gateFailures}.
+   * Present only when the tick hit at least one; absent on a clean tick.
+   */
+  gateFailures?: GateFailure[];
+  /**
    * v0.8 §5: this tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
    * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
@@ -1254,6 +1326,8 @@ export class Dispatcher {
       tipMoved,
       declined,
       provisionFailures,
+      mergeFailures,
+      gateFailures,
       tags,
       mergeOutcomes,
     } = phaseOutcome;
@@ -1303,6 +1377,8 @@ export class Dispatcher {
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
+      ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
+      ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
       summary,
     };
 
@@ -1317,6 +1393,8 @@ export class Dispatcher {
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
+      ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
+      ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
       awakeAfter: this.baton.awake(),
       summary,
     };
@@ -1402,6 +1480,10 @@ export class Dispatcher {
     const gateResults: GateResultEntry[] = [];
     let noCommit: NoCommitMode | undefined;
     let tipMoved = false;
+    // §16 (generalized): a singleton's own afterCommit gate revert carries no
+    // entry tag (nothing to quarantine — see GateFailure's doc), so it falls
+    // to the consecutive-failure backstop alone.
+    let gateFailure: GateFailure | undefined;
 
     if (committed) {
       // RELEASE-v0.11 §5 tip verify: the agent commits directly, so the
@@ -1437,6 +1519,10 @@ export class Dispatcher {
         await git.dropLastCommit(cwd, postHead);
         committed = false;
         noCommit = "gate-revert";
+        gateFailure = {
+          signature: gateFailureSignature(verdict.failure!),
+          message: verdict.failure!.message,
+        };
         await this.writePriorAttempt(key, record);
         this.log.warn(
           `[flume] ${phase.name} commit reverted: ${verdict.failure?.message}`,
@@ -1471,6 +1557,7 @@ export class Dispatcher {
       },
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
+      ...(gateFailure ? { gateFailures: [gateFailure] } : {}),
     };
   }
 
@@ -1582,7 +1669,7 @@ export class Dispatcher {
       await git.pruneWorktrees(repoRoot);
     } catch (err) {
       const message = (err as Error).message;
-      const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+      const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
       provisionFailures.push({ signature, message });
       this.log.warn(
         `[flume] ${phase.name}: worktree prune failed (${signature}); continuing — per-entry provisioning may still fail`,
@@ -1613,7 +1700,7 @@ export class Dispatcher {
         provisioned.push(entry);
       } catch (err) {
         const message = (err as Error).message;
-        const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
         provisionFailures.push({ tag: entry.tag, signature, message });
         this.log.warn(
           `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
@@ -1647,7 +1734,7 @@ export class Dispatcher {
             });
           } catch (err) {
             const message = (err as Error).message;
-            const signature = bound(message.trim(), MAX_PROVISION_SIGNATURE);
+            const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
             provisionFailures.push({ tag: entry.tag, signature, message });
             setupFailedIndices.add(i);
             this.log.warn(
@@ -1708,6 +1795,12 @@ export class Dispatcher {
     // cherry-pick, so it gets an outcome here only when it carried a
     // captured footprint (§13).
     const mergeOutcomes: TickVerdictMergeOutcome[] = [];
+    // §16 (generalized past provisioning): merge-stage and gate-stage
+    // failures this wave recorded — sibling accounting to `provisionFailures`
+    // above, fed to the same wave-level verdict for superviseLoop's quarantine
+    // + consecutive-identical backstop to key off.
+    const mergeFailures: MergeFailure[] = [];
+    const gateFailures: GateFailure[] = [];
     // RELEASE-v0.11 §5 tip verify: the tip this wave's cherry-picks may
     // legitimately land on — `preHead` for the first, advanced to each
     // successful merge's sha as the wave makes its own progress. Distinct
@@ -1739,6 +1832,7 @@ export class Dispatcher {
             footprint: r.footprint,
           });
         }
+        if (r.gateFailure) gateFailures.push(r.gateFailure);
         continue;
       }
 
@@ -1760,8 +1854,9 @@ export class Dispatcher {
       try {
         await git.cherryPick(repoRoot, r.commitSha);
       } catch (err) {
+        const message = (err as Error).message;
         this.log.warn(
-          `[flume] cherry-pick failed for ${r.entry.tag}: ${(err as Error).message}; entry stays in pending`,
+          `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; entry stays in pending`,
         );
         let footprint: string[] | undefined;
         try {
@@ -1779,6 +1874,14 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "cherry-pick-conflict",
           ...(footprint ? { footprint } : {}),
+        });
+        // §16 (generalized): a merge-stage failure — always entry-scoped, so
+        // superviseLoop's quarantine leg can isolate it exactly like a
+        // tagged provisioning failure.
+        mergeFailures.push({
+          tag: r.entry.tag,
+          signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+          message,
         });
         continue;
       }
@@ -1845,6 +1948,11 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "afterMerge-reverted",
           footprint: commitTouchedPaths,
+        });
+        gateFailures.push({
+          tag: r.entry.tag,
+          signature: gateFailureSignature(entryFailure),
+          message: entryFailure.message,
         });
         continue;
       }
@@ -1954,6 +2062,8 @@ export class Dispatcher {
           shippedTags,
           mergeOutcomes,
           ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+          ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
+          ...(gateFailures.length > 0 ? { gateFailures } : {}),
           summary:
             shippedTags.length > 0
               ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${err.message})`
@@ -2065,6 +2175,8 @@ export class Dispatcher {
       ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
       ...(waveDeclined ? { declined: waveDeclined } : {}),
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+      ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
+      ...(gateFailures.length > 0 ? { gateFailures } : {}),
       tags: provisioned.map((e) => e.tag),
       mergeOutcomes,
     };
@@ -2099,6 +2211,13 @@ export class Dispatcher {
      * the same way an `afterMerge` failure's footprint is fed in.
      */
     footprint?: string[];
+    /**
+     * §16 (generalized): set only alongside a `noCommit: "gate-revert"`
+     * afterCommit revert — the wave loop folds this entry-tagged record into
+     * its own `gateFailures` the same way it folds `footprint` into
+     * `mergeOutcomes`.
+     */
+    gateFailure?: GateFailure;
     /**
      * Set only when this entry's own commit landed and passed its
      * afterCommit gates — the wave loop's ship-classification site (spec/
@@ -2236,6 +2355,11 @@ export class Dispatcher {
         noCommit: "gate-revert",
         worktreePath: wt.path,
         ...(footprint ? { footprint } : {}),
+        gateFailure: {
+          tag: entry.tag,
+          signature: gateFailureSignature(verdict.failure!),
+          message: verdict.failure!.message,
+        },
       };
     }
 
@@ -3076,22 +3200,25 @@ export interface SuperviseLoopOptions {
   log?: Logger;
   /**
    * §8 (v0.8, RELEASE-v0.8): chain-declared override for §16's run-scoped
-   * quarantine (RELEASE-v0.7). `"none"` disables per-entry quarantine
-   * outright — a tagged provisioning failure is never withheld from later
-   * ticks this run — while the consecutive-identical-failure backstop
-   * (`abortThreshold` below) still applies. Default `"run"`: quarantine a
-   * tagged failure's slug for the rest of the run — exact default byte
-   * shape pinned by tests/Dispatcher.test.ts's "a chain declaring neither
-   * knob gets the v0.7 §16 defaults, byte-identical" case. The CLI forwards
-   * this from the resolved chain's `supervisorPolicy.quarantineScope`
-   * (`src/Phase.ts`); undeclared falls through to the default here.
+   * quarantine (RELEASE-v0.7; generalized past provisioning to the merge and
+   * gate stages, spec/loop.md "Repeated identical failures"). `"none"`
+   * disables per-entry quarantine outright — a tagged provision/merge/gate
+   * failure is never withheld from later ticks this run — while the
+   * consecutive-identical-failure backstop (`abortThreshold` below) still
+   * applies. Default `"run"`: quarantine a tagged failure's slug for the
+   * rest of the run — exact default byte shape pinned by
+   * tests/Dispatcher.test.ts's "a chain declaring neither knob gets the v0.7
+   * §16 defaults, byte-identical" case. The CLI forwards this from the
+   * resolved chain's `supervisorPolicy.quarantineScope` (`src/Phase.ts`);
+   * undeclared falls through to the default here.
    */
   quarantineScope?: "run" | "none";
   /**
    * §8: chain-declared override for §16's consecutive-identical-failure
-   * abort threshold (RELEASE-v0.7) — the number of consecutive ticks the
-   * same provisioning-failure signature must repeat, with no successful
-   * tick between them, before the run aborts. Default 3, pinned by the same
+   * abort threshold (RELEASE-v0.7; generalized past provisioning) — the
+   * number of consecutive ticks the same *stage-tagged* signature
+   * (provision, merge, or gate) must repeat, with no successful tick between
+   * them, before the run aborts. Default 3, pinned by the same
    * tests/Dispatcher.test.ts case cited on `quarantineScope` above. The CLI
    * forwards this from the resolved chain's `supervisorPolicy.abortThreshold`;
    * undeclared falls through to the default here.
@@ -3149,15 +3276,18 @@ export interface SuperviseResult {
    */
   erroredTicks: string[];
   /**
-   * §16 (RELEASE-v0.7): set when the run aborted because the same
-   * provisioning-failure signature repeated on `abortThreshold` (default 3,
-   * v0.8 §8) consecutive ticks with no successful tick between them — the
-   * consecutive-failure backstop for
-   * non-entry-scoped provisioning walls the run-scoped quarantine can't
-   * isolate (generalizes §4's mount-dead abort past its class without
-   * touching §4's own semantics). Distinct from `mountDead` — the chain
-   * resolved and ran fine; only pre-tick worktree provisioning kept hitting
-   * the identical wall.
+   * §16 (RELEASE-v0.7; generalized past provisioning to the merge and gate
+   * stages, spec/loop.md "Repeated identical failures"): set when the run
+   * aborted because the same stage-tagged signature repeated on
+   * `abortThreshold` (default 3, v0.8 §8) consecutive ticks with no
+   * successful tick between them — the consecutive-failure backstop for
+   * non-entry-scoped walls the run-scoped quarantine can't isolate
+   * (generalizes §4's mount-dead abort past its class without touching §4's
+   * own semantics). `signature` is the raw comparison key, never prefixed
+   * with the stage it came from — the stage only disambiguates the internal
+   * streak, never the reported shape. Distinct from `mountDead` — the chain
+   * resolved and ran fine; only a provision, merge, or gate wall kept
+   * hitting the identical failure.
    */
   repeatedFailure?: { signature: string; count: number };
 }
@@ -3212,12 +3342,18 @@ export async function superviseLoop(
   // signature streak for the abort backstop. Both reset to empty on every
   // fresh `superviseLoop` call — quarantine never outlives the run.
   const quarantinedSlugs = new Set<string>();
-  // Keyed by signature, not "the last one seen" — a tick's provisionFailures
-  // can carry several distinct signatures (a repo-level failure pushed first,
-  // then per-entry ones), and any of them can be the one that repeats every
-  // tick. Tracking only index 0 let a varying sibling there shadow a
-  // genuinely-repeating signature elsewhere in the list forever.
-  const provisionFailureStreaks = new Map<string, number>();
+  // spec/loop.md "Repeated identical failures — quarantine, then abort"
+  // generalizes both legs past provisioning to the merge and gate stages,
+  // keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
+  // coincidentally-identical message from a different stage never shares a
+  // streak with this one, and never shadows it in the quarantine loop either.
+  // Keyed by signature, not "the last one seen" — a tick's failures can carry
+  // several distinct signatures across stages (a repo-level provisioning
+  // failure pushed first, then per-entry ones, then a merge or gate failure),
+  // and any of them can be the one that repeats every tick. Tracking only
+  // index 0 let a varying sibling there shadow a genuinely-repeating
+  // signature elsewhere in the list forever.
+  const failureStreaks = new Map<string, number>();
   for (let i = 0; i < maxTicks; i++) {
     const { exitCode } = await runTick(quarantinedSlugs);
     ticks++;
@@ -3262,52 +3398,78 @@ export async function superviseLoop(
       }
     }
 
-    // §16: quarantine every tagged provisioning failure this tick named —
-    // isolating the slug so the rest of the run stops re-attempting a wall
-    // it already hit once — then fold the tick's failure(s) into the
-    // consecutive-identical-signature streak (the backstop for the
-    // non-entry-scoped class quarantine can't isolate, e.g. a repo-level
-    // `git worktree prune` failure). A tick with no provisioning failure at
-    // all clears the streak — only an unbroken run of the identical wall
-    // counts. §8: a chain declaring `quarantineScope: "none"` opts out of
-    // this leg entirely — the backstop below still fires.
-    const provisionFailures = verdict?.provisionFailures ?? [];
+    // §16 (generalized past provisioning): every per-entry failure fact the
+    // verdict records, tagged with the stage it came from — a voluntary bail
+    // or park never joins this list, since neither writes a provision/merge/
+    // gate failure record at all.
+    const failures: Array<{
+      stage: "provision" | "merge" | "gate";
+      tag?: string;
+      signature: string;
+      message: string;
+    }> = [
+      ...(verdict?.provisionFailures ?? []).map((f) => ({
+        stage: "provision" as const,
+        ...f,
+      })),
+      ...(verdict?.mergeFailures ?? []).map((f) => ({
+        stage: "merge" as const,
+        ...f,
+      })),
+      ...(verdict?.gateFailures ?? []).map((f) => ({
+        stage: "gate" as const,
+        ...f,
+      })),
+    ];
+
+    // Quarantine every *tagged* failure this tick named, whichever stage it
+    // came from — isolating the slug so the rest of the run stops
+    // re-attempting a wall it already hit once. A repo-level/untagged failure
+    // (no single entry to blame) falls to the backstop below instead. §8: a
+    // chain declaring `quarantineScope: "none"` opts out of this leg
+    // entirely — the backstop below still fires.
     if (quarantineScope !== "none") {
-      for (const f of provisionFailures) {
+      for (const f of failures) {
         if (!f.tag) continue;
         const slug = slugify(f.tag);
         if (!quarantinedSlugs.has(slug)) {
           quarantinedSlugs.add(slug);
           log.warn(
-            `[flume] quarantining ${f.tag} for the rest of this run: pre-tick ` +
-              `worktree provisioning failed (${f.signature})`,
+            `[flume] quarantining ${f.tag} for the rest of this run: ${f.stage}-stage ` +
+              `failure (${f.signature})`,
           );
         }
       }
     }
-    const thisSignatures = new Set(provisionFailures.map((f) => f.signature));
-    // A signature not repeated on this tick breaks its own streak — whether
-    // this tick had no provisioning failure at all, or had failures that
-    // just didn't include that particular signature.
-    for (const sig of [...provisionFailureStreaks.keys()]) {
-      if (!thisSignatures.has(sig)) provisionFailureStreaks.delete(sig);
+
+    // Fold every stage-tagged signature into the consecutive-identical
+    // streak (the backstop for the non-entry-scoped class quarantine can't
+    // isolate, e.g. a repo-level `git worktree prune` failure, or a
+    // singleton's own gate revert — nothing to quarantine either way). A
+    // tick with no failure of a given stage-tagged signature clears that
+    // signature's streak — only an unbroken run of the identical wall
+    // counts.
+    const thisSignatures = new Map(
+      failures.map((f) => [`${f.stage}:${f.signature}`, f.signature]),
+    );
+    for (const key of [...failureStreaks.keys()]) {
+      if (!thisSignatures.has(key)) failureStreaks.delete(key);
     }
     let abortSignature: string | undefined;
     let abortCount = 0;
-    for (const sig of thisSignatures) {
-      const count = (provisionFailureStreaks.get(sig) ?? 0) + 1;
-      provisionFailureStreaks.set(sig, count);
+    for (const [key, signature] of thisSignatures) {
+      const count = (failureStreaks.get(key) ?? 0) + 1;
+      failureStreaks.set(key, count);
       if (count >= abortThreshold && count > abortCount) {
-        abortSignature = sig;
+        abortSignature = signature;
         abortCount = count;
       }
     }
     if (abortSignature) {
       log.error(
-        `[flume] worktree provisioning failed with an identical signature ` +
-          `${abortCount} consecutive ticks (${abortSignature}); ` +
-          `aborting after ${ticks} tick(s) instead of burning the remaining ` +
-          `ticks against the same wall.`,
+        `[flume] the same failure signature repeated on ${abortCount} ` +
+          `consecutive ticks (${abortSignature}); aborting after ${ticks} ` +
+          `tick(s) instead of burning the remaining ticks against the same wall.`,
       );
       return {
         ticks,

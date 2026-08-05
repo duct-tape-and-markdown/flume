@@ -418,6 +418,18 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
     expect(outcome.verdict?.gateResults).toEqual([
       { gate: "intentional-fail", ok: false, message: "boom", details: "stderr-context" },
     ]);
+
+    // §16 (generalized past provisioning, spec/loop.md "Repeated identical
+    // failures"): a gate-stage failure is recorded with a signature derived
+    // from the gate's own name plus its failure output. A singleton phase has
+    // no entry to blame, so `tag` is absent — this failure falls to the
+    // consecutive-failure backstop alone, never the quarantine leg.
+    expect(outcome.verdict?.gateFailures).toEqual([
+      { signature: "intentional-fail: boom", message: "boom" },
+    ]);
+    expect(outcome.gateFailures).toEqual([
+      { signature: "intentional-fail: boom", message: "boom" },
+    ]);
   });
 });
 
@@ -2195,6 +2207,20 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       },
     ]);
 
+    // §16 (generalized past provisioning, spec/loop.md "Repeated identical
+    // failures"): a merge-stage cherry-pick conflict is recorded on the
+    // verdict with a stage-tagged signature — always entry-scoped, unlike a
+    // provisioning failure, so superviseLoop's quarantine leg can isolate it.
+    expect(outcome.verdict?.mergeFailures).toEqual([
+      expect.objectContaining({
+        tag: "CONFLICT-B",
+        signature: expect.any(String),
+      }),
+    ]);
+    expect(outcome.mergeFailures).toEqual([
+      expect.objectContaining({ tag: "CONFLICT-B" }),
+    ]);
+
     // No lingering cherry-pick state in the worktree — the dispatcher
     // aborted it so the next tick starts clean.
     const { stdout: status } = await exec("git", ["status", "--porcelain"], {
@@ -2326,6 +2352,14 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
       (g) => g.gate === "iso-veto" && !g.ok,
     );
     expect(verdictVeto?.details).toBe("ISO-FAIL-DETAIL-QQQ");
+
+    // §16 (generalized past provisioning): a gate revert is recorded with a
+    // signature derived from the gate's own name plus its failure output —
+    // the `details` above is a separate, richer channel; the signature is
+    // the bounded comparison key superviseLoop's backstop keys off.
+    expect(first.verdict?.gateFailures).toEqual([
+      { tag: "ISO-FAIL", signature: "iso-veto: iso veto", message: "iso veto" },
+    ]);
 
     // Retry wave: only ISO-FAIL is still pickable. Its prompt carries the
     // §5 gate-revert block (afterMerge); ISO-PASS never runs again.
@@ -2673,6 +2707,14 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(onDisk[0]!.observedFiles!.sort()).toEqual(
       [...outcome.verdict!.mergeOutcomes[0]!.footprint!].sort(),
     );
+
+    // §16 (generalized past provisioning): unlike the singleton afterCommit
+    // revert, a fanout entry's own afterCommit gate revert carries the
+    // entry's tag — the tagged failure superviseLoop's quarantine leg can
+    // isolate for the rest of the run.
+    expect(outcome.verdict?.gateFailures).toEqual([
+      expect.objectContaining({ tag: "FOOT-STRAY", signature: expect.any(String) }),
+    ]);
   }, 20_000);
 
   it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (engineering.md 'the fix lands at the mechanism')", async () => {
@@ -6547,6 +6589,334 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(res.ticks).toBe(4);
     expect(res.hibernated).toBe(true);
     expect(res.repeatedFailure).toBeUndefined();
+  });
+});
+
+/**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort"
+ * generalizes both §16 legs past provisioning to the merge and gate stages —
+ * sibling coverage to the provision-only suite above, same `runTick` fixture
+ * idiom (a stub writing `tick-verdict.json` directly, standing in for a real
+ * fanout wave/singleton tick whose own mechanism the Dispatcher-level suites
+ * above prove).
+ */
+describe("superviseLoop — the §16 backstop generalizes to merge- and gate-stage failures", () => {
+  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+
+  it("quarantines a tagged merge-stage failure exactly like a tagged provisioning failure", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              shippedTags: ["OK-A"],
+              mergeFailures: [
+                {
+                  tag: "CONFLICT-B",
+                  signature: "cherry-pick conflict in src/shared.ts",
+                  message: "error: could not apply ...: conflict in src/shared.ts",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    expect(res.shippedTags).toEqual(["OK-A"]);
+    expect(receivedSlugs[0]).toEqual([]);
+    expect(receivedSlugs[1]).toEqual(["conflict-b"]);
+    expect(
+      warnings.some((w) => w.includes("CONFLICT-B") && w.includes("merge-stage")),
+    ).toBe(true);
+  });
+
+  it("quarantines a tagged gate-stage failure exactly like a tagged provisioning failure", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              shippedTags: ["OK-A"],
+              gateFailures: [
+                {
+                  tag: "ISO-FAIL",
+                  signature: "iso-veto: iso veto",
+                  message: "iso veto",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(verdictFixture({ committed: false })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    expect(receivedSlugs[0]).toEqual([]);
+    expect(receivedSlugs[1]).toEqual(["iso-fail"]);
+    expect(
+      warnings.some((w) => w.includes("ISO-FAIL") && w.includes("gate-stage")),
+    ).toBe(true);
+  });
+
+  it("aborts after the same merge-stage signature fails 3 consecutive ticks with no successful tick between", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    const SIGNATURE = "error: could not apply ...: conflict in src/shared.ts";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            mergeFailures: [
+              { tag: "CONFLICT-B", signature: SIGNATURE, message: SIGNATURE },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log,
+    });
+
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    // The exposed shape carries the raw signature only — never prefixed with
+    // the stage that tagged it internally.
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
+  });
+
+  it("aborts after the same untagged gate-stage signature fails 3 consecutive ticks (a singleton's own gate revert has no entry to quarantine)", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan"); // never hibernates — the abort must come from the backstop alone
+
+    const SIGNATURE = "tsc: no commit — tsc failed";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            phaseName: "plan",
+            committed: false,
+            noCommit: "gate-revert",
+            gateFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log,
+    });
+
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
+  });
+
+  it("a voluntary bail never joins the accounting, however many times it repeats", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            phaseName: "plan",
+            committed: false,
+            noCommit: "voluntary-bail",
+          }),
+        ),
+        "utf8",
+      );
+      if (calls >= 5) baton.sleep("plan");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(5);
+    expect(res.ticks).toBe(5);
+    expect(res.hibernated).toBe(true);
+    expect(res.repeatedFailure).toBeUndefined();
+    // No failure record means nothing to quarantine either.
+    expect(receivedSlugs.every((s) => s.length === 0)).toBe(true);
+  });
+
+  it("a merge-stage and a gate-stage failure sharing identical signature text keep independent streaks — a quiet tick for one stage clears only that stage's streak", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    const SHARED_TEXT = "boom";
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1) {
+        // Tick 1: a merge-stage failure with the shared text — starts a
+        // merge-stage streak of 1.
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              mergeFailures: [
+                { tag: "CONFLICT-B", signature: SHARED_TEXT, message: SHARED_TEXT },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        // Ticks 2-4: a gate-stage failure with the identical text and no
+        // merge failure at all — this tick clears the merge-stage streak
+        // (recording no failure of that class) while accumulating its own,
+        // separately-keyed gate-stage streak.
+        await writeFile(
+          verdictPath(),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              gateFailures: [{ signature: SHARED_TEXT, message: SHARED_TEXT }],
+            }),
+          ),
+          "utf8",
+        );
+      }
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: silent,
+    });
+
+    // If the merge-stage tick's count had leaked into the gate-stage streak,
+    // the abort would fire on tick 3 (1 carried + 2 more = 3) instead of
+    // tick 4 (the gate-stage streak's own 3rd occurrence).
+    expect(calls).toBe(4);
+    expect(res.ticks).toBe(4);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({ signature: SHARED_TEXT, count: 3 });
   });
 });
 
