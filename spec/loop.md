@@ -154,26 +154,26 @@ no reset is involved: that entry's commit is still on its private worktree branc
 teardown removes along with the worktree. The entry stays pending in every case; only
 the residue differs.
 
-The check takes the shape the commit site allows:
+The check takes the shape the commit site allows — **and the leg decides what the
+check can honestly claim**, because the two legs' refs have different writers:
 
 - **Agent-made commits are verified after the fact.** The agent commits directly, so
-  the dispatcher never sees the moment of commit: `Dispatcher.checkTipMoved` compares
-  the new commit's own *parent* against the recorded tip, and on mismatch soft-resets
-  the commit away (`revertTipMovedCommit`, which itself refuses unless the current tip
-  is the sha it observed). Run before any gate — a commit on the wrong parent is
-  refused regardless of what the gates would have said. Soft rather than hard, so the
-  work survives wherever its working tree does (above).
+  the dispatcher never sees the moment of commit; `Dispatcher.checkTipMoved` verifies
+  the observed HEAD against the tip recorded at start, and on refusal soft-resets the
+  span away (`revertTipMovedCommit`, which itself refuses unless the current tip is
+  the sha it observed). Run before any gate — a commit that could not have been made
+  on the recorded tip is refused regardless of what the gates would have said. Soft
+  rather than hard, so the work survives wherever its working tree does (above).
   > **Note:** "re-read the ref before committing" describes the harness's own commits
   > only. An agent-made commit cannot be checked before it exists, so the guarantee
-  > here is equivalent rather than identical: a commit whose parent is not the recorded
-  > tip could not have been made on it, and is refused on that basis.
+  > here is equivalent rather than identical.
 
-- **The revert measures the real span, and cannot attribute it.** A tick landing more
-  than one commit produces `parent(postHead) ≠ preHead` exactly as external
-  interference does, so `revertTipMovedCommit` counts the commits between the two
-  (`git.commitsSince`) and soft-resets all of them rather than assuming one. The
-  engine has no way to separate its own N commits from its own N−1 plus an
-  operator's: the evidence is identical.
+- **Singleton leg — shared ref, parent equality, full-span revert.** On the trunk,
+  a tick landing more than one commit produces `parent(postHead) ≠ preHead` exactly
+  as external interference does, and the engine has no way to separate its own N
+  commits from its own N−1 plus an operator's: the evidence is identical. So the
+  check is parent equality and the revert counts the commits between the two
+  (`git.commitsSince`) and soft-resets all of them rather than assuming one.
 
   The accepted consequence is that an operator commit landing inside the tip-verify
   window is soft-reset alongside the tick's own. The reflog holds it, so nothing is
@@ -182,6 +182,31 @@ The check takes the shape the commit site allows:
   claim exists to discourage. It reverses if the dispatcher gains a way to count its
   own commits as it makes them: the revert could then bound itself to its own span
   and leave any excess in place.
+
+- **Per-entry leg — private ref, ancestry, N commits are completion.** An entry's
+  worktree branch has exactly one legitimate writer: this tick's agent. The
+  singleton leg's ambiguity premise therefore does not transfer, and neither does
+  its equality check: an agent that commits, keeps working, and commits again has
+  produced a *completed entry*, not interference. The check is **ancestry** — the
+  recorded base must be an ancestor of the observed HEAD — and on success the
+  entry's whole span (base..HEAD, in order) runs its gates and cherry-picks like
+  any single-commit entry. Refusal fires only when the base is *not* an ancestor
+  of the observed HEAD, which on a private branch means something reset or rewrote
+  it out from under the agent.
+
+  Two obligations ride the refusal, because on this leg the trunk-leg comforts are
+  absent (teardown removes the worktree and no snapshot is taken — above): the log
+  line and the persisted record name **both** shas the operator needs — the
+  observed HEAD and the recorded base — never the HEAD's parent alone, which reads
+  the agent's own work as the intruder and leaves the top commit undiscoverable;
+  and the entry lands in the tick verdict as its own dropped-work merge-outcome
+  fact, never as silence a partial ship summary papers over.
+
+  **Why this split is stated here:** the equality check applied to the private leg
+  was field-traced downstream (flume 0.10.1) misclassifying a commit-then-verify
+  agent's finished entry as `tip moved (no commit)`, soft-resetting it, and letting
+  teardown destroy all trace but a dangling sha — real gate-worthy work silently
+  orphaned at full agent price, invisible in the verdict.
 - **Harness-driven commits re-read the ref first.** A fanout wave checks the tip
   before each `cherry-pick` (`Dispatcher.runFanout`) and again before the
   pending-ledger commit (`commitPendingUpdate`, checked *before* the `writeFile` so a
