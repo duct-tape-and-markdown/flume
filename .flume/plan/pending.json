@@ -1,36 +1,5 @@
 [
   {
-    "tag": "cli-log-n-zero-prints-all",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "readTickVerdicts (~L450) does verdicts.slice(-n); special-case n===0 to return [] before the slice."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "Cover `flume log -n 0` printing nothing and exiting 0."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume log -n 0 prints the full verdict history instead of nothing — Array.prototype.slice(-0) is slice(0) in JS",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [
-      "flume log -n 0 prints nothing and exits 0, not the full history"
-    ],
-    "acceptance": "readTickVerdicts(dir, 0) returns [], and flume log -n 0 prints nothing",
-    "notes": "Found via plan-tick audit of 337eec2. slice(-0) === slice(0) in JS since -0 coerces; parseMaxValue already accepts 0 as valid, so this reaches production code paths, currently untested."
-  },
-  {
     "tag": "cli-friction-name-scope-mismatch",
     "gate": {
       "kind": "open"
