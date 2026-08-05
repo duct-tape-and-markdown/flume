@@ -35,6 +35,14 @@ Project conventions for the chain live in `.flume/PROTOCOL.md`.
 - `pnpm exec flume tick` — one tick of whichever phase is awake
 - `pnpm exec flume loop` — autonomous loop until hibernation
 
+## Release cut
+
+Mine the draft (`node scripts/build-changelog.mjs`), curate into CHANGELOG,
+bump `package.json`, `pnpm run smoke:install`, commit `chore(release): cut
+X.Y.Z`, tag `vX.Y.Z`, push with the tag. **npm auth: the token lives in
+`.env` (gitignored) as `NPM_TOKEN` — never ask the operator for it.**
+Publish: `. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKEN" pnpm publish`
+
 ## Quality Standard
 
 Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, writable-paths, pending-parse, changelog) validate each tick — they check *shape*. Shape is not truth: a gate can pass over an input that never resolved, a changelog that describes nothing, a schema whose two sides disagree. **@.claude/rules/engineering.md** holds the standard that closes that gap (the ladder, non-vacuity, agreement gates, a fix ships its test); **@.claude/rules/posture-sweep.md** is how it reaches code that already exists. Product/UX pressure-test remains human.
