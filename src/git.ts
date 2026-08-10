@@ -161,12 +161,39 @@ export async function dropLastCommit(
  * win32 MAX_PATH guard (v0.4 §6): repo-locally pin `core.longpaths` before
  * any operation that nests paths deep enough to exceed it — a job dir
  * (`.flume/jobs/<name>/...`) or a fanout worktree (nested at least as deep
- * as the job dir it was cloned for). No-op off win32; idempotent (`git
- * config` overwrites the same key without erroring on repeat calls).
+ * as the job dir it was cloned for). No-op off win32. Checks the local
+ * config first and skips the write when already `true` — a blind repeat
+ * write races an external holder of `.git/config` (downstream incident,
+ * @dtmd/flume 0.11.0 win32: EACCES on wave >= 2).
  */
 export async function pinLongPaths(repoRoot: string): Promise<void> {
   if (process.platform !== "win32") return;
+  if ((await getLocalConfig(repoRoot, "core.longpaths")) === "true") return;
   await run(repoRoot, ["config", "core.longpaths", "true"]);
+}
+
+/**
+ * `git config --local --get <key>`, read as "unset" rather than an error on
+ * the exit-1 case `run()` otherwise throws on (`isAncestor` above is the
+ * established pattern for reading a git exit code as data).
+ */
+async function getLocalConfig(
+  repoRoot: string,
+  key: string,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await run(repoRoot, [
+      "config",
+      "--local",
+      "--get",
+      key,
+    ]);
+    return stdout;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code === 1) return undefined;
+    throw err;
+  }
 }
 
 export async function addWorktree(opts: {

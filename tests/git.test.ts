@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -714,6 +715,31 @@ describe.runIf(process.platform === "win32")(
         { cwd: repo },
       );
       expect(again.trim()).toBe("true");
+    });
+
+    it("skips the write when already true, even when .git/config is unwritable (PINLONGPATHS-CHECKTHENSKIP)", async () => {
+      await pinLongPaths(repo);
+
+      const commonDir = await gitCommonDir(repo);
+      const configPath = join(commonDir, "config");
+      await chmod(configPath, 0o444);
+      try {
+        // Pre-fix, pinLongPaths always re-issues `git config
+        // core.longpaths true` — a write that throws EACCES against a
+        // read-only .git/config even though the value is already correct.
+        // Post-fix, the check-then-skip reads the value is already "true"
+        // and never attempts the write.
+        await expect(pinLongPaths(repo)).resolves.toBeUndefined();
+
+        const { stdout } = await exec(
+          "git",
+          ["config", "--local", "--get", "core.longpaths"],
+          { cwd: repo },
+        );
+        expect(stdout.trim()).toBe("true");
+      } finally {
+        await chmod(configPath, 0o644);
+      }
     });
   },
 );
