@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "PINLONGPATHS-CHECKTHENSKIP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "pinLongPaths (~L167): check `git config --local --get core.longpaths` first; skip the write when already \"true\". run() throws on nonzero exit — an unset key exits 1, treat that as \"unset\", not error. Shrink the doc comment's idempotence claim (~L164-165) — it no longer licenses a blind repeat write."
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "Extend the win32-lane pinLongPaths describe (~L697) per the new test below."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "pinLongPaths skips the config write when core.longpaths is already true, removing the steady-state redundant write",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      "win32 lane: core.longpaths already true locally + .git/config made read-only → pre-fix throws on the redundant write, post-fix succeeds by skipping"
+    ],
+    "acceptance": "New win32-lane test fails on pre-fix tree and passes post-fix; existing pinLongPaths idempotency test still passes; doc comment no longer claims blind idempotence",
+    "notes": "Downstream incident @dtmd/flume 0.11.0 win32 (centercode-platform, job dal-migration): redundant write races an external holder of .git/config, EACCES on wave>=2. Full mechanism analysis was in .flume/inbox.md (2026-08-10 entry, now drained). Consumer's bounded-retry alternative rejected: provisioning is already serialized (Dispatcher.ts ~L1691) and one flume writer per ref holds the tip claim (cli.ts ~L1287) — retry would re-derive exclusion the engine already owns."
+  }
+]
