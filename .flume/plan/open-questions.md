@@ -9,6 +9,38 @@ Status markers:
 
 <!-- questions below this line -->
 
+## A gate-revert whose failing tests are disjoint from the entry's footprint wants a distinct marker (752346f)
+
+Status: PARKED
+
+Inbox finding (752346f): friction-nonenoent-swallowed's first build attempt was afterMerge-reverted
+by a flake in `tests/cli.test.ts`'s tip-claim-wiring suite — tests the entry's diff never touched
+(footprint: `src/cli.ts`, a different describe block). The `PriorAttempt` record told the retry
+"your tests failed" indistinguishably from a real regression, risking an agent mutating correct
+code to chase a flake. Proposed marker: footprint ∩ failing-test-file(s) = ∅, called "mechanical...
+from facts the verdict already holds."
+
+Checked what the verdict actually holds (`spec/loop.md`, *The tick verdict*, *A reverted tick...
+PriorAttempt record*): the `gate-revert` variant carries the gate's `name`/`message`/`details` plus
+a `git show --stat` digest of the reverted commit — but `details` is documented as "a digest, not a
+transcript," capped and unstructured, not a machine-parseable failing-file list. The proposed check
+needs a *structured* failing-file field that doesn't exist today; deriving one by parsing a test
+runner's own output would be the engine reconstructing a statement it wasn't given
+(`engine-boundary.md`, *Told, not inferred*).
+
+Options:
+- Add a `failingFiles: string[]` (or similar) to the gate result shape, populated by whichever
+  chain-side mechanism already knows how to parse its own test runner's output — the
+  footprint-disjoint marker becomes a mechanical engine-side derivation once that field exists.
+- Leave `details` as an opaque digest and treat this as human-in-the-loop only (an operator reads
+  `details` before retrying, as the recovery just did) — no schema change, but the marker stays
+  manual.
+
+No recommendation — capability-vs-convention fork (`engine-boundary.md`, *Capability vs
+convention*): `failingFiles` is machinery only the chain can populate (its own test runner's output
+format), not something the engine can derive from an opaque digest. Needs a design pass on where
+that field enters the gate-result contract before it's derivable as a pending entry.
+
 ## Unexpected trailing positionals are silently accepted on `tick`, `stop`, `check`, and past `wake`/`sleep`'s `<phase>` (gh#1)
 
 Status: PARKED

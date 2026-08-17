@@ -6,7 +6,7 @@ Spec derived through: `f56afb300ff2be37a272864da894d29c172877a0`
 
 ## Audit
 
-Audited through: `d96879870cca19c663fca7576c85182d6142070d`
+Audited through: `752346f4f846d56e080d145dc4b24d7b84be095a`
 
 ## Posture sweep
 
