@@ -9,6 +9,145 @@ Status markers:
 
 <!-- questions below this line -->
 
+## Unexpected trailing positionals are silently accepted on `tick`, `stop`, `check`, and past `wake`/`sleep`'s `<phase>` (gh#1)
+
+Status: PARKED
+
+Inbox report (gh#1): `flume tick plan` with build awake runs build — the positional is neither
+honored nor refused. Verified current-surface and widened the sweep the report asked for
+(`src/cli.ts`, `main()`'s per-command blocks): `tick` (~1302), `stop` (~1062), and `check`
+(~1111) read no positionals at all and never check `rest.length`; `wake`/`sleep` (~1028-1061)
+validate a *missing* `<phase>` but not extras after it. By contrast `log`, `friction`, and every
+`job` verb (`status`/`rm`/`new`) already refuse on `rest.length > 0` past what they consume —
+this is an inconsistency within the surface, not a wholesale gap. `status` is the one deliberate
+exception: `spec/cli.md` *Subcommand surface* states it "exits 0 always," so a stray positional
+there is spec-compliant as written and out of scope.
+
+The fork is a reading of `spec/cli.md` *Subcommand surface*'s closing line: "Usage-shaped
+failures exit 2 uniformly: [enumerated list]... Everything else is the tick/loop exit-code
+contract in `spec/loop.md`." A stray positional on `tick` isn't in the enumerated list, which
+supports two opposite readings — (a) the list is a closed set and "everything else" routes to
+the tick/loop contract, so today's silent-ignore is already spec-compliant, if unintuitive; or
+(b) the list enumerates *examples*, and "usage-shaped" is a general category an unexpected
+argument to an argument-less command obviously belongs to, with `status`'s explicit "exits 0
+always" reading as the one named exception that proves the rule.
+
+Options:
+- Reading (b): widen `spec/cli.md` to name "an unexpected trailing argument to `tick`/`stop`/
+  `check`, or more than one after `wake`/`sleep`'s `<phase>`" as usage-shaped (exit 2),
+  bringing those four in line with `log`/`friction`/the `job` verbs. Smallest change, matches
+  existing precedent, and is what gh#1 asked for.
+- Reading (a): leave the enumerated list closed and treat this as already-correct behavior;
+  document the override explicitly instead (e.g. `docs/CLI.md` noting positionals past the
+  recognized ones are ignored).
+
+Recommend (b) — silent divergence from the operator's typed intent is the concrete harm gh#1
+reports, and the fix is smaller than the workaround — but the enumerated list reads as
+deliberately closed (CLAUDE.md: "never silently fill a gap in a spec"), so the spec text itself
+needs a human edit before this is derivable as a pending entry. Once blessed, ships with the
+fix ships-the-test discipline: `flume tick <phase>` exiting 2 rather than running a different
+phase, and the analogous case for `stop`/`check`/`wake`/`sleep`.
+
+## Cherry-pick conflict parks gated-green work; plain-pick vs. 3-way/ort retry before parking (gh#3)
+
+Status: PARKED
+
+Inbox report (gh#3) with cost data: two observed append-append conflicts, each discarding
+800-1500s of gated agent work (~$5-8). The recovery half is already answered — the durability
+contract (`spec/loop.md`, *The tick verdict*) records each span's head sha, so a refused span is
+re-cherry-pickable on retry, nothing lost permanently, only re-spent. Confirmed the contract is
+deliberate, not an oversight: `spec/loop.md`, *Tip verify — one writer per branch, absorption at
+the merge* states plainly that on a foreign commit "git's own conflict detection is the arbiter
+of content: a conflicting cherry-pick aborts... into that entry's existing `MergeFailure`
+outcome" — with "semantic compatibility owned by the `afterMerge` gates... never by a provenance
+check" named as the reason.
+
+The fork gh#3 raises: should the engine retry the conflict through a 3-way/ort merge (or
+rerere) before parking, auto-landing the append-append class the cost data measured? That would
+mean the *engine* deciding content-compatibility for cases plain cherry-pick refuses on but a
+3-way merge could resolve — a semantic call the `afterMerge` gates currently own exclusively,
+per the section above.
+
+Options:
+- Keep plain-`cherry-pick`-then-park (current): simplest, keeps content-compatibility judgments
+  entirely in the chain's `afterMerge` gates, zero engine risk of a bad auto-merge landing
+  unvalidated.
+- Add an ort/3-way retry before park: auto-lands the append-append class (the cost data's
+  actual pain), but the retry's result still needs `afterMerge` validation before it's trusted,
+  and a 3-way merge can silently produce content neither side wrote — the engine picking a
+  merge strategy is itself a content-compatibility decision, the exact line *Tip verify*
+  currently keeps on the chain side.
+
+gh#3's suggestion 3 (planner-declared overlap hints to serialize likely-colliding entries across
+waves) is chain-side batching policy, not an engine change — separable from this fork, actionable
+independently as a `.flume/chain.ts`/plan-prompt change if desired.
+
+No recommendation — this is a real engine-boundary tradeoff (`engine-boundary.md`, *Capability
+vs convention*: a merge strategy the engine picks is mechanism, but which conflicts are safe to
+auto-resolve is convention the chain currently owns). Needs your call on which side of that line
+this sits.
+
+## Intake gate for under-specified job specs, as a chain capability (gh#8)
+
+Status: PARKED
+
+Inbox report (gh#8): proposes rejecting/escalating thin job specs before task derivation
+(motivating incident: a one-line spec → keyhole read → ineffective fix → poisoned shared
+knowledge base). As proposed to the engine it's convention-shaped — spec-completeness is
+semantic judgment over prose the engine never reads (`engine-boundary.md`, *Capability vs
+convention*). The boundary-clean shape already posted back on the issue: a chain-declared intake
+predicate/phase at job acceptance, where the engine supplies only the refusal mechanics and a
+provenance field on the job record (human-authored vs. agent-completed spec); the chain owns the
+bar for what counts as "thin."
+
+Landing spot in the existing spec is `spec/jobs.md`, *`flume job new <name>` — seed a state
+root*, whose numbered sequence (validate name → require `chain.ts` → validate `seedDir` → mkdir
++ seed → runtime ignores → longpaths → baseline commit) has no step for spec-completeness today
+— an intake predicate would need a place in that ordering, and whether it runs before or after
+the baseline commit changes what "reject" means (nothing written yet, vs. a commit to unwind).
+
+Needs a design pass before this is derivable: where the predicate slots into the `job new`
+sequence, what the provenance field's shape is, and whether the refusal is `job new`-time or a
+later `job run`-time gate (the incident was keyhole *derivation*, which happens after `new`).
+Not recommending a specific shape yet — this wants the capability sketch worked through against
+the numbered sequence above before it is a pending entry.
+
+## Self-upgrade livelock: supervisor-frozen/children-fresh contract hazard (human+session, live derivation)
+
+Status: PARKED
+
+Observed live: `tip-verify-claim-arbitration` shipped mid-loop, so fresh tick children (running
+new code) began refusing merges on the live claim held by their own still-running supervisor
+(old code, predating `FLUME_TIP_CLAIM_HELD`), reading their own parent as a concurrent engine.
+Guaranteed refusal per wave, full agent spend each. Resolved operationally by killing the stale
+supervisor (which released the claim) and driving bare ticks to drain.
+
+The general fact behind it is already implied but not stated in `spec/loop.md`, *One tick is one
+fresh process*: "between children it re-reads the baton from disk" — each tick child re-reads
+HEAD's code, but the supervisor (`flume loop`) stays resident at whatever version it launched
+with (`spec/loop.md`, *The loop lock and the tip claim*, *Scope: per run* — the claim is
+acquired once for the whole run). Any entry that changes the supervisor↔child contract (the tip
+claim shape here) is unsafe to ship under a live old supervisor, because the supervisor half of
+the contract is frozen at launch while the child half updates every tick.
+
+Two separable questions:
+1. **Same-derivation ordering.** This run's derivation shipped the refusal-semantics entry
+   before `tip-claim-per-run-scope`, the entry that makes them safe under a live supervisor — a
+   dependency invisible except under a live self-upgrade. Is this expressible on `pending.json`'s
+   existing `blockedBy` gate (it already models "must ship after"), or does it need a new
+   same-derivation-coupling concept, or is it simply a plan-prompt/PROTOCOL judgment call
+   ("when deriving a contract change, check whether an in-flight supervisor could be running the
+   pre-change half") rather than a schema addition?
+2. **The general contract.** Should `spec/loop.md` state a supervisor-upgrade rule explicitly —
+   e.g. the loop finishes its run on the contract it started with (child version-pins, or the
+   supervisor self-restarts at a version fence) — or is "operator restarts the loop after any
+   contract-touching ship" the accepted operational fact, documented rather than engineered
+   around?
+
+No recommendation on either fork — (1) is a plan-mechanics question, (2) is an engine-boundary
+question about how much self-upgrade safety the engine should own mechanically versus leave to
+operator discipline. Needs a design pass on both before anything is derivable.
+
 ## `src/cli.ts` mixes several independently-testable concerns in one 1500-line module
 
 Status: PARKED
