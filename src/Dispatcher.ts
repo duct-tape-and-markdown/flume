@@ -2983,11 +2983,19 @@ export class Dispatcher {
     const files: Dirent[] = [];
     for (const file of candidates) {
       const relPath = join(stateRootRel, chain.friction, file.name);
-      const atBase = await git.readFileAtRef(
-        this.opts.repoRoot,
-        baseRef,
-        relPath,
-      );
+      let atBase: string | null;
+      try {
+        atBase = await git.readFileAtRef(this.opts.repoRoot, baseRef, relPath);
+      } catch (err) {
+        // Same log-and-continue class as the readdir/mkdir/rename failure
+        // modes below: a probe failure isolates to this one candidate
+        // rather than aborting the wave's teardown. Left unmoved, matching
+        // the fail-closed default a failed rename already leaves in place.
+        this.log.warn(
+          `[flume] friction harvest: could not probe base for ${relPath}: ${(err as Error).message}`,
+        );
+        continue;
+      }
       if (atBase === null) files.push(file);
     }
     if (files.length === 0) return;

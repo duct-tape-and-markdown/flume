@@ -9396,6 +9396,115 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     expect(afterSecond.sort()).toEqual(afterFirst.sort());
     expect(afterSecond.some((f) => f.startsWith("FRICTION-E--"))).toBe(false);
   }, 20_000);
+
+  it("a readFileAtRef failure during the base-delta probe is logged and does not abort teardown of the wave's remaining worktrees", async () => {
+    await writePending(fx.repo, [
+      makeEntry("FRICTION-PROBE-1", ["src/friction-probe-1.ts"]),
+      makeEntry("FRICTION-PROBE-2", ["src/friction-probe-2.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+    const frictionDir = join(fx.repo, ".flume", "friction");
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    // Only the base-delta probe against a worktree's own friction mirror
+    // fails — every other readFileAtRef call (pending.json's HEAD read, the
+    // second worktree's probe) runs for real. The first probe call is the
+    // one under test; teardown processes worktrees in batch order, so it
+    // lands on FRICTION-PROBE-1.
+    const realReadFileAtRef = git.readFileAtRef;
+    let frictionProbeCalls = 0;
+    const readFileAtRefSpy = vi
+      .spyOn(git, "readFileAtRef")
+      .mockImplementation(async (repoRoot, ref, relPath) => {
+        if (relPath.endsWith(join("friction", "note.md"))) {
+          frictionProbeCalls++;
+          if (frictionProbeCalls === 1) {
+            throw new Error("simulated git failure");
+          }
+        }
+        return realReadFileAtRef(repoRoot, ref, relPath);
+      });
+
+    const agent = fanoutAgent({
+      "friction-probe-1": async (cwd) => {
+        await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+        await writeFile(
+          join(cwd, ".flume", "friction", "note.md"),
+          "probe-1\n",
+        );
+        await writeAndCommit(
+          cwd,
+          "src/friction-probe-1.ts",
+          "ok\n",
+          "build(FRICTION-PROBE-1): ship",
+        );
+      },
+      "friction-probe-2": async (cwd) => {
+        await mkdir(join(cwd, ".flume", "friction"), { recursive: true });
+        await writeFile(
+          join(cwd, ".flume", "friction", "note.md"),
+          "probe-2\n",
+        );
+        await writeAndCommit(
+          cwd,
+          "src/friction-probe-2.ts",
+          "ok\n",
+          "build(FRICTION-PROBE-2): ship",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    let outcome: Awaited<ReturnType<typeof dispatcher.tick>>;
+    try {
+      outcome = await dispatcher.tick();
+    } finally {
+      readFileAtRefSpy.mockRestore();
+    }
+
+    // Both entries still ship — a probe failure on one candidate must not
+    // fail the entries whose commits already landed.
+    expect(outcome.result?.shippedTags?.slice().sort()).toEqual([
+      "FRICTION-PROBE-1",
+      "FRICTION-PROBE-2",
+    ]);
+    expect(
+      warnings.some(
+        (w) => w.includes("friction harvest") && w.includes("could not probe base"),
+      ),
+    ).toBe(true);
+
+    // Teardown of both worktrees proceeded despite the first one's probe
+    // failure.
+    expect(
+      existsSync(join(fx.repo, ".flume", "worktrees", "friction-probe-1")),
+    ).toBe(false);
+    expect(
+      existsSync(join(fx.repo, ".flume", "worktrees", "friction-probe-2")),
+    ).toBe(false);
+
+    // The probe-failed candidate is left unharvested (fail-closed); the
+    // sibling whose probe succeeded is delivered normally.
+    const files = await readdir(frictionDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^FRICTION-PROBE-2--/);
+  }, 20_000);
 });
 
 /**
