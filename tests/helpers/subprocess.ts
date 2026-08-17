@@ -43,6 +43,7 @@ export function hermeticEnv(): NodeJS.ProcessEnv {
   delete env.FLUME_CONFIG_DIR;
   delete env.FLUME_JOB;
   delete env.FLUME_DIR_RESOLVED_FOR;
+  delete env.FLUME_TIP_CLAIM_HELD;
   return env;
 }
 
