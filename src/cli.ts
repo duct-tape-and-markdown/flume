@@ -1231,7 +1231,13 @@ async function main(): Promise<number> {
       if (isDirectChild) {
         try {
           bytes = readFileSync(namespacedJoin(frictionDir, name));
-        } catch {
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.error(
+              `[flume] friction: '${name}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return EX_IOERR;
+          }
           bytes = undefined;
         }
       }
@@ -1248,7 +1254,13 @@ async function main(): Promise<number> {
     let entries: Dirent[];
     try {
       entries = readdirSync(namespacedJoin(frictionDir), { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error(
+          `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return EX_IOERR;
+      }
       // Declared-but-absent dir lists empty (spec/cli.md): the directory is
       // created lazily by whichever engine write needs it first, so its
       // absence here is a legitimate, silent, zero-note state.

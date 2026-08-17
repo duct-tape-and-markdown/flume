@@ -3410,6 +3410,45 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       await repo.cleanup();
     }
   }, 30_000);
+
+  it("exits EX_IOERR naming the error on a non-ENOENT note read failure, instead of reporting 'no such note'", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      // A directory in place of the note reproduces a non-ENOENT read
+      // failure (EISDIR) without relying on permission bits a root-run test
+      // could bypass (`.claude/rules/engineering.md`, "Loud or nothing"),
+      // matching the `check` pendingPath test's approach above.
+      await mkdir(join(frictionDir, "note.md"), { recursive: true });
+
+      const r = await runCli(repo.dir, ["friction", "note.md"]);
+      expect(r.code).toBe(74);
+      expect(r.out).not.toContain("no note named");
+      expect(r.out).toContain("failed to read");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("exits EX_IOERR naming the error on a non-ENOENT bare-list readdir failure, instead of listing empty", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      // A file in place of the friction dir reproduces a non-ENOENT readdir
+      // failure (ENOTDIR) without relying on permission bits — same
+      // rationale as the note-read case above.
+      await mkdir(join(repo.dir, ".flume"), { recursive: true });
+      await writeFile(join(repo.dir, ".flume", "friction"), "not a dir\n");
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(74);
+      expect(r.out.trim()).not.toBe("");
+      expect(r.out).toContain("failed to read");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
 });
 
 // ---------- flume log (spec/cli.md §Subcommand surface, cli-log-verb) ----------
