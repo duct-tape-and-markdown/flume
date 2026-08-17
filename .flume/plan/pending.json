@@ -1,41 +1,5 @@
 [
   {
-    "tag": "dispatch-reads-from-tip",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "readPending() and commitPendingUpdate's rewrite read resolve pending.json content via a committed-tip read instead of fs.readFile; readPendingTolerant stays disk-based (the declared exception)."
-        },
-        {
-          "path": "src/git.ts",
-          "description": "add a helper that reads a path's content at a given ref (git show <ref>:<path>) for readPending to call."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to pending.json."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Dispatcher's strict pending.json reads (decide-reads, ledger rewrite read) resolve from the committed HEAD tip, never the working tree.",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "Dispatch reads come from the tip, not the tree"
-    },
-    "tests": [
-      "readPending() reads pending.json from the committed tip, ignoring an uncommitted working-tree edit to the same file",
-      "PendingParseFailure still throws when the tip's committed content fails to parse"
-    ],
-    "acceptance": "Every strict readPending() call resolves from HEAD, not disk; readPendingTolerant remains the sole disk-reading exception.",
-    "notes": "Field-paid: a pickability read lagging a just-merged cherry-pick redispatched — and re-bailed, at full agent price — an already-shipped entry."
-  },
-  {
     "tag": "friction-harvest-base-delta",
     "gate": {
       "kind": "open"
