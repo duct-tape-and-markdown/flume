@@ -24,6 +24,9 @@
       "tests/tip-claim.integration.test.ts's 'acquires and releases a claim' and 'refuses exit 1 when a live process already holds the claim' pass with FLUME_TIP_CLAIM_HELD set in the ambient environment"
     ],
     "acceptance": "hermeticEnv() strips FLUME_TIP_CLAIM_HELD; both named tests in tests/tip-claim.integration.test.ts pass deterministically regardless of ambient FLUME_TIP_CLAIM_HELD.",
-    "notes": "Measured this tick: with FLUME_TIP_CLAIM_HELD ambient-set (this session runs inside a live flume loop, which leaks it to vitests env), a bare tick trusts a nonexistent supervisor and both named tests fail 100%; unset, both pass 100%. e34c41e misattributed this to test-timing flakiness -- it is a deterministic hermeticEnv() gap, not a race."
+    "notes": "Measured this tick: with FLUME_TIP_CLAIM_HELD ambient-set (this session runs inside a live flume loop, which leaks it to vitests env), a bare tick trusts a nonexistent supervisor and both named tests fail 100%; unset, both pass 100%. e34c41e misattributed this to test-timing flakiness -- it is a deterministic hermeticEnv() gap, not a race.",
+    "observedFiles": [
+      "tests/helpers/subprocess.ts"
+    ]
   }
 ]
