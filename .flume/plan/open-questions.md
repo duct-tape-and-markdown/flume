@@ -373,3 +373,26 @@ Options:
 
 No recommendation — this is a shape/consistency question about how far the "loud or nothing"
 bar reaches into a non-load-bearing informational path, not something research resolves.
+
+## `src/Phase.ts`'s `Chain` interface bundles several independently-separable config concerns (sweep, src/Phase.ts)
+
+Status: PARKED
+
+Sweep finding (posture pass over `src/Phase.ts`, posture-sweep.md's "a module carrying jobs that
+want separate homes" lens — the same lens that flagged `src/cli.ts` above): `Chain`
+(`Phase.ts:295-384`) bundles the phase list, entry-extension schema, human-only-gating policy,
+job-seeding config, the friction channel, capability assertions, and supervisor-policy overrides
+into one interface, alongside `Phase`'s own five tick-shape sub-types in the same file. These read
+as plausibly-separable concerns sharing one file, similar in shape to the already-parked cli.ts
+question, though no correctness or shape violation is demonstrable here — organizational only.
+
+Options:
+- Leave as one file — `Phase.ts` is the type-declaration home for the whole chain-config surface;
+  a single file for a small, closely-related type family is defensible, especially since these
+  are types, not runtime logic with independent failure modes.
+- Split `Chain`'s config surface from `Phase`'s tick-shape types (e.g. a separate file or grouping
+  by concern) — clearer boundaries, consistent with the cli.ts split recommendation above, but
+  touches every chain-config-typed import site.
+
+No recommendation — same shape as the cli.ts question above (a split touches many import sites),
+wants a human call on scope before it's a pending entry.
