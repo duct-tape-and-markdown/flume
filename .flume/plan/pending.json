@@ -1,42 +1,5 @@
 [
   {
-    "tag": "startup-sweep-residue",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "new startup-sweep function: under the tip claim, remove every directory under the worktree base via the removeWorktree+win32-fallback path, then git worktree prune, then every branch under this instance's flume/[ns/]… grammar; warn loudly (never abort) on a surviving path, reported once at run level."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "call the sweep once in the loop command's startup, after the tip claim is acquired and before the first tick — job run reuses this path already."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a worktree/branch abandoned by a killed fanout tick, whose entry is no longer in pending.json, is removed at the next loop start; empty base sweeps silently; a stuck removal warns once and does not abort."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume loop sweeps abandoned worktrees and flume/** branches at start, under the tip claim, closing the gap where a dropped entry leaked its worktree indefinitely.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Startup sweep — a dead wave's residue is removed at the next start"
-    },
-    "tests": [
-      "a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start",
-      "an empty worktree base sweeps silently",
-      "a directory that cannot be removed (EBUSY) warns once at run level and does not abort the run"
-    ],
-    "acceptance": "flume loop (and job run, via the shared loop path) removes every stale directory under the worktree base and every flume/[ns/]… branch belonging to this instance before the first tick.",
-    "notes": "Per-wave stale-slug removal (createWorktree) only ever covered entries being re-provisioned; this closes the remaining gap named in spec/loop.md, Crash equals stop."
-  },
-  {
     "tag": "stop-flag",
     "gate": {
       "kind": "open"
