@@ -9043,6 +9043,98 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     expect(contents).toContain("first attempt's note\n");
     expect(contents).toContain("second attempt's note\n");
   }, 20_000);
+
+  it("a friction note committed by a prior worktree and inherited by a later sibling's checkout is not re-harvested by that sibling", async () => {
+    await writePending(fx.repo, [makeEntry("FRICTION-D", ["src/friction-d.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [], friction: "friction" };
+    const frictionDir = join(fx.repo, ".flume", "friction");
+
+    const agentFirst = fanoutAgent({
+      "friction-d": async (cwd) => {
+        // Against convention: the agent commits its friction note instead
+        // of leaving it untracked. Once cherry-picked, `note.md` becomes
+        // tracked content at this same repo-relative path on trunk — the
+        // shape §4 calls out as "delivered history" for whatever worktree
+        // checks it out next.
+        await writeAndCommit(
+          cwd,
+          ".flume/friction/note.md",
+          "the loop wants owner input\n",
+          "chore: friction note",
+        );
+        await writeAndCommit(
+          cwd,
+          "src/friction-d.ts",
+          "ok\n",
+          "build(FRICTION-D): ship",
+        );
+      },
+    });
+
+    const dispatcherFirst = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: agentFirst,
+      log: silent,
+    });
+
+    const first = await dispatcherFirst.tick();
+    expect(first.result?.shippedTags).toEqual(["FRICTION-D"]);
+
+    // The committed note landed on trunk as tracked content...
+    expect(
+      await readFile(join(frictionDir, "note.md"), "utf8"),
+    ).toBe("the loop wants owner input\n");
+    // ...alongside the one legitimate harvested copy from this wave.
+    const afterFirst = await readdir(frictionDir);
+    expect(afterFirst.sort()).toEqual(
+      ["note.md", afterFirst.find((f) => f.startsWith("FRICTION-D--"))!].sort(),
+    );
+    expect(afterFirst.length).toBe(2);
+
+    // A sibling entry lands in a later wave, as a plan tick would. Its
+    // worktree branches from the new trunk tip, so its checkout inherits
+    // `.flume/friction/note.md` as ordinary tracked content — not anything
+    // its own agent produced this tick.
+    const afterFirstPending = await readPendingFromDisk(fx.repo);
+    await writePending(fx.repo, [
+      ...afterFirstPending,
+      makeEntry("FRICTION-E", ["src/friction-e.ts"]),
+    ]);
+    baton.wake("build");
+
+    const agentSecond = fanoutAgent({
+      "friction-e": (cwd) =>
+        writeAndCommit(
+          cwd,
+          "src/friction-e.ts",
+          "ok\n",
+          "build(FRICTION-E): ship",
+        ),
+    });
+
+    const dispatcherSecond = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: agentSecond,
+      log: silent,
+    });
+
+    const second = await dispatcherSecond.tick();
+    expect(second.result?.shippedTags).toEqual(["FRICTION-E"]);
+
+    // Unchanged: the inherited note is left in place, not re-copied with a
+    // FRICTION-E-- prefix.
+    const afterSecond = await readdir(frictionDir);
+    expect(afterSecond.sort()).toEqual(afterFirst.sort());
+    expect(afterSecond.some((f) => f.startsWith("FRICTION-E--"))).toBe(false);
+  }, 20_000);
 });
 
 /**
