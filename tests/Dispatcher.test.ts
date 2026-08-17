@@ -1805,6 +1805,79 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     expect(branches.trim()).toBe("");
   });
 
+  it("an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR", async () => {
+    const savedOverride = process.env.FLUME_WORKTREES_DIR;
+    const container = await mkdtemp(join(tmpdir(), "flume-sweep-nsscope-"));
+    const repoOpts = { cwd: fx.repo };
+    const base = join(container, "wt-base");
+    const siblingPath = join(base, "beta", "sib-tag");
+    try {
+      process.env.FLUME_WORKTREES_DIR = base;
+
+      // A live namespaced sibling job's worktree: registered under
+      // <base>/<namespace>/<dirName>, exactly where createWorktree would put
+      // it for a `beta`-namespaced job. Its container directory <base>/beta
+      // sits at the same top level a bare (unnamespaced) sweepBase reads.
+      await mkdir(dirname(siblingPath), { recursive: true });
+      await exec(
+        "git",
+        ["worktree", "add", "-B", "flume/beta/sib-tag", siblingPath, "HEAD"],
+        repoOpts,
+      );
+
+      // This job's own abandoned residue, directly under the bare base —
+      // what an unnamespaced sweep IS supposed to remove.
+      const ownPath = join(base, "own-orphan");
+      await exec(
+        "git",
+        ["worktree", "add", "-B", "flume/own-orphan", ownPath, "HEAD"],
+        repoOpts,
+      );
+
+      const dispatcher = new Dispatcher({
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: singleAgent(async () => {}),
+        log: silent,
+      });
+
+      await dispatcher.sweepStaleWorktrees();
+
+      // The sibling's live worktree tree and branch survive untouched.
+      expect(existsSync(siblingPath)).toBe(true);
+      const { stdout: siblingBranches } = await exec(
+        "git",
+        ["branch", "--list", "flume/beta/sib-tag"],
+        repoOpts,
+      );
+      expect(siblingBranches.trim()).not.toBe("");
+      const { stdout: worktreeList } = await exec(
+        "git",
+        ["worktree", "list", "--porcelain"],
+        repoOpts,
+      );
+      expect(worktreeList).toContain(siblingPath);
+
+      // This job's own residue is still removed.
+      expect(existsSync(ownPath)).toBe(false);
+      const { stdout: ownBranches } = await exec(
+        "git",
+        ["branch", "--list", "flume/own-orphan"],
+        repoOpts,
+      );
+      expect(ownBranches.trim()).toBe("");
+    } finally {
+      if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+      else process.env.FLUME_WORKTREES_DIR = savedOverride;
+      await exec("git", ["worktree", "remove", "--force", siblingPath], repoOpts).catch(
+        () => {},
+      );
+      await rm(container, { recursive: true, force: true });
+      await exec("git", ["worktree", "prune"], repoOpts).catch(() => {});
+      await exec("git", ["branch", "-D", "flume/beta/sib-tag"], repoOpts).catch(() => {});
+    }
+  }, 20_000);
+
   it("an empty worktree base sweeps silently", async () => {
     // No `.flume/worktrees` dir was ever created — the normal case for a
     // fresh checkout or a run that never provisioned a worktree.
@@ -1827,8 +1900,16 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
 
   it("a directory that cannot be removed (EBUSY) warns once at run level and does not abort the run", async () => {
     const wtPath = join(fx.repo, ".flume", "worktrees", "stuck");
-    await mkdir(wtPath, { recursive: true });
-    await writeFile(join(wtPath, "marker.txt"), "x\n");
+    await mkdir(dirname(wtPath), { recursive: true });
+    // Must be a registered worktree, not a bare directory — the sweep now
+    // only attempts removal on paths git itself lists (the fix for
+    // startup-sweep-namespace-scope), so an unregistered directory would
+    // never reach the mocked `removeWorktree` below.
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "flume/stuck", wtPath, "HEAD"],
+      { cwd: fx.repo },
+    );
 
     // Stands in for the win32 EBUSY/locked-handle class the real
     // removal-fallback exhausts on (§7's `removeWorktree`) — the sweep
@@ -1855,7 +1936,13 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     // Never aborted — the directory is left exactly as it was, not
     // half-cleaned, and the call returned rather than throwing.
     expect(existsSync(wtPath)).toBe(true);
-    const survivalWarnings = warnings.filter((w) => w.includes(wtPath));
+    // Deliberately narrowed to the "survived removal" message: the branch
+    // stays checked out in the surviving worktree, so `deleteBranch` also
+    // warns — that's a real, separate, expected failure, not a duplicate of
+    // the single wave-level survival report this asserts.
+    const survivalWarnings = warnings.filter(
+      (w) => w.includes(wtPath) && w.includes("survived removal"),
+    );
     expect(survivalWarnings).toHaveLength(1);
     expect(survivalWarnings[0]).toContain("survived removal");
   });

@@ -3106,15 +3106,28 @@ export class Dispatcher {
    *
    * Scope is exactly the engine's own residue: every directory directly
    * under the worktree base — namespace-scoped the same way
-   * `createWorktree`'s path is, so a shared `FLUME_WORKTREES_DIR` sweep
-   * never reaches a sibling job's live directories — removed through the
-   * same `git.removeWorktree` + win32-fallback path teardown uses; then a
-   * final `git worktree prune`; then every branch matching this
-   * instance's own `flume/[<namespace>/]…` grammar. Branch matching uses
-   * `for-each-ref`'s one-level glob (`flume/*` matches `flume/foo`, never
-   * `flume/ns/foo`) rather than `branch --list`'s pattern, whose `*`
-   * crosses `/` — the non-namespaced case must not sweep a namespaced
-   * sibling job's branches sharing the same repo.
+   * `createWorktree`'s path is when a namespace is set. Without one,
+   * `sweepBase` is the bare worktrees dir, which a shared
+   * `FLUME_WORKTREES_DIR` also holds every *namespaced* sibling job's
+   * container directory (`<wtBase>/<their-namespace>/`) at that exact same
+   * top level — an arbitrary operator-chosen string, indistinguishable by
+   * name alone from one of this job's own bounded `dirName` entries. So a
+   * bare `readdir` + blind removal would delete a live sibling's entire
+   * worktree tree the first time its container directory sits at this
+   * level. The disambiguator is git's own registry, not a naming
+   * heuristic (`engine-boundary.md`, "told, not inferred"): `git worktree
+   * list --porcelain` names every path git currently considers a
+   * worktree, and only entries that are literally one of those paths are
+   * this job's own residue to remove through `git.removeWorktree` +
+   * win32-fallback (the same path teardown uses) — a sibling's container
+   * directory was never itself registered as a worktree, only the paths
+   * nested inside it are, so it is left untouched. Then a final `git
+   * worktree prune`; then every branch matching this instance's own
+   * `flume/[<namespace>/]…` grammar. Branch matching uses `for-each-ref`'s
+   * one-level glob (`flume/*` matches `flume/foo`, never `flume/ns/foo`)
+   * rather than `branch --list`'s pattern, whose `*` crosses `/` — the
+   * non-namespaced case must not sweep a namespaced sibling job's branches
+   * sharing the same repo.
    *
    * Never throws: an unreadable or absent base, a surviving worktree
    * directory (locked handle, EBUSY), a prune failure, or a branch that
@@ -3147,9 +3160,39 @@ export class Dispatcher {
       return;
     }
 
+    // Which top-level entries are actually this job's own worktrees, as
+    // opposed to a sibling namespaced job's container directory sitting at
+    // the same level under a shared FLUME_WORKTREES_DIR: git's own registry,
+    // not the entry's name. A container directory was never itself `git
+    // worktree add`ed, so it never appears here — only the paths nested
+    // inside it do.
+    const registeredWorktrees = new Set<string>();
+    try {
+      const { stdout } = await execFileP(
+        "git",
+        ["worktree", "list", "--porcelain"],
+        { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
+      );
+      for (const line of stdout.split("\n")) {
+        if (line.startsWith("worktree ")) {
+          registeredWorktrees.add(resolve(line.slice("worktree ".length).trim()));
+        }
+      }
+    } catch (err) {
+      this.log.warn(
+        `[flume] startup sweep: could not list registered worktrees: ${(err as Error).message}`,
+      );
+    }
+
     const survivingPaths: string[] = [];
     for (const name of entries) {
       const path = join(sweepBase, name);
+      if (!registeredWorktrees.has(resolve(path))) {
+        // Not a worktree git knows about — most commonly a sibling
+        // namespaced job's container directory. Not this job's residue;
+        // leave it untouched.
+        continue;
+      }
       try {
         await git.removeWorktree(repoRoot, path);
       } catch {
