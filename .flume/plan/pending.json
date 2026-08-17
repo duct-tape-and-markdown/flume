@@ -1,39 +1,5 @@
 [
   {
-    "tag": "tip-verify-claim-arbitration",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the fanout cherry-pick loop's pre-check and commitPendingUpdate's pre-check switch from tip-sha-equality to a live-foreign-claim check (reuse git.ts tipClaimPath/liveTipClaimPid): no live foreign claim absorbs (cherry-pick onto whatever tip is current, abort-into-MergeFailure on conflict); a live foreign claim still refuses. Add headSha to TickVerdictMergeOutcome, populated at every merge-outcome push site."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "operator commit mid-wave absorbs instead of refusing tipMoved; a live foreign engine claim still refuses; verdict merge outcomes carry headSha."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Merge sites arbitrate on a live tip claim, not sha equality — a clean foreign commit absorbs, a conflicting one aborts into MergeFailure; verdict records each span's head sha.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Tip verify — one writer per branch, absorption at the merge"
-    },
-    "tests": [
-      "a wave's cherry-pick loop absorbs a foreign non-engine commit landing mid-wave instead of refusing tipMoved",
-      "a live foreign tip claim still refuses the cherry-pick and the ledger commit",
-      "commitPendingUpdate recommits on whatever tip is current when no foreign claim holds it",
-      "a TickVerdictMergeOutcome carries the merged span's head sha"
-    ],
-    "acceptance": "No sha-equality check remains at a merge site; every merge/ledger-commit site checks only for a live foreign claim; every mergeOutcome entry in the verdict carries headSha.",
-    "notes": "Field-paid incidents 10/11: a six-wide wave voided by a file-disjoint operator commit whose gates had already passed; hours later the same check refused four builds over the dispatcher's own just-landed commit."
-  },
-  {
     "tag": "shared-checkout-keep-reset",
     "gate": {
       "kind": "open"
