@@ -3815,6 +3815,91 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       ),
     ).toBe(true);
   }, 20_000);
+
+  it("a wave's second entry's ShipContext.gateResults never carries an earlier sibling's afterMerge results", async () => {
+    // Two disjoint entries in one wave, both passing the same afterMerge
+    // gate. Pre-fix, `mergeGateResults` is a single wave-level accumulator
+    // never reset between entries, so by the time the second-processed
+    // entry's `shipped` predicate runs, the array already carries the first
+    // entry's afterMerge result too — ShipContext.gateResults docstring says
+    // "this entry's own", not "the wave's so far".
+    const entries = [
+      makeEntry("LEAK-FIRST", ["src/leak-first.ts"]),
+      makeEntry("LEAK-SECOND", ["src/leak-second.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const recordGate: Gate = {
+      name: "record-gate",
+      when: "afterMerge",
+      async run() {
+        return { ok: true, message: "recorded" };
+      },
+    };
+
+    const seenGateResults: Record<string, unknown[]> = {};
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [recordGate],
+      shipped: (ctx) => {
+        seenGateResults[ctx.entry.tag] = [...ctx.gateResults];
+        return true;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "leak-first": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/leak-first.ts",
+          "leak-first\n",
+          "build(LEAK-FIRST)",
+        );
+      },
+      "leak-second": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/leak-second.ts",
+          "leak-second\n",
+          "build(LEAK-SECOND)",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Both entries shipped — the predicate accepted both.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "LEAK-FIRST",
+      "LEAK-SECOND",
+    ]);
+
+    // Every entry the predicate saw — first-processed or not — carries
+    // exactly its own gate results (its own afterCommit writable-paths
+    // check plus its own single afterMerge result), never a sibling's
+    // afterMerge result folded in too.
+    for (const tag of ["LEAK-FIRST", "LEAK-SECOND"]) {
+      const gr = seenGateResults[tag] as
+        | { gate: string; ok: boolean }[]
+        | undefined;
+      expect(gr).toBeDefined();
+      expect(gr!.filter((g) => g.gate === "record-gate")).toEqual([
+        { gate: "record-gate", ok: true, message: "recorded" },
+      ]);
+    }
+  }, 20_000);
 });
 
 describe("Dispatcher fanout — empty pickable set", () => {

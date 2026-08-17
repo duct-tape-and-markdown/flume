@@ -2130,6 +2130,13 @@ export class Dispatcher {
       let entryFailure:
         | { gate: string; message: string; details?: string }
         | undefined;
+      // `mergeGateResults` is a wave-cumulative accumulator (never reset
+      // per entry — `allGateResults` below needs the whole wave's worth).
+      // Capture this entry's own starting offset so `ShipContext.gateResults`
+      // below can slice out just the results this entry's own afterMerge
+      // loop appends, never an earlier sibling's (spec/pending.md "Ship
+      // detection trusts the agent's own account").
+      const entryMergeGateResultsStart = mergeGateResults.length;
       for (const gate of afterMergeGates) {
         const gr = await gate.run({
           cwd: repoRoot,
@@ -2234,7 +2241,10 @@ export class Dispatcher {
           entry: r.entry,
           mergedSha,
           touchedPaths: commitTouchedPaths,
-          gateResults: [...r.gateResults, ...mergeGateResults],
+          gateResults: [
+            ...r.gateResults,
+            ...mergeGateResults.slice(entryMergeGateResultsStart),
+          ],
           worktreePath: r.worktreePath,
           repoRoot,
         }) ?? true;
