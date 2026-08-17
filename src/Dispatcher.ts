@@ -3003,6 +3003,119 @@ export class Dispatcher {
   }
 
   /**
+   * Startup sweep (`spec/worktrees.md`, "Startup sweep — a dead wave's
+   * residue is removed at the next start"): a killed fanout tick abandons
+   * its worktrees and their `flume/**` branches — teardown never ran, and
+   * per-wave stale-slug removal (`createWorktree`, below) only ever covers
+   * an entry being re-provisioned, never one that left the queue entirely.
+   * `flume loop` / `flume job run` call this once, after the tip claim is
+   * acquired and before the first tick (`src/cli.ts`) — holding the claim
+   * is the guard: one flume writer per ref means no live sibling owns
+   * anything under this state root's worktree base. A bare `flume tick`
+   * never calls this; its per-wave prune and stale-slug removal are
+   * unchanged.
+   *
+   * Scope is exactly the engine's own residue: every directory directly
+   * under the worktree base — namespace-scoped the same way
+   * `createWorktree`'s path is, so a shared `FLUME_WORKTREES_DIR` sweep
+   * never reaches a sibling job's live directories — removed through the
+   * same `git.removeWorktree` + win32-fallback path teardown uses; then a
+   * final `git worktree prune`; then every branch matching this
+   * instance's own `flume/[<namespace>/]…` grammar. Branch matching uses
+   * `for-each-ref`'s one-level glob (`flume/*` matches `flume/foo`, never
+   * `flume/ns/foo`) rather than `branch --list`'s pattern, whose `*`
+   * crosses `/` — the non-namespaced case must not sweep a namespaced
+   * sibling job's branches sharing the same repo.
+   *
+   * Never throws: an unreadable or absent base, a surviving worktree
+   * directory (locked handle, EBUSY), a prune failure, or a branch that
+   * won't delete are each logged and swallowed rather than propagated — a
+   * sweep that could abort the run would convert dead residue into a
+   * denial of service on the live queue. Silent on an absent or empty
+   * base, the normal case; a surviving worktree path is warned once for
+   * the whole run, not once per directory.
+   */
+  async sweepStaleWorktrees(): Promise<void> {
+    const repoRoot = this.opts.repoRoot;
+    const wtBase = process.env.FLUME_WORKTREES_DIR
+      ? resolve(process.env.FLUME_WORKTREES_DIR)
+      : join(this.flumeDir, "worktrees");
+    const sweepBase = this.opts.namespace
+      ? join(wtBase, this.opts.namespace)
+      : wtBase;
+
+    let entries: string[];
+    try {
+      entries = await readdir(namespacedJoin(sweepBase));
+    } catch (err) {
+      // Absent base is the normal, silent case. Anything else (e.g.
+      // permissions) is logged but never aborts the run.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.log.warn(
+          `[flume] startup sweep: could not read ${sweepBase}: ${(err as Error).message}`,
+        );
+      }
+      return;
+    }
+
+    const survivingPaths: string[] = [];
+    for (const name of entries) {
+      const path = join(sweepBase, name);
+      try {
+        await git.removeWorktree(repoRoot, path);
+      } catch {
+        survivingPaths.push(path);
+      }
+    }
+    try {
+      await git.pruneWorktrees(repoRoot);
+    } catch (err) {
+      this.log.warn(
+        `[flume] startup sweep: worktree prune failed: ${(err as Error).message}`,
+      );
+    }
+
+    const branchPattern = this.opts.namespace
+      ? `flume/${this.opts.namespace}/*`
+      : "flume/*";
+    let branches: string[] = [];
+    try {
+      const { stdout } = await execFileP(
+        "git",
+        [
+          "for-each-ref",
+          "--format=%(refname:short)",
+          `refs/heads/${branchPattern}`,
+        ],
+        { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
+      );
+      branches = stdout
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    } catch (err) {
+      this.log.warn(
+        `[flume] startup sweep: could not list ${branchPattern} branches: ${(err as Error).message}`,
+      );
+    }
+    for (const branch of branches) {
+      try {
+        await git.deleteBranch(repoRoot, branch);
+      } catch (err) {
+        this.log.warn(
+          `[flume] startup sweep: deleteBranch failed for ${branch}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (survivingPaths.length > 0) {
+      this.log.warn(
+        `[flume] startup sweep: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
+      );
+    }
+  }
+
+  /**
    * Provision one worktree, branched `flume/[<namespace>/]<tag>` from
    * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
    * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md

@@ -1753,6 +1753,115 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
 });
 
 /**
+ * spec/worktrees.md "Startup sweep — a dead wave's residue is removed at
+ * the next start": per-wave stale-slug removal (`createWorktree`, above)
+ * only ever covers an entry being re-provisioned; an entry that left the
+ * queue entirely leaked its worktree and branch indefinitely. `flume
+ * loop`/`flume job run` close that gap by calling
+ * `Dispatcher.sweepStaleWorktrees()` once, after the tip claim, before the
+ * first tick (`src/cli.ts`). These tests call the method directly — the
+ * CLI wiring is a one-line call site, and this is where the removal
+ * mechanics actually live.
+ */
+describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a dead wave\'s residue is removed at the next start")', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start", async () => {
+    const repoOpts = { cwd: fx.repo };
+    const wtPath = join(fx.repo, ".flume", "worktrees", "orphan");
+    await mkdir(dirname(wtPath), { recursive: true });
+    // Exactly what a killed fanout tick leaves behind: a registered git
+    // worktree on a flume/** branch, teardown never having run, and no
+    // pending entry naming it (a dropped entry left the queue entirely).
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "flume/orphan", wtPath, "HEAD"],
+      repoOpts,
+    );
+
+    const dispatcher = new Dispatcher({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    await dispatcher.sweepStaleWorktrees();
+
+    expect(existsSync(wtPath)).toBe(false);
+    const { stdout: worktreeList } = await exec(
+      "git",
+      ["worktree", "list", "--porcelain"],
+      repoOpts,
+    );
+    expect(worktreeList).not.toContain(join(".flume", "worktrees", "orphan"));
+    const { stdout: branches } = await exec(
+      "git",
+      ["branch", "--list", "flume/orphan"],
+      repoOpts,
+    );
+    expect(branches.trim()).toBe("");
+  });
+
+  it("an empty worktree base sweeps silently", async () => {
+    // No `.flume/worktrees` dir was ever created — the normal case for a
+    // fresh checkout or a run that never provisioned a worktree.
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+    const dispatcher = new Dispatcher({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log,
+    });
+
+    await expect(dispatcher.sweepStaleWorktrees()).resolves.toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+
+  it("a directory that cannot be removed (EBUSY) warns once at run level and does not abort the run", async () => {
+    const wtPath = join(fx.repo, ".flume", "worktrees", "stuck");
+    await mkdir(wtPath, { recursive: true });
+    await writeFile(join(wtPath, "marker.txt"), "x\n");
+
+    // Stands in for the win32 EBUSY/locked-handle class the real
+    // removal-fallback exhausts on (§7's `removeWorktree`) — the sweep
+    // never distinguishes *why* removal failed, only that it did.
+    vi.spyOn(git, "removeWorktree").mockRejectedValue(
+      new Error("worktree directory survived removal fallback: " + wtPath),
+    );
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+    const dispatcher = new Dispatcher({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log,
+    });
+
+    await expect(dispatcher.sweepStaleWorktrees()).resolves.toBeUndefined();
+
+    // Never aborted — the directory is left exactly as it was, not
+    // half-cleaned, and the call returned rather than throwing.
+    expect(existsSync(wtPath)).toBe(true);
+    const survivalWarnings = warnings.filter((w) => w.includes(wtPath));
+    expect(survivalWarnings).toHaveLength(1);
+    expect(survivalWarnings[0]).toContain("survived removal");
+  });
+});
+
+/**
  * v0.7 §16 — replays the incident shape (`.flume/loop-20260729.log`, batch
  * 3): a deterministic pre-tick worktree provisioning failure on ONE entry's
  * slug must not crash the whole fanout wave when its siblings are perfectly

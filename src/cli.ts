@@ -1320,9 +1320,18 @@ async function main(): Promise<number> {
       dropLock();
       process.exit(143);
     });
-    // Supervisor: one fresh `flume tick` process per iteration (§2). The
-    // dispatcher constructed above is unused on this path — each child
-    // builds its own and resolves chain.ts in its own process. A terminal
+    // Startup sweep (spec/worktrees.md "Startup sweep"): once, right after
+    // the tip claim above and before the first tick, so a dead prior wave's
+    // abandoned worktrees/branches never linger past this start. Safe here
+    // and only here — holding the claim just acquired is what rules out a
+    // live sibling owning anything under this state root's worktree base.
+    // `job run` reaches this same branch via its `cmd = "loop"` rewrite
+    // above, so it shares this call; a bare `flume tick` never does.
+    await dispatcher.sweepStaleWorktrees();
+    // Supervisor: one fresh `flume tick` process per iteration (§2). Past
+    // the sweep call above, the dispatcher constructed above is otherwise
+    // unused on this path — each child builds its own and resolves
+    // chain.ts in its own process. A terminal
     // stop (§3) or a mount-dead abort (v0.7 §4) propagates the child's exit
     // code out of `flume loop` too: exiting 0 here would re-mask either as
     // clean at the next process boundary up.
