@@ -3593,7 +3593,7 @@ export class Dispatcher {
       gate: failure.gate,
       message: failure.message,
       ...(failure.details
-        ? { details: bound(failure.details, MAX_PRIOR_DETAILS) }
+        ? { details: tailBound(failure.details, MAX_PRIOR_DETAILS) }
         : {}),
       diffStat,
     };

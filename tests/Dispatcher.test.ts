@@ -4717,6 +4717,75 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     expect(prompts[1]).toContain("boom-msg");
   }, 20_000);
 
+  it("afterCommit gate-revert whose raw details exceed MAX_PRIOR_DETAILS keeps the tail (e.g. vitest's Failed Tests block), not the head (BUILDPRIORATTEMPT-TAIL-BIAS-GATE-REVERT-DETAILS)", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    // Mirrors what a real gate emits: KB of leading PASS noise, then the
+    // section a retry actually needs, at the very end. Total length clears
+    // the 8 KiB `MAX_PRIOR_DETAILS` cap by a wide margin so a head-first
+    // `bound()` would drop the tail entirely.
+    const headOnlyMarker = "HEAD-ONLY-PASS-NOISE-MARKER";
+    const tailOnlyMarker = "TAIL-ONLY-FAILED-TESTS-BLOCK-MARKER";
+    const details =
+      headOnlyMarker + "PASS noise line\n".repeat(1000) + tailOnlyMarker;
+    expect(details.length).toBeGreaterThan(8 * 1024);
+
+    const failing: Gate = {
+      name: "boom-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom-msg", details };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "recording-singleton-tail-bias",
+      async invoke(inv) {
+        const n = prompts.length;
+        prompts.push(inv.prompt);
+        await writeAndCommit(
+          inv.cwd,
+          "src/o.ts",
+          `attempt-${n}\n`,
+          "plan: attempt",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick(); // attempt 1 → committed then reverted
+    baton.wake("plan");
+    await dispatcher.tick(); // attempt 2 → prompt carries the (truncated) block
+
+    expect(prompts.length).toBe(2);
+    expect(prompts[0]).not.toContain("<prior-attempt>");
+
+    const retry = prompts[1]!;
+    expect(retry).toContain("<prior-attempt>");
+    // The tail — where the content a retry needs lives — survived truncation…
+    expect(retry).toContain(tailOnlyMarker);
+    // …while the head, which a head-first `bound()` would have kept instead,
+    // did not.
+    expect(retry).not.toContain(headOnlyMarker);
+    expect(retry).toContain("truncated");
+  }, 20_000);
+
   it("afterMerge gate-revert → each reverted fanout entry's next prompt carries the block; first attempt absent", async () => {
     const entries = [
       makeEntry("WAVE-A", ["src/wa.ts"]),
