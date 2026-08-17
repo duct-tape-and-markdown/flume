@@ -165,7 +165,10 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   // chain exists before any job does; a chainless repo cannot run the job
   // it would create.
   const chainPath = resolve(configDir, "chain.ts");
-  if (!existsSync(chainPath)) {
+  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): configDir can nest
+  // deep enough that the total path crosses the limit with no single
+  // component long; namespacedJoin (src/paths.ts) is the shared idiom.
+  if (!existsSync(namespacedJoin(chainPath))) {
     throw new JobUsageError(
       `no chain at ${chainPath}; a job that could never \`run\` must not be creatable`,
     );
@@ -177,7 +180,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   let seedPath: string | undefined;
   if (chain.seedDir !== undefined) {
     seedPath = resolve(configDir, chain.seedDir);
-    if (!existsSync(seedPath)) {
+    if (!existsSync(namespacedJoin(seedPath))) {
       throw new JobUsageError(
         `chain declares seedDir '${chain.seedDir}' but ${seedPath} does not exist`,
       );

@@ -1411,5 +1411,47 @@ describe.runIf(process.platform === "win32")(
         await rm(base, { recursive: true, force: true });
       }
     });
+
+    it("jobNew doesn't misread an existing chain.ts or seedDir as absent when configDir/seedDir nests past win32's ~260-char limit", async () => {
+      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      try {
+        const repoRoot = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        await mkdir(repoRoot, { recursive: true });
+        const opts = { cwd: repoRoot };
+        await exec("git", ["init", "-q", "-b", "main"], opts);
+        await exec("git", ["config", "user.email", "test@example.com"], opts);
+        await exec("git", ["config", "user.name", "Test User"], opts);
+        await exec("git", ["config", "commit.gpgsign", "false"], opts);
+        await writeFile(join(repoRoot, "README.md"), "seed\n");
+        await exec("git", ["add", "."], opts);
+        await exec("git", ["commit", "-q", "-m", "seed"], opts);
+
+        await mkdir(join(repoRoot, ".flume", "job-seed"), { recursive: true });
+        await writeFile(
+          join(repoRoot, ".flume", "job-seed", "notes.md"),
+          "seed notes\n",
+        );
+        await writeRepoChain(repoRoot, { seedDir: "job-seed" });
+
+        const chainPath = join(repoRoot, ".flume", "chain.ts");
+        const seedPath = join(repoRoot, ".flume", "job-seed");
+        expect(chainPath.length).toBeGreaterThan(260);
+        expect(seedPath.length).toBeGreaterThan(260);
+
+        // Pre-fix, the bare-join existsSync checks at chainPath/seedPath
+        // silently read both as absent and threw JobUsageError("no chain"
+        // / "seedDir does not exist") even though both genuinely exist.
+        await jobNew({ repoRoot, name: "w32job", log: () => {} });
+        const jobDir = join(repoRoot, ".flume", "jobs", "w32job");
+        expect(await readFile(join(jobDir, "notes.md"), "utf8")).toBe(
+          "seed notes\n",
+        );
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    }, 60_000);
   },
 );
