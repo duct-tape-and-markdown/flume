@@ -174,13 +174,34 @@ async function writeAndCommit(
   await exec("git", ["commit", "-q", "-m", message], { cwd });
 }
 
+/**
+ * Write `pending.json`'s raw content and commit it — every strict read the
+ * dispatcher acts on now resolves the committed `HEAD` tip, never the
+ * working tree (spec/pending.md "Dispatch reads come from the tip, not the
+ * tree"), so a fixture that only writes to disk is invisible to it. Swallows
+ * exit `1` ("nothing to commit") for a caller that re-writes byte-identical
+ * content — the established `isAncestor`/`getLocalConfig` exit-code-as-data
+ * pattern (src/git.ts), not a text match on git's own wording.
+ */
+async function commitPendingFile(repo: string, content: string): Promise<void> {
+  const path = join(repo, ".flume", "plan", "pending.json");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, "utf8");
+  await exec("git", ["add", "--", ".flume/plan/pending.json"], { cwd: repo });
+  try {
+    await exec("git", ["commit", "-q", "-m", "test: pending.json"], {
+      cwd: repo,
+    });
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 1) throw err;
+  }
+}
+
 async function writePending(
   repo: string,
   entries: PendingEntry[],
 ): Promise<void> {
-  const path = join(repo, ".flume", "plan", "pending.json");
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(entries, null, 2) + "\n", "utf8");
+  await commitPendingFile(repo, JSON.stringify(entries, null, 2) + "\n");
 }
 
 async function readPendingFromDisk(repo: string): Promise<PendingEntry[]> {
@@ -1101,8 +1122,11 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
     // that window got silently overwritten by the stale snapshot once this
     // wave finally wrote back. KEEP-B is parked (never picked this wave) so
     // it stands in for "an entry this wave doesn't touch"; the fanout
-    // agent's action mutates pending.json on disk mid-wave, standing in for
-    // that concurrent write.
+    // agent's action commits a concurrent edit to trunk's pending.json
+    // mid-wave, standing in for that concurrent write — committed, since the
+    // rewrite read now resolves the committed tip rather than the working
+    // tree (spec/pending.md "Dispatch reads come from the tip, not the
+    // tree"), so an uncommitted disk write would be invisible to it.
     const keepB: PendingEntry = {
       ...makeEntry("KEEP-B", ["src/b.ts"]),
       gate: { kind: "parked", reason: "not picked this wave" },
@@ -1112,7 +1136,6 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
 
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
     const chain: Chain = { phases: [phase], humanOnly: [] };
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
 
     const concurrentKeepB: PendingEntry = {
       ...keepB,
@@ -1122,10 +1145,9 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
         const concurrent = [makeEntry("SHIP-A", ["src/a.ts"]), concurrentKeepB];
-        await writeFile(
-          pendingPath,
+        await commitPendingFile(
+          fx.repo,
           JSON.stringify(concurrent, null, 2) + "\n",
-          "utf8",
         );
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
@@ -1150,6 +1172,78 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
     // foreign keys, no lost edits.
     expect(after).toEqual([concurrentKeepB]);
   }, 20_000);
+});
+
+describe("Dispatcher — dispatch reads resolve from the committed tip, not the working tree (spec/pending.md \"Dispatch reads come from the tip, not the tree\")", () => {
+  it("a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to pending.json", async () => {
+    await writePending(fx.repo, [makeEntry("TIP-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // Dirty the working tree without committing — a scratch edit no commit
+    // owns. Parks the only entry, so a tree-read would see nothing pickable;
+    // the decide-read must resolve HEAD's committed content instead, where
+    // TIP-A is still open.
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const dirty: PendingEntry[] = [
+      {
+        ...makeEntry("TIP-A", ["src/a.ts"]),
+        gate: { kind: "parked", reason: "uncommitted tree edit" },
+      },
+    ];
+    await writeFile(pendingPath, JSON.stringify(dirty, null, 2) + "\n", "utf8");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "tip-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "shipped\n", "build(TIP-A): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // TIP-A shipped — the working-tree edit that parked it never reached
+    // the decide-read, which resolved the committed tip where it's open.
+    expect(outcome.result?.shippedTags).toEqual(["TIP-A"]);
+  }, 20_000);
+
+  it("PendingParseFailure still throws when the tip's committed content fails to parse", async () => {
+    await commitPendingFile(fx.repo, "{ this is not valid json");
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({});
+
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: rec,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.failed).toBe(true);
+    expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
+      true,
+    );
+  });
 });
 
 describe("Dispatcher fanout — two consecutive ship waves leave an untouched entry byte-identical", () => {
@@ -1186,20 +1280,14 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
     const afterFirst = await readPendingFromDisk(fx.repo);
     expect(afterFirst).toEqual([keep]);
 
-    // A second entry lands between waves, as a plan tick would — committed,
-    // not left dirty, so wave 2's rewrite (which reverts pending.json back
-    // to just `keep`, byte-identical to wave 1's commit) has a real diff
+    // A second entry lands between waves, as a plan tick would — `writePending`
+    // commits it, so wave 2's rewrite (which reverts pending.json back to
+    // just `keep`, byte-identical to wave 1's commit) has a real diff
     // against HEAD for git to commit.
     await writePending(fx.repo, [
       ...afterFirst,
       makeEntry("SHIP-2", ["src/two.ts"]),
     ]);
-    await exec("git", ["add", "--", ".flume/plan/pending.json"], {
-      cwd: fx.repo,
-    });
-    await exec("git", ["commit", "-q", "-m", "plan: add SHIP-2"], {
-      cwd: fx.repo,
-    });
     baton.wake("build");
     const second = await dispatcher.tick();
     expect(second.result?.shippedTags).toEqual(["SHIP-2"]);
@@ -3431,8 +3519,11 @@ describe("Dispatcher fanout — empty pickable set", () => {
 describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
   it("a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation", async () => {
     const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
-    await mkdir(dirname(pendingPath), { recursive: true });
-    await writeFile(pendingPath, "{ this is not valid json", "utf8");
+    // Committed, not left on disk uncommitted — the decide-read now resolves
+    // the committed tip (spec/pending.md "Dispatch reads come from the tip,
+    // not the tree"), so an uncommitted corrupt file would be invisible to
+    // it and the tick would see an empty queue instead of refusing.
+    await commitPendingFile(fx.repo, "{ this is not valid json");
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({
@@ -3472,7 +3563,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
       true,
     );
-    // No commit was made — the corrupt file is untouched.
+    // No further commit was made — the corrupt tip is untouched.
     expect(await head(fx.repo)).toBe(preHead);
     expect(await readFile(pendingPath, "utf8")).toBe("{ this is not valid json");
   });
@@ -3489,11 +3580,13 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // Stands in for a concurrent process corrupting pending.json mid-wave —
     // same mechanism the sibling "commitPendingUpdate rewrite reads fresh"
     // suite above uses to simulate a race, but this time the concurrent
-    // write is unparseable rather than a valid concurrent edit.
+    // write is unparseable rather than a valid concurrent edit. Committed,
+    // since the rewrite read now resolves the committed tip rather than the
+    // working tree.
     const corrupt = "{ corrupted mid-wave, not json";
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
-        await writeFile(pendingPath, corrupt, "utf8");
+        await commitPendingFile(fx.repo, corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
     });
@@ -3531,11 +3624,12 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // pending.json mid-wave, after the decide-read that picked SHIP-A but
     // before commitPendingUpdate's rewrite read runs. The cherry-pick and
     // afterMerge gate (none declared, so trivially clean) both land before
-    // the corruption is ever read.
+    // the corruption is ever read. Committed, since the rewrite read now
+    // resolves the committed tip rather than the working tree.
     const corrupt = "{ corrupted mid-wave, not json";
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
-        await writeFile(pendingPath, corrupt, "utf8");
+        await commitPendingFile(fx.repo, corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
     });
@@ -3586,7 +3680,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
         invoked.push("SHIP-A");
-        await writeFile(pendingPath, corrupt, "utf8");
+        await commitPendingFile(fx.repo, corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
       "decline-b": async () => {
@@ -8898,18 +8992,12 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
       expect(outcomeFirst.result?.shippedTags).toEqual(["FRICTION-RETRY"]);
 
       vi.setSystemTime(new Date("2024-01-02T00:00:00.000Z"));
-      // Land as a plan tick would — committed, not left dirty, so wave 2's
+      // Land as a plan tick would — `writePending` commits it, so wave 2's
       // rewrite (which reverts pending.json back to `[]`, byte-identical to
       // wave 1's ship commit) has a real diff against HEAD to commit.
       await writePending(fx.repo, [
         makeEntry("FRICTION-RETRY", ["src/friction-retry-2.ts"]),
       ]);
-      await exec("git", ["add", "--", ".flume/plan/pending.json"], {
-        cwd: fx.repo,
-      });
-      await exec("git", ["commit", "-q", "-m", "plan: re-derive FRICTION-RETRY"], {
-        cwd: fx.repo,
-      });
       new Baton(join(fx.repo, ".flume")).wake("build");
 
       const agentSecond = fanoutAgent({

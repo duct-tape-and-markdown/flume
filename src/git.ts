@@ -366,6 +366,46 @@ export async function showNameOnly(
 }
 
 /**
+ * Read a path's content as committed at `ref` (`git show <ref>:<path>`) —
+ * spec/pending.md "Dispatch reads come from the tip, not the tree": every
+ * strict pending.json read resolves the committed tip, never the working
+ * tree. Returns `null` when the path is absent from that ref's tree,
+ * mirroring `existsSync` for the disk read this replaces rather than a
+ * distinct failure mode.
+ *
+ * Existence is probed with `ls-tree` first — clean exit, empty stdout for
+ * "not in this tree" — rather than parsing `git show`'s fatal-error exit
+ * code, which is the same `128` for "path missing" as for every other fatal
+ * condition (bad ref, not a repository) and so cannot structurally
+ * distinguish them (`engine-boundary.md` "Told, not inferred"; the
+ * `isAncestor`/`deleteBranch` structural-probe pattern above, applied here).
+ *
+ * Content comes straight off `exec`, not `run()`: `run()`'s `trimEnd()` is
+ * right for git's own line-oriented output but would silently drop a real
+ * file's trailing bytes — a content read wants exactly what was committed.
+ */
+export async function readFileAtRef(
+  repoRoot: string,
+  ref: string,
+  relPath: string,
+): Promise<string | null> {
+  const pathspec = relPath.split(/[\\/]/).join("/");
+  const { stdout: listing } = await run(repoRoot, [
+    "ls-tree",
+    "--name-only",
+    ref,
+    "--",
+    pathspec,
+  ]);
+  if (listing.trim().length === 0) return null;
+  const { stdout } = await exec("git", ["show", `${ref}:${pathspec}`], {
+    cwd: repoRoot,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout;
+}
+
+/**
  * Abort an in-progress cherry-pick, restoring the working tree to its
  * pre-cherry-pick state. Idempotent: errors when no cherry-pick is in
  * progress are swallowed.

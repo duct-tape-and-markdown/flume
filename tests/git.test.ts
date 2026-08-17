@@ -86,6 +86,7 @@ import {
   isAncestor,
   liveTipClaimPid,
   pinLongPaths,
+  readFileAtRef,
   removeWorktree,
   resetKeepTo,
   ResetKeepRefusedError,
@@ -232,6 +233,55 @@ describe("commitPaths", () => {
     await expect(
       commitPaths({ cwd: repo, message: "noop", paths: [] }),
     ).rejects.toThrow(/at least one path/);
+  });
+});
+
+/**
+ * spec/pending.md "Dispatch reads come from the tip, not the tree" —
+ * `Dispatcher.readPending`'s tip-read primitive.
+ */
+describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not the tree')", () => {
+  it("returns a committed file's content at the given ref", async () => {
+    await writeFile(join(repo, "committed.txt"), "committed content\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add committed.txt"], {
+      cwd: repo,
+    });
+
+    expect(await readFileAtRef(repo, "HEAD", "committed.txt")).toBe(
+      "committed content\n",
+    );
+  });
+
+  it("returns null for a path absent from the ref's tree, ignoring an uncommitted working-tree file of the same name", async () => {
+    await writeFile(join(repo, "untracked.txt"), "never committed\n");
+    expect(await readFileAtRef(repo, "HEAD", "untracked.txt")).toBeNull();
+  });
+
+  it("ignores an uncommitted edit to an otherwise-committed file — reads the committed content, not the dirty working tree", async () => {
+    await writeFile(join(repo, "tracked.txt"), "committed version\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add tracked.txt"], {
+      cwd: repo,
+    });
+    await writeFile(join(repo, "tracked.txt"), "dirty uncommitted edit\n");
+
+    expect(await readFileAtRef(repo, "HEAD", "tracked.txt")).toBe(
+      "committed version\n",
+    );
+  });
+
+  it("resolves a nested path with OS-native separators as a git pathspec", async () => {
+    await mkdir(join(repo, "a", "b"), { recursive: true });
+    await writeFile(join(repo, "a", "b", "c.txt"), "nested\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add nested file"], {
+      cwd: repo,
+    });
+
+    expect(await readFileAtRef(repo, "HEAD", join("a", "b", "c.txt"))).toBe(
+      "nested\n",
+    );
   });
 });
 

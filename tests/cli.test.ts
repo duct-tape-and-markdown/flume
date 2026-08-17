@@ -730,10 +730,18 @@ function supervisorPolicyChainSrc(policy?: {
   );
 }
 
+/**
+ * Committed, not left on disk uncommitted — every strict pending.json read
+ * the dispatcher acts on now resolves the committed `HEAD` tip, never the
+ * working tree (spec/pending.md "Dispatch reads come from the tip, not the
+ * tree"), so an uncommitted seed would be invisible to the real `flume
+ * loop`/`flume tick` subprocess this feeds.
+ */
 async function writeStuckEntryPending(root: string): Promise<void> {
-  await mkdir(join(root, ".flume", "plan"), { recursive: true });
+  const planDir = join(root, ".flume", "plan");
+  await mkdir(planDir, { recursive: true });
   await writeFile(
-    join(root, ".flume", "plan", "pending.json"),
+    join(planDir, "pending.json"),
     JSON.stringify(
       [
         {
@@ -752,6 +760,9 @@ async function writeStuckEntryPending(root: string): Promise<void> {
     ) + "\n",
     "utf8",
   );
+  const opts = { cwd: root };
+  await exec("git", ["add", "--", ".flume/plan/pending.json"], opts);
+  await exec("git", ["commit", "-q", "-m", "test: seed STUCK-ENTRY"], opts);
 }
 
 /**
@@ -1344,12 +1355,24 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
     `  async invoke(inv) {\n` +
     `    const slug = basename(inv.cwd);\n` +
     `    if (slug === "ship-a") {\n` +
-    `      const pendingPath = join(\n` +
-    `        process.env.FLUME_DIR ?? "",\n` +
-    `        "plan",\n` +
-    `        "pending.json",\n` +
-    `      );\n` +
+    `      const flumeDirEnv = process.env.FLUME_DIR ?? "";\n` +
+    `      const pendingPath = join(flumeDirEnv, "plan", "pending.json");\n` +
     `      writeFileSync(pendingPath, "{ corrupted mid-wave, not json", "utf8");\n` +
+    // Committed on trunk, not left on disk uncommitted: the rewrite read
+    // this corruption targets now resolves the committed HEAD tip, never
+    // the working tree (spec/pending.md "Dispatch reads come from the tip,
+    // not the tree").
+    `      const repoRoot = join(flumeDirEnv, "..");\n` +
+    `      execFileSync(\n` +
+    `        "git",\n` +
+    `        ["add", "--", ".flume/plan/pending.json"],\n` +
+    `        { cwd: repoRoot },\n` +
+    `      );\n` +
+    `      execFileSync(\n` +
+    `        "git",\n` +
+    `        ["commit", "-q", "-m", "test: corrupt pending.json mid-wave"],\n` +
+    `        { cwd: repoRoot },\n` +
+    `      );\n` +
     `      mkdirSync(join(inv.cwd, "src"), { recursive: true });\n` +
     `      writeFileSync(join(inv.cwd, "src", "a.ts"), "from-A\\n", "utf8");\n` +
     `      execFileSync("git", ["add", "--", "src/a.ts"], { cwd: inv.cwd });\n` +
@@ -1418,6 +1441,15 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
           ) + "\n",
           "utf8",
         );
+        // Committed, not left on disk uncommitted — the decide-read now
+        // resolves the committed HEAD tip (spec/pending.md "Dispatch reads
+        // come from the tip, not the tree").
+        await exec("git", ["add", "--", ".flume/plan/pending.json"], {
+          cwd: repo.dir,
+        });
+        await exec("git", ["commit", "-q", "-m", "test: seed SHIP-A/DECLINE-B"], {
+          cwd: repo.dir,
+        });
         new Baton(flumeDir).wake("build");
 
         const r = await runCli(repo.dir, ["tick"]);
@@ -2550,6 +2582,17 @@ describe("§3 job resolution — real CLI", () => {
           ) + "\n",
           "utf8",
         );
+        // Committed — a job's state is tracked, working-tree files
+        // (spec/jobs.md "A job is a state root"), and the decide-read now
+        // resolves the committed HEAD tip, never the working tree
+        // (spec/pending.md "Dispatch reads come from the tip, not the
+        // tree").
+        await exec("git", ["add", "--", ".flume/jobs/foo/plan/pending.json"], {
+          cwd: repo.dir,
+        });
+        await exec("git", ["commit", "-q", "-m", "test: seed NS-PROBE"], {
+          cwd: repo.dir,
+        });
         new Baton(jobDir).wake("probe");
 
         // FLUME_JOB alone, no --job flag: the env-var resolution path must

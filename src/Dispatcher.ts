@@ -3369,13 +3369,42 @@ export class Dispatcher {
    * (engineering.md "Loud or nothing": a decision or a rewrite must never
    * derive from an input that failed to resolve). `readPendingTolerant`
    * below is the one declared exception, for the two report-only reads.
+   *
+   * spec/pending.md "Dispatch reads come from the tip, not the tree":
+   * resolves the committed `HEAD` tip (`git.readFileAtRef`), never the
+   * working tree — a mid-wave merge, an engine revert, or an operator's
+   * staged edit can each leave the tree ahead of or behind the branch, and a
+   * dispatch decision must never act on state no commit owns. An out-of-tree
+   * `pendingPath` (a relocated state root) has no tip to read — invisible to
+   * git by construction (`commitPendingUpdate` below), so it stays the one
+   * disk-reading case here, alongside `readPendingTolerant`.
    */
   private async readPending(): Promise<PendingEntry[]> {
-    if (!existsSync(this.pendingPath)) return [];
-    const raw = await readFile(this.pendingPath, "utf8");
+    if (this.isPendingRelocated()) {
+      if (!existsSync(this.pendingPath)) return [];
+      const raw = await readFile(this.pendingPath, "utf8");
+      const r = parsePending(raw, this.entryExtension);
+      if (!r.ok) throw new PendingParseFailure(r.errors);
+      return r.entries;
+    }
+    const rel = relative(this.opts.repoRoot, this.pendingPath);
+    const raw = await git.readFileAtRef(this.opts.repoRoot, "HEAD", rel);
+    if (raw === null) return [];
     const r = parsePending(raw, this.entryExtension);
     if (!r.ok) throw new PendingParseFailure(r.errors);
     return r.entries;
+  }
+
+  /**
+   * Whether `pendingPath` sits outside `repoRoot` — an out-of-tree state
+   * root's ledger, invisible to git by construction. Shared by
+   * `readPending`'s tip-vs-disk choice and `commitPendingUpdate`'s
+   * commit-vs-disk-only choice: one relocation check, not two independently
+   * re-derived ones.
+   */
+  private isPendingRelocated(): boolean {
+    const rel = relative(this.opts.repoRoot, this.pendingPath);
+    return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   }
 
   /**
@@ -3468,8 +3497,7 @@ export class Dispatcher {
     // disk write alone carries the auto-unblock and observedFiles forward —
     // computed before the tip check below, which only guards the git-commit
     // path this dock never takes.
-    const rel = relative(this.opts.repoRoot, this.pendingPath);
-    const relocated = rel.startsWith("..") || isAbsolute(rel);
+    const relocated = this.isPendingRelocated();
 
     if (!relocated) {
       // spec/loop.md "Tip verify", re-checked fresh immediately before this
