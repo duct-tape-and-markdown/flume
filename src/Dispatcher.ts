@@ -1660,7 +1660,13 @@ export class Dispatcher {
                 mergedSha,
               );
               await this.writePriorAttempt(key, record);
-              await git.hardResetTo(repoRoot, preCherry);
+              // spec/loop.md "Tip verify", "dropping it must not take
+              // bystanders": the primary checkout may hold an operator's
+              // uncommitted work, so this reset carries keep-semantics —
+              // never --hard — and lets a textual collision propagate as a
+              // ResetKeepRefusedError rather than silently discarding
+              // either writer's content.
+              await git.resetKeepTo(repoRoot, preCherry);
               noCommit = "gate-revert";
               gateFailure = {
                 signature: gateFailureSignature(entryFailure),
@@ -2115,7 +2121,13 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
-        await git.hardResetTo(repoRoot, preCherry);
+        // spec/loop.md "Tip verify", "dropping it must not take
+        // bystanders": the primary checkout may hold an operator's
+        // uncommitted work, so this reset carries keep-semantics — never
+        // --hard — and lets a textual collision propagate as a
+        // ResetKeepRefusedError rather than silently discarding either
+        // writer's content.
+        await git.resetKeepTo(repoRoot, preCherry);
         mergeReverted.push(r.entry);
         mergeOutcomes.push({
           tag: r.entry.tag,

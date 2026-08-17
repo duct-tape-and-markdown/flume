@@ -87,6 +87,8 @@ import {
   liveTipClaimPid,
   pinLongPaths,
   removeWorktree,
+  resetKeepTo,
+  ResetKeepRefusedError,
   revParse,
   softResetTo,
   tipClaimPath,
@@ -343,6 +345,117 @@ describe("softResetTo (spec/loop.md 'Tip verify', per-entry leg)", () => {
     expect(await isAncestor(repo, left, await revParse(repo))).toBe(false);
     await expect(softResetTo(repo, left)).resolves.toBeUndefined();
     expect(await revParse(repo)).toBe(left);
+  });
+});
+
+describe("resetKeepTo (spec/loop.md 'Tip verify', \"dropping it must not take bystanders\")", () => {
+  it("moves the tip back and preserves an unrelated unstaged bystander edit", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "engine.txt"), "engine change");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
+
+    // A bystander's uncommitted edit to a file the engine's commit never
+    // touched.
+    await writeFile(join(repo, ".seed"), "bystander unstaged edit");
+
+    await resetKeepTo(repo, base);
+
+    expect(await revParse(repo)).toBe(base);
+    expect(existsSync(join(repo, "engine.txt"))).toBe(false);
+    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
+      "bystander unstaged edit",
+    );
+  });
+
+  it("moves the tip back and preserves an unrelated staged bystander edit", async () => {
+    const base = await revParse(repo);
+    await writeFile(join(repo, "engine.txt"), "engine change");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
+
+    await writeFile(join(repo, ".seed"), "bystander staged edit");
+    await exec("git", ["add", "."], { cwd: repo });
+
+    await resetKeepTo(repo, base);
+
+    expect(await revParse(repo)).toBe(base);
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: repo },
+    );
+    expect(status).toContain(".seed");
+    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
+      "bystander staged edit",
+    );
+  });
+
+  it("refuses on a textual collision — unstaged bystander edit to the exact path the reset would touch — leaving both writers' content in place", async () => {
+    await writeFile(join(repo, "shared.txt"), "base");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed shared.txt"], {
+      cwd: repo,
+    });
+    const preEngine = await revParse(repo);
+    await writeFile(join(repo, "shared.txt"), "base\nengine change");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
+    const postEngine = await revParse(repo);
+
+    // Bystander edits the exact same file the revert needs to touch,
+    // without committing or staging.
+    await writeFile(
+      join(repo, "shared.txt"),
+      "base\nengine change\nbystander collision",
+    );
+
+    await expect(resetKeepTo(repo, preEngine)).rejects.toThrow(
+      ResetKeepRefusedError,
+    );
+
+    // Refused: neither the engine's commit nor the bystander's edit moved.
+    expect(await revParse(repo)).toBe(postEngine);
+    expect(await readFile(join(repo, "shared.txt"), "utf8")).toBe(
+      "base\nengine change\nbystander collision",
+    );
+  });
+
+  it("refuses on a textual collision — staged bystander edit to the exact path the reset would touch — leaving both writers' content in place", async () => {
+    await writeFile(join(repo, "shared.txt"), "base");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed shared.txt"], {
+      cwd: repo,
+    });
+    const preEngine = await revParse(repo);
+    await writeFile(join(repo, "shared.txt"), "base\nengine change");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
+    const postEngine = await revParse(repo);
+
+    await writeFile(
+      join(repo, "shared.txt"),
+      "base\nengine change\nbystander collision",
+    );
+    await exec("git", ["add", "."], { cwd: repo });
+
+    const err = await resetKeepTo(repo, preEngine).catch((e) => e);
+    expect(err).toBeInstanceOf(ResetKeepRefusedError);
+    expect((err as ResetKeepRefusedError).targetSha).toBe(preEngine);
+    expect((err as ResetKeepRefusedError).cwd).toBe(repo);
+
+    // Refused: neither the engine's commit nor the bystander's staged edit
+    // moved.
+    expect(await revParse(repo)).toBe(postEngine);
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: repo },
+    );
+    expect(status).toContain("shared.txt");
+    expect(await readFile(join(repo, "shared.txt"), "utf8")).toBe(
+      "base\nengine change\nbystander collision",
+    );
   });
 });
 

@@ -2581,6 +2581,146 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
   }, 30_000);
 });
 
+// ---------- shared-checkout keep-semantics revert (spec/loop.md "Tip
+// verify", "dropping it must not take bystanders") ----------
+
+describe("Dispatcher — an afterMerge revert on the primary checkout preserves bystander state", () => {
+  // A brand-new staged file — or a staged modification to any tracked file,
+  // touched by the entry's span or not — makes git refuse the cherry-pick
+  // itself ("your local changes would be overwritten by cherry-pick"),
+  // before the dispatcher ever reaches the afterMerge-revert this entry
+  // changes. So the staged bystander edit here lands from *inside* the
+  // afterMerge gate's own callback — after the cherry-pick has already
+  // landed cleanly, simulating an operator staging something mid-tick —
+  // which is exactly the window the revert (not the cherry-pick) has to
+  // respect.
+  it("fanout: an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact", async () => {
+    await writePending(fx.repo, [makeEntry("REVERT-ME", ["src/thing.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const alwaysVeto: Gate = {
+      name: "always-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        await writeFile(
+          join(cwd, "operator-staged.txt"),
+          "staged work",
+        );
+        await exec("git", ["add", "operator-staged.txt"], { cwd });
+        return { ok: false, message: "veto", details: "REVERT-ME-DETAIL" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [alwaysVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "revert-me": async (cwd) => {
+        await writeAndCommit(cwd, "src/thing.ts", "content\n", "build(REVERT-ME)");
+      },
+    });
+
+    // The operator has unrelated unstaged work sitting on the primary
+    // checkout while the tick runs, untouched by the entry's own files.
+    await writeFile(join(fx.repo, "operator-unstaged.txt"), "unstaged work");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The entry's afterMerge gate always fails, so nothing ships and it
+    // stays pending — the reset carried it back off trunk.
+    expect(outcome.result?.committed).toBe(false);
+    expect(existsSync(join(fx.repo, "src/thing.ts"))).toBe(false);
+    expect(await readPendingFromDisk(fx.repo)).toEqual([
+      { ...makeEntry("REVERT-ME", ["src/thing.ts"]), observedFiles: ["src/thing.ts"] },
+    ]);
+
+    // The operator's bystander state — one staged mid-tick, one unstaged
+    // before the tick — survived the revert untouched. A `--hard` reset
+    // would have wiped both.
+    expect(
+      await readFile(join(fx.repo, "operator-unstaged.txt"), "utf8"),
+    ).toBe("unstaged work");
+    expect(
+      await readFile(join(fx.repo, "operator-staged.txt"), "utf8"),
+    ).toBe("staged work");
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: fx.repo },
+    );
+    expect(status).toContain("operator-staged.txt");
+    expect(status).toContain("operator-unstaged.txt");
+  }, 20_000);
+
+  it("singleton: an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const alwaysVeto: Gate = {
+      name: "always-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        await writeFile(
+          join(cwd, "operator-staged.txt"),
+          "staged work",
+        );
+        await exec("git", ["add", "operator-staged.txt"], { cwd });
+        return { ok: false, message: "veto" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [alwaysVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
+    });
+
+    await writeFile(join(fx.repo, "operator-unstaged.txt"), "unstaged work");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(existsSync(join(fx.repo, "src/plan-out.ts"))).toBe(false);
+
+    expect(
+      await readFile(join(fx.repo, "operator-unstaged.txt"), "utf8"),
+    ).toBe("unstaged work");
+    expect(
+      await readFile(join(fx.repo, "operator-staged.txt"), "utf8"),
+    ).toBe("staged work");
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: fx.repo },
+    );
+    expect(status).toContain("operator-staged.txt");
+    expect(status).toContain("operator-unstaged.txt");
+  }, 20_000);
+});
+
 // ---------- entry-scoped write guard (v0.4 §5) ----------
 
 describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {

@@ -62,6 +62,51 @@ export async function hardResetTo(cwd: string, sha: string): Promise<void> {
 }
 
 /**
+ * Thrown by {@link resetKeepTo} when git refuses the reset — a path the
+ * reset would touch also carries an uncommitted change of its own. `git
+ * reset --keep` is transactional: on this refusal it has updated nothing,
+ * so both the engine's span and the bystander's uncommitted content are
+ * exactly as they were before the call. `gitMessage` carries git's own
+ * stderr for the operator's log, never parsed by the caller — the engine
+ * does not classify *why* --keep refused (`engine-boundary.md`, "Told, not
+ * inferred"), only that it did.
+ */
+export class ResetKeepRefusedError extends Error {
+  constructor(
+    public readonly cwd: string,
+    public readonly targetSha: string,
+    public readonly gitMessage: string,
+  ) {
+    super(
+      `reset --keep to ${targetSha} refused in ${cwd}: ${gitMessage} — ` +
+        `uncommitted state collides with the revert; both writers' work ` +
+        `left in place`,
+    );
+  }
+}
+
+/**
+ * Reset the branch pointer to `sha`, preserving uncommitted state the
+ * caller did not author (spec/loop.md "Tip verify", "dropping it must not
+ * take bystanders") — `git reset --keep`, never `--hard`, on a checkout
+ * that may hold a bystander's staged or unstaged work. `--keep` updates
+ * only the paths that differ between the current tip and `sha`; a path
+ * among those that also carries an uncommitted change of its own makes git
+ * refuse the whole reset atomically rather than silently discard either
+ * side, which this surfaces as {@link ResetKeepRefusedError}. The caller's
+ * only safe move on that refusal is to propagate it — never fall back to
+ * `hardResetTo`, which is exactly the wipe this primitive exists to avoid.
+ */
+export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
+  try {
+    await run(cwd, ["reset", "--keep", sha]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ResetKeepRefusedError(cwd, sha, message);
+  }
+}
+
+/**
  * Soft reset directly to a specific sha, rather than a commit count back
  * from HEAD. Used by the per-entry tip-verify leg (spec/loop.md "Tip
  * verify"): unlike the trunk leg's `softReset`, the target here is the
