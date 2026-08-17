@@ -205,12 +205,22 @@ corrupt into silent misbehavior.
 
 ## Tip verify — commit only onto the tip the tick started on
 
-The correctness backstop behind the claim's signal: it catches an operator committing
-mid-tick, a pull moving the ref, and claim-less bare-tick collisions. The dispatcher
-records the tip at tick start and refuses to let a commit land on anything else. A
-refusal means **no commit**; the tick ends with a `tip-moved` fact, and the entry — if
-the tick carries one — stays in `pending.json` for a fresh retry against the new tip.
-The engine reports the fact; the chain owns what it means.
+The correctness backstop behind the claim's signal — but the two guard different
+things, and the split is load-bearing: **a foreign commit on the tip is legal
+history; a second engine writer is not.** The claim file is how the dispatcher tells
+them apart without inference — an engine instance always holds the claim, an
+operator never does — so tip movement at a harness commit site is *absorbed* when no
+live foreign claim exists and *refused* when one does (below). Verify's refusal legs
+defend what absorption cannot make safe: a concurrent engine interleaving merges,
+and a base rewritten out from under an agent. A refusal means **no commit**; the
+tick ends with a `tip-moved` fact, and the entry — if the tick carries one — stays
+in `pending.json` for a fresh retry. The engine reports the fact; the chain owns
+what it means.
+
+One leg still refuses operator activity: the singleton parent-equality check below
+runs where the engine cannot distinguish its agent's commits from an operator's on a
+shared ref, and its accepted consequence stands for as long as singleton ticks
+commit on a ref with two legitimate writers.
 
 What survives on disk depends on which leg refused. Where the dispatcher undoes a
 commit it observed (`Dispatcher.checkTipMoved`, singleton and per-entry), the undo is
@@ -277,24 +287,49 @@ check can honestly claim**, because the two legs' refs have different writers:
   agent's finished entry as `tip moved (no commit)`, soft-resetting it, and letting
   teardown destroy all trace but a dangling sha — real gate-worthy work silently
   orphaned at full agent price, invisible in the verdict.
-- **Harness-driven commits re-read the ref first.** A fanout wave checks the tip
-  before each `cherry-pick` (`Dispatcher.runFanout`) and again before the
-  pending-ledger commit (`commitPendingUpdate`, checked *before* the `writeFile` so a
-  refusal leaves `pending.json` untouched rather than a write with no commit behind
-  it). The wave's expected tip advances to each successful merge's sha — the wave's own
-  progress is not "moved"; anything else is external interference.
-- **Per-entry isolation holds.** Entries already merged before the interference stay
-  shipped; every remaining entry in the wave hits the same refusal, since the
-  interference does not undo itself. A wave can therefore report `tipMoved` together
-  with `committed: true`.
-- **A ledger refusal after partial merges leaves the queue behind the tree.** When the
-  ref moves between a wave's last cherry-pick and the pending-ledger commit,
-  `commitPendingUpdate` returns `tipMoved` before the write, so `pending.json` still
-  lists entries whose commits are already on the tip — and `Dispatcher.runFanout` has
-  already cleared their prior-attempt slots (`clearPriorAttempt`) on the way in. The
-  next tick re-picks them as pickable and dispatches agents against work that shipped,
-  with no prior-attempt block to say so. The engine reports the fact; nothing
-  reconciles the queue against the tree.
+- **Harness-driven commits re-read the ref first — and absorb a foreign tip.** A
+  fanout wave checks the tip before each `cherry-pick` (`Dispatcher.runFanout`) and
+  again before the pending-ledger commit (`commitPendingUpdate`, checked *before*
+  the `writeFile`). The wave's own progress — each successful merge's sha — is not
+  movement. For anything else, the claim decides what moved it:
+  - **A live claim held by another process is a concurrent engine instance**, and
+    the wave refuses exactly as before: `tipMoved`, remaining entries stay pending,
+    nothing dropped. Two engines interleaving cherry-picks onto one ref is the
+    corruption the claim exists to prevent; absorbing it would launder it.
+  - **No live foreign claim means the mover was not an engine, and the commit is
+    legal.** An operator committing law, prompts, or chain config mid-run is
+    ordinary history, never interference. The wave re-reads the tip and
+    cherry-picks onto it — the foreign commit sits under the wave's, exactly as if
+    it had landed between ticks. A conflicting cherry-pick aborts
+    (`cherry-pick --abort`) into that entry's existing `MergeFailure` outcome: the
+    entry stays pending and retries against the tip that now carries the foreign
+    commit, which is itself never touched. The pending-ledger commit absorbs
+    identically — its content derives from the wave's outcomes, not from any tip,
+    so it recommits on whatever tip is current.
+- **Absorbing the ledger commit is what closes the queue-behind-tree hazard.**
+  Under refuse-on-moved semantics, a ref moving between the last cherry-pick and
+  the ledger commit left `pending.json` listing entries whose commits were already
+  on the tip — prior-attempt slots already cleared (`clearPriorAttempt`) — and the
+  next tick dispatched agents against shipped work with nothing on disk to say so.
+  The ledger landing on the moved tip removes the window: a tick can no longer end
+  with the queue behind the tree it describes.
+- **The merged tree's validity is the chain's `afterMerge` gates** (`spec/chain.md`,
+  *Gate placement*). An absorbed foreign commit means the entry's `afterCommit`
+  gates validated its span against the recorded base, not the tree it merged into.
+  That staleness is deliberate and declared, never silent: `afterMerge` is the only
+  validation of the merged tree, and the engine re-gates nothing on its own — what
+  validation means is the chain's decision, not the engine's.
+- **One window stays a refusal, deliberately.** A foreign commit landing between an
+  entry's cherry-pick and that entry's `afterMerge` gate revert leaves the entry's
+  commit mid-history, where `dropLastCommit`'s ownership guard refuses (below). The
+  refusal is loud, names both shas, and leaves repair to the operator with the
+  evidence in hand — the bounded exception to absorption, not a contradiction of
+  it: absorbing history is safe; resetting over another writer's commit is the
+  defect the guard exists to stop.
+- **Per-entry isolation holds.** Entries already merged before a concurrent-engine
+  refusal stay shipped; every remaining entry hits the same refusal, since a live
+  foreign claim does not release mid-wave. A wave can therefore report `tipMoved`
+  together with `committed: true`.
 
 **Dropping a commit requires owning it.** `git.dropLastCommit(cwd, expectedSha)` — the
 guarded revert every gate failure depends on — refuses, naming both shas, unless the

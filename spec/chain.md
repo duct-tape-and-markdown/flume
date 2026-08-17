@@ -387,6 +387,14 @@ Gates declare `when: "afterCommit" | "afterMerge"` (`src/Gate.ts:GatePhase`).
 The engine runs them where they say; **where to put them is chain-authoring
 doctrine**, and the default guidance is:
 
+- **`afterMerge` is the only validation of the merged tree — the gates that
+  define "still correct" belong there.** `afterCommit` gates run in the worktree
+  and validate the entry's span against its recorded base; when the trunk moved
+  under the wave — a foreign commit absorbed mid-run (`spec/loop.md`, *Tip
+  verify*) — the merged tree is one no `afterCommit` gate ever saw. The engine
+  re-gates nothing on its own; a chain operating under foreign commits owns
+  placing its correctness gates at `afterMerge`, and a chain that leaves them at
+  `afterCommit` has chosen the staleness window, not merely defaulted into it.
 - **Expensive correctness gates at `afterMerge`; cheap structural gates at
   `afterCommit`.** N parallel heavy gates under fanout saturate the host, and a
   flaky timeout under contention reverts clean commits. The dogfood chain
