@@ -1,45 +1,5 @@
 [
   {
-    "tag": "shared-checkout-keep-reset",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "add a reset --keep primitive for the primary-checkout revert path, refusing loudly on a textual collision instead of discarding either side."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the afterMerge gate-revert on the primary checkout (today git.hardResetTo(repoRoot, preCherry)) uses the new keep-semantics primitive; ephemeral-worktree reverts keep --hard."
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "reset --keep preserves an unrelated uncommitted change; a textual collision refuses loudly, both writers' work left intact."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "an afterMerge revert on the trunk survives a bystander's staged or unstaged edit."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Primary-checkout engine reverts use reset --keep and refuse loudly on textual collision, instead of --hard wiping bystander uncommitted state.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Tip verify — one writer per branch, absorption at the merge"
-    },
-    "tests": [
-      "an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact",
-      "a revert whose diff textually collides with uncommitted trunk state refuses loudly instead of discarding either side"
-    ],
-    "acceptance": "No --hard reset touches the primary checkout; every primary-checkout revert is --keep with a loud refusal on collision. Ephemeral-worktree reverts are unaffected.",
-    "notes": "Field-paid incident 8: a wave-merge reset destroyed staged operator content and a refused tick's unstaged writes together, recoverable only from an operator-side snapshot."
-  },
-  {
     "tag": "dispatch-reads-from-tip",
     "gate": {
       "kind": "open"
