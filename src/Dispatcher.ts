@@ -685,15 +685,6 @@ function validateFrictionDeclaration(chain: Chain): void {
  * governs nothing. Emptiness doesn't matter — `[]` on a scoped phase is
  * live (it just adds no extra globs); the field's *presence* without the
  * flag is what's dead.
- *
- * An `afterMerge` gate on a `concurrency: "singleton"` phase used to be the
- * other dead shape here: the merge loop (`runFanout`) was the only site
- * that ran `afterMerge` gates, and a singleton tick never reached it. That
- * stopped being true the moment a singleton tick started carrying its own
- * worktree commit back through the same cherry-pick + afterMerge machinery
- * a wave of one uses (spec/worktrees.md "Singleton runs in a worktree") —
- * an `afterMerge` gate on a singleton phase now runs, on trunk, exactly
- * once per tick.
  */
 function validateNoDeadDeclarations(chain: Chain): void {
   for (const phase of chain.phases) {

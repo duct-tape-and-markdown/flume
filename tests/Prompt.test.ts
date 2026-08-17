@@ -256,7 +256,7 @@ describe("renderPrompt — <harness> states the effective fence (RELEASE-v0.7 §
   });
 });
 
-describe("renderPrompt <harness> gate list matches what the tick actually runs (CHAIN-AFTERMERGE-SINGLETON-PROMPT-FILTER)", () => {
+describe("renderPrompt <harness> gate list names every declared gate regardless of concurrency", () => {
   async function render(p: Phase): Promise<string> {
     const promptFile = join(dir, "prompt.md");
     await writeFile(promptFile, "task body\n", "utf8");
@@ -269,7 +269,7 @@ describe("renderPrompt <harness> gate list matches what the tick actually runs (
     });
   }
 
-  it("a singleton phase declaring an afterMerge gate renders a harness block that does not name it", async () => {
+  it("a singleton phase declaring an afterMerge gate renders a harness block that names it (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
     const p = phase({
       name: "plan",
       concurrency: "singleton",
@@ -282,8 +282,7 @@ describe("renderPrompt <harness> gate list matches what the tick actually runs (
     const out = await render(p);
 
     expect(out).toContain("  - tsc (afterCommit)");
-    expect(out).not.toContain("vitest");
-    expect(out).not.toContain("afterMerge");
+    expect(out).toContain("  - vitest (afterMerge)");
   });
 
   it("a fanout phase's harness block still names its afterMerge gates unchanged", async () => {

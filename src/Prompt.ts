@@ -383,15 +383,7 @@ function prependHarnessBlock(
   assignedEntry: PendingEntry | undefined,
   body: string,
 ): string {
-  // A singleton tick only ever runs `runAfterCommitGates` (src/Dispatcher.ts)
-  // — the afterMerge cherry-pick/merge step that would run an `afterMerge`
-  // gate exists only for fanout waves. Naming an afterMerge gate here for a
-  // singleton phase would state enforcement the engine never performs.
-  const gates =
-    phase.concurrency === "singleton"
-      ? phase.gates.filter((g) => g.when === "afterCommit")
-      : phase.gates;
-  const gateLines = gates
+  const gateLines = phase.gates
     .map((g) => `  - ${g.name} (${g.when})`)
     .join("\n");
 

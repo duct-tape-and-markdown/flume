@@ -87,11 +87,13 @@ export interface ClaudeCodeOptions {
   /** Path to the `claude` binary. Default: resolves from PATH. */
   binary?: string;
   /**
-   * Pass `--dangerously-skip-permissions`. Default is `true` because
-   * autonomous operation requires it — no tick can pause on a permission
-   * prompt. The fence and gates contain what lands in a commit; they do not
-   * contain what the agent does to the host mid-tick. Disable if running
-   * against a directory you don't trust the agent in.
+   * Pass `--dangerously-skip-permissions`. Default is `true`: autonomous
+   * operation requires it — no tick can pause on a permission prompt — and
+   * every Flume tick, singleton and fanout alike, runs in a worktree the
+   * harness controls (spec/worktrees.md, "Singleton runs in a worktree").
+   * The fence and gates contain what lands in a commit; they do not contain
+   * what the agent does to the host mid-tick. Disable if running against a
+   * directory you don't trust the agent in.
    */
   dangerouslySkipPermissions?: boolean;
   /**
