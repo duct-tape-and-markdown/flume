@@ -272,14 +272,21 @@ function describeRefFailure(
 
 /**
  * `flume loop` / `job run`'s completion summary line naming surfaced tick
- * errors, and (§16) an abort on the consecutive-failure backstop — undefined
- * when the run had neither. Printed even on a 0 exit (partial success):
- * errors must not vanish into a green exit silently (v0.7 §4).
+ * errors, (§16) an abort on the consecutive-failure backstop, and (spec/
+ * loop.md "Graceful stop") a stop-flag-ended run — undefined when the run
+ * had none of these. Printed even on a 0 exit (partial success, or a
+ * graceful stop): none of these facts may vanish into a green exit silently
+ * (v0.7 §4).
  */
 export function loopCompletionSummary(
   result: SuperviseResult,
 ): string | undefined {
   const parts: string[] = [];
+  if (result.stoppedByFlag) {
+    parts.push(
+      `stop flag present: ended the run after ${result.ticks} tick(s)`,
+    );
+  }
   if (result.repeatedFailure) {
     parts.push(
       `aborted: identical worktree provisioning failure repeated ` +
@@ -307,6 +314,7 @@ const SUBCOMMANDS = [
   "loop",
   "wake",
   "sleep",
+  "stop",
   "log",
   "check",
   "friction",
@@ -323,6 +331,11 @@ Commands:
   loop [--max N]      Run ticks until hibernation (default cap 50).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
+  stop                Write .flume/stop and print what happens next: a live
+                      supervisor finishes its in-flight tick then ends the
+                      run; the next loop/job run refuses to start until the
+                      flag is removed. Idempotent. No unstop/resume verb —
+                      removing the flag is the operator's own acknowledgement.
   log [-n N] [--json] Print the last N tick verdicts (default 10) from
                       tick-verdicts.jsonl, oldest first — a human table by
                       default, or --json for the records verbatim as JSONL.
@@ -411,8 +424,10 @@ Exit codes:
   0   Hibernation reached, or --max ticks completed — including partial
       success (some ticks errored but at least one entry shipped; the
       completion summary names the errors).
-  1   Harness error, another live loop holds the lock; also, HEAD is
-      detached (v0.11 §4: checkout a branch first — the tip claim below
+  1   Harness error, another live loop holds the lock; also, the stop flag
+      (\`.flume/stop\`) is already present (refusal names the path — remove
+      it to acknowledge the stop, spec/loop.md "Graceful stop"); also, HEAD
+      is detached (v0.11 §4: checkout a branch first — the tip claim below
       keys on the ref); also, another process holds the tip claim (v0.11
       §4: the refusal names the holder pid and claim path); also, at least
       one tick errored and the run shipped nothing (v0.7 §4); also, an
@@ -421,6 +436,9 @@ Exit codes:
       the completion summary names the repeated signature. A single
       entry's provisioning failure alone does not abort: it quarantines
       that entry for the rest of the run while the others keep dispatching.
+      A graceful stop mid-run (\`.flume/stop\` written while the loop is
+      already going) ends iteration after the in-flight tick finishes, but
+      never changes this exit code — it stays decided by the run's totals.
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same
@@ -452,6 +470,22 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, or <phase> names a phase the loaded chain
       does not declare.
+`,
+  stop: `Usage: flume stop
+
+Write <flumeDir>/stop and print what happens next: a live supervisor
+finishes its in-flight tick — merge, park, verdict, and handoff run exactly
+as they would have — then releases the tip claim and the loop lock and ends
+the run; without a live supervisor, the next \`loop\`/\`job run\` refuses to
+start until the flag is removed. Idempotent — a repeat call finds the flag
+already present and prints the same statement. The verb is discoverability
+plus the printed statement, never a privileged channel: \`touch\` on the same
+path is equally the interface. There is deliberately no \`unstop\`/\`resume\`
+verb — removing the flag is the operator's own acknowledgement that the stop
+was seen.
+
+Exit codes:
+  0   Always — including when the flag was already present.
 `,
   log: `Usage: flume log [-n N] [--json]
 
@@ -914,12 +948,28 @@ async function main(): Promise<number> {
     // 2026-07-29 incident's "hibernating" reading left the operator to
     // infer relaunch-safety instead of being told it. No pidfile: silent,
     // unchanged from pre-§17 output.
+    let supervisorLive = false;
     if (existsSync(join(flumeDir, "loop.pid"))) {
       const pid = await liveLoopPid(flumeDir);
+      supervisorLive = pid !== null;
       console.log(
         pid !== null
           ? `supervisor pid ${pid} live`
           : "loop.pid present, process dead — stale",
+      );
+    }
+    // spec/loop.md "Graceful stop — the stop flag" / spec/cli.md "`flume
+    // status` owes exactly this" line 3: named right after supervisor
+    // liveness, before the tip claim — the ack ritual only works if the
+    // operator who forgot the flag finds it where they look first.
+    const stopFlagPath = join(flumeDir, "stop");
+    if (existsSync(namespacedJoin(stopFlagPath))) {
+      console.log(
+        supervisorLive
+          ? `${stopFlagPath} present: the running supervisor will finish ` +
+              "its in-flight tick and end the run"
+          : `${stopFlagPath} present: the next \`loop\`/\`job run\` refuses ` +
+              "to start until it is removed",
       );
     }
     // v0.11 §4: report the current tip's claim alongside supervisor
@@ -1006,6 +1056,24 @@ async function main(): Promise<number> {
     }
     new Baton(flumeDir).sleep(phase);
     console.log(`slept ${phase}`);
+    return 0;
+  }
+
+  if (cmd === "stop") {
+    // spec/loop.md "Graceful stop — the stop flag": the file is the
+    // mechanism, this verb is discoverability plus a printed statement —
+    // `touch <flumeDir>/stop` is equally the interface. Idempotent: always
+    // (re)write the same empty file and print the same fixed statement,
+    // never conditioned on whether a supervisor happens to be live right
+    // now (that liveness-conditioned phrasing is `status`'s stop-flag line).
+    const stopPath = join(flumeDir, "stop");
+    mkdirSync(flumeDir, { recursive: true });
+    writeFileSync(namespacedJoin(stopPath), "");
+    console.log(
+      `[flume] wrote ${stopPath}: a live supervisor finishes its in-flight ` +
+        "tick and ends the run; the next `loop`/`job run` refuses to start " +
+        "until the flag is removed.",
+    );
     return 0;
   }
 
@@ -1260,6 +1328,18 @@ async function main(): Promise<number> {
         return 2;
       }
       max = parsed;
+    }
+    // spec/loop.md "Graceful stop — the stop flag": presence at start
+    // refuses the run before any tick — a stale flag must never silently
+    // swallow a scheduled run. `job run` reaches this same branch via its
+    // `cmd = "loop"` rewrite above, so it refuses identically.
+    const stopFlagPath = join(flumeDir, "stop");
+    if (existsSync(namespacedJoin(stopFlagPath))) {
+      console.error(
+        `[flume] loop refuses: stop flag present at ${stopFlagPath} — ` +
+          "remove it to acknowledge the stop before starting a new run",
+      );
+      return 1;
     }
     // v0.11 §4: refuse before any tick when HEAD does not name a ref — the
     // tip claim acquired below keys on the ref HEAD resolves to.

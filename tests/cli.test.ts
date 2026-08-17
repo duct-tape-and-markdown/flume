@@ -547,6 +547,48 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     expect(loopCompletionSummary(result)).toContain("2 consecutive ticks");
     expect(loopCompletionSummary(result)).not.toContain("3 consecutive ticks");
   });
+
+  // spec/loop.md "Graceful stop — the stop flag": stop ends iteration, it
+  // never reclassifies what already happened — loopExitCode stays decided
+  // by the run totals alone, with the completion summary naming the stop
+  // flag as the reason iteration ended, even when nothing else went wrong.
+  it("a graceful stop with nothing errored/shipped still exits 0, summary names the stop flag", () => {
+    const result: SuperviseResult = {
+      ticks: 2,
+      hibernated: false,
+      stoppedByFlag: true,
+      shippedTags: [],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(0);
+    expect(loopCompletionSummary(result)).toContain("stop flag");
+  });
+
+  it("a graceful stop after errored ticks with nothing shipped still exits 1 — no special stop code", () => {
+    const result: SuperviseResult = {
+      ticks: 2,
+      hibernated: false,
+      stoppedByFlag: true,
+      shippedTags: [],
+      erroredTicks: ["build: no commit (gate-revert) → hibernate"],
+    };
+    expect(loopExitCode(result)).toBe(1);
+    const summary = loopCompletionSummary(result);
+    expect(summary).toContain("stop flag");
+    expect(summary).toContain("gate-revert");
+  });
+
+  it("a graceful stop with a shipped entry and no errors exits 0, summary still names the stop flag", () => {
+    const result: SuperviseResult = {
+      ticks: 1,
+      hibernated: false,
+      stoppedByFlag: true,
+      shippedTags: ["SHIPPED-ENTRY"],
+      erroredTicks: [],
+    };
+    expect(loopExitCode(result)).toBe(0);
+    expect(loopCompletionSummary(result)).toContain("stop flag");
+  });
 });
 
 /**
@@ -2758,6 +2800,208 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
         expect(
           existsSync(join(repo.dir, ".flume", "awake", "anything")),
         ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
+// ---------- flume stop (spec/loop.md "Graceful stop — the stop flag") ----------
+
+describe("flume stop — writes <flumeDir>/stop and prints the consequence", () => {
+  it(
+    "writes the flag and names the path plus what happens next, exit 0",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-stop-"));
+      try {
+        const stopPath = join(dir, ".flume", "stop");
+        const r = await runCli(dir, ["stop"]);
+        expect(r.code).toBe(0);
+        expect(existsSync(stopPath)).toBe(true);
+        expect(r.out).toContain(stopPath);
+        expect(r.out).toContain(
+          "finishes its in-flight tick and ends the run",
+        );
+        expect(r.out).toContain(
+          "refuses to start until the flag is removed",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "is idempotent — a repeat call finds the flag already present and prints the same statement, exit 0",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-stop-idempotent-"));
+      try {
+        const first = await runCli(dir, ["stop"]);
+        const second = await runCli(dir, ["stop"]);
+        expect(first.code).toBe(0);
+        expect(second.code).toBe(0);
+        expect(second.out).toBe(first.out);
+        expect(existsSync(join(dir, ".flume", "stop"))).toBe(true);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it("flume stop --help short-circuits before writing the flag", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-stop-help-"));
+    try {
+      const r = await runCli(dir, ["stop", "--help"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("Usage: flume stop");
+      expect(existsSync(join(dir, ".flume", "stop"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe("flume status — stop flag line (spec/cli.md \"flume status owes exactly this\", line 3)", () => {
+  it("prints nothing when the flag is absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-absent-"));
+    try {
+      const r = await runCli(dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).not.toContain(join(dir, ".flume", "stop"));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it(
+    "names the path and that the running supervisor will finish and end the run, ordered after supervisor liveness and before the tip claim",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-live-"));
+      try {
+        const flumeDir = join(dir, ".flume");
+        await mkdir(flumeDir, { recursive: true });
+        // The vitest worker itself plays the live supervisor.
+        await writeFile(join(flumeDir, "loop.pid"), String(process.pid), "utf8");
+        await writeFile(join(flumeDir, "stop"), "", "utf8");
+
+        const r = await runCli(dir, ["status"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain(join(flumeDir, "stop"));
+        expect(r.out).toContain(
+          "the running supervisor will finish its in-flight tick and end the run",
+        );
+
+        const liveIdx = r.out.indexOf(`supervisor pid ${process.pid} live`);
+        const stopIdx = r.out.indexOf(join(flumeDir, "stop"));
+        expect(liveIdx).toBeGreaterThanOrEqual(0);
+        expect(stopIdx).toBeGreaterThan(liveIdx);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "names the path and that the next loop/job run refuses, when no supervisor is live",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-dead-"));
+      try {
+        const flumeDir = join(dir, ".flume");
+        await mkdir(flumeDir, { recursive: true });
+        await writeFile(join(flumeDir, "stop"), "", "utf8");
+
+        const r = await runCli(dir, ["status"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain(join(flumeDir, "stop"));
+        expect(r.out).toContain(
+          "the next `loop`/`job run` refuses to start until it is removed",
+        );
+        expect(r.out).not.toContain("supervisor pid");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});
+
+describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
+  it(
+    "refuses before any tick, exit 1, naming the flag path — no lock taken, no tick runs",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        const stopPath = join(flumeDir, "stop");
+        await mkdir(flumeDir, { recursive: true });
+        await writeFile(stopPath, "", "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain(stopPath);
+        expect(r.out).toContain("refuses");
+        expect(r.out).not.toContain("reached --max");
+        // The refusal fires before the loop lock is ever taken.
+        expect(existsSync(join(flumeDir, "loop.pid"))).toBe(false);
+        // The flag itself survives untouched — no unstop verb.
+        expect(existsSync(stopPath)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume tick ignores the flag and runs normally",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        await writeFile(join(flumeDir, "stop"), "", "utf8");
+        new Baton(flumeDir).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        expect(r.code).toBe(0);
+        expect(r.out).toMatch(/tick → probe/);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "job run refuses at start too, sharing the same `loop` rewrite",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
+        await mkdir(jobFlumeDir, { recursive: true });
+        const stopPath = join(jobFlumeDir, "stop");
+        await writeFile(stopPath, "", "utf8");
+
+        const r = await runCli(repo.dir, [
+          "job",
+          "run",
+          "probejob",
+          "--max",
+          "3",
+        ]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain(stopPath);
+        expect(r.out).not.toContain("reached --max");
+        expect(existsSync(join(jobFlumeDir, "loop.pid"))).toBe(false);
       } finally {
         await repo.cleanup();
       }

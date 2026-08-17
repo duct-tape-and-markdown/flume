@@ -10,6 +10,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -83,6 +84,42 @@ function envProbeChainSrc(phaseName: string): string {
     `        FLUME_CONFIG_DIR: process.env.FLUME_CONFIG_DIR,\n` +
     `      }),\n` +
     `    );\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+/**
+ * A chain.ts whose singleton phase `<name>` hands off to itself — so, absent
+ * a stop, the baton stays awake and a fresh child tick would run again next
+ * iteration — and whose `agent` writes `<FLUME_DIR>/stop` from *inside* the
+ * child tick process, before returning cleanly with no commit. This
+ * simulates a stop flag appearing while a tick is in flight: the write lands
+ * on disk mid-child, but nothing rechecks it until the supervisor's own
+ * post-child boundary (`spec/loop.md`, "Graceful stop — the stop flag" —
+ * "Checked between children only").
+ */
+function midRunStopChainSrc(phaseName: string): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "mid-run stop probe",\n` +
+    `    promptPath: "prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [${JSON.stringify(phaseName)}],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "mid-run-stop",\n` +
+    `  async invoke() {\n` +
+    `    writeFileSync(join(process.env.FLUME_DIR ?? "", "stop"), "");\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
     `} });\n`
@@ -333,6 +370,55 @@ describe("§4 mount-dead fail-fast — real `flume loop` over an unloadable chai
       expect(loop.out).toMatch(/mount-dead/);
       expect(loop.out).not.toMatch(/reached --max/);
       expect(loop.out.match(/tick exited 69/g)).toHaveLength(1);
+    },
+    30_000,
+  );
+});
+
+describe("Graceful stop — real `flume loop` over a stop flag written mid-run (spec/loop.md \"Graceful stop — the stop flag\")", () => {
+  it(
+    "the in-flight tick finishes uninterrupted, the run ends after it rather than continuing to --max, and the lock/claim are released",
+    async () => {
+      await writeFile(
+        join(repo.dir, ".flume", "chain.ts"),
+        midRunStopChainSrc("alpha"),
+        "utf8",
+      );
+      const flumeDir = join(repo.dir, ".flume");
+      const baton = new Baton(flumeDir);
+      baton.wake("alpha");
+
+      // The phase hands off to itself every tick, so absent the stop flag
+      // the loop would run all 5 iterations. The agent writes the flag from
+      // inside the first child tick, before that tick returns.
+      const loop = await runLoop(repo.dir, hermeticEnv(), 5);
+
+      expect(loop.code).toBe(0);
+      // Exactly one child tick ran — the in-flight one that wrote the flag —
+      // never a second, which --max 5 would otherwise have allowed.
+      expect(loop.out.match(/tick → alpha \(singleton\)/g)).toHaveLength(1);
+      expect(loop.out).not.toMatch(/reached --max/);
+      expect(loop.out).not.toMatch(/hibernating after/);
+      // The completion summary names the stop flag as why iteration ended.
+      expect(loop.out).toMatch(/stop flag/);
+
+      // The flag stays on disk untouched — there is no unstop verb; removing
+      // it is the operator's own acknowledgement.
+      expect(existsSync(join(flumeDir, "stop"))).toBe(true);
+      // The run ended by the stop flag, not by hibernation: the self-loop
+      // handoff re-woke "alpha" before the tick's process exited.
+      expect(baton.isAwake("alpha")).toBe(true);
+
+      // The loop lock and tip claim were released on the normal exit path —
+      // proven by a fresh loop (after the operator acks by removing the
+      // flag) not being refused by a leftover lock or claim.
+      expect(existsSync(join(flumeDir, "loop.pid"))).toBe(false);
+      await rm(join(flumeDir, "stop"));
+      const second = await runLoop(repo.dir, hermeticEnv(), 1);
+      expect(second.code).toBe(0);
+      expect(second.out).not.toContain("refusing");
+      expect(second.out).not.toContain("already runs");
+      expect(second.out).not.toContain("claimed by pid");
     },
     30_000,
   );

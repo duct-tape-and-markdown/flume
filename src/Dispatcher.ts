@@ -3791,6 +3791,18 @@ export interface SuperviseResult {
    * hitting the identical failure.
    */
   repeatedFailure?: { signature: string; count: number };
+  /**
+   * spec/loop.md "Graceful stop — the stop flag": set when `<flumeDir>/stop`
+   * was found present at the per-iteration boundary after a child tick
+   * finished, ending the run there rather than at hibernation or `--max`.
+   * Distinct from `hibernated` — the baton may still carry awake flags when
+   * a stop ends the run; `hibernated` above reflects the baton's actual
+   * disk state at that same moment, independent of this field. Read by
+   * `flume loop`'s completion summary to name the stop flag as the reason
+   * iteration ended (spec/loop.md); never consulted by `loopExitCode` —
+   * a stopped run's exit code stays decided by the run totals alone.
+   */
+  stoppedByFlag?: boolean;
 }
 
 /**
@@ -4054,6 +4066,25 @@ export async function superviseLoop(
           `tick process exited ${exitCode} with no verdict written to disk`,
         );
       }
+    }
+    // spec/loop.md "Graceful stop — the stop flag": checked at the same
+    // per-iteration boundary as the baton re-read below, never mid-tick —
+    // the in-flight tick above always completed (merge, park, verdict, and
+    // handoff ran exactly as they would have) before this is reached. A
+    // flag written while that tick was running is picked up here, ending
+    // the run even though the baton may still carry awake flags — the
+    // hibernation check below never gets a chance to end it on its own
+    // terms. The flag itself is left on disk; there is no unstop verb.
+    if (existsSync(namespacedJoin(join(flumeDir, "stop")))) {
+      log.info(`[flume] stop flag present; ending run after ${ticks} tick(s)`);
+      await logFrictionSummary();
+      return {
+        ticks,
+        hibernated: baton.hibernating(),
+        stoppedByFlag: true,
+        shippedTags: [...shippedTags],
+        erroredTicks,
+      };
     }
     // Disk is truth: the child tick slept its phase and woke successors (or
     // didn't). No awake flags ⇒ hibernation. A failed tick does no baton
