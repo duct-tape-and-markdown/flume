@@ -10665,6 +10665,102 @@ describe.runIf(process.platform === "win32")(
   },
 );
 
+// Same deep-nesting shape as the win32 lane above, applied to the two
+// remaining bare-join fs-call sites this file carried: loadChainModule's
+// existsSync (the single fix point every chain-load caller reaches through)
+// and the pendingPath reads/writes readPending, readPendingTolerant, and
+// commitPendingUpdate share. Pre-fix, each silently misread a genuinely
+// existing/writable path as absent past win32's ~260-char total-path limit
+// instead of failing loud (platform-facts.md "Windows MAX_PATH (~260 chars)
+// breaks fs calls with no long component").
+describe.runIf(process.platform === "win32")(
+  "Dispatcher — loadChainModule/pendingPath win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    it("loadChainModule doesn't misread an existing chain.ts as absent when its resolved path exceeds win32's ~260-char limit", async () => {
+      const base = await mkdtemp(join(tmpdir(), "flume-chain-w32-"));
+      try {
+        const cfg = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        await writeMinimalChain(cfg);
+
+        const chainPath = join(cfg, "chain.ts");
+        expect(chainPath.length).toBeGreaterThan(260);
+
+        // Pre-fix, the bare-join existsSync check here silently read this
+        // chain.ts as absent and threw "chain config not found" even though
+        // it genuinely exists.
+        const mod = await loadChainModule(chainPath);
+        expect(mod.chain.phases).toHaveLength(1);
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    });
+
+    it("readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit", async () => {
+      const dock = await mkdtemp(join(tmpdir(), "flume-dock-w32-"));
+      try {
+        const deepDock = join(
+          dock,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const pendingPath = join(deepDock, "plan", "pending.json");
+        await mkdir(dirname(pendingPath), { recursive: true });
+        await writeFile(
+          pendingPath,
+          JSON.stringify(
+            [makeEntry("RELOC-W32", ["src/reloc-w32.ts"])],
+            null,
+            2,
+          ) + "\n",
+          "utf8",
+        );
+        expect(pendingPath.length).toBeGreaterThan(260);
+        new Baton(deepDock).wake("build");
+
+        const phase = makePhase({ name: "build", concurrency: "fanout" });
+        const chain: Chain = { phases: [phase], humanOnly: [] };
+
+        const agent = fanoutAgent({
+          "reloc-w32": (cwd) =>
+            writeAndCommit(
+              cwd,
+              "src/reloc-w32.ts",
+              "reloc\n",
+              "build(RELOC-W32): ship",
+            ),
+        });
+
+        const dispatcher = new Dispatcher({
+          chainLoader: staticLoader(chain),
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          flumeDir: deepDock,
+          agent,
+          log: silent,
+        });
+
+        // Pre-fix, readPending's bare-join existsSync check on the
+        // relocated pendingPath silently read it as absent — the pickable
+        // entry vanished and the tick shipped nothing.
+        const outcome = await dispatcher.tick();
+        expect(outcome.result?.shippedTags).toEqual(["RELOC-W32"]);
+
+        // commitPendingUpdate's own bare-join reads/writes (the no-op-diff
+        // check and the rewrite itself) also landed at the deep path.
+        const parsed = parsePending(await readFile(pendingPath, "utf8"));
+        expect(parsed.ok).toBe(true);
+        if (parsed.ok) expect(parsed.entries).toEqual([]);
+        // readPendingTolerant hits the same deep path for pendingAfter.
+        expect(outcome.result?.pendingAfter).toEqual([]);
+      } finally {
+        await rm(dock, { recursive: true, force: true });
+      }
+    }, 20_000);
+  },
+);
+
 describe("src/index.ts — ProvisionFailure/TerminalMisconfiguration barrel export (DISPATCHER-PROVISIONFAILURE-TERMINALMISCONFIG-UNEXPORTED)", () => {
   it("re-exports ProvisionFailure and TerminalMisconfiguration as named types a chain author can consume", () => {
     // The imported types (line 58, from src/index.ts rather than

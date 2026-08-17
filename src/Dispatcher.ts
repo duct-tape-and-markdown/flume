@@ -417,12 +417,18 @@ export async function writeTickVerdict(
   flumeDir: string,
   verdict: TickVerdict,
 ): Promise<void> {
-  await mkdir(flumeDir, { recursive: true });
-  await writeFile(tickVerdictPath(flumeDir), JSON.stringify(verdict), "utf8");
+  // win32 MAX_PATH: flumeDir nests under a job/worktree root; namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  await mkdir(namespacedJoin(flumeDir), { recursive: true });
+  await writeFile(
+    namespacedJoin(tickVerdictPath(flumeDir)),
+    JSON.stringify(verdict),
+    "utf8",
+  );
   const history = await readTickVerdicts(flumeDir);
   const bounded = [...history, verdict].slice(-MAX_TICK_VERDICTS);
   await writeFile(
-    tickVerdictsLogPath(flumeDir),
+    namespacedJoin(tickVerdictsLogPath(flumeDir)),
     bounded.map((v) => JSON.stringify(v)).join("\n") + "\n",
     "utf8",
   );
@@ -435,7 +441,7 @@ export async function writeTickVerdict(
  * history one.
  */
 export async function clearTickVerdict(flumeDir: string): Promise<void> {
-  await rm(tickVerdictPath(flumeDir), { force: true });
+  await rm(namespacedJoin(tickVerdictPath(flumeDir)), { force: true });
 }
 
 /**
@@ -448,7 +454,7 @@ export async function clearTickVerdict(flumeDir: string): Promise<void> {
 async function readTickVerdict(
   flumeDir: string,
 ): Promise<TickVerdict | undefined> {
-  const p = tickVerdictPath(flumeDir);
+  const p = namespacedJoin(tickVerdictPath(flumeDir));
   if (!existsSync(p)) return undefined;
   try {
     const rec: unknown = JSON.parse(await readFile(p, "utf8"));
@@ -468,7 +474,7 @@ export async function readTickVerdicts(
   flumeDir: string,
   n: number = MAX_TICK_VERDICTS,
 ): Promise<TickVerdict[]> {
-  const p = tickVerdictsLogPath(flumeDir);
+  const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
   if (!existsSync(p)) return [];
   let raw: string;
   try {
@@ -802,7 +808,11 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
 }
 
 export async function loadChainModule(path: string): Promise<ChainModule> {
-  if (!existsSync(path)) {
+  // win32 MAX_PATH: the single fix point for this check — every caller
+  // (job.ts's jobNew/jobRun, builtinGates.ts's chainLoadGate, this file's
+  // own default loader) reaches an existing chain.ts through here.
+  // namespacedJoin (src/paths.ts) is the shared idiom.
+  if (!existsSync(namespacedJoin(path))) {
     throw new Error(
       `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
     );
@@ -3663,8 +3673,10 @@ export class Dispatcher {
    */
   private async readPending(): Promise<PendingEntry[]> {
     if (this.isPendingRelocated()) {
-      if (!existsSync(this.pendingPath)) return [];
-      const raw = await readFile(this.pendingPath, "utf8");
+      // win32 MAX_PATH: a relocated pendingPath sits under an arbitrary
+      // state root. namespacedJoin (src/paths.ts) is the shared idiom.
+      if (!existsSync(namespacedJoin(this.pendingPath))) return [];
+      const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
       const r = parsePending(raw, this.entryExtension);
       if (!r.ok) throw new PendingParseFailure(r.errors);
       return r.entries;
@@ -3701,8 +3713,9 @@ export class Dispatcher {
    * proceeding path, declared and cited at its two call sites).
    */
   private async readPendingTolerant(): Promise<PendingEntry[]> {
-    if (!existsSync(this.pendingPath)) return [];
-    const raw = await readFile(this.pendingPath, "utf8");
+    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+    if (!existsSync(namespacedJoin(this.pendingPath))) return [];
+    const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
     const r = parsePending(raw, this.entryExtension);
     if (!r.ok) {
       this.log.warn(
@@ -3769,7 +3782,11 @@ export class Dispatcher {
     const serialized = JSON.stringify(after, null, 2) + "\n";
     // A footprint-only update can be a no-op (same collision, same paths,
     // second time around) — committing an unchanged file fails, so skip.
-    const existing = await readFile(this.pendingPath, "utf8").catch(() => "");
+    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+    const existing = await readFile(
+      namespacedJoin(this.pendingPath),
+      "utf8",
+    ).catch(() => "");
     if (serialized === existing) {
       return { sha: await git.revParse(this.opts.repoRoot), tipMoved: false };
     }
@@ -3797,8 +3814,11 @@ export class Dispatcher {
       }
     }
 
-    await mkdir(dirname(this.pendingPath), { recursive: true });
-    await writeFile(this.pendingPath, serialized, "utf8");
+    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+    await mkdir(namespacedJoin(dirname(this.pendingPath)), {
+      recursive: true,
+    });
+    await writeFile(namespacedJoin(this.pendingPath), serialized, "utf8");
     if (relocated) {
       return { sha: await git.revParse(this.opts.repoRoot), tipMoved: false };
     }
