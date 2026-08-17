@@ -1,49 +1,5 @@
 [
   {
-    "tag": "singleton-aftermerge-reachable",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "remove validateNoDeadDeclarations' afterMerge-on-singleton refusal block and its doc comment — both gate points are now reachable from every concurrency."
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "prependHarnessBlock renders phase.gates unconditionally; drop the singleton-only afterCommit filter."
-        },
-        {
-          "path": "src/Agent.ts",
-          "description": "close the skip-permissions rationale drift note — every tick now runs in a harness-controlled worktree regardless of concurrency."
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "an afterMerge gate declared on a concurrency:singleton phase now loads instead of being refused."
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "a singleton phase's rendered harness block lists its afterMerge gates, not only afterCommit."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Retire the afterMerge-on-singleton load refusal and prependHarnessBlock's concurrency filter; close the Agent.ts skip-permissions drift note.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Gate placement is the chain's decision"
-    },
-    "tests": [
-      "the chain loader accepts an afterMerge gate on a concurrency:singleton phase",
-      "prependHarnessBlock's rendered gate list for a singleton phase includes its afterMerge gates"
-    ],
-    "acceptance": "A chain may declare afterMerge on a singleton phase; it loads, runs, and renders in the harness block. Agent.ts carries no drift note.",
-    "notes": "Blocked on singleton-worktree-core: the refusal stays load-bearing until singleton actually reaches the merge loop. Also closes spec/chain.md, 'A dead declaration is refused at load'."
-  },
-  {
     "tag": "tip-verify-claim-arbitration",
     "gate": {
       "kind": "open"
