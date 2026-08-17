@@ -1,37 +1,41 @@
 [
   {
-    "tag": "singleton-worktree-core",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "src/Dispatcher.ts", "description": "runSingleton provisions a worktree (generalize createWorktree's branch naming to flume/[ns/]<phase>, keyed on phase name not entry tag), invokes the agent there, carries the span back through the same cherry-pick+afterMerge path a one-entry wave uses. Retire checkTipMoved's parent-equality leg and its commitCount revert variant; singleton uses the ancestry check (today's checkTipMovedPerEntry). afterCommit GateContext.cwd for a singleton tick becomes the worktree path, not repoRoot." },
-        { "path": "tests/Dispatcher.test.ts", "description": "singleton worktree provisioning/teardown, ancestry-based tip-verify replacing parent-equality, operator trunk commits never touched during a singleton tick." }
-      ]
-    },
-    "summary": "Singleton ticks provision and run in a flume/[ns/]<phase> worktree, merging via fanout's cherry-pick+afterMerge path; retire the parent-equality tip-verify leg.",
-    "per": { "path": "spec/worktrees.md", "section": "Singleton runs in a worktree" },
-    "tests": [
-      "a singleton tick provisions a flume/[ns/]<phase> worktree, runs its agent there, and tears the worktree down like a one-entry wave",
-      "singleton tip-verify uses ancestry (ex checkTipMovedPerEntry) — a multi-commit tick's whole span ships as completion, never a full-span soft-reset",
-      "an operator commit landing on the trunk during a singleton tick is never soft-reset; it is absorbed at the merge like any wave's foreign commit"
-    ],
-    "acceptance": "Singleton phase ticks run in an ephemeral flume/[ns/]<phase> worktree and merge through the same cherry-pick+afterMerge machinery fanout uses; checkTipMoved's parent-equality leg and its full-span revert path are gone.",
-    "notes": "Deepest of the durability-contract commits (f90cfa8) — retires the shared-ref ambiguity that caused dal-migration's operator-commit soft-resets. The phase-name branch component takes the same length bound the entry-tag slug does."
-  },
-  {
     "tag": "singleton-aftermerge-reachable",
-    "gate": { "kind": "blockedBy", "tag": "singleton-worktree-core" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "remove validateNoDeadDeclarations' afterMerge-on-singleton refusal block and its doc comment — both gate points are now reachable from every concurrency." },
-        { "path": "src/Prompt.ts", "description": "prependHarnessBlock renders phase.gates unconditionally; drop the singleton-only afterCommit filter." },
-        { "path": "src/Agent.ts", "description": "close the skip-permissions rationale drift note — every tick now runs in a harness-controlled worktree regardless of concurrency." },
-        { "path": "tests/chain.test.ts", "description": "an afterMerge gate declared on a concurrency:singleton phase now loads instead of being refused." },
-        { "path": "tests/Prompt.test.ts", "description": "a singleton phase's rendered harness block lists its afterMerge gates, not only afterCommit." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "remove validateNoDeadDeclarations' afterMerge-on-singleton refusal block and its doc comment — both gate points are now reachable from every concurrency."
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "prependHarnessBlock renders phase.gates unconditionally; drop the singleton-only afterCommit filter."
+        },
+        {
+          "path": "src/Agent.ts",
+          "description": "close the skip-permissions rationale drift note — every tick now runs in a harness-controlled worktree regardless of concurrency."
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "an afterMerge gate declared on a concurrency:singleton phase now loads instead of being refused."
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "a singleton phase's rendered harness block lists its afterMerge gates, not only afterCommit."
+        }
+      ],
+      "retire": []
     },
     "summary": "Retire the afterMerge-on-singleton load refusal and prependHarnessBlock's concurrency filter; close the Agent.ts skip-permissions drift note.",
-    "per": { "path": "spec/chain.md", "section": "Gate placement is the chain's decision" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Gate placement is the chain's decision"
+    },
     "tests": [
       "the chain loader accepts an afterMerge gate on a concurrency:singleton phase",
       "prependHarnessBlock's rendered gate list for a singleton phase includes its afterMerge gates"
@@ -41,15 +45,29 @@
   },
   {
     "tag": "tip-verify-claim-arbitration",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the fanout cherry-pick loop's pre-check and commitPendingUpdate's pre-check switch from tip-sha-equality to a live-foreign-claim check (reuse git.ts tipClaimPath/liveTipClaimPid): no live foreign claim absorbs (cherry-pick onto whatever tip is current, abort-into-MergeFailure on conflict); a live foreign claim still refuses. Add headSha to TickVerdictMergeOutcome, populated at every merge-outcome push site." },
-        { "path": "tests/Dispatcher.test.ts", "description": "operator commit mid-wave absorbs instead of refusing tipMoved; a live foreign engine claim still refuses; verdict merge outcomes carry headSha." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the fanout cherry-pick loop's pre-check and commitPendingUpdate's pre-check switch from tip-sha-equality to a live-foreign-claim check (reuse git.ts tipClaimPath/liveTipClaimPid): no live foreign claim absorbs (cherry-pick onto whatever tip is current, abort-into-MergeFailure on conflict); a live foreign claim still refuses. Add headSha to TickVerdictMergeOutcome, populated at every merge-outcome push site."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "operator commit mid-wave absorbs instead of refusing tipMoved; a live foreign engine claim still refuses; verdict merge outcomes carry headSha."
+        }
+      ],
+      "retire": []
     },
     "summary": "Merge sites arbitrate on a live tip claim, not sha equality — a clean foreign commit absorbs, a conflicting one aborts into MergeFailure; verdict records each span's head sha.",
-    "per": { "path": "spec/loop.md", "section": "Tip verify — one writer per branch, absorption at the merge" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — one writer per branch, absorption at the merge"
+    },
     "tests": [
       "a wave's cherry-pick loop absorbs a foreign non-engine commit landing mid-wave instead of refusing tipMoved",
       "a live foreign tip claim still refuses the cherry-pick and the ledger commit",
@@ -61,17 +79,37 @@
   },
   {
     "tag": "shared-checkout-keep-reset",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/git.ts", "description": "add a reset --keep primitive for the primary-checkout revert path, refusing loudly on a textual collision instead of discarding either side." },
-        { "path": "src/Dispatcher.ts", "description": "the afterMerge gate-revert on the primary checkout (today git.hardResetTo(repoRoot, preCherry)) uses the new keep-semantics primitive; ephemeral-worktree reverts keep --hard." },
-        { "path": "tests/git.test.ts", "description": "reset --keep preserves an unrelated uncommitted change; a textual collision refuses loudly, both writers' work left intact." },
-        { "path": "tests/Dispatcher.test.ts", "description": "an afterMerge revert on the trunk survives a bystander's staged or unstaged edit." }
-      ]
+        {
+          "path": "src/git.ts",
+          "description": "add a reset --keep primitive for the primary-checkout revert path, refusing loudly on a textual collision instead of discarding either side."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the afterMerge gate-revert on the primary checkout (today git.hardResetTo(repoRoot, preCherry)) uses the new keep-semantics primitive; ephemeral-worktree reverts keep --hard."
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "reset --keep preserves an unrelated uncommitted change; a textual collision refuses loudly, both writers' work left intact."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "an afterMerge revert on the trunk survives a bystander's staged or unstaged edit."
+        }
+      ],
+      "retire": []
     },
     "summary": "Primary-checkout engine reverts use reset --keep and refuse loudly on textual collision, instead of --hard wiping bystander uncommitted state.",
-    "per": { "path": "spec/loop.md", "section": "Tip verify — one writer per branch, absorption at the merge" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — one writer per branch, absorption at the merge"
+    },
     "tests": [
       "an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact",
       "a revert whose diff textually collides with uncommitted trunk state refuses loudly instead of discarding either side"
@@ -81,16 +119,33 @@
   },
   {
     "tag": "dispatch-reads-from-tip",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "readPending() and commitPendingUpdate's rewrite read resolve pending.json content via a committed-tip read instead of fs.readFile; readPendingTolerant stays disk-based (the declared exception)." },
-        { "path": "src/git.ts", "description": "add a helper that reads a path's content at a given ref (git show <ref>:<path>) for readPending to call." },
-        { "path": "tests/Dispatcher.test.ts", "description": "a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to pending.json." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readPending() and commitPendingUpdate's rewrite read resolve pending.json content via a committed-tip read instead of fs.readFile; readPendingTolerant stays disk-based (the declared exception)."
+        },
+        {
+          "path": "src/git.ts",
+          "description": "add a helper that reads a path's content at a given ref (git show <ref>:<path>) for readPending to call."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to pending.json."
+        }
+      ],
+      "retire": []
     },
     "summary": "Dispatcher's strict pending.json reads (decide-reads, ledger rewrite read) resolve from the committed HEAD tip, never the working tree.",
-    "per": { "path": "spec/pending.md", "section": "Dispatch reads come from the tip, not the tree" },
+    "per": {
+      "path": "spec/pending.md",
+      "section": "Dispatch reads come from the tip, not the tree"
+    },
     "tests": [
       "readPending() reads pending.json from the committed tip, ignoring an uncommitted working-tree edit to the same file",
       "PendingParseFailure still throws when the tip's committed content fails to parse"
@@ -100,15 +155,29 @@
   },
   {
     "tag": "friction-harvest-base-delta",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "thread createWorktree's base ref through to the wave-end harvestFriction call; harvestFriction filters the mirror dir to files new relative to that base (untracked, or absent from the base tree at that path) instead of moving every file found." },
-        { "path": "tests/Dispatcher.test.ts", "description": "a friction note committed by a prior worktree and inherited by a later sibling's checkout is not re-harvested by that sibling." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "thread createWorktree's base ref through to the wave-end harvestFriction call; harvestFriction filters the mirror dir to files new relative to that base (untracked, or absent from the base tree at that path) instead of moving every file found."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a friction note committed by a prior worktree and inherited by a later sibling's checkout is not re-harvested by that sibling."
+        }
+      ],
+      "retire": []
     },
     "summary": "Friction harvest moves only files new relative to the worktree's base commit, so a committed note stops being re-relayed by every later worktree.",
-    "per": { "path": "spec/worktrees.md", "section": "Teardown harvest — the delivery guarantee" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Teardown harvest — the delivery guarantee"
+    },
     "tests": [
       "a friction file untracked in the worktree is harvested",
       "a friction-channel file already present at the worktree's base commit is left in place, not re-copied with a new tag prefix"
@@ -118,16 +187,33 @@
   },
   {
     "tag": "startup-sweep-residue",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "new startup-sweep function: under the tip claim, remove every directory under the worktree base via the removeWorktree+win32-fallback path, then git worktree prune, then every branch under this instance's flume/[ns/]… grammar; warn loudly (never abort) on a surviving path, reported once at run level." },
-        { "path": "src/cli.ts", "description": "call the sweep once in the loop command's startup, after the tip claim is acquired and before the first tick — job run reuses this path already." },
-        { "path": "tests/Dispatcher.test.ts", "description": "a worktree/branch abandoned by a killed fanout tick, whose entry is no longer in pending.json, is removed at the next loop start; empty base sweeps silently; a stuck removal warns once and does not abort." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "new startup-sweep function: under the tip claim, remove every directory under the worktree base via the removeWorktree+win32-fallback path, then git worktree prune, then every branch under this instance's flume/[ns/]… grammar; warn loudly (never abort) on a surviving path, reported once at run level."
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "call the sweep once in the loop command's startup, after the tip claim is acquired and before the first tick — job run reuses this path already."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a worktree/branch abandoned by a killed fanout tick, whose entry is no longer in pending.json, is removed at the next loop start; empty base sweeps silently; a stuck removal warns once and does not abort."
+        }
+      ],
+      "retire": []
     },
     "summary": "flume loop sweeps abandoned worktrees and flume/** branches at start, under the tip claim, closing the gap where a dropped entry leaked its worktree indefinitely.",
-    "per": { "path": "spec/worktrees.md", "section": "Startup sweep — a dead wave's residue is removed at the next start" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Startup sweep — a dead wave's residue is removed at the next start"
+    },
     "tests": [
       "a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start",
       "an empty worktree base sweeps silently",
@@ -138,17 +224,37 @@
   },
   {
     "tag": "stop-flag",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "add stop to SUBCOMMANDS/HELP_TOP; handler writes <flumeDir>/stop idempotently and prints the consequence; flume status gains a stop-flag line between supervisor liveness and tip claim; flume loop (and job run) refuses at start, exit 1 naming the path, when the flag is already present." },
-        { "path": "src/Dispatcher.ts", "description": "superviseLoop checks the stop flag at the same per-iteration boundary it re-reads the baton (never mid-tick); on seeing it, ends the run after the in-flight tick finishes and releases the claim/lock; SuperviseResult records why iteration ended for the completion summary, without changing loopExitCode's totals-based formula." },
-        { "path": "tests/cli.test.ts", "description": "flume stop is idempotent and prints the consequence; flume status reports the flag; flume loop refuses at start with the flag present." },
-        { "path": "tests/loop-process-boundary.integration.test.ts", "description": "a stop flag written mid-run lets the in-flight tick finish, then ends the run and releases the claim/lock." }
-      ]
+        {
+          "path": "src/cli.ts",
+          "description": "add stop to SUBCOMMANDS/HELP_TOP; handler writes <flumeDir>/stop idempotently and prints the consequence; flume status gains a stop-flag line between supervisor liveness and tip claim; flume loop (and job run) refuses at start, exit 1 naming the path, when the flag is already present."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "superviseLoop checks the stop flag at the same per-iteration boundary it re-reads the baton (never mid-tick); on seeing it, ends the run after the in-flight tick finishes and releases the claim/lock; SuperviseResult records why iteration ended for the completion summary, without changing loopExitCode's totals-based formula."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "flume stop is idempotent and prints the consequence; flume status reports the flag; flume loop refuses at start with the flag present."
+        },
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "a stop flag written mid-run lets the in-flight tick finish, then ends the run and releases the claim/lock."
+        }
+      ],
+      "retire": []
     },
     "summary": "flume stop writes <flumeDir>/stop; the supervisor finishes its in-flight tick then ends the run; a present flag refuses a fresh loop/job run start until removed.",
-    "per": { "path": "spec/loop.md", "section": "Graceful stop — the stop flag" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Graceful stop — the stop flag"
+    },
     "tests": [
       "flume stop is idempotent — repeat call prints the same statement, exit 0",
       "flume loop refuses to start with the flag already present, naming the path, exit 1",
@@ -161,17 +267,37 @@
   },
   {
     "tag": "tip-claim-per-run-scope",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "defaultTickRunner passes FLUME_TIP_CLAIM_HELD=<supervisor pid> in each spawned tick child's env." },
-        { "path": "src/cli.ts", "description": "flume tick: when FLUME_TIP_CLAIM_HELD is absent, acquire+release its own tip claim around the single tick, refusing exit 1 on a live foreign claim; when present, trust the supervisor's claim and take none itself." },
-        { "path": "tests/cli.test.ts", "description": "a bare flume tick acquires and releases its own claim, refusing when another live process holds it." },
-        { "path": "tests/loop-process-boundary.integration.test.ts", "description": "a loop-spawned tick child does not re-acquire the claim its supervisor already holds." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "defaultTickRunner passes FLUME_TIP_CLAIM_HELD=<supervisor pid> in each spawned tick child's env."
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "flume tick: when FLUME_TIP_CLAIM_HELD is absent, acquire+release its own tip claim around the single tick, refusing exit 1 on a live foreign claim; when present, trust the supervisor's claim and take none itself."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "a bare flume tick acquires and releases its own claim, refusing when another live process holds it."
+        },
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "a loop-spawned tick child does not re-acquire the claim its supervisor already holds."
+        }
+      ],
+      "retire": []
     },
     "summary": "A bare flume tick now takes its own tip claim around the single tick; a loop-spawned child trusts the supervisor's claim via FLUME_TIP_CLAIM_HELD instead of probing pids.",
-    "per": { "path": "spec/loop.md", "section": "The loop lock and the tip claim" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
     "tests": [
       "a bare flume tick with no other live claim-holder acquires and releases a claim around its single tick",
       "a bare flume tick refuses exit 1 when a live process already holds the claim",
