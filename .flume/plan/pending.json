@@ -1,36 +1,5 @@
 [
   {
-    "tag": "friction-harvest-error-isolation",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "harvestFriction's base-delta probe (git.readFileAtRef, ~2923-2932) gets the same try/catch-and-log-per-item handling as its sibling readdir/mkdir/rename failure modes, instead of propagating uncaught."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "A git.readFileAtRef failure while probing one candidate friction file's base-delta status is logged and does not abort teardown of the wave's remaining worktrees/branches."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "harvestFriction's new base-delta probe has no error handling, so one probe failure aborts the whole wave's teardown instead of isolating to that file.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Teardown harvest — the delivery guarantee"
-    },
-    "tests": [
-      "a readFileAtRef failure during the base-delta probe is caught, logged per item, and does not abort the wave's teardown of remaining worktrees"
-    ],
-    "acceptance": "harvestFriction's base-delta probe failure is isolated per file, matching every other failure mode in the function; teardown of remaining worktrees/branches in the wave proceeds regardless.",
-    "notes": "Audit finding against friction-harvest-base-delta (418234d): the new probe is the only failure mode in harvestFriction without a try/catch, contradicting 'harvest failure never aborts the wave.' Accepted separately as debt: a file modified-but-present at base is silently excluded — matches spec's literal 'untracked, or absent from the base tree' wording, not a divergence."
-  },
-  {
     "tag": "startup-sweep-namespace-scope",
     "gate": {
       "kind": "open"
