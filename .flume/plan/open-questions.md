@@ -9,6 +9,32 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `src/cli.ts` mixes several independently-testable concerns in one 1500-line module
+
+Status: PARKED
+
+Sweep finding (posture pass over `src/cli.ts`, posture-sweep.md's "a module carrying jobs that
+want separate homes" lens): the file combines pure help-text content (`HELP_TOP`, `HELP_SUB`,
+`HELP_JOB`, ~280 lines of string literals), state/job-path resolution
+(`resolveStateDirs`/`resolveRepoRoot` plus their conflict-error types), exit-code/verdict
+formatting (`tickExitCode`/`loopExitCode`/`loopCompletionSummary`/`formatTickVerdictLine`),
+job-verb dispatch (`runJobVerb`, which mostly forwards into `job.ts`), and the argv/subcommand
+switch in `main()`. Several of these are already imported piecemeal by tests reaching past the
+file's own boundary (e.g. `tests/Dispatcher.test.ts` imports `loopExitCode` directly from
+`../src/cli.ts`), which suggests the seams already exist structurally even though the file
+doesn't.
+
+Options:
+- Leave as one module — `cli.ts` is the CLI's front door; a single entrypoint file is a
+  defensible norm, and size alone isn't a defect if nothing about it hides behavior.
+- Split along the four seams above (help text, state/job resolution, verdict formatting,
+  job-verb dispatch), keeping `main()`'s argv switch as the thin remaining `cli.ts`.
+
+Recommend the split — a test already reaching past the module boundary to import an internal
+helper is usually a sign the boundary is drawn in the wrong place — but this touches every
+command's import path, so wants a human call on scope and sequencing before it becomes a
+pending entry (or a set of them).
+
 ## Harvested chain-preset layer
 
 Status: PARKED
