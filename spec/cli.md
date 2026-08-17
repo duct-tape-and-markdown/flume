@@ -21,6 +21,14 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `loop [--max N]` — ticks until hibernation or the cap (default 50), under a
   supervisor that spawns one fresh `flume tick` process per iteration.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
+- `stop` — write `<flumeDir>/stop` and print what happens next: a live supervisor
+  finishes its in-flight tick and ends the run; the next `loop`/`job run` refuses
+  until the flag is removed (`spec/loop.md`, *Graceful stop*). Idempotent — the
+  flag already present prints the same statement, exits 0. The verb is
+  discoverability, not a privileged channel: `touch` on the same path is equally
+  the interface, and nothing distinguishes the two writers. There is deliberately
+  no `unstop`/`resume` verb — removing the flag is the operator's acknowledgement,
+  and an engine verb that removes it would let a script ack a stop no human saw.
 - `job new|run|rm|status` — lifecycle verbs over a job's state root
   (`spec/jobs.md`).
 - `log [-n N] [--json]` — observational; prints the last N tick verdicts
@@ -79,14 +87,20 @@ In printed order:
 2. **Supervisor liveness** — when `<flumeDir>/loop.pid` exists: `supervisor pid
    N live`, or `loop.pid present, process dead — stale`. No pidfile prints
    nothing extra.
-3. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
+3. **Stop flag** — when `<flumeDir>/stop` exists, one line naming the path and
+   the consequence: with a live supervisor, that it will finish the in-flight
+   tick and end the run; without one, that the next `loop`/`job run` refuses
+   until the flag is removed. Absent flag prints nothing. This line exists
+   because the ack ritual (`spec/loop.md`, *Graceful stop*) only works if the
+   operator who forgot the flag finds it where they look first.
+4. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
    `tip claimed by pid N`, or `tip claim present, process dead — stale`. A
    detached HEAD or an absent claim both read as silence.
-4. **Pending entry count** from `<flumeDir>/plan/pending.json`: `pending: N`,
+5. **Pending entry count** from `<flumeDir>/plan/pending.json`: `pending: N`,
    `pending: 0` when absent, `pending: unparsable` when present but malformed —
    the same loose read `flume job status` performs (`readPendingLoose`,
    `src/job.ts`), so a corrupt queue reads identically on both surfaces.
-5. **Chain-declared extras**, behind a best-effort chain load that can never
+6. **Chain-declared extras**, behind a best-effort chain load that can never
    fail status — a missing or broken chain silently withholds them: the
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain

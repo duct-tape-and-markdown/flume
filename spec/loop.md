@@ -117,8 +117,14 @@ other.
     `TerminateProcess`, which runs no handler, so the claim survives the kill and the
     next acquirer's liveness probe reclaims it. Stale-reclaim is the cross-platform
     guarantee.
-  - *Scope:* loop-level only. A bare `flume tick` takes no claim — the tip verify
-    below covers it.
+  - *Scope:* per run. `flume loop` acquires once for the whole run and releases at
+    exit; its tick children run under the supervisor's claim — the runner tells the
+    child (`FLUME_TIP_CLAIM_HELD=<pid>` in the child env) rather than the child
+    probing pids and inferring parentage. A bare `flume tick` acquires and releases
+    around its single tick, refusing (exit 1) when another live process holds it.
+    Claimless ticks left the startup sweep (`spec/worktrees.md`, *Startup sweep*)
+    no way to know a live wave owns the worktree base, and left concurrent bare
+    ticks to collide with only optimistic verify between them.
 - **Detached HEAD is refused, by both `tick` and `loop`, before any work** (exit 1).
   The tick record's meaning is advancing a named tip, and the claim keys on a ref.
   The refusal names the state plainly. `tick` refuses even though it takes no claim,
@@ -130,8 +136,72 @@ other.
   (`describeRefFailure`) — a caller outside a repository is never told about a
   detached HEAD it is not in.
 
-`flume status` reports supervisor liveness and the current tip's claim, observationally
-— see `spec/cli.md`.
+`flume status` reports supervisor liveness, the current tip's claim, and the stop
+flag, observationally — see `spec/cli.md`.
+
+## Graceful stop — the stop flag
+
+Presence of `<flumeDir>/stop` asks the supervisor to end the run at the next tick
+boundary: the in-flight tick finishes — merge, park, verdict, and handoff run exactly
+as they would have — then the supervisor releases the tip claim and the loop lock and
+ends the run. Same philosophy as the awake baton: disk is truth, no IPC, no signals.
+Kills are not the pause mechanism — and on win32 they cannot be, because `SIGTERM`
+maps to `TerminateProcess`, which runs no handler (*The loop lock and the tip claim*,
+above), so a signal-based graceful stop is structurally unavailable on the one
+platform that most needs one.
+
+- **Checked between children only.** `superviseLoop` reads the flag off disk at the
+  same boundary it re-reads the baton. Nothing polls mid-tick; an in-flight tick
+  always completes. A hung agent is therefore still hung — the stop flag is not a
+  kill and does not subsume whatever the operator does about a tick that never ends.
+- **Presence at start refuses the run.** `flume loop` (and `job run`) with the flag
+  already on disk refuses before any tick, exit 1, naming the flag path — removing
+  the flag is the operator's acknowledgement that the stop was seen, and the refusal
+  message says exactly that. A stale flag can therefore never silently swallow a
+  scheduled run: the run refuses loudly until a human acks.
+- **A stopped run's exit code is still the run's.** Stop ends iteration; it does not
+  reclassify what already happened. `loopExitCode` decides from the run totals as
+  ever (*Exit codes*, below) — a graceful stop after errored ticks with nothing
+  shipped still exits non-zero. The completion summary names the stop flag as the
+  reason iteration ended.
+- **`flume tick` ignores the flag.** The flag stops the supervisor's iteration; a
+  bare tick is the operator's own explicit action, and refusing it would gate the
+  very command an operator uses to test a staged fix before acking the stop.
+- **`flume stop` writes the flag; `touch` is equally true.** The verb
+  (`spec/cli.md`) is discoverability plus a printed statement of what happens next,
+  never a privileged channel — the file is the mechanism, and a script that touches
+  the path has used the real interface.
+
+## Crash equals stop
+
+Any death of the supervisor or a tick child, at any point, leaves a state a fresh
+`flume loop` resumes without operator repair. Most of this has been true by
+construction; it is now the stated guarantee the pieces serve, so a gap in it is a
+defect rather than a workaround the operator owes the engine:
+
+- **Locks and claims self-heal.** A stale `loop.pid` (dead pid) is reclaimed
+  silently; a stale tip claim is reclaimed by the next acquirer's liveness probe
+  (above). On win32, where a kill runs no release handler, stale-reclaim is the only
+  release path — which is why reclaim is the guarantee and the exit handler is the
+  optimization.
+- **State is on disk or in git.** The baton, `pending.json`, prior-attempt records,
+  and tick verdicts survive any death, and a tick that died before writing its
+  verdict left nothing a fresh supervisor can misread as current (*The tick
+  verdict*).
+- **A dead wave's residue is swept at the next start.** Worktrees and `flume/**`
+  branches abandoned by a killed fanout tick are removed at the next `loop`/`job
+  run` start, under the tip claim — `spec/worktrees.md`, *Startup sweep*. Per-wave
+  stale-slug removal only ever covered entries being re-provisioned; an abandoned
+  entry that left the queue leaked its worktree indefinitely, which was the one
+  observed gap between this guarantee and the tree.
+
+The guarantee is bounded by git's own: a child killed inside a git mutation can
+leave `index.lock` or an in-progress cherry-pick behind, which git refuses loudly
+and a human resolves with the evidence in hand. The engine cannot tell its own
+abandoned sequencer state from an operator's in-progress cherry-pick without
+inference, so it does not try (`engine-boundary.md`, *Told, not inferred*). The
+claim is narrower and holds: the engine adds no state of its own that a crash can
+corrupt into silent misbehavior.
 
 ## Tip verify — commit only onto the tip the tick started on
 
@@ -404,7 +474,7 @@ Classification happens at the process boundary so a caller never has to read log
 | code | meaning |
 | --- | --- |
 | 0 | work done, or clean hibernation |
-| 1 | harness error, or HEAD detached |
+| 1 | harness error, HEAD detached, or another live process holds the tip claim |
 | 2 | usage — including the CJS-context host refusal, a nameable fix rather than a dead chain (`spec/chain.md`) |
 | 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid (no agent ran); or `pending.json` failed to parse (see below) |
 | 78 | `EX_TERMINAL_MISCONFIG` — the chain resolved but declares an inconsistent world (below) |

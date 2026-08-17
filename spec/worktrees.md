@@ -288,6 +288,37 @@ The wave reports surviving paths **once, at wave level**, not once per worktree:
 regardless and swallows only git's own "branch not found" wording; any other failure (most
 commonly a branch still checked out in a worktree that survived removal) is surfaced.
 
+## Startup sweep — a dead wave's residue is removed at the next start
+
+A killed fanout tick abandons its worktrees and their `flume/**` branches: teardown
+never ran, and per-wave provisioning removes a stale slug only when the same entry is
+provisioned again — an abandoned entry that then left the queue leaked its worktree
+and branch indefinitely. The sweep closes that gap (`spec/loop.md`, *Crash equals
+stop*) at the only moment it is safe to.
+
+- **When:** `flume loop` and `flume job run` sweep once at start, after the tip
+  claim is acquired and before the first tick. Holding the claim is the guard: one
+  flume writer per ref (`spec/loop.md`) means no live sibling — loop or bare tick,
+  both claim-holders now — owns anything under this state root's base. A bare
+  `flume tick` does not sweep; its per-wave prune and stale-slug removal are
+  unchanged.
+- **Scope is the engine's own residue, exactly.** Every directory under the worktree
+  base (`FLUME_WORKTREES_DIR` or `<flumeDir>/worktrees` — *Placement*, above),
+  removed through the same `removeWorktree` + win32-fallback path teardown uses;
+  then `git worktree prune`; then every branch under this instance's own
+  `flume/[<namespace>/]…` grammar. The base is declared flume-exclusive
+  (*Placement*) and the branch grammar is engine-owned (`spec/loop.md`, the
+  navigation carve-out), so nothing an operator created is reachable. The namespace
+  bound matters under a shared `FLUME_WORKTREES_DIR`: the sweep removes only its
+  own job's directories and branches, by the same namespace that keeps live jobs
+  from colliding there.
+- **Loud on failure, silent on empty.** An empty base is the normal case and prints
+  nothing. A directory that cannot be removed (held handle, EBUSY) is a warning
+  naming the surviving path, never an abort — the per-entry provisioning-failure
+  isolation already covers an entry that later collides with the leftover, and a
+  sweep that could abort the run would convert dead residue into a denial of
+  service on the live queue.
+
 ## The default test lane must stay fast
 
 The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the **trunk**,
