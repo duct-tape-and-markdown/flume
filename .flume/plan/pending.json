@@ -1,33 +1,29 @@
 [
   {
-    "tag": "keep-reset-collision-recovery",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "src/Dispatcher.ts", "description": "Catch ResetKeepRefusedError (and other throws) at both primary-checkout afterMerge-revert call sites (~1686 singleton, ~2148 fanout); surface as a handled tick/entry fact, never an uncaught crash, so the wave still reaches commitPendingUpdate for already-merged siblings." },
-        { "path": "tests/Dispatcher.test.ts", "description": "A resetKeepTo collision during a fanout wave's per-entry afterMerge revert, after a sibling entry already merged, does not crash the tick; the sibling still ships via commitPendingUpdate. Same coverage for the singleton leg." }
-      ]
-    },
-    "summary": "resetKeepTo's collision refusal is uncaught at both primary-checkout revert sites, crashing the tick after sibling wave entries already merged.",
-    "per": { "path": "spec/loop.md", "section": "Tip verify — one writer per branch, absorption at the merge" },
-    "tests": [
-      "a ResetKeepRefusedError during a fanout wave's per-entry afterMerge revert does not crash the tick; already-merged sibling entries in the same wave still reach commitPendingUpdate and ship",
-      "a singleton tick's afterMerge-revert collision surfaces as a handled outcome, not an uncaught process crash"
-    ],
-    "acceptance": "Neither primary-checkout resetKeepTo call site can propagate an uncaught throw out of the tick; a collision is reported as a fact and sibling wave entries already merged still get their pending.json rewrite.",
-    "notes": "Audit finding against shared-checkout-keep-reset (6cb9948): resetKeepTo's own refusal is left uncaught by its two callers, reproducing via a new path the queue-behind-tree hazard 'Absorbing the ledger commit' closed — already-shipped siblings' pending.json rewrite never runs if the crash happens first."
-  },
-  {
     "tag": "friction-harvest-error-isolation",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "harvestFriction's base-delta probe (git.readFileAtRef, ~2923-2932) gets the same try/catch-and-log-per-item handling as its sibling readdir/mkdir/rename failure modes, instead of propagating uncaught." },
-        { "path": "tests/Dispatcher.test.ts", "description": "A git.readFileAtRef failure while probing one candidate friction file's base-delta status is logged and does not abort teardown of the wave's remaining worktrees/branches." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "harvestFriction's base-delta probe (git.readFileAtRef, ~2923-2932) gets the same try/catch-and-log-per-item handling as its sibling readdir/mkdir/rename failure modes, instead of propagating uncaught."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "A git.readFileAtRef failure while probing one candidate friction file's base-delta status is logged and does not abort teardown of the wave's remaining worktrees/branches."
+        }
+      ],
+      "retire": []
     },
     "summary": "harvestFriction's new base-delta probe has no error handling, so one probe failure aborts the whole wave's teardown instead of isolating to that file.",
-    "per": { "path": "spec/worktrees.md", "section": "Teardown harvest — the delivery guarantee" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Teardown harvest — the delivery guarantee"
+    },
     "tests": [
       "a readFileAtRef failure during the base-delta probe is caught, logged per item, and does not abort the wave's teardown of remaining worktrees"
     ],
@@ -36,15 +32,29 @@
   },
   {
     "tag": "startup-sweep-namespace-scope",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "The startup sweep's worktree-base enumeration (~3061-3070), when this.opts.namespace is unset, must not treat every top-level entry under a shared FLUME_WORKTREES_DIR as this instance's own residue — scope removal to entries this job's own naming actually owns." },
-        { "path": "tests/Dispatcher.test.ts", "description": "An unnamespaced instance's startup sweep, run against a shared FLUME_WORKTREES_DIR holding a live namespaced sibling job's worktree directory, leaves that sibling's directory and branches untouched." }
-      ]
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "The startup sweep's worktree-base enumeration (~3061-3070), when this.opts.namespace is unset, must not treat every top-level entry under a shared FLUME_WORKTREES_DIR as this instance's own residue — scope removal to entries this job's own naming actually owns."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "An unnamespaced instance's startup sweep, run against a shared FLUME_WORKTREES_DIR holding a live namespaced sibling job's worktree directory, leaves that sibling's directory and branches untouched."
+        }
+      ],
+      "retire": []
     },
     "summary": "An unnamespaced instance's startup sweep can delete a sibling namespaced job's live worktree directory under a shared FLUME_WORKTREES_DIR.",
-    "per": { "path": "spec/worktrees.md", "section": "Startup sweep — a dead wave's residue is removed at the next start" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Startup sweep — a dead wave's residue is removed at the next start"
+    },
     "tests": [
       "an unnamespaced instance's startup sweep does not remove a sibling namespaced job's worktree directory or branches under a shared worktree base"
     ],
