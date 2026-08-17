@@ -124,13 +124,13 @@ export interface ProvisionFailure {
 /**
  * A merge-stage failure (spec/loop.md "Repeated identical failures — quarantine,
  * then abort"): a cherry-pick conflict, or a dirty trunk refusing the pick, that
- * kept an entry's already-agent-committed worktree work off trunk. Always
- * entry-scoped — unlike a provisioning failure, a cherry-pick failure always has
- * a specific entry's commit as its target — so `tag` is required rather than
- * optional.
+ * kept a worktree's already-agent-committed work off trunk. `tag` is the
+ * fanout entry's tag; absent for a singleton phase's own merge-stage failure
+ * (no entry to quarantine — same rationale as {@link GateFailure.tag}, it
+ * falls to the consecutive-failure backstop alone).
  */
 export interface MergeFailure {
-  tag: string;
+  tag?: string;
   /** Same comparison-key contract as {@link ProvisionFailure.signature}. */
   signature: string;
   message: string;
@@ -674,20 +674,26 @@ function validateFrictionDeclaration(chain: Chain): void {
 }
 
 /**
- * Refuse the two decidable dead-declaration shapes (§2, *A dead declaration
+ * Refuse the one decidable dead-declaration shape (§2, *A dead declaration
  * is refused at load*): a chain field whose only consumer is statically
- * unreachable from the rest of the same declaration. Both are checkable from
- * the declaration alone, no tick required, so the loader — not a tick —
- * refuses them.
+ * unreachable from the rest of the same declaration. Checkable from the
+ * declaration alone, no tick required, so the loader — not a tick — refuses
+ * it.
  *
- * - `phase.entryChannelPaths` is only consulted on a scoped tick
- *   (`phase.scopeWritesToEntry === true`); declared without the flag it
- *   governs nothing. Emptiness doesn't matter — `[]` on a scoped phase is
- *   live (it just adds no extra globs); the field's *presence* without the
- *   flag is what's dead.
- * - An `afterMerge` gate on a `concurrency: "singleton"` phase: the merge
- *   loop (`runFanout`) is the only site that runs `afterMerge` gates, and a
- *   singleton tick never reaches it (`runAfterCommitGates` alone).
+ * `phase.entryChannelPaths` is only consulted on a scoped tick
+ * (`phase.scopeWritesToEntry === true`); declared without the flag it
+ * governs nothing. Emptiness doesn't matter — `[]` on a scoped phase is
+ * live (it just adds no extra globs); the field's *presence* without the
+ * flag is what's dead.
+ *
+ * An `afterMerge` gate on a `concurrency: "singleton"` phase used to be the
+ * other dead shape here: the merge loop (`runFanout`) was the only site
+ * that ran `afterMerge` gates, and a singleton tick never reached it. That
+ * stopped being true the moment a singleton tick started carrying its own
+ * worktree commit back through the same cherry-pick + afterMerge machinery
+ * a wave of one uses (spec/worktrees.md "Singleton runs in a worktree") —
+ * an `afterMerge` gate on a singleton phase now runs, on trunk, exactly
+ * once per tick.
  */
 function validateNoDeadDeclarations(chain: Chain): void {
   for (const phase of chain.phases) {
@@ -697,17 +703,6 @@ function validateNoDeadDeclarations(chain: Chain): void {
           `entryChannelPaths is only consulted on a scoped tick, so it governs nothing here. ` +
           `Set scopeWritesToEntry: true on '${phase.name}', or remove entryChannelPaths.`,
       );
-    }
-    if (phase.concurrency === "singleton") {
-      const deadGate = phase.gates.find((g) => g.when === "afterMerge");
-      if (deadGate) {
-        throw new Error(
-          `phase '${phase.name}' is concurrency: "singleton" but declares gate '${deadGate.name}' ` +
-            `with when: "afterMerge"; the merge loop never runs for a singleton phase, so this ` +
-            `gate never executes. Change '${deadGate.name}' to when: "afterCommit", or make ` +
-            `'${phase.name}' a fanout phase.`,
-        );
-      }
     }
   }
 }
@@ -1419,149 +1414,284 @@ export class Dispatcher {
     agent: Agent,
     chain: Chain,
   ): Promise<PhaseTickOutcome> {
-    const cwd = this.opts.repoRoot;
-    const preHead = await git.revParse(cwd);
+    const repoRoot = this.opts.repoRoot;
+    const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
 
     const key = this.priorAttemptKey(phase);
     const prior = await this.readPriorAttempt(key);
 
-    const ctx: TickContext = { cwd, flumeDir: this.flumeDir, pending };
+    const noRunResult = (): TickResult => ({
+      phaseName: phase.name,
+      committed: false,
+      gateResults: [],
+      pendingAfter: pending,
+      shippedTags: [],
+      revertedTags: [],
+    });
+
+    // spec/worktrees.md "Singleton runs in a worktree": a singleton tick
+    // provisions one worktree — a wave of one, keyed on the phase name
+    // (there is no entry tag) — through the same machinery `runFanout` uses
+    // per entry, so a provisioning wall costs this tick exactly what it
+    // would cost a one-entry wave.
+    try {
+      await git.pruneWorktrees(repoRoot);
+    } catch (err) {
+      const message = (err as Error).message;
+      this.log.warn(
+        `[flume] ${phase.name}: worktree prune failed (${bound(message.trim(), MAX_FAILURE_SIGNATURE)}); continuing — worktree creation may still fail`,
+      );
+    }
+
+    let wt: { path: string; branch: string };
+    try {
+      wt = await this.createWorktree(phase.name, preHead);
+    } catch (err) {
+      const message = (err as Error).message;
+      const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+      this.log.warn(
+        `[flume] ${phase.name}: worktree provisioning failed (${signature}); no tick this cycle`,
+      );
+      return {
+        result: noRunResult(),
+        provisionFailures: [{ signature, message }],
+      };
+    }
+
+    let extraEnv: Record<string, string> | undefined;
+    if (phase.setupWorktree) {
+      try {
+        const r = await phase.setupWorktree({
+          worktreePath: wt.path,
+          repoRoot,
+          entryTag: phase.name,
+        });
+        if (r && r.extraEnv) extraEnv = r.extraEnv;
+      } catch (err) {
+        const message = (err as Error).message;
+        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+        this.log.warn(
+          `[flume] ${phase.name}: setupWorktree hook failed (${signature}); no tick this cycle`,
+        );
+        await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
+        return {
+          result: noRunResult(),
+          provisionFailures: [{ signature, message }],
+        };
+      }
+    }
+
+    const ctx: TickContext = { cwd: wt.path, flumeDir: this.flumeDir, pending };
+
+    let declined = false;
+    let noCommit: NoCommitMode | undefined;
+    let tipMoved = false;
+    let committed = false;
+    let commitSha: string | undefined;
+    const gateResults: GateResultEntry[] = [];
+    // §16 (generalized): a singleton's own afterCommit/afterMerge gate
+    // revert carries no entry tag (nothing to quarantine — see
+    // GateFailure's doc), so it falls to the consecutive-failure backstop
+    // alone. Same for a merge-stage failure — see MergeFailure's doc.
+    let gateFailure: GateFailure | undefined;
+    let mergeFailure: MergeFailure | undefined;
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
     // the agent — a chain can decline a tick without spending one. Sees the
     // same ctx `promptArgs` sees; undeclared `shouldRun` runs unconditionally.
     if (phase.shouldRun && !phase.shouldRun(ctx)) {
       this.log.info(`[flume] ${phase.name}: declined (shouldRun) — no invocation`);
-      return {
-        result: {
-          phaseName: phase.name,
-          committed: false,
-          gateResults: [],
-          pendingAfter: pending,
-          shippedTags: [],
-          revertedTags: [],
-        },
-        declined: true,
-      };
-    }
+      declined = true;
+    } else {
+      const args = phase.promptArgs?.(ctx) ?? {};
 
-    const args = phase.promptArgs?.(ctx) ?? {};
+      let prompt: string | undefined;
+      try {
+        prompt = await renderPrompt({
+          phase,
+          flumeDir: this.flumeDir,
+          promptFile: join(this.opts.configDir, phase.promptPath),
+          cwd: wt.path,
+          args,
+          ...(prior ? { priorAttempt: prior } : {}),
+        });
+      } catch (err) {
+        if (!(err instanceof InlineExecRenderError)) throw err;
+        // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render
+        // — the agent is never invoked. Distinct from voluntary-bail/
+        // platform-preempt: no agent ran at all.
+        await this.persistRenderRefused(key, phase.name, err);
+        noCommit = "render-refused";
+      }
 
-    let prompt: string;
-    try {
-      prompt = await renderPrompt({
-        phase,
-        flumeDir: this.flumeDir,
-        promptFile: join(this.opts.configDir, phase.promptPath),
-        cwd,
-        args,
-        ...(prior ? { priorAttempt: prior } : {}),
-      });
-    } catch (err) {
-      if (!(err instanceof InlineExecRenderError)) throw err;
-      // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render —
-      // the agent is never invoked. Distinct from voluntary-bail/
-      // platform-preempt: no agent ran at all.
-      await this.persistRenderRefused(key, phase.name, err);
-      return {
-        result: {
-          phaseName: phase.name,
-          committed: false,
-          gateResults: [],
-          pendingAfter: pending,
-          shippedTags: [],
-          revertedTags: [],
-        },
-        noCommit: "render-refused",
-      };
-    }
-
-    const tickTimeoutMs =
-      chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
-    const termination = await this.invokeAgent(
-      phase,
-      cwd,
-      prompt,
-      agent,
-      tickTimeoutMs,
-    );
-
-    const postHead = await git.revParse(cwd);
-    let committed = postHead !== preHead;
-    const gateResults: GateResultEntry[] = [];
-    let noCommit: NoCommitMode | undefined;
-    let tipMoved = false;
-    // §16 (generalized): a singleton's own afterCommit gate revert carries no
-    // entry tag (nothing to quarantine — see GateFailure's doc), so it falls
-    // to the consecutive-failure backstop alone.
-    let gateFailure: GateFailure | undefined;
-
-    if (committed) {
-      // RELEASE-v0.11 §5 tip verify: the agent commits directly, so the
-      // dispatcher never sees the moment of commit — verify after the fact
-      // instead. The commit's own parent must be the tip this tick recorded
-      // at start; a mismatch means the ref moved (an operator committing
-      // mid-tick, a pull, a claim-less bare-tick collision) while the agent
-      // ran. Checked before any gate runs — a commit on the wrong parent is
-      // refused regardless of what the gates would have said.
-      tipMoved = await this.checkTipMoved(cwd, phase.name, key, preHead, postHead);
-      if (tipMoved) committed = false;
-    }
-
-    if (committed) {
-      const verdict = await this.runAfterCommitGates(phase, cwd, postHead);
-      gateResults.push(...verdict.results);
-      if (!verdict.ok) {
-        // Capture the §5 record AND the §8 prose snapshot while the reverted
-        // commit is still reachable, then drop it. The next tick is a fresh
-        // process — these disk artifacts are the only carry. The snapshot is
-        // what keeps a reverted *plan* tick's state.md / open-questions.md
-        // findings recoverable without session logs (§8): the `git reset
-        // --hard` below would otherwise destroy them, leaving hand-recovery
-        // from `.flume/sessions/` the only path (the `5f4b583` →
-        // hand-reconstructed-in-`9432489` incident).
-        const record = await this.buildPriorAttempt(
-          "afterCommit",
-          verdict.failure!,
-          cwd,
-          postHead,
+      if (prompt !== undefined) {
+        // Fresh read, not `preHead`: the worktree branched from it, so the
+        // two agree unless `setupWorktree` itself committed something — same
+        // defensive re-read `runFanoutEntry` takes for the identical reason.
+        const preWtHead = await git.revParse(wt.path);
+        const tickTimeoutMs =
+          chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
+        const termination = await this.invokeAgent(
+          phase,
+          wt.path,
+          prompt,
+          agent,
+          tickTimeoutMs,
+          extraEnv,
         );
-        await this.snapshotRevertedFiles(cwd, postHead, key);
-        await git.dropLastCommit(cwd, postHead);
-        committed = false;
-        noCommit = "gate-revert";
-        gateFailure = {
-          signature: gateFailureSignature(verdict.failure!),
-          message: verdict.failure!.message,
-        };
-        await this.writePriorAttempt(key, record);
-        this.log.warn(
-          `[flume] ${phase.name} commit reverted: ${verdict.failure?.message}`,
-        );
+        const postWtHead = await git.revParse(wt.path);
+        let wtCommitted = postWtHead !== preWtHead;
+
+        if (wtCommitted) {
+          // RELEASE-v0.11 §5 tip verify: the agent now commits on this
+          // tick's own private worktree branch, same as a fanout entry — the
+          // ancestry check, not parent equality (spec/worktrees.md
+          // "Singleton runs in a worktree" retires the shared-ref leg).
+          tipMoved = await this.checkTipMovedPerEntry(
+            wt.path,
+            phase.name,
+            key,
+            preWtHead,
+            postWtHead,
+          );
+          if (tipMoved) wtCommitted = false;
+        }
+
+        if (wtCommitted) {
+          const verdict = await this.runAfterCommitGates(
+            phase,
+            wt.path,
+            postWtHead,
+            undefined,
+            preWtHead,
+          );
+          gateResults.push(...verdict.results);
+          if (!verdict.ok) {
+            const { gateFailure: gf } = await this.revertAfterCommitFailure(
+              chain,
+              wt.path,
+              postWtHead,
+              key,
+              phase.name,
+              undefined,
+              verdict.failure!,
+              verdict.touchedPaths,
+            );
+            noCommit = "gate-revert";
+            gateFailure = gf;
+            wtCommitted = false;
+          }
+        }
+
+        if (wtCommitted) {
+          // Carry the span back onto trunk through the same cherry-pick +
+          // afterMerge machinery a one-entry wave uses (spec/worktrees.md
+          // "Singleton runs in a worktree"). Trunk may have moved since
+          // `preHead` — the operator's checkout is theirs at every moment of
+          // a run now that the agent never touches it directly — so this
+          // lands onto whatever trunk currently is; only a real conflict
+          // refuses.
+          const preCherry = await git.revParse(repoRoot);
+          try {
+            await git.cherryPickRange(repoRoot, preWtHead, postWtHead);
+          } catch (err) {
+            const message = (err as Error).message;
+            this.log.warn(
+              `[flume] cherry-pick failed for ${phase.name}: ${message}; commit stays on the worktree branch, retried next tick`,
+            );
+            await git.cherryPickAbort(repoRoot);
+            mergeFailure = {
+              signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+              message,
+            };
+          }
+
+          if (!mergeFailure) {
+            const mergedSha = await git.revParse(repoRoot);
+            const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
+            const commitTouchedPaths = await git.diffNameOnly(
+              repoRoot,
+              preCherry,
+              mergedSha,
+            );
+            let entryFailure:
+              | { gate: string; message: string; details?: string }
+              | undefined;
+            for (const gate of afterMergeGates) {
+              const gr = await gate.run({
+                cwd: repoRoot,
+                repoRoot,
+                flumeDir: this.flumeDir,
+                phaseName: phase.name,
+                commitSha: mergedSha,
+                touchedPaths: commitTouchedPaths,
+                log: (l) => this.log.info(l),
+              });
+              gateResults.push({
+                gate: gate.name,
+                ok: gr.ok,
+                message: gr.message,
+                ...(gr.details ? { details: gr.details } : {}),
+              });
+              if (!gr.ok) {
+                entryFailure = {
+                  gate: gate.name,
+                  message: gr.message,
+                  ...(gr.details ? { details: gr.details } : {}),
+                };
+                break;
+              }
+            }
+
+            if (entryFailure) {
+              this.log.warn(
+                `[flume] afterMerge gate '${entryFailure.gate}' failed for ${phase.name}; reverting`,
+              );
+              const record = await this.buildPriorAttempt(
+                "afterMerge",
+                entryFailure,
+                repoRoot,
+                mergedSha,
+              );
+              await this.writePriorAttempt(key, record);
+              await git.hardResetTo(repoRoot, preCherry);
+              noCommit = "gate-revert";
+              gateFailure = {
+                signature: gateFailureSignature(entryFailure),
+                message: entryFailure.message,
+              };
+            } else {
+              this.log.info(
+                `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
+              );
+              committed = true;
+              commitSha = mergedSha;
+              // A clean ship clears the slot so the next tick starts with no
+              // stale prior-attempt signal.
+              await this.clearPriorAttempt(key);
+            }
+          }
+        }
+
+        if (!committed && !tipMoved && !noCommit && !mergeFailure) {
+          // No commit landed and nothing else classified it: the agent's own
+          // termination (§6). A clean exit that produced nothing is a
+          // voluntary-bail; any process failure is a platform-preempt (not a
+          // defect in the work).
+          noCommit = await this.classifyNoCommit(key, termination);
+          this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
+        }
       }
     }
 
-    if (committed) {
-      // A clean ship clears the slot so the next tick starts with no stale
-      // prior-attempt signal.
-      await this.clearPriorAttempt(key);
-    } else if (!tipMoved && !noCommit) {
-      // No commit and no gate ran: classify the agent's own termination
-      // (§6). A clean exit that produced nothing is a voluntary-bail (the
-      // agent refused a constraint and named it in its final message); any
-      // process failure is a platform-preempt (not a defect in the work).
-      // `tipMoved` already wrote its own §5 record above — the §6 taxonomy
-      // never applies to it (it's not a NoCommitMode).
-      noCommit = await this.classifyNoCommit(key, termination);
-      this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
-    }
+    await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
 
     return {
       result: {
         phaseName: phase.name,
         committed,
-        ...(committed ? { commitSha: postHead } : {}),
+        ...(commitSha ? { commitSha } : {}),
         gateResults,
         pendingAfter: await this.readPendingTolerant(),
         shippedTags: [],
@@ -1569,7 +1699,9 @@ export class Dispatcher {
       },
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
+      ...(declined ? { declined } : {}),
       ...(gateFailure ? { gateFailures: [gateFailure] } : {}),
+      ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     };
   }
 
@@ -1708,7 +1840,7 @@ export class Dispatcher {
     const provisioned: PendingEntry[] = [];
     for (const entry of batch) {
       try {
-        worktrees.push(await this.createWorktree(entry, preHead));
+        worktrees.push(await this.createWorktree(entry.tag, preHead));
         provisioned.push(entry);
       } catch (err) {
         const message = (err as Error).message;
@@ -2144,33 +2276,9 @@ export class Dispatcher {
     for (let i = 0; i < worktrees.length; i++) {
       const wt = worktrees[i]!;
       const tag = provisioned[i]!.tag;
-      if (phase.teardownWorktree) {
-        try {
-          await phase.teardownWorktree({
-            worktreePath: wt.path,
-            repoRoot,
-            entryTag: tag,
-          });
-        } catch (err) {
-          this.log.warn(
-            `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
-          );
-        }
-      }
-      await this.harvestFriction(chain, wt.path, tag);
-      try {
-        await git.removeWorktree(repoRoot, wt.path);
-        cleaned++;
-      } catch (err) {
-        survivingPaths.push(wt.path);
-      }
-      try {
-        await git.deleteBranch(repoRoot, wt.branch);
-      } catch (err) {
-        this.log.warn(
-          `[flume] deleteBranch failed for ${wt.branch}: ${(err as Error).message}`,
-        );
-      }
+      const ok = await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, tag);
+      if (ok) cleaned++;
+      else survivingPaths.push(wt.path);
     }
     this.log.info(
       `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,
@@ -2371,30 +2479,21 @@ export class Dispatcher {
     );
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
-      const record = await this.buildPriorAttempt(
-        "afterCommit",
-        verdict.failure!,
-        wt.path,
-        postHead,
-      );
-      await this.writeRevertNote(
-        chain,
-        wt.path,
-        postHead,
-        entry,
-        verdict.failure!,
-      );
       // §13: this revert never reaches cherry-pick, so it's the only chance
       // to capture what the commit actually touched — runAfterCommitGates
       // already computed this for its gate loop (engineering.md "The fix
       // lands at the mechanism"), so reuse it instead of re-deriving via a
       // second `git show --name-only` before dropLastCommit discards the
       // evidence.
-      const footprint = verdict.touchedPaths;
-      await git.dropLastCommit(wt.path, postHead);
-      await this.writePriorAttempt(key, record);
-      this.log.warn(
-        `[flume] ${entry.tag}: commit reverted (${verdict.failure?.message})`,
+      const { footprint, gateFailure } = await this.revertAfterCommitFailure(
+        chain,
+        wt.path,
+        postHead,
+        key,
+        entry.tag,
+        entry.tag,
+        verdict.failure!,
+        verdict.touchedPaths,
       );
       return {
         entry,
@@ -2402,12 +2501,8 @@ export class Dispatcher {
         gateResults,
         noCommit: "gate-revert",
         worktreePath: wt.path,
-        ...(footprint ? { footprint } : {}),
-        gateFailure: {
-          tag: entry.tag,
-          signature: gateFailureSignature(verdict.failure!),
-          message: verdict.failure!.message,
-        },
+        footprint,
+        gateFailure,
       };
     }
 
@@ -2438,22 +2533,20 @@ export class Dispatcher {
    * fault, so it survives as uncommitted changes (§5 "agent output stays on
    * disk") rather than being discarded.
    *
-   * The two legs undo different spans (spec/loop.md "Tip verify"), so the
-   * target is a discriminated union rather than one shape:
-   *  - `commitCount` — the singleton leg's shared-ref span, counted from the
-   *    recorded tip to `expectedSha` (`git.commitsSince`). The dispatcher
-   *    never observes a tick's individual commits, only its start and end
-   *    tip, so a tick that made more than one commit is undone in full
-   *    rather than leaving every commit but the newest on the tip, un-gated.
-   *  - `resetToSha` — the per-entry leg's private-ref span. The recorded
-   *    base is not necessarily an ancestor of `expectedSha` (that is exactly
-   *    what its ancestry check failed on), so a commit *count* back from
-   *    `expectedSha` does not apply; the target is the recorded base itself.
+   * `resetToSha` is always the recorded base — every worktree branch (a
+   * fanout entry's, or, since spec/worktrees.md "Singleton runs in a
+   * worktree", a singleton phase's own) is a private ref with exactly one
+   * legitimate writer, so the target is always that branch's own start
+   * point. The trunk's former shared-ref ambiguity — which needed a
+   * commit-*count* revert because the dispatcher couldn't tell its own
+   * commits from an interleaved operator's — no longer has a caller: a
+   * singleton tick's agent now commits on a private branch same as a fanout
+   * entry's, never on the trunk directly.
    */
   private async revertTipMovedCommit(
     cwd: string,
     expectedSha: string,
-    target: { commitCount: number } | { resetToSha: string },
+    resetToSha: string,
   ): Promise<void> {
     const currentTip = await git.revParse(cwd);
     if (currentTip !== expectedSha) {
@@ -2463,59 +2556,18 @@ export class Dispatcher {
           `commit at the current tip, refusing to reset`,
       );
     }
-    if ("commitCount" in target) {
-      await git.softReset(cwd, target.commitCount);
-    } else {
-      await git.softResetTo(cwd, target.resetToSha);
-    }
+    await git.softResetTo(cwd, resetToSha);
   }
 
   /**
-   * RELEASE-v0.11 §5 tip verify — singleton leg (spec/loop.md "Tip verify",
-   * "Singleton leg — shared ref, parent equality, full-span revert"). On the
-   * trunk, the engine has no way to separate its own N commits from its own
-   * N−1 plus an operator's — the evidence is identical — so the check is
-   * parent equality: the commit's own parent must be the tip this tick
-   * recorded at start. On a mismatch the whole span between the recorded tip
-   * and `postHead` reverts (via {@link revertTipMovedCommit}), never just
-   * the newest commit.
-   *
-   * Unchanged by the per-entry leg's split into {@link
-   * checkTipMovedPerEntry}: the ambiguity this check exists for is a
-   * property of the shared ref, which the private per-entry ref never has.
-   */
-  private async checkTipMoved(
-    cwd: string,
-    label: string,
-    key: string,
-    preHead: string,
-    postHead: string,
-  ): Promise<boolean> {
-    const parent = await git.revParse(cwd, `${postHead}^`);
-    if (parent === preHead) return false;
-    // More than one commit sits between the recorded tip and `postHead` —
-    // undo the whole span, not just `postHead` itself, so no un-gated
-    // commit is left behind on the tip.
-    const commitCount = await git.commitsSince(cwd, preHead, postHead);
-    await this.revertTipMovedCommit(cwd, postHead, { commitCount });
-    await this.writePriorAttempt(key, buildTipMoved(preHead, parent));
-    this.log.warn(
-      `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${parent}`,
-    );
-    return true;
-  }
-
-  /**
-   * RELEASE-v0.11 §5 tip verify — per-entry leg (spec/loop.md "Tip verify",
-   * "Per-entry leg — private ref, ancestry, N commits are completion"). An
-   * entry's worktree branch has exactly one legitimate writer: this tick's
-   * agent. The singleton leg's ambiguity premise does not transfer, and
-   * neither does its equality check: an agent that commits, keeps working,
-   * and commits again has produced a *completed entry*, not interference.
-   * The check is ancestry — the recorded base must be an ancestor of the
-   * observed HEAD — so a multi-commit span never trips this on its own
-   * account; `runFanoutEntry`'s caller runs the whole span's gates and
-   * cherry-picks it like any single-commit entry once this returns `false`.
+   * RELEASE-v0.11 §5 tip verify (spec/loop.md "Tip verify", "Per-entry leg —
+   * private ref, ancestry, N commits are completion"). Every worktree branch
+   * — a fanout entry's or a singleton phase's own (spec/worktrees.md
+   * "Singleton runs in a worktree") — has exactly one legitimate writer:
+   * this tick's agent. The check is ancestry — the recorded base must be an
+   * ancestor of the observed HEAD — so a multi-commit span never trips this
+   * on its own account; the caller runs the whole span's gates and
+   * cherry-picks it like a single-commit entry once this returns `false`.
    *
    * Refusal fires only when the base is *not* an ancestor of `postHead`,
    * which on a private branch means something reset or rewrote it out from
@@ -2533,7 +2585,7 @@ export class Dispatcher {
   ): Promise<boolean> {
     const ancestor = await git.isAncestor(cwd, preHead, postHead);
     if (ancestor) return false;
-    await this.revertTipMovedCommit(cwd, postHead, { resetToSha: preHead });
+    await this.revertTipMovedCommit(cwd, postHead, preHead);
     await this.writePriorAttempt(key, buildTipMoved(preHead, postHead));
     this.log.warn(
       `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${postHead}`,
@@ -2592,12 +2644,13 @@ export class Dispatcher {
     commitSha: string,
     assignedEntry?: PendingEntry,
     /**
-     * RELEASE-v0.11 §5 (per-entry leg): when set, touched paths are the
-     * cumulative `spanBase..commitSha` diff rather than `commitSha`'s own
-     * single-commit diff — the per-entry leg's whole-span gate (spec/loop.md
-     * "N commits are completion"). Absent for the singleton leg, which the
-     * parent-equality check restricts to exactly one commit per tick, so its
-     * single-commit diff is already the whole span.
+     * RELEASE-v0.11 §5: when set, touched paths are the cumulative
+     * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
+     * diff — the whole-span gate (spec/loop.md "N commits are completion").
+     * Every caller now passes it — both a fanout entry's worktree branch and
+     * a singleton phase's own (spec/worktrees.md "Singleton runs in a
+     * worktree") are private refs whose ancestry check clears a multi-commit
+     * span as one completed tick.
      */
     spanBase?: string,
   ): Promise<{
@@ -2669,6 +2722,48 @@ export class Dispatcher {
       }
     }
     return { ok: true, results, touchedPaths: commitTouchedPaths };
+  }
+
+  /**
+   * The one `afterCommit`-revert path (spec/worktrees.md "Reverted prose
+   * survives the reset"): every afterCommit gate revert — a fanout entry's
+   * worktree commit or, since singleton moved into a worktree too (spec/
+   * worktrees.md "Singleton runs in a worktree"), a singleton phase's own —
+   * snapshots the commit's files before dropping it (§8) and writes the
+   * operator's revert note (§5), whichever worktree it ran in. The former
+   * asymmetry — snapshot singleton-only, note fanout-only — collapsed with
+   * the paths themselves once both concurrencies commit to a private branch
+   * a tick tears down at the end.
+   *
+   * `label` names the entry tag or the phase name — both the revert note's
+   * filename and the log line use it. `gateFailureTag` is `label` for a
+   * fanout entry and `undefined` for a singleton phase's own revert (no
+   * entry to quarantine — {@link GateFailure.tag}'s doc).
+   */
+  private async revertAfterCommitFailure(
+    chain: Chain,
+    cwd: string,
+    sha: string,
+    key: string,
+    label: string,
+    gateFailureTag: string | undefined,
+    failure: { gate: string; message: string; details?: string },
+    touchedPaths: string[],
+  ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
+    const record = await this.buildPriorAttempt("afterCommit", failure, cwd, sha);
+    await this.writeRevertNote(chain, cwd, sha, label, failure);
+    await this.snapshotRevertedFiles(cwd, sha, key);
+    await git.dropLastCommit(cwd, sha);
+    await this.writePriorAttempt(key, record);
+    this.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);
+    return {
+      footprint: touchedPaths,
+      gateFailure: {
+        ...(gateFailureTag ? { tag: gateFailureTag } : {}),
+        signature: gateFailureSignature(failure),
+        message: failure.message,
+      },
+    };
   }
 
   /**
@@ -2768,12 +2863,70 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * Tear down one worktree: the chain's best-effort `teardownWorktree` hook,
+   * the friction harvest (§4), removal, then branch deletion — the exact
+   * per-worktree sequence `runFanout`'s wave-end cleanup loop ran inline,
+   * now shared with a singleton tick's own single worktree (spec/
+   * worktrees.md "Singleton runs in a worktree"). `tag` is the entry's tag
+   * or the phase name, passed straight through to the hook's `entryTag` and
+   * to the harvest's provenance prefix. Returns whether removal succeeded —
+   * the caller aggregates surviving paths itself, since a wave reports them
+   * once at wave level (§7), not once per worktree.
+   */
+  private async teardownWorktreeInstance(
+    phase: Phase,
+    chain: Chain,
+    repoRoot: string,
+    wt: { path: string; branch: string },
+    tag: string,
+  ): Promise<boolean> {
+    if (phase.teardownWorktree) {
+      try {
+        await phase.teardownWorktree({
+          worktreePath: wt.path,
+          repoRoot,
+          entryTag: tag,
+        });
+      } catch (err) {
+        this.log.warn(
+          `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
+        );
+      }
+    }
+    await this.harvestFriction(chain, wt.path, tag);
+    let removed = false;
+    try {
+      await git.removeWorktree(repoRoot, wt.path);
+      removed = true;
+    } catch {
+      // Caller records the surviving path.
+    }
+    try {
+      await git.deleteBranch(repoRoot, wt.branch);
+    } catch (err) {
+      this.log.warn(
+        `[flume] deleteBranch failed for ${wt.branch}: ${(err as Error).message}`,
+      );
+    }
+    return removed;
+  }
+
+  /**
+   * Provision one worktree, branched `flume/[<namespace>/]<tag>` from
+   * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
+   * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md
+   * "Singleton runs in a worktree" keys its worktree on the phase instead).
+   * Both directory-name length-bounding (§9) and job-namespace scoping apply
+   * identically either way — the caller supplies the identifier, this method
+   * doesn't care what it names.
+   */
   private async createWorktree(
-    entry: PendingEntry,
+    tag: string,
     fromRef: string,
   ): Promise<{ path: string; branch: string }> {
-    const slug = slugify(entry.tag);
-    // Job-scoped branch namespace (v0.5 §4): with a namespace, identical tag
+    const slug = slugify(tag);
+    // Job-scoped branch namespace (v0.5 §4): with a namespace, identical
     // slugs across jobs land on disjoint branches; without one, the legacy
     // repo-global name stands (bare `.flume` harnesses unchanged).
     const branch = this.opts.namespace
@@ -2788,7 +2941,7 @@ export class Dispatcher {
       ? resolve(process.env.FLUME_WORKTREES_DIR)
       : join(this.flumeDir, "worktrees");
     // The path mirrors the branch namespacing: under a shared
-    // FLUME_WORKTREES_DIR two jobs with identical tag slugs would otherwise
+    // FLUME_WORKTREES_DIR two jobs with identical slugs would otherwise
     // collide on <base>/<dirName>, and the stale-cleanup below would rm the
     // OTHER job's live worktree. Namespaced unconditionally when set — the
     // redundant level under a default per-job base is harmless.
@@ -2796,9 +2949,9 @@ export class Dispatcher {
     // The fs directory name is length-bounded (§9) — git itself refuses a
     // worktree path around 200 chars on win32, below `TAG_MAX_LENGTH`'s
     // NAME_MAX-derived ceiling — while `branch` above keeps the untruncated
-    // slug: the tag stays full-length everywhere except this one directory
-    // component.
-    const dirName = worktreeDirName(entry.tag);
+    // slug: `tag` stays full-length everywhere except this one directory
+    // component. A phase name takes the same bound an entry tag does.
+    const dirName = worktreeDirName(tag);
     const path = this.opts.namespace
       ? join(wtBase, this.opts.namespace, dirName)
       : join(wtBase, dirName);
@@ -3022,14 +3175,22 @@ export class Dispatcher {
   }
 
   /**
-   * §5 (RELEASE-v0.6.2): when an afterCommit gate reverts a fanout entry's
+   * §5 (RELEASE-v0.6.2): when an afterCommit gate reverts a worktree's
    * commit and `Chain.friction` is declared, write the operator's copy of
    * the verdict — the gate name/message/details plus the reverted commit's
    * subject+body — to `<friction>/<ISO-timestamp>--<tag>--reverted.md`
    * before `git.dropLastCommit` discards the evidence. Written straight to
    * the primary friction dir (harness code reaching into `flumeDir`, the
    * sessions/harvest precedent) rather than the worktree-local mirror —
-   * this runs mid-wave, well before that worktree's own teardown harvest.
+   * this runs mid-wave (or mid-singleton-tick), well before that worktree's
+   * own teardown harvest.
+   *
+   * `tag` is the fanout entry's tag or, for a singleton phase's own
+   * afterCommit revert, the phase name (spec/worktrees.md "Singleton runs in
+   * a worktree" collapsed the former asymmetry — the note used to be
+   * fanout-only, since a singleton commit lived in the operator's own
+   * checkout until it was gated; now it lives in a worktree the tick tears
+   * down, so the note is what remains).
    *
    * Undeclared `chain.friction` is a no-op, per §2. Best-effort: a
    * note-write failure must never block the revert it is documenting.
@@ -3038,7 +3199,7 @@ export class Dispatcher {
     chain: Chain,
     cwd: string,
     sha: string,
-    entry: PendingEntry,
+    tag: string,
     failure: { gate: string; message: string; details?: string },
   ): Promise<void> {
     if (chain.friction === undefined) return;
@@ -3063,13 +3224,13 @@ export class Dispatcher {
         "",
       ];
       await writeFile(
-        namespacedJoin(primaryDir, `${stamp}--${entry.tag}--reverted.md`),
+        namespacedJoin(primaryDir, `${stamp}--${tag}--reverted.md`),
         lines.join("\n"),
         "utf8",
       );
     } catch (err) {
       this.log.warn(
-        `[flume] ${entry.tag}: revert note write failed: ${(err as Error).message}`,
+        `[flume] ${tag}: revert note write failed: ${(err as Error).message}`,
       );
     }
   }
@@ -3874,12 +4035,12 @@ function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
  * didn't match the tip it recorded at tick start. A sibling to the §6
  * builders above, never a `NoCommitMode` — see {@link TipMovedAttempt}.
  *
- * `observedTip` means something different per leg (spec/loop.md "Tip
- * verify"): the singleton leg passes the mismatched commit's own parent (the
- * ambiguity it can't resolve further), while the per-entry leg passes
- * `postHead` itself — the true observed HEAD, never its parent, so the
- * agent's own top commit stays discoverable rather than reading as the
- * intruder.
+ * `observedTip` is always the observed HEAD itself, never its parent — both
+ * legs run the same ancestry check now (spec/worktrees.md "Singleton runs in
+ * a worktree" retired the singleton leg's own parent-equality check, whose
+ * "found" used to name the mismatched commit's parent instead), so the
+ * agent's own top commit always stays discoverable rather than reading as
+ * the intruder.
  */
 function buildTipMoved(expectedTip: string, observedTip: string): TipMovedAttempt {
   return { mode: "tip-moved", expectedTip, observedTip };

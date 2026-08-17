@@ -239,8 +239,17 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       // BACKLOG_PATH exists as a directory: readFileSync fails with EISDIR,
       // a real I/O failure distinct from "file absent" (ENOENT). Pre-fix,
       // the bare catch swallowed this as a clean "nothing to groom" bail
-      // (engineering.md "Loud or nothing").
+      // (engineering.md "Loud or nothing"). Committed, not just written:
+      // `groom` is a singleton phase and now runs in its own worktree
+      // (spec/worktrees.md "Singleton runs in a worktree") — a fresh
+      // worktree holds only tracked content, so an uncommitted directory in
+      // the primary checkout would simply be absent there.
       await mkdir(join(repo.dir, "BACKLOG.json"));
+      await writeFile(join(repo.dir, "BACKLOG.json", ".keep"), "");
+      await exec("git", ["add", "BACKLOG.json"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "seed a directory named BACKLOG.json"], {
+        cwd: repo.dir,
+      });
 
       const flumeDir = join(repo.dir, ".flume");
       new Baton(flumeDir).wake("groom");

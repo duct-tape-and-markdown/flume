@@ -360,6 +360,195 @@ describe("Dispatcher singleton — commit detected", () => {
   });
 });
 
+// spec/worktrees.md "Singleton runs in a worktree": a singleton tick now
+// provisions and runs in a `flume/[<namespace>/]<phase>` worktree, exactly
+// the machinery a one-entry wave uses — provisioned before the agent runs,
+// torn down (worktree + branch) after the merge step, regardless of outcome.
+describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree (WORKTREE-CORE)", () => {
+  async function branchIn(cwd: string): Promise<string> {
+    const { stdout } = await exec(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd },
+    );
+    return stdout.trim();
+  }
+
+  it("agent runs on branch flume/<phase>, not the primary checkout; the worktree and branch are gone once the tick returns", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedCwd: string | undefined;
+    let observedBranch: string | undefined;
+    const agent = singleAgent(async (cwd) => {
+      observedCwd = cwd;
+      observedBranch = await branchIn(cwd);
+      // The worktree exists, mid-tick, alongside the primary checkout.
+      expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
+        true,
+      );
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(observedCwd).not.toBe(fx.repo);
+    expect(observedCwd).toContain(join(".flume", "worktrees", "plan"));
+    expect(observedBranch).toBe("flume/plan");
+
+    // Teardown left `git worktree list` and the branch list clean — same
+    // one-`rm` promise a fanout wave's worktree gives.
+    const { stdout: worktrees } = await exec(
+      "git",
+      ["worktree", "list", "--porcelain"],
+      { cwd: fx.repo },
+    );
+    expect(worktrees).not.toContain(join(".flume", "worktrees"));
+    expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
+      false,
+    );
+    const { stdout: branches } = await exec(
+      "git",
+      ["branch", "--list", "flume/plan"],
+      { cwd: fx.repo },
+    );
+    expect(branches.trim()).toBe("");
+  });
+
+  it("namespace set → worktree branch is flume/<job>/plan; teardown deletes the namespaced branch", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let observedBranch: string | undefined;
+    const agent = singleAgent(async (cwd) => {
+      observedBranch = await branchIn(cwd);
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      namespace: "alpha",
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(observedBranch).toBe("flume/alpha/plan");
+    const { stdout: branches } = await exec(
+      "git",
+      ["branch", "--list", "flume/alpha/plan"],
+      { cwd: fx.repo },
+    );
+    expect(branches.trim()).toBe("");
+  });
+
+  it("the worktree and branch are torn down even on a declined (shouldRun=false) tick", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: () => false,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    const agent: Agent = {
+      name: "must-not-run",
+      async invoke() {
+        invoked = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.declined).toBe(true);
+    expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
+      false,
+    );
+    const { stdout: branches } = await exec(
+      "git",
+      ["branch", "--list", "flume/plan"],
+      { cwd: fx.repo },
+    );
+    expect(branches.trim()).toBe("");
+  });
+
+  it("an operator commit landing on trunk mid-tick is never touched — absorbed at merge like a wave's foreign commit, not soft-reset", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let operatorSha = "";
+    const agent = singleAgent(async (cwd) => {
+      // The operator commits straight to the primary checkout while the
+      // agent is mid-tick in its own worktree — legal at every moment of a
+      // run now that the two never share a ref (spec/worktrees.md
+      // "Singleton runs in a worktree").
+      await writeAndCommit(
+        fx.repo,
+        "src/operator.ts",
+        "operator\n",
+        "operator: concurrent commit",
+      );
+      operatorSha = await head(fx.repo);
+      await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The operator's commit was never reset — trunk still carries it, and
+    // the agent's own commit cherry-picks cleanly on top of it.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.noCommit).toBeUndefined();
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%H", "-n", "2"],
+      { cwd: fx.repo },
+    );
+    const shas = log.trim().split("\n");
+    expect(shas).toContain(operatorSha);
+    expect(shas[shas.length - 1]).toBe(operatorSha);
+    expect(existsSync(join(fx.repo, "src", "operator.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
+      "agent-work\n",
+    );
+  });
+});
+
 describe("Dispatcher singleton — afterCommit gate failure reverts the commit", () => {
   it("drops the agent's commit and reports the failing gate", async () => {
     const preHead = await head(fx.repo);
@@ -4614,29 +4803,76 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
 });
 
 describe("Dispatcher — tip verify: commit only onto the tick's starting tip (RELEASE-v0.11 §5)", () => {
-  it("singleton: an agent invocation that makes two commits has both undone by the tip-moved revert, not just the newest (LOOP-TIPMOVED-MULTICOMMIT-TICK)", async () => {
+  it("singleton: an agent invocation that makes two commits ships the whole span as one completion — ancestry holds, no full-span soft-reset (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
+    // spec/worktrees.md "Singleton runs in a worktree": the agent now commits
+    // on this tick's own private worktree branch, exactly like a fanout
+    // entry — the ancestry check (ex `checkTipMovedPerEntry`) replaces the
+    // retired parent-equality leg, so an agent that commits, keeps working,
+    // and commits again has produced a completed multi-commit tick, not
+    // interference. Both commits cherry-pick onto trunk as one span.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(
+        cwd,
+        "src/step-one.ts",
+        "one\n",
+        "plan: step one",
+      );
+      await writeAndCommit(cwd, "src/step-two.ts", "two\n", "plan: step two");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.noCommit).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+
+    // Both commits landed on trunk, cherry-picked in order beneath the
+    // cherry-picked tip `outcome.result.commitSha` names.
+    expect(existsSync(join(fx.repo, "src", "step-one.ts"))).toBe(true);
+    expect(existsSync(join(fx.repo, "src", "step-two.ts"))).toBe(true);
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "2"],
+      { cwd: fx.repo },
+    );
+    expect(log.trim().split("\n")).toEqual(["plan: step two", "plan: step one"]);
+  }, 20_000);
+
+  it("singleton: a worktree branch rewritten out from under the agent (base is no longer an ancestor of HEAD) refuses, names both shas, and never touches trunk", async () => {
+    // Mirrors the fanout per-entry ancestry-violation shape: the worktree
+    // branch is rewritten onto an orphan history and built on — the
+    // recorded base is no longer an ancestor of the observed HEAD. Unlike
+    // the retired singleton-on-trunk leg, trunk itself is never touched:
+    // the whole check and its soft-reset happen inside the private worktree
+    // branch, which teardown then discards regardless.
     const preHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    let interloperSha = "";
+    let recordedBase = "";
+    let observedHead = "";
     const agent = singleAgent(async (cwd) => {
-      // Two commits in one invocation: the dispatcher only ever compares
-      // `postHead`'s own parent against the tip it recorded, so the first of
-      // the two — whether it's the agent's own or an operator's concurrent
-      // commit landing mid-tick — reads identically as "something sits
-      // between the recorded tip and postHead". Either way, nothing may be
-      // left on the tip un-gated.
-      await writeAndCommit(
-        cwd,
-        "src/interloper.ts",
-        "external\n",
-        "external: concurrent commit",
-      );
-      interloperSha = await head(cwd);
+      recordedBase = await head(cwd);
+      await exec("git", ["checkout", "--orphan", "rewritten"], { cwd });
+      await exec("git", ["reset", "--hard"], { cwd });
       await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+      observedHead = await head(cwd);
     });
 
     const dispatcher = new Dispatcher({
@@ -4651,80 +4887,26 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.result?.commitSha).toBeUndefined();
-    expect(outcome.result?.gateResults).toEqual([]);
+    expect(outcome.tipMoved).toBe(true);
     expect(outcome.noCommit).toBeUndefined();
-    expect(outcome.tipMoved).toBe(true);
-    expect(outcome.verdict?.committed).toBe(false);
-    expect(outcome.verdict?.noCommit).toBeUndefined();
-    expect(outcome.verdict?.tipMoved).toBe(true);
     expect(outcome.summary).toContain("tip-moved");
 
-    // Both commits are undone — the tip lands back on exactly what the tick
-    // recorded at start, not on the first of the tick's own two commits.
+    // Trunk never moved — the whole check ran on the private worktree
+    // branch, which the tick tears down regardless of outcome.
     expect(await head(fx.repo)).toBe(preHead);
-    expect(await head(fx.repo)).not.toBe(interloperSha);
+    expect(recordedBase).toBe(preHead);
 
-    // Agent output stays on disk, uncommitted — a soft reset, not the
-    // gate-revert path's hard reset — for the *whole* span, not only the
-    // newest commit.
-    expect(existsSync(join(fx.repo, "src", "interloper.ts"))).toBe(true);
-    expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(true);
-    expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
-      "agent-work\n",
+    // Both shas named — the recorded base and the observed HEAD, never the
+    // HEAD's parent alone (which would read the agent's own top commit as
+    // the intruder, or not exist at all on an orphan branch).
+    const record = await readFile(
+      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      "utf8",
     );
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: fx.repo,
-    });
-    expect(status).toContain("plan-output.ts");
-    expect(status).toContain("interloper.ts");
-  }, 20_000);
-
-  it("singleton: a single-commit tick built on a stale base is soft-reverted by exactly one commit — unchanged from before multi-commit accounting", async () => {
-    // A commit sits ahead of the base the agent's own commit lands on (a
-    // worktree that never advanced past that base, or a rewind) — the
-    // recorded tip's own *parent* is where the agent's single commit
-    // actually landed. Distance from the recorded tip to the agent's commit
-    // is exactly one either way: only that one commit is undone.
-    const staleBase = await head(fx.repo);
-    await writeAndCommit(fx.repo, "src/trunk-advance.ts", "advance\n", "plan: advance");
-    const preHead = await head(fx.repo);
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    const phase = makePhase({ name: "plan", concurrency: "singleton" });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await exec("git", ["reset", "--hard", staleBase], { cwd });
-      await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.committed).toBe(false);
-    expect(outcome.tipMoved).toBe(true);
-    expect(outcome.summary).toContain("tip-moved");
-
-    // Exactly one commit undone: the tip lands back on the stale base the
-    // agent's single commit actually landed on, not further back than that.
-    expect(await head(fx.repo)).toBe(staleBase);
-    expect(await head(fx.repo)).not.toBe(preHead);
-
-    expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(true);
-    expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
-      "agent-work\n",
-    );
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: fx.repo,
-    });
-    expect(status).toContain("plan-output.ts");
+    const parsed = JSON.parse(record);
+    expect(parsed.mode).toBe("tip-moved");
+    expect(parsed.expectedTip).toBe(recordedBase);
+    expect(parsed.observedTip).toBe(observedHead);
   }, 20_000);
 
   it("singleton: an unmoved tip commits exactly as before — no tip-moved fact", async () => {
@@ -4763,12 +4945,13 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
         prompts.push(inv.prompt);
         if (firstAttempt) {
           firstAttempt = false;
-          await writeAndCommit(
-            inv.cwd,
-            "src/interloper.ts",
-            "external\n",
-            "external: concurrent commit",
-          );
+          // Rewrite the worktree branch out from under itself — an ancestry
+          // violation, the only way this leg now refuses (spec/worktrees.md
+          // "Singleton runs in a worktree").
+          await exec("git", ["checkout", "--orphan", "rewritten"], {
+            cwd: inv.cwd,
+          });
+          await exec("git", ["reset", "--hard"], { cwd: inv.cwd });
         }
         await writeAndCommit(inv.cwd, "src/plan-output.ts", "x\n", "plan: attempt");
         return { exitCode: 0, stdout: "", stderr: "" };
@@ -5042,28 +5225,25 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
   }, 20_000);
 });
 
-describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, checks diverge by leg (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", () => {
-  it("both legs persist same-shaped §5 records and log through the same template, but the singleton leg names its commit's parent while the per-entry leg names the observed HEAD itself", async () => {
-    // ---- singleton — parent-equality, unchanged by the per-entry split: an
-    // interloper commit lands on trunk after preHead is recorded, then the
-    // agent's own commit stacks on top of it. The commit's own parent (the
-    // interloper's sha) is what the singleton leg names as "found" — the
-    // most it can honestly claim on a shared ref (spec/loop.md "Tip
-    // verify", singleton leg).
+describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, same ancestry check both concurrencies (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", () => {
+  it("both legs run the identical ancestry check and persist byte-identical §5 records through the same log template", async () => {
+    // spec/worktrees.md "Singleton runs in a worktree" retired the singleton
+    // leg's own parent-equality check: a singleton tick now commits on a
+    // private worktree branch exactly like a fanout entry, so both legs run
+    // `checkTipMovedPerEntry` — ancestry, naming the observed HEAD itself,
+    // never its parent. Same rewritten-branch shape on both sides proves it.
     const singletonPreHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const singletonPhase = makePhase({ name: "plan", concurrency: "singleton" });
     const singletonChain: Chain = { phases: [singletonPhase], humanOnly: [] };
-    let singletonInterloperSha = "";
+    let singletonRecordedBase = "";
+    let singletonObservedHead = "";
     const singletonAgent = singleAgent(async (cwd) => {
-      await writeAndCommit(
-        cwd,
-        "src/interloper.ts",
-        "external\n",
-        "external: concurrent commit",
-      );
-      singletonInterloperSha = await head(cwd);
+      singletonRecordedBase = await head(cwd);
+      await exec("git", ["checkout", "--orphan", "rewritten"], { cwd });
+      await exec("git", ["reset", "--hard"], { cwd });
       await writeAndCommit(cwd, "src/plan-output.ts", "agent-work\n", "plan: derive");
+      singletonObservedHead = await head(cwd);
     });
     const singletonWarnings: string[] = [];
     const singletonLog: Logger = {
@@ -5081,22 +5261,20 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
     const singletonOutcome = await singletonDispatcher.tick();
 
     expect(singletonOutcome.tipMoved).toBe(true);
+    expect(singletonRecordedBase).toBe(singletonPreHead);
     const singletonRecord = await readFile(
       join(fx.repo, ".flume", "prior-attempts", "plan.json"),
       "utf8",
     );
-    // The singleton leg's "found" is the commit's own parent, not its own
-    // top commit — the agent's `plan-output.ts` commit sha never appears.
-    expect(JSON.parse(singletonRecord).observedTip).toBe(singletonInterloperSha);
+    // The ancestry check's "found" is the observed HEAD itself — the
+    // agent's own top commit — never its parent, which on an orphan branch
+    // doesn't even exist.
+    expect(JSON.parse(singletonRecord).observedTip).toBe(singletonObservedHead);
+    // Trunk itself never moved — the private worktree branch absorbed the
+    // whole check and its revert; the tick tears it down regardless.
+    expect(await head(fx.repo)).toBe(singletonPreHead);
 
-    // ---- fanout — ancestry, on a per-entry worktree branch rewritten out
-    // from under the agent (the recorded base is no longer an ancestor of
-    // the observed HEAD), so this leg refuses too — but on a genuinely
-    // different check than the singleton's parent equality. A fresh
-    // fixture: the singleton portion above leaves its repo's working tree
-    // dirty (the soft-reset agent output survives uncommitted, §5 "agent
-    // output stays on disk"), and fanout worktree provisioning wants a
-    // clean starting repo.
+    // ---- fanout — same shape, on a per-entry worktree branch.
     const fx2 = await makeFixture();
     try {
       await writePending(fx2.repo, [makeEntry("FANOUT-TWIN", ["src/a.ts"])]);
@@ -5141,17 +5319,12 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
         join(fx2.repo, ".flume", "prior-attempts", "fanout-twin.json"),
         "utf8",
       );
-      // The per-entry leg's "found" is the observed HEAD itself — the
-      // agent's own top commit — never its parent, which on an orphan
-      // branch doesn't even exist.
       expect(JSON.parse(fanoutRecord).observedTip).toBe(fanoutObservedHead);
 
       // §5 record shape (mode + field names + JSON formatting) is
-      // byte-identical for equivalent input, even though the two legs run
-      // different checks and the "found" sha means something different per
-      // leg — a one-sided edit to either callsite's persisted record breaks
-      // this pin once the two sides' real, necessarily-distinct SHAs are
-      // normalized out.
+      // byte-identical for equivalent input — a one-sided edit to either
+      // callsite's persisted record breaks this pin once the two sides'
+      // real, necessarily-distinct SHAs are normalized out.
       const normalize = (raw: string, expectedTip: string, observedTip: string) =>
         raw
           .split(expectedTip)
@@ -5159,16 +5332,14 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
           .split(observedTip)
           .join("<OBSERVED>");
       expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
-        normalize(singletonRecord, singletonPreHead, singletonInterloperSha),
+        normalize(singletonRecord, singletonPreHead, singletonObservedHead),
       );
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
 
       // Both legs log through the same template —
       // "[flume] <label>: tip moved (no commit) — expected <sha>, found <sha>"
-      // — with only the label (phase name vs. entry tag) and the shas
-      // (necessarily distinct per side, and per-leg-distinct in meaning)
-      // differing.
+      // — with only the label (phase name vs. entry tag) differing.
       expect(singletonWarnings).toHaveLength(1);
       expect(fanoutWarnings).toHaveLength(1);
       const shape =
@@ -5180,7 +5351,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       expect(singletonMatch![1]).toBe("plan");
       expect(fanoutMatch![1]).toBe("FANOUT-TWIN");
       expect(singletonMatch![2]).toBe(singletonPreHead);
-      expect(singletonMatch![3]).toBe(singletonInterloperSha);
+      expect(singletonMatch![3]).toBe(singletonObservedHead);
       expect(fanoutMatch![2]).toBe(fanoutPreHead);
       expect(fanoutMatch![3]).toBe(fanoutObservedHead);
     } finally {
@@ -7540,17 +7711,29 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
 });
 
 describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
-  it("singleton tick: gate's repoRoot equals the primary checkout (same as cwd)", async () => {
+  it("singleton tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    let gateRepoRoot: string | undefined;
-    let gateCwd: string | undefined;
-    const capturingGate: Gate = {
-      name: "capture-reporoot",
+    let commitRepoRoot: string | undefined;
+    let commitCwd: string | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-reporoot",
       when: "afterCommit",
       run(ctx) {
-        gateRepoRoot = ctx.repoRoot;
-        gateCwd = ctx.cwd;
+        commitRepoRoot = ctx.repoRoot;
+        commitCwd = ctx.cwd;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    let mergeRepoRoot: string | undefined;
+    let mergeCwd: string | undefined;
+    const captureMerge: Gate = {
+      name: "capture-merge-reporoot",
+      when: "afterMerge",
+      run(ctx) {
+        mergeRepoRoot = ctx.repoRoot;
+        mergeCwd = ctx.cwd;
         return Promise.resolve({ ok: true, message: "captured" });
       },
     };
@@ -7558,7 +7741,7 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
     const phase = makePhase({
       name: "plan",
       concurrency: "singleton",
-      gates: [capturingGate],
+      gates: [captureCommit, captureMerge],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -7574,10 +7757,20 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
       log: silent,
     });
 
-    await dispatcher.tick();
+    const outcome = await dispatcher.tick();
 
-    expect(gateRepoRoot).toBe(fx.repo);
-    expect(gateRepoRoot).toBe(gateCwd);
+    expect(outcome.result?.committed).toBe(true);
+
+    // afterCommit runs on the worktree branch, before cherry-pick: its
+    // repoRoot is that worktree's root, not the trunk repo.
+    expect(commitRepoRoot).toBeDefined();
+    expect(commitRepoRoot).toBe(commitCwd);
+    expect(commitRepoRoot).not.toBe(fx.repo);
+    expect(commitRepoRoot).toContain("plan");
+
+    // afterMerge runs on the trunk after the cherry-pick lands.
+    expect(mergeRepoRoot).toBe(fx.repo);
+    expect(mergeRepoRoot).toBe(mergeCwd);
   });
 
   it("fanout tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk", async () => {
@@ -7954,7 +8147,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
     }
   });
 
-  it("refuses an afterMerge gate on a concurrency: singleton phase, naming the gate and phase", async () => {
+  it("loads an afterMerge gate on a concurrency: singleton phase — no longer a dead declaration (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-aftermerge-"));
     try {
       await mkdir(cfg, { recursive: true });
@@ -7963,15 +8156,16 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
         join(cfg, "chain.ts"),
         `export default () => ({ chain: { phases: [{ name: "plan", ` +
           `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
-          `writablePaths: ["**"], gates: [{ name: "dead-merge-gate", ` +
+          `writablePaths: ["**"], gates: [{ name: "live-merge-gate", ` +
           `when: "afterMerge", run: async () => ({ ok: true, message: "x" }) }], ` +
           `handoff: () => [] }], humanOnly: [] } });\n`,
         "utf8",
       );
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
-        /'plan'.*'dead-merge-gate'.*afterMerge/,
-      );
+      const mod = await loadChainModule(join(cfg, "chain.ts"));
+
+      expect(mod.chain.phases).toHaveLength(1);
+      expect(mod.chain.phases[0]!.gates[0]!.when).toBe("afterMerge");
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
