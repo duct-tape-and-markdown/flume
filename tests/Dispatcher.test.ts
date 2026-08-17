@@ -2749,10 +2749,21 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     // Parallelism probe: per-entry afterMerge isolation must not serialize
-    // the agent fanout. Hold both invocations open together so the overlap
-    // is real, then assert two were in flight at once.
+    // the agent fanout. Rather than holding both invocations open for a
+    // fixed real-time window (flaky under CPU contention — the window can
+    // elapse before a delayed second invocation even starts), gate release
+    // on a barrier that only opens once `entries.length` invocations have
+    // started. A genuinely parallel fanout opens it every time; a serialized
+    // one leaves the first invocation waiting on a barrier the second never
+    // reaches, which fails the test's own timeout instead of quietly
+    // reporting a low-but-plausible maxInFlight.
     let inFlight = 0;
     let maxInFlight = 0;
+    let started = 0;
+    let releaseBarrier: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
     const promptsBySlug: Record<string, string[]> = {};
     const agent: Agent = {
       name: "recording-fanout",
@@ -2761,7 +2772,9 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
         (promptsBySlug[slug] ??= []).push(inv.prompt);
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise((r) => setTimeout(r, 50));
+        started++;
+        if (started >= entries.length) releaseBarrier();
+        await barrier;
         inFlight--;
         const file =
           slug === "iso-pass" ? "src/iso-pass.ts" : "src/iso-fail.ts";
