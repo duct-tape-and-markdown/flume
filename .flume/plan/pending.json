@@ -1,48 +1,5 @@
 [
   {
-    "tag": "stop-flag",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "add stop to SUBCOMMANDS/HELP_TOP; handler writes <flumeDir>/stop idempotently and prints the consequence; flume status gains a stop-flag line between supervisor liveness and tip claim; flume loop (and job run) refuses at start, exit 1 naming the path, when the flag is already present."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "superviseLoop checks the stop flag at the same per-iteration boundary it re-reads the baton (never mid-tick); on seeing it, ends the run after the in-flight tick finishes and releases the claim/lock; SuperviseResult records why iteration ended for the completion summary, without changing loopExitCode's totals-based formula."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "flume stop is idempotent and prints the consequence; flume status reports the flag; flume loop refuses at start with the flag present."
-        },
-        {
-          "path": "tests/loop-process-boundary.integration.test.ts",
-          "description": "a stop flag written mid-run lets the in-flight tick finish, then ends the run and releases the claim/lock."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume stop writes <flumeDir>/stop; the supervisor finishes its in-flight tick then ends the run; a present flag refuses a fresh loop/job run start until removed.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Graceful stop — the stop flag"
-    },
-    "tests": [
-      "flume stop is idempotent — repeat call prints the same statement, exit 0",
-      "flume loop refuses to start with the flag already present, naming the path, exit 1",
-      "a stop flag written between tick children ends the run after the current tick finishes, without killing it",
-      "flume tick ignores the flag and runs normally",
-      "a stopped run's exit code still reflects run totals (errored/shipped), not a special stop code"
-    ],
-    "acceptance": "flume stop/status/loop behave per spec: idempotent write, checked only at the baton-reread boundary, refuse-at-start, no kill, no unstop verb, exit code unchanged by the stop path itself.",
-    "notes": "Also spec/cli.md: Subcommand surface (stop verb) and 'flume status owes exactly this' (status line #3). Deliberately no unstop/resume verb — removing the flag is the operator's own ack."
-  },
-  {
     "tag": "tip-claim-per-run-scope",
     "gate": {
       "kind": "open"
