@@ -9,9 +9,49 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `spec/worktrees.md`'s "real git" integration-lane trigger is pervasive in the default lane as literally written (inbox, session)
+
+Status: PARKED
+
+Inbox finding asked for a systematic sweep of the default lane for load-flaky real-subprocess/
+timing tests, naming `tests/Dispatcher.test.ts` as suspect. Swept it: the file's shared `exec`
+helper (`tests/Dispatcher.test.ts:69`) spawns real `git` subprocesses (`git init`/`commit`/
+`checkout` in temp fixtures), used across effectively all ~191 `it(...)` blocks — and the whole
+file sits in the default (`.test.ts`) lane. Taken literally, `spec/worktrees.md`'s *The default
+test lane must stay fast* names "real git" as one of the two integration-lane triggers
+("Integration lane — anything spawning real subprocesses: real flume tick/loop through tsx, real
+git"), which would put nearly the whole file in the integration lane — clearly not today's
+practice. The one concrete load-flake risk the sweep actually found is a single hard-timing
+assertion (filed as `dispatcher-parallelism-probe-timing-flake`), not the git calls themselves —
+raw git plumbing on empty temp repos is genuinely fast.
+
+The fork: is "real git" in that section calibrated too broadly, and if so what's the actual
+dividing line — subprocess weight, `tsx`-spawned child processes specifically (full Node startup
++ module resolution, much heavier than a `git` plumbing call), a wall-clock budget, something
+else? This determines whether a broader sweep of `Dispatcher.test.ts` (or any other default-lane
+file using real git) is warranted, versus the one timing-flake being the whole story.
+
+Options:
+- Narrow the spec text to name the actual cost driver (e.g. "spawning a subprocess through `tsx`"
+  specifically, or a stated per-test wall-clock budget) — would leave `Dispatcher.test.ts`'s
+  existing real-git usage already-compliant and close this with no code change.
+- Leave "real git" as written and treat `Dispatcher.test.ts`'s pervasive real-git default-lane
+  usage as accepted, pre-existing debt — but that reading makes the spec text aspirational
+  rather than descriptive of the file it should already govern.
+
+No recommendation — this is a calibration question about intent versus a section's literal
+wording, not something research resolves; needs a human read on which failure mode the section
+was actually written to prevent.
+
 ## A gate-revert whose failing tests are disjoint from the entry's footprint wants a distinct marker (752346f)
 
 Status: PARKED
+
+**Second occurrence (2026-08-17, inbox):** `test-hermeticenv-strips-tip-claim-held`'s span
+(8da2af6) was also afterMerge-reverted by a flake disjoint from its own footprint
+(`tests/helpers/subprocess.ts`), recovered by hand via the tick verdict's sha. Same shape as
+below, independent instance — raises the cost of leaving this parked but doesn't change the
+fork.
 
 Inbox finding (752346f): friction-nonenoent-swallowed's first build attempt was afterMerge-reverted
 by a flake in `tests/cli.test.ts`'s tip-claim-wiring suite — tests the entry's diff never touched

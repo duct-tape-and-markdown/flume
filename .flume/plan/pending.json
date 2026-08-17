@@ -1,6 +1,6 @@
 [
   {
-    "tag": "test-hermeticenv-strips-tip-claim-held",
+    "tag": "buildpriorattempt-tail-bias-gate-revert-details",
     "gate": {
       "kind": "open"
     },
@@ -9,24 +9,52 @@
       "new": [],
       "edit": [
         {
-          "path": "tests/helpers/subprocess.ts",
-          "description": "hermeticEnv() also strips FLUME_TIP_CLAIM_HELD, joining the other canonicalized FLUME_* vars it already deletes."
+          "path": "src/Dispatcher.ts",
+          "description": "buildPriorAttempt's gate-revert `details` uses tailBound() (already used for voluntary-bail) instead of bound(), per spec/loop.md's digest-not-transcript framing."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pin that a gate-revert PriorAttempt's details preserve tail content when raw details exceed MAX_PRIOR_DETAILS."
         }
       ],
       "retire": []
     },
-    "summary": "hermeticEnv() leaves FLUME_TIP_CLAIM_HELD unstripped; a bare-tick child inherits it from a live ambient flume loop and silently skips claim acquire/refuse.",
+    "summary": "buildPriorAttempt() truncates gate-revert `details` head-first (bound()), discarding trailing content — twice this session it cut vitest's Failed Tests block, the section a retry needs most.",
     "per": {
       "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
+      "section": "Prior-outcome feedback to the retrying tick"
     },
     "tests": [
-      "tests/tip-claim.integration.test.ts's 'acquires and releases a claim' and 'refuses exit 1 when a live process already holds the claim' pass with FLUME_TIP_CLAIM_HELD set in the ambient environment"
+      "a gate-revert PriorAttempt whose raw details exceeds MAX_PRIOR_DETAILS keeps its trailing content rather than losing it to head-first truncation"
     ],
-    "acceptance": "hermeticEnv() strips FLUME_TIP_CLAIM_HELD; both named tests in tests/tip-claim.integration.test.ts pass deterministically regardless of ambient FLUME_TIP_CLAIM_HELD.",
-    "notes": "Measured this tick: with FLUME_TIP_CLAIM_HELD ambient-set (this session runs inside a live flume loop, which leaks it to vitests env), a bare tick trusts a nonexistent supervisor and both named tests fail 100%; unset, both pass 100%. e34c41e misattributed this to test-timing flakiness -- it is a deterministic hermeticEnv() gap, not a race.",
-    "observedFiles": [
-      "tests/helpers/subprocess.ts"
-    ]
+    "acceptance": "buildPriorAttempt's gate-revert details use tailBound(); a synthetic details string with distinctive content only in its last few hundred chars, and total length over MAX_PRIOR_DETAILS, retains that content in the persisted PriorAttempt record.",
+    "notes": "Two same-day gate-reverts (752346f, 8da2af6/69d0214) left the failing test unidentifiable from disk: bound() kept ~KB of leading PASS noise and cut vitest's Failed Tests block. tailBound() already exists for this exact reason (voluntary-bail). Vitest-specific FAIL-block regex extraction was considered and set aside per engine-boundary.md 'Told, not inferred' — reusing the generic tail-bias helper needs no tool-specific parsing."
+  },
+  {
+    "tag": "dispatcher-parallelism-probe-timing-flake",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Harden or relocate the parallelism-probe assertion (~L2712-2865) so it no longer depends on two mock invocations overlapping within a fixed 50ms window under load."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The afterMerge fanout 'ships the N-1 clean siblings' test asserts maxInFlight===2 off a bare 50ms overlap window (L2764/L2785) — a load-flake candidate for the default lane's gate-revert pattern.",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "tests": [
+      "the fanout afterMerge fixture's concurrency assertion holds deterministically under CPU contention, without depending on a fixed short real-time overlap window"
+    ],
+    "acceptance": "the 'ships the N-1 clean siblings' test's concurrency check no longer relies on a bare 50ms setTimeout window; it stays green under load while still pinning that the two entries' afterMerge gates ran concurrently.",
+    "notes": "tests/Dispatcher.test.ts:2712-2865, 'Parallelism probe' (setTimeout(r,50) at L2764, expect(maxInFlight).toBe(2) at L2785) is the one confirmed timing-dependent assertion in the file, swept per inbox request naming this file as suspect. Broader real-git-per-test scope question parked in open-questions.md, out of this entry's scope."
   }
 ]
