@@ -5,7 +5,8 @@ per-entry commits back onto the tip the tick started on. This file governs that 
 where worktrees are placed and named, how the shared `.git/worktrees` metadata is protected,
 the chain hooks that provision and tear one down, and what survives a revert — the per-entry
 merge isolation, the trunk footprint, the reverted-prose snapshot, the friction harvest, and
-the removal fallback. Singleton phases run in the main checkout and touch none of it. The
+the removal fallback. Singleton phases run the same machinery as a wave of one — *Singleton
+runs in a worktree*, below. The
 tick lifecycle around a wave (waking, no-commit classification, quarantine, tip claim/verify)
 is `spec/loop.md`; where gates are placed and what a chain declares is `spec/chain.md`.
 
@@ -26,6 +27,33 @@ condition are exercised — these are the details:
 The refs involved are engine-created, engine-consumed, and engine-deleted within one wave. No
 ref the operator chose is created, moved, or checked out. `flume/**` is the only grammar the
 engine ships, and it exists solely because `git worktree add` requires a branch to attach.
+
+## Singleton runs in a worktree
+
+A singleton tick provisions one worktree — branch `flume/[<namespace>/]<phase>` from
+the tip the tick started on — invokes its agent there, and carries the span back
+through the same cherry-pick + `afterMerge` machinery a wave of one uses.
+`setupWorktree`/`teardownWorktree` run; the write fence, prior-attempt records, and
+the no-commit taxonomy are unchanged; provisioning failure is the tick's failure the
+same way a one-entry wave's would be. The phase name takes the same length bound the
+entry-tag slug does — it becomes the same directory component.
+
+**Why:** the main checkout has two legitimate writers — the operator and the
+engine's agent — and a shared ref where their commits interleave gave tip verify an
+ambiguity it could resolve only by parent equality, whose accepted consequence was
+soft-resetting operator commits that landed mid-tick. A private branch has one
+writer, so the ancestry check applies, foreign trunk commits absorb at merge like
+any wave's (`spec/loop.md`, *Tip verify*), and the parent-equality leg — with its
+full-span revert and its admitted exception to "dropping a commit requires owning
+it" — retires entirely. One merge discipline, both concurrencies; the operator's
+checkout is theirs at every moment of a run.
+
+The costs are declared, not hidden: a singleton tick now pays worktree provisioning
+plus whatever the chain's `setupWorktree` does — a materialized install is seconds
+via the hardlinked store (`.claude/rules/platform-facts.md`) — and the operator no
+longer watches a singleton tick's scratch state evolve in their own working tree,
+only its merged result. A chain whose singleton phase is too light to justify an
+install expresses that in its own hook, not in engine policy.
 
 ## Placement — the worktree base and the job namespace
 
@@ -117,7 +145,8 @@ need before they run. Both hooks are optional, fanout-only, and receive the same
   `process.env` — for a per-worktree `DATABASE_URL`, a scratch path, a short-lived credential.
   A hook with nothing to inject returns `void`; the result object exists only to carry
   `extraEnv`. The scope is the agent invocation alone: gates spawn from the dispatcher's own
-  env and do not see these vars, and singleton phases never carry `extraEnv` at all.
+  env and do not see these vars. Both concurrencies carry the hooks and `extraEnv` — a
+  singleton tick provisions a worktree like anything else (*Singleton runs in a worktree*).
 - **`Phase.teardownWorktree?(ctx): Promise<void>`** runs after the agent and gates, before
   removal — drop a per-worktree DB, release a lease. Best-effort by contract: a throw is
   logged and removal proceeds. A leaked resource is recoverable; a stuck worktree is not.
@@ -219,11 +248,12 @@ post-image content, under a mirror of its repo path — into
 - A later clean commit under the same key clears both the JSON and the snapshot, so a shipped
   entry leaves no stale recovery artifact.
 
-> **Drift:** the snapshot is wired only on the singleton revert path
-> (`src/Dispatcher.ts:runSingleton`). A fanout entry reverted by an `afterCommit` gate writes
-> the revert note (below) but no prose snapshot. In this repo plan is singleton and build is
-> fanout, so the plan-prose case is covered — but the two revert paths do not carry the same
-> guarantee.
+With singleton unified onto the wave machinery (*Singleton runs in a worktree*), there is one
+revert path: every `afterCommit`-reverted commit — singleton phase or fanout entry — takes the
+prose snapshot and writes the revert note (below). The former asymmetry (snapshot on the
+singleton path only, note on the fanout path only) collapses with the paths themselves. The
+snapshot also matters *more* in a worktree than it did in the checkout: teardown removes the
+working tree, so nothing else preserves reverted prose.
 
 ## The revert note — the operator's copy of the verdict
 
@@ -239,9 +269,11 @@ are replaced for filename safety, and the path is joined through the win32 exten
 idiom (`src/paths.ts:namespacedJoin`) because the friction dir's full depth is not bounded by
 the tag's own length bound.
 
-Fanout-only by construction — `writeRevertNote`'s sole call site is `runFanoutEntry`
-(`src/Dispatcher.ts`). A singleton tick reverted by an `afterCommit` gate writes no note, and
-relies on the prose snapshot above instead.
+The note is written for every reverted commit — a singleton phase's tick and each fanout
+entry alike — from the one revert path (*Reverted prose survives the reset*, above). It
+stopped being optional for singleton the moment singleton moved into a worktree: the checkout
+used to keep a reverted tick's evidence in the operator's working tree, teardown now removes
+it, and the note plus the snapshot are what remain.
 
 ## Teardown harvest — the delivery guarantee
 

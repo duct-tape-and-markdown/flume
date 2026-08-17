@@ -76,11 +76,13 @@ output:
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
   tip the tick started on, in order, with `cherry-pick --abort` on conflict
   (`git.cherryPick`, `Dispatcher.runFanout`).
-- **Ephemeral fanout branch names.** `Dispatcher.createWorktree` constructs
-  `flume/<namespace>/<slug>` (or repo-global `flume/<slug>` with no namespace);
-  provisioning is `git worktree add -B` (`git.addWorktree`), and teardown removes the
+- **Ephemeral `flume/**` branch names.** `Dispatcher.createWorktree` constructs
+  `flume/<namespace>/<slug>` (or repo-global `flume/<slug>` with no namespace) —
+  the slug is a fanout entry's tag under fanout and the phase name under singleton
+  (`spec/worktrees.md`, *Singleton runs in a worktree*); provisioning is
+  `git worktree add -B` (`git.addWorktree`), and teardown removes the
   worktree (`git.removeWorktree`) and then deletes the branch with `git branch -D`
-  (`git.deleteBranch`, called from `Dispatcher.runFanout`). The grammar is the engine's
+  (`git.deleteBranch`). The grammar is the engine's
   own throwaway workspace naming, never a line of history the operator visits. See
   `spec/worktrees.md`.
 
@@ -203,7 +205,7 @@ inference, so it does not try (`engine-boundary.md`, *Told, not inferred*). The
 claim is narrower and holds: the engine adds no state of its own that a crash can
 corrupt into silent misbehavior.
 
-## Tip verify — commit only onto the tip the tick started on
+## Tip verify — one writer per branch, absorption at the merge
 
 The correctness backstop behind the claim's signal — but the two guard different
 things, and the split is load-bearing: **a foreign commit on the tip is legal
@@ -217,25 +219,25 @@ tick ends with a `tip-moved` fact, and the entry — if the tick carries one —
 in `pending.json` for a fresh retry. The engine reports the fact; the chain owns
 what it means.
 
-One leg still refuses operator activity: the singleton parent-equality check below
-runs where the engine cannot distinguish its agent's commits from an operator's on a
-shared ref, and its accepted consequence stands for as long as singleton ticks
-commit on a ref with two legitimate writers.
+No leg refuses operator activity anymore. Every agent commit lands on a private
+`flume/**` branch with exactly one legitimate writer — this tick's agent: per entry
+under fanout, per phase under singleton (`spec/worktrees.md`, *Singleton runs in a
+worktree*). An operator commit on the trunk is therefore never in the same history
+an agent-commit check reads, and it reaches the engine only as a foreign tip at a
+merge site — which absorbs it (above). The parent-equality leg this section used to
+carry — shared ref, evidence-identical interleavings, full-span revert whose
+accepted consequence was resetting operator commits landing mid-tick — is retired
+with the shared ref itself; its admitted tension with "dropping a commit requires
+owning it" (below) went with it.
 
-What survives on disk depends on which leg refused. Where the dispatcher undoes a
-commit it observed (`Dispatcher.checkTipMoved`, singleton and per-entry), the undo is
-`reset --soft` (`revertTipMovedCommit`) — but what that buys differs by leg. On the
-singleton leg the reset runs in the repository itself, so the agent's work stays in the
-working tree. On the per-entry leg it runs inside the entry's worktree, which the wave's
-teardown loop removes unconditionally (`git.removeWorktree`, `Dispatcher.runFanout`);
-the uncommitted work goes with it, and no snapshot is taken — `snapshotRevertedFiles`
-rides the afterCommit gate-revert leg only. Where a wave refuses *before* cherry-picking,
-no reset is involved: that entry's commit is still on its private worktree branch, which
-teardown removes along with the worktree. The entry stays pending in every case; only
-the residue differs.
-
-The check takes the shape the commit site allows — **and the leg decides what the
-check can honestly claim**, because the two legs' refs have different writers:
+What survives a refusal on disk: where the dispatcher undoes a commit it observed
+(`Dispatcher.checkTipMoved`), the undo is `reset --soft` (`revertTipMovedCommit`,
+which itself refuses unless the current tip is the sha it observed) — run inside
+the tick's worktree, which teardown removes along with any uncommitted work; no
+snapshot is taken (`snapshotRevertedFiles` rides the afterCommit gate-revert leg
+only). Where a wave refuses *before* cherry-picking, no reset is involved: the
+commit is still on its private worktree branch, which teardown removes. The entry
+stays pending in every case; only the residue differs.
 
 - **Agent-made commits are verified after the fact.** The agent commits directly, so
   the dispatcher never sees the moment of commit; `Dispatcher.checkTipMoved` verifies
@@ -248,45 +250,30 @@ check can honestly claim**, because the two legs' refs have different writers:
   > only. An agent-made commit cannot be checked before it exists, so the guarantee
   > here is equivalent rather than identical.
 
-- **Singleton leg — shared ref, parent equality, full-span revert.** On the trunk,
-  a tick landing more than one commit produces `parent(postHead) ≠ preHead` exactly
-  as external interference does, and the engine has no way to separate its own N
-  commits from its own N−1 plus an operator's: the evidence is identical. So the
-  check is parent equality and the revert counts the commits between the two
-  (`git.commitsSince`) and soft-resets all of them rather than assuming one.
+- **The check is ancestry, and N commits are completion.** A private branch has
+  exactly one legitimate writer, so an agent that commits, keeps working, and
+  commits again has produced a *completed tick*, not interference. The check —
+  both concurrencies, `Dispatcher.checkTipMoved` — is **ancestry**: the recorded
+  base must be an ancestor of the observed HEAD, and on success the whole span
+  (base..HEAD, in order) runs its gates and cherry-picks like any single-commit
+  tick. Refusal fires only when the base is *not* an ancestor of the observed
+  HEAD, which on a private branch means something reset or rewrote it out from
+  under the agent — never that an operator was active, who has no reason to touch
+  a `flume/**` branch and every reason to be on the trunk the merge sites absorb.
 
-  The accepted consequence is that an operator commit landing inside the tip-verify
-  window is soft-reset alongside the tick's own. The reflog holds it, so nothing is
-  destroyed, but it leaves the tip. This is the deliberate trade — fully undoing a
-  multi-commit tick is the common case, while racing the tip claim is the case the
-  claim exists to discourage. It reverses if the dispatcher gains a way to count its
-  own commits as it makes them: the revert could then bound itself to its own span
-  and leave any excess in place.
+  Two obligations ride the refusal, because teardown removes the worktree and no
+  snapshot is taken (above): the log line and the persisted record name **both**
+  shas the operator needs — the observed HEAD and the recorded base — never the
+  HEAD's parent alone, which reads the agent's own work as the intruder and leaves
+  the top commit undiscoverable; and the refusal lands in the tick verdict as its
+  own dropped-work fact, never as silence a partial ship summary papers over.
 
-- **Per-entry leg — private ref, ancestry, N commits are completion.** An entry's
-  worktree branch has exactly one legitimate writer: this tick's agent. The
-  singleton leg's ambiguity premise therefore does not transfer, and neither does
-  its equality check: an agent that commits, keeps working, and commits again has
-  produced a *completed entry*, not interference. The check is **ancestry** — the
-  recorded base must be an ancestor of the observed HEAD — and on success the
-  entry's whole span (base..HEAD, in order) runs its gates and cherry-picks like
-  any single-commit entry. Refusal fires only when the base is *not* an ancestor
-  of the observed HEAD, which on a private branch means something reset or rewrote
-  it out from under the agent.
-
-  Two obligations ride the refusal, because on this leg the trunk-leg comforts are
-  absent (teardown removes the worktree and no snapshot is taken — above): the log
-  line and the persisted record name **both** shas the operator needs — the
-  observed HEAD and the recorded base — never the HEAD's parent alone, which reads
-  the agent's own work as the intruder and leaves the top commit undiscoverable;
-  and the entry lands in the tick verdict as its own dropped-work merge-outcome
-  fact, never as silence a partial ship summary papers over.
-
-  **Why this split is stated here:** the equality check applied to the private leg
-  was field-traced downstream (flume 0.10.1) misclassifying a commit-then-verify
-  agent's finished entry as `tip moved (no commit)`, soft-resetting it, and letting
-  teardown destroy all trace but a dangling sha — real gate-worthy work silently
-  orphaned at full agent price, invisible in the verdict.
+  **Why ancestry is stated, not assumed:** an equality check applied to a private
+  branch was field-traced downstream (flume 0.10.1) misclassifying a
+  commit-then-verify agent's finished entry as `tip moved (no commit)`,
+  soft-resetting it, and letting teardown destroy all trace but a dangling sha —
+  real gate-worthy work silently orphaned at full agent price, invisible in the
+  verdict.
 - **Harness-driven commits re-read the ref first — and absorb a foreign tip.** A
   fanout wave checks the tip before each `cherry-pick` (`Dispatcher.runFanout`) and
   again before the pending-ledger commit (`commitPendingUpdate`, checked *before*
@@ -458,7 +445,8 @@ name, entry tags provisioned, `committed`, the no-commit class, `tipMoved`/`decl
 each gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
 verdict, its one-line `message`, and its captured `details` — where `writablePathsGate`
 lists the violating paths), shipped tags,
-each fanout entry's cherry-pick/merge fate with its footprint, any provisioning
+each provisioned span's cherry-pick/merge fate with its footprint — per entry under
+fanout, the phase's own single span under singleton — any provisioning
 failures, and the tick's own one-line summary.
 
 - **Gate results stop at the first failure.** Both gate loops return on the first red

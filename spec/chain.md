@@ -90,13 +90,11 @@ required:
   migrated across the narrowing-becomes-opt-in flip that kept its channel
   paths and missed the new flag — quietly running under the wider fence the
   old default would have narrowed.
-- **A gate declaring `when: "afterMerge"` on a `concurrency: "singleton"`
-  phase.** The merge loop is the only site that executes those gates, and a
-  singleton phase never enters it (*Gate placement is the chain's decision*,
-  below).
-
 The bar is static deadness, never disuse: an empty `entryChannelPaths: []` on
-a scoped phase and an `afterMerge` gate on a fanout phase both load. The
+a scoped phase and an `afterMerge` gate on any phase both load — singleton
+ticks merge through the same loop a wave does (`spec/worktrees.md`, *Singleton
+runs in a worktree*), so `afterMerge` is reachable from every concurrency and
+the former singleton-`afterMerge` refusal is retired. The
 engine is not policing convention here — it refuses only a declaration its
 own mechanics provably cannot reach, which is knowledge no chain owns. And
 refusal, not a warning, is the shape (`engineering.md`, *Loud or nothing*): a
@@ -281,11 +279,11 @@ Live agent output is operationally load-bearing (`spec/loop.md`), which is what
 makes a misassembled stack more than cosmetic: it blinds the operator without
 failing anything.
 
-> **Drift:** `src/Agent.ts:ClaudeCodeOptions` justifies the skip-permissions
-> default as "every Flume tick runs in a worktree the harness controls". A
-> singleton phase runs in the primary checkout (`spec/worktrees.md`), so the
-> rationale does not cover the case the default actually runs in for
-> singleton-only chains.
+The skip-permissions default's stated rationale — every Flume tick runs in a
+worktree the harness controls (`src/Agent.ts:ClaudeCodeOptions`) — holds for
+both concurrencies now that singleton ticks provision one too
+(`spec/worktrees.md`, *Singleton runs in a worktree*); the singleton-in-checkout
+gap it used to carry as drift is closed.
 
 ## `Chain.seedDir` — the declared job seed
 
@@ -409,16 +407,13 @@ doctrine**, and the default guidance is:
   property was expressible directly (does the bundle resolve without reaching
   outside itself). The engine's lever here is teaching, not enforcement: the
   offending gate is always chain-owned.
-- **`afterMerge` runs only under fanout.** The merge loop
-  (`src/Dispatcher.ts:runFanout`) is the only site that executes those gates; a
-  singleton tick goes through `src/Dispatcher.ts:runAfterCommitGates` alone,
-  which selects `when === "afterCommit"`. An `afterMerge` gate declared on a
-  `concurrency: "singleton"` phase could therefore never run, so the loader
-  refuses the declaration (*A dead declaration is refused at load*, above).
-  The placement guidance above presumes a fanout phase; a singleton phase's
-  only gate point is `afterCommit`, and `prependHarnessBlock` filters the
-  rendered gate list to match — the block never names a gate that will not
-  run.
+- **Both concurrencies reach both gate points.** A singleton tick runs its
+  span through the same worktree-then-merge machinery a wave of one does
+  (`spec/worktrees.md`, *Singleton runs in a worktree*): `afterCommit` gates in
+  the worktree, `afterMerge` gates on the trunk after the cherry-pick. The
+  placement guidance above therefore applies uniformly, and
+  `prependHarnessBlock` renders the full gate list for every phase — there is
+  no longer a gate point a concurrency cannot reach.
 - A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
   the dispatcher computes once per commit, instead of re-shelling
   `git show --name-only` per gate.
@@ -436,10 +431,11 @@ dispatcher builds one per gate invocation; a gate treats it as read-only and
 confines side effects to disk inside `cwd`.
 
 - **`cwd` and `repoRoot` are the same value — the working tree the gate runs
-  in.** For a fanout phase's `afterCommit` gate that is the ephemeral worktree;
-  for a singleton `afterCommit` gate and for every `afterMerge` gate it is the
-  primary checkout. No field reaches the primary checkout from inside a
-  worktree, so a gate that needs the trunk belongs at `afterMerge`.
+  in.** For an `afterCommit` gate that is the tick's ephemeral worktree, both
+  concurrencies alike (`spec/worktrees.md`, *Singleton runs in a worktree*);
+  for an `afterMerge` gate it is the primary checkout. No field reaches the
+  primary checkout from inside a worktree, so a gate that needs the trunk
+  belongs at `afterMerge`.
 - **`flumeDir`** is the absolute, resolved state root — how a gate reaches
   state-relative paths without hardcoding `.flume/` or reading `process.env`.
 - **`commitSha` and `touchedPaths` are optional in the type and always set on a
