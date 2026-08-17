@@ -9,6 +9,45 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `shouldRun` can never reconcile a pickable entry whose acceptance already landed out-of-band (inbox, live run + audit)
+
+Status: PARKED
+
+Live incident (inbox, 2026-08-17): `buildpriorattempt-tail-bias-gate-revert-details`'s fix
+landed via the verdict-sha recovery flow — `ed737f6` is a direct cherry-pick of `b055697`,
+bypassing the dispatcher's normal fanout-merge flow, so pending.json's ship-detection
+bookkeeping never ran. The entry sat open and pickable; `shouldRun` (`.flume/chain.ts` ~L358)
+returns `true` only when nothing is pickable or the inbox has entries, so a pickable-but-
+already-shipped entry defers plan to build indefinitely. Build's agent correctly
+voluntary-bails ("acceptance already holds") every tick thereafter, and a voluntary bail
+carries no failure signature, so the quarantine brake never fires. Two decline/bail cycles
+burned (~75-405s each) before `flume stop` capped the run. This tick's audit reconciled the
+immediate case (the stale entry is retired in this commit — same reconciliation already
+performed once before, for `test-hermeticenv-strips-tip-claim-held`), but the general
+livelock shape recurs each time a recovery cherry-pick bypasses ship-detection, and remains
+open.
+
+`shouldRun` is chain-owned by design (`spec/loop.md`, *Declining a tick before the
+invocation*: "the chain decides whether a tick is worth spending; the engine supplies the
+skip"), and `.flume/chain.ts` sits outside every phase's `writablePaths`
+(`.claude/rules/spec-plan-build.md`) — no plan or build tick can make this edit; only an
+operator, interactively.
+
+Options (from the inbox finding's own research):
+- Widen `shouldRun` to also return `true` when any pickable entry carries a voluntary-bail
+  prior-attempt record (a cheap existence/mode check on
+  `<flumeDir>/prior-attempts/<slug>.json`, matching the predicate's read-small-files
+  contract, `spec/pending.md` *Dispatch reads come from the tip, not the tree*) — build has
+  already said "I looked; this is plan's call." Needs no other design work; bounds the whole
+  class (any bailed entry gets plan's attention next tick, whatever the bail reason).
+- The dal-migration friction note's pre-dispatch acceptance check (incident 14): prevents the
+  dispatch instead of recovering from it, but needs the semantic-acceptance design question
+  answered first — a bigger fork, not ready to derive.
+
+No recommendation on which — this is an operator-lane `chain.ts` edit either way, but the
+first option is markedly cheaper and narrower in scope (no upstream design question to
+resolve first).
+
 ## `spec/worktrees.md`'s "real git" integration-lane trigger is pervasive in the default lane as literally written (inbox, session)
 
 Status: PARKED
