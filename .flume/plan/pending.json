@@ -1,37 +1,5 @@
 [
   {
-    "tag": "friction-harvest-base-delta",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "thread createWorktree's base ref through to the wave-end harvestFriction call; harvestFriction filters the mirror dir to files new relative to that base (untracked, or absent from the base tree at that path) instead of moving every file found."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a friction note committed by a prior worktree and inherited by a later sibling's checkout is not re-harvested by that sibling."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Friction harvest moves only files new relative to the worktree's base commit, so a committed note stops being re-relayed by every later worktree.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Teardown harvest — the delivery guarantee"
-    },
-    "tests": [
-      "a friction file untracked in the worktree is harvested",
-      "a friction-channel file already present at the worktree's base commit is left in place, not re-copied with a new tag prefix"
-    ],
-    "acceptance": "harvestFriction moves only base-delta-new files; a file the checkout itself brought in from a committed base is never re-harvested.",
-    "notes": "Field-paid: one committed note became eight stamped copies across two waves before an operator intervened."
-  },
-  {
     "tag": "startup-sweep-residue",
     "gate": {
       "kind": "open"
