@@ -33,6 +33,7 @@ import {
   jobRun,
   jobStatus,
   JobUsageError,
+  liveLoopPid,
   readPendingLoose,
   RUNTIME_IGNORES,
   validateJobName,
@@ -1330,6 +1331,84 @@ describe.runIf(process.platform === "win32")(
         ]);
       } finally {
         await rm(dir, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
+// Same deep-nesting shape as FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT above,
+// applied to the other existsSync-gated reads job.ts performs: a bare join()
+// there reads a too-long path as absent (not as a real error), so each of
+// these silently misreports state instead of failing loud.
+describe.runIf(process.platform === "win32")(
+  "job.ts existsSync-gated checks — win32 total-path limit (JOB-EXISTSSYNC-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    it("liveLoopPid resolves a live pid when dir/loop.pid nests past win32's ~260-char limit", async () => {
+      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      try {
+        const deep = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        await mkdir(deep, { recursive: true });
+        // The vitest worker plays the live loop — its pid is alive for the
+        // duration of the call, same convention as jobRm's live-loop test.
+        await writeFile(join(deep, "loop.pid"), String(process.pid), "utf8");
+
+        expect(join(deep, "loop.pid").length).toBeGreaterThan(260);
+        expect(await liveLoopPid(deep)).toBe(process.pid);
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    });
+
+    it("jobRm finds and removes a job whose dir nests past win32's ~260-char limit", async () => {
+      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      try {
+        const repoRoot = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        await mkdir(repoRoot, { recursive: true });
+        const opts = { cwd: repoRoot };
+        await exec("git", ["init", "-q", "-b", "main"], opts);
+        await exec("git", ["config", "user.email", "test@example.com"], opts);
+        await exec("git", ["config", "user.name", "Test User"], opts);
+        await exec("git", ["config", "commit.gpgsign", "false"], opts);
+        await writeFile(join(repoRoot, "README.md"), "seed\n");
+        await exec("git", ["add", "."], opts);
+        await exec("git", ["commit", "-q", "-m", "seed"], opts);
+        await writeRepoChain(repoRoot);
+        await jobNew({ repoRoot, name: "w32job", log: () => {} });
+        const jobDir = join(repoRoot, ".flume", "jobs", "w32job");
+
+        expect(jobDir.length).toBeGreaterThan(260);
+        // Pre-fix, the bare-join existsSync check silently read this jobDir
+        // as absent and threw JobUsageError("no job ...") instead of removing it.
+        await jobRm({ repoRoot, name: "w32job", log: () => {} });
+        expect(existsSync(jobDir)).toBe(false);
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    }, 60_000);
+
+    it("jobStatus reports the awake phase when the job dir nests past win32's ~260-char limit", async () => {
+      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      try {
+        const repoRoot = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        const jobDir = join(repoRoot, ".flume", "jobs", "alpha");
+        await mkdir(join(jobDir, "awake"), { recursive: true });
+        await writeFile(join(jobDir, "awake", "build"), "");
+
+        expect(join(jobDir, "awake").length).toBeGreaterThan(260);
+        expect(jobStatus(repoRoot)).toEqual([
+          { name: "alpha", awake: ["build"], pending: 0 },
+        ]);
+      } finally {
+        await rm(base, { recursive: true, force: true });
       }
     });
   },

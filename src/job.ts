@@ -90,7 +90,11 @@ export async function ensureRuntimeIgnores(
   jobDir: string,
   extra: readonly string[] = [],
 ): Promise<void> {
-  const path = join(jobDir, ".gitignore");
+  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): jobDir nests under
+  // the state root, so `.gitignore` under it can cross the total-path
+  // limit even though no single component is long. namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  const path = namespacedJoin(jobDir, ".gitignore");
   const existing = existsSync(path) ? await readFile(path, "utf8") : "";
   const have = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
   const missing = [...RUNTIME_IGNORES, ...extra].filter(
@@ -185,9 +189,14 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   // dir reaches existing jobs) and never clobbers a worked file. Absent
   // seedDir → bare job; state accretes from ticks, no warning.
   const jobDir = join(repoRoot, ".flume", "jobs", name);
-  await mkdir(jobDir, { recursive: true });
+  // win32 MAX_PATH: jobDir nests under the state root; namespacedJoin
+  // (src/paths.ts) is the shared idiom for every fs call built from it.
+  await mkdir(namespacedJoin(jobDir), { recursive: true });
   if (seedPath !== undefined) {
-    await cp(seedPath, jobDir, { recursive: true, force: false });
+    await cp(namespacedJoin(seedPath), namespacedJoin(jobDir), {
+      recursive: true,
+      force: false,
+    });
     log(`[flume] seeded ${jobDir} from ${seedPath}`);
   }
 
@@ -283,7 +292,9 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
  * than a second implementation of the same pid-liveness check.
  */
 export async function liveLoopPid(dir: string): Promise<number | null> {
-  const pidPath = join(dir, "loop.pid");
+  // win32 MAX_PATH: dir is a job/state root that can nest deep; namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  const pidPath = namespacedJoin(dir, "loop.pid");
   if (!existsSync(pidPath)) return null;
   const pid = Number((await readFile(pidPath, "utf8")).trim());
   if (!Number.isFinite(pid) || pid <= 0) return null;
@@ -330,7 +341,10 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
 
   const jobDir = join(repoRoot, ".flume", "jobs", name);
   const rel = join(".flume", "jobs", name);
-  if (!existsSync(jobDir)) {
+  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom —
+  // otherwise existsSync silently reads a too-long jobDir as absent, and
+  // `job rm` reports "no job" for one that exists.
+  if (!existsSync(namespacedJoin(jobDir))) {
     throw new JobUsageError(`no job '${name}': ${rel} does not exist`);
   }
 
@@ -361,7 +375,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   // entries kept them out of git, so git rm left them behind. fs.rm unlinks
   // a stale junction/symlink without following it; the link target is never
   // touched.
-  await rm(jobDir, { recursive: true, force: true });
+  await rm(namespacedJoin(jobDir), { recursive: true, force: true });
 
   // 4. Stale metadata from the job's fanout worktrees.
   await git(repoRoot, ["worktree", "prune"]);
@@ -446,14 +460,17 @@ export function readPendingLoose(pendingPath: string): ParseResult {
  */
 export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
   const jobsRoot = join(repoRoot, ".flume", "jobs");
-  if (!existsSync(jobsRoot)) return [];
-  return readdirSync(jobsRoot, { withFileTypes: true })
+  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom —
+  // otherwise these existence checks silently misread a too-long path as
+  // absent instead of failing loud.
+  if (!existsSync(namespacedJoin(jobsRoot))) return [];
+  return readdirSync(namespacedJoin(jobsRoot), { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort()
     .map((name) => {
       const jobDir = join(jobsRoot, name);
-      const awake = existsSync(join(jobDir, "awake"))
+      const awake = existsSync(namespacedJoin(jobDir, "awake"))
         ? new Baton(jobDir).awake()
         : [];
       // readPendingLoose rethrows a non-ENOENT read failure (permission
