@@ -1,20 +1,38 @@
 [
   {
     "tag": "friction-nonenoent-swallowed",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "friction's name-lookup readFileSync catch (~1230-1237) and bare-list readdirSync catch (~1249-1256) swallow every error as absence — split ENOENT (legitimate) from other errors, matching check's own pendingPath read (~1130-1138); surface non-ENOENT as an I/O failure (EX_IOERR)." },
-        { "path": "tests/cli.test.ts", "description": "friction <name> and bare friction against a note/dir whose read fails non-ENOENT (e.g. EACCES) each report an I/O failure, never 'no such note' / an empty list." }
-      ]
+        {
+          "path": "src/cli.ts",
+          "description": "friction's name-lookup readFileSync catch (~1230-1237) and bare-list readdirSync catch (~1249-1256) swallow every error as absence — split ENOENT (legitimate) from other errors, matching check's own pendingPath read (~1130-1138); surface non-ENOENT as an I/O failure (EX_IOERR)."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "friction <name> and bare friction against a note/dir whose read fails non-ENOENT (e.g. EACCES) each report an I/O failure, never 'no such note' / an empty list."
+        }
+      ],
+      "retire": []
     },
     "summary": "flume friction's name-lookup and bare-list catches swallow every read/readdir error as absence, misreporting I/O failures as 'no such note' or an empty list.",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
     "tests": [
       "friction <name> against a note whose read fails with a non-ENOENT error reports an I/O failure, not 'no such note'",
       "friction (bare list) against a friction dir whose readdir fails with a non-ENOENT error reports an I/O failure, not an empty list"
     ],
     "acceptance": "Both friction read paths distinguish ENOENT from other errors, matching check's existing split — a non-ENOENT failure surfaces as an I/O error, never as absence.",
-    "notes": "Sweep finding (posture pass over src/cli.ts). Same bug shape at two call sites in the same command; check's own read at ~1130 already does the split. EX_IOERR is the existing exit code for this class (sysexits.h, per platform-facts.md)."
+    "notes": "Sweep finding (posture pass over src/cli.ts). Same bug shape at two call sites in the same command; check's own read at ~1130 already does the split. EX_IOERR is the existing exit code for this class (sysexits.h, per platform-facts.md).",
+    "observedFiles": [
+      "src/cli.ts",
+      "tests/cli.test.ts"
+    ]
   }
 ]
