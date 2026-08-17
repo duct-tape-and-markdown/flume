@@ -35,3 +35,25 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+
+## 2026-08-17 — decline/bail livelock: plan's shouldRun can never reconcile an open entry whose acceptance already holds (session, live run)
+
+Observed live: buildpriorattempt-tail-bias-gate-revert-details' work landed via the
+verdict-sha recovery flow (out-of-band cherry-pick), leaving the entry open in committed
+pending.json. Plan's `shouldRun` (chain.ts ~358) returns true only when nothing is pickable
+or the inbox has entries — so a pickable entry defers plan to build forever, build's agent
+correctly voluntary-bails ("acceptance already holds") forever, and a voluntary bail carries
+no failure signature so the quarantine brake never fires (the incident-6 observation, new
+shape). Two decline/bail cycles burned (~75-405s each) before `flume stop` capped the run —
+first live use of the stop flag, worked as specced. This inbox entry is itself the designed
+unblock: inboxHasEntries() now gives plan the turn it needs to reconcile the entry out.
+
+Proposed chain fix (chain.ts is the operator's lane, so proposing rather than editing
+mid-run): plan's shouldRun also returns true when any pickable entry carries a
+voluntary-bail prior-attempt record — build has already said "I looked; this is plan's
+call"; a cheap existence/mode check on <flumeDir>/prior-attempts/<slug>.json matches the
+predicate's read-small-files idiom. Alternative at the same seam: the dal-migration friction
+note's pre-dispatch acceptance check (incident 14), which prevents the dispatch instead of
+recovering from it — but that one needs the semantic-acceptance design question answered
+first; the shouldRun tweak needs nothing and bounds the class (any bailed entry gets plan's
+attention next tick, whatever the bail reason).
