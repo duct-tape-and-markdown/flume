@@ -388,12 +388,26 @@ against its current value. `opts.pendingPath` defaults to `plan/pending.json`.
 engine ships the injection point and the chain owns which `gate.kind` values count as exempt.
 `opts.hint` appends chain-authored operator guidance verbatim to both violation messages.
 
+## Dispatch reads come from the tip, not the tree
+
+The reads the dispatcher **acts** on — the decide-reads and the wave-end rewrite read —
+resolve the queue from the committed tip (`git show HEAD:<pendingPath>`), never from the
+working tree. The tree is a scratch surface two writers share: a mid-wave merge, an engine
+revert, or an operator's staged edit can each leave it ahead of or behind the branch, and a
+dispatch decision read from the tree acts on state no commit owns (field-paid downstream: a
+bailed entry redispatched — and re-bailed, at full agent price — because a pickability read
+lagged a cherry-pick that had already merged). `flume check` is the deliberate exception: it
+validates the working tree's queue precisely because it runs before a commit exists
+(`spec/cli.md`). Chain-side dispatch predicates (`shouldRun`, pickability filters) are urged
+to the same discipline over their own inputs, as guidance rather than enforcement — the
+engine cannot force a chain's reads, only its own.
+
 ## Queue reads are strict
 
 `Dispatcher.readPending` throws `PendingParseFailure` on a parse error rather than degrading to
 `[]`. It backs every read the dispatcher **acts** on: the singleton and fanout decide-reads and
-the wave-end rewrite read. A decision or a rewrite must never derive from an input that failed to
-resolve.
+the wave-end rewrite read — each resolved from the tip (above). A decision or a rewrite must
+never derive from an input that failed to resolve.
 
 `readPendingTolerant` is the one declared exception, used only for the informational
 `TickResult.pendingAfter` re-read taken after the strict read already ran and after shipped work

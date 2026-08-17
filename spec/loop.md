@@ -190,6 +190,12 @@ defect rather than a workaround the operator owes the engine:
   and tick verdicts survive any death, and a tick that died before writing its
   verdict left nothing a fresh supervisor can misread as current (*The tick
   verdict*).
+- **No engine mutation destroys uncommitted state it did not author.** The
+  shared-checkout revert carries keep-semantics and refuses on collision rather
+  than wiping (*Tip verify*, "dropping it must not take bystanders") — the tree an
+  engine revert touches may be the only home of two writers' work, including work
+  the engine itself declined to sequence seconds earlier. Crash-equals-stop is
+  hollow if the recovery a crash leaves intact is one the next merge deletes.
 - **A dead wave's residue is swept at the next start.** Worktrees and `flume/**`
   branches abandoned by a killed fanout tick are removed at the next `loop`/`job
   run` start, under the tip claim — `spec/worktrees.md`, *Startup sweep*. Per-wave
@@ -274,25 +280,35 @@ stays pending in every case; only the residue differs.
   soft-resetting it, and letting teardown destroy all trace but a dangling sha —
   real gate-worthy work silently orphaned at full agent price, invisible in the
   verdict.
-- **Harness-driven commits re-read the ref first — and absorb a foreign tip.** A
-  fanout wave checks the tip before each `cherry-pick` (`Dispatcher.runFanout`) and
-  again before the pending-ledger commit (`commitPendingUpdate`, checked *before*
-  the `writeFile`). The wave's own progress — each successful merge's sha — is not
-  movement. For anything else, the claim decides what moved it:
+- **Harness-driven commits carry no expected-tip bookkeeping — the claim refuses,
+  git arbitrates.** Before each `cherry-pick` and before the pending-ledger commit
+  (`commitPendingUpdate`, checked *before* the `writeFile`), the wave asks one
+  question: does a live foreign claim exist? There is no expected-sha comparison,
+  because a sha equality check at a merge site is wrong in both directions — it is
+  provably more pessimistic than the merge it guards (it refuses on provenance
+  spans git would land clean, after their gates already passed), and its
+  advancement bookkeeping is a desync surface (an engine-landed commit the
+  bookkeeping fails to count turns the engine's own history into "interference").
+  Both failure shapes were field-paid in one night downstream: a file-disjoint
+  operator commit voided a six-wide wave whose gates had all passed, and hours
+  later the same check refused four builds over a commit the dispatcher itself had
+  just cherry-picked. The claim answers the only question content cannot:
   - **A live claim held by another process is a concurrent engine instance**, and
     the wave refuses exactly as before: `tipMoved`, remaining entries stay pending,
     nothing dropped. Two engines interleaving cherry-picks onto one ref is the
     corruption the claim exists to prevent; absorbing it would launder it.
   - **No live foreign claim means the mover was not an engine, and the commit is
     legal.** An operator committing law, prompts, or chain config mid-run is
-    ordinary history, never interference. The wave re-reads the tip and
-    cherry-picks onto it — the foreign commit sits under the wave's, exactly as if
-    it had landed between ticks. A conflicting cherry-pick aborts
-    (`cherry-pick --abort`) into that entry's existing `MergeFailure` outcome: the
-    entry stays pending and retries against the tip that now carries the foreign
-    commit, which is itself never touched. The pending-ledger commit absorbs
-    identically — its content derives from the wave's outcomes, not from any tip,
-    so it recommits on whatever tip is current.
+    ordinary history, never interference. The wave cherry-picks onto whatever tip
+    is current — the foreign commit sits under the wave's, exactly as if it had
+    landed between ticks — and **git's own conflict detection is the arbiter of
+    content**: a conflicting cherry-pick aborts (`cherry-pick --abort`) into that
+    entry's existing `MergeFailure` outcome — the entry stays pending and retries
+    against the tip that now carries the foreign commit, which is itself never
+    touched — and a clean pick lands, with semantic compatibility owned by the
+    `afterMerge` gates (below), never by a provenance check. The pending-ledger
+    commit absorbs identically — its content derives from the wave's outcomes, not
+    from any tip, so it recommits on whatever tip is current.
 - **Absorbing the ledger commit is what closes the queue-behind-tree hazard.**
   Under refuse-on-moved semantics, a ref moving between the last cherry-pick and
   the ledger commit left `pending.json` listing entries whose commits were already
@@ -323,6 +339,18 @@ guarded revert every gate failure depends on — refuses, naming both shas, unle
 current tip is the sha the caller itself created. Dropping another writer's commit
 blind is the defect; the refusal leaves recovery to the operator with the evidence in
 hand. Tip verify is the same idiom at wave scale.
+
+**And dropping it must not take bystanders.** On the shared checkout the same revert
+preserves uncommitted state it did not author: the reset carries keep-semantics
+(`reset --keep`, never `--hard`), so an operator's staged or unstaged work survives
+any engine revert whose diff does not touch it — and a textual collision refuses
+loudly with both writers' work left in place, instead of wiping a tree that may be
+the only home of state the engine itself declined to sequence moments earlier
+(field-paid downstream: one wave-merge reset destroyed staged operator content and a
+refused tick's unstaged writes together, recoverable only from an operator-side
+snapshot). Inside an ephemeral worktree the engine is the only writer and `--hard`
+stays correct — the distinction is authorship of the tree, not squeamishness about
+the flag.
 
 ## Declining a tick before the invocation
 
@@ -445,9 +473,13 @@ name, entry tags provisioned, `committed`, the no-commit class, `tipMoved`/`decl
 each gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
 verdict, its one-line `message`, and its captured `details` — where `writablePathsGate`
 lists the violating paths), shipped tags,
-each provisioned span's cherry-pick/merge fate with its footprint — per entry under
-fanout, the phase's own single span under singleton — any provisioning
-failures, and the tick's own one-line summary.
+each provisioned span's cherry-pick/merge fate with its footprint **and its head
+sha** — per entry under fanout, the phase's own single span under singleton — any
+provisioning failures, and the tick's own one-line summary. The sha is recovery,
+not decoration: a span that was parked or refused after its gates passed must be
+re-cherry-pickable from the verdict alone, never re-run at full agent price —
+worktree teardown deletes trees and refs, but the objects survive in the shared
+store until gc, and the verdict is the only place their sha outlives the branch.
 
 - **Gate results stop at the first failure.** Both gate loops return on the first red
   gate — `Dispatcher.runAfterCommitGates` and the afterMerge loop in

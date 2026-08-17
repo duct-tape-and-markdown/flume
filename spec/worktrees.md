@@ -283,9 +283,17 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
 
 - Resolve the worktree-local mirror of the declared channel — the state root's repo-relative
   path, joined inside the worktree, joined with `chain.friction` — and **move** every file in
-  it into the primary `<flumeDir>/<friction>/`, prefixing each filename with `<tag>--` for
-  provenance and to separate sibling entries in the same wave from each other and from the
-  primary's own revert notes.
+  it **that is new relative to the worktree's base commit** — untracked, or absent from the
+  base tree at that path — into the primary `<flumeDir>/<friction>/`, prefixing each filename
+  with `<tag>--` for provenance and to separate sibling entries in the same wave from each
+  other and from the primary's own revert notes.
+- **The base-delta bound is what keeps the relay convergent.** A note an agent *commits*
+  (against convention, but nothing prevents it) becomes tracked content every subsequent
+  worktree checks out; a relay that moves whatever it finds re-deposits that note once per
+  wave member, unbounded — field-paid downstream: one committed note became eight stamped
+  copies across two waves, plus six more per wave until an operator intervened. A file the
+  checkout itself brought in is delivered history, not mail; the relay carries only what this
+  tick's agent produced.
 - Across a device boundary (a relocated `FLUME_WORKTREES_DIR`) `rename` fails `EXDEV`; the
   harvest falls back to copy-then-remove.
 - This is a **move by harness code across the worktree boundary**, not an agent write. The
