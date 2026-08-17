@@ -351,3 +351,25 @@ Options:
 Recommend the second: file a new pending entry citing this section, scoped to
 `git.cherryPickAbort`'s callers on the primary checkout, once a design for the mechanism is
 decided (the first bullet is the open design question a new entry would need answered).
+
+## `job.ts`'s `countFrictionFiles` silently treats any readdir failure as zero, diverging from the file's own `readPendingLoose` precedent (sweep, src/job.ts)
+
+Status: PARKED
+
+Sweep finding (`src/job.ts:393-406`): `countFrictionFiles` catches any `readdirSync` error
+(ENOENT, permission-denied, a too-long path) and returns `0`, doc-commented as "0 when `dir`
+is absent or unreadable." The same file's `readPendingLoose` (`:408-434`) does the opposite for
+the analogous case — rethrows non-ENOENT, citing `engineering.md`'s "Loud or nothing" at length
+— so a corrupt/unreadable file never silently reads as empty. `countFrictionFiles` feeds `flume
+job status`'s friction count, which is informational (doesn't gate pickability or fanout), but
+could silently report "0 friction notes" when the real cause is a permission or path error.
+
+Options:
+- Mirror `readPendingLoose`'s ENOENT-only catch, giving `jobStatus` a `null` (unreadable) vs
+  `0` (empty) distinction for `frictionCount`, consistent with how it already handles
+  `pending: null`.
+- Leave as documented, accepted behavior — `frictionCount` is purely informational, so a silent
+  0 has no correctness consequence beyond a misleading status line.
+
+No recommendation — this is a shape/consistency question about how far the "loud or nothing"
+bar reaches into a non-load-bearing informational path, not something research resolves.
