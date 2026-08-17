@@ -1439,7 +1439,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
           committed: boolean;
           declined?: boolean;
           shippedTags: string[];
-          mergeOutcomes: { tag: string; outcome: string }[];
+          mergeOutcomes: { tag: string; outcome: string; headSha?: string }[];
         };
 
         expect(verdict.phaseName).toBe("build");
@@ -1448,7 +1448,11 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         expect([...verdict.tags].sort()).toEqual(["DECLINE-B", "SHIP-A"]);
         expect(verdict.declined).toBe(true);
         expect(verdict.mergeOutcomes).toEqual([
-          { tag: "SHIP-A", outcome: "merged" },
+          {
+            tag: "SHIP-A",
+            outcome: "merged",
+            headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+          },
         ]);
       } finally {
         await repo.cleanup();

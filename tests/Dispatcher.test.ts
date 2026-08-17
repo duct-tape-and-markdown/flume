@@ -2246,19 +2246,19 @@ describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
       }
 
       const aOutcome = await aTick;
-      // RELEASE-v0.11 §5: A's wave started on the tip before B ran at all,
-      // and B's wave has since landed on it — a claim-less bare-tick
-      // collision, exactly what the tip verify exists to catch (v0.11 §2:
-      // running two ticks hot against one ref with no coordination is the
-      // case the operator avoids by giving them different tips or
-      // serializing on the §4 claim). A's cherry-pick refuses; its own
-      // worktree commit, on its own disposable branch, is simply never
-      // merged — not a lost or corrupted commit, just never landed.
-      expect(aOutcome.result?.committed).toBe(false);
-      expect(aOutcome.result?.shippedTags).toEqual([]);
-      expect(aOutcome.tipMoved).toBe(true);
+      // spec/loop.md "Tip verify": neither dispatcher here takes a tip
+      // claim (that guard lives at the `flume tick`/`flume loop` CLI
+      // boundary, spec/loop.md "The loop lock and the tip claim" —
+      // uncoordinated bare ticks are the case the operator avoids by
+      // serializing on it), so B's landed commit carries no live claim and
+      // reads as ordinary foreign history. A's cherry-pick absorbs it — the
+      // two entries' files are disjoint, so git's own conflict detection
+      // lands both.
+      expect(aOutcome.result?.committed).toBe(true);
+      expect(aOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
+      expect(aOutcome.tipMoved).toBeUndefined();
       expect(await readFile(join(fx.repo, "src/dup-b.ts"), "utf8")).toBe("B\n");
-      expect(existsSync(join(fx.repo, "src/dup-a.ts"))).toBe(false);
+      expect(await readFile(join(fx.repo, "src/dup-a.ts"), "utf8")).toBe("A\n");
     } finally {
       await rm(container, { recursive: true, force: true });
       await rm(dockA, { recursive: true, force: true });
@@ -2389,11 +2389,16 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
         a.tag.localeCompare(b.tag),
       ),
     ).toEqual([
-      { tag: "CONFLICT-A", outcome: "merged" },
+      {
+        tag: "CONFLICT-A",
+        outcome: "merged",
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
       {
         tag: "CONFLICT-B",
         outcome: "cherry-pick-conflict",
         footprint: ["src/decoy-b.ts", "src/shared.ts"],
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
 
@@ -2535,8 +2540,13 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
         tag: "ISO-FAIL",
         outcome: "afterMerge-reverted",
         footprint: ["src/iso-fail.ts"],
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
-      { tag: "ISO-PASS", outcome: "merged" },
+      {
+        tag: "ISO-PASS",
+        outcome: "merged",
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
     ]);
     const verdictVeto = first.verdict?.gateResults.find(
       (g) => g.gate === "iso-veto" && !g.ok,
@@ -2892,6 +2902,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
         tag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
     expect(onDisk[0]!.observedFiles!.sort()).toEqual(
@@ -2958,6 +2969,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
         tag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
 
@@ -5027,7 +5039,11 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(outcome.verdict?.tipMoved).toBeUndefined();
     expect(outcome.verdict?.noCommit).toBeUndefined();
     expect(outcome.verdict?.mergeOutcomes).toEqual([
-      { tag: "TEST-A", outcome: "merged" },
+      {
+        tag: "TEST-A",
+        outcome: "merged",
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
     ]);
 
     // Entry shipped — gone from pending.json, both commits landed on trunk,
@@ -5091,9 +5107,11 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(outcome.verdict?.tipMoved).toBe(true);
     expect(outcome.verdict?.noCommit).toBeUndefined();
     // The dropped-work fact, distinguishable from a parked/no-op entry —
-    // never silence a partial ship summary papers over.
+    // never silence a partial ship summary papers over. headSha is the
+    // observed HEAD the ancestry check rejected — the dangling commit a
+    // human could still recover before gc.
     expect(outcome.verdict?.mergeOutcomes).toEqual([
-      { tag: "TEST-A", outcome: "dropped-work" },
+      { tag: "TEST-A", outcome: "dropped-work", headSha: observedHead },
     ]);
 
     // Both shas named — the recorded base and the observed HEAD, never the
@@ -5114,7 +5132,11 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     ]);
   }, 20_000);
 
-  it("fanout: an entry's worktree commit is ready but trunk moved during the wave — refuses the cherry-pick, entry stays pending, recorded as tip-moved", async () => {
+  it("fanout: a foreign non-engine commit lands on trunk mid-wave — the cherry-pick absorbs it instead of refusing tipMoved", async () => {
+    // spec/loop.md "Tip verify", "Harness-driven commits carry no
+    // expected-tip bookkeeping": no live claim on the ref means whatever
+    // moved trunk was not an engine, so the wave cherry-picks onto whatever
+    // tip is current instead of refusing on sha mismatch.
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -5147,25 +5169,31 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 
     const outcome = await dispatcher.tick();
 
-    expect(outcome.result?.committed).toBe(false);
-    expect(outcome.result?.shippedTags).toEqual([]);
-    expect(outcome.tipMoved).toBe(true);
-    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["TEST-A"]);
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
     expect(outcome.verdict?.mergeOutcomes).toEqual([
-      { tag: "TEST-A", outcome: "tip-moved" },
+      {
+        tag: "TEST-A",
+        outcome: "merged",
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
     ]);
 
-    // Entry stays pending; the interloper's own commit stands untouched.
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
-      makeEntry("TEST-A", ["src/a.ts"]),
-    ]);
+    // Both the interloper's commit and the entry's cherry-picked commit
+    // land — the foreign commit sits under the entry's, exactly as if it
+    // had landed between ticks.
+    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
     expect(await readFile(join(fx.repo, "src/interloper.ts"), "utf8")).toBe(
       "external\n",
     );
-    expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
+    expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe(
+      "from-A\n",
+    );
   }, 20_000);
 
-  it("fanout: trunk moved before the wave's own pending-ledger commit (no cherry-pick this wave) — refuses it, pending.json left untouched", async () => {
+  it("fanout: a foreign non-engine commit lands before the wave's own pending-ledger commit — commitPendingUpdate recommits the footprint on whatever tip is current", async () => {
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -5188,8 +5216,8 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
         // The entry's own afterCommit gate always fails, so this wave's
         // only trunk-touching action is the trailing footprint-only
         // pending-ledger commit — exactly where a concurrent actor's commit,
-        // landed here while the agent still runs in its own worktree, would
-        // otherwise be silently overwritten.
+        // landed here while the agent still runs in its own worktree, used
+        // to be silently overwritten under sha-equality refusal.
         await writeAndCommit(
           fx.repo,
           "src/interloper.ts",
@@ -5212,17 +5240,143 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(false);
-    expect(outcome.tipMoved).toBe(true);
-    expect(outcome.verdict?.tipMoved).toBe(true);
-    // The entry's own afterCommit gate-revert is a real, independent fact —
-    // tip-moved rides alongside it, a sibling, not a replacement.
+    expect(outcome.tipMoved).toBeUndefined();
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+    // The entry's own afterCommit gate-revert is unaffected.
     expect(outcome.noCommit).toBe("gate-revert");
 
-    // pending.json untouched: no footprint recorded, entry unchanged.
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
-      makeEntry("TEST-A", ["src/a.ts"]),
+    // The footprint lands on pending.json anyway — commitPendingUpdate
+    // recommitted on top of the interloper's commit rather than refusing.
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk).toEqual([
+      { ...makeEntry("TEST-A", ["src/a.ts"]), observedFiles: ["src/a.ts"] },
     ]);
+    expect(await readFile(join(fx.repo, "src/interloper.ts"), "utf8")).toBe(
+      "external\n",
+    );
   }, 20_000);
+
+  describe("a live foreign tip claim still refuses (spec/loop.md 'Tip verify')", () => {
+    async function claimPathFor(repo: string): Promise<string> {
+      const ref = await git.currentRefPath(repo);
+      if (ref.kind !== "ref") throw new Error("fixture HEAD is not a ref");
+      const commonDir = await git.gitCommonDir(repo);
+      return git.tipClaimPath(commonDir, ref.path);
+    }
+
+    async function plantClaim(repo: string, pid: number): Promise<string> {
+      const claimPath = await claimPathFor(repo);
+      await mkdir(dirname(claimPath), { recursive: true });
+      await writeFile(claimPath, String(pid), "utf8");
+      return claimPath;
+    }
+
+    it("refuses the cherry-pick, leaving the entry pending", async () => {
+      await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+      const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "test-a": async (cwd) => {
+          await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+        },
+      });
+
+      // The vitest worker's own pid plays the live concurrent engine's
+      // holder — planted before the tick runs, so every entry's
+      // pre-cherry-pick check sees it.
+      await plantClaim(fx.repo, process.pid);
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        maxParallel: 4,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(false);
+      expect(outcome.result?.shippedTags).toEqual([]);
+      expect(outcome.tipMoved).toBe(true);
+      expect(outcome.verdict?.tipMoved).toBe(true);
+      expect(outcome.verdict?.mergeOutcomes).toEqual([
+        {
+          tag: "TEST-A",
+          outcome: "tip-moved",
+          headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        },
+      ]);
+
+      expect(await readPendingFromDisk(fx.repo)).toEqual([
+        makeEntry("TEST-A", ["src/a.ts"]),
+      ]);
+      expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
+    }, 20_000);
+
+    it("refuses only the pending-ledger commit when the claim appears after a clean cherry-pick — shipped work stays shipped", async () => {
+      await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      // Plants the claim from inside an afterMerge gate — the first point
+      // after this entry's clean cherry-pick and before commitPendingUpdate's
+      // own check, so the entry's commit itself lands untouched and only the
+      // trailing ledger rewrite hits the refusal.
+      const plantClaimGate: Gate = {
+        name: "plant-claim",
+        when: "afterMerge",
+        async run() {
+          await plantClaim(fx.repo, process.pid);
+          return { ok: true, message: "ok" };
+        },
+      };
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [plantClaimGate],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "test-a": async (cwd) => {
+          await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        maxParallel: 4,
+      });
+
+      const claimPath = await claimPathFor(fx.repo);
+      try {
+        const outcome = await dispatcher.tick();
+
+        expect(outcome.result?.committed).toBe(true);
+        expect(outcome.result?.shippedTags).toEqual(["TEST-A"]);
+        expect(outcome.tipMoved).toBe(true);
+        expect(outcome.verdict?.tipMoved).toBe(true);
+
+        // The entry's own commit landed and stayed — only the ledger rewrite
+        // that would have removed it from pending.json refused.
+        expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe(
+          "from-A\n",
+        );
+        expect(await readPendingFromDisk(fx.repo)).toEqual([
+          makeEntry("TEST-A", ["src/a.ts"]),
+        ]);
+      } finally {
+        await rm(claimPath, { force: true });
+      }
+    }, 20_000);
+  });
 });
 
 describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, same ancestry check both concurrencies (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", () => {

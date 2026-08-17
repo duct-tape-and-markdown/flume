@@ -188,11 +188,13 @@ export interface TickVerdictGateResult {
  *                            stays pending. The engine records the chain's
  *                            verdict and holds no vocabulary for its reason.
  *  - `tip-moved`             the wave's own commit-onto-trunk step refused
- *                            because the ref moved since this wave started
- *                            or since its own last successful action
- *                            (RELEASE-v0.11 §5) — never reached cherry-pick,
- *                            entry stays pending for a fresh retry against
- *                            the new tip.
+ *                            because a live claim held the ref (a concurrent
+ *                            engine instance, spec/loop.md "Tip verify") —
+ *                            never reached cherry-pick, entry stays pending
+ *                            for a fresh retry once the claim clears. A
+ *                            foreign non-engine commit on the ref, with no
+ *                            live claim, is absorbed instead: git's own
+ *                            conflict detection is the only content arbiter.
  *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
  *                            check refused (spec/loop.md "Tip verify",
  *                            per-entry leg): this entry's worktree commit
@@ -229,6 +231,18 @@ export interface TickVerdictMergeOutcome {
   tag: string;
   outcome: MergeOutcome;
   footprint?: string[];
+  /**
+   * The span's own head — the entry's cherry-picked commit sha once one
+   * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
+   * worktree-branch commit sha the entry never got past (`tip-moved`,
+   * `dropped-work`, `afterCommit-reverted`). Recovery, not decoration: a span
+   * parked or refused after its gates passed must be re-cherry-pickable from
+   * the verdict alone, never re-run at full agent price — worktree teardown
+   * deletes the branch, but the commit object survives in the shared store
+   * until gc, and this is the only place its sha outlives the branch. Absent
+   * only when the entry never reached a commit at all.
+   */
+  headSha?: string;
 }
 
 /**
@@ -1936,15 +1950,6 @@ export class Dispatcher {
     // + consecutive-identical backstop to key off.
     const mergeFailures: MergeFailure[] = [];
     const gateFailures: GateFailure[] = [];
-    // RELEASE-v0.11 §5 tip verify: the tip this wave's cherry-picks may
-    // legitimately land on — `preHead` for the first, advanced to each
-    // successful merge's sha as the wave makes its own progress. Distinct
-    // from "moved": our own cherry-picks advancing trunk is expected;
-    // anything else showing up here is external interference. A wave that
-    // hits it at all sets the wave-level `tipMoved` fact even when it also
-    // ships (entries already merged before the interference stay shipped —
-    // same per-entry isolation §7b's afterMerge revert already established).
-    let expectedTip = preHead;
     let waveTipMoved = false;
     // RELEASE-v0.11 §8: mirrors `waveTipMoved` — a wave that declined at
     // least one entry sets this even when it also shipped (entries
@@ -1960,7 +1965,11 @@ export class Dispatcher {
         // over (spec/loop.md "Tip verify"). Distinct from the wave-level
         // `tip-moved` outcome pushed below, which is the shared trunk racing
         // during this wave's own merge step.
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "dropped-work" });
+        mergeOutcomes.push({
+          tag: r.entry.tag,
+          outcome: "dropped-work",
+          ...(r.headSha ? { headSha: r.headSha } : {}),
+        });
       }
       if (r.declined) waveDeclined = true;
       if (!r.committed || !r.commitSha || !r.spanBase) {
@@ -1974,27 +1983,34 @@ export class Dispatcher {
             tag: r.entry.tag,
             outcome: "afterCommit-reverted",
             footprint: r.footprint,
+            ...(r.headSha ? { headSha: r.headSha } : {}),
           });
         }
         if (r.gateFailure) gateFailures.push(r.gateFailure);
         continue;
       }
 
-      const preCherry = await git.revParse(repoRoot);
-      if (preCherry !== expectedTip) {
-        // §5: trunk moved since this wave's last known-good state — an
-        // operator commit, a pull, a claim-less collision. Refuse to
-        // cherry-pick onto it; the entry's worktree commit never reaches
-        // trunk and stays pending for a fresh retry against the new tip.
-        // `expectedTip` is left unchanged, so every remaining entry this
-        // wave hits the same refusal (the interference doesn't undo itself).
+      // spec/loop.md "Tip verify", "Harness-driven commits carry no
+      // expected-tip bookkeeping — the claim refuses, git arbitrates": no
+      // sha comparison against a recorded expectation. A live claim on the
+      // ref is a concurrent engine instance and refuses exactly as a moved
+      // tip used to; absent one, whatever moved trunk was not an engine, and
+      // the cherry-pick below lands onto whatever tip is current — git's own
+      // conflict detection is the only content arbiter left.
+      const foreignClaim = await this.liveForeignClaimPid(repoRoot);
+      if (foreignClaim !== null) {
         this.log.warn(
-          `[flume] ${phase.name}: tip moved before cherry-picking ${r.entry.tag} (expected ${expectedTip}, found ${preCherry}); entry stays pending`,
+          `[flume] ${phase.name}: tip claimed by pid ${foreignClaim}; refusing to cherry-pick ${r.entry.tag}, entry stays pending`,
         );
         waveTipMoved = true;
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "tip-moved" });
+        mergeOutcomes.push({
+          tag: r.entry.tag,
+          outcome: "tip-moved",
+          headSha: r.commitSha,
+        });
         continue;
       }
+      const preCherry = await git.revParse(repoRoot);
       try {
         // The per-entry leg's ancestry check already cleared the whole
         // `spanBase..commitSha` span as one completed entry — cherry-pick
@@ -2023,6 +2039,7 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "cherry-pick-conflict",
           ...(footprint ? { footprint } : {}),
+          headSha: r.commitSha,
         });
         // §16 (generalized): a merge-stage failure — always entry-scoped, so
         // superviseLoop's quarantine leg can isolate it exactly like a
@@ -2104,6 +2121,7 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "afterMerge-reverted",
           footprint: commitTouchedPaths,
+          headSha: mergedSha,
         });
         gateFailures.push({
           tag: r.entry.tag,
@@ -2134,15 +2152,20 @@ export class Dispatcher {
         this.log.warn(
           `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped returned false — commit stays on trunk, entry stays pending`,
         );
-        mergeOutcomes.push({ tag: r.entry.tag, outcome: "not-shipped" });
+        mergeOutcomes.push({
+          tag: r.entry.tag,
+          outcome: "not-shipped",
+          headSha: mergedSha,
+        });
         continue;
       }
 
       shipped.push(r.entry);
-      mergeOutcomes.push({ tag: r.entry.tag, outcome: "merged" });
-      // Our own successful cherry-pick is the wave's new known-good tip —
-      // the next entry's `preCherry` is expected to land here, not `preHead`.
-      expectedTip = mergedSha;
+      mergeOutcomes.push({
+        tag: r.entry.tag,
+        outcome: "merged",
+        headSha: mergedSha,
+      });
     }
 
     // Computed here — ahead of `commitPendingUpdate` below — rather than
@@ -2187,11 +2210,7 @@ export class Dispatcher {
       // has fixed the file.
       let update: { sha: string; tipMoved: boolean };
       try {
-        update = await this.commitPendingUpdate(
-          shippedTags,
-          mergeOutcomes,
-          expectedTip,
-        );
+        update = await this.commitPendingUpdate(shippedTags, mergeOutcomes);
       } catch (err) {
         if (!(err instanceof PendingParseFailure)) throw err;
         // spec/loop.md "The tick verdict — one facts artifact" drift (b):
@@ -2232,7 +2251,7 @@ export class Dispatcher {
       if (update.tipMoved) {
         waveTipMoved = true;
         this.log.warn(
-          `[flume] ${phase.name}: tip moved before the pending-ledger commit (expected ${expectedTip}, found ${updSha}); pending.json left untouched — shipped entries already on trunk stay shipped`,
+          `[flume] ${phase.name}: tip claimed before the pending-ledger commit; pending.json left untouched — shipped entries already on trunk stay shipped`,
         );
       } else {
         this.log.info(
@@ -2342,6 +2361,16 @@ export class Dispatcher {
     tipMoved?: boolean;
     /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
     declined?: boolean;
+    /**
+     * The worktree-branch commit this entry made and then lost before ever
+     * reaching cherry-pick — the tip-verify ancestry check's own observed
+     * HEAD (`tipMoved`) or the commit `revertAfterCommitFailure` dropped
+     * (`noCommit: "gate-revert"`). The wave loop's `dropped-work`/
+     * `afterCommit-reverted` mergeOutcomes read this for `headSha` since
+     * `commitSha` above is reserved for a span that actually reached
+     * cherry-pick. Absent on every other path.
+     */
+    headSha?: string;
     /** This entry's worktree, still on disk when the merge loop classifies it — `ShipContext.worktreePath`. */
     worktreePath: string;
     /**
@@ -2442,7 +2471,14 @@ export class Dispatcher {
         postHead,
       );
       if (tipMoved) {
-        return { entry, committed: false, gateResults: [], tipMoved: true, worktreePath: wt.path };
+        return {
+          entry,
+          committed: false,
+          gateResults: [],
+          tipMoved: true,
+          worktreePath: wt.path,
+          headSha: postHead,
+        };
       }
     }
 
@@ -2494,6 +2530,7 @@ export class Dispatcher {
         worktreePath: wt.path,
         footprint,
         gateFailure,
+        headSha: postHead,
       };
     }
 
@@ -2509,6 +2546,29 @@ export class Dispatcher {
   }
 
   // ---------- helpers ----------
+
+  /**
+   * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
+   * bookkeeping — the claim refuses, git arbitrates": the wave's two
+   * harness-driven commit sites (the per-entry cherry-pick, and
+   * `commitPendingUpdate`'s ledger commit) ask this instead of comparing an
+   * expected sha. A live claim on the ref HEAD currently resolves to is a
+   * concurrent engine instance — the one interference no cherry-pick/conflict
+   * check can catch on its own, since two engines can each cherry-pick a
+   * distinct, individually-clean commit onto the same tip. No live claim
+   * means whatever moved the ref was not an engine (`spec/loop.md`: "an
+   * engine instance always holds the claim, an operator never does"), so the
+   * caller proceeds and lets git's own conflict detection arbitrate content.
+   * A detached HEAD (untracked here — `flume tick`/`flume loop` both refuse
+   * it before any tick runs) reads as no claim, never a thrown error.
+   */
+  private async liveForeignClaimPid(cwd: string): Promise<number | null> {
+    const ref = await git.currentRefPath(cwd);
+    if (ref.kind !== "ref") return null;
+    const commonDir = await git.gitCommonDir(cwd);
+    const claimPath = git.tipClaimPath(commonDir, ref.path);
+    return git.liveTipClaimPid(claimPath);
+  }
 
   /**
    * RELEASE-v0.11 §5 tip verify's guarded revert, for a commit the agent
@@ -3331,18 +3391,18 @@ export class Dispatcher {
   }
 
   /**
-   * `expectedTip` (RELEASE-v0.11 §5): the wave's own running tip — `preHead`
-   * if no cherry-pick landed this wave, else the last one's `mergedSha` —
-   * checked against a fresh read immediately before this method's own
-   * harness-driven `commitPaths` call, the wave's other tip-verify site
-   * beside `cherryPick` (`runFanout`, above). Checked before `writeFile`:
-   * a refusal here leaves pending.json untouched on disk rather than a
-   * write with no commit behind it.
+   * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
+   * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
+   * immediately before this method's own harness-driven `commitPaths` call,
+   * the wave's other tip-verify site beside `cherryPick` (`runFanout`,
+   * above). Checked before `writeFile`: a refusal here leaves pending.json
+   * untouched on disk rather than a write with no commit behind it. No live
+   * claim means the rewrite recommits on whatever tip is current — its
+   * content derives from the wave's own outcomes, never from a recorded tip.
    */
   private async commitPendingUpdate(
     shippedTags: string[],
     mergeOutcomes: readonly TickVerdictMergeOutcome[],
-    expectedTip: string,
   ): Promise<{ sha: string; tipMoved: boolean }> {
     // v0.8 §5: footprint content sources from the wave's own TickVerdict
     // record (mergeOutcomes) rather than a separately maintained map — a
@@ -3400,15 +3460,18 @@ export class Dispatcher {
     const relocated = rel.startsWith("..") || isAbsolute(rel);
 
     if (!relocated) {
-      // RELEASE-v0.11 §5 tip verify, re-read immediately before this
-      // method's own commit — the wave's other harness-driven commit
-      // besides `cherryPick`. Checked before `writeFile`: a refusal here
-      // leaves pending.json untouched on disk, never a write with no commit
-      // behind it. Shipped entries this wave already cherry-picked stay
-      // shipped regardless — only the ledger update itself is refused.
-      const currentTip = await git.revParse(this.opts.repoRoot);
-      if (currentTip !== expectedTip) {
-        return { sha: currentTip, tipMoved: true };
+      // spec/loop.md "Tip verify", re-checked fresh immediately before this
+      // method's own commit — the wave's other harness-driven commit besides
+      // `cherryPick`. Checked before `writeFile`: a refusal here leaves
+      // pending.json untouched on disk, never a write with no commit behind
+      // it. Shipped entries this wave already cherry-picked stay shipped
+      // regardless — only the ledger update itself is refused.
+      const foreignClaim = await this.liveForeignClaimPid(this.opts.repoRoot);
+      if (foreignClaim !== null) {
+        return {
+          sha: await git.revParse(this.opts.repoRoot),
+          tipMoved: true,
+        };
       }
     }
 
