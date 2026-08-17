@@ -177,6 +177,19 @@ export interface TickVerdictGateResult {
  *                            pending, no commit reached trunk.
  *  - `afterMerge-reverted`   landed, then an afterMerge gate failed; that
  *                            entry's commit alone was reset back off trunk.
+ *  - `afterMerge-revert-refused` landed, an afterMerge gate failed, and the
+ *                            `reset --keep` that would have carried the
+ *                            commit back off trunk was itself refused — a
+ *                            bystander's uncommitted work collides with the
+ *                            paths the revert needs to touch (spec/loop.md
+ *                            "Tip verify", "dropping it must not take
+ *                            bystanders"). The commit stays on trunk, unlike
+ *                            `afterMerge-reverted`; the entry stays pending
+ *                            regardless, so it is never counted shipped. The
+ *                            bounded exception to absorption the same
+ *                            section names for a mid-history refusal —
+ *                            evidence left for the operator rather than a
+ *                            forced wipe.
  *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
  *                            gate (§13, RELEASE-v0.7); never reached
  *                            cherry-pick, so it never touched trunk on its
@@ -211,6 +224,7 @@ export type MergeOutcome =
   | "merged"
   | "cherry-pick-conflict"
   | "afterMerge-reverted"
+  | "afterMerge-revert-refused"
   | "afterCommit-reverted"
   | "not-shipped"
   | "tip-moved"
@@ -1516,7 +1530,7 @@ export class Dispatcher {
     // revert carries no entry tag (nothing to quarantine — see
     // GateFailure's doc), so it falls to the consecutive-failure backstop
     // alone. Same for a merge-stage failure — see MergeFailure's doc.
-    let gateFailure: GateFailure | undefined;
+    const gateFailures: GateFailure[] = [];
     let mergeFailure: MergeFailure | undefined;
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
@@ -1601,7 +1615,7 @@ export class Dispatcher {
               verdict.touchedPaths,
             );
             noCommit = "gate-revert";
-            gateFailure = gf;
+            gateFailures.push(gf);
             wtCommitted = false;
           }
         }
@@ -1677,18 +1691,32 @@ export class Dispatcher {
                 mergedSha,
               );
               await this.writePriorAttempt(key, record);
+              noCommit = "gate-revert";
+              gateFailures.push({
+                signature: gateFailureSignature(entryFailure),
+                message: entryFailure.message,
+              });
               // spec/loop.md "Tip verify", "dropping it must not take
               // bystanders": the primary checkout may hold an operator's
               // uncommitted work, so this reset carries keep-semantics —
-              // never --hard — and lets a textual collision propagate as a
-              // ResetKeepRefusedError rather than silently discarding
-              // either writer's content.
-              await git.resetKeepTo(repoRoot, preCherry);
-              noCommit = "gate-revert";
-              gateFailure = {
-                signature: gateFailureSignature(entryFailure),
-                message: entryFailure.message,
-              };
+              // never --hard — and a textual collision refuses loudly
+              // rather than silently discarding either writer's content.
+              // Caught here, not propagated: an uncaught throw would crash
+              // the tick before this phase's own facts (the gate failure
+              // above, teardown, the return below) were ever reached.
+              try {
+                await git.resetKeepTo(repoRoot, preCherry);
+              } catch (err) {
+                if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+                const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+                this.log.warn(
+                  `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
+                );
+                gateFailures.push({
+                  signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+                  message,
+                });
+              }
             } else {
               this.log.info(
                 `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
@@ -1728,7 +1756,7 @@ export class Dispatcher {
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
-      ...(gateFailure ? { gateFailures: [gateFailure] } : {}),
+      ...(gateFailures.length > 0 ? { gateFailures } : {}),
       ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     };
   }
@@ -1956,6 +1984,14 @@ export class Dispatcher {
     const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
     const shipped: PendingEntry[] = [];
     const mergeReverted: PendingEntry[] = [];
+    // Entries whose afterMerge gate failed AND whose revert-off-trunk was
+    // itself refused by a bystander collision (below) — never added to
+    // `mergeReverted`, since that array's tags feed `revertedTags` and
+    // claiming a revert that never happened would misreport the tree.
+    // Counted alongside `mergeReverted` only for `waveNoCommitCause`'s
+    // gate-revert classification, which cares that a gate failed, not
+    // whether the follow-up reset landed.
+    const revertRefused: PendingEntry[] = [];
     const mergeGateResults: GateResultEntry[] = [];
     // v0.8 §5: each provisioned entry's cherry-pick/merge fate, for this
     // wave's TickVerdict — the sole capture of what happened to each entry,
@@ -2139,24 +2175,48 @@ export class Dispatcher {
           this.priorAttemptKey(phase, r.entry),
           record,
         );
+        gateFailures.push({
+          tag: r.entry.tag,
+          signature: gateFailureSignature(entryFailure),
+          message: entryFailure.message,
+        });
         // spec/loop.md "Tip verify", "dropping it must not take
         // bystanders": the primary checkout may hold an operator's
         // uncommitted work, so this reset carries keep-semantics — never
-        // --hard — and lets a textual collision propagate as a
-        // ResetKeepRefusedError rather than silently discarding either
-        // writer's content.
-        await git.resetKeepTo(repoRoot, preCherry);
+        // --hard — and a textual collision refuses loudly rather than
+        // silently discarding either writer's content. Caught here, not
+        // propagated: an uncaught throw would abort the whole wave loop
+        // before `commitPendingUpdate` ever ran, dropping the ledger
+        // rewrite for every sibling entry already cherry-picked and shipped
+        // ahead of this one.
+        try {
+          await git.resetKeepTo(repoRoot, preCherry);
+        } catch (err) {
+          if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+          const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+          this.log.warn(
+            `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator; other entries continue`,
+          );
+          revertRefused.push(r.entry);
+          mergeOutcomes.push({
+            tag: r.entry.tag,
+            outcome: "afterMerge-revert-refused",
+            footprint: commitTouchedPaths,
+            headSha: mergedSha,
+          });
+          gateFailures.push({
+            tag: r.entry.tag,
+            signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+            message,
+          });
+          continue;
+        }
         mergeReverted.push(r.entry);
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "afterMerge-reverted",
           footprint: commitTouchedPaths,
           headSha: mergedSha,
-        });
-        gateFailures.push({
-          tag: r.entry.tag,
-          signature: gateFailureSignature(entryFailure),
-          message: entryFailure.message,
         });
         continue;
       }
@@ -2254,7 +2314,7 @@ export class Dispatcher {
         const noCommit = this.waveNoCommitCause(
           committedWave,
           perEntry,
-          mergeReverted,
+          [...mergeReverted, ...revertRefused],
         );
         const verdict: TickVerdict = {
           phaseName: phase.name,
@@ -2339,7 +2399,7 @@ export class Dispatcher {
     const waveNoCommit = this.waveNoCommitCause(
       committedWave,
       perEntry,
-      mergeReverted,
+      [...mergeReverted, ...revertRefused],
     );
 
     return {

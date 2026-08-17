@@ -2918,6 +2918,158 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
   }, 20_000);
 });
 
+// ---------- resetKeepTo collision at the primary-checkout revert site
+// (audit finding against shared-checkout-keep-reset 6cb9948: resetKeepTo's
+// own refusal was left uncaught by both its callers) ----------
+
+describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMerge-revert site does not crash the tick", () => {
+  it("fanout: a collision reverting one entry does not crash the wave; an already-merged sibling still ships and the pending-ledger rewrite still runs", async () => {
+    const entries = [
+      makeEntry("SHIP-CLEAN", ["src/clean.ts"]),
+      makeEntry("COLLIDE-BAD", ["src/collide.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const collideVeto: Gate = {
+      name: "collide-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        if (!existsSync(join(cwd, "src", "collide.ts"))) {
+          return { ok: true, message: "clean" };
+        }
+        // A bystander editing the exact path the revert needs to touch, in
+        // the window between cherry-pick and this gate's revert —
+        // resetKeepTo's own collision refusal (spec/loop.md "Tip verify",
+        // "dropping it must not take bystanders").
+        await writeFile(
+          join(cwd, "src", "collide.ts"),
+          "bystander collision\n",
+        );
+        return { ok: false, message: "collide veto" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [collideVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "ship-clean": async (cwd) => {
+        await writeAndCommit(cwd, "src/clean.ts", "clean\n", "build(SHIP-CLEAN)");
+      },
+      "collide-bad": async (cwd) => {
+        await writeAndCommit(cwd, "src/collide.ts", "collide\n", "build(COLLIDE-BAD)");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    // Must resolve, not reject — the crash this fix closes. `perEntry` is
+    // `Promise.all`-ordered, so SHIP-CLEAN's merge/gate/ship completes ahead
+    // of COLLIDE-BAD's in the loop; only *not* throwing on COLLIDE-BAD's
+    // refused revert lets the loop reach `commitPendingUpdate` at all.
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-CLEAN"]);
+    expect(await readFile(join(fx.repo, "src/clean.ts"), "utf8")).toBe(
+      "clean\n",
+    );
+
+    // pending.json rewrite ran despite COLLIDE-BAD's refused revert:
+    // SHIP-CLEAN removed, COLLIDE-BAD stays pending.
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk.map((e) => e.tag)).toEqual(["COLLIDE-BAD"]);
+
+    // COLLIDE-BAD's commit stays on trunk — the revert itself was refused,
+    // unlike a clean afterMerge-reverted entry.
+    expect(existsSync(join(fx.repo, "src/collide.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src/collide.ts"), "utf8")).toBe(
+      "bystander collision\n",
+    );
+
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.tag === "COLLIDE-BAD",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+    expect(mo?.footprint).toEqual(["src/collide.ts"]);
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(
+      gf.some((g) => g.tag === "COLLIDE-BAD" && g.message === "collide veto"),
+    ).toBe(true);
+    expect(
+      gf.some(
+        (g) => g.tag === "COLLIDE-BAD" && g.message.includes("stays on trunk"),
+      ),
+    ).toBe(true);
+  }, 20_000);
+
+  it("singleton: a collision on the tick's own afterMerge revert surfaces as a handled outcome, not an uncaught process crash", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const collideVeto: Gate = {
+      name: "collide-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        // Same bystander-collision simulation as the fanout case above, on
+        // the singleton's own primary-checkout revert.
+        await writeFile(
+          join(cwd, "src", "plan-out.ts"),
+          "bystander collision\n",
+        );
+        return { ok: false, message: "collide veto" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [collideVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    // Must resolve, not reject — an uncaught ResetKeepRefusedError here
+    // would previously crash the whole tick.
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("gate-revert");
+
+    // The offending commit stays on trunk — the collision refused the
+    // revert, unlike a clean afterMerge revert.
+    expect(existsSync(join(fx.repo, "src/plan-out.ts"))).toBe(true);
+    expect(await readFile(join(fx.repo, "src/plan-out.ts"), "utf8")).toBe(
+      "bystander collision\n",
+    );
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.some((g) => g.message === "collide veto")).toBe(true);
+    expect(gf.some((g) => g.message.includes("stays on trunk"))).toBe(true);
+  }, 20_000);
+});
+
 // ---------- entry-scoped write guard (v0.4 §5) ----------
 
 describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
