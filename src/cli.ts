@@ -1277,11 +1277,21 @@ async function main(): Promise<number> {
   const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
+  // spec/loop.md "The loop lock and the tip claim": which pid the wave's own
+  // tip-verify checks (`liveForeignClaimPid`, src/Dispatcher.ts) treat as
+  // this run's own rather than a foreign concurrent engine — a loop-spawned
+  // child's supervisor (told via FLUME_TIP_CLAIM_HELD, set by
+  // `defaultTickRunner`), or this process's own pid otherwise, which is
+  // exactly the pid a bare tick's own claim (acquired below) is filed under.
+  const ownTipClaimPid = process.env.FLUME_TIP_CLAIM_HELD
+    ? Number(process.env.FLUME_TIP_CLAIM_HELD)
+    : process.pid;
   const dispatcher = new Dispatcher({
     repoRoot,
     configDir,
     flumeDir,
     agent: claudeCode(),
+    ownTipClaimPid,
     // Fanout branch namespace (v0.5 §4): the job resolution above is the one
     // authority; the dispatcher receives it as an option, never re-derives it
     // from flumeDir.
@@ -1306,15 +1316,39 @@ async function main(): Promise<number> {
       console.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);
       return 1;
     }
-    const outcome = await dispatcher.tick();
-    console.log(outcome.summary);
-    if (outcome.verdict) {
-      await writeTickVerdict(flumeDir, outcome.verdict);
+    // spec/loop.md "The loop lock and the tip claim": scope is per run. A
+    // loop-spawned child trusts the supervisor's claim — told via
+    // FLUME_TIP_CLAIM_HELD (set by `defaultTickRunner`, src/Dispatcher.ts) —
+    // rather than probing pids and inferring parentage, and takes none
+    // itself. A bare tick has no supervisor to trust, so it acquires and
+    // releases its own claim around this single tick, refusing (exit 1) when
+    // another live process already holds it.
+    let bareTipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
+    if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
+      try {
+        bareTipClaim = await acquireTipClaim(repoRoot, tickHeadRef.path);
+      } catch (err) {
+        if (err instanceof TipClaimHeldError) {
+          console.error(`[flume] tick refuses: ${err.message}`);
+          return 1;
+        }
+        throw err;
+      }
     }
-    // Fail loudly on the Axis-C exits (§3) so the supervisor — and any human
-    // watching exit codes — classifies the failure without reading logs:
-    // 78 terminal misconfiguration, 1 resolution failure, 0 otherwise.
-    return tickExitCode(outcome);
+    try {
+      const outcome = await dispatcher.tick();
+      console.log(outcome.summary);
+      if (outcome.verdict) {
+        await writeTickVerdict(flumeDir, outcome.verdict);
+      }
+      // Fail loudly on the Axis-C exits (§3) so the supervisor — and any
+      // human watching exit codes — classifies the failure without reading
+      // logs: 78 terminal misconfiguration, 1 resolution failure, 0
+      // otherwise.
+      return tickExitCode(outcome);
+    } finally {
+      bareTipClaim?.release();
+    }
   }
 
   if (cmd === "loop") {

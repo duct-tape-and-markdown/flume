@@ -963,6 +963,23 @@ export interface DispatcherOptions {
    */
   quarantinedSlugs?: ReadonlySet<string>;
   /**
+   * spec/loop.md "The loop lock and the tip claim": the pid of the tip
+   * claim *this run* operates under — its own (a bare `flume tick`, which
+   * acquires directly in-process, so this equals `process.pid`) or its
+   * supervisor's (a loop-spawned child, told via `FLUME_TIP_CLAIM_HELD`).
+   * `liveForeignClaimPid` (the wave's own tip-verify check, consulted before
+   * every cherry-pick and before the pending-ledger commit) excludes a live
+   * claim matching this pid — without it, a run's own claim reads as a
+   * concurrent engine instance to its own wave, which refuses every
+   * cherry-pick against itself. Engine-boundary.md "Told, not inferred":
+   * the CLI states which pid is self; the dispatcher never guesses from a
+   * bare pid match, which a unit test constructing a `Dispatcher` directly
+   * (no real claim of its own) relies on to keep simulating a genuinely
+   * foreign claim. Default: unset — every live claim reads as foreign,
+   * unchanged behavior for a caller that never acquired one.
+   */
+  ownTipClaimPid?: number;
+  /**
    * Override for the pending-ledger commit's message (engine-boundary.md
    * "Capability vs convention"). `commitPendingUpdate` calls this with the
    * tags shipped this wave (empty when the wave only recorded merge-failure
@@ -2573,14 +2590,18 @@ export class Dispatcher {
    * engine instance always holds the claim, an operator never does"), so the
    * caller proceeds and lets git's own conflict detection arbitrate content.
    * A detached HEAD (untracked here — `flume tick`/`flume loop` both refuse
-   * it before any tick runs) reads as no claim, never a thrown error.
+   * it before any tick runs) reads as no claim, never a thrown error. A live
+   * claim matching `opts.ownTipClaimPid` is this run's own — not foreign —
+   * per that option's doc.
    */
   private async liveForeignClaimPid(cwd: string): Promise<number | null> {
     const ref = await git.currentRefPath(cwd);
     if (ref.kind !== "ref") return null;
     const commonDir = await git.gitCommonDir(cwd);
     const claimPath = git.tipClaimPath(commonDir, ref.path);
-    return git.liveTipClaimPid(claimPath);
+    const holder = await git.liveTipClaimPid(claimPath);
+    if (holder === null || holder === this.opts.ownTipClaimPid) return null;
+    return holder;
   }
 
   /**
@@ -4119,6 +4140,10 @@ export async function superviseLoop(
  * `quarantinedSlugs` (§16, RELEASE-v0.7) crosses the process boundary via the
  * `FLUME_QUARANTINED_SLUGS` env var — the CLI's `tick` command reads it back
  * into `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty.
+ * `FLUME_TIP_CLAIM_HELD` (spec/loop.md "The loop lock and the tip claim")
+ * carries this supervisor process's own pid — the one that acquired the tip
+ * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
+ * claim already held instead of acquiring (and colliding on) its own.
  */
 function defaultTickRunner(
   repoRoot: string,
@@ -4131,6 +4156,7 @@ function defaultTickRunner(
       if (quarantinedSlugs.size > 0) {
         env.FLUME_QUARANTINED_SLUGS = [...quarantinedSlugs].join(",");
       }
+      env.FLUME_TIP_CLAIM_HELD = String(process.pid);
       const child = spawn(
         process.execPath,
         [...process.execArgv, process.argv[1]!, "tick"],

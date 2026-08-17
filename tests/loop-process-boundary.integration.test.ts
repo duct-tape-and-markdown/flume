@@ -9,18 +9,18 @@
  * between them and asserts the second process is governed by the new chain.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
-import { CLI, TSX_CLI, hermeticEnv } from "./helpers/subprocess.ts";
+import { CLI, TSX_CLI, gitOut, hermeticEnv } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -120,6 +120,47 @@ function midRunStopChainSrc(phaseName: string): string {
     `  name: "mid-run-stop",\n` +
     `  async invoke() {\n` +
     `    writeFileSync(join(process.env.FLUME_DIR ?? "", "stop"), "");\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+/**
+ * A chain.ts whose singleton phase `<name>` exports an `agent` that sleeps
+ * briefly, then records the `FLUME_TIP_CLAIM_HELD` it observed *inside the
+ * child tick process* to `<FLUME_DIR>/observed-tip-claim.json`. The sleep
+ * gives the test a window to read the tip-claim file directly, off disk,
+ * while the child is still mid-tick — spec/loop.md "The loop lock and the
+ * tip claim": a loop-spawned child trusts the supervisor's claim via this
+ * env var rather than acquiring (and colliding on) its own.
+ */
+function tipClaimProbeChainSrc(phaseName: string): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { join } from "node:path";\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "tip claim probe",\n` +
+    `    promptPath: "prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "tip-claim-probe",\n` +
+    `  async invoke() {\n` +
+    `    await new Promise((r) => setTimeout(r, 1500));\n` +
+    `    writeFileSync(\n` +
+    `      join(process.env.FLUME_DIR ?? "", "observed-tip-claim.json"),\n` +
+    `      JSON.stringify({\n` +
+    `        FLUME_TIP_CLAIM_HELD: process.env.FLUME_TIP_CLAIM_HELD ?? null,\n` +
+    `      }),\n` +
+    `    );\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
     `} });\n`
@@ -423,3 +464,74 @@ describe("Graceful stop — real `flume loop` over a stop flag written mid-run (
     30_000,
   );
 });
+
+describe(
+  'spec/loop.md "The loop lock and the tip claim" — a loop-spawned child trusts the supervisor\'s claim',
+  () => {
+    it(
+      "a loop child's FLUME_TIP_CLAIM_HELD names exactly the pid holding the tip-claim file — it never attempts its own acquire",
+      async () => {
+        await writeFile(
+          join(repo.dir, ".flume", "chain.ts"),
+          tipClaimProbeChainSrc("probe"),
+          "utf8",
+        );
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const branch = await gitOut(repo.dir, ["symbolic-ref", "--short", "HEAD"]);
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          branch,
+        );
+
+        const child = spawn(
+          process.execPath,
+          [TSX_CLI, CLI, "loop", "--max", "1"],
+          { cwd: repo.dir, env: hermeticEnv() },
+        );
+        let out = "";
+        child.stdout?.on("data", (d: Buffer) => (out += d));
+        child.stderr?.on("data", (d: Buffer) => (out += d));
+
+        // Long enough for the supervisor to acquire the tip claim, spawn its
+        // child tick, and land that child mid-sleep inside the probe agent's
+        // `invoke()` — well inside the window the claim file exists.
+        await new Promise((r) => setTimeout(r, 800));
+
+        expect(existsSync(claimPath)).toBe(true);
+        const recordedPid = await readFile(claimPath, "utf8");
+
+        const exitCode = await new Promise<number | null>((resolveExit) => {
+          child.on("exit", (code) => resolveExit(code));
+        });
+        expect(exitCode).toBe(0);
+        expect(out).toMatch(/tick → probe \(singleton\)/);
+
+        const observed = JSON.parse(
+          await readFile(
+            join(repo.dir, ".flume", "observed-tip-claim.json"),
+            "utf8",
+          ),
+        ) as { FLUME_TIP_CLAIM_HELD: string | null };
+
+        // The child trusted the supervisor's claim instead of acquiring its
+        // own: its FLUME_TIP_CLAIM_HELD names exactly the pid that was
+        // holding the (single) claim file while it read it. Had the child
+        // instead called `acquireTipClaim` itself, that call would have hit
+        // the same claim file (EEXIST), probed the still-live supervisor,
+        // and refused the tick outright — `observed-tip-claim.json` would
+        // never have been written and this run would have exited non-zero.
+        expect(observed.FLUME_TIP_CLAIM_HELD).toBe(recordedPid);
+      },
+      30_000,
+    );
+  },
+);

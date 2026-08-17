@@ -1119,6 +1119,82 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
+    "a bare flume tick with no other live claim-holder acquires and releases a claim around its single tick",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const child = spawn(process.execPath, [TSX_CLI, CLI, "tick"], {
+          cwd: repo.dir,
+          env: hermeticEnv(),
+        });
+
+        // Long enough for the bare tick to acquire its own claim and reach
+        // the slow agent's sleep — mid-tick, not racing the process's own
+        // startup.
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          "main",
+        );
+        expect(existsSync(claimPath)).toBe(true);
+
+        const exitCode = await new Promise<number | null>((resolveExit) => {
+          child.on("exit", (code) => resolveExit(code));
+        });
+
+        expect(exitCode).toBe(0);
+        expect(existsSync(claimPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a bare flume tick refuses exit 1 when a live process already holds the claim",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimDir = join(commonDir, "flume", "tip-claims", "refs", "heads");
+        await mkdir(claimDir, { recursive: true });
+        // The vitest worker itself plays the live holder.
+        await writeFile(join(claimDir, "main"), String(process.pid), "utf8");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain(`refs/heads/main claimed by pid ${process.pid}`);
+        // A refused bare tick released nothing — it never held the claim.
+        expect(await readFile(join(claimDir, "main"), "utf8")).toBe(
+          String(process.pid),
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
     "claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32 (TerminateProcess, no handler runs) both survive and the claim is stale-reclaimable — the amended v0.11 §4 outcome",
     async () => {
       const repo = await makeJobRepo("main");
