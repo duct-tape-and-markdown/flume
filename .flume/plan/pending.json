@@ -35,5 +35,38 @@
     ],
     "acceptance": "all three pass",
     "notes": "job.ts's own readPendingLoose is the in-file precedent for the ENOENT-only catch. Ratified 2026-08-18 human sign-off, derivable now (see git log)."
+  },
+  {
+    "tag": "cli-loop-stray-positional-refuse",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "loop's cmd handler (~L1393) refuses (exit 2) any rest token beyond --max/<value>, mirroring job run's existing words.length>1 check (~L865); HELP.loop documents the new exit-2 case"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "pin the cases below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume loop refuses a stray positional past --max/<value>, closing the one subcommand f405e31 (gh#1) left uncovered",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "tests": [
+      "flume loop <positional> exits 2 rather than silently starting a run",
+      "flume loop --max N <positional> exits 2",
+      "flume job run <name> <extra> still refuses via its pre-existing check (baseline unchanged)"
+    ],
+    "acceptance": "all three pass; the first fails on the pre-fix tree",
+    "notes": "Audit finding on f405e31: spec's general rule ('any argv the surface cannot honor as typed') covers loop too — it consumes zero positionals just like tick/stop/check, but wasn't in spec's named list or the fix's scope. job run (~L865) already refuses excess words on this exact rewritten path; bare `flume loop <extra>` doesn't."
   }
 ]
