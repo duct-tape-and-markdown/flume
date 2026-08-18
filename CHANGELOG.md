@@ -11,6 +11,129 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-18
+
+The durability release: **the loop survives its operator.** Derived from two
+weeks of live downstream operation (fourteen field incidents, each reproduced
+or mechanism-traced against the tree before any fix shipped), this release
+re-founds the engine's git discipline on four guarantees: foreign commits are
+legal at any time; graceful stop is a file flag; crash equals stop; and reads
+that gate dispatch come from merged state. Chain authors: read
+[`docs/MIGRATING-0.12.md`](docs/MIGRATING-0.12.md).
+
+### Breaking
+
+- **Singleton ticks run in a worktree** (`spec/worktrees.md`, *Singleton runs
+  in a worktree*). A singleton phase's agent commits on a private
+  `flume/[<namespace>/]<phase>` branch and lands on trunk through the same
+  cherry-pick + `afterMerge` machinery a one-entry wave uses; the operator's
+  checkout is theirs at every moment of a run. Consequences:
+  - `setupWorktree`/`teardownWorktree` hooks and `extraEnv` now fire for
+    singleton phases — a singleton tick pays provisioning plus whatever the
+    chain's setup does.
+  - an `afterMerge` gate on a `concurrency: "singleton"` phase is live
+    machinery; the 0.11 dead-declaration refusal for that shape is retired.
+  - tip verify's parent-equality leg — the fixed-depth `reset HEAD~N` behind
+    every operator-commit soft-reset in the incident file — is retired with
+    the shared ref that necessitated it. Ancestry is the only agent-commit
+    check, and the revert note + prose snapshot ride one revert path for
+    both concurrencies.
+- **Merge sites absorb foreign commits — the claim refuses, git arbitrates**
+  (`spec/loop.md`, *Tip verify — one writer per branch, absorption at the
+  merge*). No expected-tip sha comparison exists anywhere in the merge path:
+  before each cherry-pick and the pending-ledger commit, the one question is
+  whether another live engine instance holds the tip claim. No → proceed
+  onto whatever tip is current (a conflict aborts into that entry's
+  `MergeFailure`; the foreign commit is never touched). Yes → refuse. An
+  operator committing law, prompts, or chain config mid-run is ordinary
+  history. Absorbing the ledger commit also closes the documented
+  queue-behind-tree hazard (shipped entries re-dispatched after a mid-wave
+  ref move). Semantic compatibility of the merged tree is owned by
+  `afterMerge` gates — the contract now states they are its *only*
+  validation; place correctness gates there (`spec/chain.md`, *Gate
+  placement*).
+- **Bare `flume tick` takes the tip claim** around its single tick, refusing
+  (exit 1) when another live process holds it. A loop-spawned child runs
+  under the supervisor's claim, told via `FLUME_TIP_CLAIM_HELD` — never
+  inferred from pid arithmetic. With absorption in place the claim is the
+  only concurrent-engine defence, so claimless ticks are gone.
+- **Dispatch reads come from the committed tip** (`spec/pending.md`). The
+  decide-reads and the wave-end rewrite read source `pending.json` from
+  `HEAD:` rather than the working tree; a hand-edited, uncommitted
+  `pending.json` is now inert (it was always illegitimate). `flume check`
+  stays the declared tree-reading exception.
+- **Stray positionals refuse, exit 2** on `tick`, `loop`, `stop`, `check`,
+  and past `wake`/`sleep`'s `<phase>` (`spec/cli.md`, *Subcommand surface*) —
+  `flume tick plan` used to silently tick whichever phase was awake (gh#1).
+  `status` remains the named exit-0-always exception.
+- **Primary-checkout reverts carry keep-semantics** — `git reset --keep`,
+  never `--hard`. An engine revert preserves uncommitted state it did not
+  author, and a bystander collision refuses atomically as a new
+  `afterMerge-revert-refused` merge outcome naming both shas (commit stays
+  on trunk; siblings and the ledger rewrite proceed) instead of wiping the
+  one tree that may hold two writers' work.
+
+### Added
+
+- **`flume stop` and the stop flag** (`spec/loop.md`, *Graceful stop*):
+  presence of `<flumeDir>/stop` ends the run at the next tick boundary — the
+  in-flight tick finishes, merges or parks, the claim releases. Presence at
+  start refuses the run until the flag is removed (the operator's ack), so a
+  stale flag can never silently swallow a scheduled run; `flume status`
+  reports the flag with its current consequence. `touch` on the path is
+  equally the interface; there is deliberately no `unstop` verb. Kills stop
+  being the pause mechanism — on win32 they never could be (`SIGTERM` runs
+  no handler).
+- **Crash equals stop, stated and closed** (`spec/loop.md`): stale
+  `loop.pid` and tip claims self-reclaim, and `flume loop`/`job run` sweep
+  worktrees and `flume/**` branches abandoned by a killed tick at startup —
+  under the tip claim, scoped to entries git itself registers as this
+  instance's worktrees, so a shared `FLUME_WORKTREES_DIR` never loses a
+  sibling job's live directories.
+- **The tick verdict records each span's head sha** — a parked or refused
+  span whose gates passed is re-cherry-pickable from the verdict alone
+  (objects survive worktree teardown until gc), never re-run at full agent
+  price. Exercised three times in anger during this release's own
+  derivation.
+- **A run finishes on the contract it started with** (`spec/loop.md`): tick
+  children re-read HEAD every spawn while the supervisor stays at its launch
+  version, so a ship that changes the supervisor↔child contract ends with
+  `flume stop` + relaunch — the documented rule that prevents fresh children
+  reading their own stale supervisor as a foreign engine.
+
+### Fixed
+
+- `pinLongPaths` checks `core.longpaths` before writing it — the blind
+  repeat write raced external holders of the shared `.git/config`
+  (field-reported EACCES on waves ≥ 2, win32); steady-state writes are gone
+  entirely.
+- Friction harvest moves only files new relative to the worktree's base
+  commit — an agent-committed note no longer re-deposits once per wave
+  member, unbounded. Probe failures isolate per file; harvest never aborts
+  a wave.
+- Gate-revert digests preserve the failure block — the prior-attempt record
+  carries the test runner's "Failed Tests" section instead of a capped
+  transcript prefix of passing-test noise (twice in one day the failing
+  test's identity was unrecoverable from disk).
+- `flume friction`, `frictionCountLine`, and `countFrictionFiles`
+  distinguish unreadable from absent/empty across both status surfaces
+  (loud-or-nothing); `flume check`'s ENOENT split is the shared precedent.
+- `chainLoadGate` resolves `chain.ts` under the config dir instead of
+  hardcoding `.flume/` beneath the gate's cwd — no silent no-op under a
+  relocated config.
+- Per-entry `ShipContext.gateResults` no longer accumulates earlier wave
+  entries' `afterMerge` results into later entries' context.
+- `hermeticEnv` strips every `FLUME_`-prefixed variable, pinned by prefix
+  rather than a list that drifts behind its subject.
+- Deep-path fs calls in `job.ts`, `Dispatcher.ts`, and `cli.ts` (`loop.pid`)
+  ride `namespacedJoin`, closing win32 MAX_PATH gaps at sites the
+  platform-facts sweep surfaced.
+- The default test lane is deterministic under gate load: real-agent and
+  engine-behavior subprocess tests moved to the integration lane, the
+  fanout-parallelism probe made event-based, and `spec/worktrees.md`'s lane
+  triggers recalibrated to the measured cost drivers — the flake class that
+  gate-reverted three innocent entries in one day.
+
 ## [0.11.0] - 2026-08-05
 
 The first *published* 0.11 — the `v0.11 §N` labels cited in the 0.10.0
