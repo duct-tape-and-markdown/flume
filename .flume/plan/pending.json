@@ -1,36 +1,5 @@
 [
   {
-    "tag": "cli-exitcode-export-exdataerr-exioerr",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "export EX_DATAERR (L76) and EX_IOERR (L84), mirroring the exported EX_TERMINAL_MISCONFIG/EX_MOUNT_DEAD pattern (Dispatcher.ts) these two module-private consts don't yet follow."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "import EX_DATAERR/EX_IOERR from src/cli.ts and replace the 5 bare 65/74 literals (~L2761, L2789, L2856, L3209, L3228) per derived-state section."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "tests/cli.test.ts hardcodes exit codes 65/74 five times because src/cli.ts's EX_DATAERR/EX_IOERR consts aren't exported for the test to reference",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "tests": [
-      "each of the 5 EX_DATAERR/EX_IOERR exit-code assertions references the exported constant, not a bare literal"
-    ],
-    "acceptance": "src/cli.ts exports EX_DATAERR and EX_IOERR; all 5 test-side occurrences of literal 65/74 for these cases import and use them",
-    "notes": "Found in the same sweep as cli-exitcode-exmountdead-literal-restated. Unlike that entry this needs a src/cli.ts touch (add `export`) since these two consts are currently module-private, unlike their exported EX_TERMINAL_MISCONFIG/EX_MOUNT_DEAD siblings."
-  },
-  {
     "tag": "cli-hermeticenv-export-strip-keys",
     "gate": {
       "kind": "open"
