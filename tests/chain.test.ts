@@ -169,6 +169,47 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
       const ctx: TickContext = { cwd: flumeDir, flumeDir };
       expect(plan.shouldRun!(ctx)).toBe(true);
     });
+
+    it("runs on a pickable-only queue when prior-attempts/ holds a voluntary-bail record (5e50102)", async () => {
+      // A standing voluntary-bail record is plan's to reconcile — shouldRun
+      // must not defer to build a second time on the same refusal
+      // (anyVoluntaryBailRecord's doc, chain.ts).
+      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+      await writeFile(
+        join(flumeDir, "prior-attempts", "build-OPEN-1.json"),
+        JSON.stringify({ mode: "voluntary-bail", constraint: "off-writablePaths edit" }),
+      );
+      const ctx: TickContext = {
+        cwd: flumeDir,
+        flumeDir,
+        pending: [makeEntry("OPEN-1", { kind: "open" })],
+      };
+      expect(plan.shouldRun!(ctx)).toBe(true);
+    });
+
+    it("declines on a pickable-only queue with an empty prior-attempts dir and empty inbox (baseline unchanged)", async () => {
+      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+      const ctx: TickContext = {
+        cwd: flumeDir,
+        flumeDir,
+        pending: [makeEntry("OPEN-1", { kind: "open" })],
+      };
+      expect(plan.shouldRun!(ctx)).toBe(false);
+    });
+
+    it("declines on a pickable-only queue with an absent prior-attempts dir and empty inbox (baseline unchanged)", async () => {
+      // No prior-attempts/ directory written at all — anyVoluntaryBailRecord's
+      // readdirSync throw is caught and treated as "no records".
+      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      const ctx: TickContext = {
+        cwd: flumeDir,
+        flumeDir,
+        pending: [makeEntry("OPEN-1", { kind: "open" })],
+      };
+      expect(plan.shouldRun!(ctx)).toBe(false);
+    });
   });
 
   describe("plan.handoff", () => {
