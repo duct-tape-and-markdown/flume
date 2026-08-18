@@ -49,6 +49,12 @@ No schema holds these; they are the plan tick's actual work.
 5. **Footprint honest.** `files` names what the work will touch — not everything it
    might, not everything nearby. Over-declaring costs wave width; under-declaring
    costs at most a cherry-pick conflict, which the dispatcher aborts and retries.
+6. **Contract couplings are ordered, not assumed.** An entry that changes a
+   supervisor↔child contract (claim inheritance, verdict paths, exit codes) is
+   `blockedBy` the entry that completes the contract's other half, because a live
+   supervisor runs the pre-change half until the run ends (`spec/loop.md`, *A run
+   finishes on the contract it started with*). Shipping the refusal semantics
+   before the inheritance mechanism livelocked a live loop (2026-08-17).
 
 ## Plan continuation marker
 

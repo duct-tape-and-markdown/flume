@@ -52,6 +52,19 @@ a bounded digest, never a session.** Prior-outcome feedback exists so a retry do
 not re-derive the same wall; it is not conversational continuity, and no design may
 grow it into one.
 
+**A run finishes on the contract it started with.** Tick children re-read HEAD's
+code on every spawn, but the supervisor stays resident at its launch version — so
+any supervisor↔child contract (the claim-inheritance env, the verdict paths, the
+exit-code map) is frozen on one side and live on the other. A commit changing such
+a contract is unsafe to absorb mid-run; the observed shape is fresh children reading
+their own stale supervisor as a foreign engine instance and refusing every merge.
+The rule is operational, deliberately un-engineered while the event stays rare:
+after a contract-touching ship, stop the loop (*Graceful stop*) and relaunch. A
+chain may mechanize this on existing surface — its build handoff writing the stop
+flag after shipping an entry plan marked contract-touching — before any engine
+version-fence is considered; the condition that would justify the engine owning it
+is a second livelock despite the documented rule.
+
 ## The engine records, never navigates
 
 The engine's entire git surface is the tick record — the commits a tick produced,
