@@ -400,6 +400,20 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
           true,
         );
         expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
+
+        const commonDir = resolve(
+          repo.dir,
+          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
+        );
+        const claimPath = join(
+          commonDir,
+          "flume",
+          "tip-claims",
+          "refs",
+          "heads",
+          "main",
+        );
+        expect(existsSync(claimPath)).toBe(false);
       } finally {
         await repo.cleanup();
       }
