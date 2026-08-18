@@ -2996,6 +2996,61 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   );
 });
 
+describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md §Subcommand surface)", () => {
+  it(
+    "flume loop <positional> exits 2 rather than silently starting a run",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const r = await runCli(repo.dir, ["loop", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume loop");
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume loop --max N <positional> exits 2",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const r = await runCli(repo.dir, ["loop", "--max", "3", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume loop");
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume job run <name> <extra> still refuses via its pre-existing check (baseline unchanged)",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const r = await runCli(repo.dir, ["job", "run", "probejob", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume job run");
+        expect(
+          existsSync(join(repo.dir, ".flume", "jobs", "probejob", "loop.pid")),
+        ).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
 /**
  * `flume friction [name]` (spec/cli.md §Subcommand surface) — the read verb
  * over `Chain.friction`. Reuses `minimalChainSrc` from the §6 friction-line

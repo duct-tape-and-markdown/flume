@@ -447,7 +447,10 @@ Exit codes:
       wall.
   78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
       --help\`); the orphaned awake flags are left on disk.
-  2   Bad --max: missing, non-numeric, or negative. No tick runs.
+  2   Bad --max: missing, non-numeric, or negative. No tick runs. Also, a
+      stray positional past --max/<value> — loop consumes no positionals,
+      and running anything other than what was typed is refused rather
+      than silently starting a run.
 `,
   wake: `Usage: flume wake <phase>
 
@@ -1396,6 +1399,7 @@ async function main(): Promise<number> {
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
     let max = 50;
+    const words = [...rest];
     if (maxIdx >= 0) {
       const value = rest[maxIdx + 1];
       const parsed = parseMaxValue(value);
@@ -1404,6 +1408,15 @@ async function main(): Promise<number> {
         return 2;
       }
       max = parsed;
+      words.splice(words.indexOf("--max"), 2);
+    }
+    // loop consumes zero positionals — an unexpected trailing token past
+    // `--max N` runs something other than what the operator typed, the same
+    // harm class as `job run`'s pre-existing `words.length > 1` check (§ CLI
+    // "Subcommand surface", gh#1).
+    if (words.length > 0) {
+      console.error("usage: flume loop [--max N]");
+      return 2;
     }
     // spec/loop.md "Graceful stop — the stop flag": presence at start
     // refuses the run before any tick — a stale flag must never silently
