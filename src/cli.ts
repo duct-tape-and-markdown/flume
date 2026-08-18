@@ -589,9 +589,10 @@ Verbs:
       Enumerate .flume/jobs/* in the working tree: one line per job with its
       awake phases (or "hibernating"), pending count (entries in the
       job's plan/pending.json; 0 when absent, "unparsable" when broken), and,
-      when the repo chain declares Chain.friction and that job's dir holds
-      notes, a friction count. Observational — nothing on disk changes;
-      prints "no jobs" when the jobs dir is empty or missing.
+      when the repo chain declares Chain.friction, a friction count (0 when
+      the dir is absent, "unreadable" when it exists but can't be read).
+      Observational — nothing on disk changes; prints "no jobs" when the
+      jobs dir is empty or missing.
 
 Exit codes:
   0   Success (run: hibernation reached, or --max ticks completed —
@@ -700,9 +701,11 @@ async function runJobVerb(
         const pending =
           j.pending === null ? "pending: unparsable" : `pending: ${j.pending}`;
         const friction =
-          j.frictionCount !== undefined && j.frictionCount > 0
-            ? `  friction: ${j.frictionCount} note(s) await routing`
-            : "";
+          j.frictionCount === null
+            ? "  friction: unreadable"
+            : j.frictionCount !== undefined && j.frictionCount > 0
+              ? `  friction: ${j.frictionCount} note(s) await routing`
+              : "";
         console.log(`${j.name.padEnd(width)}  ${state}  ${pending}${friction}`);
       }
       return 0;

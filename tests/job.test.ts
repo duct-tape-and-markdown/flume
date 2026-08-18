@@ -1123,6 +1123,30 @@ describe("jobStatus — §5d enumeration units", () => {
     }
   });
 
+  it("frictionCount reads null (not 0) when the friction dir exists but readdir fails for a non-ENOENT reason (job-frictioncount-loud-or-nothing)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      const frictionDir = join(jobs, "alpha", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "x\n");
+      // Strip traversal permission on the friction dir itself: readdir now
+      // fails with EACCES — the dir exists but can't be read — not ENOENT
+      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
+      // EACCES fixture readPendingLoose's own non-ENOENT test uses above.
+      await chmod(frictionDir, 0o000);
+
+      expect(jobStatus(dir, "friction")).toEqual([
+        { name: "alpha", awake: [], pending: 0, frictionCount: null },
+      ]);
+    } finally {
+      await chmod(join(dir, ".flume", "jobs", "alpha", "friction"), 0o755).catch(
+        () => {},
+      );
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("omits frictionCount entirely when no frictionDir is supplied", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
@@ -1270,6 +1294,34 @@ describe("jobStatus — §5d enumeration units", () => {
         expect(extra.code).toBe(2);
         expect(extra.out).toContain("usage: flume job status");
       } finally {
+        await repo.cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
+    "real CLI: renders a null frictionCount as 'friction: unreadable', distinct from the absent-dir 0 case (job-frictioncount-loud-or-nothing)",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        await writeRepoChain(repo.dir, { friction: "friction" });
+        await jobNew({ repoRoot: repo.dir, name: "s1", log: () => {} });
+        const frictionDir = join(repo.dir, ".flume", "jobs", "s1", "friction");
+        await mkdir(frictionDir, { recursive: true });
+        await writeFile(join(frictionDir, "note.md"), "blocked\n");
+        await chmod(frictionDir, 0o000);
+
+        const r = await runCli(repo.dir, ["job", "status"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("s1");
+        expect(r.out).toContain("friction: unreadable");
+        expect(r.out).not.toContain("note(s) await routing");
+      } finally {
+        await chmod(
+          join(repo.dir, ".flume", "jobs", "s1", "friction"),
+          0o755,
+        ).catch(() => {});
         await repo.cleanup();
       }
     },

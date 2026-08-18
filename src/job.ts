@@ -402,13 +402,24 @@ export interface JobStatus {
    * the caller supplies `frictionDir` (the repo chain's `Chain.friction`,
    * job-dir-relative — `jobStatus` has no chain of its own to load, so the
    * caller resolves it once and passes it in). `undefined` when no
-   * `frictionDir` is given.
+   * `frictionDir` is given; `null` when `frictionDir` is given but the dir's
+   * contents could not be read for a reason other than the dir being absent
+   * (permission denied, a path too long for the platform, …) — surfaced
+   * rather than folded into "0 files" (`.claude/rules/engineering.md`,
+   * "Loud or nothing").
    */
-  frictionCount?: number;
+  frictionCount?: number | null;
 }
 
-/** Files (not subdirs) directly under `dir`; 0 when `dir` is absent or unreadable. */
-function countFrictionFiles(dir: string): number {
+/**
+ * Files (not subdirs) directly under `dir`. `0` when `dir` is absent
+ * (`ENOENT` — nothing filed is nothing to count, the same reading
+ * `readPendingLoose` gives an absent `pending.json`); `null` when `dir`
+ * exists but `readdir` fails for any other reason — that failure is a
+ * real unresolved input, not a legitimate zero, so it must not read the
+ * same as an empty dir (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+function countFrictionFiles(dir: string): number | null {
   try {
     // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a job
     // dir onto chain.friction, the same construction writeRevertNote and
@@ -417,8 +428,9 @@ function countFrictionFiles(dir: string): number {
     return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
       (e) => e.isFile(),
     ).length;
-  } catch {
-    return 0;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    return null;
   }
 }
 
