@@ -2875,6 +2875,128 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
 });
 
 /**
+ * gh#1 — `flume tick plan` silently ticking whichever phase happened to be
+ * awake, instead of the named one, is the field-reported shape of a broader
+ * gap: the CLI surface never refused a trailing positional it does not
+ * consume. spec/cli.md "Subcommand surface": `tick`, `stop`, and `check`
+ * consume none; `wake`/`sleep` consume exactly one (`<phase>`); `status` is
+ * the one named exception, specced to ignore extras and exit 0 always.
+ */
+describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extras past <phase> (gh#1)", () => {
+  it(
+    "flume tick <positional> exits 2 rather than silently ticking whichever phase is awake",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick", "plan"]);
+
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume tick");
+        // Refused before any tick ran — the awake flag `probe` never got
+        // ticked in "plan"'s name, and it wasn't silently ticked either.
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume stop <positional> exits 2",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-stop-positional-"));
+      try {
+        const r = await runCli(dir, ["stop", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume stop");
+        expect(existsSync(join(dir, ".flume", "stop"))).toBe(false);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume check <positional> exits 2",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const r = await runCli(repo.dir, ["check", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume check");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume wake <phase> <extra> exits 2",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const r = await runCli(repo.dir, ["wake", "probe", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume wake");
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume sleep <phase> <extra> exits 2",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const r = await runCli(repo.dir, ["sleep", "probe", "extra"]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume sleep");
+        // Refused before mutating — the awake flag survives untouched.
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "flume status ignores extra positionals and still exits 0 (the one named exception)",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-status-positional-"));
+      try {
+        const r = await runCli(dir, ["status", "extra", "more"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("hibernating");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});
+
+/**
  * `flume friction [name]` (spec/cli.md §Subcommand surface) — the read verb
  * over `Chain.friction`. Reuses `minimalChainSrc` from the §6 friction-line
  * fixtures above: declaring `friction` and leaving it undeclared are both

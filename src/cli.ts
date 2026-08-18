@@ -403,9 +403,11 @@ Exit codes:
   1   Harness error (unexpected exception), or HEAD is detached (v0.11 §4:
       the tick record's meaning is advancing a named tip; checkout a branch
       first). No claim is taken or checked — that's loop-level only.
-  2   Usage: the chain load failed with the CJS-context refusal — the host
-      repo's package.json (or the one beside .flume/chain.ts) lacks "type":
-      "module". Add it and re-run.
+  2   Usage: a stray trailing positional (\`tick\` consumes none — running
+      something other than whichever phase is awake is refused, not
+      honored); or the chain load failed with the CJS-context refusal — the
+      host repo's package.json (or the one beside .flume/chain.ts) lacks
+      "type": "module". Add it and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.
@@ -456,8 +458,8 @@ wake, only a chain that loads and doesn't declare <phase> does.
 
 Exit codes:
   0   Success.
-  2   Missing <phase> argument, or <phase> names a phase the loaded chain
-      does not declare. No flag is written.
+  2   Missing <phase> argument, an extra positional past <phase>, or <phase>
+      names a phase the loaded chain does not declare. No flag is written.
 `,
   sleep: `Usage: flume sleep <phase>
 
@@ -468,8 +470,8 @@ doesn't declare <phase> does.
 
 Exit codes:
   0   Success (no-op if already hibernating).
-  2   Missing <phase> argument, or <phase> names a phase the loaded chain
-      does not declare.
+  2   Missing <phase> argument, an extra positional past <phase>, or <phase>
+      names a phase the loaded chain does not declare.
 `,
   stop: `Usage: flume stop
 
@@ -486,6 +488,8 @@ was seen.
 
 Exit codes:
   0   Always — including when the flag was already present.
+  2   Usage: a stray trailing positional (\`stop\` consumes none). No flag is
+      written.
 `,
   log: `Usage: flume log [-n N] [--json]
 
@@ -516,9 +520,10 @@ Exit codes:
   0    Pending queue parses clean and every entry's declared files survive
        the consumer phase's fence (also 0 when plan/pending.json is absent
        — nothing to check).
-  2    The chain failed to load with the CJS-context refusal — the host
-       repo's package.json (or the one beside .flume/chain.ts) lacks
-       "type": "module". Add it and re-run.
+  2    A stray trailing positional (\`check\` consumes none), checked before
+       the chain load below; or the chain failed to load with the
+       CJS-context refusal — the host repo's package.json (or the one
+       beside .flume/chain.ts) lacks "type": "module". Add it and re-run.
   65   Data error (EX_DATAERR): plan/pending.json fails schema validation,
        or an entry declares a path outside the consumer phase's fence.
        Naming the offending entry (and paths, for a fence violation).
@@ -1027,7 +1032,7 @@ async function main(): Promise<number> {
 
   if (cmd === "wake") {
     const phase = rest[0];
-    if (!phase) {
+    if (!phase || rest.length > 1) {
       console.error("usage: flume wake <phase>");
       return 2;
     }
@@ -1044,7 +1049,7 @@ async function main(): Promise<number> {
 
   if (cmd === "sleep") {
     const phase = rest[0];
-    if (!phase) {
+    if (!phase || rest.length > 1) {
       console.error("usage: flume sleep <phase>");
       return 2;
     }
@@ -1060,6 +1065,13 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "stop") {
+    // `stop` consumes no positionals (spec/cli.md "Subcommand surface") — a
+    // stray trailing arg is refused before the flag write below, not run as
+    // something other than what the operator typed.
+    if (rest.length > 0) {
+      console.error("usage: flume stop");
+      return 2;
+    }
     // spec/loop.md "Graceful stop — the stop flag": the file is the
     // mechanism, this verb is discoverability plus a printed statement —
     // `touch <flumeDir>/stop` is equally the interface. Idempotent: always
@@ -1109,6 +1121,12 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "check") {
+    // `check` consumes no positionals (spec/cli.md "Subcommand surface") —
+    // refuse before the chain load below, not just before the fence checks.
+    if (rest.length > 0) {
+      console.error("usage: flume check");
+      return 2;
+    }
     let chain: Chain;
     try {
       ({ chain } = await diskChainLoader(configDir)());
@@ -1312,6 +1330,15 @@ async function main(): Promise<number> {
   });
 
   if (cmd === "tick") {
+    // `tick` consumes no positionals (spec/cli.md "Subcommand surface") — a
+    // stray trailing arg (gh#1's field-reported shape: `flume tick plan`
+    // silently ticking whichever phase was awake, instead of the named one)
+    // is refused before any tick runs, not honored as something the
+    // operator never typed.
+    if (rest.length > 0) {
+      console.error("usage: flume tick");
+      return 2;
+    }
     // v0.8 §5: clear any stale verdict before this tick's own work — a tick
     // that returns below without an agent having run (chain-load failure,
     // hibernation, terminal misconfiguration, the detached-HEAD refusal
