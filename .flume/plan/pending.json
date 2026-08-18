@@ -1,1 +1,85 @@
-[]
+[
+  {
+    "tag": "cli-usage-shaped-stray-positional-refuse",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "tick/stop/check refuse (exit 2) on any unexpected trailing positional; wake/sleep refuse on more than one positional past <phase>, per §Subcommand surface"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "pin the refusal cases below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume tick/stop/check refuse stray positionals; wake/sleep refuse extras past <phase> (gh#1)",
+    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "tests": [
+      "flume tick <positional> exits 2 rather than silently ticking whichever phase is awake (gh#1's field-reported shape)",
+      "flume stop <positional> exits 2",
+      "flume check <positional> exits 2",
+      "flume wake <phase> <extra> exits 2",
+      "flume sleep <phase> <extra> exits 2",
+      "flume status ignores extra positionals and still exits 0 (the one named exception)"
+    ],
+    "acceptance": "all six behaviors above pass; the tick case fails on the pre-fix tree",
+    "notes": "gh#1 closes on GitHub when this ships. Ratified reading (b) in spec/cli.md's Subcommand surface, per open-questions.md's 2026-08-18 disposition (see git log)."
+  },
+  {
+    "tag": "job-frictioncount-loud-or-nothing",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "countFrictionFiles (~L411) distinguishes ENOENT (reads 0) from any other readdir error (reads unreadable), mirroring the same file's readPendingLoose; JobStatusEntry.frictionCount becomes number | null | undefined"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "render a null frictionCount distinctly from 0, the way pending: null already renders (~L696-699)"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "pin the ENOENT-vs-other-error distinction"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "countFrictionFiles mirrors readPendingLoose's ENOENT-only swallow; frictionCount surfaces null on real read errors",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "tests": [
+      "frictionCount reads 0 when the friction dir is absent (ENOENT)",
+      "frictionCount reads null (not 0) when the friction dir exists but readdir fails for a non-ENOENT reason",
+      "flume status / job status renders a null frictionCount distinctly from a 0 count"
+    ],
+    "acceptance": "all three pass",
+    "notes": "job.ts's own readPendingLoose is the in-file precedent for the ENOENT-only catch. Ratified 2026-08-18 human sign-off, derivable now (see git log)."
+  },
+  {
+    "tag": "chain-test-voluntary-bail-shouldrun",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/chain.test.ts",
+          "description": "extend the plan.shouldRun describe block with the voluntary-bail prior-attempts cases below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin plan.shouldRun's voluntary-bail reconciliation (5e50102) — shipped without a test",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A fix ships the test that would have caught it" },
+    "tests": [
+      "shouldRun returns true on a pickable-only queue when <flumeDir>/prior-attempts/*.json holds a record with mode: voluntary-bail",
+      "shouldRun still returns false on a pickable-only queue with an empty (or absent) prior-attempts dir and an empty inbox — today's baseline is unchanged"
+    ],
+    "acceptance": "both cases pass; the first fails on the tree before 5e50102",
+    "notes": "5e50102's own doc comment on anyVoluntaryBailRecord invited this: 'If the audit files the missing chain-test pin ... that entry is welcome.' Follow tests/chain.test.ts's existing FLUME_DIR-scratch-dir / makeEntry fixture pattern."
+  }
+]
