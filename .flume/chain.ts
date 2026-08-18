@@ -8,7 +8,7 @@
  * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +36,35 @@ function inboxHasEntries(): boolean {
   } catch {
     return true;
   }
+}
+
+/**
+ * Any persisted prior-attempt record whose mode is `voluntary-bail` means a
+ * build agent looked at an entry and refused it — "acceptance already holds"
+ * being the field-traced case (an entry whose fix landed out-of-band via the
+ * verdict-sha recovery flow bails forever, with no failure signature for the
+ * quarantine brake — the 2026-08-17 decline/bail livelock). That verdict is
+ * plan's to reconcile, so `shouldRun` treats it as a reason to run plan even
+ * while the entry stays pickable. Same read-small-files contract as
+ * `inboxHasEntries`; a corrupt record reads as absent, matching the engine's
+ * own treatment (`spec/loop.md`, *Prior-outcome feedback*).
+ */
+function anyVoluntaryBailRecord(): boolean {
+  try {
+    const dir = resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "prior-attempts");
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const rec = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
+        if (rec?.mode === "voluntary-bail") return true;
+      } catch {
+        // unreadable record is not evidence of a bail
+      }
+    }
+  } catch {
+    // no prior-attempts dir — no records
+  }
+  return false;
 }
 
 import type {
@@ -358,6 +387,11 @@ const factory: ChainFactory = (api) => {
     shouldRun(ctx: TickContext) {
       const pending = ctx.pending ?? [];
       if (!pending.some((e) => isPickableNow(e, new Set()))) return true;
+      // A standing voluntary-bail record means build already looked and said
+      // "this is plan's call" — reconcile before deferring to build again,
+      // or a pickable-but-already-shipped entry loops decline/bail forever
+      // (see anyVoluntaryBailRecord's doc).
+      if (anyVoluntaryBailRecord()) return true;
       return inboxHasEntries();
     },
     promptArgs() {
