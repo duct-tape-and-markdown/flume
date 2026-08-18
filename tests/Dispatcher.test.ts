@@ -8577,6 +8577,41 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   });
 });
 
+describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountline-loud-or-nothing)", () => {
+  it("reads 'friction: unreadable' (not silence) when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-unreadable-"));
+    try {
+      const frictionDir = join(stateRoot, "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "x\n");
+      // Strip traversal permission on the friction dir itself: readdir now
+      // fails with EACCES — the dir exists but can't be read — not ENOENT
+      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
+      // EACCES fixture `countFrictionFiles` (`tests/job.test.ts`) uses,
+      // now the shared detection this helper reuses.
+      await chmod(frictionDir, 0o000);
+
+      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+      expect(await frictionCountLine(stateRoot, chain)).toBe(
+        "friction: unreadable",
+      );
+    } finally {
+      await chmod(join(stateRoot, "friction"), 0o755).catch(() => {});
+      await rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("still reads undefined when the declared dir is absent (ENOENT) — baseline unchanged (dispatcher-frictioncountline-loud-or-nothing)", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-absent-"));
+    try {
+      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+      expect(await frictionCountLine(stateRoot, chain)).toBeUndefined();
+    } finally {
+      await rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
   it("threads the resolved flumeDir into GateContext and TickContext (default location)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -10377,39 +10412,6 @@ describe.runIf(process.platform === "win32")(
         await rm(stateRoot, { recursive: true, force: true });
       }
     }, 20_000);
-
-    it("frictionCountLine reads 'friction: unreadable' (not silence) when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-      const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-unreadable-"));
-      try {
-        const frictionDir = join(stateRoot, "friction");
-        await mkdir(frictionDir, { recursive: true });
-        await writeFile(join(frictionDir, "a.md"), "x\n");
-        // Strip traversal permission on the friction dir itself: readdir now
-        // fails with EACCES — the dir exists but can't be read — not ENOENT
-        // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
-        // EACCES fixture `countFrictionFiles` (`tests/job.test.ts`) uses,
-        // now the shared detection this helper reuses.
-        await chmod(frictionDir, 0o000);
-
-        const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
-        expect(await frictionCountLine(stateRoot, chain)).toBe(
-          "friction: unreadable",
-        );
-      } finally {
-        await chmod(join(stateRoot, "friction"), 0o755).catch(() => {});
-        await rm(stateRoot, { recursive: true, force: true });
-      }
-    });
-
-    it("frictionCountLine still reads undefined when the declared dir is absent (ENOENT) — baseline unchanged (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-      const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-absent-"));
-      try {
-        const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
-        expect(await frictionCountLine(stateRoot, chain)).toBeUndefined();
-      } finally {
-        await rm(stateRoot, { recursive: true, force: true });
-      }
-    });
 
     it("snapshotRevertedFiles lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // snapshotRevertedFiles runs on the singleton afterCommit-revert path
