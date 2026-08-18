@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "tag": "test-tipclaim-loop-detachedhead-claim-absence",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/tip-claim.integration.test.ts",
+          "description": "add tip-claim-file-absence assertion to the detached-HEAD loop test (:384-408), whose title already claims 'taking neither loop.pid nor the tip claim' but whose body only checks loop.pid"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin: 'flume loop' on detached HEAD never writes the tip-claim file — existing test's title claims this, body only asserts loop.pid absence",
+    "per": { "path": "spec/loop.md", "section": "The loop lock and the tip claim" },
+    "tests": [
+      "flume loop exits 1 on detached HEAD without ever creating the tip-claim file under <git-common-dir>/flume/tip-claims/refs/heads/<branch>"
+    ],
+    "acceptance": "new assertion fails if tip-claim acquisition is ever reordered ahead of the detached-HEAD check in src/cli.ts's loop branch (currently ~:1392-1419); passes on current tree",
+    "notes": "Sweep finding, tests/tip-claim.integration.test.ts:384-408. Verified against src/cli.ts that the detached-HEAD refusal genuinely precedes both loop.pid and tip-claim writes today, so the gap is missing coverage, not a live bug."
+  }
+]
