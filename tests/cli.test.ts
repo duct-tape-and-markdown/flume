@@ -39,7 +39,13 @@ import {
   type SuperviseResult,
   type TickVerdict,
 } from "../src/Dispatcher.ts";
-import { CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import {
+  CLI,
+  gitOut,
+  HERMETIC_ENV_STRIP_KEYS,
+  hermeticEnv,
+  runCli,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -650,33 +656,27 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
  * strips every identity/provenance FLUME_* var it knows of — a job
  * resolution or a tip-claim PID leaked from the vitest process's own env is
  * exactly as capable of retargeting a spawned CLI as a relocated state root
- * is. `hermeticEnv()` has no exported strip-list to import here, so the
- * assertion below checks the invariant directly — no key matching
+ * is. The assertion below checks the invariant directly — no key matching
  * `/^FLUME_/` survives in its output — rather than restating a copy of its
  * delete set (`.claude/rules/engineering.md`, "Derived state is computed,
  * never restated beside its source"; CLI-HERMETICENV-COVERS-ALL-VARS had
  * hardcoded a name list here that fell behind hermeticEnv()'s own deletes
- * twice). `STRIPPED_VARS` below only seeds realistic input (and keeps the
- * test non-vacuous); it plays no role in what gets checked, so a var added
- * to `hermeticEnv()`'s strip set — or one that leaks ambiently from an outer
- * flume-on-flume invocation — is caught without touching this file. Not
+ * twice). `HERMETIC_ENV_STRIP_KEYS` below (imported from the harness, not
+ * restated) only seeds realistic input (and keeps the test non-vacuous); it
+ * plays no role in what gets checked, so a var added to `hermeticEnv()`'s
+ * strip set — or one that leaks ambiently from an outer flume-on-flume
+ * invocation — is caught without touching this file. Not
  * `FLUME_WORKTREES_DIR` / `FLUME_QUARANTINED_SLUGS`: those are per-test
  * config overrides layered on top of `hermeticEnv()`'s output, not identity
  * leaks it strips, and are never set as ambient input here.
  */
 describe("hermeticEnv — strips every identity/provenance FLUME_* var", () => {
-  const STRIPPED_VARS = [
-    "FLUME_DIR",
-    "FLUME_CONFIG_DIR",
-    "FLUME_JOB",
-    "FLUME_DIR_RESOLVED_FOR",
-    "FLUME_TIP_CLAIM_HELD",
-  ];
-
   it("carries no key matching /^FLUME_/ when identity/provenance vars are set", () => {
-    const prior = Object.fromEntries(STRIPPED_VARS.map((key) => [key, process.env[key]]));
+    const prior = Object.fromEntries(
+      HERMETIC_ENV_STRIP_KEYS.map((key) => [key, process.env[key]]),
+    );
     try {
-      for (const key of STRIPPED_VARS) {
+      for (const key of HERMETIC_ENV_STRIP_KEYS) {
         process.env[key] = `outer-${key}`;
       }
 

@@ -25,8 +25,21 @@ export const TSX_CLI = fileURLToPath(
 );
 
 /**
- * A copy of this process's env with the canonical FLUME_DIR /
- * FLUME_CONFIG_DIR / FLUME_JOB / FLUME_DIR_RESOLVED_FOR stripped, so a
+ * The identity/provenance FLUME_* keys `hermeticEnv()` strips. Exported so
+ * seed-side test input (cli.test.ts) can derive from the same list instead
+ * of hand-restating it (`.claude/rules/engineering.md`, "Derived state is
+ * computed, never restated beside its source").
+ */
+export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
+  "FLUME_DIR",
+  "FLUME_CONFIG_DIR",
+  "FLUME_JOB",
+  "FLUME_DIR_RESOLVED_FOR",
+  "FLUME_TIP_CLAIM_HELD",
+];
+
+/**
+ * A copy of this process's env with `HERMETIC_ENV_STRIP_KEYS` stripped, so a
  * spawned CLI resolves the caller's own temp dir/repo default — or the
  * test's own explicit job resolution — instead of inheriting this process's.
  * Without this the suite is not hermetic: run under a flume harness (whose
@@ -39,11 +52,9 @@ export const TSX_CLI = fileURLToPath(
  */
 export function hermeticEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  delete env.FLUME_DIR;
-  delete env.FLUME_CONFIG_DIR;
-  delete env.FLUME_JOB;
-  delete env.FLUME_DIR_RESOLVED_FOR;
-  delete env.FLUME_TIP_CLAIM_HELD;
+  for (const key of HERMETIC_ENV_STRIP_KEYS) {
+    delete env[key];
+  }
   return env;
 }
 
