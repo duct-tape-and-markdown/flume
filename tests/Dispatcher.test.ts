@@ -7097,6 +7097,14 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
       `humanOnly: [] } });\n`;
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
     const preHead = await head(fx.repo);
+    // chainLoadGate now keys off `configDir`, not a hardcoded `.flume`
+    // (ENGINE-BOUNDARY "Told, not inferred") — so this fixture points
+    // `configDir` at the repo's own default `.flume` (where the agent below
+    // actually rewrites chain.ts), rather than the fixture's normally-
+    // external `fx.configDir` scratch dir, which the gate would correctly
+    // never see as touched.
+    const configDir = join(fx.repo, ".flume");
+    await writeFile(join(configDir, "prompt.md"), "dummy prompt\n", "utf8");
 
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -7122,7 +7130,7 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
-      configDir: fx.configDir,
+      configDir,
       agent,
       log: silent,
     });
@@ -7161,6 +7169,14 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
       `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
       `humanOnly: [] } });\n`;
     await writeAndCommit(fx.repo, ".flume/chain.ts", goodChain, "seed chain");
+    // chainLoadGate now keys off `configDir`, not a hardcoded `.flume`
+    // (ENGINE-BOUNDARY "Told, not inferred") — so this fixture points
+    // `configDir` at the repo's own default `.flume` (where the agent below
+    // actually rewrites chain.ts), rather than the fixture's normally-
+    // external `fx.configDir` scratch dir, which the gate would correctly
+    // never see as touched.
+    const configDir = join(fx.repo, ".flume");
+    await writeFile(join(configDir, "prompt.md"), "dummy prompt\n", "utf8");
 
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
@@ -7206,7 +7222,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
-      configDir: fx.configDir,
+      configDir,
       agent,
       log: silent,
     });

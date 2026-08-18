@@ -44,6 +44,17 @@ export interface GateContext {
    */
   flumeDir: string;
   /**
+   * Absolute path of the chain/prompts dir (`<configDir>/chain.ts`, default
+   * `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md
+   * "State-root and config-dir resolution"). Rebased onto the gate's own
+   * `cwd` when that differs from the primary checkout (an `afterCommit` gate
+   * runs inside a fanout worktree, which mirrors the repo's tracked layout
+   * at the same relative offset) — a gate reads `ctx.configDir` directly
+   * instead of hardcoding `.flume` or reaching into `process.env`
+   * (`.claude/rules/engine-boundary.md` "Told, not inferred").
+   */
+  configDir: string;
+  /**
    * Absolute path of the working-tree root the gate is running in — in a
    * fanout tick, the worktree root; in a bare tick, the primary checkout
    * (RELEASE-v0.7 §6).

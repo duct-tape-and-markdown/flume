@@ -289,6 +289,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       const ctx: GateContext = {
         cwd: repo.dir,
         flumeDir: join(repo.dir, ".flume"),
+        configDir: join(repo.dir, ".flume"),
         repoRoot: repo.dir,
         phaseName: "groom",
         log: () => {},

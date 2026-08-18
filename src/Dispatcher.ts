@@ -1669,6 +1669,7 @@ export class Dispatcher {
                 cwd: repoRoot,
                 repoRoot,
                 flumeDir: this.flumeDir,
+                configDir: this.opts.configDir,
                 phaseName: phase.name,
                 commitSha: mergedSha,
                 touchedPaths: commitTouchedPaths,
@@ -2152,6 +2153,7 @@ export class Dispatcher {
           cwd: repoRoot,
           repoRoot,
           flumeDir: this.flumeDir,
+          configDir: this.opts.configDir,
           phaseName: phase.name,
           commitSha: mergedSha,
           touchedPaths: commitTouchedPaths,
@@ -2855,12 +2857,24 @@ export class Dispatcher {
     const commitTouchedPaths = spanBase
       ? await git.diffNameOnly(cwd, spanBase, commitSha)
       : await git.showNameOnly(cwd, commitSha);
+    // `cwd` here is the fanout worktree (or a singleton's own worktree,
+    // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
+    // that holds only tracked files at the same relative layout as the
+    // primary checkout. `this.opts.configDir` is resolved against the
+    // primary checkout, so it is rebased onto `cwd` at its own relative
+    // offset rather than passed through verbatim, or a relocated configDir
+    // would point a gate at the wrong tree entirely.
+    const configDir = join(
+      cwd,
+      relative(this.opts.repoRoot, this.opts.configDir),
+    );
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
       const r: GateResult = await gate.run({
         cwd,
         repoRoot: cwd,
         flumeDir: this.flumeDir,
+        configDir,
         phaseName: phase.name,
         commitSha,
         touchedPaths: commitTouchedPaths,

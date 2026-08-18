@@ -8,7 +8,7 @@
 
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { promisify } from "node:util";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
@@ -198,14 +198,6 @@ export const eslintGate: PkgManagerGate = pkgManagerGate(
 );
 
 /**
- * Relative path, from the repo root, of the chain config every flume project
- * keeps. Hardcoded because the gate sees only `GateContext` (no configDir),
- * and `.flume/chain.ts` is the universal convention — which is exactly why
- * this gate is a builtin and not chain-local (RELEASE-v0.2 §3).
- */
-const CHAIN_REL_PATH = join(".flume", "chain.ts");
-
-/**
  * A commit's touched paths, shared across every gate that needs them.
  * `ctx.touchedPaths` is the dispatcher's one-per-commit computation
  * (`git.showNameOnly`, run once before the gate loop); a gate reads it from
@@ -226,13 +218,20 @@ async function resolveTouchedPaths(ctx: GateContext): Promise<string[]> {
 
 /**
  * Builtin chain-load gate. Declared by any chain on the phase(s) that may
- * rewrite `.flume/chain.ts` (a self-modifying loop). On a commit that touched
- * `.flume/chain.ts`, it loads the post-commit file through the same
- * load+validate path the runtime uses (`loadChainModule`): the default export
- * resolves and `phases` is an array. A broken rewrite (syntax error, no
- * default export, no `phases[]`) fails the gate → flume's existing revert
- * path drops the commit → `chain.ts` returns to the last-good version → the
- * loop continues against a chain that still loads.
+ * rewrite `<configDir>/chain.ts` (a self-modifying loop; default `configDir`
+ * is `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md
+ * "State-root and config-dir resolution"). On a commit that touched
+ * `chain.ts`, it loads the post-commit file through the same load+validate
+ * path the runtime uses (`loadChainModule`): the default export resolves and
+ * `phases` is an array. A broken rewrite (syntax error, no default export, no
+ * `phases[]`) fails the gate → flume's existing revert path drops the commit
+ * → `chain.ts` returns to the last-good version → the loop continues against
+ * a chain that still loads.
+ *
+ * `ctx.configDir` is read directly rather than assumed — it is already
+ * rebased onto `ctx.cwd` by the dispatcher when the gate runs inside a fanout
+ * worktree, so the touched-path check and the load both key off the same
+ * relocatable dir (`.claude/rules/engine-boundary.md` "Told, not inferred").
  *
  * No-op on the overwhelming majority of ticks (the commit didn't touch
  * `chain.ts`). Promoted to a builtin — not chain-local like the pending-parse
@@ -247,11 +246,15 @@ export const chainLoadGate: Gate = {
       return { ok: false, message: "chain-load gate requires commitSha" };
     }
     const touched = await resolveTouchedPaths(ctx);
-    if (!touched.includes(CHAIN_REL_PATH.split(/[\\/]/).join("/"))) {
+    const configDirRel = relative(ctx.repoRoot, ctx.configDir);
+    const chainRelPath = join(configDirRel, "chain.ts")
+      .split(/[\\/]/)
+      .join("/");
+    if (!touched.includes(chainRelPath)) {
       return { ok: true, message: "chain.ts untouched — gate skipped" };
     }
     try {
-      await loadChainModule(join(ctx.cwd, CHAIN_REL_PATH));
+      await loadChainModule(join(ctx.configDir, "chain.ts"));
       return { ok: true, message: "chain.ts loads as a valid Chain" };
     } catch (err) {
       return {
@@ -276,9 +279,8 @@ export interface PendingGateOptions {
   extension?: EntryExtension;
   /**
    * flumeDir-relative path to the pending list. Default `plan/pending.json`
-   * — the universal plan/build convention (mirrors `CHAIN_REL_PATH` above).
-   * Override for a chain that attaches this gate to a differently-shaped
-   * producer phase.
+   * — the universal plan/build convention. Override for a chain that
+   * attaches this gate to a differently-shaped producer phase.
    */
   pendingPath?: string;
   /**

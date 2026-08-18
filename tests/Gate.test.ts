@@ -24,6 +24,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
     cwd,
     flumeDir: join(cwd, ".flume"),
+    configDir: join(cwd, ".flume"),
     repoRoot: cwd,
     phaseName: "test-phase",
     log: () => {},
@@ -418,6 +419,32 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     const result = await chainLoadGate.run(ctx(repo));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/requires commitSha/);
+  });
+
+  it("loads and validates chain.ts under a relocated configDir instead of skipping on the cwd-relative default path", async () => {
+    const sha = await commitFiles(
+      repo,
+      { "custom-config/chain.ts": VALID_CHAIN },
+      "build: rewrite chain under relocated configDir",
+    );
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, configDir: join(repo, "custom-config") }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/valid Chain/);
+  });
+
+  it("skips a relocated-configDir commit that left the default .flume/chain.ts untouched", async () => {
+    const sha = await commitFiles(
+      repo,
+      { ".flume/chain.ts": VALID_CHAIN },
+      "build: rewrite default-path chain.ts, but configDir points elsewhere",
+    );
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, configDir: join(repo, "custom-config") }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/untouched/);
   });
 });
 

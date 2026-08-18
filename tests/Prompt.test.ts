@@ -316,6 +316,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     return {
       cwd: dir,
       flumeDir: "/state-root",
+      configDir: join(dir, ".flume"),
       repoRoot: dir,
       phaseName: "build",
       commitSha: "deadbeef",
