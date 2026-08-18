@@ -380,16 +380,21 @@ const factory: ChainFactory = (api) => {
         // state.md missing — treat as stable; build (if pickable) or hibernate.
       }
 
-      if (planContinues) return [plan.name];
-
       // Same pickability verdict the dispatcher will reach (blockedBy with
       // shipped blockers, fork gates, capabilities) — not a hand-rolled
       // subset that drifts as gate variants are added.
+      //
+      // Pickable work preempts the continue-marker (posture-sweep.md, "The
+      // sweep yields to pickable work"): a sweep tick that files an entry
+      // and leaves `Plan continues: yes` must still hand to build, or the
+      // baton loops on a declining plan (shouldRun defers to build while
+      // handoff defers to the marker) and build never runs.
       const shipped = new Set(result.shippedTags);
       const hasPickable = result.pendingAfter.some((e) =>
         isPickableNow(e, shipped),
       );
-      return hasPickable ? [build.name] : [];
+      if (hasPickable) return [build.name];
+      return planContinues ? [plan.name] : [];
     },
   };
 
