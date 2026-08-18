@@ -1,31 +1,10 @@
 [
   {
-    "tag": "cli-exitcode-exmountdead-literal-restated",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "~L2902: swap the bare literal 69 for the imported EX_MOUNT_DEAD constant per derived-state section — same restated-copy shape as the hermeticEnv pin, but simpler: EX_MOUNT_DEAD is already imported (L35) and used symbolically elsewhere in this file (L349, L511-519, L1158)."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cli.test.ts:2902 hardcodes exit code 69 instead of the EX_MOUNT_DEAD constant already imported and used elsewhere in the same file",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "tests": [
-      "the mount-dead 'flume check' exit-code assertion at ~L2902 references EX_MOUNT_DEAD, not a bare 69"
-    ],
-    "acceptance": "L2902 reads expect(r.code).toBe(EX_MOUNT_DEAD); no bare 69 literal remains for this assertion",
-    "notes": "Found during posture sweep of tests/cli.test.ts (a03f0c9's sweep frontier). One-line swap, no src/ change needed."
-  },
-  {
     "tag": "cli-exitcode-export-exdataerr-exioerr",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -53,7 +32,10 @@
   },
   {
     "tag": "cli-hermeticenv-export-strip-keys",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
