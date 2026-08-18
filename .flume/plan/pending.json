@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "dispatcher-frictioncountline-tests-win32-gated",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "relocate the two frictionCountLine EACCES/ENOENT unit tests (currently ~L10381-10412, inside describe.runIf(win32) 'Dispatcher fanout — createWorktree pins core.longpaths') into an unguarded describe — mirror tests/job.test.ts's countFrictionFiles EACCES test, which sits in a plain describe with no runIf"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "frictionCountLine's two EACCES/ENOENT unit tests (94a4e57) sit inside the win32-only describe.runIf block — skipped on every non-Windows run, so the loud-or-nothing fix has no real coverage here.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fix ships the test that would have caught it"
+    },
+    "tests": [
+      "frictionCountLine reads 'friction: unreadable' on a non-ENOENT readdir failure — runs (not skipped) on a non-win32 host",
+      "frictionCountLine still reads undefined when the dir is absent (ENOENT) — runs (not skipped) on a non-win32 host"
+    ],
+    "acceptance": "pnpm test on this (non-win32) host actually executes both tests rather than folding them into the win32-only skip count, and both pass",
+    "notes": "Audit finding on 94a4e57: `vitest run -t dispatcher-frictioncountline-loud-or-nothing` shows both direct-unit tests among 200 skipped on this (Linux) host — only the unguarded superviseLoop-level test exercises the split here. tests/job.test.ts's sibling countFrictionFiles EACCES test (job-frictioncount-loud-or-nothing, a8d52dc) sits in a plain describe, unguarded — same precedent to follow."
+  }
+]
