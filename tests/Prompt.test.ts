@@ -503,4 +503,20 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render (REL
 
     expect(out).toContain("value=[]\n");
   });
+
+  it("stdout past the output cap rejects rather than resolving with truncated output", async () => {
+    let caught: unknown;
+    try {
+      await render("value=!`head -c 5000000 /dev/zero`\n");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(InlineExecRenderError);
+    const err = caught as InlineExecRenderError;
+    expect(err.failures).toHaveLength(1);
+    expect(err.failures[0]!.cmd).toBe("head -c 5000000 /dev/zero");
+    expect(err.failures[0]!.stderr).toContain("exceeded");
+    expect(err.message).toContain("exceeded");
+  });
 });
