@@ -48,6 +48,8 @@ No recommendation on which — this is an operator-lane `chain.ts` edit either w
 first option is markedly cheaper and narrower in scope (no upstream design question to
 resolve first).
 
+**Answered (2026-08-18, human sign-off via interactive session):** fixed at the chain, `5e50102` — `shouldRun` runs plan whenever any voluntary-bail prior-attempt record stands (dir-scan variant of option 1; a record for any entry is reason enough, since plan's reconcile is global). Symmetric with `d563953`'s handoff ordering. The pre-dispatch acceptance check stays unbuilt — separate fork, not needed for this class. If the audit files the missing chain-test pin (as it did for d563953), that entry is welcome. Question closes.
+
 ## `spec/worktrees.md`'s "real git" integration-lane trigger is pervasive in the default lane as literally written (inbox, session)
 
 Status: PARKED
@@ -90,6 +92,8 @@ No recommendation — this is a calibration question about intent versus a secti
 wording, not something research resolves; needs a human read on which failure mode the section
 was actually written to prevent.
 
+**Answered (2026-08-18, human sign-off):** spec narrowed to the measured cost drivers, `44e7216` — Node-child spawns, real agent invocations, wall-clock timing assertions; raw git plumbing explicitly not a trigger. `Dispatcher.test.ts`'s git usage is compliant as practiced; the one timing flake (already fixed) was the whole story. Residual sweep worth one pass: any remaining default-lane Node-spawn or timing probe not yet moved/fixed. Question closes after that pass (or immediately if the 2026-08-17 fixes already covered them).
+
 ## A gate-revert whose failing tests are disjoint from the entry's footprint wants a distinct marker (752346f)
 
 Status: PARKED
@@ -127,6 +131,14 @@ No recommendation — capability-vs-convention fork (`engine-boundary.md`, *Capa
 convention*): `failingFiles` is machinery only the chain can populate (its own test runner's output
 format), not something the engine can derive from an opaque digest. Needs a design pass on where
 that field enters the gate-result contract before it's derivable as a pending entry.
+
+**Answered (2026-08-18, human sign-off):** approved as the capability shape — chain-populated
+`failingFiles?: string[]` on the gate result (the chain knows its runner; vitest has a JSON
+reporter), engine derives the footprint-disjoint suspect-flake marker mechanically when the
+field is present, absent field = today's behavior. **Sequenced to the 0.13 line**: hold out of
+pending.json until the 0.12.0 cut ships; needs its spec edit (gate-result shape in
+spec/chain.md + the marker in spec/loop.md's prior-attempt section) first, which the operator
+will land when opening that line.
 
 ## Unexpected trailing positionals are silently accepted on `tick`, `stop`, `check`, and past `wake`/`sleep`'s `<phase>` (gh#1)
 
@@ -167,6 +179,8 @@ needs a human edit before this is derivable as a pending entry. Once blessed, sh
 fix ships-the-test discipline: `flume tick <phase>` exiting 2 rather than running a different
 phase, and the analogous case for `stop`/`check`/`wake`/`sleep`.
 
+**Answered (2026-08-18, human sign-off):** reading (b), ratified in spec — `c8eedce` rewords the exit-2 list into the category it meant, names the stray-positional instance, and keeps `status` as the one exception. Derivable now; ships with fails-pre-fix tests (`flume tick <phase>` exiting 2 rather than running a different phase, plus stop/check/wake/sleep analogues). gh#1 closes on GitHub when the fix ships.
+
 ## Cherry-pick conflict parks gated-green work; plain-pick vs. 3-way/ort retry before parking (gh#3)
 
 Status: PARKED
@@ -206,6 +220,8 @@ vs convention*: a merge strategy the engine picks is mechanism, but which confli
 auto-resolve is convention the chain currently owns). Needs your call on which side of that line
 this sits.
 
+**Answered (2026-08-18, human sign-off):** keep plain-pick-then-park. Modern cherry-pick already is an ort 3-way merge — the ask is a looser conflict tolerance, and which conflicts are safe to auto-resolve is content judgment the afterMerge gates own by fresh, explicit contract. The cost calculus also changed: a park now costs a re-cherry-pick from the verdict's span sha, not a rebuild. Chain-side overlap hints remain available if the class recurs downstream. gh#3 closed with this rationale. Question closes.
+
 ## Intake gate for under-specified job specs, as a chain capability (gh#8)
 
 Status: PARKED
@@ -230,6 +246,8 @@ sequence, what the provenance field's shape is, and whether the refusal is `job 
 later `job run`-time gate (the incident was keyhole *derivation*, which happens after `new`).
 Not recommending a specific shape yet — this wants the capability sketch worked through against
 the numbered sequence above before it is a pending entry.
+
+**Answered (2026-08-18, human sign-off):** capability shape ratified in principle — derivation-time predicate (not `job new`-time; the incident was keyhole derivation) plus a provenance field on the job record; chain owns the bar. **Deferred to its own design session after the 0.12.0 cut** — largest open surface, lowest urgency in this repo. Hold out of pending until that session lands its spec edit against spec/jobs.md's numbered sequence.
 
 ## Self-upgrade livelock: supervisor-frozen/children-fresh contract hazard (human+session, live derivation)
 
@@ -267,6 +285,8 @@ No recommendation on either fork — (1) is a plan-mechanics question, (2) is an
 question about how much self-upgrade safety the engine should own mechanically versus leave to
 operator discipline. Needs a design pass on both before anything is derivable.
 
+**Answered (2026-08-18, human sign-off):** both forks resolved at the prose rung, `3274af4`. (1) No new schema — `blockedBy` already expresses the ordering; the discipline is PROTOCOL item 6 (supervisor-contract entries blockedBy their contract-completing sibling), promotable if it recurs. (2) spec/loop.md states the operational rule — a run finishes on the contract it started with; contract-touching ships end with `flume stop` + relaunch — with the chain-level mechanization (handoff writes the stop flag for entries plan marks contract-touching) named as the next rung, and the engine version-fence condition stated as 'a second livelock despite the rule.' Question closes.
+
 ## `src/cli.ts` mixes several independently-testable concerns in one 1500-line module
 
 Status: PARKED
@@ -292,6 +312,8 @@ Recommend the split — a test already reaching past the module boundary to impo
 helper is usually a sign the boundary is drawn in the wrong place — but this touches every
 command's import path, so wants a human call on scope and sequencing before it becomes a
 pending entry (or a set of them).
+
+**Answered (2026-08-18, human sign-off):** approved — split along the four named seams (help text, state/job resolution, verdict formatting, job-verb dispatch), with `main()`'s argv switch as the residual cli.ts, and tests/cli.test.ts split along the same seams as part of the same project (see that question below). **Sequenced to the 0.13 line** — churn across every command's import path doesn't belong under the 0.12.0 cut. Hold out of pending until the cut ships.
 
 ## Harvested chain-preset layer
 
@@ -360,6 +382,8 @@ Recommend the second: file a new pending entry citing this section, scoped to
 `git.cherryPickAbort`'s callers on the primary checkout, once a design for the mechanism is
 decided (the first bullet is the open design question a new entry would need answered).
 
+**Answered (2026-08-18, human sign-off):** file as its own entry per the second option, with the mechanism direction ratified: (a) abort only a sequence that actually started (CHERRY_PICK_HEAD/sequencer present — never blind), and (b) checkpoint staged bystander state before a primary-checkout range begins via a `git stash create`-style dangling commit whose sha the verdict records — the same never-destroy-always-leave-a-sha idiom as span recovery. **Sequenced to the 0.13 line**; hold until the 0.12.0 cut ships.
+
 ## `job.ts`'s `countFrictionFiles` silently treats any readdir failure as zero, diverging from the file's own `readPendingLoose` precedent (sweep, src/job.ts)
 
 Status: PARKED
@@ -381,6 +405,8 @@ Options:
 
 No recommendation — this is a shape/consistency question about how far the "loud or nothing"
 bar reaches into a non-load-bearing informational path, not something research resolves.
+
+**Answered (2026-08-18, human sign-off):** fix it — loud-or-nothing reaches informational surfaces; a misleading status line is a confident wrong answer, which is the class the rule fences, and the precedent (`readPendingLoose`) is in the same file. Mirror it: ENOENT reads 0, anything else reads null/unreadable, rendered the way `pending: null` already is. Derivable now.
 
 ## `src/Phase.ts`'s `Chain` interface bundles several independently-separable config concerns (sweep, src/Phase.ts)
 
@@ -404,6 +430,8 @@ Options:
 
 No recommendation — same shape as the cli.ts question above (a split touches many import sites),
 wants a human call on scope before it's a pending entry.
+
+**Answered (2026-08-18, human sign-off):** declined — leave as one file. Types with no runtime failure modes, no test reaching past the boundary, nothing hidden; the lens fired on size alone. Accept as debt; question closes.
 
 ## `tests/cli.test.ts` bundles several independently-separable command suites in one 3159-line file (sweep, tests/cli.test.ts)
 
@@ -431,3 +459,6 @@ Options:
 No recommendation — same shape as the cli.ts and Phase.ts split questions above: boundaries
 aren't mechanical (by subcommand vs. by concern), and a split touches a large single-file test
 suite's shared fixtures; wants a human call on scope before it's a pending entry.
+
+**Answered (2026-08-18, human sign-off):** folded into the cli.ts split as one 0.13 project (same seams, shared sequencing) — see that question's answer above. Hold until the cut ships.
+
