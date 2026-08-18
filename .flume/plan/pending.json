@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "tag": "test-chain-handoff-pickable-overrides-continue",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/chain.test.ts",
+          "description": "pin plan.handoff hands to build (not plan) when a pickable entry remains, per d563953 / posture-sweep.md 'The sweep yields to pickable work'; correct the adjacent test's 'regardless of pendingAfter' claim, which only exercises the empty case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin plan.handoff: a pickable entry in pendingAfter overrides 'Plan continues: yes' and hands to build, not plan",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A fix ships the test that would have caught it" },
+    "tests": [
+      "plan.handoff returns [build] (not [plan]) when state.md says 'Plan continues: yes' and pendingAfter carries a pickable entry"
+    ],
+    "acceptance": "new test fails against chain.ts's pre-d563953 ordering (planContinues checked before hasPickable) and passes on current tree; the existing 'regardless of pendingAfter' test's title/assertion no longer overclaims for the non-empty case",
+    "notes": "Audit finding (commit-delta, d563953): the deadlock fix shipped with zero test coverage of the exact scenario it fixed; tests/chain.test.ts:175 asserts 'regardless of pendingAfter' but only exercises pendingAfter: []."
+  }
+]
