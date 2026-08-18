@@ -1,42 +1,5 @@
 [
   {
-    "tag": "job-frictioncount-loud-or-nothing",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "countFrictionFiles (~L411) distinguishes ENOENT (reads 0) from any other readdir error (reads unreadable), mirroring the same file's readPendingLoose; JobStatusEntry.frictionCount becomes number | null | undefined"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "render a null frictionCount distinctly from 0, the way pending: null already renders (~L696-699)"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "pin the ENOENT-vs-other-error distinction"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "countFrictionFiles mirrors readPendingLoose's ENOENT-only swallow; frictionCount surfaces null on real read errors",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "tests": [
-      "frictionCount reads 0 when the friction dir is absent (ENOENT)",
-      "frictionCount reads null (not 0) when the friction dir exists but readdir fails for a non-ENOENT reason",
-      "flume status / job status renders a null frictionCount distinctly from a 0 count"
-    ],
-    "acceptance": "all three pass",
-    "notes": "job.ts's own readPendingLoose is the in-file precedent for the ENOENT-only catch. Ratified 2026-08-18 human sign-off, derivable now (see git log)."
-  },
-  {
     "tag": "cli-loop-stray-positional-refuse",
     "gate": {
       "kind": "open"
