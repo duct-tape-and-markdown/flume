@@ -14,7 +14,7 @@
         },
         {
           "path": "tests/cli.test.ts",
-          "description": "replace the local STRIPPED_VARS literal (L666-672) with an import of subprocess.ts's exported list, closing the seed-side restatement CLI-HERMETICENV-PIN-GENERICIZE-PREFIX-CHECK left open."
+          "description": "replace the local STRIPPED_VARS literal (L668-673) with an import of subprocess.ts's exported list, closing the seed-side restatement CLI-HERMETICENV-PIN-GENERICIZE-PREFIX-CHECK left open."
         }
       ],
       "retire": []
