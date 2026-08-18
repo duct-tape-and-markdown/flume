@@ -2899,7 +2899,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     const repo = await makeJobRepo("main"); // no .flume/chain.ts written
     try {
       const r = await runCli(repo.dir, ["check"]);
-      expect(r.code).toBe(69);
+      expect(r.code).toBe(EX_MOUNT_DEAD);
     } finally {
       await repo.cleanup();
     }
