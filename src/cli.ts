@@ -73,7 +73,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * that fails to parse or that declares a path outside the consumer phase's
  * fence.
  */
-const EX_DATAERR = 65;
+export const EX_DATAERR = 65;
 
 /**
  * sysexits.h `EX_IOERR` — I/O failed on a file known to exist (permission
@@ -81,7 +81,7 @@ const EX_DATAERR = 65;
  * (`.claude/rules/engineering.md`, "Loud or nothing": a stat failure other
  * than absence must never read as "nothing to check").
  */
-const EX_IOERR = 74;
+export const EX_IOERR = 74;
 
 /**
  * Resolve flume's own package.json (sibling of src/ in checkout, sibling of

@@ -28,6 +28,8 @@ import {
   tickExitCode,
   loopExitCode,
   loopCompletionSummary,
+  EX_DATAERR,
+  EX_IOERR,
 } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import {
@@ -2758,7 +2760,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       ]);
 
       const r = await runCli(repo.dir, ["check"]);
-      expect(r.code).toBe(65);
+      expect(r.code).toBe(EX_DATAERR);
       expect(r.out).toContain("schema violation");
       expect(r.out).toContain("[0]");
     } finally {
@@ -2786,7 +2788,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       ]);
 
       const r = await runCli(repo.dir, ["check"]);
-      expect(r.code).toBe(65);
+      expect(r.code).toBe(EX_DATAERR);
       expect(r.out).toContain("outside the consumer phase's fence");
       expect(r.out).toContain("OUT-OF-FENCE");
       expect(r.out).toContain("docs/readme.md");
@@ -2853,7 +2855,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       });
 
       const r = await runCli(repo.dir, ["check"]);
-      expect(r.code).toBe(74);
+      expect(r.code).toBe(EX_IOERR);
       expect(r.out).not.toContain("absent");
       expect(r.out).toContain("failed to read");
     } finally {
@@ -3206,7 +3208,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       await mkdir(join(frictionDir, "note.md"), { recursive: true });
 
       const r = await runCli(repo.dir, ["friction", "note.md"]);
-      expect(r.code).toBe(74);
+      expect(r.code).toBe(EX_IOERR);
       expect(r.out).not.toContain("no note named");
       expect(r.out).toContain("failed to read");
     } finally {
@@ -3225,7 +3227,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       await writeFile(join(repo.dir, ".flume", "friction"), "not a dir\n");
 
       const r = await runCli(repo.dir, ["friction"]);
-      expect(r.code).toBe(74);
+      expect(r.code).toBe(EX_IOERR);
       expect(r.out.trim()).not.toBe("");
       expect(r.out).toContain("failed to read");
     } finally {
