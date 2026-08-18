@@ -960,7 +960,7 @@ async function main(): Promise<number> {
     // infer relaunch-safety instead of being told it. No pidfile: silent,
     // unchanged from pre-§17 output.
     let supervisorLive = false;
-    if (existsSync(join(flumeDir, "loop.pid"))) {
+    if (existsSync(namespacedJoin(flumeDir, "loop.pid"))) {
       const pid = await liveLoopPid(flumeDir);
       supervisorLive = pid !== null;
       console.log(
@@ -1443,7 +1443,10 @@ async function main(): Promise<number> {
     // two supervisors against one state root race plan/build state. Lives
     // under flumeDir (§16): the state root is what races, and a relocated
     // dock must carry its lock with it.
-    const lockPath = join(flumeDir, "loop.pid");
+    // win32 MAX_PATH: flumeDir can nest deep under a job/state root;
+    // namespacedJoin (src/paths.ts) is the shared idiom — see
+    // .claude/rules/platform-facts.md.
+    const lockPath = namespacedJoin(flumeDir, "loop.pid");
     mkdirSync(flumeDir, { recursive: true });
     const priorPid = await liveLoopPid(flumeDir);
     if (priorPid !== null) {

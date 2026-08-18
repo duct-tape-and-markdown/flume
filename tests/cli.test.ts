@@ -10,7 +10,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -40,6 +40,8 @@ import {
 import { CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
+
+const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
 const repoRoot = "/repo/root";
 
@@ -3387,4 +3389,32 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
       await repo.cleanup();
     }
   }, 30_000);
+});
+
+describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
+  // toNamespacedPath is a no-op on POSIX, so any roundtrip test of loop.pid
+  // behavior passes identically whether cli.ts routes through namespacedJoin
+  // or a bare join. Pin the source shape directly, mirroring
+  // Baton.test.ts's "win32 MAX_PATH fix" precedent — job.ts:liveLoopPid is
+  // the reference shape every loop.pid call site here must match.
+  const src = readFileSync(CLI_SRC_PATH, "utf8");
+
+  it("never builds the loop.pid path with a bare join", () => {
+    const bareJoinLoopPid = /(?<!namespaced)\bjoin\([^)]*"loop\.pid"/g;
+    expect(src.match(bareJoinLoopPid)).toBeNull();
+  });
+
+  it("builds the status-check loop.pid path (existsSync) through namespacedJoin", () => {
+    expect(src).toMatch(/existsSync\(namespacedJoin\(flumeDir,\s*"loop\.pid"\)\)/);
+  });
+
+  it("builds the loop-lock loop.pid path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {
+    const lockPathAssign = src.match(/const lockPath = (namespacedJoin\(flumeDir,\s*"loop\.pid"\));/);
+    expect(lockPathAssign).not.toBeNull();
+
+    expect(src).toMatch(/writeFileSync\(lockPath,/);
+    const unlinkCalls = src.match(/unlinkSync\(lockPath\)/g);
+    expect(unlinkCalls).not.toBeNull();
+    expect(unlinkCalls!.length).toBeGreaterThanOrEqual(2);
+  });
 });
