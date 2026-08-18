@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "cli-looppid-namespacedjoin",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "wrap loop.pid path construction (~line 1446) and its existsSync/writeFileSync/unlinkSync call sites (~963, 1455, 1465, 1477) with namespacedJoin, matching job.ts's liveLoopPid"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "add win32 MAX_PATH source-shape pin for loop.pid fs calls, per tests/Baton.test.ts's precedent describe block"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cli.ts's loop.pid fs calls use bare join, not namespacedJoin — silent MAX_PATH failure on win32 unlike sibling job.ts:liveLoopPid",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Windows MAX_PATH (~260 chars) breaks fs calls with no long component"
+    },
+    "tests": [
+      "cli.ts's loop.pid fs calls (existsSync/writeFileSync/unlinkSync) each route through namespacedJoin, never a bare join — source-shape pin mirroring tests/Baton.test.ts's win32 MAX_PATH test"
+    ],
+    "acceptance": "cli.ts:963,1446,1455,1465,1477 all wrap the loop.pid path with namespacedJoin; new test fails on pre-fix source, passes after; tsc and vitest green",
+    "notes": "Found in this tick's posture sweep of cli.ts. Every other fs-call site in cli.ts already uses namespacedJoin (977,1089,1153,1257,1280,1298,1426); only loop.pid was missed. job.ts:300 liveLoopPid is the reference shape."
+  }
+]
