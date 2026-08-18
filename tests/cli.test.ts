@@ -11,7 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1497,6 +1497,31 @@ describe("flume status — friction line (§6)", () => {
       expect(r.out).toContain("hibernating");
       expect(r.out).not.toContain("friction:");
     } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("renders 'friction: unreadable' when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      // Strip traversal permission on the friction dir itself: readdir now
+      // fails with EACCES — the dir exists but can't be read — not ENOENT
+      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
+      // EACCES fixture `flume job status`'s own frictionCount test uses
+      // (tests/job.test.ts).
+      await chmod(frictionDir, 0o000);
+
+      const r = await runCli(repo.dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).toContain("friction: unreadable");
+      expect(r.out).not.toContain("note(s) await routing");
+    } finally {
+      await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
       await repo.cleanup();
     }
   }, 60_000);

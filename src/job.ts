@@ -418,8 +418,12 @@ export interface JobStatus {
  * exists but `readdir` fails for any other reason — that failure is a
  * real unresolved input, not a legitimate zero, so it must not read the
  * same as an empty dir (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * Exported so `frictionCountLine` (`src/Dispatcher.ts`) shares this
+ * ENOENT-vs-other split instead of re-deriving it
+ * (`.claude/rules/engineering.md`, "the fix lands at the mechanism").
  */
-function countFrictionFiles(dir: string): number | null {
+export function countFrictionFiles(dir: string): number | null {
   try {
     // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a job
     // dir onto chain.friction, the same construction writeRevertNote and

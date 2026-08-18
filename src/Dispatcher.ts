@@ -46,6 +46,7 @@ import { partitionByFileOverlap } from "./partition.js";
 import { namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
+import { countFrictionFiles } from "./job.js";
 
 /**
  * Local-mutable shape for accumulating gate results before they widen to
@@ -737,27 +738,28 @@ function validateNoDeadDeclarations(chain: Chain): void {
  * the loop-end summary (§6, v0.6.2): count of files directly under the
  * declared friction dir, resolved against `stateRoot` — whichever state
  * root is in play for the caller (the repo's `flumeDir`, or a job's dir).
- * `undefined` when `Chain.friction` is undeclared, the dir is absent, or it
- * holds no files — callers print a line only when this resolves to a
- * string (§6: "when declared and non-empty").
+ * `undefined` when `Chain.friction` is undeclared, the dir is absent
+ * (`ENOENT`), or it holds no files — callers print a line only when this
+ * resolves to a string (§6: "when declared and non-empty"). When the dir
+ * exists but `readdir` fails for any other reason (permission denied, a
+ * path too long for the platform, …), that is a real unresolved input, not
+ * a legitimate zero: it reads `"friction: unreadable"` rather than folding
+ * into the same silence as "nothing declared" or "nothing filed"
+ * (`.claude/rules/engineering.md`, "Loud or nothing") — the same split
+ * `countFrictionFiles` (`src/job.ts`) gives `flume job status`, reused here
+ * rather than re-derived (`.claude/rules/engineering.md`, "the fix lands at
+ * the mechanism").
  */
 export async function frictionCountLine(
   stateRoot: string,
   chain: Chain,
 ): Promise<string | undefined> {
   if (chain.friction === undefined) return undefined;
-  let entries: Dirent[];
-  try {
-    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
-    // chain.friction) construction writeRevertNote and harvestFriction
-    // guard below — namespacedJoin (src/paths.ts) is the shared idiom.
-    entries = await readdir(namespacedJoin(stateRoot, chain.friction), {
-      withFileTypes: true,
-    });
-  } catch {
-    return undefined;
-  }
-  const count = entries.filter((e) => e.isFile()).length;
+  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
+  // chain.friction) construction writeRevertNote and harvestFriction guard
+  // below — namespacedJoin (src/paths.ts) is the shared idiom.
+  const count = countFrictionFiles(namespacedJoin(stateRoot, chain.friction));
+  if (count === null) return "friction: unreadable";
   return count > 0 ? `friction: ${count} note(s) await routing` : undefined;
 }
 
