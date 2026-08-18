@@ -370,10 +370,20 @@ The suite has two lanes:
 
 - **Fast lane** — the default `vitest run`, exactly what the `afterMerge` gate invokes. It must
   stay fast, because its cost multiplies with wave width.
-- **Integration lane** — anything spawning real subprocesses: real `flume tick`/`loop` through
-  `tsx`, real `git`. Marked by the `*.integration.test.ts` filename convention and **excluded
-  from the default run** by `vitest.config.ts`, so the gate never runs them. They run via
-  `pnpm test:integration`, which selects the lane with `vitest run --mode integration`.
+- **Integration lane** — a test whose method is slow or load-sensitive by construction:
+  spawning a **Node child process** (`flume tick`/`loop` through `tsx` — a full runtime
+  startup and module resolution per spawn), invoking a **real agent**, or asserting on
+  **wall-clock timing**. Marked by the `*.integration.test.ts` filename convention and
+  **excluded from the default run** by `vitest.config.ts`, so the gate never runs them. They
+  run via `pnpm test:integration`, which selects the lane with `vitest run --mode integration`.
+
+  Raw `git` plumbing on temp fixtures is **not** a trigger by itself: measured across ~190
+  default-lane tests it is fast and has never flaked, and naming it here would move most of
+  `Dispatcher.test.ts` for a cost it does not pay. The lane boundary names the measured cost
+  drivers — Node startup, agent invocations, timing probes — not "subprocess" as a category.
+  A load-sensitive timing assertion belongs in *neither* lane until it is event-based: under
+  the afterMerge gate's full-suite contention it reverts innocent entries (three in one day,
+  2026-08-17), which is a defect in the test, not a lane assignment.
 
 Rejected, and worth not re-proposing:
 
