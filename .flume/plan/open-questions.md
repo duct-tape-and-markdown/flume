@@ -43,3 +43,10 @@ Options:
 No recommendation — same calibration-not-research fork as the resolved git question: needs a
 human read on whether "Node-child spawn" was meant to reach single-invocation CLI-surface tests
 at all, or only multi-tick engine-behavior spawns.
+
+**Answered (2026-08-18, human sign-off via interactive session):** option 1, and the spec is
+already amended — the trigger is spawning `flume tick`/`loop` to drive multi-tick or engine
+behavior; a single-invocation CLI-surface spawn is the test's subject, not overhead, and is
+compliant as practiced. Truthful to measurement: every flake was an engine-behavior spawn or a
+timing probe; the ~100 `runCli` surface tests have never flaked. Question closes with no code
+change.

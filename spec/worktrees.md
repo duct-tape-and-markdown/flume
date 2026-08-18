@@ -371,9 +371,13 @@ The suite has two lanes:
 - **Fast lane** — the default `vitest run`, exactly what the `afterMerge` gate invokes. It must
   stay fast, because its cost multiplies with wave width.
 - **Integration lane** — a test whose method is slow or load-sensitive by construction:
-  spawning a **Node child process** (`flume tick`/`loop` through `tsx` — a full runtime
-  startup and module resolution per spawn), invoking a **real agent**, or asserting on
-  **wall-clock timing**. Marked by the `*.integration.test.ts` filename convention and
+  spawning `flume tick`/`loop` **to drive multi-tick or engine behavior** (each spawn is a
+  full Node runtime startup, and engine behavior stacks several per test), invoking a
+  **real agent**, or asserting on **wall-clock timing**. A single-invocation CLI-surface
+  test — argv parsing, an exit code, output shape — must spawn one process to test
+  process-level behavior at all; that spawn is the test's subject, not overhead, and
+  (~100 such default-lane tests, zero flakes ever) is not what this lane exists to
+  exclude. Marked by the `*.integration.test.ts` filename convention and
   **excluded from the default run** by `vitest.config.ts`, so the gate never runs them. They
   run via `pnpm test:integration`, which selects the lane with `vitest run --mode integration`.
 
