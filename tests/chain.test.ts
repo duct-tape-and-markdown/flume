@@ -172,10 +172,19 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
   });
 
   describe("plan.handoff", () => {
-    it("re-wakes plan when state.md declares 'Plan continues: yes', regardless of pendingAfter", async () => {
+    it("re-wakes plan when state.md declares 'Plan continues: yes' and nothing remains pickable", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
       const result = tickResult({ phaseName: "plan", pendingAfter: [] });
       expect(plan.handoff(result)).toEqual(["plan"]);
+    });
+
+    it("hands off to build when state.md declares 'Plan continues: yes' but a pickable entry remains (posture-sweep.md, 'The sweep yields to pickable work')", async () => {
+      await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
+      const result = tickResult({
+        phaseName: "plan",
+        pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
+      });
+      expect(plan.handoff(result)).toEqual(["build"]);
     });
 
     it("hands off to build when state.md says 'no' and a pickable entry remains", async () => {
