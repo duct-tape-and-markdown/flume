@@ -648,15 +648,19 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
  * strips every identity/provenance FLUME_* var it knows of — a job
  * resolution or a tip-claim PID leaked from the vitest process's own env is
  * exactly as capable of retargeting a spawned CLI as a relocated state root
- * is. `STRIPPED_VARS` below is the single list driving setup, restore, and
- * assertion, so a future addition to `hermeticEnv()`'s strip set needs one
- * line here, not a hand-sync across separate blocks (CLI-HERMETICENV-COVERS-ALL-VARS
- * — the fast-lane pin previously hardcoded only 3 of the then-5 stripped
- * vars, and neither of the two added later touched it). Pinned fast-lane so
- * a future partial copy of the harness cannot ship green through build's
- * afterMerge gate. Not `FLUME_WORKTREES_DIR` / `FLUME_QUARANTINED_SLUGS`:
- * those are per-test config overrides layered on top of `hermeticEnv()`'s
- * output, not identity leaks it strips.
+ * is. `hermeticEnv()` has no exported strip-list to import here, so the
+ * assertion below checks the invariant directly — no key matching
+ * `/^FLUME_/` survives in its output — rather than restating a copy of its
+ * delete set (`.claude/rules/engineering.md`, "Derived state is computed,
+ * never restated beside its source"; CLI-HERMETICENV-COVERS-ALL-VARS had
+ * hardcoded a name list here that fell behind hermeticEnv()'s own deletes
+ * twice). `STRIPPED_VARS` below only seeds realistic input (and keeps the
+ * test non-vacuous); it plays no role in what gets checked, so a var added
+ * to `hermeticEnv()`'s strip set — or one that leaks ambiently from an outer
+ * flume-on-flume invocation — is caught without touching this file. Not
+ * `FLUME_WORKTREES_DIR` / `FLUME_QUARANTINED_SLUGS`: those are per-test
+ * config overrides layered on top of `hermeticEnv()`'s output, not identity
+ * leaks it strips, and are never set as ambient input here.
  */
 describe("hermeticEnv — strips every identity/provenance FLUME_* var", () => {
   const STRIPPED_VARS = [
@@ -667,18 +671,20 @@ describe("hermeticEnv — strips every identity/provenance FLUME_* var", () => {
     "FLUME_TIP_CLAIM_HELD",
   ];
 
-  it(`carries none of ${STRIPPED_VARS.join(", ")} when all are set`, () => {
+  it("carries no key matching /^FLUME_/ when identity/provenance vars are set", () => {
     const prior = Object.fromEntries(STRIPPED_VARS.map((key) => [key, process.env[key]]));
     try {
       for (const key of STRIPPED_VARS) {
         process.env[key] = `outer-${key}`;
       }
 
-      const env = hermeticEnv();
+      const leaked = Object.keys(process.env).filter((key) => /^FLUME_/.test(key));
+      expect(leaked.length).toBeGreaterThan(0);
 
-      for (const key of STRIPPED_VARS) {
-        expect(env[key]).toBeUndefined();
-      }
+      const env = hermeticEnv();
+      const survivors = Object.keys(env).filter((key) => /^FLUME_/.test(key));
+
+      expect(survivors).toEqual([]);
     } finally {
       for (const [key, value] of Object.entries(prior)) {
         if (value === undefined) delete process.env[key];
