@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "tag": "test-promptinlineexec-cap-overrun-rejects",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "pin inline-exec output-cap overrun per spec/prompt.md 'An unresolved inline-exec span fails the tick'"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin inline-exec output-cap overrun: rejects and kills the child, never truncates silently",
+    "per": { "path": "spec/prompt.md", "section": "An unresolved inline-exec span fails the tick" },
+    "tests": [
+      "a command whose stdout exceeds the inline-exec output cap (src/Prompt.ts INLINE_EXEC_MAX_BUFFER) rejects rather than resolving with truncated output"
+    ],
+    "acceptance": "new test fails against a runInlineExec that silently truncates past the cap instead of rejecting; passes on current tree",
+    "notes": "Sweep of tests/Prompt.test.ts (posture-sweep.md): cap-overrun is one of four named resolution-failure triggers in spec but has zero coverage anywhere in the repo — a regression to silent truncation would ship green."
+  }
+]
