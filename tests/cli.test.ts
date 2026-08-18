@@ -1414,6 +1414,36 @@ function minimalChainSrc(friction?: string): string {
 }
 
 /**
+ * `minimalChainSrc`, but with an agent declared so the dispatcher never
+ * falls through to the real `claudeCode()` agent (`src/Dispatcher.ts`) —
+ * for tests that only need a tick to complete cleanly, not to observe what
+ * an agent does. spec/worktrees.md "The default test lane must stay fast":
+ * a real agent invocation in the fast lane is flaky under parallel load.
+ */
+function minimalStubbedAgentChainSrc(): string {
+  return (
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "stub-agent",\n` +
+    `  async invoke() {\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+/**
  * §6 (v0.6.2) — `flume status`'s friction line (`frictionCountLine`,
  * `src/Dispatcher.ts`): a count of files in the declared friction dir,
  * appended only when declared and non-empty. Best-effort: a missing/broken
@@ -2571,7 +2601,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
     async () => {
       const repo = await makeJobRepo("main");
       try {
-        await writeRepoConfig(repo.dir, minimalChainSrc());
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         await writeFile(join(flumeDir, "stop"), "", "utf8");
         new Baton(flumeDir).wake("probe");
