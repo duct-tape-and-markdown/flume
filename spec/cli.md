@@ -68,12 +68,20 @@ short-circuit before state-dir resolution, chain load, and any side effect, so
 they answer from any cwd. Only the global `--job` extraction precedes them, and
 a `--job` carrying no value refuses first.
 
-Usage-shaped failures exit 2 uniformly: unknown command or job verb, a missing
-`<phase>` or `<name>`, an unknown phase, `--entry` with no matching entry, a
-`--max` that is missing, non-numeric, or negative (refused before any tick
-runs), a resolution-authority conflict (below), a cross-repo `FLUME_DIR`
-(below), and the CJS-context refusal (below). Everything else is the tick/loop
-exit-code contract in `spec/loop.md`.
+Usage-shaped failures exit 2 uniformly. The category is **any argv the surface
+cannot honor as typed** — the instances below are its members, not a closed
+enumeration: unknown command or job verb; a missing `<phase>` or `<name>`; an
+unknown phase; **an unexpected trailing positional past what a subcommand
+consumes** (`tick`, `stop`, and `check` consume none; `wake`/`sleep` exactly
+one) — running something other than what the operator typed is the harm this
+class exists to refuse, and `flume tick plan` silently ticking whichever phase
+was awake is the field-reported shape (gh#1); `--entry` with no matching
+entry; a `--max` that is missing, non-numeric, or negative (refused before any
+tick runs); a resolution-authority conflict (below); a cross-repo `FLUME_DIR`
+(below); and the CJS-context refusal (below). `status` is the one named
+exception: specced to exit 0 always, it ignores extras rather than acquiring
+its first failure mode. Everything else is the tick/loop exit-code contract in
+`spec/loop.md`.
 
 The runtime help text is the authoritative statement of the surface;
 `docs/CLI.md` carries one prose entry per subcommand covering exit semantics,
