@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "cli-hermeticenv-pin-genericize-prefix-check",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "Replace the STRIPPED_VARS hardcoded-list assertion (~L654-690) with a generic /^FLUME_/-prefix check per derived-state section — e2db3e4 widened the pin to 5 vars but still hand-syncs a literal list against hermeticEnv()'s actual delete-set, reintroducing the staleness class the entry it shipped was filed to close."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "hermeticEnv pin still hardcodes STRIPPED_VARS instead of asserting no FLUME_-prefixed key survives, so a future stripped var again needs a manual test-side sync",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "hermeticEnv() leaves no key matching /^FLUME_/ in its returned env, so a future var added to its strip set is caught without any test-side edit"
+    ],
+    "acceptance": "cli.test.ts's hermeticEnv pin fails if a new FLUME_* var is added to hermeticEnv() without being stripped, with zero test-side changes required",
+    "notes": "hermeticEnv() (subprocess.ts:40-46) has no exported list to derive from — it's 5 individual delete statements — so the robust fix asserts the invariant directly (no /^FLUME_/ key survives) rather than deriving a list. This was the original entry's own notes recommendation; e2db3e4 took the hardcoded-list path instead."
+  }
+]
