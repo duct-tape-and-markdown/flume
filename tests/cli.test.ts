@@ -645,29 +645,40 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
 
 /**
  * The shared subprocess harness's `hermeticEnv()` (`tests/helpers/subprocess.ts`)
- * strips all three canonical FLUME_* vars, not just FLUME_DIR/FLUME_CONFIG_DIR
- * — a job resolution leaked from the vitest process's own env is exactly as
- * capable of retargeting a spawned CLI as a relocated state root is. Pinned
- * fast-lane so a future partial copy of the harness cannot ship green through
- * build's afterMerge gate.
+ * strips every identity/provenance FLUME_* var it knows of — a job
+ * resolution or a tip-claim PID leaked from the vitest process's own env is
+ * exactly as capable of retargeting a spawned CLI as a relocated state root
+ * is. `STRIPPED_VARS` below is the single list driving setup, restore, and
+ * assertion, so a future addition to `hermeticEnv()`'s strip set needs one
+ * line here, not a hand-sync across separate blocks (CLI-HERMETICENV-COVERS-ALL-VARS
+ * — the fast-lane pin previously hardcoded only 3 of the then-5 stripped
+ * vars, and neither of the two added later touched it). Pinned fast-lane so
+ * a future partial copy of the harness cannot ship green through build's
+ * afterMerge gate. Not `FLUME_WORKTREES_DIR` / `FLUME_QUARANTINED_SLUGS`:
+ * those are per-test config overrides layered on top of `hermeticEnv()`'s
+ * output, not identity leaks it strips.
  */
-describe("hermeticEnv — strips all three canonical FLUME_* vars", () => {
-  it("carries none of FLUME_DIR, FLUME_CONFIG_DIR, FLUME_JOB when all three are set", () => {
-    const prior = {
-      FLUME_DIR: process.env.FLUME_DIR,
-      FLUME_CONFIG_DIR: process.env.FLUME_CONFIG_DIR,
-      FLUME_JOB: process.env.FLUME_JOB,
-    };
+describe("hermeticEnv — strips every identity/provenance FLUME_* var", () => {
+  const STRIPPED_VARS = [
+    "FLUME_DIR",
+    "FLUME_CONFIG_DIR",
+    "FLUME_JOB",
+    "FLUME_DIR_RESOLVED_FOR",
+    "FLUME_TIP_CLAIM_HELD",
+  ];
+
+  it(`carries none of ${STRIPPED_VARS.join(", ")} when all are set`, () => {
+    const prior = Object.fromEntries(STRIPPED_VARS.map((key) => [key, process.env[key]]));
     try {
-      process.env.FLUME_DIR = "/outer/state";
-      process.env.FLUME_CONFIG_DIR = "/outer/config";
-      process.env.FLUME_JOB = "outer-job";
+      for (const key of STRIPPED_VARS) {
+        process.env[key] = `outer-${key}`;
+      }
 
       const env = hermeticEnv();
 
-      expect(env.FLUME_DIR).toBeUndefined();
-      expect(env.FLUME_CONFIG_DIR).toBeUndefined();
-      expect(env.FLUME_JOB).toBeUndefined();
+      for (const key of STRIPPED_VARS) {
+        expect(env[key]).toBeUndefined();
+      }
     } finally {
       for (const [key, value] of Object.entries(prior)) {
         if (value === undefined) delete process.env[key];
