@@ -31,5 +31,47 @@
     ],
     "acceptance": "all three pass; the first fails on the pre-fix tree",
     "notes": "Audit finding on f405e31: spec's general rule ('any argv the surface cannot honor as typed') covers loop too — it consumes zero positionals just like tick/stop/check, but wasn't in spec's named list or the fix's scope. job run (~L865) already refuses excess words on this exact rewritten path; bare `flume loop <extra>` doesn't."
+  },
+  {
+    "tag": "dispatcher-frictioncountline-loud-or-nothing",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "export countFrictionFiles (~L422) so Dispatcher.ts can reuse the ENOENT-vs-other split instead of re-deriving it"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "frictionCountLine (~L744) reuses that shared detection; renders 'friction: unreadable' on a non-ENOENT readdir failure instead of folding it into undefined, same as countFrictionFiles now does"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "pin the unreadable-vs-absent split for frictionCountLine (EACCES fixture, mirrors tests/job.test.ts's) and the loop-end summary rendering it"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "add the unreadable case to the existing 'flume status — friction line (§6)' describe block, alongside declared/absent/empty"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "frictionCountLine (Dispatcher.ts) still folds non-ENOENT readdir errors into silence and duplicates job.ts detection — spec already names the drift",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "`flume status` owes exactly this"
+    },
+    "tests": [
+      "frictionCountLine reads 'friction: unreadable' (not silence) when the declared dir exists but readdir fails for a non-ENOENT reason",
+      "frictionCountLine still reads undefined when the dir is absent (ENOENT) — baseline unchanged",
+      "flume status renders the unreadable line the same way job status renders it",
+      "the loop-end friction summary renders the unreadable line rather than silently omitting it"
+    ],
+    "acceptance": "all four pass; the first fails on the pre-fix tree",
+    "notes": "Audit finding on a8d52dc: fixed job.ts countFrictionFiles per engineering.md Loud or nothing but left sibling frictionCountLine (Dispatcher.ts) with the identical bare-catch-swallows-everything shape. spec/cli.md already names the duplication as Drift under this section, citing engineering.md the fix lands at the mechanism — this entry closes both the drift and the error-swallow it left unaddressed."
   }
 ]
