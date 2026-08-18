@@ -52,6 +52,14 @@ resolve first).
 
 Status: PARKED
 
+**Third data point (2026-08-17, plan self-audit):** swept `tests/cli.test.ts` (3159 lines,
+default lane) this tick. It repeatedly spawns real `flume tick`/`loop` through `tsx` via its
+shared `runCli` helper (`tests/helpers/subprocess.ts:51`) — the section's *other* named
+trigger, not just "real git." One call site is now filed separately as
+`cli-test-stop-flag-real-agent-flake` (mechanical fix, doesn't wait on this fork), but the
+file's broader real-`flume-tick`-through-`tsx` usage is the same open calibration question as
+the `Dispatcher.test.ts` git usage below, on the other named trigger.
+
 Inbox finding asked for a systematic sweep of the default lane for load-flaky real-subprocess/
 timing tests, naming `tests/Dispatcher.test.ts` as suspect. Swept it: the file's shared `exec`
 helper (`tests/Dispatcher.test.ts:69`) spawns real `git` subprocesses (`git init`/`commit`/
@@ -396,3 +404,30 @@ Options:
 
 No recommendation — same shape as the cli.ts question above (a split touches many import sites),
 wants a human call on scope before it's a pending entry.
+
+## `tests/cli.test.ts` bundles several independently-separable command suites in one 3159-line file (sweep, tests/cli.test.ts)
+
+Status: PARKED
+
+Sweep finding (posture pass over `tests/cli.test.ts`, posture-sweep.md's "a module carrying jobs
+that want separate homes" lens — same lens that flagged `src/cli.ts` and `src/Phase.ts` above):
+the file bundles tick/loop exit-code mapping, the cross-process loop lock, `--job` resolution
+end-to-end, `flume status`'s friction/capability/pending lines, `flume check`, `flume friction`,
+`flume log`, and `flume stop` in one suite. The repo already splits comparable CLI-adjacent
+surface into standalone files (`job.test.ts`, `job.integration.test.ts`,
+`loop-process-boundary.integration.test.ts`, `bin.test.ts`), so there's internal precedent for
+narrower files here too. Also present, lower stakes: `runDistCli` (`tests/cli.test.ts:701-715`)
+duplicates `runCli`'s spawn/error-normalize shape (`tests/helpers/subprocess.ts:51-67`) instead
+of extending it, and a "harvest a dead pid" fixture block repeats verbatim three times
+(`:915-918`, `:980-983`, `:1309-1312`) — both accepted as debt, not filed, per
+posture-sweep.md's routing bar (pure duplication).
+
+Options:
+- Leave as one file — mirrors the cli.ts "single front door" argument; size alone isn't a
+  defect.
+- Split along the command-suite seams (tick/loop, `--job`, status, check, friction, log, stop),
+  matching the file layout precedent already set by the other CLI-adjacent test files.
+
+No recommendation — same shape as the cli.ts and Phase.ts split questions above: boundaries
+aren't mechanical (by subcommand vs. by concern), and a split touches a large single-file test
+suite's shared fixtures; wants a human call on scope before it's a pending entry.

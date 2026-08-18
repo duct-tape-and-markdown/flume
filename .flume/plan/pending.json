@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "cli-test-stop-flag-real-agent-flake",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "stub the agent in the stop-flag 'tick ignores the flag and runs normally' fixture, per §The default test lane must stay fast"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Stub the real agent in cli.test.ts's stop-flag tick test to remove real-claude-invocation flakiness under parallel load",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "tests": [
+      "the stop-flag 'flume tick ignores the flag and runs normally' test passes deterministically without spawning a real claude agent, under parallel full-suite load"
+    ],
+    "acceptance": "test passes reliably in isolation and in the full `pnpm test` run; no real claude-code process spawned by this test",
+    "notes": "minimalChainSrc() declares no agent, so Dispatcher falls to the real claudeCode() agent (src/Dispatcher.ts:1343). Sibling fixtures in this file (jobEnvProbeChainSrc, jobFanoutProbeChainSrc) already stub agent.invoke -- mirror that pattern here. Measured: passed standalone in 13.2s, timed out at the file's 30s cap under full `pnpm test` parallel load (reproduced twice); isolated re-run also passed in 13.2s, confirming load-dependence not a hang."
+  }
+]
