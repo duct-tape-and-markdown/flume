@@ -1,1 +1,82 @@
-[]
+[
+  {
+    "tag": "cli-exitcode-exmountdead-literal-restated",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "~L2902: swap the bare literal 69 for the imported EX_MOUNT_DEAD constant per derived-state section — same restated-copy shape as the hermeticEnv pin, but simpler: EX_MOUNT_DEAD is already imported (L35) and used symbolically elsewhere in this file (L349, L511-519, L1158)."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cli.test.ts:2902 hardcodes exit code 69 instead of the EX_MOUNT_DEAD constant already imported and used elsewhere in the same file",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "the mount-dead 'flume check' exit-code assertion at ~L2902 references EX_MOUNT_DEAD, not a bare 69"
+    ],
+    "acceptance": "L2902 reads expect(r.code).toBe(EX_MOUNT_DEAD); no bare 69 literal remains for this assertion",
+    "notes": "Found during posture sweep of tests/cli.test.ts (a03f0c9's sweep frontier). One-line swap, no src/ change needed."
+  },
+  {
+    "tag": "cli-exitcode-export-exdataerr-exioerr",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "export EX_DATAERR (L76) and EX_IOERR (L84), mirroring the exported EX_TERMINAL_MISCONFIG/EX_MOUNT_DEAD pattern (Dispatcher.ts) these two module-private consts don't yet follow."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "import EX_DATAERR/EX_IOERR from src/cli.ts and replace the 5 bare 65/74 literals (~L2761, L2789, L2856, L3209, L3228) per derived-state section."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/cli.test.ts hardcodes exit codes 65/74 five times because src/cli.ts's EX_DATAERR/EX_IOERR consts aren't exported for the test to reference",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "each of the 5 EX_DATAERR/EX_IOERR exit-code assertions references the exported constant, not a bare literal"
+    ],
+    "acceptance": "src/cli.ts exports EX_DATAERR and EX_IOERR; all 5 test-side occurrences of literal 65/74 for these cases import and use them",
+    "notes": "Found in the same sweep as cli-exitcode-exmountdead-literal-restated. Unlike that entry this needs a src/cli.ts touch (add `export`) since these two consts are currently module-private, unlike their exported EX_TERMINAL_MISCONFIG/EX_MOUNT_DEAD siblings."
+  },
+  {
+    "tag": "cli-hermeticenv-export-strip-keys",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "export the literal FLUME_* key list hermeticEnv() deletes from (L42-46) so it becomes the one source of truth, instead of 5 unexported individual delete statements."
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "replace the local STRIPPED_VARS literal (L666-672) with an import of subprocess.ts's exported list, closing the seed-side restatement CLI-HERMETICENV-PIN-GENERICIZE-PREFIX-CHECK left open."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cli.test.ts's STRIPPED_VARS still hand-restates hermeticEnv()'s strip set to seed test input, even though a03f0c9 genericized the assertion side",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "a var added to hermeticEnv()'s exported strip-key list is automatically seeded and checked by the hermeticEnv test, with zero test-file edit"
+    ],
+    "acceptance": "subprocess.ts exports its strip-key list; cli.test.ts's STRIPPED_VARS is replaced by an import of it",
+    "notes": "Audited this tick: a03f0c9 closed the assertion-side restatement (CLI-HERMETICENV-PIN-GENERICIZE-PREFIX-CHECK) but left the seed-side list hand-authored — same class, one layer over. hermeticEnv() has no exported list today (5 individual `delete env.X` statements); convert to a loop over an exported const array."
+  }
+]
