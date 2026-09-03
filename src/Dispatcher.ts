@@ -1832,10 +1832,18 @@ export class Dispatcher {
     // v0.8 §4: the environment facts this chain asserts, matched against
     // each entry's `requiresCapability` gate.
     const capabilities = new Set(chain.capabilities ?? []);
-    const pickable = pending.filter(
-      (e) =>
-        isPickable(e, pending, isForkResolved, capabilities) &&
-        !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+    const gateEligible = pending.filter((e) =>
+      isPickable(e, pending, isForkResolved, capabilities),
+    );
+    // spec/loop.md "Repeated identical failures": entries the gate switch
+    // would pick, but this run's live quarantine drops anyway — reported on
+    // the result (below) so a chain's handoff can tell "quarantined open"
+    // from "genuinely pickable" without re-deriving it from pendingAfter.
+    const quarantinedTags = gateEligible
+      .filter((e) => quarantinedSlugs?.has(slugify(e.tag)) ?? false)
+      .map((e) => e.tag);
+    const pickable = gateEligible.filter(
+      (e) => !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
     );
 
     if (pickable.length === 0) {
@@ -1849,6 +1857,8 @@ export class Dispatcher {
           pendingAfter: pending,
           shippedTags: [],
           revertedTags: [],
+          quarantinedTags,
+          nothingPickable: true,
         },
       };
     }

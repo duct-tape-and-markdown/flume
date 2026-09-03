@@ -107,6 +107,24 @@ export interface TickResult {
    * distinguish from a genuine nothing-pickable no-op.
    */
   noCommit?: NoCommitMode;
+  /**
+   * spec/loop.md "The no-commit taxonomy" / "Repeated identical failures":
+   * fanout only. Tags a live-quarantined slug (this run's
+   * `FLUME_QUARANTINED_SLUGS`) dropped from the pickable set this tick.
+   * Empty, never absent, on a nothing-pickable tick with no quarantine in
+   * effect; absent entirely on a tick that provisioned an entry. Lets a
+   * chain's `handoff` tell a quarantined `open` entry — still `open` in
+   * `pendingAfter`, since `pending.json` itself is untouched — from a
+   * genuinely pickable one, without re-deriving it.
+   */
+  quarantinedTags?: readonly string[];
+  /**
+   * spec/loop.md "The no-commit taxonomy": true iff this fanout tick found
+   * nothing pickable (after the quarantine drop above) and therefore never
+   * invoked an agent. Absent on a tick that provisioned an entry — never
+   * `false`, mirroring `noCommit`'s absent-on-committed convention.
+   */
+  nothingPickable?: boolean;
 }
 
 /**

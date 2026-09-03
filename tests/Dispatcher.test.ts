@@ -4068,6 +4068,120 @@ describe("Dispatcher fanout — empty pickable set", () => {
   });
 });
 
+describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-quarantine-visibility)", () => {
+  it("a fanout tick with every open entry quarantined reports nothingPickable:true and the dropped tags on quarantinedTags", async () => {
+    const entries: PendingEntry[] = [
+      makeEntry("QUARANTINED-A", ["src/a.ts"]),
+      makeEntry("QUARANTINED-B", ["src/b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({});
+
+    const preHead = await head(fx.repo);
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      quarantinedSlugs: new Set(["quarantined-a", "quarantined-b"]),
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.nothingPickable).toBe(true);
+    expect([...(outcome.result?.quarantinedTags ?? [])].sort()).toEqual([
+      "QUARANTINED-A",
+      "QUARANTINED-B",
+    ]);
+    // pending.json itself is untouched — the entries still read `open`.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
+      "QUARANTINED-A",
+      "QUARANTINED-B",
+    ]);
+    expect(await head(fx.repo)).toBe(preHead);
+  });
+
+  it("quarantinedTags is empty (not absent) on a nothing-pickable tick with no quarantine", async () => {
+    const entries: PendingEntry[] = [
+      {
+        ...makeEntry("DOWN", ["src/down.ts"]),
+        gate: { kind: "blockedBy", tags: ["UP"] },
+      },
+      {
+        ...makeEntry("UP", ["src/up.ts"]),
+        gate: { kind: "parked", reason: "human needed" },
+      },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({});
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.nothingPickable).toBe(true);
+    expect(outcome.result?.quarantinedTags).toEqual([]);
+  });
+
+  it("both fields are absent on a tick that provisioned an entry", async () => {
+    const entries = [makeEntry("SHIPS", ["src/ships.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      ships: (cwd) =>
+        writeAndCommit(cwd, "src/ships.ts", "from-ships\n", "build(SHIPS): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["SHIPS"]);
+    expect(outcome.result?.nothingPickable).toBeUndefined();
+    expect(outcome.result?.quarantinedTags).toBeUndefined();
+  });
+});
+
 describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
   it("a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation", async () => {
     const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
