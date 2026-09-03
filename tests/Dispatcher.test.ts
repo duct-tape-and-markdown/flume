@@ -31,6 +31,8 @@ import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   worktreeDirName,
+  slugify,
+  priorAttemptPath,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -66,6 +68,15 @@ import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts
 // name it from the package entry point. This import fails tsc if it drops
 // from src/index.ts.
 import type { NoCommitMode } from "../src/index.ts";
+
+// Barrel-export pin (engineering.md "An export earns its consumer"):
+// slugify/priorAttemptPath are the chain-facing exported rule (spec/loop.md
+// "Prior-outcome feedback to the retrying tick"), so a chain author needs to
+// reach them from the package entry point, not just src/Dispatcher.ts.
+import {
+  slugify as indexSlugify,
+  priorAttemptPath as indexPriorAttemptPath,
+} from "../src/index.ts";
 
 const exec = promisify(execFile);
 
@@ -6840,13 +6851,18 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       // §5 record shape (mode + field names + JSON formatting) is
       // byte-identical for equivalent input — a one-sided edit to either
       // callsite's persisted record breaks this pin once the two sides'
-      // real, necessarily-distinct SHAs are normalized out.
+      // real, necessarily-distinct SHAs are normalized out. `at` is wall-
+      // clock and necessarily distinct between the two dispatcher runs, so
+      // it is normalized the same way (spec/loop.md "Every record is
+      // anchored": the field exists on both sides, its exact value is not
+      // what this pin is about).
       const normalize = (raw: string, expectedTip: string, observedTip: string) =>
         raw
           .split(expectedTip)
           .join("<EXPECTED>")
           .split(observedTip)
-          .join("<OBSERVED>");
+          .join("<OBSERVED>")
+          .replace(/"at": "[^"]*"/, '"at": "<AT>"');
       expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
         normalize(singletonRecord, singletonPreHead, singletonObservedHead),
       );
@@ -7218,6 +7234,276 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
   }, 20_000);
 });
 
+describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/at on every variant (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
+  it("src/index.ts re-exports the same slugify/priorAttemptPath functions, not second copies", () => {
+    expect(indexSlugify).toBe(slugify);
+    expect(indexPriorAttemptPath).toBe(priorAttemptPath);
+  });
+
+  it("priorAttemptPath(flumeDir, tag) matches the path the dispatcher itself reads/writes for a fanout entry's record", async () => {
+    // A tag exercising real slugification (uppercase, '.', '_', '(', ')' —
+    // all TAG_PATTERN-legal but none of them slug-safe on their own).
+    const tag = "Weird.Tag_Name(1)";
+    await writePending(fx.repo, [makeEntry(tag, ["src/o.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const failing: Gate = {
+      name: "revert-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "no" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "fanout-agent",
+      async invoke(inv) {
+        await writeAndCommit(inv.cwd, "src/o.ts", "x\n", "build: attempt");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const flumeDir = join(fx.repo, ".flume");
+    const derived = priorAttemptPath(flumeDir, tag);
+    expect(derived).toBe(
+      join(flumeDir, "prior-attempts", `${slugify(tag)}.json`),
+    );
+    expect(existsSync(derived)).toBe(true);
+    expect(JSON.parse(await readFile(derived, "utf8")).mode).toBe(
+      "gate-revert",
+    );
+  }, 20_000);
+
+  it("priorAttemptPath(flumeDir, phase.name) matches the path the dispatcher itself reads/writes for a singleton phase's record", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const agent: Agent = {
+      name: "bailing-singleton",
+      async invoke() {
+        return { exitCode: 0, stdout: "bailed\n", stderr: "" };
+      },
+    };
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const flumeDir = join(fx.repo, ".flume");
+    const derived = priorAttemptPath(flumeDir, "plan");
+    expect(existsSync(derived)).toBe(true);
+    expect(derived).toBe(join(flumeDir, "prior-attempts", "plan.json"));
+  }, 20_000);
+
+  /**
+   * None of the five modes below land anything on trunk (afterCommit
+   * gate-revert and tip-moved both revert/discard on the private worktree
+   * branch; voluntary-bail/platform-preempt/render-refused never commit at
+   * all) — so `headSha` on every one of them is the pre-tick trunk tip.
+   */
+  it("gate-revert record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const failing: Gate = {
+      name: "revert-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "no" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        "utf8",
+      ),
+    );
+    expect(record.mode).toBe("gate-revert");
+    expect(record.headSha).toBe(preHead);
+    expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+
+  it("voluntary-bail record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "bailing-singleton",
+      async invoke() {
+        return { exitCode: 0, stdout: "BAILED: no.\n", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        "utf8",
+      ),
+    );
+    expect(record.mode).toBe("voluntary-bail");
+    expect(record.headSha).toBe(preHead);
+    expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+
+  it("platform-preempt record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "preempted-singleton",
+      async invoke() {
+        return { exitCode: 137, stdout: "", stderr: "Killed" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        "utf8",
+      ),
+    );
+    expect(record.mode).toBe("platform-preempt");
+    expect(record.headSha).toBe(preHead);
+    expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+
+  it("render-refused record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      "digest: !`echo boom-detail 1>&2; exit 3`\n",
+      "utf8",
+    );
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "never-invoked",
+      async invoke() {
+        throw new Error("must not be invoked — render refused first");
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        "utf8",
+      ),
+    );
+    expect(record.mode).toBe("render-refused");
+    expect(record.headSha).toBe(preHead);
+    expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+
+  it("tip-moved record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "rewriting-singleton",
+      async invoke(inv) {
+        // Rewrite the worktree branch out from under itself — the only way
+        // this leg refuses (spec/worktrees.md "Singleton runs in a
+        // worktree").
+        await exec("git", ["checkout", "--orphan", "rewritten"], {
+          cwd: inv.cwd,
+        });
+        await exec("git", ["reset", "--hard"], { cwd: inv.cwd });
+        await writeAndCommit(inv.cwd, "src/o.ts", "x\n", "plan: attempt");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.tipMoved).toBe(true);
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        "utf8",
+      ),
+    );
+    expect(record.mode).toBe("tip-moved");
+    expect(record.headSha).toBe(preHead);
+    expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+});
+
 // ---------- plan-tick prose durability (§8) ----------
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
@@ -7457,8 +7743,15 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
 
     // §5 record content (mode + failures) is byte-identical for equivalent
     // input — a one-sided edit to either callsite's persisted record breaks
-    // this pin.
-    expect(fanoutRecord).toBe(singletonRecord);
+    // this pin, once `headSha`/`at` are normalized out: the fanout tick
+    // runs after a real trunk commit (writePending, below) and at a later
+    // wall-clock instant, so both anchor fields are legitimately distinct
+    // between the two records (spec/loop.md "Every record is anchored").
+    const normalizeAnchor = (raw: string) =>
+      raw
+        .replace(/"headSha": "[^"]*"/, '"headSha": "<HEAD>"')
+        .replace(/"at": "[^"]*"/, '"at": "<AT>"');
+    expect(normalizeAnchor(fanoutRecord)).toBe(normalizeAnchor(singletonRecord));
 
     // Both callsites log through the same template —
     // "[flume] <label>: render-refused (no commit): <message>" — with only

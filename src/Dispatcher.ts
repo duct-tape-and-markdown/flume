@@ -76,6 +76,20 @@ import * as git from "./git.js";
 const execFileP = promisify(execFile);
 
 /**
+ * A `PriorAttempt` variant before {@link Dispatcher.writePriorAttempt} stamps
+ * the `headSha`/`at` anchor — what each mode-specific builder below actually
+ * produces. Kept as an explicit union (rather than a distributed `Omit` over
+ * `PriorAttempt`) so each arm still carries its own mode-specific fields
+ * rather than collapsing to their shared `mode` key.
+ */
+type PriorAttemptDraft =
+  | Omit<GateRevertAttempt, "headSha" | "at">
+  | Omit<VoluntaryBailAttempt, "headSha" | "at">
+  | Omit<PlatformPreemptAttempt, "headSha" | "at">
+  | Omit<RenderRefusedAttempt, "headSha" | "at">
+  | Omit<TipMovedAttempt, "headSha" | "at">;
+
+/**
  * Prior-attempt records live beside the baton (`<flumeDir>/awake/`) —
  * gitignored harness runtime state under the flume state dir, NOT in the
  * per-entry worktree (a fanout retry gets a fresh worktree; the record must
@@ -630,8 +644,20 @@ type AgentTermination =
  * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
  * "revert note to the friction channel (§5)", not asserted here.
  */
-function slugify(tag: string): string {
+export function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+}
+
+/**
+ * Filesystem path of a tag's/phase's prior-attempt record
+ * (spec/loop.md "Prior-outcome feedback to the retrying tick": "the exported
+ * rule"). Slugifies internally — idempotent on an already-slugified key — so
+ * a chain-authored `shouldRun` can derive the same path the dispatcher
+ * itself reads and writes from nothing but the raw tag/phase name it already
+ * has, with no private dispatcher rule to reverse-engineer.
+ */
+export function priorAttemptPath(flumeDir: string, tag: string): string {
+  return join(flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${slugify(tag)}.json`);
 }
 
 /**
@@ -3595,10 +3621,6 @@ export class Dispatcher {
     return entry ? slugify(entry.tag) : phase.name;
   }
 
-  private priorAttemptPath(key: string): string {
-    return join(this.flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${key}.json`);
-  }
-
   /**
    * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
    * unrecognized `mode` discriminant → treated as absent: the renderer is
@@ -3608,7 +3630,7 @@ export class Dispatcher {
   private async readPriorAttempt(
     key: string,
   ): Promise<PriorAttempt | undefined> {
-    const p = this.priorAttemptPath(key);
+    const p = priorAttemptPath(this.flumeDir, key);
     if (!existsSync(toNamespacedPath(p))) return undefined;
     try {
       const rec = JSON.parse(
@@ -3631,15 +3653,28 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") onto
+   * whatever mode-specific fields the caller built, so every one of the five
+   * builders below stays ignorant of the anchor rather than each re-reading
+   * the trunk tip itself. `this.opts.repoRoot`, never `key`'s worktree — the
+   * anchor is the *trunk* tip regardless of which worktree produced the
+   * record.
+   */
   private async writePriorAttempt(
     key: string,
-    rec: PriorAttempt,
+    rec: PriorAttemptDraft,
   ): Promise<void> {
-    const p = this.priorAttemptPath(key);
+    const p = priorAttemptPath(this.flumeDir, key);
+    const anchored: PriorAttempt = {
+      ...rec,
+      headSha: await git.revParse(this.opts.repoRoot),
+      at: new Date().toISOString(),
+    };
     await mkdir(toNamespacedPath(dirname(p)), { recursive: true });
     await writeFile(
       toNamespacedPath(p),
-      JSON.stringify(rec, null, 2) + "\n",
+      JSON.stringify(anchored, null, 2) + "\n",
       "utf8",
     );
   }
@@ -3651,7 +3686,9 @@ export class Dispatcher {
    * already holds, extended to the prose snapshot).
    */
   private async clearPriorAttempt(key: string): Promise<void> {
-    await rm(toNamespacedPath(this.priorAttemptPath(key)), { force: true });
+    await rm(toNamespacedPath(priorAttemptPath(this.flumeDir, key)), {
+      force: true,
+    });
     await rm(toNamespacedPath(this.revertedSnapshotDir(key)), {
       recursive: true,
       force: true,
@@ -3856,7 +3893,7 @@ export class Dispatcher {
      * returns") — the footprint `suspectFlake` disjointness reads against.
      */
     footprint: string[],
-  ): Promise<GateRevertAttempt> {
+  ): Promise<Omit<GateRevertAttempt, "headSha" | "at">> {
     const diffStat = await this.capturedDiffStat(diffCwd, sha);
     return {
       mode: "gate-revert",
@@ -4642,7 +4679,9 @@ function summarize(
  * transcript before bounding, so the refused constraint reaches the retry
  * legibly rather than as escaped-JSON/cost-metadata noise.
  */
-function buildVoluntaryBail(stdout: string): VoluntaryBailAttempt {
+function buildVoluntaryBail(
+  stdout: string,
+): Omit<VoluntaryBailAttempt, "headSha" | "at"> {
   const message = finalAgentMessage(stdout);
   return {
     mode: "voluntary-bail",
@@ -4720,7 +4759,9 @@ export function assistantTurnText(e: NdjsonEvent): string {
 }
 
 /** Build the §6 platform-preempt record from the non-work failure class. */
-function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
+function buildPlatformPreempt(
+  failureClass: string,
+): Omit<PlatformPreemptAttempt, "headSha" | "at"> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
@@ -4732,7 +4773,9 @@ function buildPlatformPreempt(failureClass: string): PlatformPreemptAttempt {
  * {@link InlineExecRenderError} — its `message` already names every failing
  * span's command text and stderr.
  */
-function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
+function buildRenderRefused(
+  err: InlineExecRenderError,
+): Omit<RenderRefusedAttempt, "headSha" | "at"> {
   return {
     mode: "render-refused",
     failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
@@ -4751,7 +4794,10 @@ function buildRenderRefused(err: InlineExecRenderError): RenderRefusedAttempt {
  * agent's own top commit always stays discoverable rather than reading as
  * the intruder.
  */
-function buildTipMoved(expectedTip: string, observedTip: string): TipMovedAttempt {
+function buildTipMoved(
+  expectedTip: string,
+  observedTip: string,
+): Omit<TipMovedAttempt, "headSha" | "at"> {
   return { mode: "tip-moved", expectedTip, observedTip };
 }
 

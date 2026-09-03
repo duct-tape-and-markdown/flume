@@ -27,7 +27,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import { loadChainModule } from "../src/Dispatcher.ts";
+import { loadChainModule, slugify, priorAttemptPath } from "../src/Dispatcher.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
@@ -367,5 +367,13 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
 describe("buildFlumeApi().matchesAny", () => {
   it("is the same matcher src/paths.ts exports, not a second copy", () => {
     expect(buildFlumeApi().matchesAny).toBe(matchesAny);
+  });
+});
+
+describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
+  it("are the same functions src/Dispatcher.ts exports, not second copies a chain's shouldRun would drift from", () => {
+    const api = buildFlumeApi();
+    expect(api.slugify).toBe(slugify);
+    expect(api.priorAttemptPath).toBe(priorAttemptPath);
   });
 });

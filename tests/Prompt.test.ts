@@ -19,6 +19,14 @@ import { shellGate, writablePathsGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { declaredPaths, type PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
+import type {
+  GateRevertAttempt,
+  VoluntaryBailAttempt,
+  PlatformPreemptAttempt,
+  RenderRefusedAttempt,
+  TipMovedAttempt,
+  PriorAttempt,
+} from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 
 const spawnMock = vi.mocked(spawn);
@@ -559,5 +567,101 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render (REL
     expect(err.failures[0]!.cmd).toBe("head -c 5000000 /dev/zero");
     expect(err.failures[0]!.stderr).toContain("exceeded");
     expect(err.message).toContain("exceeded");
+  });
+});
+
+describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (spec/loop.md 'Every record is anchored')", () => {
+  const HEAD_SHA = "a".repeat(40);
+  const AT = "2024-06-01T12:00:00.000Z";
+
+  async function renderWithPrior(prior: PriorAttempt): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "task body\n", "utf8");
+    return renderPrompt({
+      phase: phase(),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+      priorAttempt: prior,
+    });
+  }
+
+  const gateRevert: GateRevertAttempt = {
+    mode: "gate-revert",
+    when: "afterCommit",
+    gate: "revert-gate",
+    message: "gate said no",
+    details: "GATE-DETAIL",
+    diffStat: "1 file changed",
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+  const voluntaryBail: VoluntaryBailAttempt = {
+    mode: "voluntary-bail",
+    constraint: "off-writablePaths edit refused",
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+  const platformPreempt: PlatformPreemptAttempt = {
+    mode: "platform-preempt",
+    failureClass: "exited with code 137",
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+  const renderRefused: RenderRefusedAttempt = {
+    mode: "render-refused",
+    failures: "cmd: exit 3\nstderr: boom",
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+  const tipMoved: TipMovedAttempt = {
+    mode: "tip-moved",
+    expectedTip: "b".repeat(40),
+    observedTip: "c".repeat(40),
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+
+  const variants: Array<[string, PriorAttempt]> = [
+    ["gate-revert", gateRevert],
+    ["voluntary-bail", voluntaryBail],
+    ["platform-preempt", platformPreempt],
+    ["render-refused", renderRefused],
+    ["tip-moved", tipMoved],
+  ];
+
+  it.each(variants)(
+    "%s: the rendered block carries the anchor (headSha + at) alongside the mode's own fields",
+    async (_mode, prior) => {
+      const out = await renderWithPrior(prior);
+
+      expect(out).toContain("<prior-attempt>");
+      expect(out).toContain(`Recorded ${AT}, trunk tip ${HEAD_SHA}.`);
+      // The anchor rides inside the block, before the task body.
+      const blockStart = out.indexOf("<prior-attempt>");
+      const anchorIdx = out.indexOf(`Recorded ${AT}, trunk tip ${HEAD_SHA}.`);
+      const blockEnd = out.indexOf("</prior-attempt>");
+      const bodyIdx = out.indexOf("task body");
+      expect(blockStart).toBeGreaterThanOrEqual(0);
+      expect(anchorIdx).toBeGreaterThan(blockStart);
+      expect(anchorIdx).toBeLessThan(blockEnd);
+      expect(bodyIdx).toBeGreaterThan(blockEnd);
+    },
+  );
+
+  it("absent priorAttempt renders no block and no anchor line at all", async () => {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "task body\n", "utf8");
+    const out = await renderPrompt({
+      phase: phase(),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+    });
+
+    expect(out).not.toContain("<prior-attempt>");
+    expect(out).not.toContain("Recorded ");
   });
 });

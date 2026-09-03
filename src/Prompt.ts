@@ -84,6 +84,10 @@ export interface GateRevertAttempt {
    * missing or the lists overlap: an absent field is never read as flaky.
    */
   suspectFlake?: boolean;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
 }
 
 /**
@@ -101,6 +105,10 @@ export interface VoluntaryBailAttempt {
    * on a bail, so its tail is where the constraint is named.
    */
   constraint: string;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
 }
 
 /**
@@ -113,6 +121,10 @@ export interface PlatformPreemptAttempt {
   mode: "platform-preempt";
   /** The non-work failure class, bounded. */
   failureClass: string;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
 }
 
 /**
@@ -127,6 +139,10 @@ export interface RenderRefusedAttempt {
   mode: "render-refused";
   /** Every failing span's command text and stderr, bounded. */
   failures: string;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
 }
 
 /**
@@ -144,6 +160,10 @@ export interface TipMovedAttempt {
   expectedTip: string;
   /** Tip the harness actually found immediately before it would have committed. */
   observedTip: string;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
 }
 
 /**
@@ -481,8 +501,20 @@ function prependPriorAttemptBlock(
   return block + body;
 }
 
-/** The mode-specific body of the `<prior-attempt>` block. Exhaustive over the union. */
+/**
+ * The `<prior-attempt>` block body: the mode-specific lines, followed by the
+ * anchor every variant now carries (spec/loop.md "Every record is
+ * anchored") — one shared trailer rather than repeating it per case.
+ */
 function priorAttemptLines(prior: PriorAttempt): string[] {
+  return [
+    ...modeLines(prior),
+    `Recorded ${prior.at}, trunk tip ${prior.headSha}.`,
+  ];
+}
+
+/** The mode-specific body of the `<prior-attempt>` block. Exhaustive over the union. */
+function modeLines(prior: PriorAttempt): string[] {
   switch (prior.mode) {
     case "gate-revert":
       return [

@@ -73,6 +73,8 @@ export {
   consoleLogger,
   readTickVerdicts,
   readLatestVerdictsSync,
+  slugify,
+  priorAttemptPath,
   type ChainModule,
   type ChainFactory,
   type DispatcherOptions,
