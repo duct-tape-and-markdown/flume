@@ -47,6 +47,51 @@ Options:
 
 This repo's own `.flume/chain.ts` always declares one fanout phase (`build`), so the case doesn't manifest here — this is a second-implementation question (`engine-boundary.md`), not a bug against current usage.
 
+## `GateContext.flumeDir` isn't rebased onto the worktree for `afterCommit` gates, unlike `configDir` (PARKED)
+
+`PENDING-GATE-STALE-TIP-READ` fixed `pendingGate` to read the gated commit via
+`git.readFileAtRef(ctx.repoRoot, ctx.commitSha, relPath)` instead of a disk read off
+`ctx.flumeDir`, where `relPath = relative(ctx.repoRoot, join(ctx.flumeDir, pendingPath))`. That
+computation assumes `ctx.flumeDir` is nested under `ctx.repoRoot` — true for the hand-built
+`GateContext` fixtures every gate test in this repo already uses (`flumeDir: join(cwd, ".flume")`,
+`repoRoot: cwd`), and true for `afterMerge` gates (`repoRoot` is trunk, an ancestor of the
+default `<repoRoot>/.flume`).
+
+It is **not** true for `afterCommit` gates in production. `Dispatcher.runAfterCommitGates`
+(`src/Dispatcher.ts:3120-3128`) sets `repoRoot: cwd` (the tick's own worktree — every tick,
+singleton or fanout, runs in one per `spec/worktrees.md` "Singleton runs in a worktree") but
+`flumeDir: this.flumeDir` verbatim — the *primary* checkout's absolute `.flume` path, never
+rebased. Since worktrees default to `<flumeDir>/worktrees/<slug>` (`src/Dispatcher.ts:3441`),
+`ctx.flumeDir` is an *ancestor* of `ctx.repoRoot`, not nested under it — `relative(ctx.repoRoot,
+join(ctx.flumeDir, pendingPath))` yields a path that climbs out of the worktree (`../../plan/
+pending.json`), which this fix's own relocation check reads as "outside repoRoot" and falls back
+to the disk read — the exact pre-fix behavior — for every real `afterCommit` run. Confirmed
+empirically in this worktree: `git show HEAD:.flume/plan/pending.json` (bare, root-relative)
+correctly resolves the *worktree's own* tracked copy regardless of cwd nesting; a `../..`-prefixed
+path errors `fatal: '...' is outside repository`.
+
+`configDir` doesn't have this problem — `Dispatcher.runAfterCommitGates` rebases it explicitly:
+`join(cwd, relative(this.opts.repoRoot, this.opts.configDir))` (`src/Dispatcher.ts:3114-3117`).
+`flumeDir` wants the identical treatment, mirroring the already-established
+`stateRootRel = relative(this.opts.repoRoot, this.flumeDir)` pattern `harvestFriction`
+(`src/Dispatcher.ts:3245`) already uses to read a worktree-local tracked file via
+`git.readFileAtRef` correctly.
+
+Out of scope for `PENDING-GATE-STALE-TIP-READ`: its fence is `src/builtinGates.ts` +
+`tests/**`, and this fix belongs in `src/Dispatcher.ts`'s `GateContext` construction (and
+possibly `Gate.ts`'s doc comment, which — unlike `configDir`'s — doesn't currently promise
+`flumeDir` is rebased per-worktree). Until it ships, `pendingGate`'s new commit-sha read is
+correct but dormant in production: every real `afterCommit` run still falls back to the disk
+read this entry was filed to retire.
+
+Options:
+- **A — rebase `flumeDir` the same way as `configDir`** at both `runAfterCommitGates` call sites,
+  and update `Gate.ts`'s `flumeDir` doc comment to state the same per-worktree contract
+  `configDir` already documents.
+- **B — leave `flumeDir` un-rebased** and instead give `GateContext` a distinct field for "the
+  primary repoRoot flumeDir is anchored to," so a gate can compute the tracked-relative offset
+  itself without assuming nesting either way.
+
 ## `spec/loop.md` "The tick verdict" field enumeration omits `bystanderCheckpointSha` (NEEDS AMENDMENT)
 
 `1f98caf` added `TickVerdict.bystanderCheckpointSha` to satisfy "Crash equals stop" ("its sha recorded on the tick verdict"), and the field is real and reported (JSDoc on `TickVerdict.bystanderCheckpointSha` in `src/Dispatcher.ts`, populated in both `runSingleton` and `runFanout`). But `spec/loop.md`'s "The tick verdict — one facts artifact" section — the canonical enumeration of what the artifact carries — doesn't list it alongside `headSha`/`at`/`invocations[]`, each of which got its own bullet when added. The fix is mechanical: a bullet naming the field and its recovery purpose, mirroring "Every verdict is anchored" / "Every agent invocation leaves a usage row" already there. Not filed as a pending entry — the edit is to `spec/loop.md` itself, a human-authored surface plan doesn't touch.

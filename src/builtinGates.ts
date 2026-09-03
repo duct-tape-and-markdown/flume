@@ -8,7 +8,7 @@
 
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
@@ -19,6 +19,7 @@ import type { Phase } from "./Phase.js";
 // validates through the exact load path the runtime uses so the gate's
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
+import * as git from "./git.js";
 import { entryWriteScopeUnion, matchesAny } from "./paths.js";
 import {
   parsePending,
@@ -332,6 +333,9 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     name: "pending-gate",
     when: "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
+      if (!ctx.commitSha) {
+        return { ok: false, message: "pending gate requires commitSha" };
+      }
       // Read fresh on every run — not hoisted to construction — so a
       // declaration-driven fence (e.g. a Phase whose writablePaths/
       // entryChannelPaths are populated after pendingGate(...) is called,
@@ -342,14 +346,44 @@ export function pendingGate(opts: PendingGateOptions): Gate {
         ...opts.targetFence.writablePaths,
         ...(opts.targetFence.entryChannelPaths ?? []),
       ];
+      const absPendingPath = join(ctx.flumeDir, pendingPath);
+      // spec/pending.md "Dispatch reads come from the tip, not the tree":
+      // the gate judges the commit it is attached to, not whatever the
+      // working tree happens to hold — a disk read here would see trunk's
+      // pending.json even while gating a commit that hasn't merged to
+      // trunk yet (`.claude/rules/engineering.md` "Loud or nothing").
+      // `git.readFileAtRef` resolves the queue as of `ctx.commitSha`
+      // instead. Mirrors `Dispatcher.isPendingRelocated`: an out-of-tree
+      // `pendingPath` (a relocated state root) has no tip to read and
+      // stays a disk read, same as the dispatcher's own decide-reads.
+      const relPath = relative(ctx.repoRoot, absPendingPath);
+      const relocated =
+        relPath === ".." ||
+        relPath.startsWith(`..${sep}`) ||
+        isAbsolute(relPath);
       let raw: string;
-      try {
-        raw = await readFile(join(ctx.flumeDir, pendingPath), "utf8");
-      } catch {
-        return {
-          ok: false,
-          message: `${pendingPath} missing after commit`,
-        };
+      if (relocated) {
+        try {
+          raw = await readFile(absPendingPath, "utf8");
+        } catch {
+          return {
+            ok: false,
+            message: `${pendingPath} missing after commit`,
+          };
+        }
+      } else {
+        const atCommit = await git.readFileAtRef(
+          ctx.repoRoot,
+          ctx.commitSha,
+          relPath,
+        );
+        if (atCommit === null) {
+          return {
+            ok: false,
+            message: `${pendingPath} missing after commit`,
+          };
+        }
+        raw = atCommit;
       }
       const parsed = parsePending(raw, opts.extension);
       if (!parsed.ok) {

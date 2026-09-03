@@ -18,9 +18,11 @@
  * verb) as "TypeScript errors" when npm never ran tsc at all.
  */
 
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -47,6 +49,8 @@ import type {
   PkgManagerGate,
 } from "../src/index.ts";
 
+const exec = promisify(execFile);
+
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
   return {
     cwd,
@@ -57,6 +61,40 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     log: () => {},
     ...overrides,
   };
+}
+
+// pendingGate reads the gated commit via `git.readFileAtRef`
+// (PENDING-GATE-STALE-TIP-READ), so its tests need a real repo and a real
+// commit sha rather than a bare temp dir.
+async function createBootstrappedRepo(prefix: string): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), prefix));
+  const opts = { cwd: repo };
+  await exec("git", ["init", "-q"], opts);
+  await exec("git", ["config", "user.email", "test@example.com"], opts);
+  await exec("git", ["config", "user.name", "Test User"], opts);
+  await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  await exec("git", ["config", "core.autocrlf", "false"], opts);
+  await writeFile(join(repo, ".seed"), "");
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  return repo;
+}
+
+async function commitFiles(
+  repo: string,
+  files: Record<string, string>,
+  msg = "candidate",
+): Promise<string> {
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(repo, rel);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, content);
+  }
+  const opts = { cwd: repo };
+  await exec("git", ["add", "."], opts);
+  await exec("git", ["commit", "-q", "-m", msg], opts);
+  const { stdout } = await exec("git", ["rev-parse", "HEAD"], opts);
+  return stdout.trim();
 }
 
 const validEntry = {
@@ -74,25 +112,21 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-lazy-"));
+    dir = await createBootstrappedRepo("flume-pendinggate-lazy-");
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<void> {
-    const pendingDir = join(dir, ".flume", "plan");
-    await mkdir(pendingDir, { recursive: true });
-    await writeFile(
-      join(pendingDir, "pending.json"),
-      JSON.stringify(entries),
-      "utf8",
-    );
+  async function writePending(entries: unknown): Promise<string> {
+    return commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify(entries),
+    });
   }
 
   it("passes when a getter-backed writablePaths is only populated after pendingGate(...) is called", async () => {
-    await writePending([validEntry]);
+    const sha = await writePending([validEntry]);
     // Simulates a declaration-driven Phase: writablePaths is a getter whose
     // backing value isn't set until after the chain wires the gate — e.g.
     // read from a per-job declaration.json resolved later in chain setup.
@@ -104,13 +138,13 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     };
     const gate = pendingGate({ targetFence });
     backing = ["src/**"];
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
   it("fails, naming the path, when a getter-backed writablePaths narrows after pendingGate(...) is called", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         files: {
@@ -129,14 +163,14 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     const gate = pendingGate({ targetFence });
     // Fence narrows after construction; run() must see the current value.
     backing = ["src/**"];
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/outside the target fence/);
     expect(result.details ?? "").toContain("docs/nope.md");
   });
 
   it("reflects a getter-backed entryChannelPaths populated after pendingGate(...) is called", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         tag: "OTHER-TAG",
         gate: { kind: "open" },
@@ -157,13 +191,13 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     };
     const gate = pendingGate({ targetFence });
     backing = ["tests/**"];
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
   it("re-reads the fence on every run(), not just once after the first call", async () => {
-    await writePending([validEntry]);
+    const sha = await writePending([validEntry]);
     let backing = ["src/**"];
     const targetFence = {
       get writablePaths() {
@@ -172,11 +206,11 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     };
     const gate = pendingGate({ targetFence });
 
-    const first = await gate.run(ctx(dir));
+    const first = await gate.run(ctx(dir, { commitSha: sha }));
     expect(first.ok).toBe(true);
 
     backing = [];
-    const second = await gate.run(ctx(dir));
+    const second = await gate.run(ctx(dir, { commitSha: sha }));
     expect(second.ok).toBe(false);
     expect(second.details ?? "").toContain("src/foo.ts");
   });
@@ -186,25 +220,21 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-declared-"));
+    dir = await createBootstrappedRepo("flume-pendinggate-declared-");
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<void> {
-    const pendingDir = join(dir, ".flume", "plan");
-    await mkdir(pendingDir, { recursive: true });
-    await writeFile(
-      join(pendingDir, "pending.json"),
-      JSON.stringify(entries),
-      "utf8",
-    );
+  async function writePending(entries: unknown): Promise<string> {
+    return commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify(entries),
+    });
   }
 
   it("passes an entry whose declared files all sit inside the fence but whose observedFiles names a path outside it", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         // A prior tick's dispatcher-observed footprint, outside the fence.
@@ -216,7 +246,7 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
     ]);
     const targetFence = { writablePaths: ["src/**"] };
     const gate = pendingGate({ targetFence });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
@@ -226,21 +256,17 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-hint-"));
+    dir = await createBootstrappedRepo("flume-pendinggate-hint-");
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<void> {
-    const pendingDir = join(dir, ".flume", "plan");
-    await mkdir(pendingDir, { recursive: true });
-    await writeFile(
-      join(pendingDir, "pending.json"),
-      JSON.stringify(entries),
-      "utf8",
-    );
+  async function writePending(entries: unknown): Promise<string> {
+    return commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify(entries),
+    });
   }
 
   const outsideFenceEntry = {
@@ -253,21 +279,21 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary
   };
 
   it("appends the hint to the schema-violation message when supplied", async () => {
-    await writePending([{ ...validEntry, mystery: "field" }]);
+    const sha = await writePending([{ ...validEntry, mystery: "field" }]);
     const gate = pendingGate({
       targetFence: { writablePaths: ["src/**"] },
       hint: "park it, never re-scope",
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/schema violation/);
     expect(result.message).toContain("park it, never re-scope");
   });
 
   it("leaves the schema-violation message unchanged when the hint is omitted", async () => {
-    await writePending([{ ...validEntry, mystery: "field" }]);
+    const sha = await writePending([{ ...validEntry, mystery: "field" }]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toBe(
       `${join("plan", "pending.json")} has 1 schema violation(s)`,
@@ -275,25 +301,120 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary
   });
 
   it("appends the hint to the fence-violation message when supplied", async () => {
-    await writePending([outsideFenceEntry]);
+    const sha = await writePending([outsideFenceEntry]);
     const gate = pendingGate({
       targetFence: { writablePaths: ["src/**"] },
       hint: "park it, never re-scope",
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/outside the target fence/);
     expect(result.message).toContain("park it, never re-scope");
   });
 
   it("leaves the fence-violation message unchanged when the hint is omitted", async () => {
-    await writePending([outsideFenceEntry]);
+    const sha = await writePending([outsideFenceEntry]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toBe(
       "1 pending entry declare files outside the target fence",
     );
+  });
+});
+
+describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await createBootstrappedRepo("flume-pendinggate-staletip-");
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const offFenceEntry = {
+    ...validEntry,
+    files: {
+      new: [],
+      edit: [{ path: "spec/loop.md", description: "off-fence" }],
+      retire: [],
+    },
+  };
+
+  it("reverts the commit that introduces an off-fence declaration, not the next one", async () => {
+    await commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify([validEntry]),
+    });
+    const violatingSha = await commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify([offFenceEntry]),
+    });
+    // The disk/working-tree copy still shows the clean, pre-violation
+    // state — as it would for a fanout worktree commit whose branch hasn't
+    // merged onto whatever tree `ctx.flumeDir` resolves to. Pre-fix,
+    // `readFile(join(ctx.flumeDir, pendingPath))` reads exactly this stale
+    // copy and wrongly passes the commit that introduced the violation —
+    // the violation would only surface once some later write finally
+    // synced the disk, misattributing it to whatever commit came next.
+    await writeFile(
+      join(dir, ".flume", "plan", "pending.json"),
+      JSON.stringify([validEntry]),
+      "utf8",
+    );
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir, { commitSha: violatingSha }));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/outside the target fence/);
+  });
+
+  it("passes a commit that removes a prior off-fence declaration, on its own commit", async () => {
+    await commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify([offFenceEntry]),
+    });
+    const fixSha = await commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify([validEntry]),
+    });
+    // Mirror of the test above: the disk copy now races *ahead* of the
+    // gated commit, reintroducing the violation the fix commit itself
+    // removed. Pre-fix, the stale disk read sees this and wrongly reverts
+    // the commit that fixed the violation (observed: 70f4632 -> c168d3b).
+    await writeFile(
+      join(dir, ".flume", "plan", "pending.json"),
+      JSON.stringify([offFenceEntry]),
+      "utf8",
+    );
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir, { commitSha: fixSha }));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("reads a relocated flumeDir (pendingPath outside repoRoot) from disk, unchanged", async () => {
+    const outside = await mkdtemp(
+      join(tmpdir(), "flume-pendinggate-relocated-"),
+    );
+    try {
+      const pendingDir = join(outside, "plan");
+      await mkdir(pendingDir, { recursive: true });
+      await writeFile(
+        join(pendingDir, "pending.json"),
+        JSON.stringify([validEntry]),
+        "utf8",
+      );
+      // A commit must still exist to gate — the relocated queue lives
+      // entirely outside git, so the gated commit's own content is
+      // irrelevant to this read.
+      const sha = await commitFiles(dir, { "src/foo.ts": "x" });
+      const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+      const result = await gate.run(
+        ctx(dir, { commitSha: sha, flumeDir: outside }),
+      );
+      expect(result.ok).toBe(true);
+      expect(result.message).toMatch(/fence pre-check passed/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 

@@ -585,22 +585,27 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
 
 describe("pendingGate — composed validation + fence pre-check", () => {
   let dir: string;
+  let seedSha: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "flume-pendinggate-"));
+    dir = await createBootstrappedRepo("flume-pendinggate-");
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: dir });
+    seedSha = stdout.trim();
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<void> {
-    const pendingDir = join(dir, ".flume", "plan");
-    await mkdir(pendingDir, { recursive: true });
-    await writeFile(
-      join(pendingDir, "pending.json"),
-      JSON.stringify(entries),
-      "utf8",
+  // Commits the queue at `.flume/plan/pending.json` so the gate — which
+  // reads the gated commit via `git.readFileAtRef`, not the working tree —
+  // has a real ref to resolve. Returns the resulting sha for `ctx(dir, {
+  // commitSha })`.
+  async function writePending(entries: unknown): Promise<string> {
+    return commitFiles(
+      dir,
+      { ".flume/plan/pending.json": JSON.stringify(entries) },
+      "pending update",
     );
   }
 
@@ -616,17 +621,17 @@ describe("pendingGate — composed validation + fence pre-check", () => {
   };
 
   it("passes a valid queue whose declared files sit inside the target fence", async () => {
-    await writePending([validEntry]);
+    const sha = await writePending([validEntry]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
   it("fails composed validation on an unknown field with no declared extension", async () => {
-    await writePending([{ ...validEntry, mystery: "field" }]);
+    const sha = await writePending([{ ...validEntry, mystery: "field" }]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/schema violation/);
   });
@@ -635,17 +640,19 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     const extension = {
       summary: { schema: z.string().min(1), hint: '"one-line"' },
     };
-    await writePending([{ ...validEntry, summary: "does a thing" }]);
+    const sha = await writePending([
+      { ...validEntry, summary: "does a thing" },
+    ]);
     const gate = pendingGate({
       targetFence: { writablePaths: ["src/**"] },
       extension,
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
   });
 
   it("fails the fence pre-check naming the offending path", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         files: {
@@ -656,7 +663,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
       },
     ]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/outside the target fence/);
     expect(result.details ?? "").toContain("spec/loop.md");
@@ -664,7 +671,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
   });
 
   it("includes entryChannelPaths in the fence alongside writablePaths", async () => {
-    await writePending([
+    const sha = await writePending([
       validEntry,
       {
         tag: "OTHER-TAG",
@@ -683,42 +690,39 @@ describe("pendingGate — composed validation + fence pre-check", () => {
         entryChannelPaths: ["tests/**"],
       },
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
   });
 
   it("passes an empty queue — a fully-drained pending.json has nothing to fence", async () => {
-    await writePending([]);
+    const sha = await writePending([]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/\(0 entries\)/);
   });
 
   it("reports pending.json missing after commit", async () => {
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: seedSha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/missing after commit/);
   });
 
   it("reads pending.json from a custom pendingPath", async () => {
-    await mkdir(join(dir, ".flume", "custom"), { recursive: true });
-    await writeFile(
-      join(dir, ".flume", "custom", "queue.json"),
-      JSON.stringify([validEntry]),
-      "utf8",
-    );
+    const sha = await commitFiles(dir, {
+      ".flume/custom/queue.json": JSON.stringify([validEntry]),
+    });
     const gate = pendingGate({
       targetFence: { writablePaths: ["src/**"] },
       pendingPath: join("custom", "queue.json"),
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
   });
 
   it("omitting fenceWhen fences every entry, matching current behavior", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         gate: { kind: "parked", reason: "blocked on human decision" },
@@ -730,13 +734,13 @@ describe("pendingGate — composed validation + fence pre-check", () => {
       },
     ]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/outside the target fence/);
   });
 
   it("fenceWhen exempts an entry it returns false for", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         gate: { kind: "parked", reason: "blocked on human decision" },
@@ -751,13 +755,13 @@ describe("pendingGate — composed validation + fence pre-check", () => {
       targetFence: { writablePaths: ["src/**"] },
       fenceWhen: (entry) => entry.gate.kind !== "parked",
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
   it("fenceWhen still checks entries it returns true for", async () => {
-    await writePending([
+    const sha = await writePending([
       {
         ...validEntry,
         gate: { kind: "parked", reason: "blocked on human decision" },
@@ -782,7 +786,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
       targetFence: { writablePaths: ["src/**"] },
       fenceWhen: (entry) => entry.gate.kind !== "parked",
     });
-    const result = await gate.run(ctx(dir));
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.details ?? "").toContain("OTHER-TAG");
     expect(result.details ?? "").not.toContain("SOME-TAG");
