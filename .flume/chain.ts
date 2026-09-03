@@ -49,9 +49,11 @@ function inboxHasEntries(): boolean {
  * `inboxHasEntries`; a corrupt record reads as absent, matching the engine's
  * own treatment (`spec/loop.md`, *Prior-outcome feedback*).
  */
-function anyVoluntaryBailRecord(): boolean {
+function anyVoluntaryBailRecord(
+  priorAttemptsDir: FlumeApi["priorAttemptsDir"],
+): boolean {
   try {
-    const dir = resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "prior-attempts");
+    const dir = priorAttemptsDir(process.env.FLUME_DIR ?? CHAIN_DIR);
     for (const name of readdirSync(dir)) {
       if (!name.endsWith(".json")) continue;
       try {
@@ -74,6 +76,7 @@ import type {
   WorktreeSetupContext,
 } from "../src/Phase.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
+import type { FlumeApi } from "../src/flumeApi.ts";
 
 import { z } from "zod";
 import type { EntryExtension } from "../src/PendingSchema.ts";
@@ -391,7 +394,7 @@ const factory: ChainFactory = (api) => {
       // "this is plan's call" — reconcile before deferring to build again,
       // or a pickable-but-already-shipped entry loops decline/bail forever
       // (see anyVoluntaryBailRecord's doc).
-      if (anyVoluntaryBailRecord()) return true;
+      if (anyVoluntaryBailRecord(api.priorAttemptsDir)) return true;
       return inboxHasEntries();
     },
     promptArgs() {

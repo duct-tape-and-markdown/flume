@@ -25,6 +25,11 @@ Once `priorAttemptsDir` ships, an interactive session should replace `.flume/cha
 helper (mirroring however the file already imports `priorAttemptPath`/`slugify` from `../src/`),
 in its own `chore(flume):` commit — no design fork, just an edit no phase can make.
 
+**Answered (2026-09-03, human sign-off via interactive session):** wired in the commit carrying
+this answer — `anyVoluntaryBailRecord` takes the helper as a parameter and `shouldRun` passes
+`api.priorAttemptsDir`, keeping chain.ts's values-off-the-api / types-only-from-src discipline
+(`spec/chain.md`, *The chain is a plugin*). Question closes.
+
 ## `src/Dispatcher.ts` (4836 lines) bundles several jobs that read as separate homes (PARKED)
 
 Posture sweep (`.claude/rules/posture-sweep.md` standing lens: "a module carrying jobs that want separate homes") over the `src/Dispatcher.ts` neighborhood found the file's own `// ---------- X ----------` markers delineating distinct concerns: chain load+validate (`:735-1028`), tick-verdict I/O (`:440-600`), singleton tick (`:1601-1943`), fanout tick + per-entry fanout (`:1983-2892`), worktree/friction/prior-attempt helpers (`:2894-4153`), loop supervisor (`:4156-4628`). Sibling engine files stay well under 1000 lines (`git.ts` 651, `Agent.ts` 606, `PendingSchema.ts` 598).
@@ -35,6 +40,11 @@ Options:
 - **A — split along the marked seams**, keeping only what the `buildFlumeApi` cycle constraint actually requires colocated.
 - **B — leave it whole**, treating the file's size as the cost of the single-cycle-avoidance design and citing that constraint as the deliberate divergence (`engineering.md` "The fix lands at the mechanism" allows a declared exception).
 - **C — narrower split**: extract only the clearly acyclic concerns (worktree/friction/prior-attempt helpers, loop supervisor) and leave chain-load + tick execution together.
+
+**Answered (2026-09-03, human sign-off):** **sequenced to the line after 0.13.0**, option left
+open until the operator opens that line — the same operator-triggered deferral the cli.ts split
+took in August. Not declined: unlike Phase.ts this file carries runtime failure modes. Hold out
+of pending until the cut ships; git log carries the three options.
 
 ## `flume check`'s fence collapses to universal rejection when a chain declares zero fanout phases (PARKED)
 
@@ -91,3 +101,18 @@ Options:
 - **B — leave `flumeDir` un-rebased** and instead give `GateContext` a distinct field for "the
   primary repoRoot flumeDir is anchored to," so a gate can compute the tracked-relative offset
   itself without assuming nesting either way.
+
+**Answered (2026-09-03, human sign-off):** **B, with the offset computed by the engine, not the
+gate** — ratified in `spec/chain.md` *What a gate receives* (commit carrying this answer).
+A is wrong on its own terms: `flumeDir` is where runtime state lives (`awake/`,
+`prior-attempts/`, verdicts), which exists only in the primary checkout, so rebasing it onto a
+worktree breaks every gate that reads runtime state to fix one that reads a tracked file.
+`GateContext` gains `stateRootRel` — the `relative(repoRoot, flumeDir)` the friction harvest
+already computes, shared not re-derived (`engineering.md`, *The fix lands at the mechanism*) —
+set only when the state root is inside the repo. `pendingGate` reads
+`git show <commitSha>:<stateRootRel>/<pendingPath>` and keeps the `flumeDir` disk read only for
+the relocated case. Derivable now; the fix's test must build the context the way
+`runAfterCommitGates` does (`flumeDir` an ancestor of the worktree `repoRoot`), since the
+shipped test's nested fixture is exactly what let the dormant fix ship green
+(`engineering.md`, *A seam gate reads what the real writer wrote*). Question closes when it
+ships.

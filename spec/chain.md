@@ -460,6 +460,21 @@ confines side effects to disk inside `cwd`.
   belongs at `afterMerge`.
 - **`flumeDir`** is the absolute, resolved state root — how a gate reaches
   state-relative paths without hardcoding `.flume/` or reading `process.env`.
+  It is the **primary checkout's** state root at both gate points, never
+  rebased onto a worktree: runtime state (`awake/`, `prior-attempts/`,
+  `tick-verdicts.jsonl`) exists only there. Under `afterCommit` it is
+  therefore *not* nested under `repoRoot` — the worktree lives inside it —
+  so a gate never derives a repo-relative path from the two.
+- **`stateRootRel`** is the state root's path relative to the primary repo
+  root, set when the state root lives inside the repo and absent when it is
+  relocated outside it. It is the one value a gate needs to read a
+  **tracked** state-root file as the gated commit holds it —
+  `git show <commitSha>:<stateRootRel>/plan/pending.json` — and the
+  dispatcher computes it once, the same computation the friction harvest
+  already makes, rather than each gate re-deriving it from paths that are
+  not nested. A gate that reads a tracked file off `flumeDir` instead reads
+  the previous commit's copy under `afterCommit`; `pendingGate` reads at the
+  sha.
 - **`commitSha` and `touchedPaths` are optional in the type and always set on a
   dispatcher-built context.** The optionality exists for hand-built fixtures;
   a builtin that falls back to its own `git show --name-only` is covering the
