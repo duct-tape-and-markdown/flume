@@ -1,46 +1,5 @@
 [
   {
-    "tag": "git-cherry-pick-abort-bystander-checkpoint",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "cherryPickAbort: guard the --abort call on sequencer state (CHERRY_PICK_HEAD or sequencer/ present) — never blind."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "before a primary-checkout pick range begins, checkpoint any staged bystander state as a dangling commit (git stash create shape) and record its sha on the tick verdict."
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "no-op abort when no sequence started; --abort issued when sequencer state is present."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "checkpoint sha recorded and staged content recoverable from it after an abort/reset."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Primary-checkout cherry-pick --abort only fires against a sequence that started; staged bystander state is checkpointed to a recoverable sha first.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Crash equals stop"
-    },
-    "tests": [
-      "cherryPickAbort issues no git command when no sequencer state is present",
-      "cherryPickAbort issues --abort when CHERRY_PICK_HEAD/sequencer state is present",
-      "staged bystander content present when a pick range begins is recoverable via the sha recorded on the tick verdict"
-    ],
-    "acceptance": "A pick failing before a sequence starts never touches bystander index/working-tree state; staged bystander content always has a recorded recovery sha.",
-    "notes": "Ratified 2026-08-18 (271fb13), sequenced to the 0.13 line now that 0.12.0 shipped. The checkpoint-sha field name on TickVerdict is build's call."
-  },
-  {
     "tag": "worktree-harvest-tracked-at-head",
     "gate": {
       "kind": "open"
