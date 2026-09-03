@@ -165,3 +165,49 @@ describe("partitionByFileOverlap — observed footprints", () => {
     expect(batches.map(tags)).toEqual([["A"], ["B"]]);
   });
 });
+
+describe("partitionByFileOverlap — ignore (Chain.supervisorPolicy.partitionIgnore)", () => {
+  it("packs two entries into the same wave when they collide only on an ignored path", () => {
+    const entries = [
+      makeEntry("A", { edit: ["shared-lock.json", "src/a.ts"] }),
+      makeEntry("B", { edit: ["shared-lock.json", "src/b.ts"] }),
+    ];
+
+    const batches = partitionByFileOverlap(entries, {
+      maxParallel: 4,
+      ignore: ["shared-lock.json"],
+    });
+
+    expect(batches).toHaveLength(1);
+    expect(tags(batches[0]!)).toEqual(["A", "B"]);
+  });
+
+  it("still splits two entries that collide on a non-ignored path in addition to an ignored one", () => {
+    const entries = [
+      makeEntry("A", { edit: ["shared-lock.json", "src/shared.ts"] }),
+      makeEntry("B", { edit: ["shared-lock.json", "src/shared.ts"] }),
+    ];
+
+    const batches = partitionByFileOverlap(entries, {
+      maxParallel: 4,
+      ignore: ["shared-lock.json"],
+    });
+
+    expect(batches).toHaveLength(2);
+    expect(tags(batches[0]!)).toEqual(["A"]);
+    expect(tags(batches[1]!)).toEqual(["B"]);
+  });
+
+  it("default (no ignore) is byte-identical to today — the shared path still collides", () => {
+    const entries = [
+      makeEntry("A", { edit: ["shared-lock.json"] }),
+      makeEntry("B", { edit: ["shared-lock.json"] }),
+    ];
+
+    const batches = partitionByFileOverlap(entries, { maxParallel: 4 });
+
+    expect(batches).toHaveLength(2);
+    expect(tags(batches[0]!)).toEqual(["A"]);
+    expect(tags(batches[1]!)).toEqual(["B"]);
+  });
+});

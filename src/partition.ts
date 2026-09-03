@@ -10,12 +10,22 @@
  * optimal-by-count but it's stable and respects pending order (priority).
  */
 
+import { matchesAny } from "./paths.js";
 import { touchedPaths } from "./PendingSchema.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
 export interface PartitionOptions {
   /** Maximum parallel ticks the harness will spawn. */
   maxParallel: number;
+  /**
+   * Globs (matched by `matchesAny`) whose paths never count toward the
+   * partition's collision set — `Chain.supervisorPolicy.partitionIgnore`
+   * (spec/pending.md, "Fanout partition — disjoint touched paths"). A path
+   * an entry touches that matches one of these is dropped before placement;
+   * the entry's own `declaredPaths`/`observedFiles` are untouched. Default
+   * `[]`, byte-identical to no filter.
+   */
+  ignore?: string[];
 }
 
 /**
@@ -28,10 +38,13 @@ export function partitionByFileOverlap(
   entries: readonly PendingEntry[],
   opts: PartitionOptions,
 ): PendingEntry[][] {
+  const ignore = opts.ignore ?? [];
   const batches: { entries: PendingEntry[]; paths: Set<string> }[] = [];
 
   for (const entry of entries) {
-    const paths = new Set(touchedPaths(entry));
+    const paths = new Set(
+      touchedPaths(entry).filter((p) => !matchesAny(p, ignore)),
+    );
 
     let placed = false;
     for (const batch of batches) {

@@ -43,7 +43,7 @@ import { writablePathsGate } from "./builtinGates.js";
 // import participates safely in the builtinGates cycle — see its docstring.
 import { buildFlumeApi, type FlumeApi } from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { namespacedJoin } from "./paths.js";
+import { matchesAny, namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 import { countFrictionFiles } from "./job.js";
@@ -1870,7 +1870,15 @@ export class Dispatcher {
     // (tick() loads it once per process), so reading its declaration at the
     // point of use is already byte-identical to a per-run bind.
     const maxParallel = chain.supervisorPolicy?.maxParallel ?? this.maxParallel;
-    const batches = partitionByFileOverlap(pickable, { maxParallel });
+    // spec/pending.md "Fanout partition — disjoint touched paths": narrows
+    // the collision set only — `declaredPaths` (fence, write guard, ship
+    // detection) is untouched. Same per-tick read as maxParallel/
+    // tickTimeoutMs above.
+    const partitionIgnore = chain.supervisorPolicy?.partitionIgnore ?? [];
+    const batches = partitionByFileOverlap(pickable, {
+      maxParallel,
+      ignore: partitionIgnore,
+    });
     const batch = batches[0]!;
     this.log.info(
       `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,
@@ -2334,7 +2342,11 @@ export class Dispatcher {
       // has fixed the file.
       let update: { sha: string; tipMoved: boolean };
       try {
-        update = await this.commitPendingUpdate(shippedTags, mergeOutcomes);
+        update = await this.commitPendingUpdate(
+          shippedTags,
+          mergeOutcomes,
+          partitionIgnore,
+        );
       } catch (err) {
         if (!(err instanceof PendingParseFailure)) throw err;
         // spec/loop.md "The tick verdict — one facts artifact" drift (b):
@@ -3765,14 +3777,22 @@ export class Dispatcher {
   private async commitPendingUpdate(
     shippedTags: string[],
     mergeOutcomes: readonly TickVerdictMergeOutcome[],
+    partitionIgnore: string[],
   ): Promise<{ sha: string; tipMoved: boolean }> {
     // v0.8 §5: footprint content sources from the wave's own TickVerdict
     // record (mergeOutcomes) rather than a separately maintained map — a
     // view over the same facts `tick()` persists, not a second capture.
+    // spec/pending.md "Fanout partition — disjoint touched paths": the
+    // footprint recorder filters through the same partitionIgnore list the
+    // partition itself reads `touchedPaths` through, so observedFiles never
+    // grows with a path the partition would drop anyway.
     const observed = new Map(
       mergeOutcomes
         .filter((m) => m.footprint && m.footprint.length > 0)
-        .map((m) => [m.tag, m.footprint!] as const),
+        .map((m) => [
+          m.tag,
+          m.footprint!.filter((p) => !matchesAny(p, partitionIgnore)),
+        ] as const),
     );
     const shipped = new Set(shippedTags);
     // Re-read pending.json fresh, right before deriving the rewrite —

@@ -398,5 +398,17 @@ export interface Chain {
      * a value bound once per run.
      */
     tickTimeoutMs?: number;
+    /**
+     * Globs (matched by `matchesAny`, `src/paths.ts`) whose paths never
+     * count toward the fanout partition's collision set —
+     * `partitionByFileOverlap` (`src/partition.ts`) and the wave-end
+     * `observedFiles` footprint recorder (`src/Dispatcher.ts`) both read
+     * `touchedPaths` through this filter. `declaredPaths` itself — the
+     * fence, the write guard, ship detection — is untouched; this widens
+     * only what counts as a partition collision, never a permission.
+     * Default `[]`: byte-identical to no filter (spec/pending.md, "Fanout
+     * partition — disjoint touched paths").
+     */
+    partitionIgnore?: string[];
   };
 }

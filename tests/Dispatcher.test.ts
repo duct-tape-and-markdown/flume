@@ -1218,6 +1218,174 @@ describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invoca
   });
 });
 
+/**
+ * CHAIN-PARTITIONIGNORE — `Chain.supervisorPolicy.partitionIgnore`
+ * (`src/Phase.ts`) joins `maxParallel`/`tickTimeoutMs` as a per-tick
+ * chain-overridable default: `runFanout` reads it straight off the tick's
+ * own resolved chain and threads it into `partitionByFileOverlap`
+ * (`src/partition.ts`). spec/pending.md "Fanout partition — disjoint
+ * touched paths": it narrows the partition's collision set only —
+ * `declaredPaths` (the fence, the write guard, ship detection) is
+ * untouched, so a wave that widens on the ignored path still gates and
+ * ships each entry against its real declared files.
+ */
+describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the collision set (CHAIN-PARTITIONIGNORE)", () => {
+  it("two entries colliding only on an ignored path ship in the same wave", async () => {
+    const entries = [
+      makeEntry("PI-A", ["shared-lock.json", "src/pi-a.ts"]),
+      makeEntry("PI-B", ["shared-lock.json", "src/pi-b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { partitionIgnore: ["shared-lock.json"] },
+    };
+
+    const agent = fanoutAgent({
+      "pi-a": (cwd) =>
+        writeAndCommit(cwd, "src/pi-a.ts", "from-A\n", "build(PI-A): ship"),
+      "pi-b": (cwd) =>
+        writeAndCommit(cwd, "src/pi-b.ts", "from-B\n", "build(PI-B): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Both entries only ever touch src/pi-a.ts / src/pi-b.ts + the ignored
+    // shared-lock.json, so with the ignore in effect they're disjoint and
+    // both ship in wave 1 — no cherry-pick conflict on the ignored file.
+    expect(outcome.result?.shippedTags).toEqual(["PI-A", "PI-B"]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+  }, 20_000);
+
+  it("still splits two entries that collide on a non-ignored path in addition to the ignored one", async () => {
+    const entries = [
+      makeEntry("PIC-A", ["shared-lock.json", "src/shared.ts"]),
+      makeEntry("PIC-B", ["shared-lock.json", "src/shared.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { partitionIgnore: ["shared-lock.json"] },
+    };
+
+    const agent = fanoutAgent({
+      "pic-a": (cwd) =>
+        writeAndCommit(cwd, "src/shared.ts", "from-A\n", "build(PIC-A): ship"),
+      "pic-b": (cwd) =>
+        writeAndCommit(cwd, "src/shared.ts", "from-B\n", "build(PIC-B): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // src/shared.ts is not ignored, so PIC-A and PIC-B still collide and
+    // only the first ships this wave — the ignore widened nothing here.
+    expect(outcome.result?.shippedTags).toEqual(["PIC-A"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIC-B"]);
+  }, 20_000);
+
+  it("a chain declaring no partitionIgnore is byte-identical to today — the shared path still collides", async () => {
+    const entries = [
+      makeEntry("PID-A", ["shared-lock.json"]),
+      makeEntry("PID-B", ["shared-lock.json"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    // No supervisorPolicy at all — the undeclared-fields-fall-through case.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "pid-a": (cwd) =>
+        writeAndCommit(cwd, "shared-lock.json", "from-A\n", "build(PID-A): ship"),
+      "pid-b": (cwd) =>
+        writeAndCommit(cwd, "shared-lock.json", "from-B\n", "build(PID-B): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["PID-A"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PID-B"]);
+  }, 20_000);
+
+  it("declaredPaths / write guard / ship detection are unaffected — an ignored path still fails writablePaths outside the phase's ceiling", async () => {
+    // partitionIgnore widens the wave only; it must not act as a second
+    // permission. An entry declaring a path outside writablePaths still
+    // reverts on the write guard even though that same path is ignored by
+    // the partition.
+    const entries = [makeEntry("PIG-A", ["shared-lock.json", "forbidden/out.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**", ".flume/plan/pending.json"],
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { partitionIgnore: ["shared-lock.json"] },
+    };
+
+    const agent = fanoutAgent({
+      "pig-a": (cwd) =>
+        writeAndCommit(
+          cwd,
+          "forbidden/out.ts",
+          "nope\n",
+          "build(PIG-A): ship",
+        ),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIG-A"]);
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a tick-start snapshot (regression)", () => {
   it("ships one entry without clobbering a concurrent edit landed on an untouched entry mid-wave", async () => {
     // SHIP-PENDING-CLOBBER-BUG repro: a ship commit reintroduced a retired
