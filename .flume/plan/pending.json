@@ -1,42 +1,33 @@
 [
   {
-    "tag": "pending-blockedby-tags-list",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/PendingSchema.ts", "description": "gate union: blockedBy.tag -> blockedBy.tags (non-empty array; empty is a parse error). Update the doc-comment line, the prompt-schema hint, and isPickableNow's blockedBy case (pickable iff every tag shipped)." },
-        { "path": "src/Dispatcher.ts", "description": "wave auto-unblock rewrite: drop landed tags from the list, flip to open only once empty. The dispatcher-local pickability copy (same switch shape) gets the identical change." },
-        { "path": "tests/PendingSchema.test.ts", "description": "schema + isPickableNow coverage for the list form." },
-        { "path": "tests/Dispatcher.test.ts", "description": "auto-unblock partial-drain and pickability coverage." }
-      ],
-      "retire": []
-    },
-    "summary": "gate.blockedBy.tag (singular) -> gate.blockedBy.tags (non-empty list); empty list is a parse error, not an open gate.",
-    "per": { "path": "spec/pending.md", "section": "The entry core" },
-    "tests": [
-      "empty blockedBy.tags array is a schema parse error",
-      "entry pickable only when every named blocker tag has shipped",
-      "wave auto-unblock removes landed tags from the list and flips to open only once empty",
-      "an entry naming an unshipped blocker among several stays blockedBy with the shorter list"
-    ],
-    "acceptance": "PendingSchema and Dispatcher agree on gate.blockedBy.tags; a multi-parent DAG entry no longer flattens to a single blocker.",
-    "notes": "Two read sites carry the same switch (PendingSchema.ts isPickableNow, Dispatcher.ts's local copy) — both must change identically. Also governed by spec/pending.md Pickability and Wave auto-unblock."
-  },
-  {
     "tag": "dispatcher-quarantine-visibility",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Phase.ts", "description": "TickResult: add quarantinedTags?: readonly string[] and nothingPickable?: boolean." },
-        { "path": "src/Dispatcher.ts", "description": "fanout selection: when FLUME_QUARANTINED_SLUGS drops a tag from the pickable set, record it on the result; set nothingPickable when nothing remains after the drop." },
-        { "path": "tests/Dispatcher.test.ts", "description": "coverage for both fields across quarantined/non-quarantined nothing-pickable ticks." }
+        {
+          "path": "src/Phase.ts",
+          "description": "TickResult: add quarantinedTags?: readonly string[] and nothingPickable?: boolean."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "fanout selection: when FLUME_QUARANTINED_SLUGS drops a tag from the pickable set, record it on the result; set nothingPickable when nothing remains after the drop."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "coverage for both fields across quarantined/non-quarantined nothing-pickable ticks."
+        }
       ],
       "retire": []
     },
     "summary": "TickResult.quarantinedTags + nothingPickable so a chain's handoff can tell a quarantined open entry from a genuinely pickable one.",
-    "per": { "path": "spec/loop.md", "section": "The no-commit taxonomy" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The no-commit taxonomy"
+    },
     "tests": [
       "a fanout tick with every open entry quarantined reports nothingPickable:true and the dropped tags on quarantinedTags",
       "quarantinedTags is empty (not absent) on a nothing-pickable tick with no quarantine",
@@ -47,20 +38,41 @@
   },
   {
     "tag": "chain-partition-ignore",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Phase.ts", "description": "Chain.supervisorPolicy: add partitionIgnore?: string[]." },
-        { "path": "src/partition.ts", "description": "PartitionOptions gains the ignore-globs list; partitionByFileOverlap treats a path matching matchesAny(path, ignore) as touched by nobody." },
-        { "path": "src/Dispatcher.ts", "description": "runFanout reads supervisorPolicy.partitionIgnore ?? [] per tick and passes it to the partition call; the observedFiles footprint recorder filters the same paths through the same list." },
-        { "path": "tests/partition.test.ts", "description": "ignored-path collision-avoidance coverage." },
-        { "path": "tests/Dispatcher.test.ts", "description": "per-tick read of partitionIgnore off the resolved chain." }
+        {
+          "path": "src/Phase.ts",
+          "description": "Chain.supervisorPolicy: add partitionIgnore?: string[]."
+        },
+        {
+          "path": "src/partition.ts",
+          "description": "PartitionOptions gains the ignore-globs list; partitionByFileOverlap treats a path matching matchesAny(path, ignore) as touched by nobody."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runFanout reads supervisorPolicy.partitionIgnore ?? [] per tick and passes it to the partition call; the observedFiles footprint recorder filters the same paths through the same list."
+        },
+        {
+          "path": "tests/partition.test.ts",
+          "description": "ignored-path collision-avoidance coverage."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "per-tick read of partitionIgnore off the resolved chain."
+        }
       ],
       "retire": []
     },
     "summary": "supervisorPolicy.partitionIgnore narrows the fanout partition's collision set only; write guard and ship detection are unaffected.",
-    "per": { "path": "spec/pending.md", "section": "Fanout partition — disjoint touched paths" },
+    "per": {
+      "path": "spec/pending.md",
+      "section": "Fanout partition — disjoint touched paths"
+    },
     "tests": [
       "two entries touching only an ignored path partition into the same wave",
       "an entry touching both an ignored and a non-ignored shared path still collides on the non-ignored path",
@@ -70,46 +82,42 @@
     "notes": "Read per tick off the resolved chain, same shape as maxParallel/tickTimeoutMs (spec/chain.md Supervisor policy is a chain-overridable default)."
   },
   {
-    "tag": "gate-command-harness-render",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/Gate.ts", "description": "Gate: add command?: string." },
-        { "path": "src/builtinGates.ts", "description": "shellGate renders command as one line from cmd+args — the single site behind tscGate/vitestGate/eslintGate/pkgManagerGate. chainLoadGate/pendingGate/writablePathsGate declare none (hand-rolled, no single command line)." },
-        { "path": "src/Prompt.ts", "description": "prependHarnessBlock's gate line renders ': <command>' when the gate declares one, else unchanged." },
-        { "path": "tests/Gate.test.ts", "description": "type/passthrough coverage." },
-        { "path": "tests/builtinGates.test.ts", "description": "shellGate command rendering; hand-rolled gates carry none." },
-        { "path": "tests/Prompt.test.ts", "description": "harness block render with and without a declared command." }
-      ],
-      "retire": []
-    },
-    "summary": "shellGate-built gates declare Gate.command; the harness block shows it beside the gate name so a chain's prompt doesn't restate it.",
-    "per": { "path": "spec/chain.md", "section": "The builtin gates" },
-    "tests": [
-      "shellGate's returned Gate.command renders cmd+args as one line",
-      "a hand-rolled gate has no command and renders as name alone",
-      "harness block shows 'name (when): <command>' when command is present, 'name (when)' otherwise"
-    ],
-    "acceptance": "An agent reading <harness> sees the exact command a shellGate-built gate will run, sourced from the gate's own declaration.",
-    "notes": "Render side also spec'd at spec/prompt.md The harness block."
-  },
-  {
     "tag": "gate-failing-files-suspect-flake",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Gate.ts", "description": "GateResult: add failingFiles?: string[]." },
-        { "path": "src/Prompt.ts", "description": "GateRevertAttempt: add suspectFlake?: boolean." },
-        { "path": "src/Dispatcher.ts", "description": "at the gate-revert prior-attempt write site, derive suspectFlake when the gate result's failingFiles is present and every entry is disjoint from the reverted span's footprint." },
-        { "path": "tests/Gate.test.ts", "description": "type coverage." },
-        { "path": "tests/Dispatcher.test.ts", "description": "disjoint vs overlapping failingFiles, and the absent-field case." }
+        {
+          "path": "src/Gate.ts",
+          "description": "GateResult: add failingFiles?: string[]."
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "GateRevertAttempt: add suspectFlake?: boolean."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "at the gate-revert prior-attempt write site, derive suspectFlake when the gate result's failingFiles is present and every entry is disjoint from the reverted span's footprint."
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "type coverage."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "disjoint vs overlapping failingFiles, and the absent-field case."
+        }
       ],
       "retire": []
     },
     "summary": "GateResult.failingFiles lets Dispatcher derive suspectFlake on a gate-revert record from list disjointness, never from gate prose.",
-    "per": { "path": "spec/chain.md", "section": "What a gate returns" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate returns"
+    },
     "tests": [
       "a gate-revert record whose failingFiles is disjoint from the reverted span's footprint is marked suspectFlake:true",
       "a gate-revert record whose failingFiles overlaps the footprint earns no marker",
@@ -120,19 +128,37 @@
   },
   {
     "tag": "git-cherry-pick-abort-bystander-checkpoint",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/git.ts", "description": "cherryPickAbort: guard the --abort call on sequencer state (CHERRY_PICK_HEAD or sequencer/ present) — never blind." },
-        { "path": "src/Dispatcher.ts", "description": "before a primary-checkout pick range begins, checkpoint any staged bystander state as a dangling commit (git stash create shape) and record its sha on the tick verdict." },
-        { "path": "tests/git.test.ts", "description": "no-op abort when no sequence started; --abort issued when sequencer state is present." },
-        { "path": "tests/Dispatcher.test.ts", "description": "checkpoint sha recorded and staged content recoverable from it after an abort/reset." }
+        {
+          "path": "src/git.ts",
+          "description": "cherryPickAbort: guard the --abort call on sequencer state (CHERRY_PICK_HEAD or sequencer/ present) — never blind."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "before a primary-checkout pick range begins, checkpoint any staged bystander state as a dangling commit (git stash create shape) and record its sha on the tick verdict."
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "no-op abort when no sequence started; --abort issued when sequencer state is present."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "checkpoint sha recorded and staged content recoverable from it after an abort/reset."
+        }
       ],
       "retire": []
     },
     "summary": "Primary-checkout cherry-pick --abort only fires against a sequence that started; staged bystander state is checkpointed to a recoverable sha first.",
-    "per": { "path": "spec/loop.md", "section": "Crash equals stop" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Crash equals stop"
+    },
     "tests": [
       "cherryPickAbort issues no git command when no sequencer state is present",
       "cherryPickAbort issues --abort when CHERRY_PICK_HEAD/sequencer state is present",
@@ -143,17 +169,29 @@
   },
   {
     "tag": "worktree-harvest-tracked-at-head",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "harvestFriction: bound moves from base-commit-relative (readFileAtRef against baseRef) to untracked-at-worktree-HEAD, so a note this tick's own agent committed is delivered once, not duplicated under a stamped name." },
-        { "path": "tests/Dispatcher.test.ts", "description": "a committed friction note is harvested zero times; the existing new-since-base case stays covered." }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "harvestFriction: bound moves from base-commit-relative (readFileAtRef against baseRef) to untracked-at-worktree-HEAD, so a note this tick's own agent committed is delivered once, not duplicated under a stamped name."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "a committed friction note is harvested zero times; the existing new-since-base case stays covered."
+        }
       ],
       "retire": []
     },
     "summary": "Teardown harvest moves files untracked at the worktree's HEAD, not merely new since base — a committed note is delivered once, via its own commit.",
-    "per": { "path": "spec/worktrees.md", "section": "Teardown harvest — the delivery guarantee" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Teardown harvest — the delivery guarantee"
+    },
     "tests": [
       "a friction-channel file the tick's agent committed is not harvested a second time under a stamped name",
       "a file untracked at worktree HEAD but absent from the base tree is still harvested",
@@ -164,19 +202,37 @@
   },
   {
     "tag": "verdict-anchor-head-sha-at",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "TickVerdict: add headSha: string, at: string (ISO timestamp), populated by writeTickVerdict. Add readLatestVerdictsSync(flumeDir): most-recent verdict per phaseName, synchronous, reading the same verdict log readTickVerdicts does." },
-        { "path": "src/index.ts", "description": "export readLatestVerdictsSync." },
-        { "path": "src/flumeApi.ts", "description": "export readLatestVerdictsSync." },
-        { "path": "tests/Dispatcher.test.ts", "description": "headSha/at correctness; readLatestVerdictsSync per-phase latest reduction." }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "TickVerdict: add headSha: string, at: string (ISO timestamp), populated by writeTickVerdict. Add readLatestVerdictsSync(flumeDir): most-recent verdict per phaseName, synchronous, reading the same verdict log readTickVerdicts does."
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export readLatestVerdictsSync."
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "export readLatestVerdictsSync."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "headSha/at correctness; readLatestVerdictsSync per-phase latest reduction."
+        }
       ],
       "retire": []
     },
     "summary": "Every TickVerdict carries headSha/at; readLatestVerdictsSync gives shouldRun/handoff a synchronous per-phase anchor read.",
-    "per": { "path": "spec/loop.md", "section": "The tick verdict — one facts artifact" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
     "tests": [
       "a written verdict's headSha matches the trunk tip and at is a valid ISO timestamp",
       "readLatestVerdictsSync returns the most recent verdict per phase name from the verdict log",
@@ -187,19 +243,37 @@
   },
   {
     "tag": "verdict-invocations-usage",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Agent.ts", "description": "AgentResult gains per-invocation usage: model id, turn count, duration, and token counts (input/output/cacheCreation/cacheRead), parsed from the same stream-json result event withTerminalRenderer's formatResult already reads — one source, not a second parser." },
-        { "path": "src/Dispatcher.ts", "description": "TickVerdict: add invocations[] — one row per agent run this tick (tag present for a fanout entry, absent for a singleton), populated from each AgentResult." },
-        { "path": "tests/Agent.test.ts", "description": "usage extraction from a result event, including a field the agent didn't report." },
-        { "path": "tests/Dispatcher.test.ts", "description": "singleton vs fanout invocations[] shape." }
+        {
+          "path": "src/Agent.ts",
+          "description": "AgentResult gains per-invocation usage: model id, turn count, duration, and token counts (input/output/cacheCreation/cacheRead), parsed from the same stream-json result event withTerminalRenderer's formatResult already reads — one source, not a second parser."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "TickVerdict: add invocations[] — one row per agent run this tick (tag present for a fanout entry, absent for a singleton), populated from each AgentResult."
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "usage extraction from a result event, including a field the agent didn't report."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "singleton vs fanout invocations[] shape."
+        }
       ],
       "retire": []
     },
     "summary": "TickVerdict.invocations[] carries one usage row per agent run (model, turns, duration, token counts incl. cache split); absent fields the agent didn't report.",
-    "per": { "path": "spec/loop.md", "section": "The tick verdict — one facts artifact" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
     "tests": [
       "a singleton tick's verdict carries one invocations[] row with no tag",
       "a fanout tick's verdict carries one invocations[] row per provisioned entry, each tagged",
@@ -210,21 +284,45 @@
   },
   {
     "tag": "prior-attempt-anchor-export",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "slugify and priorAttemptPath become exported free functions: priorAttemptPath(flumeDir, tag) (internally slugifies). Update priorAttemptKey/readPriorAttempt/writePriorAttempt call sites to the new signature." },
-        { "path": "src/Prompt.ts", "description": "all 5 PriorAttempt variants gain headSha: string and at: string." },
-        { "path": "src/index.ts", "description": "export slugify, priorAttemptPath." },
-        { "path": "src/flumeApi.ts", "description": "export slugify, priorAttemptPath." },
-        { "path": "tests/Dispatcher.test.ts", "description": "priorAttemptPath(flumeDir, tag) matches the dispatcher's own read/write path; headSha/at on each variant." },
-        { "path": "tests/Prompt.test.ts", "description": "render coverage carrying the two new fields through the five variants." }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "slugify and priorAttemptPath become exported free functions: priorAttemptPath(flumeDir, tag) (internally slugifies). Update priorAttemptKey/readPriorAttempt/writePriorAttempt call sites to the new signature."
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "all 5 PriorAttempt variants gain headSha: string and at: string."
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export slugify, priorAttemptPath."
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "export slugify, priorAttemptPath."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "priorAttemptPath(flumeDir, tag) matches the dispatcher's own read/write path; headSha/at on each variant."
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "render coverage carrying the two new fields through the five variants."
+        }
       ],
       "retire": []
     },
     "summary": "priorAttemptPath/slugify become exported so a chain reads the engine's own rule; every prior-attempt record anchors on headSha/at.",
-    "per": { "path": "spec/loop.md", "section": "Prior-outcome feedback to the retrying tick" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
     "tests": [
       "priorAttemptPath(flumeDir, tag) matches the path the dispatcher itself reads/writes for that tag",
       "every one of the 5 prior-attempt record variants carries headSha and at when written",
@@ -235,48 +333,35 @@
   },
   {
     "tag": "docs-singleton-worktree-stale-sites",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Gate.ts", "description": "GateContext.repoRoot JSDoc's fanout/bare dichotomy and GatePhase's afterMerge doc ('singleton phases never run afterMerge') both predate 0.12 singleton worktrees — correct to the current model (spec/chain.md: 'the former singleton-afterMerge refusal is retired')." },
-        { "path": "docs/CLI.md", "description": "~line 121 'will not appear' text misses the gitignored job state that survives a branch switch (spec/jobs.md: job dir is tracked, some subdirs are gitignored)." },
-        { "path": "README.md", "description": "~line 196 heading 'Relocating fanout worktrees only' — singleton worktrees ride the same base." }
+        {
+          "path": "src/Gate.ts",
+          "description": "GateContext.repoRoot JSDoc's fanout/bare dichotomy and GatePhase's afterMerge doc ('singleton phases never run afterMerge') both predate 0.12 singleton worktrees — correct to the current model (spec/chain.md: 'the former singleton-afterMerge refusal is retired')."
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "~line 121 'will not appear' text misses the gitignored job state that survives a branch switch (spec/jobs.md: job dir is tracked, some subdirs are gitignored)."
+        },
+        {
+          "path": "README.md",
+          "description": "~line 196 heading 'Relocating fanout worktrees only' — singleton worktrees ride the same base."
+        }
       ],
       "retire": []
     },
     "summary": "Four doc/comment sites predate 0.12's singleton-worktree unification; correct each to the current fanout=singleton worktree model.",
-    "per": { "path": "spec/worktrees.md", "section": "Singleton runs in a worktree" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Singleton runs in a worktree"
+    },
     "tests": [],
     "acceptance": "None of the four sites implies singleton phases skip worktrees or afterMerge gates, or that job state is branch-scoped where it isn't.",
     "notes": "docs/CLI.md fix additionally grounded in spec/jobs.md 'A job is a state root'. gh#13 + 2 more, inbox 2026-09-03, filed directly (docs lane, no engine change)."
-  },
-  {
-    "tag": "cli-seam-split",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        { "path": "src/cliHelp.ts", "description": "help-text constants + isSubcommand/wantsHelp, extracted from src/cli.ts." },
-        { "path": "src/cliJobResolution.ts", "description": "JobResolutionConflictError/CrossRepoFlumeDirError, resolveRepoRoot, resolveStateDirs." },
-        { "path": "src/cliVerdict.ts", "description": "tickExitCode, loopExitCode, describeRefFailure, loopCompletionSummary, formatTickVerdictLine." },
-        { "path": "src/cliJobVerbs.ts", "description": "runJobVerb and its helpers." },
-        { "path": "tests/cliHelp.test.ts", "description": "split from tests/cli.test.ts along the same seam." },
-        { "path": "tests/cliJobResolution.test.ts", "description": "split from tests/cli.test.ts along the same seam." },
-        { "path": "tests/cliVerdict.test.ts", "description": "split from tests/cli.test.ts along the same seam." },
-        { "path": "tests/cliJobVerbs.test.ts", "description": "split from tests/cli.test.ts along the same seam." }
-      ],
-      "edit": [
-        { "path": "src/cli.ts", "description": "residual: main()'s argv switch and dispatch only, importing the four extracted modules." },
-        { "path": "tests/cli.test.ts", "description": "residual: whatever exercises main()'s dispatch itself, after the seam suites move out." }
-      ],
-      "retire": []
-    },
-    "summary": "Split cli.ts/cli.test.ts along the four ratified seams (help text, state/job resolution, verdict formatting, job-verb dispatch); main()'s argv switch stays.",
-    "per": { "path": ".claude/rules/posture-sweep.md", "section": "A violation counts only when verified on disk this tick" },
-    "tests": [
-      "existing cli.test.ts coverage is preserved, split across the four new test files, with no behavior change"
-    ],
-    "acceptance": "src/cli.ts holds only main()'s dispatch and its direct helpers; each of the four seams lives in its own file with its own test file; pnpm test and pnpm tsc stay green.",
-    "notes": "Ratified 2026-08-18 (271fb13), sequenced to the 0.13 line, held until 0.12.0 shipped (it has). Pure internal refactor, no consumer-facing change — sequence last. Exact function-to-seam boundary beyond what's listed is build's call."
   }
 ]
