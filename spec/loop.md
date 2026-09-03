@@ -554,6 +554,11 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   and `at` its ISO timestamp, so "has the world moved since this phase last ran" is a
   comparison against engine state, never an inference from which paths the last commit
   touched — and a phase need not commit on a quiet tick just to leave an anchor behind.
+- **`bystanderCheckpointSha`** is the dangling commit that captured whatever was staged
+  or unstaged on the primary checkout when the tick's merge stage began (*Crash equals
+  stop*). Absent when the tree was clean at that point, or when no merge stage began.
+  It is the recovery handle for the operator's own work, the same way a span's
+  `headSha` is the recovery handle for the agent's.
 - **Every agent invocation leaves a usage row.** `invocations[]` carries one row per
   agent run in the tick — one for a singleton, one per provisioned entry under fanout —
   with the entry `tag` (absent for a singleton), the agent's model id, turn count,
