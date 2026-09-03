@@ -4,7 +4,7 @@
  * re-exported below is unreachable from outside the package.
  */
 
-export type { Agent, AgentInvocation, AgentResult } from "./Agent.js";
+export type { Agent, AgentInvocation, AgentResult, AgentUsage } from "./Agent.js";
 export {
   claudeCode,
   withSessionCapture,
@@ -84,6 +84,7 @@ export {
   type TickOutcome,
   type TickVerdict,
   type TickVerdictGateResult,
+  type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type MergeOutcome,
 } from "./Dispatcher.js";
