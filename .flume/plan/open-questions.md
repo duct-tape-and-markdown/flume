@@ -9,27 +9,6 @@ Status markers:
 
 <!-- questions below this line -->
 
-## `.flume/chain.ts:54`'s `anyVoluntaryBailRecord` needs `priorAttemptsDir` wired in by hand (PARKED)
-
-`PRIOR-ATTEMPTS-DIR-EXPORT` (pending.json) exports `priorAttemptsDir(flumeDir)` from
-`src/Dispatcher.ts`/`index.ts`/`flumeApi.ts` so `anyVoluntaryBailRecord` can stop hardcoding the
-`"prior-attempts"` literal. But `.flume/chain.ts` is outside every phase's lane
-(`.claude/rules/spec-plan-build.md`) — no build tick can write it. The prior plan tick declared
-`.flume/chain.ts` in that entry's `files.edit` anyway; build picked it up, and the resulting
-merge failure is exactly the recorded footprint (`chore(flume): record merge-failure footprints
-for PRIOR-ATTEMPTS-DIR-EXPORT`). This tick scoped the entry back down to the exportable src+test
-surface and parks the consuming edit here.
-
-Once `priorAttemptsDir` ships, an interactive session should replace `.flume/chain.ts:54`'s
-`resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "prior-attempts")` with a call through the exported
-helper (mirroring however the file already imports `priorAttemptPath`/`slugify` from `../src/`),
-in its own `chore(flume):` commit — no design fork, just an edit no phase can make.
-
-**Answered (2026-09-03, human sign-off via interactive session):** wired in the commit carrying
-this answer — `anyVoluntaryBailRecord` takes the helper as a parameter and `shouldRun` passes
-`api.priorAttemptsDir`, keeping chain.ts's values-off-the-api / types-only-from-src discipline
-(`spec/chain.md`, *The chain is a plugin*). Question closes.
-
 ## `src/Dispatcher.ts` (4836 lines) bundles several jobs that read as separate homes (PARKED)
 
 Posture sweep (`.claude/rules/posture-sweep.md` standing lens: "a module carrying jobs that want separate homes") over the `src/Dispatcher.ts` neighborhood found the file's own `// ---------- X ----------` markers delineating distinct concerns: chain load+validate (`:735-1028`), tick-verdict I/O (`:440-600`), singleton tick (`:1601-1943`), fanout tick + per-entry fanout (`:1983-2892`), worktree/friction/prior-attempt helpers (`:2894-4153`), loop supervisor (`:4156-4628`). Sibling engine files stay well under 1000 lines (`git.ts` 651, `Agent.ts` 606, `PendingSchema.ts` 598).

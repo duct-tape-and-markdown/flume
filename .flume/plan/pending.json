@@ -1,1 +1,40 @@
-[]
+[
+  {
+    "tag": "GATE-CONTEXT-STATE-ROOT-REL",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "GateContext gains stateRootRel per spec/chain.md 'What a gate receives'; update flumeDir doc comment to state it is the primary checkout's root, never rebased, at both gate points."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Compute stateRootRel (relative(repoRoot, flumeDir), absent when it climbs out or is absolute) at all three gate.run call sites (~1844, ~2378, ~3130); share the computation with harvestFriction's existing stateRootRel (~3255) rather than re-deriving it, per engineering.md 'The fix lands at the mechanism'."
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "pendingGate reads the gated commit via join(ctx.stateRootRel, pendingPath) when stateRootRel is set, falling back to the existing disk read only when it is absent (relocated state root) — replaces the relative(ctx.repoRoot, join(ctx.flumeDir, pendingPath)) computation that assumes flumeDir nests under repoRoot."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pin stateRootRel's value on a dispatcher-built afterCommit GateContext where flumeDir is an ancestor of the worktree repoRoot (the real afterCommit shape), and the absent case when the state root is relocated outside repoRoot."
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "Regression per engineering.md 'A seam gate reads what the real writer wrote': build the GateContext the way runAfterCommitGates does (flumeDir ancestor of repoRoot, not nested under it) and assert pendingGate reads the gated commit's tracked pending.json via stateRootRel — the shape the PENDING-GATE-STALE-TIP-READ fix shipped dormant against."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Wire GateContext.stateRootRel so pendingGate reads the gated commit's tracked pending.json instead of falling back to a stale disk read",
+    "per": { "path": "spec/chain.md", "section": "What a gate receives" },
+    "tests": [
+      "stateRootRel is set to the repo-relative offset when flumeDir is inside repoRoot, absent when relocated outside it",
+      "pendingGate resolves the gated commit's pending.json via stateRootRel when flumeDir is the primary checkout's root and repoRoot is a worktree nested under it (real afterCommit shape, not the inverted fixture the shipped test used)"
+    ],
+    "acceptance": "GateContext.stateRootRel is computed once by the dispatcher and shared with harvestFriction; pendingGate uses it to read the gated sha's tracked pending.json in a real afterCommit worktree layout, activating the fix PENDING-GATE-STALE-TIP-READ shipped dormant",
+    "notes": "Open question 'GateContext.flumeDir isn't rebased...' answered option B, engine-computed offset, ratified into spec/chain.md by 6120a2ef. Question stays open until this ships (its own text: 'Question closes when it ships')."
+  }
+]
