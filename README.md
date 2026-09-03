@@ -193,10 +193,12 @@ under `FLUME_DIR` — see
 [`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for the chain-author
 requirement.
 
-### Relocating fanout worktrees only: `FLUME_WORKTREES_DIR`
+### Relocating worktrees: `FLUME_WORKTREES_DIR`
 
-Fanout worktrees default to `<flumeDir>/worktrees` — inside the state root, so
-they move with `FLUME_DIR` and are covered by the one-`rm` teardown.
+Every tick provisions a worktree — a fanout entry's, or a singleton phase's
+own (`spec/worktrees.md`, "Singleton runs in a worktree") — and both default
+to `<flumeDir>/worktrees` — inside the state root, so they move with
+`FLUME_DIR` and are covered by the one-`rm` teardown.
 `FLUME_WORKTREES_DIR` overrides just the worktree base, resolved as
 `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`; a relative value resolves
 against the cwd.

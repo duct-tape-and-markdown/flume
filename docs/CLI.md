@@ -118,7 +118,7 @@ flume job rm docs-refresh
 
 Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`); the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing.
 
-Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir that lives only on a branch other than the one checked out will not appear. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
+Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir's tracked files (chain, prompts, `plan/pending.json`) are branch-scoped and will not appear on a branch that never committed them. Its gitignored subdirs — `awake/`, `loop.pid`, `prior-attempts/`, `worktrees/` (`spec/jobs.md`, "Runtime ignores") — are untracked and outlive a branch switch, so a stale baton or `loop.pid` from a job dir seeded elsewhere can still surface after HEAD moves off that branch. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
 
 ```sh
 flume job status

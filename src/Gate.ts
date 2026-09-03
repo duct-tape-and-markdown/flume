@@ -20,10 +20,10 @@ export type GatePhase =
    */
   | "afterCommit"
   /**
-   * Runs after a fanout entry's worktree commit is cherry-picked onto the
-   * trunk. Failure reverts only that entry's commit — the rest of the wave
-   * stays shipped. Singleton phases never run afterMerge gates because they
-   * commit directly to the trunk.
+   * Runs after a worktree commit is cherry-picked onto the trunk — a fanout
+   * entry's, or a singleton phase's own (spec/worktrees.md, "Singleton runs
+   * in a worktree"). Failure reverts only that commit; for a fanout wave,
+   * the rest of the wave stays shipped.
    */
   | "afterMerge";
 
@@ -55,9 +55,10 @@ export interface GateContext {
    */
   configDir: string;
   /**
-   * Absolute path of the working-tree root the gate is running in — in a
-   * fanout tick, the worktree root; in a bare tick, the primary checkout
-   * (RELEASE-v0.7 §6).
+   * Absolute path of the working-tree root the gate is running in — for an
+   * `afterCommit` gate, the worktree root (a fanout entry's, or a singleton
+   * phase's own; spec/worktrees.md "Singleton runs in a worktree"); for an
+   * `afterMerge` gate, the trunk (RELEASE-v0.7 §6).
    */
   repoRoot: string;
   /** Phase the gate is running for. */
