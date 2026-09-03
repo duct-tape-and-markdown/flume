@@ -3292,6 +3292,92 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
   }, 20_000);
 });
 
+// ---------- bystander checkpoint before the primary-checkout merge stage
+// (spec/loop.md "Crash equals stop": "Staged bystander state is
+// checkpointed before a pick range begins") ----------
+
+describe("Dispatcher — staged bystander state is checkpointed to a recoverable sha before the merge stage", () => {
+  it("fanout: a staged bystander edit that blocks the wave's own cherry-pick is still recoverable from the verdict's checkpoint sha", async () => {
+    await writePending(fx.repo, [makeEntry("SHIP-IT", ["src/thing.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "ship-it": async (cwd) => {
+        await writeAndCommit(cwd, "src/thing.ts", "content\n", "build(SHIP-IT)");
+      },
+    });
+
+    // The operator has staged unrelated work on the primary checkout before
+    // this tick's merge stage begins. Git refuses *any* cherry-pick outright
+    // while the checkout carries staged content, disjoint or not ("your
+    // local changes would be overwritten by cherry-pick") — so the wave's
+    // own pick never lands and the entry stays pending. That pre-flight
+    // refusal still leaves the multi-commit range's sequencer state on disk
+    // (git's own bookkeeping, ahead of applying any commit), so the guarded
+    // `cherryPickAbort` legitimately fires and can still take the staged
+    // file with it. Recovery, not prevention of the abort, is what the
+    // checkpoint buys (spec/loop.md "Crash equals stop", "Never-destroy-
+    // always-leave-a-sha").
+    await writeFile(join(fx.repo, "operator-staged.txt"), "bystander content\n");
+    await exec("git", ["add", "operator-staged.txt"], { cwd: fx.repo });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk.map((e) => e.tag)).toEqual(["SHIP-IT"]);
+
+    const sha = outcome.verdict?.bystanderCheckpointSha;
+    expect(sha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+
+    // Recoverable from the checkpoint sha alone — `git stash create`'s
+    // shape, an object in the store independent of whatever the failed
+    // pick and its abort did to the working tree.
+    const { stdout } = await exec(
+      "git",
+      ["show", `${sha}:operator-staged.txt`],
+      { cwd: fx.repo },
+    );
+    expect(stdout).toBe("bystander content\n");
+  }, 20_000);
+
+  it("singleton: absent when the primary checkout was clean at merge time", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.verdict?.bystanderCheckpointSha).toBeUndefined();
+  });
+});
+
 // ---------- resetKeepTo collision at the primary-checkout revert site
 // (audit finding against shared-checkout-keep-reset 6cb9948: resetKeepTo's
 // own refusal was left uncaught by both its callers) ----------

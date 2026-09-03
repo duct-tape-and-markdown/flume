@@ -314,6 +314,17 @@ export interface TickVerdict {
    * Absent when nothing this tick touched hit a `shouldRun` refusal.
    */
   declined?: boolean;
+  /**
+   * spec/loop.md "Crash equals stop": the sha of a dangling commit
+   * (`git stash create`'s shape — object written, no ref moved, nothing
+   * reset) capturing whatever was staged or unstaged on the primary
+   * checkout when this tick's merge stage began, checkpointed before the
+   * tick's first cherry-pick range so a later `--abort` or gate revert can
+   * never destroy the operator's own bystander work unrecoverably. Absent
+   * when the tree was clean at that point, or when the tick's merge stage
+   * never began (nothing committed to cherry-pick).
+   */
+  bystanderCheckpointSha?: string;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: TickVerdictGateResult[];
   /** Entry tags shipped by this tick (entries the phase's `shipped` predicate rejected already excluded); empty for a singleton phase. */
@@ -350,6 +361,8 @@ type PhaseTickOutcome = {
   tipMoved?: boolean;
   /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
   declined?: boolean;
+  /** See {@link TickVerdict.bystanderCheckpointSha}. */
+  bystanderCheckpointSha?: string;
   provisionFailures?: ProvisionFailure[];
   /** §16 (generalized) — see {@link TickVerdict.mergeFailures}. */
   mergeFailures?: MergeFailure[];
@@ -1398,6 +1411,7 @@ export class Dispatcher {
       noCommit,
       tipMoved,
       declined,
+      bystanderCheckpointSha,
       provisionFailures,
       mergeFailures,
       gateFailures,
@@ -1444,6 +1458,7 @@ export class Dispatcher {
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
+      ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
       gateResults: [...result.gateResults] as TickVerdictGateResult[],
       shippedTags: [...result.shippedTags],
       mergeOutcomes: mergeOutcomes ?? [],
@@ -1555,6 +1570,9 @@ export class Dispatcher {
     let tipMoved = false;
     let committed = false;
     let commitSha: string | undefined;
+    // spec/loop.md "Crash equals stop": set the one time this tick's merge
+    // stage actually begins a pick range — see the checkpoint call below.
+    let bystanderCheckpointSha: string | undefined;
     const gateResults: GateResultEntry[] = [];
     // §16 (generalized): a singleton's own afterCommit/afterMerge gate
     // revert carries no entry tag (nothing to quarantine — see
@@ -1658,6 +1676,15 @@ export class Dispatcher {
           // a run now that the agent never touches it directly — so this
           // lands onto whatever trunk currently is; only a real conflict
           // refuses.
+          //
+          // spec/loop.md "Crash equals stop": checkpoint whatever the
+          // operator has staged/unstaged on the primary checkout before
+          // this tick's one pick range begins — recoverable from the tick
+          // verdict alone even if the cherry-pick below conflicts and its
+          // `--abort` (now guarded, but still a reset) or a later gate
+          // revert disturbs it.
+          bystanderCheckpointSha =
+            await git.checkpointBystanderState(repoRoot);
           const preCherry = await git.revParse(repoRoot);
           try {
             await git.cherryPickRange(repoRoot, preWtHead, postWtHead);
@@ -1794,6 +1821,7 @@ export class Dispatcher {
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
+      ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
       ...(gateFailures.length > 0 ? { gateFailures } : {}),
       ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     };
@@ -2071,6 +2099,13 @@ export class Dispatcher {
     // least one entry sets this even when it also shipped (entries
     // `shouldRun` let through are unaffected by their siblings declining).
     let waveDeclined = false;
+    // spec/loop.md "Crash equals stop": checkpointed once, lazily, right
+    // before this wave's first cherry-pick range — see the loop below.
+    // `checkpointAttempted` (rather than testing the sha itself) so a
+    // clean tree at that moment — `checkpointBystanderState` returning
+    // `undefined` — is never retried on a later entry in the same wave.
+    let checkpointAttempted = false;
+    let bystanderCheckpointSha: string | undefined;
 
     for (const r of perEntry) {
       if (r.tipMoved) {
@@ -2125,6 +2160,16 @@ export class Dispatcher {
           headSha: r.commitSha,
         });
         continue;
+      }
+      if (!checkpointAttempted) {
+        // spec/loop.md "Crash equals stop": checkpoint whatever the
+        // operator has staged/unstaged on the primary checkout before this
+        // wave's first pick range begins — once per wave, not once per
+        // entry, since a clean checkout stays clean across a wave's own
+        // cherry-picks (only a conflict's `--abort`, now guarded, or a
+        // gate revert resets anything).
+        checkpointAttempted = true;
+        bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
       }
       const preCherry = await git.revParse(repoRoot);
       try {
@@ -2401,6 +2446,7 @@ export class Dispatcher {
           ...(noCommit ? { noCommit } : {}),
           ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
           ...(waveDeclined ? { declined: waveDeclined } : {}),
+          ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
           gateResults: allGateResults as TickVerdictGateResult[],
           shippedTags,
           mergeOutcomes,
@@ -2493,6 +2539,7 @@ export class Dispatcher {
       ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
       ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
       ...(waveDeclined ? { declined: waveDeclined } : {}),
+      ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures.length > 0 ? { gateFailures } : {}),

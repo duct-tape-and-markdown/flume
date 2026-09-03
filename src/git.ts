@@ -406,16 +406,78 @@ export async function readFileAtRef(
 }
 
 /**
+ * `git rev-parse --git-path <relPath>` — the checkout-relative path git
+ * itself resolves for a piece of its own state, rather than this caller
+ * assuming `.git/<relPath>` directly (right for a linked worktree, where
+ * `CHERRY_PICK_HEAD`/`sequencer/` live under `.git/worktrees/<name>/`, not
+ * under the shared common dir `gitCommonDir` resolves).
+ */
+async function gitPath(repoRoot: string, relPath: string): Promise<string> {
+  const { stdout } = await run(repoRoot, ["rev-parse", "--git-path", relPath]);
+  return resolve(repoRoot, stdout);
+}
+
+/**
+ * Whether a cherry-pick sequence has actually started on this checkout —
+ * `CHERRY_PICK_HEAD` or a `sequencer/` directory present, git's own state
+ * for an in-progress (possibly multi-commit) pick. Read structurally off
+ * disk, never inferred from a prior call's outcome (`engine-boundary.md`
+ * "Told, not inferred").
+ */
+async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
+  const [headPath, sequencerPath] = await Promise.all([
+    gitPath(repoRoot, "CHERRY_PICK_HEAD"),
+    gitPath(repoRoot, "sequencer"),
+  ]);
+  return (
+    existsSync(toNamespacedPath(headPath)) ||
+    existsSync(toNamespacedPath(sequencerPath))
+  );
+}
+
+/**
  * Abort an in-progress cherry-pick, restoring the working tree to its
- * pre-cherry-pick state. Idempotent: errors when no cherry-pick is in
- * progress are swallowed.
+ * pre-cherry-pick state — but only when a sequence actually started
+ * (spec/loop.md "Crash equals stop": "An abort is issued only against a
+ * sequence that started"). Called with nothing to abort at all — no
+ * `cherryPickRange` call preceded it this process, or git never got far
+ * enough to write `CHERRY_PICK_HEAD`/`sequencer/` state in the first place
+ * — this issues no git command: a blind `--abort` there would reset the
+ * operator's index and working tree for no reason. Once a range pick has
+ * been attempted, git's own sequencer bookkeeping for that range is on disk
+ * even when the very first commit's pre-flight check refuses (e.g. an
+ * operator's uncommitted change colliding with a path the pick would
+ * touch) — in that case the guard here still lets `--abort` run, since a
+ * sequence did start in git's own accounting; `checkpointBystanderState`
+ * below is what makes that abort's own fallout recoverable, not this
+ * guard. Still idempotent past the check: a sequence that clears between
+ * the check and the call is swallowed, nothing left to clean up.
  */
 export async function cherryPickAbort(repoRoot: string): Promise<void> {
+  if (!(await hasCherryPickSequencerState(repoRoot))) return;
   try {
     await run(repoRoot, ["cherry-pick", "--abort"]);
   } catch {
-    // No cherry-pick in progress, or already aborted — nothing to clean up.
+    // Sequencer state was present a moment ago but cleared before the
+    // abort landed — nothing left to clean up.
   }
+}
+
+/**
+ * Capture whatever is staged or unstaged on the primary checkout as a
+ * dangling commit — `git stash create`'s shape: an object is written, no
+ * ref moves, nothing is reset or touched on disk (spec/loop.md "Crash
+ * equals stop": "Staged bystander state is checkpointed before a pick
+ * range begins"). The operator's work stays exactly where it is; the sha
+ * is recovery insurance for if a later `--abort` or gate-revert reset
+ * disturbs it. Returns `undefined` when the tree was clean — `git stash
+ * create` itself prints nothing to capture in that case.
+ */
+export async function checkpointBystanderState(
+  repoRoot: string,
+): Promise<string | undefined> {
+  const { stdout } = await run(repoRoot, ["stash", "create"]);
+  return stdout.length > 0 ? stdout : undefined;
 }
 
 /** Stage a specific set of paths and commit. */

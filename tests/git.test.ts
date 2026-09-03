@@ -36,6 +36,16 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 // French locale env does not change git's own message here), so this fakes
 // the one shape a localized git would produce — a `show-ref --verify` miss
 // carrying non-English stderr — without touching any other call.
+// `execArgsLog` records every `(file, args, options)` triple git.ts's own
+// `exec = promisify(execFile)` actually issues — captured inside the custom
+// implementation because `promisify` resolves `execFile[promisify.custom]`
+// once at git.ts's module-load time and calls that directly, bypassing the
+// wrapped `execFileMock` vi.fn body entirely; a spy attached to `execFileMock`
+// (or reassigned onto the custom symbol after import) never sees these
+// calls. Read via `execArgsLogSince` below — the cherryPickAbort tests are
+// the one place a call log, not just a passthrough, is needed.
+const execArgsLog: unknown[][] = [];
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { promisify: nodePromisify } = await import("node:util");
@@ -48,6 +58,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   Object.defineProperty(execFileMock, nodePromisify.custom, {
     configurable: true,
     value: (...callArgs: unknown[]) => {
+      execArgsLog.push(callArgs);
       const gitArgs = callArgs[1] as string[] | undefined;
       const targetsMissingBranch =
         (gitArgs?.[0] === "show-ref" &&
@@ -73,9 +84,16 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFile: execFileMock };
 });
 
+/** Every logged `(file, args, options)` call since `sinceIndex`. */
+function execArgsLogSince(sinceIndex: number): unknown[][] {
+  return execArgsLog.slice(sinceIndex);
+}
+
 import {
   acquireTipClaim,
   addWorktree,
+  checkpointBystanderState,
+  cherryPickAbort,
   cherryPickRange,
   commitPaths,
   currentRefPath,
@@ -585,6 +603,131 @@ describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
       { cwd: repo },
     );
     expect(subject.trim()).toBe("solo");
+  });
+});
+
+/**
+ * cherryPickAbort (spec/loop.md "Crash equals stop", "An abort is issued
+ * only against a sequence that started"): `--abort` runs iff
+ * `CHERRY_PICK_HEAD`/`sequencer/` state is actually on disk — never blind,
+ * since a blind abort on a checkout that never started a sequence would
+ * reset an operator's index/working tree for no reason. Asserted off
+ * `execArgsLogSince` (top of file) — the exact `(file, args, options)`
+ * triples git.ts's own `exec` issued — rather than a per-test spy, since
+ * `promisify(execFile)` resolves `[promisify.custom]` once at git.ts's
+ * module-load time and calls that directly, bypassing any wrapper attached
+ * after import.
+ */
+describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
+  function abortCalls(calls: unknown[][]): unknown[][] {
+    return calls.filter((c) => {
+      const args = c[1] as string[] | undefined;
+      return args?.[0] === "cherry-pick" && args?.[1] === "--abort";
+    });
+  }
+
+  it("issues no git command when no sequencer state is present", async () => {
+    // A totally untouched checkout — no cherry-pick of any kind was ever
+    // attempted, so neither CHERRY_PICK_HEAD nor sequencer/ exists.
+    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
+    expect(existsSync(join(repo, ".git", "sequencer"))).toBe(false);
+
+    const since = execArgsLog.length;
+    await expect(cherryPickAbort(repo)).resolves.toBeUndefined();
+    expect(abortCalls(execArgsLogSince(since))).toHaveLength(0);
+  });
+
+  it("issues --abort when CHERRY_PICK_HEAD/sequencer state is present", async () => {
+    const base = await revParse(repo);
+    await exec("git", ["checkout", "-q", "-b", "other"], { cwd: repo });
+    await writeFile(join(repo, "file.txt"), "from-other\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "other-change"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", base], { cwd: repo });
+    await writeFile(join(repo, "file.txt"), "from-primary\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "primary-change"], {
+      cwd: repo,
+    });
+
+    // A real content conflict — git writes CHERRY_PICK_HEAD once it
+    // actually starts applying the conflicting commit, unlike a pre-flight
+    // refusal that never gets that far.
+    await expect(
+      exec("git", ["cherry-pick", `${base}..${head}`], { cwd: repo }),
+    ).rejects.toThrow();
+    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(true);
+
+    const since = execArgsLog.length;
+    await cherryPickAbort(repo);
+    expect(abortCalls(execArgsLogSince(since)).length).toBeGreaterThan(0);
+
+    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: repo },
+    );
+    expect(status.trim()).toBe("");
+    expect(await readFile(join(repo, "file.txt"), "utf8")).toBe(
+      "from-primary\n",
+    );
+  });
+});
+
+describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged bystander state is checkpointed before a pick range begins')", () => {
+  it("returns undefined and touches nothing when the checkout is clean", async () => {
+    await expect(checkpointBystanderState(repo)).resolves.toBeUndefined();
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: repo },
+    );
+    expect(status.trim()).toBe("");
+  });
+
+  it("captures staged content as a recoverable dangling commit, without resetting anything", async () => {
+    await writeFile(join(repo, "staged.txt"), "staged content\n");
+    await exec("git", ["add", "staged.txt"], { cwd: repo });
+    await writeFile(join(repo, ".seed"), "unstaged edit\n");
+
+    const shaOrUndefined = await checkpointBystanderState(repo);
+    expect(shaOrUndefined).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+    const sha = shaOrUndefined as string;
+
+    // Nothing was reset — the staged/unstaged content is exactly where the
+    // caller left it, and the checkpoint itself moved no ref.
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: repo },
+    );
+    expect(status).toContain("staged.txt");
+    expect(status).toContain(".seed");
+    expect(await readFile(join(repo, "staged.txt"), "utf8")).toBe(
+      "staged content\n",
+    );
+
+    // Recoverable from the sha alone.
+    const { stdout: recovered } = await exec(
+      "git",
+      ["show", `${sha}:staged.txt`],
+      { cwd: repo },
+    );
+    expect(recovered).toBe("staged content\n");
+    const { stdout: head } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: repo,
+    });
+    // A dangling commit — no branch or ref points at it.
+    const { stdout: branchAtSha } = await exec(
+      "git",
+      ["branch", "--contains", sha],
+      { cwd: repo },
+    );
+    expect(branchAtSha.trim()).toBe("");
+    expect(head.trim()).not.toBe(sha);
   });
 });
 
