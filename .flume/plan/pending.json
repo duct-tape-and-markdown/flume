@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "tag": "SWEEP-DISPATCHER-ISPENDINGRELOCATED-DEDUP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "isPendingRelocated (~:4029) delegates to computeStateRootRel (~:683) instead of re-deriving the escape check" }
+      ],
+      "retire": []
+    },
+    "summary": "isPendingRelocated re-derives computeStateRootRel's escape check byte-for-byte instead of calling it",
+    "per": { "path": ".claude/rules/engineering.md", "section": "The fix lands at the mechanism" },
+    "tests": [
+      "isPendingRelocated and computeStateRootRel agree on a relocated (out-of-tree) pendingPath and on a normal in-tree one"
+    ],
+    "acceptance": "isPendingRelocated's body is computeStateRootRel(this.opts.repoRoot, this.pendingPath) === undefined; no independent relative()/escape-check duplication remains",
+    "notes": "computeStateRootRel's own docstring (Dispatcher.ts:673-682) claims it's shared by every consumer and neither re-derives it — isPendingRelocated is a third, undocumented re-derivation the docstring doesn't know about. Found by posture sweep, not audit."
+  }
+]
