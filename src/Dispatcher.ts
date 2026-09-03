@@ -34,7 +34,7 @@ import { promisify } from "node:util";
 
 import { tsImport } from "tsx/esm/api";
 
-import type { Agent, NdjsonEvent } from "./Agent.js";
+import type { Agent, AgentUsage, NdjsonEvent } from "./Agent.js";
 import { contentBlocksOfType, isAssistantEvent, isResultEvent, parseNdjsonLine } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
@@ -261,6 +261,17 @@ export interface TickVerdictMergeOutcome {
 }
 
 /**
+ * spec/loop.md "The tick verdict — one facts artifact", "Every agent
+ * invocation leaves a usage row": one row per agent run this tick, carrying
+ * whatever cost/usage facts that run's {@link AgentResult} reported. `tag`
+ * names the provisioned entry under fanout; absent for a singleton phase,
+ * which has no entry to tag.
+ */
+export interface TickVerdictInvocation extends AgentUsage {
+  tag?: string;
+}
+
+/**
  * v0.8 §5: the one facts artifact every tick that actually runs a phase
  * writes — phase, entry tag(s), committed/no-commit class, gate results,
  * shipped tags, and (fanout) each provisioned entry's cherry-pick/merge
@@ -332,6 +343,14 @@ export interface TickVerdict {
   /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
   mergeOutcomes: TickVerdictMergeOutcome[];
   /**
+   * spec/loop.md "The tick verdict", "Every agent invocation leaves a usage
+   * row": one entry per agent run this tick — one for a singleton, one per
+   * provisioned entry that actually reached `invokeAgent` under fanout.
+   * Empty when nothing this tick invoked the agent at all (declined,
+   * render-refused, or nothing pickable).
+   */
+  invocations: TickVerdictInvocation[];
+  /**
    * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
    * create) this tick recorded, before any agent ran for the affected
    * entries. Absent/empty when the tick hit none.
@@ -384,6 +403,8 @@ type PhaseTickOutcome = {
   tags?: string[];
   /** Fanout only (§5): each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
   mergeOutcomes?: TickVerdictMergeOutcome[];
+  /** See {@link TickVerdict.invocations}. */
+  invocations?: TickVerdictInvocation[];
 };
 
 /**
@@ -428,6 +449,7 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
     Array.isArray(r.gateResults) &&
     Array.isArray(r.shippedTags) &&
     Array.isArray(r.mergeOutcomes) &&
+    Array.isArray(r.invocations) &&
     typeof r.summary === "string" &&
     typeof r.headSha === "string" &&
     typeof r.at === "string"
@@ -589,8 +611,8 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
  * basis; a commit it left behind is honored exactly as a clean one would be.
  */
 type AgentTermination =
-  | { kind: "clean"; stdout: string }
-  | { kind: "process-failure"; failureClass: string };
+  | { kind: "clean"; stdout: string; usage?: AgentUsage }
+  | { kind: "process-failure"; failureClass: string; usage?: AgentUsage };
 
 /**
  * Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt
@@ -1468,6 +1490,7 @@ export class Dispatcher {
       gateFailures,
       tags,
       mergeOutcomes,
+      invocations,
     } = phaseOutcome;
 
     // §15: fold the already-computed no-commit classification into the
@@ -1518,6 +1541,7 @@ export class Dispatcher {
       gateResults: [...result.gateResults] as TickVerdictGateResult[],
       shippedTags: [...result.shippedTags],
       mergeOutcomes: mergeOutcomes ?? [],
+      invocations: invocations ?? [],
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
@@ -1638,6 +1662,11 @@ export class Dispatcher {
     // alone. Same for a merge-stage failure — see MergeFailure's doc.
     const gateFailures: GateFailure[] = [];
     let mergeFailure: MergeFailure | undefined;
+    // spec/loop.md "Every agent invocation leaves a usage row": set once the
+    // agent actually runs, regardless of what the tick goes on to do with
+    // the commit — absent when `shouldRun`/render-refusal skipped the
+    // invocation entirely.
+    let invocation: TickVerdictInvocation | undefined;
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
     // the agent — a chain can decline a tick without spending one. Sees the
@@ -1682,6 +1711,7 @@ export class Dispatcher {
           tickTimeoutMs,
           extraEnv,
         );
+        invocation = { ...(termination.usage ?? {}) };
         const postWtHead = await git.revParse(wt.path);
         let wtCommitted = postWtHead !== preWtHead;
 
@@ -1882,6 +1912,7 @@ export class Dispatcher {
       ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
       ...(gateFailures.length > 0 ? { gateFailures } : {}),
       ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
+      ...(invocation ? { invocations: [invocation] } : {}),
     };
   }
 
@@ -2163,8 +2194,15 @@ export class Dispatcher {
     // `undefined` — is never retried on a later entry in the same wave.
     let checkpointAttempted = false;
     let bystanderCheckpointSha: string | undefined;
+    // spec/loop.md "Every agent invocation leaves a usage row": one row per
+    // provisioned entry that actually reached `invokeAgent` — a declined or
+    // render-refused entry carries no `termination` and gets no row.
+    const invocations: TickVerdictInvocation[] = [];
 
     for (const r of perEntry) {
+      if (r.termination) {
+        invocations.push({ tag: r.entry.tag, ...(r.termination.usage ?? {}) });
+      }
       if (r.tipMoved) {
         waveTipMoved = true;
         // RELEASE-v0.11 §5 (per-entry leg): this entry's own ancestry check
@@ -2507,6 +2545,7 @@ export class Dispatcher {
           gateResults: allGateResults as TickVerdictGateResult[],
           shippedTags,
           mergeOutcomes,
+          invocations,
           ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
           ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
           ...(gateFailures.length > 0 ? { gateFailures } : {}),
@@ -2608,6 +2647,7 @@ export class Dispatcher {
       ...(gateFailures.length > 0 ? { gateFailures } : {}),
       tags: provisioned.map((e) => e.tag),
       mergeOutcomes,
+      invocations,
     };
   }
 
@@ -2756,6 +2796,7 @@ export class Dispatcher {
           tipMoved: true,
           worktreePath: wt.path,
           headSha: postHead,
+          termination,
         };
       }
     }
@@ -2768,7 +2809,7 @@ export class Dispatcher {
       // must be legible without reading session logs).
       const mode = await this.classifyNoCommit(key, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
-      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path };
+      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination };
     }
 
     // The ancestry check above cleared the whole base..postHead span as one
@@ -2809,6 +2850,7 @@ export class Dispatcher {
         footprint,
         gateFailure,
         headSha: postHead,
+        termination,
       };
     }
 
@@ -2949,12 +2991,20 @@ export class Dispatcher {
         // platform-preempt — not a defect in the work.
         const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
         this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
-        return { kind: "process-failure", failureClass };
+        return {
+          kind: "process-failure",
+          failureClass,
+          ...(result.usage ? { usage: result.usage } : {}),
+        };
       }
       // Clean exit. `result.stdout` is the full captured transcript; the
       // agent's final message — where a writablePaths/Rule-0/spec bail names
       // the constraint it refused — lives at its tail.
-      return { kind: "clean", stdout: result.stdout };
+      return {
+        kind: "clean",
+        stdout: result.stdout,
+        ...(result.usage ? { usage: result.usage } : {}),
+      };
     } catch (err) {
       // Swallow abort/timeout/spawn errors so a single bad invocation doesn't
       // tear down the loop. The post-invocation `git rev-parse` still runs,

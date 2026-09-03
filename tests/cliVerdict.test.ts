@@ -287,6 +287,7 @@ function makeVerdict(
     gateResults: [],
     shippedTags: [],
     mergeOutcomes: [],
+    invocations: [],
     summary: `${overrides.phaseName} placeholder`,
     headSha: "0".repeat(40),
     at: "2024-01-01T00:00:00.000Z",

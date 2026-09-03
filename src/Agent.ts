@@ -50,6 +50,29 @@ export interface AgentInvocation {
 }
 
 /**
+ * Cost/telemetry facts read off a `claude -p --output-format stream-json`
+ * `result` event — the same event {@link formatResult} renders to the
+ * terminal (spec/loop.md "The tick verdict — one facts artifact"). Each
+ * field is present only when the event reported it; a field the agent's
+ * result didn't carry is absent, never coerced to zero.
+ */
+export interface AgentUsage {
+  /**
+   * The `result` event's `modelUsage` key, when it names exactly one model.
+   * `modelUsage` can carry more than one (an ancillary model alongside the
+   * turn's primary one) — absent rather than guessed when it does, since
+   * nothing on the event says which key is "the" model.
+   */
+  model?: string;
+  turns?: number;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+}
+
+/**
  * Captured output of a single agent invocation. Returned by `Agent.invoke`
  * once the process exits; the dispatcher reads `exitCode` to log warnings,
  * but stdout/stderr are surfaced as a whole for debugging and decorators.
@@ -61,6 +84,13 @@ export interface AgentResult {
   stdout: string;
   /** Full captured stderr. */
   stderr: string;
+  /**
+   * Usage/cost facts lifted from a stream-json `result` event, when the
+   * wrapping `Agent` parses one (`withTerminalRenderer`). Absent for a
+   * plain-text agent, or when the invocation's stdout carried no `result`
+   * event to read from.
+   */
+  usage?: AgentUsage;
 }
 
 /**
@@ -319,7 +349,16 @@ export function withTerminalRenderer(
     async invoke(inv) {
       const tag = tagFn(inv);
       let buf = "";
+      // Set alongside the render when a `result` event is seen — the same
+      // per-line walk `formatResult` already runs, not a second parser over
+      // the transcript (spec/loop.md "The tick verdict", "Every agent
+      // invocation leaves a usage row").
+      let usage: AgentUsage | undefined;
       const emitLine = (line: string): void => {
+        const parsed = parseNdjsonLine(line);
+        if (parsed.kind === "event" && isResultEvent(parsed.event)) {
+          usage = extractResultUsage(parsed.event);
+        }
         const rendered = renderStreamJsonLine(line, tag, inv.cwd);
         if (rendered !== null) inv.onStdout?.(rendered + "\n");
       };
@@ -335,14 +374,16 @@ export function withTerminalRenderer(
           }
         },
       };
+      let result: AgentResult;
       try {
-        return await agent.invoke(wrapped);
+        result = await agent.invoke(wrapped);
       } finally {
         if (buf.length > 0) {
           emitLine(buf);
           buf = "";
         }
       }
+      return usage ? { ...result, usage } : result;
     },
   };
 }
@@ -499,6 +540,33 @@ function summarizeToolArg(name: string, inp: Record<string, unknown>, cwd: strin
       }
     }
   }
+}
+
+/**
+ * Lift {@link AgentUsage} out of a stream-json `result` event — the same
+ * event object {@link formatResult} renders to the terminal. A field the
+ * event didn't report is left absent, never defaulted to `0`.
+ */
+export function extractResultUsage(e: NdjsonEvent): AgentUsage {
+  const usage = (e.usage as Record<string, unknown> | undefined) ?? {};
+  const modelUsage = e.modelUsage;
+  const modelKeys =
+    modelUsage && typeof modelUsage === "object"
+      ? Object.keys(modelUsage as Record<string, unknown>)
+      : [];
+  const out: AgentUsage = {};
+  if (modelKeys.length === 1) out.model = modelKeys[0]!;
+  if (typeof e.num_turns === "number") out.turns = e.num_turns;
+  if (typeof e.duration_ms === "number") out.durationMs = e.duration_ms;
+  if (typeof usage.input_tokens === "number") out.inputTokens = usage.input_tokens;
+  if (typeof usage.output_tokens === "number") out.outputTokens = usage.output_tokens;
+  if (typeof usage.cache_creation_input_tokens === "number") {
+    out.cacheCreationInputTokens = usage.cache_creation_input_tokens;
+  }
+  if (typeof usage.cache_read_input_tokens === "number") {
+    out.cacheReadInputTokens = usage.cache_read_input_tokens;
+  }
+  return out;
 }
 
 function formatResult(e: Record<string, unknown>): string {

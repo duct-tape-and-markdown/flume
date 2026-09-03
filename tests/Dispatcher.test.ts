@@ -90,6 +90,7 @@ function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
     gateResults: [],
     shippedTags: [],
     mergeOutcomes: [],
+    invocations: [],
     summary: "build shipped nothing → hibernate",
     headSha: "0".repeat(40),
     at: "2024-01-01T00:00:00.000Z",
@@ -6964,6 +6965,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
         "gateResults",
         "shippedTags",
         "mergeOutcomes",
+        "invocations",
         "summary",
         "headSha",
         "at",
@@ -7098,6 +7100,122 @@ describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
       {},
     );
   });
+});
+
+describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agent invocation leaves a usage row')", () => {
+  it("a singleton tick's verdict carries one invocations[] row with no tag; a field the agent didn't report is absent, not zero", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "usage-singleton",
+      async invoke(inv) {
+        await writeAndCommit(inv.cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          usage: {
+            model: "claude-fable-5-1",
+            turns: 2,
+            inputTokens: 10,
+            outputTokens: 20,
+          },
+        };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.verdict!.invocations).toHaveLength(1);
+
+    const row = outcome.verdict!.invocations[0]!;
+    expect(row).toEqual({
+      model: "claude-fable-5-1",
+      turns: 2,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    // Absent, not zero/undefined-as-a-key: the agent's usage never named
+    // these fields, so the row carries no key for them at all.
+    expect("tag" in row).toBe(false);
+    expect("durationMs" in row).toBe(false);
+    expect("cacheCreationInputTokens" in row).toBe(false);
+    expect("cacheReadInputTokens" in row).toBe(false);
+  });
+
+  it("a fanout tick's verdict carries one invocations[] row per provisioned entry, each tagged", async () => {
+    const entries = [
+      makeEntry("TEST-A", ["src/a.ts"]),
+      makeEntry("TEST-B", ["src/b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent: Agent = {
+      name: "usage-fanout",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        if (slug === "test-a") {
+          await writeAndCommit(inv.cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+          return {
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            usage: { model: "claude-fable-5-1", turns: 1, inputTokens: 100 },
+          };
+        }
+        if (slug === "test-b") {
+          await writeAndCommit(inv.cwd, "src/b.ts", "from-B\n", "build(TEST-B): ship");
+          return {
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            usage: { model: "claude-haiku-4-5", turns: 3, outputTokens: 50 },
+          };
+        }
+        throw new Error(`usage-fanout: no fixture for slug '${slug}'`);
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+
+    const invocations = outcome.verdict!.invocations;
+    expect(invocations).toHaveLength(2);
+    const byTag = Object.fromEntries(invocations.map((i) => [i.tag, i]));
+    expect(byTag["TEST-A"]).toEqual({
+      tag: "TEST-A",
+      model: "claude-fable-5-1",
+      turns: 1,
+      inputTokens: 100,
+    });
+    expect(byTag["TEST-B"]).toEqual({
+      tag: "TEST-B",
+      model: "claude-haiku-4-5",
+      turns: 3,
+      outputTokens: 50,
+    });
+  }, 20_000);
 });
 
 // ---------- plan-tick prose durability (§8) ----------

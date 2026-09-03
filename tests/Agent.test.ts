@@ -20,6 +20,7 @@ import {
   isAssistantEvent,
   isResultEvent,
   isErrorResult,
+  extractResultUsage,
   type Agent,
 } from "../src/Agent.ts";
 import { assistantTurnText } from "../src/Dispatcher.ts";
@@ -709,5 +710,110 @@ describe("isAssistantEvent / isResultEvent / isErrorResult — shared event-type
     if (parsed.kind !== "event") throw new Error("expected an event line");
     expect(isResultEvent(parsed.event)).toBe(true);
     expect(isErrorResult(parsed.event)).toBe(true);
+  });
+});
+
+describe("extractResultUsage — usage/cost facts off a stream-json result event", () => {
+  it("extracts turns, duration, token counts, and a single-model modelUsage key", () => {
+    const usage = extractResultUsage({
+      type: "result",
+      num_turns: 3,
+      duration_ms: 2500,
+      usage: {
+        input_tokens: 1234,
+        output_tokens: 5678,
+        cache_creation_input_tokens: 10,
+        cache_read_input_tokens: 20,
+      },
+      modelUsage: {
+        "claude-fable-5-1": { inputTokens: 1234, outputTokens: 5678 },
+      },
+    });
+    expect(usage).toEqual({
+      model: "claude-fable-5-1",
+      turns: 3,
+      durationMs: 2500,
+      inputTokens: 1234,
+      outputTokens: 5678,
+      cacheCreationInputTokens: 10,
+      cacheReadInputTokens: 20,
+    });
+  });
+
+  it("leaves a field the result event didn't report absent, not zero", () => {
+    const usage = extractResultUsage({
+      type: "result",
+      num_turns: 1,
+      usage: { input_tokens: 2 },
+    });
+    expect(usage).toEqual({ turns: 1, inputTokens: 2 });
+    expect("durationMs" in usage).toBe(false);
+    expect("outputTokens" in usage).toBe(false);
+    expect("cacheCreationInputTokens" in usage).toBe(false);
+    expect("cacheReadInputTokens" in usage).toBe(false);
+    expect("model" in usage).toBe(false);
+  });
+
+  it("leaves model absent when modelUsage names more than one model — ambiguous, not guessed", () => {
+    const usage = extractResultUsage({
+      type: "result",
+      modelUsage: {
+        "claude-haiku-4-5-20251001": {},
+        "claude-fable-5-1": {},
+      },
+    });
+    expect("model" in usage).toBe(false);
+  });
+});
+
+describe("withTerminalRenderer merges extractResultUsage's reading onto the resolved AgentResult", () => {
+  function ndjson(...events: unknown[]): string {
+    return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  }
+
+  it("attaches usage when the transcript carries a result event", async () => {
+    const stream = ndjson(
+      { type: "system", subtype: "init" },
+      {
+        type: "result",
+        num_turns: 2,
+        duration_ms: 1000,
+        usage: { input_tokens: 5, output_tokens: 7 },
+        modelUsage: { "claude-fable-5-1": {} },
+      },
+    );
+    const fake: Agent = {
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(stream);
+        return { exitCode: 0, stdout: stream, stderr: "" };
+      },
+    };
+    const result = await withTerminalRenderer(fake).invoke({
+      cwd: "/work/foo",
+      prompt: "",
+    });
+    expect(result.usage).toEqual({
+      model: "claude-fable-5-1",
+      turns: 2,
+      durationMs: 1000,
+      inputTokens: 5,
+      outputTokens: 7,
+    });
+  });
+
+  it("leaves usage undefined when the transcript carries no result event", async () => {
+    const fake: Agent = {
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(ndjson({ type: "system", subtype: "init" }));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const result = await withTerminalRenderer(fake).invoke({
+      cwd: "/work/foo",
+      prompt: "",
+    });
+    expect(result.usage).toBeUndefined();
   });
 });
