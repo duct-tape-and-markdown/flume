@@ -1,46 +1,5 @@
 [
   {
-    "tag": "verdict-anchor-head-sha-at",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "TickVerdict: add headSha: string, at: string (ISO timestamp), populated by writeTickVerdict. Add readLatestVerdictsSync(flumeDir): most-recent verdict per phaseName, synchronous, reading the same verdict log readTickVerdicts does."
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export readLatestVerdictsSync."
-        },
-        {
-          "path": "src/flumeApi.ts",
-          "description": "export readLatestVerdictsSync."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "headSha/at correctness; readLatestVerdictsSync per-phase latest reduction."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Every TickVerdict carries headSha/at; readLatestVerdictsSync gives shouldRun/handoff a synchronous per-phase anchor read.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The tick verdict — one facts artifact"
-    },
-    "tests": [
-      "a written verdict's headSha matches the trunk tip and at is a valid ISO timestamp",
-      "readLatestVerdictsSync returns the most recent verdict per phase name from the verdict log",
-      "headSha/at are written on a quiet (no-commit) tick too, not only a committed one"
-    ],
-    "acceptance": "A chain compares a verdict's headSha to the live tip without inferring it from touched paths, and reads it from shouldRun/handoff without await.",
-    "notes": "readTickVerdicts stays async; readLatestVerdictsSync is the new sync sibling for the two synchronous chain hooks."
-  },
-  {
     "tag": "verdict-invocations-usage",
     "gate": {
       "kind": "open"
