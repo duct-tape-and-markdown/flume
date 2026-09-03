@@ -91,7 +91,3 @@ Options:
 - **B — leave `flumeDir` un-rebased** and instead give `GateContext` a distinct field for "the
   primary repoRoot flumeDir is anchored to," so a gate can compute the tracked-relative offset
   itself without assuming nesting either way.
-
-## `spec/loop.md` "The tick verdict" field enumeration omits `bystanderCheckpointSha` (NEEDS AMENDMENT)
-
-`1f98caf` added `TickVerdict.bystanderCheckpointSha` to satisfy "Crash equals stop" ("its sha recorded on the tick verdict"), and the field is real and reported (JSDoc on `TickVerdict.bystanderCheckpointSha` in `src/Dispatcher.ts`, populated in both `runSingleton` and `runFanout`). But `spec/loop.md`'s "The tick verdict — one facts artifact" section — the canonical enumeration of what the artifact carries — doesn't list it alongside `headSha`/`at`/`invocations[]`, each of which got its own bullet when added. The fix is mechanical: a bullet naming the field and its recovery purpose, mirroring "Every verdict is anchored" / "Every agent invocation leaves a usage row" already there. Not filed as a pending entry — the edit is to `spec/loop.md` itself, a human-authored surface plan doesn't touch.
