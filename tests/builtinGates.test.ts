@@ -25,10 +25,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  chainLoadGate,
   eslintGate,
   pendingGate,
+  shellGate,
   tscGate,
   vitestGate,
+  writablePathsGate,
 } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer",
@@ -447,5 +450,57 @@ describe("src/index.ts — ShellGateOptions/PkgManagerOverride/PkgManagerGate ba
     expect(shellOpts.name).toBe("custom");
     expect(override.cmd).toBe("npm");
     expect(gate.name).toBe("tsc");
+  });
+});
+
+describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md 'The builtin gates')", () => {
+  it("shellGate declares command as cmd followed by args, space-joined", () => {
+    const gate = shellGate({
+      name: "custom",
+      when: "afterCommit",
+      cmd: "tsc",
+      args: ["--noEmit", "-p", "tsconfig.json"],
+    });
+    expect(gate.command).toBe("tsc --noEmit -p tsconfig.json");
+  });
+
+  it("shellGate with no args renders the bare cmd", () => {
+    const gate = shellGate({
+      name: "bare",
+      when: "afterCommit",
+      cmd: "pnpm",
+      args: [],
+    });
+    expect(gate.command).toBe("pnpm");
+  });
+
+  it("tscGate/vitestGate/eslintGate declare their pnpm-flavored command bare", () => {
+    expect(tscGate.command).toBe("pnpm tsc --noEmit");
+    expect(vitestGate.command).toBe("pnpm test --run");
+    expect(eslintGate.command).toBe("pnpm lint");
+  });
+
+  it("a pkgManagerGate override renders the overridden command, not the pnpm default", () => {
+    const overridden = tscGate({
+      cmd: "npm",
+      args: ["exec", "--", "tsc", "--noEmit"],
+    });
+    expect(overridden.command).toBe("npm exec -- tsc --noEmit");
+    expect(tscGate.command).toBe("pnpm tsc --noEmit");
+  });
+
+  it("chainLoadGate declares no command — no single command line to run", () => {
+    expect(chainLoadGate.command).toBeUndefined();
+  });
+
+  it("writablePathsGate declares no command — no single command line to run", () => {
+    expect(writablePathsGate(["**"]).command).toBeUndefined();
+  });
+
+  it("pendingGate declares no command — no single command line to run", () => {
+    const gate = pendingGate({
+      targetFence: { writablePaths: ["**"] },
+    });
+    expect(gate.command).toBeUndefined();
   });
 });

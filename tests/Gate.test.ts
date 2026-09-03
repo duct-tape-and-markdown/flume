@@ -16,7 +16,7 @@ import {
   writablePathsGate,
   pendingGate,
 } from "../src/builtinGates.ts";
-import type { GateContext } from "../src/Gate.ts";
+import type { Gate, GateContext } from "../src/Gate.ts";
 
 const exec = promisify(execFile);
 
@@ -344,6 +344,33 @@ describe("afterCommit vs afterMerge wiring", () => {
   it("chainLoadGate declares afterCommit", () => {
     expect(chainLoadGate.when).toBe("afterCommit");
     expect(chainLoadGate.name).toBe("chain-load");
+  });
+});
+
+describe("Gate.command — optional field, type passthrough", () => {
+  it("a hand-built Gate compiles and runs with no command declared", async () => {
+    const gate: Gate = {
+      name: "hand-rolled",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "ok" };
+      },
+    };
+    expect(gate.command).toBeUndefined();
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.ok).toBe(true);
+  });
+
+  it("a hand-built Gate compiles and runs with a command declared", async () => {
+    const gate: Gate = {
+      name: "hand-rolled-with-command",
+      when: "afterCommit",
+      command: 'node -e ""',
+      async run() {
+        return { ok: true, message: "ok" };
+      },
+    };
+    expect(gate.command).toBe('node -e ""');
   });
 });
 

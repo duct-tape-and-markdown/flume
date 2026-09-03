@@ -89,6 +89,7 @@ export function shellGate(opts: ShellGateOptions): Gate {
   return {
     name: opts.name,
     when: opts.when,
+    command: [opts.cmd, ...opts.args].join(" "),
     async run(ctx: GateContext): Promise<GateResult> {
       try {
         const { stdout, stderr } = await execGate(opts.cmd, opts.args, {
@@ -157,6 +158,7 @@ function pkgManagerGate(
   });
   fn.when = defaultGate.when;
   fn.run = defaultGate.run;
+  fn.command = defaultGate.command!;
   return fn;
 }
 

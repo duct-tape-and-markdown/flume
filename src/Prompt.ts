@@ -384,7 +384,7 @@ function prependHarnessBlock(
   body: string,
 ): string {
   const gateLines = phase.gates
-    .map((g) => `  - ${g.name} (${g.when})`)
+    .map((g) => `  - ${g.name} (${g.when})` + (g.command ? `: ${g.command}` : ""))
     .join("\n");
 
   const harness = [

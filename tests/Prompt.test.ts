@@ -15,7 +15,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { writablePathsGate } from "../src/builtinGates.ts";
+import { shellGate, writablePathsGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { declaredPaths, type PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
@@ -300,6 +300,47 @@ describe("renderPrompt <harness> gate list names every declared gate regardless 
 
     expect(out).toContain("  - tsc (afterCommit)");
     expect(out).toContain("  - vitest (afterMerge)");
+  });
+});
+
+describe("renderPrompt <harness> gate list renders a declared command (spec/chain.md 'The builtin gates', spec/prompt.md 'The harness block')", () => {
+  async function render(p: Phase): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "task body\n", "utf8");
+    return renderPrompt({
+      phase: p,
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: {},
+    });
+  }
+
+  it("a gate with no declared command renders as 'name (when)' alone", async () => {
+    const p = phase({
+      gates: [
+        { name: "hand-rolled", when: "afterCommit", run: async () => ({ ok: true, message: "" }) },
+      ],
+    });
+
+    const out = await render(p);
+
+    expect(out).toContain("  - hand-rolled (afterCommit)\n");
+  });
+
+  it("a gate with a declared command renders 'name (when): <command>', sourced from shellGate's own declaration", async () => {
+    const gate = shellGate({
+      name: "tsc",
+      when: "afterCommit",
+      cmd: "pnpm",
+      args: ["tsc", "--noEmit"],
+    });
+    const p = phase({ gates: [gate] });
+
+    const out = await render(p);
+
+    expect(out).toContain(`  - tsc (afterCommit): ${gate.command}`);
+    expect(out).toContain("  - tsc (afterCommit): pnpm tsc --noEmit");
   });
 });
 

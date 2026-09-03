@@ -103,4 +103,13 @@ export interface Gate {
   when: GatePhase;
   /** The check itself. Must be pure-ish; idempotent; no commits or pushes. */
   run: (ctx: GateContext) => Promise<GateResult>;
+  /**
+   * The single command line this gate runs, when it has one — `shellGate`
+   * sets it from its `cmd`/`args`, so a chain wanting the agent to
+   * self-check before committing doesn't restate the command in its prompt
+   * from a parallel constant (`spec/chain.md`, "The builtin gates"). A
+   * hand-rolled gate with no single command line (`chainLoadGate`,
+   * `pendingGate`, `writablePathsGate`) declares none.
+   */
+  command?: string;
 }
