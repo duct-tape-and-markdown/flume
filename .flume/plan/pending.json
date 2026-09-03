@@ -1,46 +1,5 @@
 [
   {
-    "tag": "verdict-invocations-usage",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "AgentResult gains per-invocation usage: model id, turn count, duration, and token counts (input/output/cacheCreation/cacheRead), parsed from the same stream-json result event withTerminalRenderer's formatResult already reads — one source, not a second parser."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "TickVerdict: add invocations[] — one row per agent run this tick (tag present for a fanout entry, absent for a singleton), populated from each AgentResult."
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "usage extraction from a result event, including a field the agent didn't report."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "singleton vs fanout invocations[] shape."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "TickVerdict.invocations[] carries one usage row per agent run (model, turns, duration, token counts incl. cache split); absent fields the agent didn't report.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The tick verdict — one facts artifact"
-    },
-    "tests": [
-      "a singleton tick's verdict carries one invocations[] row with no tag",
-      "a fanout tick's verdict carries one invocations[] row per provisioned entry, each tagged",
-      "a field the agent's result didn't report is absent on the row, not zero"
-    ],
-    "acceptance": "Cost/telemetry for a tick is readable from the verdict alone, without re-parsing the agent's stdout stream in a decorator.",
-    "notes": "Collides with verdict-anchor-head-sha-at on TickVerdict/Dispatcher.ts — expected, both edit the same type."
-  },
-  {
     "tag": "prior-attempt-anchor-export",
     "gate": {
       "kind": "open"
