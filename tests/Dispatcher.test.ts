@@ -51,7 +51,7 @@ import {
   type PendingEntry,
 } from "../src/PendingSchema.ts";
 import { InlineExecRenderError as realInlineExecRenderError } from "../src/Prompt.ts";
-import { loopExitCode } from "../src/cli.ts";
+import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer"): both
 // types are field types on the already-public TickVerdict/TickOutcome, so a
