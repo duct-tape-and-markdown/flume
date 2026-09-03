@@ -1,22 +1,52 @@
 [
   {
     "tag": "PRIOR-ATTEMPTS-DIR-EXPORT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "Export priorAttemptsDir(flumeDir) beside priorAttemptPath, deriving from the same private PRIOR_ATTEMPTS_SUBDIR." },
-        { "path": "src/index.ts", "description": "Re-export priorAttemptsDir alongside priorAttemptPath/slugify." },
-        { "path": "src/flumeApi.ts", "description": "Add priorAttemptsDir to the FlumeApi interface and buildFlumeApi, mirroring priorAttemptPath's entry." },
-        { "path": ".flume/chain.ts", "description": "anyVoluntaryBailRecord: import priorAttemptsDir and use it instead of the hardcoded \"prior-attempts\" literal." },
-        { "path": "tests/Dispatcher.test.ts", "description": "Agreement pin beside the existing slugify/priorAttemptPath re-export test." }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Export priorAttemptsDir(flumeDir) beside priorAttemptPath, deriving from the same private PRIOR_ATTEMPTS_SUBDIR."
+        },
+        {
+          "path": "src/index.ts",
+          "description": "Re-export priorAttemptsDir alongside priorAttemptPath/slugify."
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "Add priorAttemptsDir to the FlumeApi interface and buildFlumeApi, mirroring priorAttemptPath's entry."
+        },
+        {
+          "path": ".flume/chain.ts",
+          "description": "anyVoluntaryBailRecord: import priorAttemptsDir and use it instead of the hardcoded \"prior-attempts\" literal."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Agreement pin beside the existing slugify/priorAttemptPath re-export test."
+        }
       ],
       "retire": []
     },
     "summary": "Export priorAttemptsDir so .flume/chain.ts stops hardcoding the prior-attempts subdir name",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A fact the engine holds is reported, never rediscovered" },
-    "tests": ["priorAttemptsDir(flumeDir) agrees with the directory component of priorAttemptPath(flumeDir, tag) for an arbitrary tag"],
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "tests": [
+      "priorAttemptsDir(flumeDir) agrees with the directory component of priorAttemptPath(flumeDir, tag) for an arbitrary tag"
+    ],
     "acceptance": "chain.ts's anyVoluntaryBailRecord derives its scan directory from the exported helper, not a literal; new agreement test is green.",
-    "notes": "Posture sweep, src/Prompt.ts neighborhood. .flume/chain.ts:54 hardcodes \"prior-attempts\", duplicating Dispatcher.ts's private PRIOR_ATTEMPTS_SUBDIR that priorAttemptPath (Dispatcher.ts:659) already exists to encapsulate for exactly this reason (its own doc comment: \"no private dispatcher rule to reverse-engineer\"). A future subdir rename would silently break voluntary-bail detection (the 2026-08-17 decline/bail livelock guard) with no compiler or test signal."
+    "notes": "Posture sweep, src/Prompt.ts neighborhood. .flume/chain.ts:54 hardcodes \"prior-attempts\", duplicating Dispatcher.ts's private PRIOR_ATTEMPTS_SUBDIR that priorAttemptPath (Dispatcher.ts:659) already exists to encapsulate for exactly this reason (its own doc comment: \"no private dispatcher rule to reverse-engineer\"). A future subdir rename would silently break voluntary-bail detection (the 2026-08-17 decline/bail livelock guard) with no compiler or test signal.",
+    "observedFiles": [
+      ".flume/chain.ts",
+      "src/Dispatcher.ts",
+      "src/flumeApi.ts",
+      "src/index.ts",
+      "tests/Dispatcher.test.ts"
+    ]
   }
 ]
