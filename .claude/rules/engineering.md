@@ -58,6 +58,29 @@ argument it should lose — it reads as authoritative while being stale.
 fact is both a per-tick token tax and a second thing that can go stale
 against the source it paraphrases.
 
+## A fact the engine holds is reported, never rediscovered
+
+The bar above does not stop at the package boundary. Any value the engine
+computes or decodes that changes what it does next — a set that gates
+selection, the tip it read, a usage line it already parsed, a path rule it
+keys files by — is on a surface a chain reads: `TickResult` for the handoff,
+the tick verdict for disk, the API for helpers. What the engine keeps only in
+memory, a chain cannot read and will rebuild.
+
+- Internal state that affects dispatch and appears on no reporting surface is
+  residue fileable against this section — before a consumer hits it, not
+  after.
+- **A chain restating an engine fact is evidence against the engine, not the
+  chain.** Re-parsing an agent stream the engine already decoded, copying a
+  filename rule the engine owns, inferring whether a phase ran from the shape
+  of its commit: each is a fact the engine failed to hand out. The finding is
+  filed here, and the chain's copy is deleted in the adopting commit.
+- Reported means a **fact, never a verdict**. The engine says what it skipped
+  and why; what to do about it stays the chain's (`engine-boundary.md`).
+
+**Why:** a rebuilt copy reads as mechanism, so nothing re-litigates it, and it
+fails silently the moment the engine changes shape.
+
 ## Loud or nothing
 
 No path silently degrades, reconciles, or **proceeds over an unresolved

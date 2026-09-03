@@ -17,13 +17,20 @@ next rotation forward — it never reopens a stamped window.
 
 ## The frontier is decidable; the neighborhood is judged
 
-Two delta kinds arm the sweep, both read off `git log --name-only` forward
-from the stamp — no file reads:
+Three delta kinds arm the sweep. The first two are read off `git log
+--name-only` forward from the stamp — no file reads:
 
 - A **code delta** puts the window's touched modules in the frontier.
 - A **phrase delta** — the window touched a posture page itself — puts
   **every module across the sweep domain** in the frontier, because a changed
   phrase has been applied to nothing yet.
+- A **retired-claim delta** — the window touched `spec/` — is read off the
+  spec diff's *deleted* lines. A sentence the spec no longer states is a
+  claim every doc comment, `docs/` page, and README section may still
+  assert. For this delta alone the domain widens to `docs/` and `README.md`,
+  and the frontier is every site a search for the deleted claim's key
+  phrases turns up — a text search is the right tool here, because the
+  finding is prose, not a symbol. No hits closes the delta in one tick.
 
 Each tick sweeps at most **one neighborhood**: one frontier module read
 together with its immediate imports. That is the context bound. Every
@@ -69,6 +76,15 @@ line, an `interim` marker whose retiring change has landed, a "revisit when
 X" whose X is observable now. The sweep domain for this lens includes
 `.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no other
 lens reads.
+
+A further lens reads the engine from the consumer's side: **consumer
+restatement** (`engineering.md`, *A fact the engine holds is reported*). The
+consumers this repo carries are `examples/` and `.flume/chain.ts`; a
+decorator parsing agent output, a constant mirroring a gate's command, a
+copied path rule, or a predicate inferring engine state from commit shape is
+filed against the engine surface that should have reported the fact.
+Downstream chains outside this repo are the interactive session's to read,
+and their findings enter through the inbox.
 
 An **absence verdict never rests on a bare text search**: proving a symbol is
 *un*referenced needs LSP references (`code-navigation.md`), never a plain
