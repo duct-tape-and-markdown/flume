@@ -37,6 +37,7 @@ import {
   readLatestVerdictsSync,
   slugify,
   priorAttemptPath,
+  priorAttemptsDir,
 } from "./Dispatcher.js";
 import { showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
@@ -88,6 +89,7 @@ export interface FlumeApi {
   readLatestVerdictsSync: typeof readLatestVerdictsSync;
   slugify: typeof slugify;
   priorAttemptPath: typeof priorAttemptPath;
+  priorAttemptsDir: typeof priorAttemptsDir;
   /** Read-only git helpers a chain gate may need. */
   git: {
     showNameOnly: typeof showNameOnly;
@@ -136,6 +138,7 @@ export function buildFlumeApi(): FlumeApi {
     readLatestVerdictsSync,
     slugify,
     priorAttemptPath,
+    priorAttemptsDir,
     git: { showNameOnly },
     CjsContextLoadError,
     PendingParseFailure,

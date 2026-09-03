@@ -75,6 +75,7 @@ export {
   readLatestVerdictsSync,
   slugify,
   priorAttemptPath,
+  priorAttemptsDir,
   type ChainModule,
   type ChainFactory,
   type DispatcherOptions,

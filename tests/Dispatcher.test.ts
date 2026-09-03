@@ -33,6 +33,7 @@ import {
   worktreeDirName,
   slugify,
   priorAttemptPath,
+  priorAttemptsDir,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -7238,6 +7239,12 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
   it("src/index.ts re-exports the same slugify/priorAttemptPath functions, not second copies", () => {
     expect(indexSlugify).toBe(slugify);
     expect(indexPriorAttemptPath).toBe(priorAttemptPath);
+  });
+
+  it("priorAttemptsDir(flumeDir) agrees with the directory component of priorAttemptPath(flumeDir, tag) for an arbitrary tag", () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const tag = "Weird.Tag_Name(1)";
+    expect(priorAttemptsDir(flumeDir)).toBe(dirname(priorAttemptPath(flumeDir, tag)));
   });
 
   it("priorAttemptPath(flumeDir, tag) matches the path the dispatcher itself reads/writes for a fanout entry's record", async () => {

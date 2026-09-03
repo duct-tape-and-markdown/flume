@@ -661,6 +661,16 @@ export function priorAttemptPath(flumeDir: string, tag: string): string {
 }
 
 /**
+ * Directory `priorAttemptPath` writes into — the same `PRIOR_ATTEMPTS_SUBDIR`
+ * a chain would otherwise have to hardcode to scan for prior-attempt records
+ * (`.claude/rules/engineering.md` "A fact the engine holds is reported,
+ * never rediscovered").
+ */
+export function priorAttemptsDir(flumeDir: string): string {
+  return join(flumeDir, PRIOR_ATTEMPTS_SUBDIR);
+}
+
+/**
  * Length bound for `createWorktree`'s directory-name component only (§9,
  * v0.11). `git worktree add` refuses a worktree path around 200 chars on
  * win32 (`fatal: '$GIT_DIR' too big`) — below MAX_PATH, unaffected by
