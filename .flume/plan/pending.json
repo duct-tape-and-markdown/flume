@@ -1,42 +1,5 @@
 [
   {
-    "tag": "dispatcher-quarantine-visibility",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "TickResult: add quarantinedTags?: readonly string[] and nothingPickable?: boolean."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "fanout selection: when FLUME_QUARANTINED_SLUGS drops a tag from the pickable set, record it on the result; set nothingPickable when nothing remains after the drop."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "coverage for both fields across quarantined/non-quarantined nothing-pickable ticks."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "TickResult.quarantinedTags + nothingPickable so a chain's handoff can tell a quarantined open entry from a genuinely pickable one.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The no-commit taxonomy"
-    },
-    "tests": [
-      "a fanout tick with every open entry quarantined reports nothingPickable:true and the dropped tags on quarantinedTags",
-      "quarantinedTags is empty (not absent) on a nothing-pickable tick with no quarantine",
-      "both fields are absent on a tick that provisioned an entry"
-    ],
-    "acceptance": "A chain reading TickResult distinguishes a quarantined open entry from a pickable one without re-deriving it from pendingAfter.",
-    "notes": "Fixes the reproduced live-lock: a consumer's build handoff re-woke on a quarantined open entry and burned ticks to --max. Also spec'd at spec/pending.md Pickability (selection-drop reporting)."
-  },
-  {
     "tag": "chain-partition-ignore",
     "gate": {
       "kind": "open"
@@ -330,38 +293,5 @@
     ],
     "acceptance": "A chain-authored shouldRun locates and interprets a prior-attempt record using only exported engine rules.",
     "notes": "Export is also spec'd at spec/pending.md What the package exports. Collides with gate-failing-files-suspect-flake on Prompt.ts's GateRevertAttempt — expected."
-  },
-  {
-    "tag": "docs-singleton-worktree-stale-sites",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "GateContext.repoRoot JSDoc's fanout/bare dichotomy and GatePhase's afterMerge doc ('singleton phases never run afterMerge') both predate 0.12 singleton worktrees — correct to the current model (spec/chain.md: 'the former singleton-afterMerge refusal is retired')."
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "~line 121 'will not appear' text misses the gitignored job state that survives a branch switch (spec/jobs.md: job dir is tracked, some subdirs are gitignored)."
-        },
-        {
-          "path": "README.md",
-          "description": "~line 196 heading 'Relocating fanout worktrees only' — singleton worktrees ride the same base."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Four doc/comment sites predate 0.12's singleton-worktree unification; correct each to the current fanout=singleton worktree model.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Singleton runs in a worktree"
-    },
-    "tests": [],
-    "acceptance": "None of the four sites implies singleton phases skip worktrees or afterMerge gates, or that job state is branch-scoped where it isn't.",
-    "notes": "docs/CLI.md fix additionally grounded in spec/jobs.md 'A job is a state root'. gh#13 + 2 more, inbox 2026-09-03, filed directly (docs lane, no engine change)."
   }
 ]
