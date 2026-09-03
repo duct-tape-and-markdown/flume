@@ -1525,7 +1525,7 @@ export class Dispatcher {
       );
     }
 
-    let wt: { path: string; branch: string; baseRef: string };
+    let wt: { path: string; branch: string };
     try {
       wt = await this.createWorktree(phase.name, preHead);
     } catch (err) {
@@ -1976,8 +1976,7 @@ export class Dispatcher {
     // on one held slug while 6/7 other entries sat pickable). The failed
     // entry stays pending; `provisioned`/`worktrees` stay index-aligned for
     // everything downstream.
-    const worktrees: Array<{ path: string; branch: string; baseRef: string }> =
-      [];
+    const worktrees: Array<{ path: string; branch: string }> = [];
     const provisioned: PendingEntry[] = [];
     for (const entry of batch) {
       try {
@@ -3067,8 +3066,8 @@ export class Dispatcher {
 
   /**
    * §4 (RELEASE-v0.6.2): before a fanout worktree is torn down, move every
-   * file its declared friction channel holds *that is new relative to the
-   * worktree's own base commit* into the primary friction dir, prefixed
+   * file its declared friction channel holds *that is untracked at the
+   * worktree's own HEAD* into the primary friction dir, prefixed
    * `<tag>--<stamp>--` for provenance and collision-freedom — the stamp
    * (same `Date.toISOString()`-minus-punctuation idiom as `writeRevertNote`)
    * means a retried entry whose agent reuses the same source filename lands
@@ -3078,13 +3077,17 @@ export class Dispatcher {
    * sessions precedent), not an agent write — worktree agents still only
    * ever write under their own `$PWD`.
    *
-   * The base-delta bound (spec/worktrees.md "Teardown harvest — the
-   * delivery guarantee") is what keeps the relay convergent: a file already
-   * present at `baseRef` for this path arrived via the checkout itself, not
-   * this tick's agent, and re-harvesting it would re-deposit the same note
-   * once per worktree that inherits it. `git ls-tree` at `baseRef` is the
-   * existence probe — content is irrelevant, only whether the path was
-   * already there.
+   * The tracked-at-HEAD bound (spec/worktrees.md "Teardown harvest — the
+   * delivery guarantee") is what keeps the relay convergent and non-
+   * duplicating: a file tracked at the worktree's own HEAD arrived either
+   * via the checkout (present since before this tick's agent ran) or via a
+   * commit this tick's own agent made — either way it is delivered content
+   * already, and re-harvesting it under a stamped name would deposit a
+   * duplicate the operator has to reconcile by hand. `git ls-tree` at the
+   * worktree's `HEAD` is the existence probe — content is irrelevant, only
+   * whether the path is tracked there. `HEAD` is resolved with the worktree
+   * itself as the git invocation's cwd, since each linked worktree has its
+   * own `HEAD` even though branch refs live in the shared common dir.
    *
    * Undeclared `chain.friction` — no-op. A relocated state root (`flumeDir`
    * outside the repo tree) has no worktree-local mirror to harvest from —
@@ -3097,7 +3100,6 @@ export class Dispatcher {
     chain: Chain,
     worktreePath: string,
     tag: string,
-    baseRef: string,
   ): Promise<void> {
     if (chain.friction === undefined) return;
     const stateRootRel = relative(this.opts.repoRoot, this.flumeDir);
@@ -3130,27 +3132,28 @@ export class Dispatcher {
     const candidates = entries.filter((e) => e.isFile());
     if (candidates.length === 0) return;
 
-    // Base-delta bound: a file already present at `baseRef` for this path
-    // is delivered history — the checkout brought it in, not this tick's
-    // agent — and is left in place rather than re-harvested. Existence
-    // only; content is irrelevant to the check.
+    // Tracked-at-HEAD bound: a file already tracked at the worktree's own
+    // `HEAD` — whether the checkout brought it in, or this tick's own
+    // agent committed it — is delivered content already, and is left in
+    // place rather than re-harvested under a stamped name. Existence only;
+    // content is irrelevant to the check.
     const files: Dirent[] = [];
     for (const file of candidates) {
       const relPath = join(stateRootRel, chain.friction, file.name);
-      let atBase: string | null;
+      let atHead: string | null;
       try {
-        atBase = await git.readFileAtRef(this.opts.repoRoot, baseRef, relPath);
+        atHead = await git.readFileAtRef(worktreePath, "HEAD", relPath);
       } catch (err) {
         // Same log-and-continue class as the readdir/mkdir/rename failure
         // modes below: a probe failure isolates to this one candidate
         // rather than aborting the wave's teardown. Left unmoved, matching
         // the fail-closed default a failed rename already leaves in place.
         this.log.warn(
-          `[flume] friction harvest: could not probe base for ${relPath}: ${(err as Error).message}`,
+          `[flume] friction harvest: could not probe HEAD for ${relPath}: ${(err as Error).message}`,
         );
         continue;
       }
-      if (atBase === null) files.push(file);
+      if (atHead === null) files.push(file);
     }
     if (files.length === 0) return;
 
@@ -3211,7 +3214,7 @@ export class Dispatcher {
     phase: Phase,
     chain: Chain,
     repoRoot: string,
-    wt: { path: string; branch: string; baseRef: string },
+    wt: { path: string; branch: string },
     tag: string,
   ): Promise<boolean> {
     if (phase.teardownWorktree) {
@@ -3227,7 +3230,7 @@ export class Dispatcher {
         );
       }
     }
-    await this.harvestFriction(chain, wt.path, tag, wt.baseRef);
+    await this.harvestFriction(chain, wt.path, tag);
     let removed = false;
     try {
       await git.removeWorktree(repoRoot, wt.path);
@@ -3413,7 +3416,7 @@ export class Dispatcher {
   private async createWorktree(
     tag: string,
     fromRef: string,
-  ): Promise<{ path: string; branch: string; baseRef: string }> {
+  ): Promise<{ path: string; branch: string }> {
     const slug = slugify(tag);
     // Job-scoped branch namespace (v0.5 §4): with a namespace, identical
     // slugs across jobs land on disjoint branches; without one, the legacy
@@ -3463,7 +3466,7 @@ export class Dispatcher {
       branch,
       fromRef,
     });
-    return { path, branch, baseRef: fromRef };
+    return { path, branch };
   }
 
   // ---------- prior-attempt persistence (§5) ----------

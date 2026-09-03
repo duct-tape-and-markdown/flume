@@ -10254,7 +10254,7 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     expect(contents).toContain("second attempt's note\n");
   }, 20_000);
 
-  it("a friction note committed by a prior worktree and inherited by a later sibling's checkout is not re-harvested by that sibling", async () => {
+  it("a friction note the tick's own agent commits is harvested zero times, not delivered twice under a stamped name (dispatcher-worktree-harvest-tracked-at-head)", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-D", ["src/friction-d.ts"])]);
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
@@ -10266,10 +10266,9 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     const agentFirst = fanoutAgent({
       "friction-d": async (cwd) => {
         // Against convention: the agent commits its friction note instead
-        // of leaving it untracked. Once cherry-picked, `note.md` becomes
-        // tracked content at this same repo-relative path on trunk — the
-        // shape §4 calls out as "delivered history" for whatever worktree
-        // checks it out next.
+        // of leaving it untracked. That commit is itself the delivery — a
+        // harvested copy under a stamped name would be a duplicate the
+        // operator has to reconcile by hand.
         await writeAndCommit(
           cwd,
           ".flume/friction/note.md",
@@ -10300,12 +10299,11 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     expect(
       await readFile(join(frictionDir, "note.md"), "utf8"),
     ).toBe("the loop wants owner input\n");
-    // ...alongside the one legitimate harvested copy from this wave.
+    // ...and nothing else — no FRICTION-D--stamped duplicate. The note was
+    // tracked at the worktree's own HEAD (this tick's agent committed it),
+    // so the tracked-at-HEAD bound left it unharvested.
     const afterFirst = await readdir(frictionDir);
-    expect(afterFirst.sort()).toEqual(
-      ["note.md", afterFirst.find((f) => f.startsWith("FRICTION-D--"))!].sort(),
-    );
-    expect(afterFirst.length).toBe(2);
+    expect(afterFirst).toEqual(["note.md"]);
 
     // A sibling entry lands in a later wave, as a plan tick would. Its
     // worktree branches from the new trunk tip, so its checkout inherits
@@ -10346,7 +10344,7 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     expect(afterSecond.some((f) => f.startsWith("FRICTION-E--"))).toBe(false);
   }, 20_000);
 
-  it("a readFileAtRef failure during the base-delta probe is logged and does not abort teardown of the wave's remaining worktrees", async () => {
+  it("a readFileAtRef failure during the tracked-at-HEAD probe is logged and does not abort teardown of the wave's remaining worktrees", async () => {
     await writePending(fx.repo, [
       makeEntry("FRICTION-PROBE-1", ["src/friction-probe-1.ts"]),
       makeEntry("FRICTION-PROBE-2", ["src/friction-probe-2.ts"]),
@@ -10364,11 +10362,11 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
       error: () => {},
     };
 
-    // Only the base-delta probe against a worktree's own friction mirror
-    // fails — every other readFileAtRef call (pending.json's HEAD read, the
-    // second worktree's probe) runs for real. The first probe call is the
-    // one under test; teardown processes worktrees in batch order, so it
-    // lands on FRICTION-PROBE-1.
+    // Only the tracked-at-HEAD probe against a worktree's own friction
+    // mirror fails — every other readFileAtRef call (pending.json's HEAD
+    // read, the second worktree's probe) runs for real. The first probe
+    // call is the one under test; teardown processes worktrees in batch
+    // order, so it lands on FRICTION-PROBE-1.
     const realReadFileAtRef = git.readFileAtRef;
     let frictionProbeCalls = 0;
     const readFileAtRefSpy = vi
@@ -10435,7 +10433,7 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     ]);
     expect(
       warnings.some(
-        (w) => w.includes("friction harvest") && w.includes("could not probe base"),
+        (w) => w.includes("friction harvest") && w.includes("could not probe HEAD"),
       ),
     ).toBe(true);
 
