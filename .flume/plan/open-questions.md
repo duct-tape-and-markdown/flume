@@ -19,3 +19,7 @@ Options:
 - **C — enforce the invariant earlier.** If a chain with zero fanout phases and a non-empty `pending.json` is always a misconfiguration, chain-load validation could refuse it outright, making `check`'s current behavior moot.
 
 This repo's own `.flume/chain.ts` always declares one fanout phase (`build`), so the case doesn't manifest here — this is a second-implementation question (`engine-boundary.md`), not a bug against current usage.
+
+## `spec/loop.md` "The tick verdict" field enumeration omits `bystanderCheckpointSha` (NEEDS AMENDMENT)
+
+`1f98caf` added `TickVerdict.bystanderCheckpointSha` to satisfy "Crash equals stop" ("its sha recorded on the tick verdict"), and the field is real and reported (JSDoc on `TickVerdict.bystanderCheckpointSha` in `src/Dispatcher.ts`, populated in both `runSingleton` and `runFanout`). But `spec/loop.md`'s "The tick verdict — one facts artifact" section — the canonical enumeration of what the artifact carries — doesn't list it alongside `headSha`/`at`/`invocations[]`, each of which got its own bullet when added. The fix is mechanical: a bullet naming the field and its recovery purpose, mirroring "Every verdict is anchored" / "Every agent invocation leaves a usage row" already there. Not filed as a pending entry — the edit is to `spec/loop.md` itself, a human-authored surface plan doesn't touch.
