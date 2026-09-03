@@ -1,54 +1,5 @@
 [
   {
-    "tag": "prior-attempt-anchor-export",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "slugify and priorAttemptPath become exported free functions: priorAttemptPath(flumeDir, tag) (internally slugifies). Update priorAttemptKey/readPriorAttempt/writePriorAttempt call sites to the new signature."
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "all 5 PriorAttempt variants gain headSha: string and at: string."
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export slugify, priorAttemptPath."
-        },
-        {
-          "path": "src/flumeApi.ts",
-          "description": "export slugify, priorAttemptPath."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "priorAttemptPath(flumeDir, tag) matches the dispatcher's own read/write path; headSha/at on each variant."
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "render coverage carrying the two new fields through the five variants."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "priorAttemptPath/slugify become exported so a chain reads the engine's own rule; every prior-attempt record anchors on headSha/at.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Prior-outcome feedback to the retrying tick"
-    },
-    "tests": [
-      "priorAttemptPath(flumeDir, tag) matches the path the dispatcher itself reads/writes for that tag",
-      "every one of the 5 prior-attempt record variants carries headSha and at when written",
-      "a chain's shouldRun can compare a stale record's headSha to the live tip instead of the file's mtime"
-    ],
-    "acceptance": "A chain-authored shouldRun locates and interprets a prior-attempt record using only exported engine rules.",
-    "notes": "Export is also spec'd at spec/pending.md What the package exports. Collides with gate-failing-files-suspect-flake on Prompt.ts's GateRevertAttempt — expected."
-  },
-  {
     "tag": "verdict-invocation-types-export",
     "gate": {
       "kind": "open"
