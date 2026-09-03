@@ -27,6 +27,7 @@ import {
   writeTickVerdict,
   clearTickVerdict,
   readTickVerdicts,
+  readLatestVerdictsSync,
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   worktreeDirName,
@@ -90,6 +91,8 @@ function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
     shippedTags: [],
     mergeOutcomes: [],
     summary: "build shipped nothing → hibernate",
+    headSha: "0".repeat(40),
+    at: "2024-01-01T00:00:00.000Z",
     ...over,
   };
 }
@@ -6962,6 +6965,8 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
         "shippedTags",
         "mergeOutcomes",
         "summary",
+        "headSha",
+        "at",
       ].sort(),
     );
     // The violating path is a fact in the gate's own captured `details`, not
@@ -6992,6 +6997,106 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     }
     const last2 = await readTickVerdicts(join(fx.repo, ".flume"), 2);
     expect(last2.map((v) => v.summary)).toEqual(["tick 3", "tick 4"]);
+  });
+});
+
+/**
+ * spec/loop.md "The tick verdict — one facts artifact", "Every verdict is
+ * anchored": `headSha` is the trunk tip and `at` an ISO timestamp, so "has
+ * the world moved since this phase last ran" is a comparison against engine
+ * state rather than an inference from touched paths — and a quiet
+ * (no-commit) tick still leaves an anchor behind.
+ */
+describe("TickVerdict anchoring — headSha/at (spec/loop.md 'The tick verdict')", () => {
+  it("a committed tick's verdict headSha matches the trunk tip once written; at is a valid ISO timestamp", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.verdict).toBeDefined();
+
+    await writeTickVerdict(join(fx.repo, ".flume"), outcome.verdict!);
+    const [written] = await readTickVerdicts(join(fx.repo, ".flume"));
+
+    expect(written!.headSha).toBe(await head(fx.repo));
+    expect(new Date(written!.at).toISOString()).toBe(written!.at);
+  });
+
+  it("a quiet (no-commit) tick's verdict still carries headSha/at", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "noop",
+      async invoke() {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.verdict).toBeDefined();
+
+    // Nothing shipped, so the trunk tip is unchanged — but the anchor is
+    // present regardless, never conditioned on a commit having happened.
+    expect(outcome.verdict!.headSha).toBe(preHead);
+    expect(new Date(outcome.verdict!.at).toISOString()).toBe(
+      outcome.verdict!.at,
+    );
+  });
+});
+
+/**
+ * `readLatestVerdictsSync` — the synchronous sibling `Phase.shouldRun`/
+ * `Phase.handoff` (both synchronous by contract) read for the anchor above,
+ * since neither can take `readTickVerdicts`'s `await`.
+ */
+describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
+  it("returns the most recent verdict per phase name from the verdict log", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(
+      flumeDir,
+      verdictFixture({ phaseName: "plan", summary: "plan tick 1" }),
+    );
+    await writeTickVerdict(
+      flumeDir,
+      verdictFixture({ phaseName: "build", summary: "build tick 1" }),
+    );
+    await writeTickVerdict(
+      flumeDir,
+      verdictFixture({ phaseName: "plan", summary: "plan tick 2" }),
+    );
+
+    const latest = readLatestVerdictsSync(flumeDir);
+
+    expect(Object.keys(latest).sort()).toEqual(["build", "plan"]);
+    expect(latest["plan"]!.summary).toBe("plan tick 2");
+    expect(latest["build"]!.summary).toBe("build tick 1");
+  });
+
+  it("returns an empty result when the verdict log does not exist yet", () => {
+    expect(readLatestVerdictsSync(join(fx.repo, ".flume", "never-ticked"))).toEqual(
+      {},
+    );
   });
 });
 
@@ -7346,10 +7451,18 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
 
     // Every fact both ticks produce is deterministic except the
     // content-addressed commit sha (author/committer timestamps differ
-    // between the two independent commits) — blank those out before
-    // comparing the rest byte-for-byte.
+    // between the two independent commits) and the verdict's own `at`
+    // (wall-clock at the moment each `dispatcher.tick()` call built its
+    // verdict) — blank those out before comparing the rest byte-for-byte.
     const normalize = (o: unknown) =>
-      JSON.parse(JSON.stringify(o).replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>"));
+      JSON.parse(
+        JSON.stringify(o)
+          .replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>")
+          .replace(
+            /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g,
+            "<TIMESTAMP>",
+          ),
+      );
 
     expect(normalize(declaredTrue)).toEqual(normalize(undeclared));
     expect(declaredTrue.declined).toBeUndefined();

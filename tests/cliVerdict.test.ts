@@ -288,6 +288,8 @@ function makeVerdict(
     shippedTags: [],
     mergeOutcomes: [],
     summary: `${overrides.phaseName} placeholder`,
+    headSha: "0".repeat(40),
+    at: "2024-01-01T00:00:00.000Z",
     ...overrides,
   };
 }

@@ -16,7 +16,7 @@ import {
   rename,
   copyFile,
 } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -351,6 +351,18 @@ export interface TickVerdict {
   gateFailures?: GateFailure[];
   /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
   summary: string;
+  /**
+   * spec/loop.md "The tick verdict — one facts artifact": the trunk repo's
+   * HEAD at the moment this verdict was built — after this tick's own
+   * commits, if any, already landed. "Has the world moved since this phase
+   * last ran" is therefore a comparison against this field, never an
+   * inference from which paths the last commit touched, and a quiet
+   * (no-commit) tick still leaves an anchor behind: a phase need not commit
+   * just to record one.
+   */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha} — ambient wall-clock context, not itself load-bearing. */
+  at: string;
 }
 
 /** Shared return shape for {@link Dispatcher.runSingleton} and {@link Dispatcher.runFanout}. */
@@ -416,7 +428,9 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
     Array.isArray(r.gateResults) &&
     Array.isArray(r.shippedTags) &&
     Array.isArray(r.mergeOutcomes) &&
-    typeof r.summary === "string"
+    typeof r.summary === "string" &&
+    typeof r.headSha === "string" &&
+    typeof r.at === "string"
   );
 }
 
@@ -508,6 +522,43 @@ export async function readTickVerdicts(
     }
   }
   return n === 0 ? [] : verdicts.slice(-n);
+}
+
+/**
+ * The most recent {@link TickVerdict} per `phaseName`, read synchronously
+ * from the same history log {@link readTickVerdicts} serves. `Phase.shouldRun`
+ * and `Phase.handoff` (`spec/loop.md` "Declining a tick before the
+ * invocation") are synchronous by contract, so a chain reading `headSha`/`at`
+ * from either needs this rather than the async accessor behind an `await`
+ * it cannot take. Corrupt lines are skipped, same no-false-signal posture as
+ * `readTickVerdicts`; an absent log reads as an empty result, never a throw.
+ */
+export function readLatestVerdictsSync(
+  flumeDir: string,
+): Record<string, TickVerdict> {
+  const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
+  const latest: Record<string, TickVerdict> = {};
+  if (!existsSync(p)) return latest;
+  let raw: string;
+  try {
+    raw = readFileSync(p, "utf8");
+  } catch {
+    return latest;
+  }
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const rec: unknown = JSON.parse(trimmed);
+      // Log order is chronological (append-only), so the last record parsed
+      // for a given phaseName is the most recent — no timestamp comparison
+      // needed.
+      if (isTickVerdict(rec)) latest[rec.phaseName] = rec;
+    } catch {
+      // a corrupt line is skipped, not fatal to the rest of the history
+    }
+  }
+  return latest;
 }
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
@@ -1451,6 +1502,11 @@ export class Dispatcher {
     // a disk write (the concern `writeTickVerdict`'s own doc names for
     // `Dispatcher.tick()` unit tests), so it costs the existing computed
     // fields (`summary` et al.) nothing extra.
+    //
+    // headSha/at (spec/loop.md "The tick verdict"): the trunk tip read here,
+    // after this phase's own commits (if any) already landed — never
+    // inferred from which paths the last commit touched, and left behind
+    // even on a quiet no-commit tick.
     const verdict: TickVerdict = {
       phaseName: phase.name,
       tags: tags ?? [],
@@ -1468,6 +1524,8 @@ export class Dispatcher {
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
       summary,
+      headSha: await git.revParse(this.opts.repoRoot),
+      at: new Date().toISOString(),
     };
 
     return {
@@ -2456,6 +2514,12 @@ export class Dispatcher {
             shippedTags.length > 0
               ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${err.message})`
               : `${phase.name}: pending-ledger rewrite refused (${err.message})`,
+          // headSha: the ledger rewrite never reached its own commit, so the
+          // tip has not moved past what this wave's cherry-picks already
+          // landed — a fresh read rather than reusing `preUpdate` so this
+          // stays correct if a future revision moves the read point.
+          headSha: await git.revParse(repoRoot),
+          at: new Date().toISOString(),
         };
         throw new WaveLedgerParseFailure(err.errors, verdict);
       }

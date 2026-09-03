@@ -72,6 +72,7 @@ export {
   Dispatcher,
   consoleLogger,
   readTickVerdicts,
+  readLatestVerdictsSync,
   type ChainModule,
   type ChainFactory,
   type DispatcherOptions,

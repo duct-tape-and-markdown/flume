@@ -34,6 +34,7 @@ import {
   CjsContextLoadError,
   PendingParseFailure,
   readTickVerdicts,
+  readLatestVerdictsSync,
 } from "./Dispatcher.js";
 import { showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
@@ -82,6 +83,7 @@ export interface FlumeApi {
   matchesAny: typeof matchesAny;
   renderPrompt: typeof renderPrompt;
   readTickVerdicts: typeof readTickVerdicts;
+  readLatestVerdictsSync: typeof readLatestVerdictsSync;
   /** Read-only git helpers a chain gate may need. */
   git: {
     showNameOnly: typeof showNameOnly;
@@ -127,6 +129,7 @@ export function buildFlumeApi(): FlumeApi {
     matchesAny,
     renderPrompt,
     readTickVerdicts,
+    readLatestVerdictsSync,
     git: { showNameOnly },
     CjsContextLoadError,
     PendingParseFailure,
