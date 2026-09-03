@@ -3781,14 +3781,19 @@ export class Dispatcher {
     // A blockedBy gate naming a tag this wave shipped is resolved HERE,
     // mechanically: the dispatcher just merged and gated that tag, so
     // "did the blocker land" needs no plan tick — the next wave forms
-    // without a plan interim. Judgment gates (parked) stay plan's.
+    // without a plan interim. Judgment gates (parked) stay plan's. A
+    // multi-parent blockedBy drains one landed tag at a time: the gate
+    // only flips to open once every named parent has shipped.
     const after = current
       .filter((e) => !shipped.has(e.tag))
-      .map((e) =>
-        e.gate.kind === "blockedBy" && shipped.has(e.gate.tag)
+      .map((e) => {
+        if (e.gate.kind !== "blockedBy") return e;
+        const remainingTags = e.gate.tags.filter((tag) => !shipped.has(tag));
+        if (remainingTags.length === e.gate.tags.length) return e;
+        return remainingTags.length === 0
           ? { ...e, gate: { kind: "open" as const } }
-          : e,
-      )
+          : { ...e, gate: { kind: "blockedBy" as const, tags: remainingTags } };
+      })
       .map((e) => {
         const obs = observed.get(e.tag);
         if (!obs || obs.length === 0) return e;
@@ -4517,8 +4522,8 @@ function isPickable(
       return true;
     case "blockedBy": {
       // Narrow into a local so the closure doesn't lose the discriminator.
-      const depTag = entry.gate.tag;
-      return !pending.some((e) => e.tag === depTag);
+      const depTags = entry.gate.tags;
+      return depTags.every((depTag) => !pending.some((e) => e.tag === depTag));
     }
     case "parked":
     case "deferred":

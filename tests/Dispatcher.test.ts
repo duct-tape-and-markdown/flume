@@ -860,6 +860,112 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-unblock)", () => {
+  it("a multi-parent blockedBy entry flips to open once every named parent ships in the same wave", async () => {
+    const entries = [
+      makeEntry("PARENT-A", ["src/a.ts"]),
+      makeEntry("PARENT-B", ["src/b.ts"]),
+      {
+        ...makeEntry("CHILD-MULTI", ["src/c.ts"]),
+        gate: { kind: "blockedBy" as const, tags: ["PARENT-A", "PARENT-B"] },
+      },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "parent-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(PARENT-A): ship"),
+      "parent-b": (cwd) =>
+        writeAndCommit(cwd, "src/b.ts", "from-B\n", "build(PARENT-B): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // CHILD-MULTI wasn't pickable this wave (both parents still pending at
+    // pick time) — only the two parents shipped.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "PARENT-A",
+      "PARENT-B",
+    ]);
+
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk).toEqual([
+      {
+        ...makeEntry("CHILD-MULTI", ["src/c.ts"]),
+        gate: { kind: "open" },
+      },
+    ]);
+  }, 20_000);
+
+  it("stays blockedBy with the shorter list when only some named parents ship", async () => {
+    const entries = [
+      makeEntry("PARENT-A", ["src/a.ts"]),
+      {
+        ...makeEntry("CHILD-PARTIAL", ["src/c.ts"]),
+        gate: {
+          kind: "blockedBy" as const,
+          tags: ["PARENT-A", "PARENT-B-NEVER-QUEUED"],
+        },
+      },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "parent-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(PARENT-A): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["PARENT-A"]);
+
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk).toEqual([
+      {
+        ...makeEntry("CHILD-PARTIAL", ["src/c.ts"]),
+        gate: {
+          kind: "blockedBy",
+          tags: ["PARENT-B-NEVER-QUEUED"],
+        },
+      },
+    ]);
+  }, 20_000);
+});
+
 /**
  * CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE — `Chain.supervisorPolicy.maxParallel`
  * (`src/Phase.ts`) joins `quarantineScope`/`abortThreshold` as a
@@ -3921,7 +4027,7 @@ describe("Dispatcher fanout — empty pickable set", () => {
     const entries: PendingEntry[] = [
       {
         ...makeEntry("DOWN", ["src/down.ts"]),
-        gate: { kind: "blockedBy", tag: "UP" },
+        gate: { kind: "blockedBy", tags: ["UP"] },
       },
       {
         ...makeEntry("UP", ["src/up.ts"]),

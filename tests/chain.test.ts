@@ -145,7 +145,7 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
       const ctx: TickContext = {
         cwd: flumeDir,
         flumeDir,
-        pending: [makeEntry("BLOCKED-1", { kind: "blockedBy", tag: "STILL-PENDING-UPSTREAM" })],
+        pending: [makeEntry("BLOCKED-1", { kind: "blockedBy", tags: ["STILL-PENDING-UPSTREAM"] })],
       };
       expect(plan.shouldRun!(ctx)).toBe(true);
     });
@@ -159,7 +159,7 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
       const ctx: TickContext = {
         cwd: flumeDir,
         flumeDir,
-        pending: [makeEntry("PROMOTABLE-1", { kind: "blockedBy", tag: "ALREADY-SHIPPED-TAG" })],
+        pending: [makeEntry("PROMOTABLE-1", { kind: "blockedBy", tags: ["ALREADY-SHIPPED-TAG"] })],
       };
       expect(plan.shouldRun!(ctx)).toBe(true);
     });

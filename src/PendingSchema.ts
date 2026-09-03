@@ -39,7 +39,12 @@ const FileChange = z.object({
  * *why* so the plan-phase can reason about lifecycle when it refreshes.
  *
  * - open:               ready to ship.
- * - blockedBy:          upstream pending entry must ship first.
+ * - blockedBy:          upstream pending entries (named by tag, one or more)
+ *                       must all ship first. A DAG with several parents is
+ *                       stated as such — never flattened to a single tag —
+ *                       so `tags` is non-empty by construction: an author
+ *                       who meant to name blockers and named none gets a
+ *                       parse error, never a silently-open gate.
  * - parked:             human action required (workshop, design call) before
  *                       the entry can be refined enough to ship.
  * - deferred:           carried indefinitely; no consumer surface yet.
@@ -50,7 +55,10 @@ const FileChange = z.object({
  */
 const Gate = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("open") }),
-  z.object({ kind: z.literal("blockedBy"), tag: z.string().min(1) }),
+  z.object({
+    kind: z.literal("blockedBy"),
+    tags: z.array(z.string().min(1)).min(1, "blockedBy.tags must be non-empty"),
+  }),
   z.object({ kind: z.literal("parked"), reason: z.string().min(1) }),
   z.object({ kind: z.literal("deferred"), reason: z.string().min(1) }),
   z.object({
@@ -503,7 +511,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
 
   const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship
-        | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
+        | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
         | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
@@ -537,6 +545,10 @@ Empty array is valid (means nothing pending).`;
  * It defaults to always-resolved, so a caller that supplies none — or an entry
  * that declares no `dependsOnForks` — behaves exactly as before.
  *
+ * `blockedBy` is pickable iff every named blocker tag has shipped — a DAG
+ * with several parents resolves only once all of them land, never on the
+ * first.
+ *
  * `capabilities` is the chain's declared `Chain.capabilities` (v0.8 §4) — the
  * environment facts it asserts. Defaults to empty, so a `requiresCapability`
  * gate is opt-in: unasserted by default, exactly as the env-gate variant it
@@ -555,7 +567,7 @@ export function isPickableNow(
     case "open":
       return true;
     case "blockedBy":
-      return shippedTags.has(entry.gate.tag);
+      return entry.gate.tags.every((tag) => shippedTags.has(tag));
     case "parked":
     case "deferred":
       return false;

@@ -96,9 +96,20 @@ describe("parsePending — round-trip per gate.kind", () => {
   it("parses gate=blockedBy", () => {
     const parsed = roundTrip({
       ...baseEntry,
-      gate: { kind: "blockedBy", tag: "UPSTREAM-TAG" },
+      gate: { kind: "blockedBy", tags: ["UPSTREAM-TAG"] },
     });
-    expect(parsed.gate).toEqual({ kind: "blockedBy", tag: "UPSTREAM-TAG" });
+    expect(parsed.gate).toEqual({ kind: "blockedBy", tags: ["UPSTREAM-TAG"] });
+  });
+
+  it("parses gate=blockedBy with multiple parent tags", () => {
+    const parsed = roundTrip({
+      ...baseEntry,
+      gate: { kind: "blockedBy", tags: ["UPSTREAM-A", "UPSTREAM-B"] },
+    });
+    expect(parsed.gate).toEqual({
+      kind: "blockedBy",
+      tags: ["UPSTREAM-A", "UPSTREAM-B"],
+    });
   });
 
   it("parses gate=parked", () => {
@@ -185,9 +196,19 @@ describe("parsePending — rejects malformed entries", () => {
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
-  it("rejects gate=blockedBy missing `tag`", () => {
+  it("rejects gate=blockedBy missing `tags`", () => {
     const result = parsePending(
       JSON.stringify([{ ...baseEntry, gate: { kind: "blockedBy" } }]),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
+  });
+
+  it("rejects gate=blockedBy with an empty `tags` array (not a silently-open gate)", () => {
+    const result = parsePending(
+      JSON.stringify([
+        { ...baseEntry, gate: { kind: "blockedBy", tags: [] } },
+      ]),
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
@@ -828,12 +849,36 @@ describe("dependsOnForks — foundations governor", () => {
   it("an unresolved fork blocks even a blockedBy-satisfied entry", () => {
     const entry = roundTrip({
       ...baseEntry,
-      gate: { kind: "blockedBy", tag: "UPSTREAM" },
+      gate: { kind: "blockedBy", tags: ["UPSTREAM"] },
       dependsOnForks: ["open-one"],
     });
     // Upstream shipped (gate would pass) but the fork is open → not pickable.
     expect(isPickableNow(entry, new Set(["UPSTREAM"]), () => false)).toBe(
       false,
+    );
+  });
+});
+
+describe("gate=blockedBy — pickability against a tag list (spec/pending.md § The entry core)", () => {
+  const noForks = new Set<string>();
+
+  it("is pickable once the single named blocker has shipped", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "blockedBy", tags: ["UPSTREAM"] },
+    });
+    expect(isPickableNow(entry, new Set(["UPSTREAM"]))).toBe(true);
+    expect(isPickableNow(entry, noForks)).toBe(false);
+  });
+
+  it("a multi-parent entry is not pickable until EVERY named blocker has shipped", () => {
+    const entry = roundTrip({
+      ...baseEntry,
+      gate: { kind: "blockedBy", tags: ["UPSTREAM-A", "UPSTREAM-B"] },
+    });
+    expect(isPickableNow(entry, new Set(["UPSTREAM-A"]))).toBe(false);
+    expect(isPickableNow(entry, new Set(["UPSTREAM-A", "UPSTREAM-B"]))).toBe(
+      true,
     );
   });
 });
@@ -876,7 +921,7 @@ describe("renderSchemaForPrompt", () => {
       {
         "tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>",   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
         "gate": { "kind": "open" }                                  // ready to ship
-              | { "kind": "blockedBy", "tag": "OTHER-TAG" }           // upstream blocks
+              | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
               | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
@@ -1117,8 +1162,9 @@ describe("renderSchemaForPrompt", () => {
     expect(rendered).toContain(
       `"tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>" AND "ALL-CAPS-WITH-DASHES"`,
     );
-    // Not rendered a second time as a generic extension field line.
-    expect(rendered.match(/"tag":/g)).toHaveLength(2); // core "tag" line + gate.blockedBy's "tag" example
+    // Not rendered a second time as a generic extension field line. Only the
+    // core "tag" line matches — gate.blockedBy's example is "tags" now.
+    expect(rendered.match(/"tag":/g)).toHaveLength(1);
   });
 });
 
