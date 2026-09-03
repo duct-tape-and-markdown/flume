@@ -1,50 +1,5 @@
 [
   {
-    "tag": "chain-partition-ignore",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Chain.supervisorPolicy: add partitionIgnore?: string[]."
-        },
-        {
-          "path": "src/partition.ts",
-          "description": "PartitionOptions gains the ignore-globs list; partitionByFileOverlap treats a path matching matchesAny(path, ignore) as touched by nobody."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runFanout reads supervisorPolicy.partitionIgnore ?? [] per tick and passes it to the partition call; the observedFiles footprint recorder filters the same paths through the same list."
-        },
-        {
-          "path": "tests/partition.test.ts",
-          "description": "ignored-path collision-avoidance coverage."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "per-tick read of partitionIgnore off the resolved chain."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "supervisorPolicy.partitionIgnore narrows the fanout partition's collision set only; write guard and ship detection are unaffected.",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "Fanout partition — disjoint touched paths"
-    },
-    "tests": [
-      "two entries touching only an ignored path partition into the same wave",
-      "an entry touching both an ignored and a non-ignored shared path still collides on the non-ignored path",
-      "declaredPaths / write guard / ship detection are unaffected by partitionIgnore"
-    ],
-    "acceptance": "A chain declaring partitionIgnore widens wave width for entries colliding only on the ignored path; default [] is byte-identical to today.",
-    "notes": "Read per tick off the resolved chain, same shape as maxParallel/tickTimeoutMs (spec/chain.md Supervisor policy is a chain-overridable default)."
-  },
-  {
     "tag": "gate-failing-files-suspect-flake",
     "gate": {
       "kind": "open"
