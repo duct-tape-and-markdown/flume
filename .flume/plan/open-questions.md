@@ -9,6 +9,17 @@ Status markers:
 
 <!-- questions below this line -->
 
+## `src/Dispatcher.ts` (4836 lines) bundles several jobs that read as separate homes (PARKED)
+
+Posture sweep (`.claude/rules/posture-sweep.md` standing lens: "a module carrying jobs that want separate homes") over the `src/Dispatcher.ts` neighborhood found the file's own `// ---------- X ----------` markers delineating distinct concerns: chain load+validate (`:735-1028`), tick-verdict I/O (`:440-600`), singleton tick (`:1601-1943`), fanout tick + per-entry fanout (`:1983-2892`), worktree/friction/prior-attempt helpers (`:2894-4153`), loop supervisor (`:4156-4628`). Sibling engine files stay well under 1000 lines (`git.ts` 651, `Agent.ts` 606, `PendingSchema.ts` 598).
+
+Not filed as a mechanical fix: `Dispatcher.ts:42-44` already documents a constraint that shaped the current structure — `buildFlumeApi` is a function rather than a constant "precisely so" a chain can't resolve a second physical engine, which implies at least the chain-load/`FlumeApi` surface is deliberately colocated with the dispatcher rather than free to split. Whether the tick-execution (singleton/fanout), worktree/friction/prior-attempt, and loop-supervisor concerns share that same constraint, or could split cleanly, needs a design call rather than a sweep-driven guess.
+
+Options:
+- **A — split along the marked seams**, keeping only what the `buildFlumeApi` cycle constraint actually requires colocated.
+- **B — leave it whole**, treating the file's size as the cost of the single-cycle-avoidance design and citing that constraint as the deliberate divergence (`engineering.md` "The fix lands at the mechanism" allows a declared exception).
+- **C — narrower split**: extract only the clearly acyclic concerns (worktree/friction/prior-attempt helpers, loop supervisor) and leave chain-load + tick execution together.
+
 ## `flume check`'s fence collapses to universal rejection when a chain declares zero fanout phases (PARKED)
 
 `src/cli.ts:1184-1188` derives `check`'s fence from `chain.phases.filter(p => p.concurrency === "fanout")`. Nothing in `src/Phase.ts`'s `Concurrency` type or chain-load validation requires at least one fanout phase — per `spec/pending.md` ("Selection is the sole site; a singleton phase does not pick from pending"), a chain with only singleton phases is structurally legal, it just never consumes `pending.json`. For such a chain, `consumerPhases` is `[]`, `entryWriteScopeUnion([], [])` is the empty fence, and `matchesAny(p, fence)` is `false` for every declared path — so `flume check` would report *every* pending entry as a fence violation, misdiagnosed as "declares files outside the consumer phase's fence" when the real story is "no consumer phase exists." `spec/cli.md`'s `check` description doesn't address this case.
