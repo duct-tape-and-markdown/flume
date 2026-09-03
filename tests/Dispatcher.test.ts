@@ -34,6 +34,7 @@ import {
   slugify,
   priorAttemptPath,
   priorAttemptsDir,
+  computeStateRootRel,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -1825,6 +1826,56 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
     }
   }, 20_000);
 });
+
+describe(
+  "Dispatcher — isPendingRelocated delegates to computeStateRootRel " +
+    '(.claude/rules/engineering.md "The fix lands at the mechanism")',
+  () => {
+    // isPendingRelocated is private; cast to reach it directly rather than
+    // asserting only through tick()-level behavior, so this pins the
+    // delegation itself and not just an outcome the pre-fix duplicate would
+    // have produced identically.
+    function relocated(dispatcher: Dispatcher): boolean {
+      return (
+        dispatcher as unknown as { isPendingRelocated(): boolean }
+      ).isPendingRelocated();
+    }
+
+    it("agrees with computeStateRootRel on a relocated (out-of-tree) pendingPath", async () => {
+      const dock = await mkdtemp(join(tmpdir(), "flume-dock-agree-"));
+      try {
+        const dispatcher = new Dispatcher({
+          chainLoader: staticLoader({ phases: [], humanOnly: [] }),
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          flumeDir: dock,
+          agent: fanoutAgent({}),
+          log: silent,
+        });
+
+        const pendingPath = join(dock, "plan", "pending.json");
+        expect(computeStateRootRel(fx.repo, pendingPath)).toBeUndefined();
+        expect(relocated(dispatcher)).toBe(true);
+      } finally {
+        await rm(dock, { recursive: true, force: true });
+      }
+    });
+
+    it("agrees with computeStateRootRel on a normal in-tree pendingPath", async () => {
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader({ phases: [], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: fanoutAgent({}),
+        log: silent,
+      });
+
+      const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+      expect(computeStateRootRel(fx.repo, pendingPath)).toBeDefined();
+      expect(relocated(dispatcher)).toBe(false);
+    });
+  },
+);
 
 describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
   it("a commitMessage override lands verbatim on the ledger ship commit, receiving the shipped tags", async () => {

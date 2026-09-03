@@ -675,10 +675,13 @@ export function priorAttemptsDir(flumeDir: string): string {
  * when the state root is relocated outside it (climbs out via `..`, or is
  * already absolute — a relocated `flumeDir` set by an absolute `FLUME_DIR`).
  * Computed once, from the two roots that never change after construction,
- * and shared by every `GateContext.stateRootRel` and by `harvestFriction`'s
- * own worktree-mirror check (spec/chain.md "What a gate receives";
- * `.claude/rules/engineering.md` "The fix lands at the mechanism") — neither
- * re-derives it.
+ * and shared by every `GateContext.stateRootRel`, by `harvestFriction`'s own
+ * worktree-mirror check (spec/chain.md "What a gate receives"), and by
+ * `isPendingRelocated`, which calls it with `pendingPath` in place of
+ * `flumeDir` — a fixed descendant (`join(flumeDir, "plan", "pending.json")`)
+ * whose escape status against `repoRoot` always matches `flumeDir`'s own
+ * (`.claude/rules/engineering.md` "The fix lands at the mechanism") — none
+ * re-derives the check.
  */
 export function computeStateRootRel(
   repoRoot: string,
@@ -4024,11 +4027,14 @@ export class Dispatcher {
    * root's ledger, invisible to git by construction. Shared by
    * `readPending`'s tip-vs-disk choice and `commitPendingUpdate`'s
    * commit-vs-disk-only choice: one relocation check, not two independently
-   * re-derived ones.
+   * re-derived ones. Delegates to `computeStateRootRel`'s own escape check
+   * rather than re-deriving it (`.claude/rules/engineering.md` "The fix
+   * lands at the mechanism").
    */
   private isPendingRelocated(): boolean {
-    const rel = relative(this.opts.repoRoot, this.pendingPath);
-    return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    return (
+      computeStateRootRel(this.opts.repoRoot, this.pendingPath) === undefined
+    );
   }
 
   /**
