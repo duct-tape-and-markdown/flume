@@ -1,38 +1,5 @@
 [
   {
-    "tag": "worktree-harvest-tracked-at-head",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "harvestFriction: bound moves from base-commit-relative (readFileAtRef against baseRef) to untracked-at-worktree-HEAD, so a note this tick's own agent committed is delivered once, not duplicated under a stamped name."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "a committed friction note is harvested zero times; the existing new-since-base case stays covered."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Teardown harvest moves files untracked at the worktree's HEAD, not merely new since base — a committed note is delivered once, via its own commit.",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Teardown harvest — the delivery guarantee"
-    },
-    "tests": [
-      "a friction-channel file the tick's agent committed is not harvested a second time under a stamped name",
-      "a file untracked at worktree HEAD but absent from the base tree is still harvested",
-      "a file the checkout itself brought in (tracked at both base and HEAD) is never harvested"
-    ],
-    "acceptance": "Harvest count for a wave where the agent committed its own friction note matches one delivery, not two.",
-    "notes": "Fixes the field-reported duplication (one committed note became eight stamped copies across two waves)."
-  },
-  {
     "tag": "verdict-anchor-head-sha-at",
     "gate": {
       "kind": "open"
