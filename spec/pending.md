@@ -16,8 +16,12 @@ rewrites `pending.json` on ship, so a stripped field would be destroyed on disk.
 
 - **`tag`** — identity. Appears in commit messages, worktree/branch slugs, and revert-note
   filenames. Grammar below.
-- **`gate`** — a discriminated union controlling pickability: `open`, `blockedBy{tag}`,
-  `parked{reason}`, `deferred{reason}`, `requiresCapability{capability}`.
+- **`gate`** — a discriminated union controlling pickability: `open`, `blockedBy{tags}`,
+  `parked{reason}`, `deferred{reason}`, `requiresCapability{capability}`. `blockedBy.tags` is a
+  **non-empty** list of tags — a DAG with several parents is stated as such, never flattened
+  into a spine of dependencies that do not exist. An empty list is a parse error, not an open
+  gate: an author who meant to name blockers and named none gets a refusal, never a silently
+  unblocked entry.
 - **`dependsOnForks`** — array of opaque fork slugs, defaulting to `[]`. A cross-cutting
   pickability predicate, not a gate kind (below).
 - **`files`** — `{ new: FileChange[], edit: FileChange[], retire: string[] }`, each `FileChange`
@@ -134,12 +138,17 @@ Two implementations, one rule set:
 
 Both short-circuit identically before the gate switch: **if any declared `dependsOnForks` slug is
 unresolved, the entry is not pickable, regardless of gate kind** — including `open`. Then the
-switch: `open` → pickable; `blockedBy` → iff the blocker landed; `parked`/`deferred` → never;
-`requiresCapability` → iff the chain asserts the named string.
+switch: `open` → pickable; `blockedBy` → iff **every** named blocker landed; `parked`/`deferred`
+→ never; `requiresCapability` → iff the chain asserts the named string.
 
 Selection additionally drops entries whose slug the supervisor quarantined earlier in the run
-after a worktree-provisioning failure; `pending.json` itself is untouched, so a fresh run retries
-from scratch (see spec/loop.md).
+(spec/loop.md, *Repeated identical failures*); `pending.json` itself is untouched, so a fresh run
+retries from scratch. The drop is **reported, never hidden**: `TickResult.quarantinedTags` carries
+the tags selection skipped for that reason, and a wave that found nothing to run sets
+`TickResult.nothingPickable`. `pendingAfter` stays the queue as it is on disk — a quarantined entry
+still reads `open` there, and a chain that hands off on "anything open" without consulting
+`quarantinedTags` re-wakes a phase that will pick nothing (spec/loop.md, *The no-commit
+taxonomy*).
 
 **Why `dependsOnForks` is a side-array and not a gate kind.** `gate` is a discriminated union —
 one entry has exactly one gate state. An entry can simultaneously be `open`, rest on two open
@@ -224,6 +233,17 @@ touchedPaths(entry) = declaredPaths(entry) ∪ (entry.observedFiles ?? [])
 touched. The partition needs the union — otherwise a retry rides the same wave as the entry it
 already collided with. The write guard and ship detection deliberately do **not** consume
 `observedFiles`: it feeds parallelism, not permission, and not proof of work.
+
+**`supervisorPolicy.partitionIgnore` narrows the partition set, and only the partition set.** A
+chain whose every entry legitimately touches one shared file — a per-member lock a ship re-pins,
+a generated index — declares those paths (globs, matched by `matchesAny`, spec/chain.md) and the
+partition treats them as touched by nobody: `partitionByFileOverlap` and the footprint recorder
+both read `touchedPaths` through the filter. Without it every pair collides, the batch is one
+entry wide regardless of `maxParallel`, and a full producer tick runs between every ship.
+`declaredPaths` itself is untouched — the fence, the write guard, and ship detection see the
+declared file exactly as before — so the knob can widen a wave but never a permission. The
+residual risk is the one the dispatcher already bounds: two ships that do collide in the ignored
+file cost one cherry-pick conflict and a re-pick, never a silent bad merge.
 
 ## `observedFiles` — the dispatcher's collision record
 
@@ -337,10 +357,12 @@ per-entry revert isolation the fanout merge path uses.
 
 ## Wave auto-unblock
 
-A `blockedBy` gate naming a tag the same wave shipped is opened **mechanically**, at wave-end
+A `blockedBy` gate naming a tag the same wave shipped is advanced **mechanically**, at wave-end
 bookkeeping: the dispatcher just merged and gated that tag, so "did the blocker land" needs no
-producer tick, and a chained entry advances without a plan interim. Judgment gates (`parked`,
-`deferred`) are never auto-opened — those are the producer's call.
+producer tick, and a chained entry advances without a plan interim. The shipped tag leaves
+`tags`; the gate becomes `open` when the list empties, and an entry still naming an unshipped
+blocker stays `blockedBy` with the shorter list. Judgment gates (`parked`, `deferred`) are never
+auto-opened — those are the producer's call.
 
 The rewrite re-reads `pending.json` fresh immediately before deriving it, **not** the tick-start
 snapshot: a wave's fanned-out agent runs and serial cherry-picks can take long enough for another
@@ -424,7 +446,11 @@ that did not know the extension is how declared fields get destroyed.
 
 `src/index.ts` and `FlumeApi` (`src/flumeApi.ts`) are the canonical lists. Both carry the *values*
 `composePendingList`, `parsePending`, `parsePendingLoose`, `renderSchemaForPrompt`,
-`touchedPaths`, `isPickableNow`, and `partitionByFileOverlap`. Types are index-only by
+`touchedPaths`, `isPickableNow`, `partitionByFileOverlap`, `slugify`, and `priorAttemptPath`.
+The last two are the tag-to-filename rule and the record path built from it
+(`priorAttemptPath(flumeDir, tag)`): a chain reading `prior-attempts/` — a `shouldRun` declining
+to redispatch an entry whose last attempt bailed — uses the engine's rule rather than restating
+it, so the rule cannot drift out from under the reader. Types are index-only by
 construction — `FlumeApi` carries values, never types — so a chain takes `PendingEntry` /
 `PendingList` / `EntryExtension` / `EntryExtensionField` / `ParseError` / `ParseResult` /
 `StandardSchemaV1` through `import type` (erased at runtime), and every value off the API

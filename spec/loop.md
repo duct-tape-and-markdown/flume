@@ -224,6 +224,20 @@ inference, so it does not try (`engine-boundary.md`, *Told, not inferred*). The
 claim is narrower and holds: the engine adds no state of its own that a crash can
 corrupt into silent misbehavior.
 
+Two consequences for the engine's own cherry-pick handling on the primary checkout:
+
+- **An abort is issued only against a sequence that started.** `cherry-pick --abort`
+  runs iff the sequencer state (`CHERRY_PICK_HEAD`, `sequencer/`) is present, never
+  blind — a blind abort after a pick that failed *before* starting a sequence would
+  reset the operator's index and working tree, taking bystanders the pick never
+  touched.
+- **Staged bystander state is checkpointed before a pick range begins.** Anything
+  staged on the primary checkout when the merge stage starts is captured as a dangling
+  commit (`git stash create`'s shape — object written, no ref moved, nothing reset) and
+  its sha recorded on the tick verdict. Never-destroy-always-leave-a-sha is the same
+  idiom span recovery rides: the operator's work is recoverable from the verdict alone
+  even if a later abort or reset disturbs it.
+
 ## Tip verify — one writer per branch, absorption at the merge
 
 The correctness backstop behind the claim's signal — but the two guard different
@@ -440,6 +454,15 @@ attempted.
   Absent on committed ticks; a handoff that ignores the field behaves identically.
   `TickResult.revertedTags` carries tags whose commits were reverted at merge time, so
   merge-thrash is distinguishable from an in-session retry.
+- **The nothing-pickable no-op is stated, not left to be reconstructed.** A fanout tick that
+  found nothing to run carries `TickResult.nothingPickable: true` and
+  `TickResult.quarantinedTags` — the tags selection skipped because the supervisor
+  quarantined them this run (*Repeated identical failures*, below). Both are facts; the
+  wake decision stays the chain's. Without them a chain reading `pendingAfter` sees the
+  quarantined entry as `open`, hands back to the same phase, and the run burns no-op
+  ticks to `--max` — the live-lock the fields exist to make expressible. Absent on every
+  tick that provisioned an entry; `quarantinedTags` is empty, never absent, on a
+  nothing-pickable tick with no quarantine.
 - **The classification reaches disk.** It rides `TickOutcome.noCommit`, the tick verdict,
   and the per-entry prior-attempt record.
 - **A wave reports one representative cause** when it shipped nothing, by precedence
@@ -469,8 +492,19 @@ dispatcher-owned `<prior-attempt>` block:
 - `tip-moved` — the expected and observed tips.
 
 - **Cross-process by construction.** Persisted at
-  `<flumeDir>/prior-attempts/<key>.json` and read by the next `flume tick` at prompt
-  render. There is no in-memory handoff to assume.
+  `<flumeDir>/prior-attempts/<key>.json` — `priorAttemptPath(flumeDir, tag)`, the
+  exported rule (`spec/pending.md`, *What the package exports*) — and read by the next
+  `flume tick` at prompt render. There is no in-memory handoff to assume.
+- **Every record is anchored.** Each variant carries `headSha` — the trunk tip when the
+  record was written — and `at`, an ISO timestamp. A chain deciding "bailed, and nothing
+  has changed since" compares `headSha` to the tip, never the record file's mtime to a
+  commit time.
+- **A gate that names its failing files earns a flake marker.** A `gate-revert` record
+  whose gate result carried `failingFiles` (`spec/chain.md`, *What a gate returns*) and
+  whose every named file is **disjoint from the reverted span's footprint** is marked
+  `suspectFlake: true`: the entry's own edits cannot have caused a failure in files it
+  never touched. The marker is derived, never trusted — the engine computes it from the
+  two lists, and a gate that reports no `failingFiles` earns no marker.
 - **Bounded by construction — a digest, not a transcript.** Gate details, diffstats,
   and agent messages are each capped at a few KB with an explicit truncation marker.
 - **No false signal.** The slot is absent on a first attempt, and a clean ship clears
@@ -516,8 +550,23 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   pure value on `TickOutcome.verdict`; the `tick` command persists it
   (`writeTickVerdict`). A unit test calling `tick()` directly gains no untracked side
   effect.
+- **Every verdict is anchored.** `headSha` is the trunk tip when the verdict was written
+  and `at` its ISO timestamp, so "has the world moved since this phase last ran" is a
+  comparison against engine state, never an inference from which paths the last commit
+  touched — and a phase need not commit on a quiet tick just to leave an anchor behind.
+- **Every agent invocation leaves a usage row.** `invocations[]` carries one row per
+  agent run in the tick — one for a singleton, one per provisioned entry under fanout —
+  with the entry `tag` (absent for a singleton), the agent's model id, turn count,
+  duration, and the token counts the agent reports: input, output, cache-creation, and
+  cache-read, each as its own field, because cost is unrecoverable without the cache
+  split. Recorded when the agent emits them, absent per field when it does not; a chain
+  wanting cost telemetry reads the verdict rather than re-parsing the agent's stream in a
+  decorator beside it.
 - **`readTickVerdicts(flumeDir, n)` is exported** so a chain can render recent tick
   history into a prompt. Whether and what to render is the chain's call.
+  **`readLatestVerdictsSync(flumeDir)`** is exported beside it, returning the most recent
+  verdict per phase name, synchronously — `shouldRun` and `handoff` are synchronous by
+  contract, and the anchor above is useless to them behind an `await`.
 - **No interpretation fields.** The artifact records what happened, never what it
   means. "Errored" is not stored: `superviseLoop` derives it at the read site from the
   facts (`gate-revert`, `platform-preempt`, `render-refused`, `tipMoved`, or a
@@ -635,8 +684,10 @@ Two legs, not either alone:
   dispatching. The quarantine crosses to each child via `FLUME_QUARANTINED_SLUGS`. It
   is run-scoped — a fresh run retries the slug, so a transient hold costs at most the
   rest of one batch — and logged distinctly (tag, stage, failure signature) so the skip
-  is visible, never silent. Only a *tagged* failure quarantines; a repo-level one no
-  entry can be blamed for falls to the backstop.
+  is visible, never silent, and reported to the chain on `TickResult.quarantinedTags`
+  (*The no-commit taxonomy*) so a handoff can tell a quarantined `open` entry from a
+  pickable one. Only a *tagged* failure quarantines; a repo-level one no entry can be
+  blamed for falls to the backstop.
 - **Consecutive-identical-failure backstop.** If the same stage-tagged signature
   repeats three consecutive ticks with no clearing tick between them, the run aborts
   non-zero with a summary naming the repeated signature. This covers the

@@ -339,14 +339,15 @@ resolved `flumeDir`, same idiom as `seedDir`.
 ## Supervisor policy is a chain-overridable default
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
-number; maxParallel?: number; tickTimeoutMs?: number }` (`src/Phase.ts:Chain`).
-The engine's loop policy — run-scoped quarantine of an entry slug whose
-worktree provisioning failed, abort after three consecutive identical failure
-signatures, fanout batch width, and the per-invocation wall-clock cap — ships
-as **defaults, not behavior** (`src/Dispatcher.ts:superviseLoop`,
-`quarantineScope ?? "run"`, `abortThreshold ?? 3`; `runFanout`,
-`maxParallel ?? 4`; `tickTimeoutMs` default unset — no cap). A chain declaring
-nothing gets the defaults byte-identically.
+number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[] }`
+(`src/Phase.ts:Chain`). The engine's loop policy — run-scoped quarantine of an
+entry slug whose worktree provisioning failed, abort after three consecutive
+identical failure signatures, fanout batch width, the per-invocation wall-clock
+cap, and the paths the fanout partition ignores — ships as **defaults, not
+behavior** (`src/Dispatcher.ts:superviseLoop`, `quarantineScope ?? "run"`,
+`abortThreshold ?? 3`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default
+unset — no cap; `partitionIgnore` default `[]`). A chain declaring nothing gets
+the defaults byte-identically.
 
 **The block's fields split by read scope, and the split is principled:**
 
@@ -361,10 +362,11 @@ nothing gets the defaults byte-identically.
   consecutive-failure streak are run-scoped accounting that resets per
   `superviseLoop` call, so a mid-run change would rewrite the rules the
   accumulated counts were gathered under.
-- **`maxParallel` and `tickTimeoutMs` are read per tick**, straight off the
-  tick's own resolved chain (`runFanout`,
+- **`maxParallel`, `tickTimeoutMs`, and `partitionIgnore` are read per tick**,
+  straight off the tick's own resolved chain (`runFanout`,
   `chain.supervisorPolicy?.maxParallel ?? this.maxParallel`; `tickTimeoutMs`
-  the same shape against `DispatcherOptions.tickTimeoutMs`). Neither
+  the same shape against `DispatcherOptions.tickTimeoutMs`; `partitionIgnore`
+  handed to the partition, `spec/pending.md` *Fanout partition*). None
   accumulates run-scoped state, so there is nothing a mid-run change would
   corrupt — the per-tick chain reload governs.
 
@@ -417,6 +419,26 @@ doctrine**, and the default guidance is:
 - A gate reads the tick's touched paths from `GateContext.touchedPaths`, which
   the dispatcher computes once per commit, instead of re-shelling
   `git show --name-only` per gate.
+- **Sibling ships compose only on the trunk, and only `afterMerge` sees the
+  composition.** Two entries in one wave can each pass `afterCommit` in
+  isolation and together produce a tree neither worktree ever held — each adds
+  an import of the other's module, the cherry-picks land cleanly in different
+  files, and the linearized tree fails to load. The `afterMerge` loop runs per
+  entry on the trunk *after* that entry's cherry-pick, so the second sibling's
+  gate runs over both; a chain that placed its load-bearing verify at
+  `afterCommit` gated every commit and never the wave. This is the first bullet
+  restated for the wave case, not a new rule.
+- **A gate that should not judge a channel-only commit says so itself.** A
+  content gate over the whole tree fails on a broken base whatever the commit
+  says, so once the base is broken it reverts the very commit that reports the
+  breakage — a rescope note written and lost, and the worse the tree, the less
+  of it reaches the producer. The engine adds no skip mechanism for this: the
+  gate already receives `touchedPaths`, and the chain already declared which
+  paths are its channel, so a gate that returns `ok` when every touched path
+  matches the channel is a chain-side wrapper, not an engine flag. The
+  upstream fix is the bullet above — a verify gate at `afterMerge` keeps the
+  base from breaking in the first place — and `writablePathsGate` runs
+  regardless, so no wrapper widens the fence.
 
 The complementary constraint — naming real-subprocess tests
 `*.integration.test.ts` and excluding them from the default `vitest run` — is
@@ -445,6 +467,19 @@ confines side effects to disk inside `cwd`.
 - **`log`** is the harness-side output channel; a gate does not write to stdout
   itself.
 
+## What a gate returns
+
+`GateResult` (`src/Gate.ts:GateResult`) is `{ ok, message, details?, failingFiles? }`.
+
+- **`failingFiles?: string[]`** — repo-relative paths the gate attributes the
+  failure to, when the gate's runner can name them (a test reporter's JSON, a
+  type-checker's diagnostics). The chain knows its runner; the engine knows the
+  span's footprint. When both are present the engine derives the
+  suspect-flake marker on the prior-attempt record (`spec/loop.md`,
+  *Prior-outcome feedback*) — mechanically, from list disjointness, never by
+  reading the gate's prose. An absent field is today's behavior: no marker,
+  no inference.
+
 ## The builtin gates
 
 The set is deliberately small — the gates most chains reach for, so a chain
@@ -457,7 +492,13 @@ does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
   `failHint` (default `"<name> failed"`) and `details` carries the captured
   output. `env` merges over `process.env` for the spawned command — the
   injection point that keeps a chain from hand-forking the gate to inject one
-  variable.
+  variable. The gate it returns declares `command` — the `cmd` and `args` it
+  will run, rendered as one line — which the harness block shows the agent
+  beside the gate's name (`spec/prompt.md`, *The harness block*), so a chain
+  wanting the agent to self-check before committing does not restate the
+  command in its prompt from a parallel constant. `Gate.command?: string` is
+  optional on the type: a hand-rolled gate with no single command line
+  declares none and renders as name alone.
 - **`maxBuffer` defaults to 16 MiB, and an overrun reads as a failing check.**
   Exceeding it rejects the exec, and the same catch that reports a non-zero
   exit reports this — so a command that would have passed reverts a clean

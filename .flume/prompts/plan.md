@@ -66,7 +66,7 @@ in `tests[]`. Never a follow-up entry the audit has to file (operator ruling 202
 
 **Drain (inbox).** Trigger: `<inbox>` non-empty. Each entry routes to one of: pending entry (with `per` cite), open question (parked), or accepted-debt (one-line in commit body). Remove drained entries; preserve the `inbox.md` header. The inbox is a queue, not a log.
 
-**Promote (unblock).** Trigger: any entry in `<pending-now>` with `gate.kind === "blockedBy"` whose `gate.tag` is no longer a tag in `<pending-now>`. Flip such entries to `gate.kind: "open"`. This is mechanical — process all of them.
+**Promote (unblock).** Trigger: any entry in `<pending-now>` with `gate.kind === "blockedBy"` any of whose `gate.tags` is no longer a tag in `<pending-now>`. Remove the landed tags from the list; when the list empties, flip the entry to `gate.kind: "open"`. This is mechanical — process all of them.
 
 **Sweep (posture).** Trigger: commits past the `Posture swept through:` stamp in `<state>` touch the sweep domain (`src/`, `tests/`, `bin/`, `examples/`) or a posture page (`.claude/rules/{engineering,engine-boundary}.md`). Apply the posture pages to code that already exists — a ratified phrase governs nothing until it is swept. Mechanics, frontier, cursor, and stamp: `.claude/rules/posture-sweep.md`, which binds this dimension. One neighborhood per tick, and only on a tick where `<pending-now>` carries no pickable entry — the sweep yields to pickable work: while entries are pickable, hand off to build and leave the rotation untouched in `<state>` (frontier and cursor persist; coverage is deferred, never lost). An open rotation sets `Plan continues: yes` only once the queue is drained; quiet-on-clean advances the stamp alone.
 

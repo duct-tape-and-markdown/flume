@@ -78,7 +78,10 @@ hardcodes `.flume/` while the dispatcher reads a relocated root.
 `prependHarnessBlock` (`src/Prompt.ts`) states, in the engine's own voice, what the
 engine will enforce on this tick. It renders the phase name, the phase's `concurrency`,
 the write fence, and the gates that run automatically after the commit — each as
-`name (when)`, or `(none)`.
+`name (when)`, followed by `: <command>` when the gate declares one (`spec/chain.md`,
+*The builtin gates*), or `(none)`. The command is the gate's own declaration rendered
+verbatim, so what the agent is told it can run to check itself is what the engine will run
+to judge it.
 
 **Unscoped ticks** — singleton phases, and fanout ticks with no assigned entry — render
 the phase's `writablePaths` under `Writable paths (anything else you modify will revert
