@@ -5302,6 +5302,141 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
       existsSync(join(fx.repo, ".flume", "prior-attempts", "plan.json")),
     ).toBe(false);
   }, 20_000);
+
+  // ---------- suspectFlake derivation (spec/chain.md "What a gate
+  // returns", spec/loop.md "Prior-outcome feedback") ----------
+  //
+  // GateResult.failingFiles lets the dispatcher derive `suspectFlake` on the
+  // persisted gate-revert record mechanically, from list disjointness
+  // against the reverted span's own touched paths — never from the gate's
+  // prose. Exercised at the afterCommit revert site (singleton), the
+  // simplest path that reaches `buildPriorAttempt`; the afterMerge sites
+  // thread the same `failingFiles` field through the same helper.
+
+  async function readPlanPriorAttempt(): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await readFile(
+        join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+  }
+
+  it("gate-revert record: failingFiles disjoint from the reverted span's footprint → suspectFlake:true", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const failing: Gate = {
+      name: "flaky-gate",
+      when: "afterCommit",
+      async run() {
+        return {
+          ok: false,
+          message: "unrelated failure",
+          failingFiles: ["totally/unrelated.ts"],
+        };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = await readPlanPriorAttempt();
+    expect(record.mode).toBe("gate-revert");
+    expect(record.suspectFlake).toBe(true);
+  }, 20_000);
+
+  it("gate-revert record: failingFiles overlaps the reverted span's footprint → no suspectFlake marker", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const failing: Gate = {
+      name: "real-gate",
+      when: "afterCommit",
+      async run() {
+        return {
+          ok: false,
+          message: "genuine failure",
+          failingFiles: ["src/o.ts"],
+        };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = await readPlanPriorAttempt();
+    expect(record.mode).toBe("gate-revert");
+    expect(record.suspectFlake).toBeUndefined();
+  }, 20_000);
+
+  it("gate-revert record: no failingFiles on the gate result → no suspectFlake marker (today's behavior)", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const failing: Gate = {
+      name: "silent-gate",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "no attribution offered" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    const record = await readPlanPriorAttempt();
+    expect(record.mode).toBe("gate-revert");
+    expect(record.suspectFlake).toBeUndefined();
+  }, 20_000);
 });
 
 // ---------- no-commit outcome taxonomy (§6) ----------

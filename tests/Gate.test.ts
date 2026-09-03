@@ -374,6 +374,38 @@ describe("Gate.command — optional field, type passthrough", () => {
   });
 });
 
+// ---------- GateResult.failingFiles (spec/chain.md "What a gate returns") ----------
+
+describe("GateResult.failingFiles — optional, type passthrough", () => {
+  it("a hand-built Gate compiles and runs with no failingFiles declared", async () => {
+    const gate: Gate = {
+      name: "no-failing-files",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "boom" };
+      },
+    };
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.failingFiles).toBeUndefined();
+  });
+
+  it("a hand-built Gate compiles and runs with failingFiles declared", async () => {
+    const gate: Gate = {
+      name: "with-failing-files",
+      when: "afterCommit",
+      async run() {
+        return {
+          ok: false,
+          message: "boom",
+          failingFiles: ["src/a.ts", "src/b.ts"],
+        };
+      },
+    };
+    const result = await gate.run(ctx(process.cwd()));
+    expect(result.failingFiles).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+});
+
 // ---------- chainLoadGate (RELEASE-v0.2 §3) ----------
 
 const VALID_CHAIN =

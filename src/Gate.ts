@@ -90,6 +90,16 @@ export interface GateResult {
   message: string;
   /** Optional captured output (e.g. tsc stderr) for context injection. */
   details?: string;
+  /**
+   * Repo-relative paths the gate attributes the failure to, when its runner
+   * can name them (a test reporter's JSON, a type-checker's diagnostics).
+   * When present alongside the reverted span's own touched paths, the
+   * dispatcher derives the suspect-flake marker on the prior-attempt record
+   * mechanically, from list disjointness — never from this gate's prose
+   * (spec/chain.md "What a gate returns"). Absent is today's behavior: no
+   * marker, no inference. No builtin gate populates this yet.
+   */
+  failingFiles?: string[];
 }
 
 /**

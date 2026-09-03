@@ -602,6 +602,24 @@ function gateFailureSignature(failure: { gate: string; message: string }): strin
   return bound(`${failure.gate}: ${failure.message}`.trim(), MAX_FAILURE_SIGNATURE);
 }
 
+/**
+ * spec/chain.md "What a gate returns": a gate-revert record earns
+ * `suspectFlake: true` only when the gate named `failingFiles` AND every
+ * named file is disjoint from the reverted span's own footprint — the
+ * entry's own edits cannot have caused a failure in files it never touched.
+ * Mechanical, from list disjointness alone; never inferred from gate prose,
+ * and never derived from an absent or empty `failingFiles` (non-vacuous:
+ * nothing named means nothing to disjoint-check).
+ */
+function isSuspectFlake(
+  failingFiles: string[] | undefined,
+  footprint: string[],
+): boolean {
+  if (!failingFiles || failingFiles.length === 0) return false;
+  const touched = new Set(footprint);
+  return failingFiles.every((f) => !touched.has(f));
+}
+
 // ---------- public surface ----------
 
 /**
@@ -1664,7 +1682,12 @@ export class Dispatcher {
               mergedSha,
             );
             let entryFailure:
-              | { gate: string; message: string; details?: string }
+              | {
+                  gate: string;
+                  message: string;
+                  details?: string;
+                  failingFiles?: string[];
+                }
               | undefined;
             for (const gate of afterMergeGates) {
               const gr = await gate.run({
@@ -1688,6 +1711,7 @@ export class Dispatcher {
                   gate: gate.name,
                   message: gr.message,
                   ...(gr.details ? { details: gr.details } : {}),
+                  ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
                 };
                 break;
               }
@@ -1702,6 +1726,7 @@ export class Dispatcher {
                 entryFailure,
                 repoRoot,
                 mergedSha,
+                commitTouchedPaths,
               );
               await this.writePriorAttempt(key, record);
               noCommit = "gate-revert";
@@ -2159,7 +2184,12 @@ export class Dispatcher {
         mergedSha,
       );
       let entryFailure:
-        | { gate: string; message: string; details?: string }
+        | {
+            gate: string;
+            message: string;
+            details?: string;
+            failingFiles?: string[];
+          }
         | undefined;
       // `mergeGateResults` is a wave-cumulative accumulator (never reset
       // per entry — `allGateResults` below needs the whole wave's worth).
@@ -2190,6 +2220,7 @@ export class Dispatcher {
             gate: gate.name,
             message: gr.message,
             ...(gr.details ? { details: gr.details } : {}),
+            ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
           };
           break;
         }
@@ -2209,6 +2240,7 @@ export class Dispatcher {
           entryFailure,
           repoRoot,
           mergedSha,
+          commitTouchedPaths,
         );
         await this.writePriorAttempt(
           this.priorAttemptKey(phase, r.entry),
@@ -2847,7 +2879,12 @@ export class Dispatcher {
   ): Promise<{
     ok: boolean;
     /** First failing gate, structured so callers can persist a §5 record. */
-    failure?: { gate: string; message: string; details?: string };
+    failure?: {
+      gate: string;
+      message: string;
+      details?: string;
+      failingFiles?: string[];
+    };
     results: GateResultEntry[];
     /** The commit's touched paths, already computed for the gate loop below —
      * exposed so callers don't re-derive via a second `git show --name-only`
@@ -2918,6 +2955,7 @@ export class Dispatcher {
             gate: gate.name,
             message: r.message,
             ...(r.details ? { details: r.details } : {}),
+            ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
           },
           results,
           touchedPaths: commitTouchedPaths,
@@ -2950,10 +2988,21 @@ export class Dispatcher {
     key: string,
     label: string,
     gateFailureTag: string | undefined,
-    failure: { gate: string; message: string; details?: string },
+    failure: {
+      gate: string;
+      message: string;
+      details?: string;
+      failingFiles?: string[];
+    },
     touchedPaths: string[],
   ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
-    const record = await this.buildPriorAttempt("afterCommit", failure, cwd, sha);
+    const record = await this.buildPriorAttempt(
+      "afterCommit",
+      failure,
+      cwd,
+      sha,
+      touchedPaths,
+    );
     await this.writeRevertNote(chain, cwd, sha, label, failure);
     await this.snapshotRevertedFiles(cwd, sha, key);
     await git.dropLastCommit(cwd, sha);
@@ -3630,9 +3679,19 @@ export class Dispatcher {
 
   private async buildPriorAttempt(
     when: GateRevertAttempt["when"],
-    failure: { gate: string; message: string; details?: string },
+    failure: {
+      gate: string;
+      message: string;
+      details?: string;
+      failingFiles?: string[];
+    },
     diffCwd: string,
     sha: string,
+    /**
+     * The reverted span's own touched paths (spec/chain.md "What a gate
+     * returns") — the footprint `suspectFlake` disjointness reads against.
+     */
+    footprint: string[],
   ): Promise<GateRevertAttempt> {
     const diffStat = await this.capturedDiffStat(diffCwd, sha);
     return {
@@ -3644,6 +3703,9 @@ export class Dispatcher {
         ? { details: tailBound(failure.details, MAX_PRIOR_DETAILS) }
         : {}),
       diffStat,
+      ...(isSuspectFlake(failure.failingFiles, footprint)
+        ? { suspectFlake: true }
+        : {}),
     };
   }
 

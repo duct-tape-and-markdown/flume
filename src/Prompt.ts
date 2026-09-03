@@ -76,6 +76,14 @@ export interface GateRevertAttempt {
   details?: string;
   /** `git show --stat` digest of the reverted commit, bounded. */
   diffStat: string;
+  /**
+   * Set when the gate's `failingFiles` (`GateResult.failingFiles`) is present
+   * and every entry in it is disjoint from the reverted span's own touched
+   * paths — derived mechanically by the dispatcher, never inferred from gate
+   * prose (spec/chain.md "What a gate returns"). Absent when either list is
+   * missing or the lists overlap: an absent field is never read as flaky.
+   */
+  suspectFlake?: boolean;
 }
 
 /**
