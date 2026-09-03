@@ -41,8 +41,31 @@ export interface GateContext {
    * relocatable via `FLUME_DIR`). A gate reads state-relative paths from here
    * (`join(ctx.flumeDir, "plan", "pending.json")`) instead of hardcoding
    * `.flume/` or reaching into `process.env` (RELEASE-v0.3 §16).
+   *
+   * This is the **primary checkout's** state root at both gate points, never
+   * rebased onto a worktree: runtime state (`awake/`, `prior-attempts/`,
+   * `tick-verdicts.jsonl`) exists only there. Under `afterCommit` it is
+   * therefore *not* nested under `repoRoot` — the worktree lives inside it —
+   * so a gate never derives a repo-relative path from `flumeDir` and
+   * `repoRoot` directly; use `stateRootRel` for that (spec/chain.md "What a
+   * gate receives").
    */
   flumeDir: string;
+  /**
+   * `flumeDir`'s path relative to the primary repo root, set when the state
+   * root lives inside the repo and absent when it is relocated outside it
+   * (an absolute `FLUME_DIR`, or one that climbs out via `..`). The one value
+   * a gate needs to read a **tracked** state-root file as a given commit
+   * held it — `git show <commitSha>:<stateRootRel>/plan/pending.json` —
+   * without hardcoding `.flume` or re-deriving the offset itself. Computed
+   * once by the dispatcher and shared with its own friction-harvest use of
+   * the same offset (`.claude/rules/engineering.md` "The fix lands at the
+   * mechanism"). Optional so hand-built `GateContext` fixtures that predate
+   * this field keep compiling; every dispatcher-constructed context sets it
+   * (to a string, or explicitly to `undefined` when the state root is
+   * relocated).
+   */
+  stateRootRel?: string | undefined;
   /**
    * Absolute path of the chain/prompts dir (`<configDir>/chain.ts`, default
    * `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md

@@ -671,6 +671,25 @@ export function priorAttemptsDir(flumeDir: string): string {
 }
 
 /**
+ * The state root's path relative to the primary repo root, or `undefined`
+ * when the state root is relocated outside it (climbs out via `..`, or is
+ * already absolute — a relocated `flumeDir` set by an absolute `FLUME_DIR`).
+ * Computed once, from the two roots that never change after construction,
+ * and shared by every `GateContext.stateRootRel` and by `harvestFriction`'s
+ * own worktree-mirror check (spec/chain.md "What a gate receives";
+ * `.claude/rules/engineering.md` "The fix lands at the mechanism") — neither
+ * re-derives it.
+ */
+export function computeStateRootRel(
+  repoRoot: string,
+  flumeDir: string,
+): string | undefined {
+  const rel = relative(repoRoot, flumeDir);
+  const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  return outside ? undefined : rel;
+}
+
+/**
  * Length bound for `createWorktree`'s directory-name component only (§9,
  * v0.11). `git worktree add` refuses a worktree path around 200 chars on
  * win32 (`fatal: '$GIT_DIR' too big`) — below MAX_PATH, unaffected by
@@ -1381,6 +1400,7 @@ export class Dispatcher {
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
   private readonly flumeDir: string;
+  private readonly stateRootRel: string | undefined;
   private readonly pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses (v0.8 §2). */
@@ -1389,6 +1409,7 @@ export class Dispatcher {
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
     this.flumeDir = opts.flumeDir ?? join(opts.repoRoot, ".flume");
+    this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
     this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;
     this.maxParallel = opts.maxParallel ?? 4;
@@ -1845,6 +1866,7 @@ export class Dispatcher {
                 cwd: repoRoot,
                 repoRoot,
                 flumeDir: this.flumeDir,
+                stateRootRel: this.stateRootRel,
                 configDir: this.opts.configDir,
                 phaseName: phase.name,
                 commitSha: mergedSha,
@@ -2379,6 +2401,7 @@ export class Dispatcher {
           cwd: repoRoot,
           repoRoot,
           flumeDir: this.flumeDir,
+          stateRootRel: this.stateRootRel,
           configDir: this.opts.configDir,
           phaseName: phase.name,
           commitSha: mergedSha,
@@ -3131,6 +3154,7 @@ export class Dispatcher {
         cwd,
         repoRoot: cwd,
         flumeDir: this.flumeDir,
+        stateRootRel: this.stateRootRel,
         configDir,
         phaseName: phase.name,
         commitSha,
@@ -3252,14 +3276,9 @@ export class Dispatcher {
     tag: string,
   ): Promise<void> {
     if (chain.friction === undefined) return;
-    const stateRootRel = relative(this.opts.repoRoot, this.flumeDir);
-    const relocated =
-      stateRootRel === ".." ||
-      stateRootRel.startsWith(`..${sep}`) ||
-      isAbsolute(stateRootRel);
-    if (relocated) return;
+    if (this.stateRootRel === undefined) return;
 
-    const mirrorDir = join(worktreePath, stateRootRel, chain.friction);
+    const mirrorDir = join(worktreePath, this.stateRootRel, chain.friction);
     let entries: Dirent[];
     try {
       // win32 MAX_PATH (`.claude/rules/platform-facts.md`): mirrorDir nests
@@ -3289,7 +3308,7 @@ export class Dispatcher {
     // content is irrelevant to the check.
     const files: Dirent[] = [];
     for (const file of candidates) {
-      const relPath = join(stateRootRel, chain.friction, file.name);
+      const relPath = join(this.stateRootRel, chain.friction, file.name);
       let atHead: string | null;
       try {
         atHead = await git.readFileAtRef(worktreePath, "HEAD", relPath);

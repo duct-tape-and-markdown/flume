@@ -35,6 +35,7 @@ import {
   vitestGate,
   writablePathsGate,
 } from "../src/builtinGates.ts";
+import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { GateContext } from "../src/Gate.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer",
 // CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call shellGate/tscGate/
@@ -52,11 +53,18 @@ import type {
 const exec = promisify(execFile);
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
+  const repoRoot = overrides.repoRoot ?? cwd;
+  const flumeDir = overrides.flumeDir ?? join(cwd, ".flume");
   return {
     cwd,
-    flumeDir: join(cwd, ".flume"),
+    flumeDir,
+    // Default fixture shape has flumeDir nested under repoRoot (the
+    // afterMerge/no-worktree shape) — computeStateRootRel handles it the
+    // same as the dispatcher-built case. The dedicated "real afterCommit
+    // shape" regression test below overrides both explicitly.
+    stateRootRel: computeStateRootRel(repoRoot, flumeDir),
     configDir: join(cwd, ".flume"),
-    repoRoot: cwd,
+    repoRoot,
     phaseName: "test-phase",
     log: () => {},
     ...overrides,
@@ -415,6 +423,80 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+});
+
+describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, engineering.md 'A seam gate reads what the real writer wrote')", () => {
+  // Every other pendingGate test in this file builds its GateContext with
+  // flumeDir *nested under* repoRoot (`ctx()`'s default) — the afterMerge/
+  // no-worktree shape. That is not the shape `runAfterCommitGates` actually
+  // builds: there, flumeDir is the *primary* checkout's state root and
+  // repoRoot is a fanout worktree living *inside* it
+  // (`<flumeDir>/worktrees/<slug>`), the reverse nesting. Pre-fix,
+  // pendingGate derived its own relative offset from `ctx.repoRoot` and
+  // `ctx.flumeDir` — correct only under the inverted fixture shape, and
+  // misreading a real worktree's offset as a relocated state root, silently
+  // falling back to the primary checkout's on-disk (pre-cherry-pick) copy.
+  // This reproduces the real shape with an actual `git worktree add` so the
+  // gate reads the *gated commit's* content through `stateRootRel`, not a
+  // hand-authored fixture that never exercises the bug.
+  let repo: string;
+  let flumeDir: string;
+  let worktreePath: string;
+
+  beforeEach(async () => {
+    repo = await createBootstrappedRepo("flume-pendinggate-realshape-");
+    flumeDir = join(repo, ".flume");
+    await commitFiles(repo, {
+      ".flume/plan/pending.json": JSON.stringify([validEntry]),
+    });
+    worktreePath = join(flumeDir, "worktrees", "srr");
+    await exec(
+      "git",
+      ["worktree", "add", "-b", "srr-work", worktreePath, "HEAD"],
+      { cwd: repo },
+    );
+  });
+
+  afterEach(async () => {
+    await exec("git", ["worktree", "remove", "--force", worktreePath], {
+      cwd: repo,
+    }).catch(() => {});
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("reads the gated commit's tracked pending.json via stateRootRel, not the stale primary-checkout disk copy", async () => {
+    const offFenceEntry = {
+      ...validEntry,
+      files: {
+        new: [],
+        edit: [{ path: "spec/loop.md", description: "off-fence" }],
+        retire: [],
+      },
+    };
+    // Committed on the worktree branch — the primary checkout's own disk
+    // copy of `.flume/plan/pending.json` (under `flumeDir`) is untouched by
+    // this and still holds the clean `validEntry` written above.
+    const violatingSha = await commitFiles(
+      worktreePath,
+      { ".flume/plan/pending.json": JSON.stringify([offFenceEntry]) },
+      "worktree: off-fence",
+    );
+
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run({
+      cwd: worktreePath,
+      repoRoot: worktreePath,
+      flumeDir,
+      stateRootRel: computeStateRootRel(repo, flumeDir),
+      configDir: flumeDir,
+      phaseName: "build",
+      commitSha: violatingSha,
+      log: () => {},
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/outside the target fence/);
   });
 });
 

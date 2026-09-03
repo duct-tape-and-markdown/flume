@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9970,6 +9970,132 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
     // afterMerge runs on the trunk after the cherry-pick lands.
     expect(mergeRepoRoot).toBe(fx.repo);
     expect(mergeRepoRoot).toBe(mergeCwd);
+  }, 20_000);
+});
+
+describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, spec/chain.md 'What a gate receives')", () => {
+  it("singleton tick: an afterCommit gate's stateRootRel is flumeDir's offset from repoRoot, with the worktree nested inside flumeDir (the real afterCommit shape)", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let commitStateRootRel: string | undefined;
+    let commitRepoRoot: string | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-staterootrel",
+      when: "afterCommit",
+      run(ctx) {
+        commitStateRootRel = ctx.stateRootRel;
+        commitRepoRoot = ctx.repoRoot;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    let mergeStateRootRel: string | undefined;
+    const captureMerge: Gate = {
+      name: "capture-merge-staterootrel",
+      when: "afterMerge",
+      run(ctx) {
+        mergeStateRootRel = ctx.stateRootRel;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [captureCommit, captureMerge],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+
+    const flumeDir = join(fx.repo, ".flume");
+    const expected = relative(fx.repo, flumeDir);
+    // Not the inverted shape a hand-built fixture might assume (flumeDir
+    // nested under repoRoot): here the worktree (afterCommit's repoRoot)
+    // is nested *inside* flumeDir, and stateRootRel is still flumeDir's
+    // own offset from the primary repoRoot, not derived from the worktree.
+    expect(commitRepoRoot).toBeDefined();
+    expect(commitRepoRoot as string).toContain(flumeDir);
+    expect(commitStateRootRel).toBe(expected);
+    expect(mergeStateRootRel).toBe(expected);
+  });
+
+  it("fanout tick: stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-staterootrel-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(
+        pendingPath,
+        JSON.stringify(
+          [makeEntry("SRR-RELOC", ["src/srr-reloc.ts"])],
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      let gateRan = false;
+      let commitStateRootRel: string | undefined;
+      const captureCommit: Gate = {
+        name: "capture-commit-staterootrel-reloc",
+        when: "afterCommit",
+        run(ctx) {
+          gateRan = true;
+          commitStateRootRel = ctx.stateRootRel;
+          return Promise.resolve({ ok: true, message: "captured" });
+        },
+      };
+
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        gates: [captureCommit],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      const agent = fanoutAgent({
+        "srr-reloc": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/srr-reloc.ts",
+            "reloc\n",
+            "build(SRR-RELOC): ship",
+          ),
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+      expect(outcome.result?.shippedTags).toEqual(["SRR-RELOC"]);
+      // The gate ran — its captured value is explicitly `undefined`, not
+      // merely never invoked.
+      expect(gateRan).toBe(true);
+      expect(commitStateRootRel).toBeUndefined();
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
   }, 20_000);
 });
 
