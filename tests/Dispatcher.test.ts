@@ -35,6 +35,8 @@ import {
   priorAttemptPath,
   priorAttemptsDir,
   computeStateRootRel,
+  tickVerdictPath,
+  tickVerdictsLogPath,
   type ChainModule,
   type DispatcherOptions,
   type Logger,
@@ -6948,7 +6950,7 @@ describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", ()
   it("a tip-moved tick is distinguishable in the run's errored-tick classification, even though it is never a NoCommitMode", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
-    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
 
     const runTick = async (): Promise<{ exitCode: number | null }> => {
       await writeFile(
@@ -6994,9 +6996,9 @@ describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", ()
  * `errored`; §5 derives that at the read site instead).
  */
 describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact (v0.8 §5)", () => {
-  const latestPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const latestPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
   const historyPath = (): string =>
-    join(fx.repo, ".flume", "tick-verdicts.jsonl");
+    tickVerdictsLogPath(join(fx.repo, ".flume"));
 
   it("writes a record readable back verbatim, appends it to the bounded history log", async () => {
     const v = verdictFixture({ shippedTags: ["TEST-A"] });
@@ -8582,7 +8584,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   it("a run with one errored tick and one shipped entry: SuperviseResult reports shipped>0 and errored>0, error named", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
-    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
 
     let calls = 0;
     const runTick = async (): Promise<{ exitCode: number | null }> => {
@@ -8629,7 +8631,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   it("render-refused (RELEASE-v0.10 §3) counts as errored — a broken prompt is a genuine failure, not a voluntary-bail no-op", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
-    const verdictPath = join(fx.repo, ".flume", "tick-verdict.json");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
 
     const runTick = async (): Promise<{ exitCode: number | null }> => {
       await writeFile(
@@ -8749,7 +8751,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
  * errored-accounting tests above, same `runTick` fixture idiom.
  */
 describe("superviseLoop — merge-stage-only failure counts as errored (loop-merge-failure-errored-accounting)", () => {
-  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("a tick recording only mergeFailures with zero shippedTags and no gate revert is counted in erroredTicks", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8887,7 +8889,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
  * worktree provisioning failure isolates one entry (§16)` suite).
  */
 describe("superviseLoop — provisioning-failure quarantine & consecutive-failure abort backstop (§16)", () => {
-  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("quarantines a tagged failure after its first tick and carries it to the next child tick", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -9121,7 +9123,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
  * above prove).
  */
 describe("superviseLoop — the §16 backstop generalizes to merge- and gate-stage failures", () => {
-  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("quarantines a tagged merge-stage failure exactly like a tagged provisioning failure", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -9450,7 +9452,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
  * already proves defaults through when neither option is passed.
  */
 describe("superviseLoop — supervisor policy knobs override the §16 defaults (v0.8 §8)", () => {
-  const verdictPath = (): string => join(fx.repo, ".flume", "tick-verdict.json");
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("abortThreshold: 2 aborts on the second consecutive identical signature, not the third", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

@@ -444,11 +444,13 @@ const TICK_VERDICTS_LOG_FILE = "tick-verdicts.jsonl";
 /** Bound on {@link TICK_VERDICTS_LOG_FILE} — a rolling window, not an unbounded log. */
 const MAX_TICK_VERDICTS = 200;
 
-function tickVerdictPath(flumeDir: string): string {
+/** Path to {@link TICK_VERDICT_FILE} under a given flume dir — the same rule `writeTickVerdict`/`clearTickVerdict` key writes by, exported so a consumer never restates it. */
+export function tickVerdictPath(flumeDir: string): string {
   return join(flumeDir, TICK_VERDICT_FILE);
 }
 
-function tickVerdictsLogPath(flumeDir: string): string {
+/** Path to {@link TICK_VERDICTS_LOG_FILE} under a given flume dir — the same rule `writeTickVerdict`/`readTickVerdicts` key writes and reads by, exported so a consumer never restates it. */
+export function tickVerdictsLogPath(flumeDir: string): string {
   return join(flumeDir, TICK_VERDICTS_LOG_FILE);
 }
 
