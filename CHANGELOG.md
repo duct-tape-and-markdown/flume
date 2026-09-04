@@ -11,6 +11,117 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-03
+
+The feedback release: **the engine hands out what it knows.** Every entry
+here traces to a consumer harness (temper, centercode-platform, freelance)
+that had to rebuild an engine fact by hand — parsing agent output the engine
+had already decoded, copying a path rule it owns, inferring from commit
+shape whether a phase ran, or handing off on a queue the supervisor was
+silently skipping. The fixes report facts; the wake decisions stay the
+chain's. Nine GitHub issues close on this tag.
+
+### Breaking
+
+- **`gate.blockedBy` carries `tags`, a non-empty list** (`spec/pending.md`,
+  *The entry core*). The single-`tag` form is gone: a DAG with two parents
+  was being flattened into a spine of dependencies that did not exist,
+  destroying at authoring time the parallelism the fanout partitioner exists
+  to find. An entry is pickable once **every** named tag has shipped; wave
+  auto-unblock removes shipped tags one at a time and opens the gate when
+  the list empties. An empty list is a parse error, never an open gate.
+  Migration: rewrite `{ "kind": "blockedBy", "tag": "X" }` as
+  `{ "kind": "blockedBy", "tags": ["X"] }` in `pending.json`, and update any
+  prompt or rule prose that spells the old shape — `renderSchemaForPrompt`
+  already renders the new one.
+
+### Added
+
+- **`TickResult.quarantinedTags` and `TickResult.nothingPickable`**
+  (`spec/loop.md`, *The no-commit taxonomy*). A fanout tick that found nothing
+  to run says so, and names the tags selection skipped because the supervisor
+  quarantined them this run. Without them a chain handing off on "anything
+  open" re-woke a phase that would pick nothing until `--max` — the live-lock
+  temper's dogfood chain reported twice. `pendingAfter` stays the queue as
+  it is on disk.
+- **`supervisorPolicy.partitionIgnore`** (`spec/pending.md`, *Fanout
+  partition*). Globs the fanout partition treats as touched by nobody — a
+  per-member lock every ship re-pins, a generated index — so a job whose every
+  entry shares one file no longer serializes to a one-entry wave. Narrows the
+  partition set only; the fence, the write guard, and ship detection are
+  untouched. Read per tick like `maxParallel`.
+- **Tick verdicts are anchored and carry usage** (`spec/loop.md`, *The tick
+  verdict*). Every verdict has `headSha` and `at`, so "has the world moved
+  since this phase last ran" is a comparison against engine state and a
+  phase need not commit on a quiet tick to leave an anchor. `invocations[]`
+  holds one row per agent run — tag, model, turns, duration, and input,
+  output, cache-creation, and cache-read tokens as separate fields, because
+  cost is unrecoverable without the cache split. `readLatestVerdictsSync`
+  serves the latest verdict per phase to `shouldRun`/`handoff`, which cannot
+  `await`. `TickVerdictInvocation` and `AgentUsage` are type-exported.
+- **Prior-attempt records are anchored, and their path rule is exported**
+  (`spec/loop.md`, *Prior-outcome feedback*; `spec/pending.md`, *What the
+  package exports*). Every record carries `headSha` and `at`; `slugify`,
+  `priorAttemptPath`, and `priorAttemptsDir` ride `src/index.ts` and
+  `FlumeApi`, so a chain scanning `prior-attempts/` uses the engine's rule
+  instead of a copy that breaks silently on rename.
+- **`Gate.command` renders in the `<harness>` block** (`spec/chain.md`, *The
+  builtin gates*; `spec/prompt.md`, *The harness block*). `shellGate` and the
+  package-manager gates built on it declare the command line they will run,
+  and the harness block shows it beside the gate's name, so a chain wanting
+  the agent to self-check before committing no longer restates the command
+  from a parallel constant.
+- **`GateResult.failingFiles` and the `suspectFlake` marker** (`spec/chain.md`,
+  *What a gate returns*). A gate whose runner can name the files it failed on
+  reports them; the engine marks a gate-revert record `suspectFlake` when
+  every named file is disjoint from the reverted span's footprint. Derived
+  from the two lists, never from gate prose; no builtin populates the field
+  yet.
+- **`GateContext.stateRootRel`** (`spec/chain.md`, *What a gate receives*).
+  The state root's path relative to the primary repo root, set when the
+  state root lives inside the repo. `flumeDir` is declared as the primary
+  checkout's state root at both gate points and is not nested under an
+  `afterCommit` gate's `repoRoot` — the worktree lives inside it — so a gate
+  reading a tracked state-root file at the gated sha goes through this field.
+- **`tickVerdictPath` / `tickVerdictsLogPath`** exported beside the verdict
+  readers.
+
+### Fixed
+
+- **`pendingGate` judged the previous commit, not the gated one.** It read
+  trunk's `pending.json` from `flumeDir` while running inside the singleton
+  worktree 0.12 introduced, so it passed the plan commit that filed an
+  off-fence entry (green over zero entries) and reverted the next commit that
+  repaired it. It now reads the queue at `ctx.commitSha` through
+  `stateRootRel`, keeping the disk read only for a state root relocated
+  outside the repo. Found by the posture sweep on this repo's own loop.
+- **`cherry-pick --abort` no longer fires blind.** The abort runs only when
+  sequencer state exists, and staged bystander work on the primary checkout
+  is captured as a dangling commit before the merge stage begins, its sha on
+  the verdict as `bystanderCheckpointSha` (`spec/loop.md`, *Crash equals
+  stop*).
+- **The friction harvest no longer re-delivers a committed note.** The bound
+  is untracked-at-worktree-HEAD: a note the tick committed is delivered by
+  its commit or its revert snapshot, not a second stamped copy the operator
+  reconciles by hand (`spec/worktrees.md`, *Teardown harvest*).
+- **Four doc sites still described singleton ticks committing to trunk**
+  (`GateContext.repoRoot` and `GatePhase` JSDoc, `docs/CLI.md`'s job-status
+  note, the README's worktree-relocation heading). All read the 0.12 model
+  now; the CLI note also says gitignored job state survives a branch switch.
+
+### Changed
+
+- `src/cli.ts` is split along its four seams — help text, state and job
+  resolution, verdict formatting, job-verb dispatch — with `main()`'s argv
+  switch as the residual. No behavior, exit code, or CLI surface changed;
+  `tests/cli.test.ts` splits the same way.
+- `spec/chain.md` *Gate placement* states the wave case: sibling ships
+  compose only on the trunk, and only `afterMerge` sees the composition. A
+  chain that placed its load-bearing verify at `afterCommit` gated every
+  commit and never the wave. It also states that a gate declining to judge a
+  channel-only commit is a chain-side wrapper over `touchedPaths`, not an
+  engine flag.
+
 ## [0.12.0] - 2026-08-18
 
 The durability release: **the loop survives its operator.** Derived from two
