@@ -56,6 +56,29 @@ nothing re-litigates it, and it silently changes meaning the moment the
 counterparty rephrases — a localized error string, a reworded prompt, a
 convention the engine never agreed to.
 
+## Surface, not prescription
+
+The engine offers a typed place to declare a value. It does not choose
+the value, and it does not tell the chain to carry the mechanism itself.
+
+- **A default is mechanism** only when the engine consumes the value and
+  a tick cannot run without one. Everything else is optional with no
+  default; the example chain shows our value.
+- **A hook receives facts, never re-derives them.** If a chain reads env,
+  scans an engine-owned directory, or re-computes a verdict the engine
+  already holds, the engine is missing a field. Add the field.
+- **Verbatim copying is the detector.** A block that appears unchanged in
+  every consumer's chain is a missing surface, not a chain concern. A
+  spec ruling that says "the chain author does this" is the same defect
+  in prose.
+- **Opinion ships by name, opted into.** Recommended values live in
+  `examples/` and `docs/`, never as an engine default a consumer must
+  discover to turn off.
+
+**Why:** a default that encodes taste is an opinion with the engine's
+authority behind it; every consumer inherits it silently and the engine
+becomes one implementation's tool.
+
 ## Routing rule (plan, build, and interactive sessions)
 
 - When triaging a finding, first ask: **is this the engine's

@@ -35,6 +35,74 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-09-06 — loss audit v0.3→v0.13: residue outside the spec edits (interactive session via human)
+
+Filed alongside the spec edits that added `engine-boundary.md` *Surface, not
+prescription*, `spec/chain.md` *What a hook receives*, `FlumeApi.paths`,
+`ClaudeCodeOptions.model`, `AgentResult.finalMessage`, and `Chain.pendingPath`.
+Those carry their own drift notes; plan derives them from the spec diff. What
+follows is what the audit found that needs no spec change, or needs a human
+ruling first.
+
+1. **Stale ship-classification comments describe a removed inference.**
+   `src/Dispatcher.ts` `AgentTermination` doc (~611-628) says a `clean`
+   termination's final message keeps an entry out of `shipped` when it "states
+   a park"; `runFanoutEntry`'s `termination` field doc (~2772-2781) says the
+   ship site reads it. The park regex was removed (62bb03e); the call site
+   consults only `phase.shipped`. Under *Told, not inferred* a comment that
+   reads as mechanism is the named failure mode. Rewrite both to say
+   `termination` feeds the usage row only.
+
+2. **`FLUME_WORKTREES_DIR` is read inside the dispatcher** (`src/Dispatcher.ts`
+   ~3473, ~3606) while the `namespace` doc (~1097) says the dispatcher never
+   sniffs env. Embedders and tests cannot set it without mutating
+   `process.env`. Ask: `DispatcherOptions.worktreesDir`, resolved in `cli.ts`
+   beside `flumeDir`, same idiom as `namespace`. Engine hygiene, no chain
+   surface.
+
+3. **`docs/CLI.md` documents six of ten verbs.** `stop`, `log`, `check`,
+   `friction` have no section; `spec/cli.md:87` still promises one entry per
+   subcommand. Either add the four or amend the spec line to point at
+   `flume --help` as the authority (as `PROTOCOL.md` already does). Human
+   picks; the second is smaller.
+
+4. **`docs/INTENT.md` contradicts the code in two places and carries executed
+   decisions.** (a) The Provenance spine bullet says the harness verifies typed
+   inter-layer citations; `per` left the engine core in 0.8.0 and is opaque.
+   (b) "v0 success criterion" (line ~46) was never re-proven and cannot be:
+   the comparison target (`bin/flume-bash`, gen2 specs) no longer exists in
+   any live tree. (c) "Decided, not yet executed — spec corpus reform" has
+   executed. Ask: (a) restate to match 0.8+, (b) retire or restate against a
+   measurable target such as the dogfood ship ledger, (c) delete. Human edits;
+   filing so it is not lost. Cascade's session raised (b) independently.
+
+5. **`examples/prompts/spec.md` models a retired consumer shape** (workshop/ →
+   specs/active → specs/_aligned). Cascade dropped that partition in June; no
+   current consumer has a spec phase. A new adopter would build the shape
+   flume's own consumer abandoned. Ask: cut it, keep plan/build examples only.
+   Cascade's session raised this.
+
+6. **Voluntary-bail is inferred intent — needs a ruling, not an entry.** A
+   clean exit with no commit is recorded as "the agent refused a constraint"
+   (`src/Dispatcher.ts` `classifyNoCommit` ~3956-3969) and that label is
+   persisted into the prior-attempt record the next tick renders. An agent
+   that ran out of turns, or found nothing to do, gets a block saying it
+   refused to cross a constraint. Predates v0.3. Fix shape is a chain-declared
+   bail signal with the engine recording only `clean-exit`, which is a
+   taxonomy change. Parked here for the human; do not derive.
+
+7. **Multi-minor jumps have no single lookup.** Fourteen releases in four months,
+   four migration guides, one superseding two. A consumer pinned at 0.2 (cascade)
+   faced a routing table. Ask: one cumulative index in `docs/` mapping each
+   consumer-visible symbol to the release that changed it, so a jump is one
+   lookup. Docs lane; build can derive. Cascade's session raised this.
+
+8. **`docs/MIGRATING-0.12.md` §1 restores v0's gate placement without saying so.**
+   "Put correctness gates at afterMerge" is where v0 put them before
+   `afterCommit` became the documented placement. A v0-shaped chain that never
+   moved is already compliant and cannot tell. Ask: one line in the guide or the
+   0.12 changelog entry naming it a restoration. Cascade's session raised this.
+
 ## 2026-09-03 — three field observations from temper's 0.12 release round (temper-2d via human)
 
 Filed after the 0.13.0 cut commit; next-line scope. Source: temper's dogfood chain,

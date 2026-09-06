@@ -1,7 +1,14 @@
 # The pending queue
 
 The pending queue is the contract between a producer phase and a consumer phase: a JSON array
-at `<flumeDir>/plan/pending.json`, each element one unit of work. This file governs what the
+at `<flumeDir>/<Chain.pendingPath>`, each element one unit of work. `Chain.pendingPath` is a
+state-root-relative file path, the `seedDir`/`friction` idiom, defaulting to `plan/pending.json`
+— a default the engine keeps because its own mechanics read the file and a tick cannot run
+without one (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). Every engine read
+of the queue — fanout selection, the post-tick re-read, `flume status`, `flume check`, and
+`pendingGate` — resolves the one declared value; no site carries its own copy of the default.
+
+This file governs what the
 engine owns in that shape (`src/PendingSchema.ts`), what a chain declares on top of it, how an
 entry becomes pickable, how a picked entry's writes are fenced, how entries are partitioned
 into a parallel wave, and what counts as shipping one. The engine validates and interprets only
@@ -129,9 +136,13 @@ conflict, which the dispatcher aborts and leaves pending for a retry. Where a ph
 
 Two implementations, one rule set:
 
-- **`isPickableNow(entry, shippedTags, isForkResolved?, capabilities?)`** — exported for chains:
-  the handoff/pickability reasoning a chain does off the API parameter (`.flume/chain.ts`,
-  `examples/backlog-groomer-chain.ts`). Resolves `blockedBy` against a **shipped-tags set**.
+- **`isPickableNow(entry, shippedTags, isForkResolved?, capabilities?)`** — exported for tooling
+  that holds its own shipped-tags set and its own resolver (`examples/backlog-groomer-chain.ts`).
+  Resolves `blockedBy` against a **shipped-tags set**. A chain's `handoff` and `shouldRun` do not
+  call it: they read `TickResult.pickableAfter` and `TickContext.pickable`, the dispatcher's
+  verdict with the chain's resolver and capabilities already applied (`spec/chain.md`, *What a
+  hook receives*). Calling it with the default resolver and an empty capability set yields a
+  different answer for any fork- or capability-gated entry.
 - **`isPickable(entry, pending, isForkResolved?, capabilities?)`** — `src/Dispatcher.ts`, internal
   to fanout selection. Resolves `blockedBy` against the **pending list**: a dep is satisfied iff
   it is no longer pending, since entries are removed on ship.
@@ -404,11 +415,17 @@ therefore reverts every such tick. This is the opposite policy from `chainLoadGa
 
 The fence is read fresh on every run, never hoisted to construction, so a declaration-driven
 phase (writable paths backed by a per-job declaration read after the gate is built) is checked
-against its current value. `opts.pendingPath` defaults to `plan/pending.json`.
+against its current value. The queue path is `Chain.pendingPath` (*The pending queue*, above);
+`pendingGate` takes no path of its own, so the gate and the dispatcher cannot check two files.
 `opts.fenceWhen?: (entry) => boolean` selects which entries are fence-checked, defaulting to all
 — a chain that exempts, say, parked entries from the consumer fence supplies the predicate; the
 engine ships the injection point and the chain owns which `gate.kind` values count as exempt.
 `opts.hint` appends chain-authored operator guidance verbatim to both violation messages.
+
+> **Drift:** the dispatcher, `flume status`, and `flume check` each hardcode
+> `plan/pending.json` (`src/Dispatcher.ts`, `src/cli.ts`) while `pendingGate` alone accepts an
+> `opts.pendingPath`. A chain that sets the option today gets a gate that validates one file and a
+> dispatcher that dispatches from another. The option goes; `Chain.pendingPath` replaces it.
 
 ## Dispatch reads come from the tip, not the tree
 

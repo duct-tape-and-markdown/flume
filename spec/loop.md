@@ -389,9 +389,11 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
 - **Undeclared is unchanged behavior.** A phase without `shouldRun` always runs,
   byte-identically to one whose predicate returns `true`. A capability with an
   injection point, not a policy — the engine ships no default that skips anything.
-- **Context is what already exists.** The predicate sees the same `TickContext`
+- **Context is the engine's facts.** The predicate sees the same `TickContext`
   `promptArgs` sees: `cwd`, `flumeDir`, `pending` (all entries, for singleton phases
-  that read the plan), `assignedEntry` (fanout). No new plumbing.
+  that read the plan), `assignedEntry` (fanout), `pickable` (the dispatcher's own
+  selection verdict), and `priorAttempts` (every persisted record, keyed as on disk).
+  See `spec/chain.md`, *What a hook receives*.
 - **Synchronous, and cheap by contract.** It runs before every invocation; a predicate
   needing I/O is doing work that belongs in the tick it is trying to avoid.
 - **What a decline saves depends on the concurrency.** A singleton decline
@@ -453,7 +455,9 @@ attempted.
   bail that `shippedTags`/`gateResults` alone cannot distinguish from a genuine no-op.
   Absent on committed ticks; a handoff that ignores the field behaves identically.
   `TickResult.revertedTags` carries tags whose commits were reverted at merge time, so
-  merge-thrash is distinguishable from an in-session retry.
+  merge-thrash is distinguishable from an in-session retry. `TickResult.pickableAfter`
+  carries the dispatcher's own post-tick selection verdict, so "is there work for
+  build" is read, not recomputed (`spec/chain.md`, *What a hook receives*).
 - **The nothing-pickable no-op is stated, not left to be reconstructed.** A fanout tick that
   found nothing to run carries `TickResult.nothingPickable: true` and
   `TickResult.quarantinedTags` — the tags selection skipped because the supervisor
@@ -470,7 +474,8 @@ attempted.
   outrank bails because a platform failure masquerading as an agent failure is the harm
   this taxonomy exists to prevent, and a render refusal is a real defect in the
   prompt/config, so it outranks both non-defect classes. Each entry's own mode is still
-  persisted to its own prior-attempt record.
+  persisted to its own prior-attempt record, and reported on `TickResult.entries`
+  (`spec/chain.md`, *What a hook receives*) — the fold is a summary, not the only copy.
 
 ## Prior-outcome feedback to the retrying tick
 
@@ -486,7 +491,7 @@ dispatcher-owned `<prior-attempt>` block:
   the reverted commit. Fires for `afterMerge` as well as `afterCommit`: a merge-time
   failure that dies with the dispatcher process is the anti-pattern this closes.
 - `voluntary-bail` — the constraint the agent refused to cross, taken from the tail of
-  its final message.
+  `AgentResult.finalMessage` (the adapter's field, `spec/chain.md`, *The agent seam*).
 - `platform-preempt` — the failure class, marked as not a defect in the prior work.
 - `render-refused` — every failing inline-exec span's command text and stderr.
 - `tip-moved` — the expected and observed tips.
@@ -494,7 +499,9 @@ dispatcher-owned `<prior-attempt>` block:
 - **Cross-process by construction.** Persisted at
   `<flumeDir>/prior-attempts/<key>.json` — `priorAttemptPath(flumeDir, tag)`, the
   exported rule (`spec/pending.md`, *What the package exports*) — and read by the next
-  `flume tick` at prompt render. There is no in-memory handoff to assume.
+  `flume tick` at prompt render. There is no in-memory handoff to assume. The same
+  read populates `TickContext.priorAttempts` for `shouldRun` and `promptArgs`, so a
+  chain never opens the directory itself.
 - **Every record is anchored.** Each variant carries `headSha` — the trunk tip when the
   record was written — and `at`, an ISO timestamp. A chain deciding "bailed, and nothing
   has changed since" compares `headSha` to the tip, never the record file's mtime to a

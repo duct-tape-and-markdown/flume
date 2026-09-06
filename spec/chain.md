@@ -224,11 +224,24 @@ scope.
 
 Mechanism over sugar: the declared value is an `Agent`, not a model string, so
 it composes with decorators — a bare model string cannot express "same
-decorator stack, different model". A model-only variation is expressible as
-`claudeCode({ extraArgs: ["--model", "…"] })` inside the phase's agent value,
-and a chain-local helper amortizes re-stating the stack (the dogfood chain's
-`phaseAgent(model)` is the worked example). A `Phase.model` shortcut stays
-deferred until a second provider or demonstrated ergonomic pain exists.
+decorator stack, different model". There is no `Phase.model`.
+
+The model itself is a typed option on the adapter: `claudeCode({ model })`
+(`src/Agent.ts:ClaudeCodeOptions.model`), rendered to `--model <value>` on the
+argv. It has **no default** — undeclared, the binary's own default applies and
+the engine passes nothing. `extraArgs` remains the passthrough for every other
+flag; the engine types the one knob every consumer varies per phase and
+declines to mirror the rest of the CLI (`.claude/rules/engine-boundary.md`,
+*Surface, not prescription*). The result event reports the model
+that ran (`AgentUsage.model`, the resolved id), so a chain can check what
+ran against what it asked for. A chain-local helper that re-states a decorator
+stack per model is still the way to vary model under one stack; what it no
+longer does is assemble argv.
+
+> **Drift:** `ClaudeCodeOptions` has no `model` today. Two independent chains
+> (this repo's `phaseAgent`, cascade's `modelAgent`) carry the same
+> `extraArgs: ["--model", m]` helper, which is the demonstrated pain the
+> earlier deferral named as its trigger.
 
 ## The agent seam
 
@@ -236,25 +249,30 @@ An `Agent` is `{ name, invoke }` (`src/Agent.ts:Agent`) — an opaque value the
 chain supplies and the engine only calls. The engine never inspects it, so
 provider options and decorator composition are entirely the chain's.
 
-**The seam is opaque; the transcript reader is not.** One provider's NDJSON
-event vocabulary — `assistant`, `result`, `is_error`, `subtype` — is hardcoded
-in the engine, shared between the renderer and the voluntary-bail extractor. It
-has one home rather than two, but that home is engine code holding a provider's
-shape. This is accepted while Claude Code is the only shipped provider: the
-second-implementation test (`.claude/rules/engine-boundary.md`) cannot be
-answered from a sample of one, and a `transcript` hook invented against a single
-known consumer would encode that consumer's shape as everyone's. **The condition
-that reopens it is a second provider** — at that point the chain supplies its own
-extractor alongside its `Agent`, and the engine stops parsing streams entirely.
-Not a date, not a release: the appearance of the second implementation.
+**The seam is opaque, and the adapter is where provider shape lives.** One
+provider's NDJSON event vocabulary — `assistant`, `result`, `is_error`,
+`subtype` — is known to exactly one module, `src/Agent.ts`, which holds the
+`claudeCode` adapter and its decorators. The adapter lifts what the engine
+consumes onto `AgentResult` as plain fields: `usage` (already) and
+`finalMessage` — the agent's closing prose, the `result` event's text under
+stream-json, the whole of stdout under `"text"`. The dispatcher reads
+`AgentResult.finalMessage` and never parses a transcript; a second provider's
+adapter fills the same fields from its own stream and nothing downstream
+changes. The renderer keeps its own parse because rendering *is* provider
+presentation, and it lives in the same module.
+
+> **Drift:** `AgentResult` has no `finalMessage`; `src/Dispatcher.ts:finalAgentMessage`
+> re-parses stdout as NDJSON at bail-record time, keying on the provider's
+> `result.result` field. The extraction moves into `claudeCode` and the
+> dispatcher's copy goes.
 
 - **`claudeCode()` skips permissions by default.** `dangerouslySkipPermissions`
   defaults to `true`, and the flag is appended to the argv whenever it is
   (`src/Agent.ts:claudeCode`). The CLI's fallback agent is a bare
   `claudeCode()` (`src/cli.ts`), so a chain that declares neither `Phase.agent`
   nor `ChainModule.agent` runs every tick with permissions skipped. The other
-  defaults: `claude` off `PATH`, `outputFormat: "text"`, `extraArgs` appended
-  after the format flags.
+  defaults: `claude` off `PATH`, `outputFormat: "text"`, `model` unset (no
+  `--model` flag emitted), `extraArgs` appended after the format flags.
 - **Decorators wrap an `Agent` and return one, and the stack order is
   load-bearing.** `withTerminalRenderer` replaces `inv.onStdout`, so
   `withSessionCapture` must sit **inside** it to tee the raw stream —
@@ -495,6 +513,66 @@ confines side effects to disk inside `cwd`.
   reading the gate's prose. An absent field is today's behavior: no marker,
   no inference.
 
+## What a hook receives
+
+`shouldRun`, `promptArgs`, `handoff`, and `shipped` are the chain's four
+interpretation points. Each receives one read-only object carrying the facts
+the engine holds at that moment (`.claude/rules/engine-boundary.md`, *Surface,
+not prescription*: a hook receives facts, never re-derives them). The test for
+adding a field: a chain that reads `process.env`, scans a directory under
+`flumeDir`, or recomputes a verdict the dispatcher already reached is naming a
+missing field, and the field is added rather than the chain excused.
+
+- **`TickContext`** (`shouldRun`, `promptArgs`; `src/Phase.ts:TickContext`) —
+  `cwd`, `flumeDir`, `assignedEntry` (fanout), `pending` (singleton), plus:
+  - **`pickable`** — the entries the dispatcher would select right now: the
+    strict-read queue with `blockedBy` resolved, every declared fork checked
+    through the chain's `forkResolver`, `requiresCapability` checked against
+    `Chain.capabilities`, and this run's quarantine drop applied. The same
+    computation fanout selection uses (`src/Dispatcher.ts:isPickable`), so a
+    singleton `shouldRun` and the next fanout tick cannot disagree.
+  - **`priorAttempts`** — every persisted `PriorAttempt` record under
+    `<flumeDir>/prior-attempts/`, keyed as the files are (tag slug for fanout
+    entries, phase name for singletons), read with the engine's own reader and
+    the engine's own tolerance (a corrupt record is absent). A plan-phase
+    `shouldRun` deciding "build has a standing bail to reconcile" reads this
+    map; it does not `readdirSync` the engine's directory.
+- **`TickResult`** (`handoff`; `src/Phase.ts:TickResult`) — the existing
+  facts (`committed`, `commitSha`, `gateResults`, `pendingAfter`,
+  `shippedTags`, `revertedTags`, `noCommit`, `quarantinedTags`,
+  `nothingPickable`) plus:
+  - **`pickableAfter`** — `pendingAfter` filtered by the same dispatcher
+    verdict as `TickContext.pickable`, taken at the post-tick re-read. A
+    handoff that wakes build on "anything pickable" reads this list; it does
+    not call `isPickableNow` with a default resolver and an empty capability
+    set, which is a different verdict with two inputs missing.
+  - **`flumeDir`** and **`configDir`** — the resolved roots, so a handoff that
+    writes or reads a state-root file has them without `process.env`.
+  - **`entries`** (fanout only) — one record per entry the wave provisioned,
+    `{ tag, committed, shipped, reverted, declined?, noCommit? }`, the same
+    facts the wave already folds into `shippedTags`, `revertedTags`,
+    `noCommit`, and `declined`, reported before the fold. The fold stays: the
+    top-level fields are the wave's summary and remain byte-identical. What
+    `entries` adds is the per-entry `noCommit` mode that the summary loses
+    whenever a sibling shipped — a bailed entry on a wave that also landed
+    work is otherwise invisible to `handoff`, which re-picks it with the bail
+    undrained. Absent on a singleton tick and on a wave that provisioned
+    nothing.
+- **`ShipContext`** (`shipped`; `spec/pending.md`, *Ship detection trusts the
+  agent's own account*) — unchanged: entry, merged sha, touched paths, gate
+  results, worktree path before teardown.
+
+Every addition is a fact the dispatcher already computed for its own use. None
+is an interpretation: the engine says which entries it *would* pick and which
+records *exist*; whether to wake, decline, or reconcile stays the chain's.
+
+> **Drift:** none of `pickable`, `priorAttempts`, `pickableAfter`, `flumeDir`,
+> `configDir`, `entries` exist on the contexts today. The dogfood chain re-derives all
+> three verdicts: `isPickableNow(e, shipped)` in `handoff` and `shouldRun`,
+> and a hand-rolled scan of `prior-attempts/*.json` for a `voluntary-bail`
+> mode (`.flume/chain.ts`, `anyVoluntaryBailRecord`). `PriorAttempt` is not
+> yet an exported type.
+
 ## The builtin gates
 
 The set is deliberately small — the gates most chains reach for, so a chain
@@ -532,38 +610,46 @@ does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
 ## Per-run artifacts belong under `FLUME_DIR`
 
 The teardown promise — one `rm` removes the whole footprint — holds only if
-**every** mutable artifact lives under the state root. The runtime supplies
-that root; it does not own what a chain writes into it.
+**every** mutable artifact lives under the state root. The runtime resolves
+that root and hands it to the chain; it does not decide what a chain writes
+into it.
 
-- **The runtime canonicalizes.** After resolving `flumeDir` and `configDir`,
-  the CLI writes the resolved **absolute** paths back to `process.env.FLUME_DIR`
-  and `process.env.FLUME_CONFIG_DIR` (`src/cli.ts:resolveStateDirs`), so a chain
-  loaded later in the same process, and any spawned child, read one resolved
-  value instead of re-deriving a default or falling back to a coincidentally-equal
-  `configDir`. `FLUME_DIR` is a reliable, always-present source of truth.
-- **The chain author places.** A chain that captures sessions — or any other
-  per-run artifact — must place it under `process.env.FLUME_DIR` for the state
-  root to be self-contained. The dogfood chain's session capture is the
-  reference implementation: `resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions")`,
-  where the `??` leg is defensive only. An absolute path matters here: a fanout
-  tick runs inside the worktree base — `<flumeDir>/worktrees/` by default,
-  relocatable via `FLUME_WORKTREES_DIR`, namespaced per job — so a relative
-  session dir would be written into a worktree git later removes.
-- **The runtime does not own session-capture location.** It is a chain concern
-  by decision, not an omission — the runtime supplies the canonical root and
-  nothing more. A relocated state root is expected to live outside the working
-  tree, so no in-repo gitignore glob is added for it; the default
-  `<repoRoot>/.flume` stays ignored as it already is.
+- **The runtime canonicalizes, then loads.** `flumeDir` and `configDir` are
+  resolved to **absolute** paths (`src/cliJobResolution.ts:resolveStateDirs`)
+  before any code path constructs the chain. This holds for every verb that
+  loads a chain — `tick`, `loop`, `status`, `wake`, `sleep`, `check`, and the
+  `job` verbs alike. The resolved values are also written back to
+  `process.env.FLUME_DIR` and `process.env.FLUME_CONFIG_DIR` so spawned
+  children (an agent, a gate's shell) inherit one answer; the env is a
+  child-process channel, not the chain's read path.
+- **The engine hands the chain its roots.** `FlumeApi.paths` carries
+  `{ repoRoot, configDir, flumeDir }`, absolute, the identity-same values the
+  dispatcher was constructed with (`src/flumeApi.ts:buildFlumeApi` takes them
+  as its argument). A chain that places a per-run artifact resolves against
+  `api.paths.flumeDir`. It never reads `process.env.FLUME_DIR`, and it never
+  falls back to its own directory: a chain with a `?? CHAIN_DIR` leg is
+  re-deriving a fact the engine already resolved
+  (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+- **Whether to capture is the chain's; where the root is, is not.** Session
+  capture stays an opt-in decorator (`withSessionCapture`) whose `dir` is
+  required and has no default: the runtime ships no opinion on whether a
+  chain keeps transcripts or under what name. What it removes is the
+  resolution: `withSessionCapture(agent, { dir: resolve(api.paths.flumeDir,
+  "sessions") })` is the whole placement, and `examples/` shows it. An
+  absolute path still matters — a fanout tick runs inside the worktree base
+  (`<flumeDir>/worktrees/` by default, relocatable, namespaced per job), so a
+  relative dir would land in a worktree git later removes.
+- A relocated state root is expected to live outside the working tree, so no
+  in-repo gitignore glob is added for it; the default `<repoRoot>/.flume`
+  stays ignored as it already is.
 
-> **Drift:** `main()` dispatches the job-management verbs
-> (`src/cli.ts:runJobVerb`) and returns before it reaches `resolveStateDirs`,
-> so `flume job new` and `flume job status` — each deriving `configDir` inline
-> and loading the chain from it — canonicalize nothing. A chain factory reading
-> `process.env.FLUME_DIR` under those verbs sees whatever the caller exported,
-> or nothing; the dogfood chain takes its `?? CHAIN_DIR` leg there, which the
-> bullet above calls defensive only. No tick runs under those verbs, so nothing
-> is misplaced today — what does not hold is the unqualified always-present
-> contract a chain author would build on.
+> **Drift:** `FlumeApi` carries no `paths` today, and `main()` dispatches the
+> job-management verbs (`src/cli.ts:runJobVerb`) before it reaches
+> `resolveStateDirs`, so `flume job new` and `flume job status` load the chain
+> with nothing resolved. The dogfood chain reads `process.env.FLUME_DIR ??
+> CHAIN_DIR` at four sites to cover both gaps. Both close together: once
+> `buildFlumeApi` requires the roots, a verb cannot construct the API without
+> first resolving them, and the fallback leg has nothing left to cover.
 
 ## The package a chain loads through
 
