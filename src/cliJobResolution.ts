@@ -52,11 +52,13 @@ export function resolveRepoRoot(cwd: string): string {
  * (`configDir`) from `env`, canonicalizing each to an **absolute** path, and
  * write the resolved values back into `env`.
  *
- * Writing back is the point (§12): a chain loaded later in this same process
- * (via tsx) and any spawned child then read the single resolved value from
- * `FLUME_DIR` / `FLUME_CONFIG_DIR` rather than re-deriving the default or
- * falling back to a coincidentally-equal `configDir`. `FLUME_DIR` becomes a
- * reliable, always-present source of truth for the state root.
+ * Writing back is the point: every spawned child — an agent, a gate's shell,
+ * a loop-spawned tick — inherits the single resolved value from `FLUME_DIR` /
+ * `FLUME_CONFIG_DIR` rather than re-deriving the default or falling back to a
+ * coincidentally-equal `configDir`. The env is that child-process channel,
+ * not the chain's read path: a chain takes its roots from `FlumeApi.paths`,
+ * which `buildFlumeApi` requires and which carries these same values by
+ * reference (spec/chain.md, "Per-run artifacts belong under `FLUME_DIR`").
  *
  * Both default to `<repoRoot>/.flume` when unset; a set-but-relative value is
  * resolved against the cwd. Independent of one another: a dock sets both to its

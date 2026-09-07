@@ -166,3 +166,24 @@ in `spec/loop.md` (*Prior-outcome feedback*) and `spec/chain.md` (*What a hook
 receives*), so it is the human's edit first.
 
 Same shape as the two-facts question above; folds into one spec pass with it.
+
+## `src/Dispatcher.ts:112` teaches the retired env-sniff — one site short of the fence (FOR PLAN — mechanical, no fork)
+
+Shipping RETIRED-ROOTS-AND-MODEL-NARRATION retargeted the three declared
+sites (`docs/CHAIN-AUTHORING.md`, `src/Phase.ts`, `src/cliJobResolution.ts`).
+A fourth carries the same retired claim and was not declared, so it is outside
+the effective fence: the `PRIOR_ATTEMPTS_SUBDIR` doc comment
+(`src/Dispatcher.ts:112`) still says "A chain that captures sessions roots them
+under `process.env.FLUME_DIR`". Per `spec/chain.md`, *Per-run artifacts belong
+under `FLUME_DIR`*, that root now reaches the chain as `api.paths.flumeDir`;
+the env is the child-process channel.
+
+One-line retarget, same `per` (`engineering.md`, *Narration is the ladder's
+bottom rung*). Needs only a declaration of `src/Dispatcher.ts` on a follow-up
+entry.
+
+Note the shipped pin (`tests/retired-narration.test.ts`) does **not** catch
+this site: it refuses the two decidable shapes (a `?? …` fallback beside
+`process.env.FLUME_DIR`, `--model` inside `extraArgs`), and this comment
+carries neither — it is the weaker "read the env for placement" phrasing,
+which no regex separates from the legitimate mentions of the write-back.

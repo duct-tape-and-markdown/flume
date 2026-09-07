@@ -231,8 +231,9 @@ export interface Phase {
    * `phase.agent ?? chainModule.agent ?? DispatcherOptions.agent` — the
    * innermost scope of the existing chain-level override. An `Agent` value
    * (not a model string) so it composes with decorators; a model-only
-   * variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside this
-   * value. Absent, the phase runs on the chain/dispatcher default.
+   * variation is `claudeCode({ model: "…" })` inside this value — the
+   * adapter owns the flag, so the chain names a model rather than
+   * assembling argv. Absent, the phase runs on the chain/dispatcher default.
    */
   agent?: Agent;
 

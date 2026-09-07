@@ -34,7 +34,9 @@ by the tick's own agent invocation.
 
 **Default-export a factory** — `(api) => ({ chain })`, where `api` carries
 every engine value your chain composes with (gates, agent constructors,
-schema helpers). The resolver refuses a default export that is not a
+schema helpers) plus `api.paths` — the runtime's own resolved
+`{ repoRoot, configDir, flumeDir }`, absolute, by reference. The resolver
+refuses a default export that is not a
 function, and refuses a factory that returns no `chain` with a `phases[]`
 array. Take engine values from the parameter; your only engine `import` is
 `import type`, which is erased at runtime.
@@ -748,6 +750,8 @@ Spawns `claude -p` with the rendered prompt on stdin. Options:
 - `outputFormat` — `"text"` (default) or `"stream-json"` (adds
   `--output-format stream-json --verbose`). Required for
   `withTerminalRenderer`.
+- `model` — passes `--model <value>`. No default: undeclared, the flag is
+  omitted and the binary's own default applies.
 - `extraArgs` — appended after the format flags.
 
 ### Decorators
@@ -767,7 +771,7 @@ The canonical composition (disk capture + terminal rendering):
 ```ts
 const agent = withTerminalRenderer(
   withSessionCapture(claudeCode({ outputFormat: "stream-json" }), {
-    dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
+    dir: resolve(flume.paths.flumeDir, "sessions"),
   }),
 );
 ```
@@ -790,19 +794,18 @@ The field takes an `Agent` value, not a model string, so it composes with
 the decorators above — "same decorator stack, different model" is exactly
 what a string cannot express. The canonical use is the architect/editor
 split (plan on a stronger model, build on a cheaper one). A model-only
-variation is `claudeCode({ extraArgs: ["--model", "…"] })` inside the
-phase's agent value; a chain-local helper amortizes re-stating the
-decorator stack:
+variation is `claudeCode({ model: "…" })` inside the phase's agent value —
+the adapter owns the flag, so the chain names a model rather than assembling
+argv. A chain-local helper amortizes re-stating the decorator stack:
 
 ```ts
-const SESSIONS = resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions");
+const SESSIONS = resolve(flume.paths.flumeDir, "sessions");
 
 function modelAgent(model: string): Agent {
   return withTerminalRenderer(
-    withSessionCapture(
-      claudeCode({ outputFormat: "stream-json", extraArgs: ["--model", model] }),
-      { dir: SESSIONS },
-    ),
+    withSessionCapture(claudeCode({ outputFormat: "stream-json", model }), {
+      dir: SESSIONS,
+    }),
   );
 }
 
@@ -813,8 +816,9 @@ const build: Phase = { /* … */ agent: modelAgent("claude-haiku-4-5") };
 
 ### Per-run artifacts go under `FLUME_DIR`
 
-Note the `dir` above: it is **`process.env.FLUME_DIR`-relative**, not a fixed
-`.flume/sessions`. This is a requirement, not a stylistic choice.
+Note the `dir` above: it is **`flume.paths.flumeDir`-relative**, not a fixed
+`.flume/sessions` and not the chain's own directory. This is a requirement,
+not a stylistic choice.
 
 Flume's mutable state — baton, pending, worktrees, prior-attempts — relocates
 under one root via the `FLUME_DIR` env var, so the whole footprint can live
@@ -825,29 +829,28 @@ logs are the canonical case: pin them at `configDir` (`CHAIN_DIR`) and a
 relocated dock's `rm` leaves them stranded under the config dir whenever
 `FLUME_DIR` and `FLUME_CONFIG_DIR` are relocated independently.
 
-The runtime makes this reliable: after resolving the dirs, the CLI canonicalizes
-the **absolute** resolved state root back into `process.env.FLUME_DIR`, so a
-chain (loaded later in the same process via tsx) reads one authoritative value
-rather than re-deriving the default. The `?? CHAIN_DIR` fallback above is
-defensive only — in normal operation `FLUME_DIR` is always set. The runtime
-supplies the root; **placement is the chain's job.**
+The runtime hands you that root rather than making you find it. `api.paths`
+carries `{ repoRoot, configDir, flumeDir }` — absolute, already canonicalized,
+the identity-same values the dispatcher was constructed with. `buildFlumeApi`
+takes them as a **required** argument, so there is no way to be handed an API
+whose roots are unresolved, and therefore nothing for a fallback leg to cover:
+a `?? CHAIN_DIR` beside `flume.paths.flumeDir` would be re-deriving a fact the
+engine has already resolved, and would answer with the config dir if it ever
+fired. The runtime supplies the root; **placement is the chain's job.**
 
 **The rule:** if your chain writes any per-run artifact (session captures,
 scratch logs, anything mutable that a run produces), root its path at
-`process.env.FLUME_DIR`, not at the chain dir or a hardcoded `.flume/`.
+`flume.paths.flumeDir` — not the chain dir, not `process.env`, not a
+hardcoded `.flume/`.
 
-The dogfood chain (`.flume/chain.ts`) is the worked example: its session dir is
-`resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions")`, exactly the shape
-above. `CHAIN_DIR` there is `dirname(fileURLToPath(import.meta.url))`.
+#### Gates and prompts get `flumeDir` injected too
 
-#### Gates and prompts get `flumeDir` injected — don't reach into `process.env`
+A chain never reaches into the global env for its roots. Which surface hands
+them over depends on where you are, and there is one for every position:
 
-For per-run *artifact placement* (the sessions case above), `process.env.FLUME_DIR`
-is the seam, because that placement is decided at chain-load before any tick
-context exists. But **inside a gate or a prompt**, the runtime hands you the
-resolved root directly, so you never reach into the global env or hardcode
-`.flume/`:
-
+- **The factory** receives `api.paths` at chain-load — the seam for anything
+  decided before a tick exists: artifact placement (the sessions case above)
+  and `writablePaths`.
 - **Gates** receive `ctx.flumeDir` on `GateContext` — the absolute resolved
   state root. A gate that reads pending validates
   `join(ctx.flumeDir, "plan", "pending.json")`. The dogfood `pendingParseGate`
@@ -861,15 +864,19 @@ resolved root directly, so you never reach into the global env or hardcode
 - **`promptArgs(ctx)`** also receives `ctx.flumeDir` if you need to derive a
   path programmatically.
 
-`writablePaths` is the one place that stays `process.env.FLUME_DIR`-derived: it
-is static config evaluated at chain-load, before any per-tick context exists.
+`process.env.FLUME_DIR` is still set — the CLI canonicalizes the resolved root
+back into it — but that write-back is the **child-process channel**: it is how
+a spawned agent, a gate's shell, and a loop-spawned tick child inherit one
+answer. `$FLUME_DIR` inside an inline-exec is the sanctioned read, because the
+reader there really is a child process. The chain itself is handed the same
+values by reference and has no reason to go looking.
 
-**The boundary:** placement (chain-load, static) → `process.env.FLUME_DIR`;
-reading/referencing at tick time (gates, prompts) → `ctx.flumeDir` /
-`{{FLUME_DIR}}`. Hardcoding `.flume/` in a gate, prompt, or `writablePaths`
-breaks under a relocated `flumeDir` — the dispatcher reads `<flumeDir>/plan/`
-while your hardcoded site points at `.flume/plan/`, and the tick's writes land
-where the harness isn't looking.
+**The boundary:** chain-load (placement, `writablePaths`) →
+`flume.paths.flumeDir`; tick time (gates, prompts) → `ctx.flumeDir` /
+`{{FLUME_DIR}}`; a spawned child → the inherited env. Hardcoding `.flume/` in
+a gate, prompt, or `writablePaths` breaks under a relocated `flumeDir` — the
+dispatcher reads `<flumeDir>/plan/` while your hardcoded site points at
+`.flume/plan/`, and the tick's writes land where the harness isn't looking.
 
 ### Wiring into the dispatcher
 
