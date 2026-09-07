@@ -16,7 +16,9 @@ carries `RELEASE-v0.N §M` / `v0.8 §5`-style cites into `spec/RELEASE-v*.md`
 — files the corpus reform deleted from the tree. 180 sites across 16 modules,
 verified this tick: `src/Dispatcher.ts` 81, `src/cli.ts` 18, `src/job.ts` 18,
 `src/Prompt.ts` 12, then a long tail. Nothing in-file defines the section
-numbers, so none resolves for a reader today.
+numbers, so none resolves for a reader today. Scope is wider than `src/`:
+`examples/cascade-chain.ts` carries `RELEASE-v0.11 §6` and `v0.8 §2` too,
+so whichever option wins covers `examples/` as well.
 
 Correctness-adjacent by one hop rather than directly: it is the audit
 dimension's own machinery. A tick cross-checking a diff against the section
@@ -85,6 +87,12 @@ Raised independently by cascade's session for (b).
 Models a workshop/ → specs/active → specs/_aligned partition that cascade dropped in June; no current consumer has a spec phase. A new adopter would build the shape flume's own consumer abandoned. No clean `per` cite into spec (this is repo hygiene, not spec-derived), which is why it's parked rather than filed — `spec-plan-build.md`: "If a candidate plan entry can't carry a clean per cite into the spec, it's a question for a human."
 
 **Recommend:** cut it, keep plan/build examples only — corroborated independently by cascade's session, low risk (build can execute the deletion once approved).
+
+The prompt is half of it: `examples/cascade-chain.ts`'s `spec` phase declares
+the same `specs/active/**` / `specs/_aligned/**` / `workshop/_archive/**`
+partition, and that file is the load-bearing example. Decide both together.
+(Unrelated to PRE-0.10-CHAIN-SHAPE-TAUGHT, which touches only that file's
+trailing host-repo instruction block.)
 
 ## Voluntary-bail is inferred intent — taxonomy ruling needed (PARKED — do not derive)
 

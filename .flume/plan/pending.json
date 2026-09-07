@@ -1,1 +1,39 @@
-[]
+[
+  {
+    "tag": "PRE-0.10-CHAIN-SHAPE-TAUGHT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": ":1074's missing-chain error tells the consumer to write the shape :1102 refuses 30 lines later. :1040's docstring still lists pre-0.10 validation (\"a shape that isn't a Chain\") — f6fef79 moved this block onto its symbol without correcting it."
+        },
+        {
+          "path": "src/cli.ts",
+          "description": ":10 — a factory, not a `Chain`; and `agent` rides the factory's return (`ChainModule.agent`), not a module export."
+        },
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "Trailing host-repo block :258-292: the preamble, step 2's import list (omits `ChainFactory`/`EntryExtension`, both imported above), step 4 (`export default cascadeChain` — not a named export in this file), step 5's module-level `agent`."
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "Widen `scannedPaths()` to `examples/`'s chain modules — its docstring already claims them, and neither existing needle is scanning them. Add the retired module shape as a third pin."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Four chain-authoring surfaces teach the pre-0.10 module shape the loader refuses — a default-exported `Chain`, `agent` as a module export — one of them the missing-chain error itself",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      "no chain-authoring surface teaches the pre-0.10 module shape — a default-exported `Chain` object, or `agent` as a module export",
+      "the scanned corpus covers `examples/`'s chain modules, the surface engine-boundary.md names as opinion's home"
+    ],
+    "acceptance": "The pin fails on the pre-fix tree at all four sites, green after; `docs/CHAIN-AUTHORING.md:39`, which denies the same shape, stays unflagged.",
+    "notes": "Audit of f6fef79 and the examples/ sweep found the same defect. Hazard the pin must clear: CHAIN-AUTHORING.md:39 denies this shape in the same verbs an assertion uses — the case this file already met once and answered with an inventory (ALLOWED_ENV_MENTIONS); a regex tight enough to split assertion from denial is the alternative. examples/ carries neither existing needle today, so the widening stays green on its own."
+  }
+]
