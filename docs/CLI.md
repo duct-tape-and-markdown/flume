@@ -65,6 +65,26 @@ Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-
 flume sleep plan
 ```
 
+## `flume stop`
+
+Writes `.flume/stop` and prints what happens next: with a live supervisor, that it
+finishes its in-flight tick and ends the run; otherwise, that the next `loop` /
+`job run` refuses to start until the flag is removed. Idempotent — running it again
+while the flag is already present rewrites the same empty file and prints the same
+statement. The verb is discoverability, not a privileged channel: `touch .flume/stop`
+is equally the interface, and nothing distinguishes the two writers. There is
+deliberately no `unstop` / `resume` verb — removing the flag is the operator's own
+acknowledgement that they saw the stop, and an engine verb that removed it would let
+a script ack a stop no human saw. Consumes no positionals; a trailing argument is
+refused before the flag is written. Exits `0` always; `2` if given any argument.
+
+```sh
+flume stop
+# [flume] wrote .flume/stop: a live supervisor finishes its in-flight tick and
+# ends the run; the next `loop`/`job run` refuses to start until the flag is
+# removed.
+```
+
 ## `flume job new <name>`
 
 Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever branch that is. Loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). No branch is created or checked out. The job name must be a single path segment; a name containing a path separator is rejected before any directory is constructed.
@@ -124,4 +144,77 @@ Observational, like `flume status`: nothing on disk changes — no chain load, n
 flume job status
 # docs-refresh  awake: build  pending: 3
 # scratch       hibernating   pending: 0
+```
+
+## `flume log [-n N] [--json]`
+
+Observational; prints the last `N` tick verdicts (default `10`) from
+`tick-verdicts.jsonl`, oldest first. The human form is one fixed-format line per
+verdict carrying only fields the record already holds — phase, whether it committed,
+gate results, shipped tags, merge outcomes: `<phase>  committed=<bool>
+gates=[<gate>:ok|FAIL,...]  shipped=[<tag>,...]  merge=[<tag>:<outcome>,...]`.
+`--json` emits the records verbatim as JSONL, one per line, for a supervising agent
+to parse instead of scrape. Facts only, never reclassified — `log` prints what the
+verdict record states and nothing derived; park/bail vocabulary belongs to the
+chain, not to this verb. No verdicts file present prints nothing and exits `0`.
+Mutates nothing. Exits `0` on success; `2` if `-n` is missing its value or
+non-numeric, or given any other unrecognized argument.
+
+```sh
+flume log -n 3
+# plan  committed=true  gates=[tsc:ok,vitest:ok]  shipped=[]  merge=[]
+# build  committed=true  gates=[tsc:ok,vitest:ok]  shipped=[DOCS-CLI-1]  merge=[DOCS-CLI-1:merged]
+# build  committed=false  gates=[tsc:FAIL]  shipped=[]  merge=[]
+
+flume log --json
+# {"phaseName":"build","committed":true,"gateResults":[...],"shippedTags":["DOCS-CLI-1"],"mergeOutcomes":[...]}
+```
+
+## `flume check`
+
+Validates the working tree's `.flume/plan/pending.json` without spending an agent:
+the real parse (the same decode a tick's resolution takes) plus fence arithmetic for
+every entry — each entry's declared paths checked against the consumer fanout
+phase's declared fence, the same computation the write guard enforces at commit
+time. Read-only — touches no baton flag, loads the chain only to compute the fence,
+and invokes nothing. Scope is deliberately the engine's own mechanics alone; chain
+gates need a tick's `GateContext` and do not run here. No `pending.json` present
+prints `plan/pending.json absent — nothing to check` and exits `0`. Consumes no
+positionals. Exits `0` when the file parses and every entry's paths clear the fence;
+exits `65` (`EX_DATAERR`) on a parse failure or a fence violation, naming the
+offending entry and paths — the same refusal the next tick would otherwise have
+spent an invocation to discover; exits `2` if given any argument, or `69`
+(`EX_MOUNT_DEAD`) if the chain itself fails to load.
+
+```sh
+flume check
+# plan/pending.json valid (3 entries), fence check passed
+
+flume check
+# [flume] check: 1 pending entry declares files outside the consumer phase's fence
+#   [DOCS-CLI-1] src/forbidden.ts
+```
+
+## `flume friction [name]`
+
+Bare, lists the declared friction channel's notes — filename, size in bytes, and
+mtime as an ISO timestamp, one line per file, sorted by name. With `name`, prints
+that note's bytes verbatim to stdout. Output is never interpreted — the engine's
+lifecycle guarantee over the channel is interpretation-freedom, not read-freedom,
+and this verb only moves bytes; it never derives meaning from them. `name` must name
+a direct child of the declared directory — the same scope the bare list enumerates;
+a nested or escaping path is refused, not resolved. A chain that declares no
+`Chain.friction` refuses usage-shaped, naming the missing declaration. A declared but
+not-yet-created directory lists empty and exits `0` — the directory is created
+lazily by whichever engine write needs it first. Exits `0` on a successful list or
+read (including the empty-directory case); `2` if the chain declares no
+`Chain.friction`, if given more than one argument, or if `name` names no note in the
+directory; `69` (`EX_MOUNT_DEAD`) if the chain fails to load.
+
+```sh
+flume friction
+# revert-note-a54de89.md  412  2026-09-06T14:02:11.000Z
+
+flume friction revert-note-a54de89.md
+# (bytes of the note, written verbatim to stdout)
 ```
