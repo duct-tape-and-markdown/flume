@@ -193,6 +193,14 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/open-questions.md",
+      "src/Dispatcher.ts",
+      "src/flumeApi.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/chain.test.ts",
+      "tests/examples.integration.test.ts"
+    ],
     "summary": "FlumeApi carries paths {repoRoot, configDir, flumeDir}, the dispatcher's own resolved roots, by reference",
     "per": {
       "path": "spec/chain.md",
@@ -202,82 +210,6 @@
       "api.paths.flumeDir/configDir/repoRoot equal the Dispatcher's own resolved values at chain-load time"
     ],
     "acceptance": "a chain can resolve a per-run artifact against api.paths.flumeDir instead of process.env.FLUME_DIR with a `?? CHAIN_DIR` fallback",
-    "notes": "cli.ts already resolves state dirs ahead of every chain-loading verb including the job verbs (e814195); that half of the spec's drift note is stale. Only the FlumeApi.paths gap itself remains live. `.flume/chain.ts` adoption is a separate chore(flume) commit (harness surface).",
-    "observedFiles": [
-      ".flume/plan/open-questions.md",
-      "src/Dispatcher.ts",
-      "src/flumeApi.ts",
-      "tests/Dispatcher.test.ts",
-      "tests/chain.test.ts",
-      "tests/examples.integration.test.ts"
-    ]
-  },
-  {
-    "tag": "CHAIN-PENDINGPATH",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Add Chain.pendingPath?: string, state-root-relative, default 'plan/pending.json' — the seedDir/friction idiom."
-        },
-        {
-          "path": "src/Gate.ts",
-          "description": "Add GateContext.pendingPath: string — the resolved value, same pattern as flumeDir/configDir/stateRootRel."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Resolve chain.pendingPath ?? default once per tick (after chain load, replacing the constructor-fixed this.pendingPath), use it for every internal read/rewrite site and every GateContext built."
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "pendingGate drops opts.pendingPath; reads ctx.pendingPath instead."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "status and check resolve the pending path from the loaded chain's pendingPath instead of the hardcoded 'plan/pending.json' literal."
-        },
-        {
-          "path": "src/job.ts",
-          "description": "jobStatus takes the chain's pendingPath (same idiom as the friction dir it already threads through) instead of hardcoding 'plan/pending.json' per job dir."
-        },
-        {
-          "path": "src/cliJobVerbs.ts",
-          "description": "Pass chain.pendingPath through to jobStatus alongside the friction dir it already loads."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "A chain-declared pendingPath is honored by both the dispatcher's own reads and a gate reading ctx.pendingPath."
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "pendingGate reads ctx.pendingPath; no opts.pendingPath left to set."
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "status/check honor a chain-declared pendingPath."
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "flume job status honors a chain-declared pendingPath."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Chain.pendingPath is the single declared queue path; dispatcher, status, check, job status, and pendingGate all read it, never a hardcoded default",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "`pendingGate` — validation and fence pre-check as an opt-in builtin"
-    },
-    "tests": [
-      "a chain declaring Chain.pendingPath is honored by fanout selection, the wave-end rewrite, flume status, flume check, flume job status, and pendingGate alike",
-      "undeclared defaults identically to today's plan/pending.json everywhere"
-    ],
-    "acceptance": "no site (dispatcher, cli.ts, job.ts, pendingGate) carries its own copy of the 'plan/pending.json' default; PendingGateOptions no longer has a pendingPath field",
-    "notes": "Largest entry this tick — one fact, many readers. Chain.ts declares nothing today so behavior is unchanged there; no chore(flume) follow-up needed unless a chain wants to relocate the queue."
+    "notes": "cli.ts already resolves state dirs ahead of every chain-loading verb including the job verbs (e814195); that half of the spec's drift note is stale. Only the FlumeApi.paths gap itself remains live. `.flume/chain.ts` adoption is a separate chore(flume) commit (harness surface)."
   }
 ]
