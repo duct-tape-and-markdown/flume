@@ -610,6 +610,12 @@ export function readLatestVerdictsSync(
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
 const MAX_PRIOR_DETAILS = 8 * 1024;
+/**
+ * Share of {@link MAX_PRIOR_DETAILS} reserved for the *tail* of a gate's
+ * captured output — enough for a reporter's closing summary, small enough
+ * that the head keeps a multi-failure block whole. See {@link headTailBound}.
+ */
+const MAX_PRIOR_DETAILS_TAIL = 1024;
 /** Bound on the persisted `git show --stat` digest. */
 const MAX_PRIOR_DIFFSTAT = 4 * 1024;
 /**
@@ -748,6 +754,39 @@ function bound(s: string, max: number): string {
 function tailBound(s: string, max: number): string {
   if (s.length <= max) return s;
   return `[truncated ${s.length - max} chars]…\n` + s.slice(s.length - max);
+}
+
+/**
+ * Keep both ends of `s` — `max - tailBudget` chars of head plus `tailBudget`
+ * of tail — eliding the middle with a visible marker. The digest shape for a
+ * gate's captured output, where the two ends carry different facts and the
+ * middle is filler.
+ *
+ * Measured against this repo's own vitest afterMerge gate (2026-09-06, a
+ * 22 KB capture): the reporter emits the `Failed Tests` section — which
+ * tests failed, and the assertion text — in the **first** ~1 KB, then ~20 KB
+ * of per-test pass lines, then the `Test Files … failed | … passed` counts
+ * in the last ~200 bytes. A tail-only slice of that capture is pass lines
+ * and a count: it says how many failed and never which. A head-only slice
+ * loses the counts the moment a reporter puts its failure section last, as
+ * some do. Keeping both ends is the content-agnostic answer — no line is
+ * parsed, no reporter's layout is assumed, and neither end can be crowded
+ * out by the other's length.
+ *
+ * Distinct from {@link tailBound} by design, not by oversight: that helper
+ * keeps the tail *only*, which is right for an agent's final message, where
+ * the refused constraint is the last thing said and everything before it is
+ * transcript.
+ */
+function headTailBound(s: string, max: number, tailBudget: number): string {
+  if (s.length <= max) return s;
+  const tail = Math.min(tailBudget, max);
+  const head = max - tail;
+  return (
+    s.slice(0, head) +
+    `\n…[truncated ${s.length - max} chars]…\n` +
+    s.slice(s.length - tail)
+  );
 }
 
 /**
@@ -4178,7 +4217,13 @@ export class Dispatcher {
       gate: failure.gate,
       message: failure.message,
       ...(failure.details
-        ? { details: tailBound(failure.details, MAX_PRIOR_DETAILS) }
+        ? {
+            details: headTailBound(
+              failure.details,
+              MAX_PRIOR_DETAILS,
+              MAX_PRIOR_DETAILS_TAIL,
+            ),
+          }
         : {}),
       diffStat,
       ...(isSuspectFlake(failure.failingFiles, footprint)

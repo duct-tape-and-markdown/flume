@@ -5555,19 +5555,38 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     expect(prompts[1]).toContain("boom-msg");
   }, 20_000);
 
-  it("afterCommit gate-revert whose raw details exceed MAX_PRIOR_DETAILS keeps the tail (e.g. vitest's Failed Tests block), not the head (BUILDPRIORATTEMPT-TAIL-BIAS-GATE-REVERT-DETAILS)", async () => {
+  it("afterCommit gate-revert whose raw details exceed MAX_PRIOR_DETAILS keeps the failing-test lines AND the closing counts, eliding only the middle (PRIORATTEMPT-GATE-DETAILS-KEEPS-FAILURES)", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
-    // Mirrors what a real gate emits: KB of leading PASS noise, then the
-    // section a retry actually needs, at the very end. Total length clears
-    // the 8 KiB `MAX_PRIOR_DETAILS` cap by a wide margin so a head-first
-    // `bound()` would drop the tail entirely.
-    const headOnlyMarker = "HEAD-ONLY-PASS-NOISE-MARKER";
-    const tailOnlyMarker = "TAIL-ONLY-FAILED-TESTS-BLOCK-MARKER";
+    // Byte-for-byte the layout this repo's own vitest afterMerge gate emits
+    // (measured on a 22 KB capture, 2026-09-06): the `Failed Tests` section
+    // — the only place a failing test is *named* — inside the first KB, then
+    // ~20 KB of per-test pass lines, then the counts in the last ~200 bytes.
+    // Supersedes the tail-only pin this case used to carry, whose fixture put
+    // the failure block at the end and was never checked against a reporter.
+    const failedTestLine =
+      "FAIL  tests/Dispatcher.test.ts > Dispatcher singleton — commit detected > gates green";
+    const assertionLine =
+      "AssertionError: expected { a: 1, b: 'hello' } to deeply equal { a: 2, b: 'world' }";
+    const middleMarker = "MIDDLE-PASS-LIST-MARKER";
+    const countsLine = " Test Files  1 failed | 20 passed (21)";
+    const passLines = (n: number) => "   ✓ a passing test 3ms\n".repeat(n);
     const details =
-      headOnlyMarker + "PASS noise line\n".repeat(1000) + tailOnlyMarker;
-    expect(details.length).toBeGreaterThan(8 * 1024);
+      [
+        "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯",
+        "",
+        ` ${failedTestLine}`,
+        assertionLine,
+        "",
+      ].join("\n") +
+      passLines(400) +
+      `   ✓ ${middleMarker} 3ms\n` +
+      passLines(400) +
+      [countsLine, "      Tests  1 failed | 764 passed (791)", ""].join("\n");
+    // Vacuity pin: the cap must actually bind, and each end must be far
+    // enough from the other that no single-ended slice could keep both.
+    expect(details.length).toBeGreaterThan(2 * 8 * 1024);
 
     const failing: Gate = {
       name: "boom-gate",
@@ -5585,7 +5604,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
 
     const prompts: string[] = [];
     const agent: Agent = {
-      name: "recording-singleton-tail-bias",
+      name: "recording-singleton-details-digest",
       async invoke(inv) {
         const n = prompts.length;
         prompts.push(inv.prompt);
@@ -5616,12 +5635,26 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
 
     const retry = prompts[1]!;
     expect(retry).toContain("<prior-attempt>");
-    // The tail — where the content a retry needs lives — survived truncation…
-    expect(retry).toContain(tailOnlyMarker);
-    // …while the head, which a head-first `bound()` would have kept instead,
-    // did not.
-    expect(retry).not.toContain(headOnlyMarker);
+    // The head: *which* test failed and why — the fact a retry diagnoses
+    // from, and the one a tail-only slice dropped.
+    expect(retry).toContain(failedTestLine);
+    expect(retry).toContain(assertionLine);
+    // The tail: the closing counts still survive.
+    expect(retry).toContain(countsLine);
+    // The middle is what pays for both, and the elision is marked.
+    expect(retry).not.toContain(middleMarker);
     expect(retry).toContain("truncated");
+
+    // The digest is bounded, not merely reordered.
+    const record = JSON.parse(
+      await readFile(
+        join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+        "utf8",
+      ),
+    ) as { mode: string; details: string };
+    expect(record.mode).toBe("gate-revert");
+    expect(record.details.length).toBeLessThan(details.length);
+    expect(record.details.length).toBeLessThan(9 * 1024);
   }, 20_000);
 
   it("afterMerge gate-revert → each reverted fanout entry's next prompt carries the block; first attempt absent", async () => {
