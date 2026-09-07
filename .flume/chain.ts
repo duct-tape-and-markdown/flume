@@ -9,11 +9,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-/** Absolute path to this chain.ts directory (.flume/), regardless of cwd. */
-const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
+import { basename, join, resolve } from "node:path";
 
 /**
  * Does inbox.md carry an undrained finding? Entries are `##` subsections
@@ -25,12 +21,9 @@ const CHAIN_DIR = dirname(fileURLToPath(import.meta.url));
  * returns `true`: plan's `shouldRun` treats an unreadable inbox as a reason
  * to run the tick, never to skip it.
  */
-function inboxHasEntries(): boolean {
+function inboxHasEntries(flumeDir: string): boolean {
   try {
-    const text = readFileSync(
-      resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "inbox.md"),
-      "utf8",
-    );
+    const text = readFileSync(resolve(flumeDir, "inbox.md"), "utf8");
     const marker = text.indexOf("<!-- entries below this line");
     return /^## /m.test(marker === -1 ? text : text.slice(marker));
   } catch {
@@ -51,9 +44,10 @@ function inboxHasEntries(): boolean {
  */
 function anyVoluntaryBailRecord(
   priorAttemptsDir: FlumeApi["priorAttemptsDir"],
+  flumeDir: string,
 ): boolean {
   try {
-    const dir = priorAttemptsDir(process.env.FLUME_DIR ?? CHAIN_DIR);
+    const dir = priorAttemptsDir(flumeDir);
     for (const name of readdirSync(dir)) {
       if (!name.endsWith(".json")) continue;
       try {
@@ -304,14 +298,14 @@ const factory: ChainFactory = (api) => {
           ],
         }),
         {
-          // Sessions track the flume state dir (FLUME_DIR), so a relocated,
+          // Sessions live under the flume state dir, so a relocated,
           // ephemeral dock owns its transcripts too and one `rm` removes the
-          // whole footprint (spec/cli.md: state-root resolution). The CLI canonicalizes the
-          // resolved root into FLUME_DIR; the `?? CHAIN_DIR` fallback is
-          // defensive only. Absolute either way, so build (which runs in
-          // <flumeDir>/worktrees/<tag>/) writes up into the state dir's
-          // sessions/ rather than a worktree git eats.
-          dir: resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "sessions"),
+          // whole footprint (spec/cli.md: state-root resolution). The root is
+          // the dispatcher's own resolved value (spec/chain.md, *Per-run
+          // artifacts belong under FLUME_DIR*), absolute, so build (which
+          // runs in <flumeDir>/worktrees/<tag>/) writes up into the state
+          // dir's sessions/ rather than a worktree git eats.
+          dir: resolve(api.paths.flumeDir, "sessions"),
           filename: (inv) => {
             const ts = new Date().toISOString().replace(/[:.]/g, "-");
             const cwdName = basename(inv.cwd) || "tick";
@@ -395,7 +389,9 @@ const factory: ChainFactory = (api) => {
       // "this is plan's call" — reconcile before deferring to build again,
       // or a pickable-but-already-shipped entry loops decline/bail forever
       // (see anyVoluntaryBailRecord's doc).
-      if (anyVoluntaryBailRecord(api.priorAttemptsDir)) return true;
+      if (anyVoluntaryBailRecord(api.priorAttemptsDir, ctx.flumeDir)) {
+        return true;
+      }
       // A park is a *committed* not-shipped outcome (build.shipped read the
       // park file), so it writes no prior-attempt record and the check
       // above can never see it; the last build verdict can. Without this,
@@ -407,7 +403,7 @@ const factory: ChainFactory = (api) => {
       if (lastBuild?.mergeOutcomes?.some((o) => o.outcome === "not-shipped")) {
         return true;
       }
-      return inboxHasEntries();
+      return inboxHasEntries(ctx.flumeDir);
     },
     promptArgs() {
       return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
@@ -416,12 +412,12 @@ const factory: ChainFactory = (api) => {
       // Plan re-wakes itself while state.md carries `Plan continues: yes` —
       // the vertical-slice signal (one focused mode per tick). The prompt
       // mandates the marker; absence = stable. state.md lives under the
-      // relocatable state root (FLUME_DIR), not the config dir — same idiom
+      // relocatable state root, which the tick result reports — same idiom
       // as the sessions dir above.
       let planContinues = false;
       try {
         const stateText = readFileSync(
-          resolve(process.env.FLUME_DIR ?? CHAIN_DIR, "plan", "state.md"),
+          resolve(result.flumeDir, "plan", "state.md"),
           "utf8",
         );
         planContinues = /^Plan continues:\s*yes\b/im.test(stateText);

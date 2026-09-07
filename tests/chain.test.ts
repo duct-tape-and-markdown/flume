@@ -12,10 +12,11 @@
  * of chain.ts's own sentinel-assertion logic (see
  * `tests/examples.integration.test.ts`, which drives `examples/` the same way).
  *
- * `plan.shouldRun` and `plan.handoff` read `<FLUME_DIR>/inbox.md` and
- * `<FLUME_DIR>/plan/state.md`; every test below points `FLUME_DIR` at a fresh
- * scratch directory so the real `.flume/inbox.md` / `.flume/plan/state.md`
- * are never read or written.
+ * `plan.shouldRun` reads `<flumeDir>/inbox.md` and `plan.handoff` reads
+ * `<flumeDir>/plan/state.md`, taking the root from what the engine hands them
+ * (`TickContext.flumeDir`, `TickResult.flumeDir`) — never from env. Every test
+ * below passes a fresh scratch directory as that root so the real
+ * `.flume/inbox.md` / `.flume/plan/state.md` are never read or written.
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -112,7 +113,6 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
   let plan: Phase;
   let build: Phase;
   let flumeDir: string;
-  let priorFlumeDir: string | undefined;
 
   beforeAll(async () => {
     const { chain } = await loadChainModule(REPO_PATHS);
@@ -127,13 +127,9 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
   beforeEach(async () => {
     flumeDir = await mkdtemp(join(tmpdir(), "flume-chain-test-"));
     await mkdir(join(flumeDir, "plan"), { recursive: true });
-    priorFlumeDir = process.env.FLUME_DIR;
-    process.env.FLUME_DIR = flumeDir;
   });
 
   afterEach(async () => {
-    if (priorFlumeDir === undefined) delete process.env.FLUME_DIR;
-    else process.env.FLUME_DIR = priorFlumeDir;
     await rm(flumeDir, { recursive: true, force: true });
   });
 
@@ -301,13 +297,14 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
   describe("plan.handoff", () => {
     it("re-wakes plan when state.md declares 'Plan continues: yes' and nothing remains pickable", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
-      const result = tickResult({ phaseName: "plan", pendingAfter: [] });
+      const result = tickResult({ flumeDir, phaseName: "plan", pendingAfter: [] });
       expect(plan.handoff(result)).toEqual(["plan"]);
     });
 
     it("hands off to build when state.md declares 'Plan continues: yes' but a pickable entry remains (posture-sweep.md, 'The sweep yields to pickable work')", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
       const result = tickResult({
+        flumeDir,
         phaseName: "plan",
         pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
       });
@@ -317,6 +314,7 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
     it("hands off to build when state.md says 'no' and a pickable entry remains", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: no\n");
       const result = tickResult({
+        flumeDir,
         phaseName: "plan",
         pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
       });
@@ -325,13 +323,14 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
 
     it("hibernates when state.md says 'no' and nothing remains pickable", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: no\n");
-      const result = tickResult({ phaseName: "plan", pendingAfter: [] });
+      const result = tickResult({ flumeDir, phaseName: "plan", pendingAfter: [] });
       expect(plan.handoff(result)).toEqual([]);
     });
 
     it("falls through to the pickability check when state.md carries no 'Plan continues:' line", async () => {
       await writeFile(join(flumeDir, "plan", "state.md"), "# State\n\nno marker here\n");
       const result = tickResult({
+        flumeDir,
         phaseName: "plan",
         pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
       });
@@ -342,6 +341,7 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
       // No plan/state.md written at all — the readFileSync throw is caught
       // and treated the same as an explicit "no".
       const result = tickResult({
+        flumeDir,
         phaseName: "plan",
         pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
       });
