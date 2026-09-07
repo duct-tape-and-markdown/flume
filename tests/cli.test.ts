@@ -13,7 +13,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -22,7 +22,8 @@ import { describe, expect, it } from "vitest";
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD } from "../src/Dispatcher.ts";
-import { CLI, HERMETIC_ENV_STRIP_KEYS, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { resolvePendingPath } from "../src/paths.ts";
+import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -177,10 +178,14 @@ function supervisorPolicyChainSrc(policy?: {
  * loop`/`flume tick` subprocess this feeds.
  */
 async function writeStuckEntryPending(root: string): Promise<void> {
-  const planDir = join(root, ".flume", "plan");
-  await mkdir(planDir, { recursive: true });
+  // Placed by the accessor that owns the undeclared-queue default
+  // (`resolvePendingPath`, src/paths.ts), never by a path spelled here — so a
+  // consumer that resolved the default differently reads an absent queue
+  // rather than a fixture the test steered onto its own answer.
+  const queuePath = resolvePendingPath(join(root, ".flume"));
+  await mkdir(dirname(queuePath), { recursive: true });
   await writeFile(
-    join(planDir, "pending.json"),
+    queuePath,
     JSON.stringify(
       [
         {
@@ -200,7 +205,7 @@ async function writeStuckEntryPending(root: string): Promise<void> {
     "utf8",
   );
   const opts = { cwd: root };
-  await exec("git", ["add", "--", ".flume/plan/pending.json"], opts);
+  await exec("git", ["add", "--", relative(root, queuePath)], opts);
   await exec("git", ["commit", "-q", "-m", "test: seed STUCK-ENTRY"], opts);
 }
 
@@ -1986,20 +1991,19 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
   // behavior passes identically whether cli.ts routes through namespacedJoin
   // or a bare join. Pin the source shape directly, mirroring
   // Baton.test.ts's "win32 MAX_PATH fix" precedent — job.ts:liveLoopPid is
-  // the reference shape every loop.pid call site here must match.
+  // the reference shape every loop.pid call site here must match. The name
+  // itself now comes from `loopLockPath` (src/paths.ts), so the pin is on the
+  // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("never builds the loop.pid path with a bare join", () => {
-    const bareJoinLoopPid = /(?<!namespaced)\bjoin\([^)]*"loop\.pid"/g;
-    expect(src.match(bareJoinLoopPid)).toBeNull();
+  it("builds the status-check loop-lock path (existsSync) through namespacedJoin", () => {
+    expect(src).toMatch(/existsSync\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
   });
 
-  it("builds the status-check loop.pid path (existsSync) through namespacedJoin", () => {
-    expect(src).toMatch(/existsSync\(namespacedJoin\(flumeDir,\s*"loop\.pid"\)\)/);
-  });
-
-  it("builds the loop-lock loop.pid path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {
-    const lockPathAssign = src.match(/const lockPath = (namespacedJoin\(flumeDir,\s*"loop\.pid"\));/);
+  it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {
+    const lockPathAssign = src.match(
+      /const lockPath = namespacedJoin\(loopLockPath\(flumeDir\)\);/,
+    );
     expect(lockPathAssign).not.toBeNull();
 
     expect(src).toMatch(/writeFileSync\(lockPath,/);
@@ -2007,4 +2011,248 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
     expect(unlinkCalls).not.toBeNull();
     expect(unlinkCalls!.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("every loopLockPath call in cli.ts is wrapped in namespacedJoin", () => {
+    const uses = [...src.matchAll(/\bloopLockPath\(\w+\)/g)];
+    expect(uses.length).toBeGreaterThan(0);
+    for (const use of uses) {
+      expect(src.slice(0, use.index!)).toMatch(/namespacedJoin\($/);
+    }
+  });
+});
+
+// ---------- the state root's layout, writer against reader ----------
+
+/**
+ * The runtime state root's names (`stop`, `loop.pid`, the undeclared-queue
+ * default) each have a writer and a reader in *different* modules, so a
+ * rename that reaches only one side is a silent bypass rather than a type
+ * error. `src/paths.ts` is the single home; these tests are the agreement
+ * gate over it (`.claude/rules/engineering.md`, "A seam gate reads what the
+ * real writer wrote"): the real writer runs, the real reader decodes what it
+ * wrote, and no path in this section is spelled by the test.
+ */
+
+/**
+ * A chain whose singleton phase hands off to itself — so absent a stop the
+ * loop burns to `--max` — and whose agent shells out to the real `flume
+ * stop` verb from *inside* the child tick. The flag therefore lands on disk
+ * by the production writer, mid-tick, with the state root taken from the
+ * env the supervisor canonicalized; nothing here names the file.
+ */
+function realStopVerbChainSrc(phaseName: string): string {
+  return (
+    `import { execFileSync } from "node:child_process";\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [${JSON.stringify(phaseName)}],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "real-stop-verb",\n` +
+    `  async invoke() {\n` +
+    `    execFileSync(process.execPath, [${JSON.stringify(TSX_CLI)}, ${JSON.stringify(CLI)}, "stop"], {\n` +
+    `      stdio: "ignore",\n` +
+    `    });\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+describe("state root layout — `flume stop` writes the flag every reader honors", () => {
+  it(
+    "the flag the stop verb wrote refuses the next `flume loop` before any tick",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        // Vacuity control: with no flag, this loop runs its tick and reaches
+        // --max. Whatever the refusal below proves, it is not proving that
+        // `loop` refuses unconditionally.
+        const before = await runCli(repo.dir, ["loop", "--max", "1"]);
+        expect(before.out).toMatch(/reached --max 1|hibernating after/);
+        expect(before.out).not.toContain("stop flag present");
+
+        // The real writer. The test never names the file it wrote.
+        const wrote = await runCli(repo.dir, ["stop"]);
+        expect(wrote.code).toBe(0);
+
+        // The real reader — `flume loop`'s pre-tick refusal.
+        const after = await runCli(repo.dir, ["loop", "--max", "1"]);
+        expect(after.code).toBe(1);
+        expect(after.out).toContain("stop flag present at");
+        expect(after.out).not.toContain("reached --max");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "the flag the stop verb wrote mid-tick ends the supervisor's run at its next per-iteration check",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, realStopVerbChainSrc("probe"));
+        const flumeDir = join(repo.dir, ".flume");
+        const baton = new Baton(flumeDir);
+        baton.wake("probe");
+
+        // The phase re-wakes itself every tick, so absent the flag this run
+        // burns all 4 iterations. The agent runs the real `flume stop` from
+        // inside the first child tick; the supervisor's per-iteration check
+        // (src/Dispatcher.ts) is the only thing that can see it.
+        const loop = await runCli(repo.dir, ["loop", "--max", "4"]);
+
+        expect(loop.out).toContain("stop flag present");
+        expect(loop.out).not.toContain("reached --max");
+        // Exactly one child tick ran — the self-handoff would have allowed
+        // three more.
+        expect(loop.out.match(/tick → probe \(singleton\)/g)).toHaveLength(1);
+        // Ended by the flag, not by hibernation: the handoff left the phase
+        // awake.
+        expect(baton.isAwake("probe")).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+});
+
+/**
+ * A chain whose agent calls the runtime's own `liveLoopPid` (`src/job.ts`) —
+ * the reader side of the one-supervisor lock — from inside the child tick,
+ * and records what it read. The writer is the real `flume loop` that spawned
+ * that child: nothing here writes or names a pidfile.
+ */
+function loopLockReaderChainSrc(phaseName: string, observedPath: string): string {
+  const jobSrc = new URL("../src/job.ts", import.meta.url).href;
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `import { liveLoopPid } from ${JSON.stringify(jobSrc)};\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: ${JSON.stringify(phaseName)},\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "loop-lock-reader",\n` +
+    `  async invoke() {\n` +
+    `    const observed = await liveLoopPid(process.env.FLUME_DIR ?? "");\n` +
+    `    writeFileSync(\n` +
+    `      ${JSON.stringify(observedPath)},\n` +
+    `      JSON.stringify({ observed, supervisor: process.ppid }),\n` +
+    `    );\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+describe("state root layout — `flume loop` writes the lock `liveLoopPid` reads back", () => {
+  it(
+    "the pid liveLoopPid reads mid-run is the live supervisor's own",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const outDir = await mkdtemp(join(tmpdir(), "flume-loop-lock-read-"));
+      try {
+        // Outside the state root so the probe's own output can never be
+        // mistaken for state the runtime wrote.
+        const observedPath = join(outDir, "observed-loop-lock.json");
+        await writeRepoConfig(
+          repo.dir,
+          loopLockReaderChainSrc("probe", observedPath),
+        );
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const loop = await runCli(repo.dir, ["loop", "--max", "1"]);
+        expect(loop.out).toContain("tick → probe (singleton)");
+
+        // Vacuity: the probe ran at all.
+        expect(existsSync(observedPath)).toBe(true);
+        const observed = JSON.parse(await readFile(observedPath, "utf8")) as {
+          observed: number | null;
+          supervisor: number;
+        };
+        // The reader found a live pid — the lock the supervisor wrote —
+        // and it is that supervisor, the child tick's own parent.
+        expect(observed.observed).not.toBeNull();
+        expect(observed.observed).toBe(observed.supervisor);
+
+        // Released on the normal exit path: a second loop is not refused by
+        // a leftover lock.
+        const second = await runCli(repo.dir, ["loop", "--max", "0"]);
+        expect(second.out).not.toContain("already runs");
+      } finally {
+        await repo.cleanup();
+        await rm(outDir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+});
+
+describe("state root layout — an undeclared Chain.pendingPath is one file for every consumer", () => {
+  it(
+    "the queue at the default location is the one `flume check` validates and the one the dispatcher picks from",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const wtDir = await mkdtemp(join(tmpdir(), "flume-queue-default-"));
+      try {
+        // A fanout phase (the sole kind that picks from pending) on a chain
+        // that declares no pendingPath. Worktree provisioning is pointed at
+        // a plain file so a picked entry fails immediately after selection —
+        // this test is about which file was read, not about shipping.
+        await writeRepoConfig(repo.dir, supervisorPolicyChainSrc(undefined));
+        const collision = join(wtDir, "wt-collision");
+        await writeFile(collision, "not a directory\n", "utf8");
+        const env = { ...hermeticEnv(), FLUME_WORKTREES_DIR: collision };
+        new Baton(join(repo.dir, ".flume")).wake("build");
+
+        // Vacuity control: with no queue on disk, both consumers report
+        // absence. Without this, a pair of consumers that both resolved the
+        // wrong default would still agree — on nothing.
+        const checkAbsent = await runCli(repo.dir, ["check"], env);
+        expect(checkAbsent.code).toBe(0);
+        expect(checkAbsent.out).toContain("absent — nothing to check");
+        const tickAbsent = await runCli(repo.dir, ["tick"], env);
+        expect(tickAbsent.out).toContain("nothing pickable");
+
+        // Seeded at the accessor's default and committed (dispatch reads the
+        // tip, not the tree).
+        await writeStuckEntryPending(repo.dir);
+
+        const check = await runCli(repo.dir, ["check"], env);
+        expect(check.code).toBe(0);
+        expect(check.out).toContain("valid (1 entries)");
+
+        const tick = await runCli(repo.dir, ["tick"], env);
+        expect(tick.out).not.toContain("nothing pickable");
+        expect(tick.out).toContain("STUCK-ENTRY");
+      } finally {
+        await repo.cleanup();
+        await rm(wtDir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
 });

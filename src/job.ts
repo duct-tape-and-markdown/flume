@@ -23,7 +23,13 @@ import { promisify } from "node:util";
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
 import { pinLongPaths } from "./git.js";
-import { namespacedJoin } from "./paths.js";
+import {
+  awakeDir,
+  loopLockPath,
+  namespacedJoin,
+  resolvePendingPath,
+  STATE_ROOT_NAMES,
+} from "./paths.js";
 import { parsePendingLoose } from "./PendingSchema.js";
 import type { ParseResult } from "./PendingSchema.js";
 
@@ -36,13 +42,19 @@ export class JobUsageError extends Error {}
  * Runtime-owned entries ensured in every job dir's `.gitignore` (§5a-3).
  * The runtime owns its layout; chain-convention dirs (`sessions/`) are the
  * template's to add.
+ *
+ * Derived from `STATE_ROOT_NAMES` (`src/paths.ts`) wherever an accessor owns
+ * the name, so renaming a runtime path cannot leave the ignore behind
+ * pointing at the old one. `worktrees/` has no accessor yet (the open
+ * `Chain.worktreesDir` fork) and `node_modules/` is not the runtime's to
+ * name, so both stay spelled here.
  */
 export const RUNTIME_IGNORES = [
-  "awake/",
-  "prior-attempts/",
+  `${STATE_ROOT_NAMES.awake}/`,
+  `${STATE_ROOT_NAMES.priorAttempts}/`,
   "worktrees/",
   "node_modules/",
-  "loop.pid",
+  STATE_ROOT_NAMES.loopLock,
 ] as const;
 
 /**
@@ -306,7 +318,7 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
 export async function liveLoopPid(dir: string): Promise<number | null> {
   // win32 MAX_PATH: dir is a job/state root that can nest deep; namespacedJoin
   // (src/paths.ts) is the shared idiom.
-  const pidPath = namespacedJoin(dir, "loop.pid");
+  const pidPath = namespacedJoin(loopLockPath(dir));
   if (!existsSync(pidPath)) return null;
   const pid = Number((await readFile(pidPath, "utf8")).trim());
   if (!Number.isFinite(pid) || pid <= 0) return null;
@@ -507,7 +519,7 @@ export function jobStatus(
     .sort()
     .map((name) => {
       const jobDir = join(jobsRoot, name);
-      const awake = existsSync(namespacedJoin(jobDir, "awake"))
+      const awake = existsSync(namespacedJoin(awakeDir(jobDir)))
         ? new Baton(jobDir).awake()
         : [];
       // readPendingLoose rethrows a non-ENOENT read failure (permission
@@ -517,7 +529,7 @@ export function jobStatus(
       let pending: number | null;
       try {
         const parsed = readPendingLoose(
-          join(jobDir, pendingPath ?? join("plan", "pending.json")),
+          resolvePendingPath(jobDir, pendingPath),
         );
         pending = parsed.ok ? parsed.entries.length : null;
       } catch {

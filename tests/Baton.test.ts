@@ -111,7 +111,10 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   const src = readFileSync(BATON_SRC_PATH, "utf8");
 
   it("imports namespacedJoin from ./paths.js", () => {
-    expect(src).toMatch(/import\s*\{\s*namespacedJoin\s*\}\s*from\s*"\.\/paths\.js"/);
+    // Named alongside whatever else Baton takes from paths.js (the state-root
+    // layout accessors) — the pin is that namespacedJoin comes from the shared
+    // home, not that it arrives alone.
+    expect(src).toMatch(/import\s*\{[^}]*\bnamespacedJoin\b[^}]*\}\s*from\s*"\.\/paths\.js"/);
   });
 
   it("routes every fs call (mkdirSync/existsSync/writeFileSync/rmSync/readdirSync) through namespacedJoin, never a bare join", () => {

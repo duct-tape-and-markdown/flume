@@ -46,7 +46,13 @@ import {
   type FlumePaths,
 } from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { matchesAny, namespacedJoin } from "./paths.js";
+import {
+  matchesAny,
+  namespacedJoin,
+  priorAttemptsDir,
+  resolvePendingPath,
+  stopFlagPath,
+} from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 import { countFrictionFiles } from "./job.js";
@@ -99,11 +105,14 @@ type PriorAttemptDraft =
   | Omit<TipMovedAttempt, "headSha" | "at">;
 
 /**
- * Prior-attempt records live beside the baton (`<flumeDir>/awake/`) —
- * gitignored harness runtime state under the flume state dir, NOT in the
- * per-entry worktree (a fanout retry gets a fresh worktree; the record must
- * outlive it). One JSON file per key: the entry tag slug (fanout) or phase
- * name (singleton).
+ * Prior-attempt records live beside the baton, under `priorAttemptsDir`
+ * (`src/paths.ts`, which owns the name): gitignored harness runtime state
+ * under the flume state dir, NOT in the per-entry worktree (a fanout retry
+ * gets a fresh worktree; the record must outlive it). One JSON file per key —
+ * the entry tag slug (fanout) or phase name (singleton).
+ *
+ * Re-exported here because that is where a chain reaches it from
+ * (`src/index.ts`, `src/flumeApi.ts`).
  *
  * Session logs sit alongside under the same root (the dogfood chain places
  * them at `<flumeDir>/sessions/`), but that placement is chain-supplied, not
@@ -112,7 +121,7 @@ type PriorAttemptDraft =
  * `api.paths.flumeDir` (spec/chain.md, *Per-run artifacts belong under
  * `FLUME_DIR`*) so the whole footprint tears down in one `rm`.
  */
-const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
+export { priorAttemptsDir };
 
 /**
  * §16 (RELEASE-v0.7): one pre-tick worktree provisioning failure — the
@@ -677,17 +686,7 @@ export function slugify(tag: string): string {
  * has, with no private dispatcher rule to reverse-engineer.
  */
 export function priorAttemptPath(flumeDir: string, tag: string): string {
-  return join(flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${slugify(tag)}.json`);
-}
-
-/**
- * Directory `priorAttemptPath` writes into — the same `PRIOR_ATTEMPTS_SUBDIR`
- * a chain would otherwise have to hardcode to scan for prior-attempt records
- * (`.claude/rules/engineering.md` "A fact the engine holds is reported,
- * never rediscovered").
- */
-export function priorAttemptsDir(flumeDir: string): string {
-  return join(flumeDir, PRIOR_ATTEMPTS_SUBDIR);
+  return join(priorAttemptsDir(flumeDir), `${slugify(tag)}.json`);
 }
 
 /**
@@ -699,8 +698,8 @@ export function priorAttemptsDir(flumeDir: string): string {
  * own worktree-mirror check (spec/chain.md "What a gate receives"). Two
  * further consumers call it with a different second root, each a path whose
  * escape status decides whether a worktree holds a mirror of it:
- * `isPendingRelocated` passes `pendingPath` — a fixed descendant
- * (`join(flumeDir, "plan", "pending.json")`) whose escape status against
+ * `isPendingRelocated` passes `pendingPath` — a descendant of the state root
+ * (`resolvePendingPath`, `src/paths.ts`) whose escape status against
  * `repoRoot` always matches `flumeDir`'s own — and the `afterCommit`
  * gate-context build passes `configDir`, rebasing it onto the worktree only
  * when it resolves inside the repo. None re-derives the check
@@ -1520,7 +1519,7 @@ export class Dispatcher {
     this.log = opts.log ?? consoleLogger;
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
-    this.pendingPath = join(this.flumeDir, "plan", "pending.json");
+    this.pendingPath = resolvePendingPath(this.flumeDir);
     this.chainLoader =
       opts.chainLoader ??
       diskChainLoader({
@@ -1585,10 +1584,7 @@ export class Dispatcher {
     // spec/pending.md "The pending queue": Chain.pendingPath replaces the
     // constructor-fixed default — resolved once per tick, after chain load,
     // same idiom as entryExtension above.
-    this.pendingPath = join(
-      this.flumeDir,
-      chain.pendingPath ?? join("plan", "pending.json"),
-    );
+    this.pendingPath = resolvePendingPath(this.flumeDir, chain.pendingPath);
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -4034,7 +4030,7 @@ export class Dispatcher {
    * worktree teardown — the same durability the §5 record relies on.
    */
   private revertedSnapshotDir(key: string): string {
-    return join(this.flumeDir, PRIOR_ATTEMPTS_SUBDIR, `${key}.reverted`);
+    return join(priorAttemptsDir(this.flumeDir), `${key}.reverted`);
   }
 
   /**
@@ -4897,7 +4893,7 @@ export async function superviseLoop(
     // the run even though the baton may still carry awake flags — the
     // hibernation check below never gets a chance to end it on its own
     // terms. The flag itself is left on disk; there is no unstop verb.
-    if (existsSync(namespacedJoin(join(flumeDir, "stop")))) {
+    if (existsSync(namespacedJoin(stopFlagPath(flumeDir)))) {
       log.info(`[flume] stop flag present; ending run after ${ticks} tick(s)`);
       await logFrictionSummary();
       return {

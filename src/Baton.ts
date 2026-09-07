@@ -9,9 +9,8 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { namespacedJoin } from "./paths.js";
+import { awakeDir, namespacedJoin } from "./paths.js";
 
 /**
  * Filesystem-flag mechanism for which phases wake next. Presence of
@@ -28,7 +27,7 @@ export class Baton {
 
   /** @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`). */
   constructor(flumeDir: string) {
-    this.dir = join(flumeDir, "awake");
+    this.dir = awakeDir(flumeDir);
     mkdirSync(namespacedJoin(this.dir), { recursive: true });
   }
 

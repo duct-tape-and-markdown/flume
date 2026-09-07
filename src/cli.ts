@@ -49,7 +49,15 @@ import {
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
 import { parsePending, declaredPaths } from "./PendingSchema.js";
-import { matchesAny, entryWriteScopeUnion, namespacedJoin } from "./paths.js";
+import {
+  DEFAULT_PENDING_REL,
+  entryWriteScopeUnion,
+  loopLockPath,
+  matchesAny,
+  namespacedJoin,
+  resolvePendingPath,
+  stopFlagPath,
+} from "./paths.js";
 import {
   JobResolutionConflictError,
   CrossRepoFlumeDirError,
@@ -300,7 +308,7 @@ async function main(): Promise<number> {
     // infer relaunch-safety instead of being told it. No pidfile: silent,
     // unchanged from pre-§17 output.
     let supervisorLive = false;
-    if (existsSync(namespacedJoin(flumeDir, "loop.pid"))) {
+    if (existsSync(namespacedJoin(loopLockPath(flumeDir)))) {
       const pid = await liveLoopPid(flumeDir);
       supervisorLive = pid !== null;
       console.log(
@@ -313,13 +321,13 @@ async function main(): Promise<number> {
     // status` owes exactly this" line 3: named right after supervisor
     // liveness, before the tip claim — the ack ritual only works if the
     // operator who forgot the flag finds it where they look first.
-    const stopFlagPath = join(flumeDir, "stop");
-    if (existsSync(namespacedJoin(stopFlagPath))) {
+    const statusStopPath = stopFlagPath(flumeDir);
+    if (existsSync(namespacedJoin(statusStopPath))) {
       console.log(
         supervisorLive
-          ? `${stopFlagPath} present: the running supervisor will finish ` +
+          ? `${statusStopPath} present: the running supervisor will finish ` +
               "its in-flight tick and end the run"
-          : `${stopFlagPath} present: the next \`loop\`/\`job run\` refuses ` +
+          : `${statusStopPath} present: the next \`loop\`/\`job run\` refuses ` +
               "to start until it is removed",
       );
     }
@@ -357,7 +365,7 @@ async function main(): Promise<number> {
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
     // on both surfaces.
     const pending = readPendingLoose(
-      join(flumeDir, chain?.pendingPath ?? join("plan", "pending.json")),
+      resolvePendingPath(flumeDir, chain?.pendingPath),
     );
     console.log(
       pending.ok ? `pending: ${pending.entries.length}` : "pending: unparsable",
@@ -430,7 +438,7 @@ async function main(): Promise<number> {
     // (re)write the same empty file and print the same fixed statement,
     // never conditioned on whether a supervisor happens to be live right
     // now (that liveness-conditioned phrasing is `status`'s stop-flag line).
-    const stopPath = join(flumeDir, "stop");
+    const stopPath = stopFlagPath(flumeDir);
     mkdirSync(flumeDir, { recursive: true });
     writeFileSync(namespacedJoin(stopPath), "");
     console.log(
@@ -496,8 +504,8 @@ async function main(): Promise<number> {
     // spec/pending.md "The pending queue": the queue path is Chain.pendingPath
     // (default plan/pending.json) — the same resolved value the dispatcher,
     // `flume status`, and `pendingGate` read, never a hardcoded copy.
-    const pendingRel = chain.pendingPath ?? join("plan", "pending.json");
-    const pendingPath = join(flumeDir, pendingRel);
+    const pendingRel = chain.pendingPath ?? DEFAULT_PENDING_REL;
+    const pendingPath = resolvePendingPath(flumeDir, chain.pendingPath);
     let raw: string;
     try {
       raw = readFileSync(namespacedJoin(pendingPath), "utf8");
@@ -772,10 +780,10 @@ async function main(): Promise<number> {
     // refuses the run before any tick — a stale flag must never silently
     // swallow a scheduled run. `job run` reaches this same branch via its
     // `cmd = "loop"` rewrite above, so it refuses identically.
-    const stopFlagPath = join(flumeDir, "stop");
-    if (existsSync(namespacedJoin(stopFlagPath))) {
+    const loopStopPath = stopFlagPath(flumeDir);
+    if (existsSync(namespacedJoin(loopStopPath))) {
       console.error(
-        `[flume] loop refuses: stop flag present at ${stopFlagPath} — ` +
+        `[flume] loop refuses: stop flag present at ${loopStopPath} — ` +
           "remove it to acknowledge the stop before starting a new run",
       );
       return 1;
@@ -796,7 +804,7 @@ async function main(): Promise<number> {
     // win32 MAX_PATH: flumeDir can nest deep under a job/state root;
     // namespacedJoin (src/paths.ts) is the shared idiom — see
     // .claude/rules/platform-facts.md.
-    const lockPath = namespacedJoin(flumeDir, "loop.pid");
+    const lockPath = namespacedJoin(loopLockPath(flumeDir));
     mkdirSync(flumeDir, { recursive: true });
     const priorPid = await liveLoopPid(flumeDir);
     if (priorPid !== null) {
