@@ -107,30 +107,26 @@ neither can be derived without the human widening the enumeration first
   nothing, and invisible to a chain reconciling a failed provision. The
   enumeration in `spec/chain.md`, *What a hook receives*, would need the field.
 
-## All five `Drift:` notes in `spec/chain.md` now describe landed work (PARKED — spec housekeeping)
+## `spec/chain.md`'s closing **Gap:** note is false on both halves (PARKED — spec housekeeping)
 
-`5f4e449` shows the convention: a human spec commit closes drift notes once
-the code catches up. Every one is now stale, and a stale note is worse than
-absent — plan's derive dimension reads them as live gaps and would file
-entries for shipped work.
+Residue of `62aa506`, which retired the five `Drift:` notes but left the
+`Gap:` note under *The package a chain loads through* (`spec/chain.md:688`)
+citing one of them.
 
-- `:189` — `chainLoadGate` keys on a hardcoded `.flume/chain.ts`. It derives
-  the path from `ctx.configDir` today (`src/builtinGates.ts:252`); the
-  `CHAIN_REL_PATH` literal is gone.
-- `:241` — "`ClaudeCodeOptions` has no `model` today." It does:
-  `src/Agent.ts:145`, with `AgentUsage.model` at `:66` (landed by `798f72f`).
-- `:264` — "`AgentResult` has no `finalMessage`; `finalAgentMessage` re-parses
-  stdout." Both halves closed by `6a8dfb1`: `src/Agent.ts:101`/`:235`, and no
-  `finalAgentMessage` remains in `src/Dispatcher.ts`.
-- `:569` — "none of `pickable`, `priorAttempts`, `pickableAfter`, `flumeDir`,
-  `configDir`, `entries` exist on the contexts today." All six exist
-  (`src/Phase.ts`, `1cadcce` and its predecessor), and `PriorAttempt` is
-  exported (`src/index.ts:67`).
-- `:646` — both halves closed: `FlumeApi.paths` by `62b67e5`, the `main()`
-  ordering by `e814195`.
+Both halves verified false on disk this tick:
 
-Also in this file, unverified this tick: the closing **Gap:** note under *The
-package a chain loads through* refers to "the drift note above" as live.
+- "see the drift note above" has **no referent** — `grep "Drift:" spec/chain.md`
+  returns zero after `62aa506`.
+- "whose chain fixture is pre-factory" — `scripts/smoke-install.mjs:64-83`
+  declares `const factory: ChainFactory = (api) => ...; export default
+  factory`, packs the real tarball, installs it, and runs `status` through the
+  generated shim. So the note's conclusion — "nothing currently proves a
+  *published* package loads a factory-shaped chain end to end" — is what the
+  smoke has proven since the fixture moved to the factory shape.
+
+**Recommend:** delete the note. Same reasoning as `62aa506`'s own body — a
+gap note plan's derive reads as live work is worse than none, and this one
+would file an entry for coverage that already ships.
 
 ## A park is invisible on the surface chains already read — engine ruling needed (PARKED — do not derive)
 
