@@ -294,14 +294,13 @@ const factory: ChainFactory = (api) => {
       withSessionCapture(
         claudeCode({
           outputFormat: "stream-json",
+          model,
           extraArgs: [
             // Stabilize the system prompt for cache reuse: moves per-machine
             // sections (cwd, env, git status) into the first user message.
             // Within an active cache window, consecutive ticks can hit the
             // cached system prefix instead of rebuilding it.
             "--exclude-dynamic-system-prompt-sections",
-            "--model",
-            model,
           ],
         }),
         {
@@ -325,17 +324,19 @@ const factory: ChainFactory = (api) => {
   /**
    * Model pinned per phase: the seam exists so the tiers can diverge (plan
    * carries open-ended judgment; build executes decided entries). Both
-   * currently sonnet — a usage-budget ruling, not a collapse of the seam.
+   * currently Opus, pinned by id rather than the `opus` alias so a run is
+   * reproducible across Claude Code releases that move the alias.
    *
-   * Retiring condition, and who acts on it: chain.ts is outside every phase
-   * lane, so **the operator re-pins here, in an interactive `chore(flume):`
+   * Re-pinning, and who acts on it: chain.ts is outside every phase lane,
+   * so **the operator re-pins here, in an interactive `chore(flume):`
    * commit** — no tick can. The condition to re-read this on is observable
-   * in the session capture under `<FLUME_DIR>/sessions/`: plan ticks
-   * retrying past a gate, or build ticks reverting on work whose entry was
-   * unambiguous. Neither is a budget problem; both are a tier problem.
+   * in the session capture under `<FLUME_DIR>/sessions/`: the usage lines
+   * there carry cost per tick, so a step down is a budget ruling made on
+   * measured spend, and a step up is build ticks reverting on work whose
+   * entry was unambiguous.
    */
-  const planAgent = phaseAgent("sonnet");
-  const buildAgent = phaseAgent("sonnet");
+  const planAgent = phaseAgent("claude-opus-5");
+  const buildAgent = phaseAgent("claude-opus-5");
 
   // ---------- phases ----------
 
