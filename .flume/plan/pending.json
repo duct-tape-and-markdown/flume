@@ -1,1 +1,63 @@
-[]
+[
+  {
+    "tag": "CHAINTS-PARK-VERDICT-PIN",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/chain.test.ts",
+          "description": "The `plan.shouldRun` describe already drives the real `loadChainModule` against a scratch FLUME_DIR; it has no case for the not-shipped leg added at `.flume/chain.ts` ~:399. The leg reads `api.readLatestVerdictsSync(ctx.flumeDir)[build.name]`, so the fixture is a tick-verdict file under that scratch root — shape per `TickVerdict.mergeOutcomes` (`src/Dispatcher.ts:367`)."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin plan.shouldRun's park leg: a pickable-only queue plus a last build verdict carrying not-shipped must run plan",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fix ships the test that would have caught it"
+    },
+    "tests": [
+      "plan.shouldRun runs on a pickable-only queue when the last build verdict carries a not-shipped merge outcome",
+      "plan.shouldRun still declines on a pickable-only queue when the last build verdict's merge outcomes are all shipped"
+    ],
+    "acceptance": "both legs of plan.shouldRun's build-verdict check are covered through the real chain factory, and the not-shipped case fails against the pre-4ee48ee predicate",
+    "notes": "4ee48ee fixed the four-park livelock chain-side and shipped no pin. chain.ts is outside both phase lanes, so tests/chain.test.ts is the only surface that can hold one — same arrangement as the existing voluntary-bail case (5e50102)."
+  },
+  {
+    "tag": "RETIRED-ROOTS-AND-MODEL-NARRATION",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "Three sites teach shapes the spec retired: the canonical decorator composition (~:768) and the modelAgent example (~:790-810) carry `process.env.FLUME_DIR ?? CHAIN_DIR` and `extraArgs: [\"--model\", …]`; section 'Per-run artifacts go under FLUME_DIR' (~:825-845) states as **the rule** what spec/chain.md, Per-run artifacts belong under `FLUME_DIR`, now names a defect. Retarget to `api.paths.flumeDir` and `ClaudeCodeOptions.model`; the following 'don't reach into process.env' subsection needs the same pass."
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "`Phase.agent`'s doc (~:234) teaches `extraArgs` as the model-only variation. The spec sentence it paraphrases was deleted at 3d52cd0; `src/Agent.ts:145` carries `model`."
+        },
+        {
+          "path": "src/cliJobResolution.ts",
+          "description": "`resolveStateDirs`' doc (~:59) still calls FLUME_DIR 'a reliable, always-present source of truth for the state root'. The write-back survives per the `per` section — as a child-process channel, not the chain's read path."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Retire the `?? CHAIN_DIR` and `--model`-argv shapes wherever docs and doc comments still teach them as the rule",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "no doc or doc comment tells a chain author to read process.env.FLUME_DIR for artifact placement or to assemble --model into extraArgs",
+    "notes": "Sweep, retired-claim delta off 3d52cd0's spec deletions: the sentences these paraphrase left spec/chain.md as FlumeApi.paths (62b67e5) and ClaudeCodeOptions.model (0acfbb2) landed. examples/ and README.md searched clean. .flume/chain.ts carries four of the same fallback and is outside both lanes — parked."
+  }
+]

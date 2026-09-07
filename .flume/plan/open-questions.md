@@ -84,39 +84,6 @@ Proposed fix keys on the entry *as read* (slug + a hash of entry content, or the
 
 Filed as **gh#19** with full repro. The operator is opening the spec line for this (a startup check under the tip claim, or a `flume resume-merge` verb); do not derive further until that edit lands. Boundary note for whoever writes it: detect from the surviving `flume/<slug>` branch (teardown never ran) and the orphaned worktree dirs the startup sweep already enumerates — never from commit shape or authorship (`engine-boundary.md`, *Told, not inferred*).
 
-## A build park cannot wake plan — the loop livelocks on a parked entry (PARKED — chain.ts, harness surface)
-
-Field-traced 2026-09-06: FLUMEAPI-PATHS parked four times with the same
-verdict, and plan never ran to act on it. The operator had to tick plan by
-hand. Verified on disk this tick:
-
-- `build.shipped` (`.flume/chain.ts`) *does* read a park — a commit touching
-  only `PARK_FILE` returns false — so the engine records the entry
-  `not-shipped` in the tick verdict (`src/Dispatcher.ts:2655`).
-- But `not-shipped` is a **committed** outcome, so it writes no
-  `PriorAttempt`. `NoCommitMode` (`src/Prompt.ts:56`) has no such variant,
-  correctly — nothing was un-committed.
-- `plan.shouldRun` returns false whenever anything is pickable unless
-  `inboxHasEntries()` or `anyVoluntaryBailRecord()`. A park satisfies
-  neither, so plan declines and build is re-dispatched against the same
-  fence forever.
-
-`build.handoff` is not the gap — it wakes plan (a park carries gate results).
-The gap is that the wake is declined.
-
-**Recommendation (chain-side; no engine entry).** `plan.shouldRun` reads the
-last build tick verdict via `readLatestVerdictsSync`, already on the
-`FlumeApi`, and returns true on a `not-shipped` outcome. That is durable
-on-disk state the engine owns, read the way `anyVoluntaryBailRecord` already
-reads prior-attempts — not a re-derivation. Alternative worth weighing: now
-that `TickResult.entries` ships (`1cadcce`), a park is also legible to
-`handoff` as `committed: true, shipped: false, reverted: false`; a marker
-written from there would work but adds a second copy of a fact the verdict
-already holds (`engineering.md`, *Derived state is computed*).
-
-Needs a human `chore(flume):` commit — `.flume/chain.ts` is outside both
-phase lanes.
-
 ## Two facts the engine holds have no field to report them — both need a spec-enumeration amendment (PARKED)
 
 Same shape, bundled for one sign-off. Each is a fact the dispatcher already
@@ -140,18 +107,62 @@ neither can be derived without the human widening the enumeration first
   nothing, and invisible to a chain reconciling a failed provision. The
   enumeration in `spec/chain.md`, *What a hook receives*, would need the field.
 
-## Three `Drift:` notes in `spec/chain.md` describe work that has landed (PARKED — spec housekeeping)
+## All five `Drift:` notes in `spec/chain.md` now describe landed work (PARKED — spec housekeeping)
 
 `5f4e449` shows the convention: a human spec commit closes drift notes once
-the code catches up. Three are now stale, and a stale one is worse than
+the code catches up. Every one is now stale, and a stale note is worse than
 absent — plan's derive dimension reads them as live gaps and would file
 entries for shipped work.
 
+- `:189` — `chainLoadGate` keys on a hardcoded `.flume/chain.ts`. It derives
+  the path from `ctx.configDir` today (`src/builtinGates.ts:252`); the
+  `CHAIN_REL_PATH` literal is gone.
 - `:241` — "`ClaudeCodeOptions` has no `model` today." It does:
   `src/Agent.ts:145`, with `AgentUsage.model` at `:66` (landed by `798f72f`).
+- `:264` — "`AgentResult` has no `finalMessage`; `finalAgentMessage` re-parses
+  stdout." Both halves closed by `6a8dfb1`: `src/Agent.ts:101`/`:235`, and no
+  `finalAgentMessage` remains in `src/Dispatcher.ts`.
 - `:569` — "none of `pickable`, `priorAttempts`, `pickableAfter`, `flumeDir`,
   `configDir`, `entries` exist on the contexts today." All six exist
-  (`src/Phase.ts`, `1cadcce` and its predecessor).
-- `:646` — the ordering half ("`main()` dispatches the job-management verbs
-  before it reaches `resolveStateDirs`") is stale per `e814195`. The
-  `FlumeApi.paths` half is still live; FLUMEAPI-PATHS closes it.
+  (`src/Phase.ts`, `1cadcce` and its predecessor), and `PriorAttempt` is
+  exported (`src/index.ts:67`).
+- `:646` — both halves closed: `FlumeApi.paths` by `62b67e5`, the `main()`
+  ordering by `e814195`.
+
+Also in this file, unverified this tick: the closing **Gap:** note under *The
+package a chain loads through* refers to "the drift note above" as live.
+
+## `.flume/chain.ts` still env-sniffs the state root at four sites (PARKED — chain.ts, harness surface)
+
+`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*, now states the
+answer outright: a chain "never reads `process.env.FLUME_DIR`, and it never
+falls back to its own directory: a chain with a `?? CHAIN_DIR` leg is
+re-deriving a fact the engine already resolved." `FlumeApi.paths` shipped in
+`62b67e5` and the dogfood chain has not adopted it — `.flume/chain.ts:31`
+(inbox), `:56` (prior-attempts dir), `:314` (session capture), `:424`
+(state.md), plus the comment at `:310` justifying the fallback.
+
+**Recommendation:** replace all four with `api.paths.flumeDir` and delete
+`CHAIN_DIR`; no fork to weigh, the spec section decides it. Blocked only by
+lane — `.flume/chain.ts` is outside both phases, so this needs a human
+`chore(flume):` commit. `tests/chain.test.ts` already builds the API from a
+real `FlumePaths`, so the predicates keep their coverage across the change.
+
+## A park is invisible on the surface chains already read — engine ruling needed (PARKED — do not derive)
+
+Drained from the inbox (2026-09-07, cascade-integrations via flume-main). Two
+chains hit the same livelock independently: flume's `plan.shouldRun` (fixed
+chain-side in `4ee48ee`) and cascade's `build.handoff` re-picking a
+capture-only commit (fixed chain-side there). Cause in both: a park is a
+committed `not-shipped` merge outcome, so no `PriorAttempt` is written and
+neither `TickContext.priorAttempts` nor quarantine ever sees it — each chain
+has to know to read the verdict log instead. Two consumers carrying the same
+block is the detector (`engine-boundary.md`, *Surface, not prescription*).
+
+Fork: whether `not-shipped` writes a prior-attempt record (a fact — "landed,
+chain said not shipped", no reason vocabulary), or whether `TickContext`
+carries the entry's last merge outcome directly. Either widens an enumeration
+in `spec/loop.md` (*Prior-outcome feedback*) and `spec/chain.md` (*What a hook
+receives*), so it is the human's edit first.
+
+Same shape as the two-facts question above; folds into one spec pass with it.
