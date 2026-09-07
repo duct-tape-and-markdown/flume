@@ -151,6 +151,12 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "src/Phase.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/chain.test.ts"
+    ],
     "summary": "TickResult gains pickableAfter, flumeDir, configDir, and per-entry fanout outcomes (entries), so a bail isn't lost behind a sibling's ship",
     "per": {
       "path": "spec/chain.md",
@@ -161,13 +167,7 @@
       "a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape"
     ],
     "acceptance": "handoff can read result.pickableAfter/flumeDir/configDir/entries without process.env or a re-picked isPickableNow call",
-    "notes": "May collide with TICKCONTEXT-PICKABLE-PRIORATTEMPTS on src/Phase.ts and src/Dispatcher.ts (expected — sequential ship, not a design coupling).",
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "src/Phase.ts",
-      "tests/Dispatcher.test.ts",
-      "tests/chain.test.ts"
-    ]
+    "notes": "May collide with TICKCONTEXT-PICKABLE-PRIORATTEMPTS on src/Phase.ts and src/Dispatcher.ts (expected — sequential ship, not a design coupling)."
   },
   {
     "tag": "FLUMEAPI-PATHS",
@@ -202,7 +202,15 @@
       "api.paths.flumeDir/configDir/repoRoot equal the Dispatcher's own resolved values at chain-load time"
     ],
     "acceptance": "a chain can resolve a per-run artifact against api.paths.flumeDir instead of process.env.FLUME_DIR with a `?? CHAIN_DIR` fallback",
-    "notes": "cli.ts already resolves state dirs ahead of every chain-loading verb including the job verbs (e814195); that half of the spec's drift note is stale. Only the FlumeApi.paths gap itself remains live. `.flume/chain.ts` adoption is a separate chore(flume) commit (harness surface)."
+    "notes": "cli.ts already resolves state dirs ahead of every chain-loading verb including the job verbs (e814195); that half of the spec's drift note is stale. Only the FlumeApi.paths gap itself remains live. `.flume/chain.ts` adoption is a separate chore(flume) commit (harness surface).",
+    "observedFiles": [
+      ".flume/plan/open-questions.md",
+      "src/Dispatcher.ts",
+      "src/flumeApi.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/chain.test.ts",
+      "tests/examples.integration.test.ts"
+    ]
   },
   {
     "tag": "CHAIN-PENDINGPATH",
