@@ -1,51 +1,5 @@
 [
   {
-    "tag": "AGENTRESULT-FINALMESSAGE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "claudeCode's invoke() extracts finalMessage from the full captured stdout (same three cases as Dispatcher's finalAgentMessage: stream-json result event text, last assistant turn text, raw stdout for plain-text) and sets it on AgentResult, unbound; export the extraction helper."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Delete the finalAgentMessage free function; carry finalMessage on AgentTermination's clean variant from AgentResult; buildVoluntaryBail reads it and still applies tailBound(_, MAX_PRIOR_NOCOMMIT) itself at record-build time."
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "Cover the three finalMessage extraction cases moved from Dispatcher."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Update fixtures feeding termination.stdout to instead set termination.finalMessage; voluntary-bail record text stays byte-identical."
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      "src/Agent.ts",
-      "src/Dispatcher.ts",
-      "tests/Agent.test.ts",
-      "tests/Dispatcher.test.ts"
-    ],
-    "summary": "Move stdout finalMessage extraction from Dispatcher into claudeCode's AgentResult.finalMessage",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "The agent seam"
-    },
-    "tests": [
-      "AgentResult.finalMessage carries the stream-json result event's text, or the last assistant turn's text, or raw stdout for a plain-text agent",
-      "voluntary-bail record's constraint text is unchanged for existing fixtures after the move"
-    ],
-    "acceptance": "src/Dispatcher.ts holds no NDJSON re-parse of stdout for this purpose; the adapter is the one place provider transcript shape is read",
-    "notes": "Bounding (tailBound/MAX_PRIOR_NOCOMMIT) stays Dispatcher-side — record-size policy, not provider shape."
-  },
-  {
     "tag": "TICKCONTEXT-PICKABLE-PRIORATTEMPTS",
     "gate": {
       "kind": "open"
