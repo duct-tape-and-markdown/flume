@@ -21,9 +21,11 @@ import type { Gate, GateContext } from "../src/Gate.ts";
 const exec = promisify(execFile);
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
+  const flumeDir = overrides.flumeDir ?? join(cwd, ".flume");
   return {
     cwd,
-    flumeDir: join(cwd, ".flume"),
+    flumeDir,
+    pendingPath: join(flumeDir, "plan", "pending.json"),
     configDir: join(cwd, ".flume"),
     repoRoot: cwd,
     phaseName: "test-phase",
@@ -709,15 +711,17 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     expect(result.message).toMatch(/missing after commit/);
   });
 
-  it("reads pending.json from a custom pendingPath", async () => {
+  it("reads pending.json from ctx.pendingPath — the queue path is Chain.pendingPath's, not the gate's own", async () => {
     const sha = await commitFiles(dir, {
       ".flume/custom/queue.json": JSON.stringify([validEntry]),
     });
-    const gate = pendingGate({
-      targetFence: { writablePaths: ["src/**"] },
-      pendingPath: join("custom", "queue.json"),
-    });
-    const result = await gate.run(ctx(dir, { commitSha: sha }));
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(
+      ctx(dir, {
+        commitSha: sha,
+        pendingPath: join(dir, ".flume", "custom", "queue.json"),
+      }),
+    );
     expect(result.ok).toBe(true);
   });
 

@@ -852,24 +852,57 @@ export type ChainFactory = (api: FlumeApi) => ChainModule;
  */
 function validateFrictionDeclaration(chain: Chain): void {
   if (chain.friction === undefined) return;
-  const friction = chain.friction;
-  if (isAbsolute(friction)) {
+  assertStateRootRelative(
+    "friction",
+    chain.friction,
+    'directory path (e.g. "friction")',
+  );
+}
+
+/**
+ * Shared escape-check for a declared state-root-relative path
+ * (`Chain.friction`, `Chain.pendingPath`) — base-independent, per
+ * `validateFrictionDeclaration`'s original doc: it resolves the declared
+ * path against an arbitrary sentinel root and asks whether the result still
+ * sits under that root, so it needs no actual `flumeDir` value.
+ */
+function assertStateRootRelative(
+  fieldName: string,
+  value: string,
+  shapeHint: string,
+): void {
+  if (isAbsolute(value)) {
     throw new Error(
-      `chain declares friction '${friction}' as an absolute path; ` +
-        `Chain.friction must be a state-root-relative directory path (e.g. "friction")`,
+      `chain declares ${fieldName} '${value}' as an absolute path; ` +
+        `Chain.${fieldName} must be a state-root-relative ${shapeHint}`,
     );
   }
   const sentinelRoot = resolve("__flume_state_root__");
-  const resolved = resolve(sentinelRoot, friction);
+  const resolved = resolve(sentinelRoot, value);
   const rel = relative(sentinelRoot, resolved);
   const escapesRoot =
     rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   if (escapesRoot) {
     throw new Error(
-      `chain declares friction '${friction}' which resolves outside the state root; ` +
-        `Chain.friction must be a state-root-relative directory path (e.g. "friction")`,
+      `chain declares ${fieldName} '${value}' which resolves outside the state root; ` +
+        `Chain.${fieldName} must be a state-root-relative ${shapeHint}`,
     );
   }
+}
+
+/**
+ * Validate a declared `Chain.pendingPath` (spec/pending.md "The pending
+ * queue"): must be relative and must resolve inside the state root, same
+ * idiom as `Chain.friction`. Undeclared is a strict no-op — the dispatcher
+ * falls back to `plan/pending.json`.
+ */
+function validatePendingPathDeclaration(chain: Chain): void {
+  if (chain.pendingPath === undefined) return;
+  assertStateRootRelative(
+    "pendingPath",
+    chain.pendingPath,
+    'file path (e.g. "plan/pending.json")',
+  );
 }
 
 /**
@@ -1040,6 +1073,7 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
     );
   }
   validateFrictionDeclaration(chain);
+  validatePendingPathDeclaration(chain);
   validateNoDeadDeclarations(chain);
   const result: ChainModule = { chain };
   if (module.agent) result.agent = module.agent;
@@ -1406,7 +1440,7 @@ export class Dispatcher {
   private readonly tickTimeoutMs: number | undefined;
   private readonly flumeDir: string;
   private readonly stateRootRel: string | undefined;
-  private readonly pendingPath: string;
+  private pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses (v0.8 §2). */
   private entryExtension: EntryExtension | undefined;
@@ -1475,6 +1509,13 @@ export class Dispatcher {
     // (v0.8 §2); remembered here because readPending runs downstream of the
     // one place the chain is loaded.
     this.entryExtension = chain.entryExtension;
+    // spec/pending.md "The pending queue": Chain.pendingPath replaces the
+    // constructor-fixed default — resolved once per tick, after chain load,
+    // same idiom as entryExtension above.
+    this.pendingPath = join(
+      this.flumeDir,
+      chain.pendingPath ?? join("plan", "pending.json"),
+    );
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -1872,6 +1913,7 @@ export class Dispatcher {
                 repoRoot,
                 flumeDir: this.flumeDir,
                 stateRootRel: this.stateRootRel,
+                pendingPath: this.pendingPath,
                 configDir: this.opts.configDir,
                 phaseName: phase.name,
                 commitSha: mergedSha,
@@ -2407,6 +2449,7 @@ export class Dispatcher {
           repoRoot,
           flumeDir: this.flumeDir,
           stateRootRel: this.stateRootRel,
+          pendingPath: this.pendingPath,
           configDir: this.opts.configDir,
           phaseName: phase.name,
           commitSha: mergedSha,
@@ -3160,6 +3203,7 @@ export class Dispatcher {
         repoRoot: cwd,
         flumeDir: this.flumeDir,
         stateRootRel: this.stateRootRel,
+        pendingPath: this.pendingPath,
         configDir,
         phaseName: phase.name,
         commitSha,

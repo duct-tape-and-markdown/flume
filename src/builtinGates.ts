@@ -281,12 +281,6 @@ export interface PendingGateOptions {
    */
   extension?: EntryExtension;
   /**
-   * flumeDir-relative path to the pending list. Default `plan/pending.json`
-   * — the universal plan/build convention. Override for a chain that
-   * attaches this gate to a differently-shaped producer phase.
-   */
-  pendingPath?: string;
-  /**
    * The fence every entry's declared `files` must survive: the downstream
    * phase that will build this queue, typically passed as the phase value
    * itself (`{ writablePaths, entryChannelPaths }` is all this gate reads).
@@ -325,7 +319,6 @@ export interface PendingGateOptions {
  * build as unshippable work.
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
-  const pendingPath = opts.pendingPath ?? join("plan", "pending.json");
   const fenceWhen = opts.fenceWhen ?? (() => true);
   const withHint = (message: string): string =>
     opts.hint ? `${message} — ${opts.hint}` : message;
@@ -336,6 +329,12 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       if (!ctx.commitSha) {
         return { ok: false, message: "pending gate requires commitSha" };
       }
+      // spec/pending.md "The pending queue": `ctx.pendingPath` is the one
+      // resolved value (`Chain.pendingPath ?? "plan/pending.json"`,
+      // absolute, under `ctx.flumeDir`) — the gate and the dispatcher can
+      // no longer check two different files. `displayPath` is only for
+      // messages: flumeDir-relative, matching the pre-ctx.pendingPath text.
+      const displayPath = relative(ctx.flumeDir, ctx.pendingPath);
       // Read fresh on every run — not hoisted to construction — so a
       // declaration-driven fence (e.g. a Phase whose writablePaths/
       // entryChannelPaths are populated after pendingGate(...) is called,
@@ -367,17 +366,16 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       // stays the disk read.
       let raw: string;
       if (ctx.stateRootRel === undefined) {
-        const absPendingPath = join(ctx.flumeDir, pendingPath);
         try {
-          raw = await readFile(absPendingPath, "utf8");
+          raw = await readFile(ctx.pendingPath, "utf8");
         } catch {
           return {
             ok: false,
-            message: `${pendingPath} missing after commit`,
+            message: `${displayPath} missing after commit`,
           };
         }
       } else {
-        const relPath = join(ctx.stateRootRel, pendingPath);
+        const relPath = join(ctx.stateRootRel, displayPath);
         const atCommit = await git.readFileAtRef(
           ctx.repoRoot,
           ctx.commitSha,
@@ -386,7 +384,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
         if (atCommit === null) {
           return {
             ok: false,
-            message: `${pendingPath} missing after commit`,
+            message: `${displayPath} missing after commit`,
           };
         }
         raw = atCommit;
@@ -396,7 +394,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
         return {
           ok: false,
           message: withHint(
-            `${pendingPath} has ${parsed.errors.length} schema violation(s)`,
+            `${displayPath} has ${parsed.errors.length} schema violation(s)`,
           ),
           details: parsed.errors
             .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
@@ -428,7 +426,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       }
       return {
         ok: true,
-        message: `${pendingPath} valid (${parsed.entries.length} entries), fence pre-check passed`,
+        message: `${displayPath} valid (${parsed.entries.length} entries), fence pre-check passed`,
       };
     },
   };

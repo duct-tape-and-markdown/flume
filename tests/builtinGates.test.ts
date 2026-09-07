@@ -63,6 +63,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     // same as the dispatcher-built case. The dedicated "real afterCommit
     // shape" regression test below overrides both explicitly.
     stateRootRel: computeStateRootRel(repoRoot, flumeDir),
+    pendingPath: join(flumeDir, "plan", "pending.json"),
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
@@ -331,6 +332,48 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary
   });
 });
 
+describe("pendingGate — reads ctx.pendingPath, not an option of its own (CHAIN-PENDINGPATH)", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await createBootstrappedRepo("flume-pendinggate-ctxpath-");
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("reads a custom ctx.pendingPath instead of the default plan/pending.json location", async () => {
+    const sha = await commitFiles(dir, {
+      ".flume/custom/queue.json": JSON.stringify([validEntry]),
+    });
+    // PendingGateOptions carries no pendingPath field at all (acceptance:
+    // "PendingGateOptions no longer has a pendingPath field") — the gate
+    // and the dispatcher can no longer check two different files.
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(
+      ctx(dir, {
+        commitSha: sha,
+        pendingPath: join(dir, ".flume", "custom", "queue.json"),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("undeclared ctx.pendingPath (the default fixture shape) still resolves to plan/pending.json", async () => {
+    const sha = await commitFiles(dir, {
+      ".flume/plan/pending.json": JSON.stringify([validEntry]),
+    });
+    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
+    const result = await gate.run(ctx(dir, { commitSha: sha }));
+    expect(result.ok).toBe(true);
+    expect(result.message).toBe(
+      `${join("plan", "pending.json")} valid (1 entries), fence pre-check passed`,
+    );
+  });
+});
+
 describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
   let dir: string;
 
@@ -489,6 +532,7 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, e
       repoRoot: worktreePath,
       flumeDir,
       stateRootRel: computeStateRootRel(repo, flumeDir),
+      pendingPath: join(flumeDir, "plan", "pending.json"),
       configDir: flumeDir,
       phaseName: "build",
       commitSha: violatingSha,

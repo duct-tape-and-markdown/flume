@@ -78,6 +78,14 @@ export interface GateContext {
    */
   configDir: string;
   /**
+   * Absolute, resolved path to the pending queue (`Chain.pendingPath`,
+   * default `<flumeDir>/plan/pending.json`), resolved once per tick by the
+   * dispatcher — same idiom as `flumeDir`/`configDir`. A gate reads this
+   * instead of hardcoding `plan/pending.json` (spec/pending.md, "`pendingGate`
+   * — validation and fence pre-check as an opt-in builtin").
+   */
+  pendingPath: string;
+  /**
    * Absolute path of the working-tree root the gate is running in — for an
    * `afterCommit` gate, the worktree root (a fanout entry's, or a singleton
    * phase's own; spec/worktrees.md "Singleton runs in a worktree"); for an

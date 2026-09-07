@@ -782,7 +782,7 @@ async function writeRepoConfig(
  * below, just loaded for its declared fields. `friction` omitted leaves the
  * field undeclared entirely (§2: undeclared turns every §6 behavior off).
  */
-function minimalChainSrc(friction?: string): string {
+function minimalChainSrc(friction?: string, pendingPath?: string): string {
   return (
     `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
@@ -797,6 +797,9 @@ function minimalChainSrc(friction?: string): string {
     `  humanOnly: [],\n` +
     (friction !== undefined
       ? `  friction: ${JSON.stringify(friction)},\n`
+      : ``) +
+    (pendingPath !== undefined
+      ? `  pendingPath: ${JSON.stringify(pendingPath)},\n`
       : ``) +
     `} });\n`
   );
@@ -977,6 +980,42 @@ describe("flume status — pending entry count (§3)", () => {
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
       expect(r.out).toContain("pending: 0");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — counts entries at the custom location, not plan/pending.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    try {
+      const customRel = join("custom", "queue.json");
+      await writeRepoConfig(dir, minimalChainSrc(undefined, customRel));
+      const customDir = join(dir, ".flume", "custom");
+      await mkdir(customDir, { recursive: true });
+      await writeFile(
+        join(customDir, "queue.json"),
+        JSON.stringify([
+          {
+            tag: "A",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
+          },
+        ]),
+        "utf8",
+      );
+      // A plan/pending.json at the default location must never be consulted
+      // once a custom pendingPath is declared.
+      await mkdir(join(dir, ".flume", "plan"), { recursive: true });
+      await writeFile(
+        join(dir, ".flume", "plan", "pending.json"),
+        JSON.stringify([]),
+        "utf8",
+      );
+
+      const r = await runCli(dir, ["status"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("pending: 1");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1370,6 +1409,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
 function fanoutCheckChainSrc(
   buildWritablePaths: string[],
   buildChannelPaths: string[] = [],
+  pendingPath?: string,
 ): string {
   return (
     `export default () => ({ chain: {\n` +
@@ -1396,17 +1436,21 @@ function fanoutCheckChainSrc(
     `    },\n` +
     `  ],\n` +
     `  humanOnly: [],\n` +
+    (pendingPath !== undefined
+      ? `  pendingPath: ${JSON.stringify(pendingPath)},\n`
+      : ``) +
     `} });\n`
   );
 }
 
-async function writeCheckPending(root: string, entries: unknown[]): Promise<void> {
-  await mkdir(join(root, ".flume", "plan"), { recursive: true });
-  await writeFile(
-    join(root, ".flume", "plan", "pending.json"),
-    JSON.stringify(entries, null, 2) + "\n",
-    "utf8",
-  );
+async function writeCheckPending(
+  root: string,
+  entries: unknown[],
+  rel: string = join("plan", "pending.json"),
+): Promise<void> {
+  const path = join(root, ".flume", rel);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(entries, null, 2) + "\n", "utf8");
 }
 
 describe("flume check (spec/cli.md §Subcommand surface)", () => {
@@ -1490,6 +1534,43 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(0);
       expect(r.out).toContain("valid (1 entries)");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — reads and reports the custom location, not plan/pending.json", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const customRel = join("custom", "queue.json");
+      await writeRepoConfig(
+        repo.dir,
+        fanoutCheckChainSrc(["src/**"], [], customRel),
+      );
+      await writeCheckPending(
+        repo.dir,
+        [
+          {
+            tag: "CUSTOM",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {
+              new: [],
+              edit: [{ path: "src/a.ts", description: "inside fence" }],
+              retire: [],
+            },
+          },
+        ],
+        customRel,
+      );
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain(`${customRel} valid (1 entries)`);
+      // The default location was never written or read.
+      expect(existsSync(join(repo.dir, ".flume", "plan", "pending.json"))).toBe(
+        false,
+      );
     } finally {
       await repo.cleanup();
     }

@@ -345,6 +345,16 @@ export interface Chain {
    */
   friction?: string;
   /**
+   * State-root-relative file path naming the pending queue (spec/pending.md,
+   * *The pending queue*) — the `seedDir`/`friction` idiom applied to the
+   * queue file itself. Resolved against the resolved `flumeDir` once per
+   * tick, same as `friction`. Undeclared defaults to `"plan/pending.json"`,
+   * the one default the engine keeps because its own mechanics (fanout
+   * selection, the wave-end rewrite) read the file and a tick cannot run
+   * without one.
+   */
+  pendingPath?: string;
+  /**
    * Environment facts this chain asserts (v0.8 §4) — the strings a pending
    * entry's `gate: { kind: "requiresCapability", capability }` is matched
    * against. `chain.ts` is TypeScript, so this may probe the environment at

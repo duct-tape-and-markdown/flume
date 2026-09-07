@@ -476,8 +476,17 @@ export function readPendingLoose(pendingPath: string): ParseResult {
  * `frictionDir` (§6, v0.6.2), when supplied, is the repo chain's declared
  * `Chain.friction` — job-dir-relative, so the same string applies to every
  * job. Omitted → every row's `frictionCount` is `undefined`.
+ *
+ * `pendingPath` (spec/pending.md "The pending queue"), when supplied, is the
+ * repo chain's declared `Chain.pendingPath` — job-dir-relative, the same
+ * idiom as `frictionDir`. Omitted defaults to `plan/pending.json`, same as
+ * the repo-level default.
  */
-export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
+export function jobStatus(
+  repoRoot: string,
+  frictionDir?: string,
+  pendingPath?: string,
+): JobStatus[] {
   const jobsRoot = join(repoRoot, ".flume", "jobs");
   // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom —
   // otherwise these existence checks silently misread a too-long path as
@@ -498,7 +507,9 @@ export function jobStatus(repoRoot: string, frictionDir?: string): JobStatus[] {
       // as unparsable here rather than escaping the map.
       let pending: number | null;
       try {
-        const parsed = readPendingLoose(join(jobDir, "plan", "pending.json"));
+        const parsed = readPendingLoose(
+          join(jobDir, pendingPath ?? join("plan", "pending.json")),
+        );
         pending = parsed.ok ? parsed.entries.length : null;
       } catch {
         pending = null;

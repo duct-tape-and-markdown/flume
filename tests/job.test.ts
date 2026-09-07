@@ -87,7 +87,7 @@ const MINIMAL_CHAIN_SRC =
  */
 async function writeRepoChain(
   repoDir: string,
-  opts: { seedDir?: string; friction?: string } = {},
+  opts: { seedDir?: string; friction?: string; pendingPath?: string } = {},
 ): Promise<void> {
   await mkdir(join(repoDir, ".flume"), { recursive: true });
   let src = MINIMAL_CHAIN_SRC;
@@ -101,6 +101,12 @@ async function writeRepoChain(
     src = src.replace(
       "humanOnly: [],",
       `humanOnly: [],\n  friction: ${JSON.stringify(opts.friction)},`,
+    );
+  }
+  if (opts.pendingPath !== undefined) {
+    src = src.replace(
+      "humanOnly: [],",
+      `humanOnly: [],\n  pendingPath: ${JSON.stringify(opts.pendingPath)},`,
     );
   }
   await writeFile(join(repoDir, ".flume", "chain.ts"), src, "utf8");
@@ -1147,6 +1153,45 @@ describe("jobStatus — §5d enumeration units", () => {
     }
   });
 
+  it("a supplied pendingPath (CHAIN-PENDINGPATH) counts entries under <jobdir>/<pendingPath>, per job, instead of the default plan/pending.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      const customRel = join("custom", "queue.json");
+      await mkdir(join(jobs, "alpha", "custom"), { recursive: true });
+      await writeFile(
+        join(jobs, "alpha", "custom", "queue.json"),
+        JSON.stringify([pendingEntry("A-ONE"), pendingEntry("A-TWO")]),
+      );
+      // A default-location pending.json must never be consulted once a
+      // pendingPath override is supplied.
+      await mkdir(join(jobs, "alpha", "plan"), { recursive: true });
+      await writeFile(join(jobs, "alpha", "plan", "pending.json"), "[]");
+
+      expect(jobStatus(dir, undefined, customRel)).toEqual([
+        { name: "alpha", awake: [], pending: 2 },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("undeclared pendingPath defaults identically to today's plan/pending.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      await mkdir(join(jobs, "alpha", "plan"), { recursive: true });
+      await writeFile(
+        join(jobs, "alpha", "plan", "pending.json"),
+        JSON.stringify([pendingEntry("A-ONE")]),
+      );
+
+      expect(jobStatus(dir)).toEqual([{ name: "alpha", awake: [], pending: 1 }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("omits frictionCount entirely when no frictionDir is supplied", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
@@ -1293,6 +1338,36 @@ describe("jobStatus — §5d enumeration units", () => {
         const extra = await runCli(repo.dir, ["job", "status", "s1"]);
         expect(extra.code).toBe(2);
         expect(extra.out).toContain("usage: flume job status");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
+    "real CLI: a chain-declared pendingPath (CHAIN-PENDINGPATH) is honored per job — counts entries at the custom location, not <jobdir>/plan/pending.json",
+    async () => {
+      const repo = await makeRepo();
+      try {
+        const customRel = join("custom", "queue.json");
+        await writeRepoChain(repo.dir, { pendingPath: customRel });
+        await jobNew({ repoRoot: repo.dir, name: "s1", log: () => {} });
+        const jobDir = join(repo.dir, ".flume", "jobs", "s1");
+        await mkdir(join(jobDir, "custom"), { recursive: true });
+        await writeFile(
+          join(jobDir, "custom", "queue.json"),
+          JSON.stringify([pendingEntry("S-ONE"), pendingEntry("S-TWO")]),
+        );
+        // The default location must never be consulted once a custom
+        // pendingPath is declared.
+        await mkdir(join(jobDir, "plan"), { recursive: true });
+        await writeFile(join(jobDir, "plan", "pending.json"), "[]");
+
+        const r = await runCli(repo.dir, ["job", "status"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("s1");
+        expect(r.out).toContain("pending: 2");
       } finally {
         await repo.cleanup();
       }

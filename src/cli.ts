@@ -336,18 +336,27 @@ async function main(): Promise<number> {
         );
       }
     }
+    // §6 (v0.6.2) / spec/pending.md "The pending queue": best-effort — a
+    // missing or broken chain must never fail `status`, only silently
+    // withhold the friction line and the chain-declared pendingPath (the
+    // pending count below then falls back to the default location).
+    let chain: Chain | undefined;
+    try {
+      ({ chain } = await diskChainLoader(configDir)());
+    } catch {
+      chain = undefined;
+    }
     // §3: the pending entry count, independent of whether the chain loads —
     // `flume job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
     // on both surfaces.
-    const pending = readPendingLoose(join(flumeDir, "plan", "pending.json"));
+    const pending = readPendingLoose(
+      join(flumeDir, chain?.pendingPath ?? join("plan", "pending.json")),
+    );
     console.log(
       pending.ok ? `pending: ${pending.entries.length}` : "pending: unparsable",
     );
-    // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
-    // `status`, only silently withhold the friction line.
-    try {
-      const { chain } = await diskChainLoader(configDir)();
+    if (chain) {
       const line = await frictionCountLine(flumeDir, chain);
       if (line) console.log(line);
       // v0.8 §4: name entries stuck on a capability this chain hasn't
@@ -363,9 +372,6 @@ async function main(): Promise<number> {
           );
         }
       }
-    } catch {
-      // no chain, or a chain that fails to load — nothing to report beyond
-      // the pending count above
     }
     return 0;
   }
@@ -481,17 +487,21 @@ async function main(): Promise<number> {
       return EX_MOUNT_DEAD;
     }
 
-    const pendingPath = join(flumeDir, "plan", "pending.json");
+    // spec/pending.md "The pending queue": the queue path is Chain.pendingPath
+    // (default plan/pending.json) — the same resolved value the dispatcher,
+    // `flume status`, and `pendingGate` read, never a hardcoded copy.
+    const pendingRel = chain.pendingPath ?? join("plan", "pending.json");
+    const pendingPath = join(flumeDir, pendingRel);
     let raw: string;
     try {
       raw = readFileSync(namespacedJoin(pendingPath), "utf8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        console.log("plan/pending.json absent — nothing to check");
+        console.log(`${pendingRel} absent — nothing to check`);
         return 0;
       }
       console.error(
-        `[flume] check: plan/pending.json failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] check: ${pendingRel} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
@@ -499,7 +509,7 @@ async function main(): Promise<number> {
     const parsed = parsePending(raw, chain.entryExtension);
     if (!parsed.ok) {
       console.error(
-        `[flume] check: plan/pending.json has ${parsed.errors.length} schema violation(s)`,
+        `[flume] check: ${pendingRel} has ${parsed.errors.length} schema violation(s)`,
       );
       for (const e of parsed.errors) {
         console.error(`  [${e.index}] ${e.path}: ${e.message}`);
@@ -539,7 +549,7 @@ async function main(): Promise<number> {
     }
 
     console.log(
-      `plan/pending.json valid (${parsed.entries.length} entries), fence check passed`,
+      `${pendingRel} valid (${parsed.entries.length} entries), fence check passed`,
     );
     return 0;
   }

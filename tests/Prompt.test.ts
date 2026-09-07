@@ -365,6 +365,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     return {
       cwd: dir,
       flumeDir: "/state-root",
+      pendingPath: "/state-root/plan/pending.json",
       configDir: join(dir, ".flume"),
       repoRoot: dir,
       phaseName: "build",

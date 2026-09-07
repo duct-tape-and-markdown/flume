@@ -34,16 +34,20 @@ export async function runJobVerb(
       // §6 (v0.6.2): the friction dir is job-dir-relative but declared once
       // on the repo-resident chain — load it here, best-effort (a missing or
       // broken chain must never fail `job status`, only silently withhold
-      // the friction counts).
+      // the friction counts). `Chain.pendingPath` (spec/pending.md "The
+      // pending queue") rides the same best-effort load, alongside it.
       let frictionDir: string | undefined;
+      let pendingPath: string | undefined;
       try {
         const { chain } = await diskChainLoader(configDir)();
         frictionDir = chain.friction;
+        pendingPath = chain.pendingPath;
       } catch {
         frictionDir = undefined;
+        pendingPath = undefined;
       }
 
-      const jobs = jobStatus(repoRoot, frictionDir);
+      const jobs = jobStatus(repoRoot, frictionDir, pendingPath);
       if (jobs.length === 0) {
         console.log("no jobs");
         return 0;

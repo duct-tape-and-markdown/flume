@@ -879,6 +879,135 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md 'The pending queue')", () => {
+  /**
+   * Commits a pending queue's raw content at an arbitrary flumeDir-relative
+   * path — the same tip-committing shape `commitPendingFile` gives the
+   * default `plan/pending.json` location, generalized so a declared
+   * `Chain.pendingPath` has something to resolve against.
+   */
+  async function commitPendingFileAt(
+    repo: string,
+    rel: string,
+    content: string,
+  ): Promise<void> {
+    const path = join(repo, ".flume", rel);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
+    await exec("git", ["add", "--", join(".flume", rel)], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "test: pending.json"], {
+      cwd: repo,
+    });
+  }
+
+  it("a chain-declared pendingPath is honored by fanout selection, the wave-end rewrite, and a gate reading ctx.pendingPath", async () => {
+    const customRel = join("custom", "queue.json");
+    const entries = [makeEntry("CUSTOM-PATH", ["src/custom.ts"])];
+    await commitPendingFileAt(
+      fx.repo,
+      customRel,
+      JSON.stringify(entries, null, 2) + "\n",
+    );
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let capturedPendingPath: string | undefined;
+    const capturingGate: Gate = {
+      name: "capture-pendingpath",
+      when: "afterCommit",
+      run(ctx) {
+        capturedPendingPath = ctx.pendingPath;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [capturingGate],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      pendingPath: customRel,
+    };
+
+    const agent = fanoutAgent({
+      "custom-path": (cwd) =>
+        writeAndCommit(cwd, "src/custom.ts", "from-custom\n", "build(CUSTOM-PATH): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Fanout selection picked the entry from the declared location, and the
+    // wave-end rewrite ships it there — not at the default plan/pending.json.
+    expect(outcome.result?.shippedTags).toEqual(["CUSTOM-PATH"]);
+    expect(
+      JSON.parse(
+        await readFile(join(fx.repo, ".flume", customRel), "utf8"),
+      ),
+    ).toEqual([]);
+    expect(existsSync(join(fx.repo, ".flume", "plan", "pending.json"))).toBe(
+      false,
+    );
+
+    // The afterCommit gate saw the same resolved, absolute path.
+    expect(capturedPendingPath).toBe(join(fx.repo, ".flume", customRel));
+  }, 20_000);
+
+  it("undeclared pendingPath defaults identically to today's plan/pending.json", async () => {
+    const entries = [makeEntry("DEFAULT-PATH", ["src/default.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let capturedPendingPath: string | undefined;
+    const capturingGate: Gate = {
+      name: "capture-pendingpath",
+      when: "afterCommit",
+      run(ctx) {
+        capturedPendingPath = ctx.pendingPath;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [capturingGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "default-path": (cwd) =>
+        writeAndCommit(cwd, "src/default.ts", "x\n", "build(DEFAULT-PATH): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["DEFAULT-PATH"]);
+    expect(capturedPendingPath).toBe(
+      join(fx.repo, ".flume", "plan", "pending.json"),
+    );
+  }, 20_000);
+});
+
 describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-unblock)", () => {
   it("a multi-parent blockedBy entry flips to open once every named parent ships in the same wave", async () => {
     const entries = [
