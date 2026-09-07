@@ -84,94 +84,74 @@ Proposed fix keys on the entry *as read* (slug + a hash of entry content, or the
 
 Filed as **gh#19** with full repro. The operator is opening the spec line for this (a startup check under the tip claim, or a `flume resume-merge` verb); do not derive further until that edit lands. Boundary note for whoever writes it: detect from the surviving `flume/<slug>` branch (teardown never ran) and the orphaned worktree dirs the startup sweep already enumerates — never from commit shape or authorship (`engine-boundary.md`, *Told, not inferred*).
 
-## Debt note: `docs/CHAIN-AUTHORING.md` still documents `pendingGate`'s retired `pendingPath?` option
+## A build park cannot wake plan — the loop livelocks on a parked entry (PARKED — chain.ts, harness surface)
 
-CHAIN-PENDINGPATH (this tick) removed `PendingGateOptions.pendingPath` — the queue path is now the one `Chain.pendingPath` value every reader resolves (`src/Gate.ts` `GateContext.pendingPath`), per `spec/pending.md` "The pending queue". `docs/CHAIN-AUTHORING.md:290` still lists `pendingGate({ targetFence, extension?, pendingPath?, fenceWhen? })`. Out of this entry's fence (docs/ wasn't in `entry.files`); pure narration drift, no behavior at stake — a one-line doc fix for the next tick that touches that file, not a pending entry on its own.
+Field-traced 2026-09-06: FLUMEAPI-PATHS parked four times with the same
+verdict, and plan never ran to act on it. The operator had to tick plan by
+hand. Verified on disk this tick:
 
-## FLUMEAPI-PATHS parked: fence-only — plan must widen `files.edit` by four `src/` files
+- `build.shipped` (`.flume/chain.ts`) *does* read a park — a commit touching
+  only `PARK_FILE` returns false — so the engine records the entry
+  `not-shipped` in the tick verdict (`src/Dispatcher.ts:2655`).
+- But `not-shipped` is a **committed** outcome, so it writes no
+  `PriorAttempt`. `NoCommitMode` (`src/Prompt.ts:56`) has no such variant,
+  correctly — nothing was un-committed.
+- `plan.shouldRun` returns false whenever anything is pickable unless
+  `inboxHasEntries()` or `anyVoluntaryBailRecord()`. A park satisfies
+  neither, so plan declines and build is re-dispatched against the same
+  fence forever.
 
-**No human decision needed. This is plan's call, and only a plan tick can
-make it.** Attempt 4 re-parked because trunk tip is still `266d80c` — the
-attempt-3 park itself. Plan has not ticked since the park landed, so build was
-re-dispatched against the same three-file fence and could only park again.
-Re-dispatching build changes nothing; the entry needs a derive.
+`build.handoff` is not the gap — it wakes plan (a park carries gate results).
+The gap is that the wake is declined.
 
-### The blocker, verified on disk this tick
+**Recommendation (chain-side; no engine entry).** `plan.shouldRun` reads the
+last build tick verdict via `readLatestVerdictsSync`, already on the
+`FlumeApi`, and returns true on a `not-shipped` outcome. That is durable
+on-disk state the engine owns, read the way `anyVoluntaryBailRecord` already
+reads prior-attempts — not a re-derivation. Alternative worth weighing: now
+that `TickResult.entries` ships (`1cadcce`), a park is also legible to
+`handoff` as `committed: true, shipped: false, reverted: false`; a marker
+written from there would work but adds a second copy of a fact the verdict
+already holds (`engineering.md`, *Derived state is computed*).
 
-`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*, makes
-`buildFlumeApi` **require** `{repoRoot, configDir, flumeDir}` — that is the
-whole mechanism ("once `buildFlumeApi` requires the roots, a verb cannot
-construct the API without first resolving them"). The factory is applied
-**inside** `loadChainModule` (`src/Dispatcher.ts:1064`,
-`factory(buildFlumeApi())`), which is the single seam: the roots can reach it
-only as a parameter on `loadChainModule` / `diskChainLoader`. Nine call sites
-carry it; five are outside this entry's fence:
+Needs a human `chore(flume):` commit — `.flume/chain.ts` is outside both
+phase lanes.
 
-- `src/cli.ts:126` (`chainRefusesPhase`, wake/sleep), `:345` (`status`),
-  `:478` (`check`), `:566` (`friction`), `:652` (`tick`/`loop`'s
-  `resolveChain`)
-- `src/cliJobVerbs.ts:42` (`job status`)
-- `src/job.ts:176` (`jobNew`), `:279` (`jobRun`'s entry-phase wake)
-- `src/builtinGates.ts:260` (`chainLoadGate`)
+## Two facts the engine holds have no field to report them — both need a spec-enumeration amendment (PARKED)
 
-Required breaks all five at compile time, so `tsc` reverts. Optional invents
-roots when absent — attempt 1 (`36907e3`, reverted) shipped
-`paths ?? { repoRoot: dirname(path), … }`, handing `chainLoadGate` and the job
-verbs a `repoRoot` of `.flume/` and a `flumeDir` that ignores `--job`: a
-substituted placeholder with nothing refusing on it (`engineering.md`, *Loud or
-nothing*), re-opening the very re-derivation the spec section closes. There is
-no third shape.
+Same shape, bundled for one sign-off. Each is a fact the dispatcher already
+computed, on a record whose spec section enumerates the fields verbatim — so
+neither can be derived without the human widening the enumeration first
+(`engineering.md`, *A fact the engine holds is reported, never rediscovered*).
 
-### All nine sites are mechanical — no design fork
+- **A gate cannot say "not applicable."** `GateResult` is
+  `{ok, message, details?, failingFiles?}` (`spec/chain.md`, *What a gate
+  returns*), so this chain's commit-scoped vitest skip (`6fd900b`) reports a
+  green with a message. A skip that reads as a pass is a green over nothing
+  (`engineering.md`, *A green verdict is proven non-vacuous*), and it also
+  inflates `gateResults.length`, which `build.handoff` uses as a wake signal.
+  Fork: add `skipped?: true` to `GateResult`, or rule that applicability is
+  the chain's business and a skip legitimately reports green.
+- **A fanout entry whose `setupWorktree` threw reports nothing.**
+  `setupFailedIndices` (`src/Dispatcher.ts:2260`) is consumed only to skip
+  the agent and reaches no surface. Such an entry appears in the newly-shipped
+  `TickResult.entries` as `{committed: false, shipped: false, reverted: false}`
+  with no `noCommit` and no `declined` — indistinguishable from an unexplained
+  nothing, and invisible to a chain reconciling a failed provision. The
+  enumeration in `spec/chain.md`, *What a hook receives*, would need the field.
 
-An earlier park claimed three sites needed a human ruling on what `flumeDir`
-means for a verb that is not running a tick (`jobNew` has no `flumeDir`,
-`job status` has no single one, `jobRun` has no `repoRoot`). Those claims are
-true of the *option-object signatures* and false of the *call sites*: every
-caller already holds the resolved value.
+## Three `Drift:` notes in `spec/chain.md` describe work that has landed (PARKED — spec housekeeping)
 
-- `main()` resolves `repoRoot` at `src/cli.ts:135` and
-  `{flumeDir, configDir, job}` from `resolveStateDirs` at `:240` — **before**
-  it dispatches the job verbs at `:253`. No chain-loading verb reaches its load
-  with roots unresolved (`e814195` closed that half of the spec's drift note).
-- `jobNew` ← `src/cliJobVerbs.ts:116` and `job status` ← `:42`, both inside
-  `runJobVerb(args, repoRoot, configDir)`: give it a fourth `flumeDir`
-  parameter from `cli.ts:253`, pass it into `JobNewOptions`.
-- `jobRun` ← `src/cli.ts:275`, inside `main()`, which holds `repoRoot` from
-  `:135`. Add `repoRoot` to `JobRunOptions`.
-- `chainLoadGate` ← `src/builtinGates.ts:260` — `ctx.repoRoot`,
-  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext` (`src/Gate.ts:94`,
-  `:79`, `:53`).
+`5f4e449` shows the convention: a human spec commit closes drift notes once
+the code catches up. Three are now stale, and a stale one is worse than
+absent — plan's derive dimension reads them as live gaps and would file
+entries for shipped work.
 
-No root is fabricated. `flume job new` / `job status` pass no `--job`, so
-`resolveStateDirs` yields `<repoRoot>/.flume` — the honest root, because the
-chain being loaded *is* the repo chain (`spec/chain.md`, *Chain residency*).
-So `FlumeApiPaths` keeps all three members **required**.
-
-### What plan does next tick
-
-Widen `files.edit` to add `src/cli.ts`, `src/cliJobVerbs.ts`, `src/job.ts`,
-`src/builtinGates.ts`. `tests/chain.test.ts` and
-`tests/examples.integration.test.ts` also call `buildFlumeApi()` bare, but
-build's `tests/**` channel already covers them. A `blockedBy` split buys
-nothing — the threading is one argument per site and is not separately
-testable.
-
-For whoever writes it, to declare at the site rather than treat as a blocker:
-under `afterCommit`, `chainLoadGate`'s `ctx.repoRoot` is the ephemeral worktree
-while `ctx.flumeDir` is the primary checkout's state root (`spec/chain.md`,
-*What a gate receives*). Handing a chain-under-validation those two is right —
-the gate is not running a tick — but it should read as deliberate.
-
-### Attempt 1's revert cause is unidentified — do not derive from the record
-
-`.flume/prior-attempts/flumeapi-paths.json` opens with
-`[truncated 16751 chars]…` and vitest's failure detail sits in the truncated
-head; 4 tests across 2 files failed and neither name survives. The diagnosis
-this file previously carried (a `hermeticEnv` / `FLUME_QUARANTINED_SLUGS`
-collision) is **wrong**: `91694b8` made `hermeticEnv()` strip by prefix and is
-an ancestor of `36907e3`, so that trigger could not fire. The surviving tail
-shows heavy host contention (`transform 37.21s / collect 106.51s` against
-`6.58s / 14.26s` quiet, ~7×) — load-coupled flake is the best available
-reading, but it is a reading, not a finding. Treat the shape defect above as
-the reason to change approach; treat the recorded cause as unknown.
+- `:241` — "`ClaudeCodeOptions` has no `model` today." It does:
+  `src/Agent.ts:145`, with `AgentUsage.model` at `:66` (landed by `798f72f`).
+- `:569` — "none of `pickable`, `priorAttempts`, `pickableAfter`, `flumeDir`,
+  `configDir`, `entries` exist on the contexts today." All six exist
+  (`src/Phase.ts`, `1cadcce` and its predecessor).
+- `:646` — the ordering half ("`main()` dispatches the job-management verbs
+  before it reaches `resolveStateDirs`") is stale per `e814195`. The
+  `FlumeApi.paths` half is still live; FLUMEAPI-PATHS closes it.

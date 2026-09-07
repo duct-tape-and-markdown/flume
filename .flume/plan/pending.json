@@ -10,11 +10,27 @@
       "edit": [
         {
           "path": "src/flumeApi.ts",
-          "description": "Add FlumeApi.paths: {repoRoot, configDir, flumeDir}; buildFlumeApi(paths) takes them as its argument instead of zero args."
+          "description": "Add FlumeApi.paths: {repoRoot, configDir, flumeDir}; buildFlumeApi(paths) takes them as a required argument instead of zero args. All three stay required — that requirement IS the mechanism the per section names."
         },
         {
           "path": "src/Dispatcher.ts",
-          "description": "Thread {repoRoot, configDir, flumeDir} into every buildFlumeApi() call site (chain load), so the handed api.paths are the identity-same resolved roots the dispatcher already holds."
+          "description": "loadChainModule and diskChainLoader gain the roots and pass them to buildFlumeApi at the single factory-application seam (~:1064, `factory(buildFlumeApi())`). Also the supervisor's own diskChainLoader call (~:4574)."
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "Five diskChainLoader sites (~:126 chainRefusesPhase, :345 status, :478 check, :566 friction, :652 resolveChain), all in main() scope which already holds repoRoot (~:135) and flumeDir/configDir from resolveStateDirs (~:240). Pass flumeDir into runJobVerb (~:253) and repoRoot into jobRun (~:275)."
+        },
+        {
+          "path": "src/cliJobVerbs.ts",
+          "description": "runJobVerb(args, repoRoot, configDir) gains a fourth flumeDir param, used by `job status`'s diskChainLoader (~:42) and passed into JobNewOptions (~:116)."
+        },
+        {
+          "path": "src/job.ts",
+          "description": "JobNewOptions gains flumeDir, JobRunOptions gains repoRoot; thread both into the two loadChainModule calls (~:176 jobNew, ~:279 jobRun)."
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "chainLoadGate (~:260) reads ctx.repoRoot/configDir/flumeDir, all already on GateContext. Declare at the site that under afterCommit repoRoot is the ephemeral worktree while flumeDir is the primary checkout's state root (spec/chain.md, What a gate receives) — correct here since the gate validates a chain rather than running a tick, but it should read deliberate."
         },
         {
           "path": "tests/Dispatcher.test.ts",
@@ -23,14 +39,6 @@
       ],
       "retire": []
     },
-    "observedFiles": [
-      ".flume/plan/open-questions.md",
-      "src/Dispatcher.ts",
-      "src/flumeApi.ts",
-      "tests/Dispatcher.test.ts",
-      "tests/chain.test.ts",
-      "tests/examples.integration.test.ts"
-    ],
     "summary": "FlumeApi carries paths {repoRoot, configDir, flumeDir}, the dispatcher's own resolved roots, by reference",
     "per": {
       "path": "spec/chain.md",
@@ -40,6 +48,37 @@
       "api.paths.flumeDir/configDir/repoRoot equal the Dispatcher's own resolved values at chain-load time"
     ],
     "acceptance": "a chain can resolve a per-run artifact against api.paths.flumeDir instead of process.env.FLUME_DIR with a `?? CHAIN_DIR` fallback",
-    "notes": "cli.ts already resolves state dirs ahead of every chain-loading verb including the job verbs (e814195); that half of the spec's drift note is stale. Only the FlumeApi.paths gap itself remains live. `.flume/chain.ts` adoption is a separate chore(flume) commit (harness surface)."
+    "notes": "Fence widened by plan 2026-09-06 after four build parks: the change needs all nine call sites and only plan can declare them. Optional roots are NOT an option — attempt 1 (36907e3) defaulted them and handed chainLoadGate a repoRoot of .flume/ (engineering.md, Loud or nothing). tests/chain.test.ts and tests/examples.integration.test.ts also call buildFlumeApi() bare; they ride build's tests/** channel."
+  },
+  {
+    "tag": "PRIORATTEMPT-GATE-DETAILS-KEEPS-FAILURES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "The gate-revert record's details digest (~:4158) uses tailBound, keeping the last 8KB. For a suite reporter the tail is the pass list and the count line; the failure block sits in the elided head. Keep the failure lines first, then fill remaining budget. tailBound's own JSDoc justifies the tail for an agent's final message (~:4945, voluntary-bail) — that reasoning is right there and wrong here, so the two sites want different helpers, not a shared one re-pointed."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Drive a gate whose details exceed MAX_PRIOR_DETAILS with the failure block at the head."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The gate-revert prior-attempt digest keeps the failure block, not the trailing pass list — a retry agent reads why it was reverted",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "tests": [
+      "a gate-revert record whose gate details exceed the cap retains the failing-test lines and marks the elision"
+    ],
+    "acceptance": "a reverted build tick's <prior-attempt> block names which tests failed, not only how many",
+    "notes": "Field-traced: four records on 2026-09-06 carried a count and no name, and .flume/prior-attempts/flumeapi-paths.json opens with `[truncated 16751 chars]…` with the failure detail inside the elision — the attempt-1 retry agent diagnosed from that gap and recorded a cause that was later disproved. The per section already demands the digest carry the gate's details; keeping the wrong slice is the defect."
   }
 ]
