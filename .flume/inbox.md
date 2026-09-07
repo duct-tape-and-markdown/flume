@@ -34,3 +34,28 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-09-07 — the tick's base sha is on no surface a gate or handoff reads (temper via flume-main)
+
+1. **An afterMerge gate cannot tell an input the tick ignored from one it never
+   saw.** Field-traced twice at temper this morning (~$11, 25 min): a trunk
+   commit landed minutes after a plan tick branched; the afterMerge honesty gate
+   reads trunk claims by design, saw an unreconciled input, and reverted a tick
+   that could not have seen it. Chain-side fix at temper 0377962d reads the
+   tick's own tree at `<FLUME_WORKTREES_DIR>/plan` HEAD — a path convention
+   plus a cleanup-ordering promise the engine never made. Verified on disk: the
+   dispatcher holds the span's base at both merge sites (`preWtHead` at
+   `src/Dispatcher.ts:1896` for singleton, `r.spanBase` at `:2505` for fanout)
+   and hands it out on neither `GateContext` (`src/Gate.ts`) nor `TickResult`
+   (`src/Phase.ts`). With the base, a gate says `git show <base>:path` and
+   `git log <base>..HEAD -- specs/` and never touches the worktree. Fact, not
+   verdict: the engine reports where the span started; whether an input that
+   post-dates it counts stays the chain's (`engineering.md`, *A fact the
+   engine holds is reported, never rediscovered*). Candidate shape: `baseSha`
+   beside `commitSha` on `GateContext` (both stages) and `TickResult`;
+   `ShipContext` already carries the merged sha and would take the same field.
+   Widens the enumerations in spec/chain.md (*What a gate receives*, *What a
+   hook receives*) and spec/loop.md (*The tick verdict*), so the human's edit
+   first. Temper also asked for the worktree path on the afterMerge
+   `GateContext`; the base sha makes that read unnecessary, so file it only
+   if plan finds a second consumer.
