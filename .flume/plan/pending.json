@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "DISPATCHER-SESSIONS-ROOT-NARRATION",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "`PRIOR_ATTEMPTS_SUBDIR`'s doc (~:112) still tells a chain that captures sessions to root them under `process.env.FLUME_DIR`. That root reaches a chain as `api.paths.flumeDir` (spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`*); the env is the child-process channel. One-line retarget, no behavior."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Retarget PRIOR_ATTEMPTS_SUBDIR's doc at api.paths.flumeDir — the last src/ site telling a chain to root sessions at process.env.FLUME_DIR",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "no src/ doc comment tells a chain to read process.env.FLUME_DIR for artifact placement; the surviving mentions describe the env as the child-process channel or deny it as a read path",
+    "notes": "Residue of RETIRED-ROOTS-AND-MODEL-NARRATION: undeclared, so outside build's fence (5034ca6 reported it). tests/retired-narration.test.ts cannot widen to reach it — verified on disk this tick the corpus carries exactly three `process.env.FLUME_DIR` hits: this one plus two legitimate (src/flumeApi.ts:64 denies the env, docs/CHAIN-AUTHORING.md:867 names it the child channel). No regex separates them, so this ships unpinned as a declared exception."
+  }
+]
