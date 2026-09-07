@@ -53,7 +53,13 @@ import {
 } from "../src/builtinGates.ts";
 import type { FlumePaths } from "../src/flumeApi.ts";
 import type { Gate } from "../src/Gate.ts";
-import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
+import type {
+  Chain,
+  Phase,
+  TickContext,
+  TickResult,
+  WorktreeSetupContext,
+} from "../src/Phase.ts";
 import {
   parsePending,
   TAG_MAX_LENGTH,
@@ -602,6 +608,122 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     expect(await readFile(join(fx.repo, "src", "plan-output.ts"), "utf8")).toBe(
       "agent-work\n",
     );
+  });
+
+  it("invokes setupWorktree before the agent and teardownWorktree after the gates", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const order: string[] = [];
+    const probe = (name: string, when: Gate["when"]): Gate => ({
+      name,
+      when,
+      async run() {
+        order.push(name);
+        return { ok: true, message: `${name} ok` };
+      },
+    });
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [
+        probe("probe-commit", "afterCommit"),
+        probe("probe-merge", "afterMerge"),
+      ],
+      setupWorktree: async () => {
+        order.push("setup");
+        return undefined;
+      },
+      teardownWorktree: async () => {
+        order.push("teardown");
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      order.push("agent");
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The tick actually ran and gated — without this the ordering below
+    // would hold vacuously over a tick that never reached the hooks.
+    expect(outcome.result?.committed).toBe(true);
+    expect(
+      outcome.result?.gateResults
+        .map((g) => g.gate)
+        .filter((n) => n.startsWith("probe-")),
+    ).toEqual(["probe-commit", "probe-merge"]);
+    // Setup precedes the agent; teardown trails both gate stages, so a
+    // hook releasing a resource cannot pull it out from under a gate.
+    expect(order).toEqual([
+      "setup",
+      "agent",
+      "probe-commit",
+      "probe-merge",
+      "teardown",
+    ]);
+  });
+
+  it("the singleton hook's ctx.entryTag is the phase name and ctx.worktreePath is the provisioned worktree", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const setupCtxs: WorktreeSetupContext[] = [];
+    const teardownCtxs: WorktreeSetupContext[] = [];
+    let worktreeExistedAtSetup: boolean | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      setupWorktree: async (ctx) => {
+        setupCtxs.push(ctx);
+        // Already provisioned: the hook can install into it.
+        worktreeExistedAtSetup = existsSync(join(ctx.worktreePath, ".git"));
+        return undefined;
+      },
+      teardownWorktree: async (ctx) => {
+        teardownCtxs.push(ctx);
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let agentCwd: string | undefined;
+    const agent = singleAgent(async (cwd) => {
+      agentCwd = cwd;
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    // A singleton tick carries no entry, so the key is the phase name —
+    // the same key `createWorktree` derived the directory and branch from.
+    expect(setupCtxs).toHaveLength(1);
+    expect(setupCtxs[0]!.entryTag).toBe("plan");
+    expect(setupCtxs[0]!.repoRoot).toBe(fx.repo);
+    expect(setupCtxs[0]!.worktreePath).toBe(agentCwd);
+    expect(setupCtxs[0]!.worktreePath).toContain(
+      join(".flume", "worktrees", "plan"),
+    );
+    expect(worktreeExistedAtSetup).toBe(true);
+    // Teardown is handed the same key and path, so a hook pair can match
+    // what it provisioned to what it releases.
+    expect(teardownCtxs).toEqual(setupCtxs);
   });
 });
 

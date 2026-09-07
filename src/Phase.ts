@@ -331,14 +331,16 @@ export interface Phase {
   shipped?: (ctx: ShipContext) => boolean;
 
   /**
-   * Optional hook invoked after a fanout worktree is created, before the
+   * Optional hook invoked after the tick's worktree is created, before the
    * agent runs. The chain config uses this to materialize gitignored files
    * the gates need — typically `node_modules` via a real install (the
    * exported `setupWorktree` helper runs the install a lockfile implies)
    * and `.env` via a copy. Never symlink `node_modules` from the main
    * repo: pnpm deletes a symlinked `node_modules` on install, breaking the
-   * pattern the first time a fanout entry installs. Singleton phases run
-   * in the main repo and do not invoke this.
+   * pattern the first time a worktree installs. Both concurrencies invoke
+   * it — a fanout wave once per entry, a singleton tick once for the one
+   * worktree it provisions (`spec/worktrees.md`, "Singleton runs in a
+   * worktree").
    *
    * Returning `{ extraEnv }` injects those vars into the agent invocation
    * for this worktree, layered on top of the harness's `process.env`. Use
@@ -361,13 +363,17 @@ export interface Phase {
   teardownWorktree?: (ctx: WorktreeSetupContext) => Promise<void>;
 }
 
-/** Context handed to Phase.setupWorktree after a fanout worktree is created. */
+/** Context handed to the worktree hooks once a tick's worktree exists. */
 export interface WorktreeSetupContext {
   /** Path to the fresh worktree the tick will run in. */
   worktreePath: string;
   /** Path to the main repo root the worktree was created from. */
   repoRoot: string;
-  /** Tag of the pending entry assigned to this worktree. */
+  /**
+   * Key of the worktree this context describes: the pending entry's tag on
+   * a fanout tick, the phase name on a singleton one, which carries no
+   * entry. `teardownWorktree` receives the same key its `setupWorktree` did.
+   */
   entryTag: string;
 }
 

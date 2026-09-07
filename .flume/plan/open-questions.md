@@ -150,3 +150,35 @@ in `spec/loop.md` (*Prior-outcome feedback*) and `spec/chain.md` (*What a hook
 receives*), so it is the human's edit first.
 
 Same shape as the two-facts question above; folds into one spec pass with it.
+
+## `src/Agent.ts:47` carries the same singleton negation just fixed in `Phase.ts`
+
+Found while shipping PHASE-SINGLETON-WORKTREE-NARRATION; `src/Agent.ts` is
+outside that entry's fence, so it stays unfixed.
+
+`AgentInvocation.extraEnv`'s doc (`src/Agent.ts:43-48`) says the dispatcher
+populates it "for fanout phases" and that "Singleton phases never carry
+extraEnv." The singleton path collects the hook's `extraEnv`
+(`src/Dispatcher.ts:1823`) and passes it to the agent (`:1908`) — same defect
+class as `Phase.setupWorktree`'s doc, same `spec/worktrees.md` *Singleton runs
+in a worktree* cite. Retarget to "the tick's `setupWorktree` return value,
+both concurrencies"; the behavior half is pinnable (a singleton hook returning
+`extraEnv` reaches `Agent.invoke`) and is unpinned today.
+
+## A leaked `/tmp/.flume/stop` red-lines the default lane (observed, cause unattributed)
+
+Seen twice this tick (2026-09-06) while running `pnpm test --run` in a fanout
+worktree: a run left `/tmp/.flume/` behind holding `awake/` and an empty
+`stop`. Every subsequent run then failed 8 tests across `tests/cli.test.ts`
+(5) and `tests/cliJobResolution.test.ts` (3) — CLI fixtures under `tmpdir()`
+walk up, find that state root, and see `stop present` / `awake: anything`
+instead of `hibernating`. `rm -rf /tmp/.flume` makes all 8 pass unchanged; a
+later full run did not recreate it, so the write is intermittent and I could
+not attribute it to a specific test.
+
+Correctness-adjacent: the same suite is the build phase's `afterMerge` gate,
+so a leak reverts innocent entries for host state no entry touched. Two forks
+— pin the CLI fixtures against ancestor discovery (an env override or a
+sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
+and fix the writer. The first bounds the blast radius whatever the second
+turns up.
