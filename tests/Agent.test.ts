@@ -21,9 +21,10 @@ import {
   isResultEvent,
   isErrorResult,
   extractResultUsage,
+  extractFinalMessage,
+  assistantTurnText,
   type Agent,
 } from "../src/Agent.ts";
-import { assistantTurnText } from "../src/Dispatcher.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -193,6 +194,7 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
         exitCode: 0,
         stdout: "shim-output",
         stderr: "",
+        finalMessage: "shim-output",
       });
 
       expect(spawnMock).toHaveBeenCalledTimes(2);
@@ -728,8 +730,8 @@ describe("isAssistantEvent / isResultEvent / isErrorResult — shared event-type
     });
     expect(rendered.join("")).toContain("ERROR");
 
-    // Stand-in for Dispatcher.ts's finalAgentMessage result-event branch:
-    // same shared isResultEvent/isErrorResult, independent of the renderer.
+    // Stand-in for extractFinalMessage's result-event branch: same shared
+    // isResultEvent/isErrorResult, independent of the renderer.
     const parsed = parseNdjsonLine(errorLine);
     if (parsed.kind !== "event") throw new Error("expected an event line");
     expect(isResultEvent(parsed.event)).toBe(true);
@@ -839,5 +841,85 @@ describe("withTerminalRenderer merges extractResultUsage's reading onto the reso
       prompt: "",
     });
     expect(result.usage).toBeUndefined();
+  });
+});
+
+describe("extractFinalMessage — the three transcript shapes (spec/chain.md \"The agent seam\")", () => {
+  function ndjson(...events: unknown[]): string {
+    return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  }
+
+  it("lifts the terminal result event's result text under stream-json", () => {
+    const stdout = ndjson(
+      { type: "system", subtype: "init" },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "intermediate turn" }] },
+      },
+      { type: "result", subtype: "success", result: "  final answer  " },
+    );
+    expect(extractFinalMessage(stdout)).toBe("final answer");
+  });
+
+  it("falls back to the last assistant turn's text when the result event carries none", () => {
+    const stdout = ndjson(
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "first turn" }] },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "last turn" }] },
+      },
+      { type: "result", subtype: "success" },
+    );
+    expect(extractFinalMessage(stdout)).toBe("last turn");
+  });
+
+  it("returns raw stdout trimmed for a plain-text agent (no stream-json events)", () => {
+    expect(extractFinalMessage("  plain prose, no NDJSON here\n")).toBe(
+      "plain prose, no NDJSON here",
+    );
+  });
+
+  it("falls back to the raw transcript trimmed when stream-json parsed but no event carried text", () => {
+    const stdout = ndjson(
+      { type: "system", subtype: "init" },
+      { type: "result", subtype: "success" },
+    );
+    expect(extractFinalMessage(stdout)).toBe(stdout.trim());
+  });
+});
+
+describe("claudeCode — sets AgentResult.finalMessage from the captured stdout", () => {
+  it("extracts the stream-json result text when outputFormat is stream-json", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode({ outputFormat: "stream-json" }).invoke({
+      cwd: "/tmp",
+      prompt: "p",
+    });
+    proc.stdout.emit(
+      "data",
+      JSON.stringify({ type: "result", subtype: "success", result: "done." }) +
+        "\n",
+    );
+    proc.emit("close", 0);
+
+    await expect(result).resolves.toMatchObject({ finalMessage: "done." });
+  });
+
+  it("uses raw stdout as finalMessage for the default plain-text format", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+    proc.stdout.emit("data", "plain closing prose\n");
+    proc.emit("close", 0);
+
+    await expect(result).resolves.toMatchObject({
+      finalMessage: "plain closing prose",
+    });
   });
 });

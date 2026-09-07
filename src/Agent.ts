@@ -91,6 +91,14 @@ export interface AgentResult {
    * event to read from.
    */
   usage?: AgentUsage;
+  /**
+   * The agent's closing prose, lifted from the full captured stdout by
+   * {@link extractFinalMessage} — unbound, provider-specific size policy
+   * (a persist-time bound like the dispatcher's `tailBound`) is the caller's
+   * job, not the adapter's. A provider that doesn't implement extraction
+   * leaves this absent; `claudeCode` always sets it.
+   */
+  finalMessage?: string;
 }
 
 /**
@@ -220,7 +228,12 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           });
           proc.on("close", (exitCode) => {
             if (abandoned) return;
-            resolve({ exitCode: exitCode ?? -1, stdout, stderr });
+            resolve({
+              exitCode: exitCode ?? -1,
+              stdout,
+              stderr,
+              finalMessage: extractFinalMessage(stdout),
+            });
           });
 
           // A failed spawn destroys stdin with the prompt write still queued,
@@ -448,10 +461,10 @@ export function contentBlocksOfType(
 
 /**
  * Stream-json event-type vocabulary, shared by every reader that classifies
- * an NDJSON event: `renderStreamJsonLine` below and Dispatcher's
- * `finalAgentMessage`. The `"assistant"`/`"result"` literals and the
- * `is_error`/`subtype` error rule live here once so two readers can't drift
- * on what counts as which event.
+ * an NDJSON event: `renderStreamJsonLine` below and `extractFinalMessage`.
+ * The `"assistant"`/`"result"` literals and the `is_error`/`subtype` error
+ * rule live here once so two readers can't drift on what counts as which
+ * event.
  */
 export function isAssistantEvent(event: NdjsonEvent): boolean {
   return event.type === "assistant";
@@ -464,6 +477,70 @@ export function isResultEvent(event: NdjsonEvent): boolean {
 /** A `result` event's `is_error`/non-`"success"` `subtype` marks failure. */
 export function isErrorResult(event: NdjsonEvent): boolean {
   return Boolean(event.is_error) || Boolean(event.subtype && event.subtype !== "success");
+}
+
+/**
+ * Concatenated `text` blocks of one stream-json `assistant` event;
+ * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
+ */
+export function assistantTurnText(e: NdjsonEvent): string {
+  const parts = contentBlocksOfType(e, "text")
+    .filter((c) => typeof c.text === "string")
+    .map((c) => (c.text as string).trim());
+  return parts.join("\n\n").trim();
+}
+
+/**
+ * The agent's final message, lifted from the full captured stdout — the
+ * spec/chain.md "agent seam" extraction every `Agent.invoke` implementation
+ * owns for its own transcript shape. Unbound: a caller that persists this
+ * (the dispatcher's §6 voluntary-bail record) applies its own size policy —
+ * record-size bounding is not provider shape.
+ *
+ * `claudeCode({ outputFormat: "stream-json" })` produces NDJSON on stdout,
+ * not prose — tailing it raw forwards escaped-JSON assistant/result events
+ * plus cost/usage metadata, exactly the noise this extraction exists to
+ * replace with the agent's closing prose. Three cases:
+ *
+ *  - stream-json: the terminal `result` event's `result` text (Claude Code
+ *    puts the final assistant message there verbatim).
+ *  - stream-json with no result text: the last `assistant` turn's
+ *    concatenated text blocks.
+ *  - plain text (`outputFormat: "text"`, the default): stdout already IS the
+ *    final message, returned trimmed and unchanged — no stream-json events
+ *    to parse.
+ *
+ * When stream-json was detected but neither event carried text, falls back
+ * to the raw transcript trimmed — never empty, which would silently drop a
+ * bail's refused constraint (`.claude/rules/engineering.md`, "Loud or
+ * nothing").
+ */
+export function extractFinalMessage(stdout: string): string {
+  let sawStreamJson = false;
+  let resultText: string | undefined;
+  let lastAssistantText: string | undefined;
+
+  for (const raw of stdout.split("\n")) {
+    const parsed = parseNdjsonLine(raw);
+    if (parsed.kind !== "event") continue;
+    const e = parsed.event;
+    if (typeof e.type !== "string") continue;
+    sawStreamJson = true;
+    if (isResultEvent(e)) {
+      if (typeof e.result === "string" && e.result.trim().length > 0) {
+        resultText = e.result.trim();
+      }
+    } else if (isAssistantEvent(e)) {
+      const text = assistantTurnText(e);
+      if (text.length > 0) lastAssistantText = text;
+    }
+  }
+
+  if (!sawStreamJson) return stdout.trim();
+  if (resultText !== undefined || lastAssistantText !== undefined) {
+    return (resultText ?? lastAssistantText) as string;
+  }
+  return stdout.trim();
 }
 
 /**

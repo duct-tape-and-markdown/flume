@@ -43,6 +43,7 @@ import {
   type TickVerdict,
 } from "../src/Dispatcher.ts";
 import type { Agent } from "../src/Agent.ts";
+import { extractFinalMessage } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import {
   chainLoadGate,
@@ -5971,10 +5972,15 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
       async invoke(inv) {
         prompts.push(inv.prompt);
         // Clean exit, no commit, constraint stated in the final message.
+        // `finalMessage` stands in for what claudeCode's own extraction
+        // would produce for this plain-text transcript (Agent.ts,
+        // extractFinalMessage) — the Dispatcher no longer re-derives it.
+        const stdout = `working…\n\n${CONSTRAINT}\n`;
         return {
           exitCode: 0,
-          stdout: `working…\n\n${CONSTRAINT}\n`,
+          stdout,
           stderr: "",
+          finalMessage: extractFinalMessage(stdout),
         };
       },
     };
@@ -6118,8 +6124,15 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
       async invoke(inv) {
         prompts.push(inv.prompt);
         // Clean exit, no commit; the constraint is the final message,
-        // delivered only inside the stream-json transcript.
-        return { exitCode: 0, stdout: ndjson, stderr: "" };
+        // delivered only inside the stream-json transcript. `finalMessage`
+        // stands in for claudeCode's own extraction (Agent.ts,
+        // extractFinalMessage) — the Dispatcher no longer re-parses stdout.
+        return {
+          exitCode: 0,
+          stdout: ndjson,
+          stderr: "",
+          finalMessage: extractFinalMessage(ndjson),
+        };
       },
     };
 
@@ -6173,8 +6186,8 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     // sawStreamJson flips true) but never emits a `result` or `assistant`
     // event — e.g. the process was cut off after the `system`/`init` line.
     // DISPATCHER-FINALAGENTMESSAGE-STREAMJSON-SILENT-EMPTY: pre-fix,
-    // finalAgentMessage tailBound'd the empty string here, and the retry
-    // prompt lost the bail entirely.
+    // finalAgentMessage (now Agent.ts's extractFinalMessage) tailBound'd the
+    // empty string here, and the retry prompt lost the bail entirely.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -6196,7 +6209,12 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
       name: "bailing-stream-json-no-text-singleton",
       async invoke(inv) {
         prompts.push(inv.prompt);
-        return { exitCode: 0, stdout: ndjson, stderr: "" };
+        return {
+          exitCode: 0,
+          stdout: ndjson,
+          stderr: "",
+          finalMessage: extractFinalMessage(ndjson),
+        };
       },
     };
 

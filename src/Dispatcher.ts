@@ -34,8 +34,7 @@ import { promisify } from "node:util";
 
 import { tsImport } from "tsx/esm/api";
 
-import type { Agent, AgentUsage, NdjsonEvent } from "./Agent.js";
-import { contentBlocksOfType, isAssistantEvent, isResultEvent, parseNdjsonLine } from "./Agent.js";
+import type { Agent, AgentUsage } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
@@ -613,9 +612,11 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
 /**
  * How an agent invocation ended. A clean exit with no commit is a
  * voluntary-bail (the agent refused a constraint and said so in its final
- * message, captured here as `stdout`); any process failure is a
- * platform-preempt (not a defect in the work) — §6 classification consults
- * this distinction only when the tick produced no commit.
+ * message, captured here as `finalMessage` — lifted from the transcript by
+ * the adapter's own `extractFinalMessage`, spec/chain.md "The agent seam");
+ * any process failure is a platform-preempt (not a defect in the work) — §6
+ * classification consults this distinction only when the tick produced no
+ * commit.
  *
  * When a commit lands, `runFanout`'s ship classification consults it too
  * (spec/pending.md "Ship detection trusts the agent's own account", ruling
@@ -627,7 +628,7 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
  * basis; a commit it left behind is honored exactly as a clean one would be.
  */
 type AgentTermination =
-  | { kind: "clean"; stdout: string; usage?: AgentUsage }
+  | { kind: "clean"; finalMessage: string; usage?: AgentUsage }
   | { kind: "process-failure"; failureClass: string; usage?: AgentUsage };
 
 /**
@@ -3169,12 +3170,12 @@ export class Dispatcher {
           ...(result.usage ? { usage: result.usage } : {}),
         };
       }
-      // Clean exit. `result.stdout` is the full captured transcript; the
-      // agent's final message — where a writablePaths/Rule-0/spec bail names
-      // the constraint it refused — lives at its tail.
+      // Clean exit. `result.finalMessage` is the agent's closing prose,
+      // already lifted from the full transcript by the adapter — where a
+      // writablePaths/Rule-0/spec bail names the constraint it refused.
       return {
         kind: "clean",
-        stdout: result.stdout,
+        finalMessage: result.finalMessage ?? "",
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } catch (err) {
@@ -4067,7 +4068,10 @@ export class Dispatcher {
     termination: AgentTermination,
   ): Promise<NoCommitMode> {
     if (termination.kind === "clean") {
-      await this.writePriorAttempt(key, buildVoluntaryBail(termination.stdout));
+      await this.writePriorAttempt(
+        key,
+        buildVoluntaryBail(termination.finalMessage),
+      );
       return "voluntary-bail";
     }
     await this.writePriorAttempt(
@@ -4819,16 +4823,16 @@ function summarize(
 
 /**
  * Build the §6 voluntary-bail record: the agent exited cleanly without
- * committing. The constraint it refused is its final message, bounded — the
- * build/plan prompts instruct it to name the writablePaths/Rule-0/spec gap
- * there. {@link finalAgentMessage} lifts that message out of a stream-json
- * transcript before bounding, so the refused constraint reaches the retry
- * legibly rather than as escaped-JSON/cost-metadata noise.
+ * committing. The constraint it refused is its final message — extracted
+ * from the full transcript by the adapter's own `extractFinalMessage`
+ * (`src/Agent.ts`, spec/chain.md "The agent seam"), unbound at that layer;
+ * `tailBound` here is record-size policy, not provider shape, so it stays on
+ * this side of the seam.
  */
 function buildVoluntaryBail(
-  stdout: string,
+  finalMessage: string,
 ): Omit<VoluntaryBailAttempt, "headSha" | "at"> {
-  const message = finalAgentMessage(stdout);
+  const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "voluntary-bail",
     constraint:
@@ -4836,72 +4840,6 @@ function buildVoluntaryBail(
         ? message
         : "(agent exited cleanly without committing and produced no final message naming a constraint)",
   };
-}
-
-/**
- * The agent's final message, bounded for the §5 voluntary-bail block.
- *
- * The dogfood `.flume/chain.ts` runs the agent under
- * `withTerminalRenderer(withSessionCapture(claudeCode({ outputFormat:
- * "stream-json" })))`. Those decorators pass stdout through raw, so
- * `AgentResult.stdout` is the stream-json NDJSON transcript, not prose —
- * tailing it raw forwards escaped-JSON assistant/result events plus
- * cost/usage metadata, the exact §6 noise this block is meant to replace
- * with the refused constraint. When stdout parses as stream-json, lift the
- * agent's final message out of the transcript: the terminal `result` event's
- * `result` text (Claude Code puts the final assistant message there
- * verbatim), else the last `assistant` turn's concatenated text blocks. If
- * stream-json was detected but neither event carried text, fall back to the
- * raw transcript tail — never an empty string, which would silently drop
- * the bail's refused constraint (`.claude/rules/engineering.md`, "Loud or
- * nothing"). A plain-text agent (`claudeCode({ outputFormat: "text" })`)
- * emits no stream-json events — its stdout already IS the final message,
- * returned unchanged. Either way the result is `tailBound` to
- * `MAX_PRIOR_NOCOMMIT`: a bail names its constraint at the tail of its
- * closing message.
- */
-function finalAgentMessage(stdout: string): string {
-  let sawStreamJson = false;
-  let resultText: string | undefined;
-  let lastAssistantText: string | undefined;
-
-  for (const raw of stdout.split("\n")) {
-    const parsed = parseNdjsonLine(raw);
-    if (parsed.kind !== "event") continue;
-    const e = parsed.event;
-    if (typeof e.type !== "string") continue;
-    sawStreamJson = true;
-    if (isResultEvent(e)) {
-      if (typeof e.result === "string" && e.result.trim().length > 0) {
-        resultText = e.result.trim();
-      }
-    } else if (isAssistantEvent(e)) {
-      const text = assistantTurnText(e);
-      if (text.length > 0) lastAssistantText = text;
-    }
-  }
-
-  if (!sawStreamJson) {
-    // Plain-text agent: stdout already IS the final message.
-    return tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
-  }
-  if (resultText !== undefined || lastAssistantText !== undefined) {
-    return tailBound((resultText ?? lastAssistantText) as string, MAX_PRIOR_NOCOMMIT);
-  }
-  // stream-json parsed but no result/assistant event carried text: fall back
-  // to the raw transcript tail rather than losing the bail's constraint.
-  return tailBound(stdout.trim(), MAX_PRIOR_NOCOMMIT);
-}
-
-/**
- * Concatenated `text` blocks of one stream-json `assistant` event;
- * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
- */
-export function assistantTurnText(e: NdjsonEvent): string {
-  const parts = contentBlocksOfType(e, "text")
-    .filter((c) => typeof c.text === "string")
-    .map((c) => (c.text as string).trim());
-  return parts.join("\n\n").trim();
 }
 
 /** Build the §6 platform-preempt record from the non-work failure class. */
