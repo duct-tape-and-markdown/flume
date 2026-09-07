@@ -1,41 +1,5 @@
 [
   {
-    "tag": "AFTERMERGE-REVERT-TIP-CHECK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Before resetKeepTo(repoRoot, preCherry) on an afterMerge gate failure (singleton leg and fanout per-entry leg), revParse trunk and refuse — naming both shas, routed through the existing revert-refused reporting (log line + gateFailures/prior-attempt) — when it isn't mergedSha, per spec/loop.md Tip verify."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Cover the new refusal for both concurrencies."
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "tests/Dispatcher.test.ts"
-    ],
-    "summary": "afterMerge revert refuses instead of resetting over a foreign trunk commit, singleton and fanout alike",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Tip verify — one writer per branch, absorption at the merge"
-    },
-    "tests": [
-      "afterMerge gate failure with a foreign commit landed atop the cherry-pick refuses the revert (both shas named) and leaves the foreign commit on trunk, fanout leg",
-      "same refusal on the singleton leg"
-    ],
-    "acceptance": "resetKeepTo is only attempted when current trunk tip == mergedSha; a mismatch refuses loudly via the existing revert-refused path instead of resetting",
-    "notes": "Field-traced at temper 0.13.0 (entry a385660a cherry-picked, operator commit 3da55a88 landed on top, afterMerge gate failed, trunk rewound to pre-cherry-pick). Recovered manually. Inbox 2026-09-06 (temper-main)."
-  },
-  {
     "tag": "AGENTRESULT-FINALMESSAGE",
     "gate": {
       "kind": "open"
