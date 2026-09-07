@@ -1962,18 +1962,33 @@ export class Dispatcher {
               // Caught here, not propagated: an uncaught throw would crash
               // the tick before this phase's own facts (the gate failure
               // above, teardown, the return below) were ever reached.
-              try {
-                await git.resetKeepTo(repoRoot, preCherry);
-              } catch (err) {
-                if (!(err instanceof git.ResetKeepRefusedError)) throw err;
-                const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+              const foreignTip = await this.checkMergedTipUnmoved(
+                repoRoot,
+                preCherry,
+                mergedSha,
+              );
+              if (foreignTip) {
                 this.log.warn(
-                  `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
+                  `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator`,
                 );
                 gateFailures.push({
-                  signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-                  message,
+                  signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
+                  message: foreignTip,
                 });
+              } else {
+                try {
+                  await git.resetKeepTo(repoRoot, preCherry);
+                } catch (err) {
+                  if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+                  const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+                  this.log.warn(
+                    `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
+                  );
+                  gateFailures.push({
+                    signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+                    message,
+                  });
+                }
               }
             } else {
               this.log.info(
@@ -2507,6 +2522,29 @@ export class Dispatcher {
         // before `commitPendingUpdate` ever ran, dropping the ledger
         // rewrite for every sibling entry already cherry-picked and shipped
         // ahead of this one.
+        const foreignTip = await this.checkMergedTipUnmoved(
+          repoRoot,
+          preCherry,
+          mergedSha,
+        );
+        if (foreignTip) {
+          this.log.warn(
+            `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator; other entries continue`,
+          );
+          revertRefused.push(r.entry);
+          mergeOutcomes.push({
+            tag: r.entry.tag,
+            outcome: "afterMerge-revert-refused",
+            footprint: commitTouchedPaths,
+            headSha: mergedSha,
+          });
+          gateFailures.push({
+            tag: r.entry.tag,
+            signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
+            message: foreignTip,
+          });
+          continue;
+        }
         try {
           await git.resetKeepTo(repoRoot, preCherry);
         } catch (err) {
@@ -3025,6 +3063,33 @@ export class Dispatcher {
    * singleton tick's agent now commits on a private branch same as a fanout
    * entry's, never on the trunk directly.
    */
+  /**
+   * Tip verify's afterMerge-revert guard (spec/loop.md "Tip verify", "one
+   * window stays a refusal, deliberately"). `resetKeepTo` below drops the
+   * span this call's own caller cherry-picked onto trunk at `mergedSha` —
+   * but a gate can take long enough to run that a foreign commit lands on
+   * trunk in the gap between the merge and the gate failing it. That
+   * foreign commit is legal history the wave would otherwise absorb
+   * (same section); resetting to `preCherry` regardless would silently
+   * discard it along with the entry's own commit. Returns the refusal
+   * message, naming both the merged sha this call expected and the trunk
+   * tip it actually found, when the two disagree; `undefined` when
+   * `resetKeepTo` is still safe to run.
+   */
+  private async checkMergedTipUnmoved(
+    repoRoot: string,
+    preCherry: string,
+    mergedSha: string,
+  ): Promise<string | undefined> {
+    const currentTip = await git.revParse(repoRoot);
+    if (currentTip === mergedSha) return undefined;
+    return (
+      `afterMerge revert refused: trunk tip ${currentTip} is not the ` +
+      `merged commit ${mergedSha} — a foreign commit landed on trunk ` +
+      `after the cherry-pick; resetting to ${preCherry} would discard it`
+    );
+  }
+
   private async revertTipMovedCommit(
     cwd: string,
     expectedSha: string,

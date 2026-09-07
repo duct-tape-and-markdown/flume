@@ -3728,6 +3728,156 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
   }, 20_000);
 });
 
+// ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
+// merged span refuses the afterMerge revert instead of resetting over it
+// (spec/loop.md "Tip verify", "one window stays a refusal, deliberately") ----------
+
+describe("Dispatcher — afterMerge revert refuses over a foreign commit landed atop the cherry-pick", () => {
+  it("fanout: a foreign commit landing on trunk while the afterMerge gate runs refuses the revert, naming both shas, and leaves the foreign commit on trunk", async () => {
+    await writePending(fx.repo, [makeEntry("TIP-DRIFT", ["src/tip-drift.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const foreignCommitVeto: Gate = {
+      name: "foreign-commit-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        if (!existsSync(join(cwd, "src", "tip-drift.ts"))) {
+          return { ok: true, message: "clean" };
+        }
+        // Simulate an operator committing directly to trunk in the window
+        // between this entry's cherry-pick and this gate's own revert — a
+        // foreign commit is legal history the wave would otherwise absorb
+        // (spec/loop.md "Tip verify"), but not something the afterMerge
+        // revert may reset over.
+        await writeFile(join(cwd, "src", "foreign.ts"), "foreign\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "operator: foreign commit"],
+          { cwd },
+        );
+        return { ok: false, message: "foreign veto" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [foreignCommitVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "tip-drift": async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/tip-drift.ts",
+          "drift\n",
+          "build(TIP-DRIFT)",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Nothing shipped — the entry stays pending, refused rather than reset.
+    expect(outcome.result?.committed).toBe(false);
+
+    // Both the entry's own cherry-picked commit and the foreign commit stay
+    // on trunk — the revert refused instead of resetting either away.
+    expect(existsSync(join(fx.repo, "src/tip-drift.ts"))).toBe(true);
+    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
+
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk.map((e) => e.tag)).toEqual(["TIP-DRIFT"]);
+
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.tag === "TIP-DRIFT",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(
+      gf.some((g) => g.tag === "TIP-DRIFT" && g.message === "foreign veto"),
+    ).toBe(true);
+    const tipRefusal = gf.find(
+      (g) =>
+        g.tag === "TIP-DRIFT" &&
+        g.message.includes("afterMerge revert refused"),
+    );
+    expect(tipRefusal).toBeDefined();
+    // Names both shas: the merged commit this call expected, and the
+    // foreign trunk tip it actually found.
+    expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
+    expect(tipRefusal?.message).toContain("trunk tip");
+  }, 20_000);
+
+  it("singleton: same refusal on the phase's own primary-checkout revert", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const foreignCommitVeto: Gate = {
+      name: "foreign-commit-veto",
+      when: "afterMerge",
+      async run({ cwd }) {
+        // Same foreign-commit simulation as the fanout case above, on the
+        // singleton's own primary-checkout revert.
+        await writeFile(join(cwd, "src", "foreign.ts"), "foreign\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "operator: foreign commit"],
+          { cwd },
+        );
+        return { ok: false, message: "foreign veto" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [foreignCommitVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.noCommit).toBe("gate-revert");
+
+    // Both the agent's own commit and the foreign commit stay on trunk — the
+    // revert refused instead of resetting either away.
+    expect(existsSync(join(fx.repo, "src/plan-out.ts"))).toBe(true);
+    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.some((g) => g.message === "foreign veto")).toBe(true);
+    const tipRefusal = gf.find((g) =>
+      g.message.includes("afterMerge revert refused"),
+    );
+    expect(tipRefusal).toBeDefined();
+    expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
+    expect(tipRefusal?.message).toContain("trunk tip");
+  }, 20_000);
+});
+
 // ---------- entry-scoped write guard (v0.4 §5) ----------
 
 describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
