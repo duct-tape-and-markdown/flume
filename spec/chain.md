@@ -186,13 +186,6 @@ the failure detail to the retrying tick (`spec/loop.md`): without it, a tick
 that writes a broken `chain.ts` is reverted, the next tick cannot see why,
 writes it the same way, and the loop reverts forever while looking alive.
 
-> **Drift:** `chainLoadGate` keys on the repo-relative literal
-> `.flume/chain.ts` (`src/builtinGates.ts:CHAIN_REL_PATH`), not on the
-> dispatcher's resolved `configDir`, and `GateContext` carries no `configDir`
-> to key on. Under an explicit `FLUME_CONFIG_DIR` the gate silently reports
-> "chain.ts untouched — gate skipped" for a chain it never validated. The site
-> declares the hardcoded path as the universal convention.
-
 ## Chain residency — one chain per `.flume`
 
 The chain lives at `<configDir>/chain.ts`, and **job resolution never retargets
@@ -238,11 +231,6 @@ ran against what it asked for. A chain-local helper that re-states a decorator
 stack per model is still the way to vary model under one stack; what it no
 longer does is assemble argv.
 
-> **Drift:** `ClaudeCodeOptions` has no `model` today. Two independent chains
-> (this repo's `phaseAgent`, cascade's `modelAgent`) carry the same
-> `extraArgs: ["--model", m]` helper, which is the demonstrated pain the
-> earlier deferral named as its trigger.
-
 ## The agent seam
 
 An `Agent` is `{ name, invoke }` (`src/Agent.ts:Agent`) — an opaque value the
@@ -260,11 +248,6 @@ stream-json, the whole of stdout under `"text"`. The dispatcher reads
 adapter fills the same fields from its own stream and nothing downstream
 changes. The renderer keeps its own parse because rendering *is* provider
 presentation, and it lives in the same module.
-
-> **Drift:** `AgentResult` has no `finalMessage`; `src/Dispatcher.ts:finalAgentMessage`
-> re-parses stdout as NDJSON at bail-record time, keying on the provider's
-> `result.result` field. The extraction moves into `claudeCode` and the
-> dispatcher's copy goes.
 
 - **`claudeCode()` skips permissions by default.** `dangerouslySkipPermissions`
   defaults to `true`, and the flag is appended to the argv whenever it is
@@ -566,13 +549,6 @@ Every addition is a fact the dispatcher already computed for its own use. None
 is an interpretation: the engine says which entries it *would* pick and which
 records *exist*; whether to wake, decline, or reconcile stays the chain's.
 
-> **Drift:** none of `pickable`, `priorAttempts`, `pickableAfter`, `flumeDir`,
-> `configDir`, `entries` exist on the contexts today. The dogfood chain re-derives all
-> three verdicts: `isPickableNow(e, shipped)` in `handoff` and `shouldRun`,
-> and a hand-rolled scan of `prior-attempts/*.json` for a `voluntary-bail`
-> mode (`.flume/chain.ts`, `anyVoluntaryBailRecord`). `PriorAttempt` is not
-> yet an exported type.
-
 ## The builtin gates
 
 The set is deliberately small — the gates most chains reach for, so a chain
@@ -642,14 +618,6 @@ into it.
 - A relocated state root is expected to live outside the working tree, so no
   in-repo gitignore glob is added for it; the default `<repoRoot>/.flume`
   stays ignored as it already is.
-
-> **Drift:** `FlumeApi` carries no `paths` today, and `main()` dispatches the
-> job-management verbs (`src/cli.ts:runJobVerb`) before it reaches
-> `resolveStateDirs`, so `flume job new` and `flume job status` load the chain
-> with nothing resolved. The dogfood chain reads `process.env.FLUME_DIR ??
-> CHAIN_DIR` at four sites to cover both gaps. Both close together: once
-> `buildFlumeApi` requires the roots, a verb cannot construct the API without
-> first resolving them, and the fallback leg has nothing left to cover.
 
 ## The package a chain loads through
 
