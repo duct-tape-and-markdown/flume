@@ -11015,6 +11015,120 @@ describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, 
   }, 20_000);
 });
 
+describe("Dispatcher — GateContext.configDir rebase (GATECTX-CONFIGDIR-ESCAPE)", () => {
+  /**
+   * Drive one singleton tick whose afterCommit gate captures `ctx.configDir`,
+   * `ctx.repoRoot` (the worktree the gate ran in), and — from inside the
+   * gate, while that worktree still exists — whether the config dir it was
+   * handed actually resolves onto the prompt file. `configDir` varies per
+   * case; everything else is the shared shape.
+   */
+  async function captureAfterCommitConfigDir(configDir: string): Promise<{
+    configDir: string;
+    worktree: string;
+    promptResolves: boolean;
+  }> {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let gateRan = false;
+    let seenConfigDir: string | undefined;
+    let seenWorktree: string | undefined;
+    let promptResolves = false;
+    const capture: Gate = {
+      name: "capture-commit-configdir",
+      when: "afterCommit",
+      run(ctx) {
+        gateRan = true;
+        seenConfigDir = ctx.configDir;
+        seenWorktree = ctx.repoRoot;
+        // Evaluated here, not after the tick: a singleton worktree is torn
+        // down before `tick()` returns.
+        promptResolves = existsSync(join(ctx.configDir, "prompt.md"));
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [capture],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+    // Non-vacuity: the captured values come from a gate that actually ran,
+    // not from a never-invoked `undefined`.
+    expect(gateRan).toBe(true);
+    expect(seenConfigDir).toBeDefined();
+    expect(seenWorktree).toBeDefined();
+    // The gate really did run somewhere other than the primary checkout —
+    // otherwise the rebase under test would be a no-op either way.
+    expect(seenWorktree).not.toBe(fx.repo);
+    return {
+      configDir: seenConfigDir as string,
+      worktree: seenWorktree as string,
+      promptResolves,
+    };
+  }
+
+  /** Track a config dir at `rel` so the worktree checkout carries its mirror. */
+  async function commitConfigDir(rel: string): Promise<string> {
+    const dir = join(fx.repo, rel);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "prompt.md"), "dummy prompt\n", "utf8");
+    await exec("git", ["add", "--", rel], { cwd: fx.repo });
+    await exec("git", ["commit", "-q", "-m", `add ${rel}`], { cwd: fx.repo });
+    return dir;
+  }
+
+  it("passes a configDir relocated outside the repo through verbatim — no worktree mirror exists to rebase onto", async () => {
+    // `fx.configDir` is its own tmpdir, a sibling of the repo: `relative()`
+    // from repoRoot climbs out via `..`, so a bare join yields
+    // `<worktree>/../../flume-dispatcher-cfg-XXXX`, which from a worktree
+    // nested two levels deep under `.flume/worktrees/` normalizes onto a
+    // path that holds nothing.
+    const seen = await captureAfterCommitConfigDir(fx.configDir);
+
+    expect(seen.configDir).toBe(fx.configDir);
+    // The verbatim path is the real config dir, prompt file and all — the
+    // property the rebased one loses.
+    expect(seen.promptResolves).toBe(true);
+  });
+
+  it("rebases the default in-repo configDir onto the worktree", async () => {
+    const cfg = await commitConfigDir(".flume");
+
+    const seen = await captureAfterCommitConfigDir(cfg);
+
+    expect(seen.configDir).toBe(join(seen.worktree, ".flume"));
+    expect(seen.configDir).not.toBe(cfg);
+    expect(seen.promptResolves).toBe(true);
+  });
+
+  it("rebases a configDir relocated within the repo onto the worktree, at its own offset", async () => {
+    const cfg = await commitConfigDir("cfg");
+
+    const seen = await captureAfterCommitConfigDir(cfg);
+
+    expect(seen.configDir).toBe(join(seen.worktree, "cfg"));
+    expect(seen.configDir).not.toBe(cfg);
+    expect(seen.promptResolves).toBe(true);
+  });
+});
+
 describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DEDUP)", () => {
   it("singleton tick: every afterCommit gate receives the identical touchedPaths array for the commit", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");

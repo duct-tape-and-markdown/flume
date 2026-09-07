@@ -695,13 +695,16 @@ export function priorAttemptsDir(flumeDir: string): string {
  * when the state root is relocated outside it (climbs out via `..`, or is
  * already absolute — a relocated `flumeDir` set by an absolute `FLUME_DIR`).
  * Computed once, from the two roots that never change after construction,
- * and shared by every `GateContext.stateRootRel`, by `harvestFriction`'s own
- * worktree-mirror check (spec/chain.md "What a gate receives"), and by
- * `isPendingRelocated`, which calls it with `pendingPath` in place of
- * `flumeDir` — a fixed descendant (`join(flumeDir, "plan", "pending.json")`)
- * whose escape status against `repoRoot` always matches `flumeDir`'s own
- * (`.claude/rules/engineering.md` "The fix lands at the mechanism") — none
- * re-derives the check.
+ * and shared by every `GateContext.stateRootRel` and by `harvestFriction`'s
+ * own worktree-mirror check (spec/chain.md "What a gate receives"). Two
+ * further consumers call it with a different second root, each a path whose
+ * escape status decides whether a worktree holds a mirror of it:
+ * `isPendingRelocated` passes `pendingPath` — a fixed descendant
+ * (`join(flumeDir, "plan", "pending.json")`) whose escape status against
+ * `repoRoot` always matches `flumeDir`'s own — and the `afterCommit`
+ * gate-context build passes `configDir`, rebasing it onto the worktree only
+ * when it resolves inside the repo. None re-derives the check
+ * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
  */
 export function computeStateRootRel(
   repoRoot: string,
@@ -3398,13 +3401,23 @@ export class Dispatcher {
     // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
     // that holds only tracked files at the same relative layout as the
     // primary checkout. `this.opts.configDir` is resolved against the
-    // primary checkout, so it is rebased onto `cwd` at its own relative
-    // offset rather than passed through verbatim, or a relocated configDir
-    // would point a gate at the wrong tree entirely.
-    const configDir = join(
-      cwd,
-      relative(this.opts.repoRoot, this.opts.configDir),
+    // primary checkout, so an in-repo configDir is rebased onto `cwd` at its
+    // own relative offset rather than passed through verbatim, or a
+    // configDir relocated *within* the repo would point a gate at the wrong
+    // tree entirely. A configDir relocated *outside* the repo has no
+    // worktree mirror to rebase onto — the checkout carries only tracked
+    // files — so it passes through verbatim, and the escape test that
+    // decides which case this is comes from `computeStateRootRel` rather
+    // than being re-derived here (`.claude/rules/engineering.md` "The fix
+    // lands at the mechanism").
+    const configDirRel = computeStateRootRel(
+      this.opts.repoRoot,
+      this.opts.configDir,
     );
+    const configDir =
+      configDirRel === undefined
+        ? this.opts.configDir
+        : join(cwd, configDirRel);
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
       const r: GateResult = await gate.run({

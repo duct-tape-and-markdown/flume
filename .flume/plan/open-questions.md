@@ -170,3 +170,23 @@ so a leak reverts innocent entries for host state no entry touched. Two forks
 sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
 and fix the writer. The first bounds the blast radius whatever the second
 turns up.
+
+## `src/Gate.ts:70-79` states the configDir rebase without its escape branch
+
+Found while shipping GATECTX-CONFIGDIR-ESCAPE; `src/Gate.ts` is outside that
+entry's fence, so it stays unfixed.
+
+`GateContext.configDir`'s doc says the value is "Rebased onto the gate's own
+`cwd` when that differs from the primary checkout." As of this tick that is
+half the rule: a configDir resolving *outside* `repoRoot` has no tracked
+mirror in the worktree checkout, so it is passed through verbatim
+(`src/Dispatcher.ts`, the `computeStateRootRel` call in the afterCommit
+gate-context build). A gate author reading only `Gate.ts` would expect a
+rebased path in the `FLUME_CONFIG_DIR=/elsewhere` case and get an absolute
+primary-checkout path.
+
+Mechanical retarget, no design fork: name the escape branch and point at
+`computeStateRootRel` as its owner, the same way `stateRootRel`'s doc two
+fields up already does. Behavior is pinned
+(`tests/Dispatcher.test.ts`, "GateContext.configDir rebase"); only the prose
+lags.
