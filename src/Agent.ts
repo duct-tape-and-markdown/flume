@@ -133,6 +133,11 @@ export interface ClaudeCodeOptions {
    * a downstream consumer wants structured per-turn events.
    */
   outputFormat?: "text" | "stream-json";
+  /**
+   * Pass `--model <value>`. No default: undeclared, the flag is omitted and
+   * the binary's own default applies.
+   */
+  model?: string;
   /** Extra flags appended to the `claude` argv (after the format flags). */
   extraArgs?: string[];
 }
@@ -166,6 +171,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           "-p",
           ...formatArgs,
           ...(skipPerms ? ["--dangerously-skip-permissions"] : []),
+          ...(opts.model !== undefined ? ["--model", opts.model] : []),
           ...extra,
         ];
 

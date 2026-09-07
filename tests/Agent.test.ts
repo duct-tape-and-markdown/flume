@@ -138,6 +138,30 @@ describe("claudeCode — outputFormat flags", () => {
       "opus",
     ]);
   });
+
+  it("appends --model <value> to argv when model is declared", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode({ model: "opus" }).invoke({ cwd: "/tmp", prompt: "p" });
+    proc.emit("close", 0);
+    await result;
+
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).toEqual(["-p", "--dangerously-skip-permissions", "--model", "opus"]);
+  });
+
+  it("emits no --model flag when model is undeclared", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode({}).invoke({ cwd: "/tmp", prompt: "p" });
+    proc.emit("close", 0);
+    await result;
+
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).not.toContain("--model");
+  });
 });
 
 describe("claudeCode — win32 .cmd shim fallback", () => {
