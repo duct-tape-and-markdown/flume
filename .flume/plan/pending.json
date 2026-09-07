@@ -109,6 +109,12 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "src/Phase.ts",
+      "src/index.ts",
+      "tests/Dispatcher.test.ts"
+    ],
     "summary": "TickContext gains pickable (dispatcher's own selection verdict) and priorAttempts (persisted records), so a hook stops re-deriving either",
     "per": {
       "path": "spec/chain.md",
@@ -119,13 +125,7 @@
       "TickContext.priorAttempts is keyed as the on-disk files are (tag slug / phase name) and a corrupt record reads as absent"
     ],
     "acceptance": "a shouldRun/promptArgs hook can read ctx.pickable and ctx.priorAttempts instead of calling isPickableNow or scanning prior-attempts/ itself",
-    "notes": ".flume/chain.ts's isPickableNow(shouldRun) call and hand-rolled anyVoluntaryBailRecord scan are out of build's writablePaths (harness surface) — adoption is a separate chore(flume) commit.",
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "src/Phase.ts",
-      "src/index.ts",
-      "tests/Dispatcher.test.ts"
-    ]
+    "notes": ".flume/chain.ts's isPickableNow(shouldRun) call and hand-rolled anyVoluntaryBailRecord scan are out of build's writablePaths (harness surface) — adoption is a separate chore(flume) commit."
   },
   {
     "tag": "TICKRESULT-PICKABLEAFTER-ROOTS-ENTRIES",
@@ -161,7 +161,13 @@
       "a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape"
     ],
     "acceptance": "handoff can read result.pickableAfter/flumeDir/configDir/entries without process.env or a re-picked isPickableNow call",
-    "notes": "May collide with TICKCONTEXT-PICKABLE-PRIORATTEMPTS on src/Phase.ts and src/Dispatcher.ts (expected — sequential ship, not a design coupling)."
+    "notes": "May collide with TICKCONTEXT-PICKABLE-PRIORATTEMPTS on src/Phase.ts and src/Dispatcher.ts (expected — sequential ship, not a design coupling).",
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "src/Phase.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/chain.test.ts"
+    ]
   },
   {
     "tag": "FLUMEAPI-PATHS",
