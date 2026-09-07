@@ -93,12 +93,30 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
  * restated) only seeds realistic input (and keeps the test non-vacuous); it
  * plays no role in what gets checked, so a var added to `hermeticEnv()`'s
  * strip set — or one that leaks ambiently from an outer flume-on-flume
- * invocation — is caught without touching this file. Not
- * `FLUME_WORKTREES_DIR` / `FLUME_QUARANTINED_SLUGS`: those are per-test
- * config overrides layered on top of `hermeticEnv()`'s output, not identity
- * leaks it strips, and are never set as ambient input here.
+ * invocation — is caught without touching this file.
+ *
+ * The strip is by prefix, never by list: `flume loop` sets
+ * `FLUME_QUARANTINED_SLUGS` in every tick child after the first quarantine,
+ * and a chain may export `FLUME_WORKTREES_DIR` at load, so both arrive
+ * ambiently whenever this suite runs as an afterMerge gate. A list-based
+ * strip passed here and failed there, reverting every entry for the rest of
+ * the run. A test wanting one of them sets it explicitly on top of
+ * `hermeticEnv()`'s output; the second case below pins the unlisted key.
  */
 describe("hermeticEnv — strips every identity/provenance FLUME_* var", () => {
+  it("strips a FLUME_* key the harness never listed (a supervisor-set var arriving ambiently)", () => {
+    const key = "FLUME_QUARANTINED_SLUGS";
+    const prior = process.env[key];
+    try {
+      process.env[key] = "some-slug";
+      expect(HERMETIC_ENV_STRIP_KEYS).not.toContain(key);
+      expect(Object.keys(hermeticEnv())).not.toContain(key);
+    } finally {
+      if (prior === undefined) delete process.env[key];
+      else process.env[key] = prior;
+    }
+  });
+
   it("carries no key matching /^FLUME_/ when identity/provenance vars are set", () => {
     const prior = Object.fromEntries(
       HERMETIC_ENV_STRIP_KEYS.map((key) => [key, process.env[key]]),

@@ -25,10 +25,12 @@ export const TSX_CLI = fileURLToPath(
 );
 
 /**
- * The identity/provenance FLUME_* keys `hermeticEnv()` strips. Exported so
- * seed-side test input (cli.test.ts) can derive from the same list instead
- * of hand-restating it (`.claude/rules/engineering.md`, "Derived state is
- * computed, never restated beside its source").
+ * The identity/provenance FLUME_* keys an outer flume harness is known to
+ * set. `hermeticEnv()` does not strip by this list — it strips every
+ * `/^FLUME_/` key (below) — so the list is seed input only: cli.test.ts sets
+ * each one ambiently to prove the strip is non-vacuous without restating
+ * the harness's vocabulary (`.claude/rules/engineering.md`, "Derived state
+ * is computed, never restated beside its source").
  */
 export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
   "FLUME_DIR",
@@ -39,7 +41,7 @@ export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
 ];
 
 /**
- * A copy of this process's env with `HERMETIC_ENV_STRIP_KEYS` stripped, so a
+ * A copy of this process's env with every `FLUME_*` key stripped, so a
  * spawned CLI resolves the caller's own temp dir/repo default — or the
  * test's own explicit job resolution — instead of inheriting this process's.
  * Without this the suite is not hermetic: run under a flume harness (whose
@@ -49,11 +51,16 @@ export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
  * overridden per-test but the stale stamp survives — misfire
  * `CrossRepoFlumeDirError` against the outer repo it was actually stamped
  * for (CLI-FLUMEDIR-PROVENANCE-STAMP).
+ *
+ * By prefix, never by list: the supervisor adds vars a list falls behind
+ * (`FLUME_QUARANTINED_SLUGS` after the first quarantine of a run), and this
+ * suite runs as an afterMerge gate inside exactly that process. A test that
+ * wants a `FLUME_*` var layers it on top of this function's output.
  */
 export function hermeticEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const key of HERMETIC_ENV_STRIP_KEYS) {
-    delete env[key];
+  for (const key of Object.keys(env)) {
+    if (/^FLUME_/.test(key)) delete env[key];
   }
   return env;
 }
