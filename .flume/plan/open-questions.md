@@ -9,6 +9,35 @@ Status markers:
 
 <!-- questions below this line -->
 
+## 180 doc cites in `src/` point at a spec corpus that no longer exists (PARKED)
+
+Posture sweep over the `src/Dispatcher.ts` neighborhood. Every `src/` module
+carries `RELEASE-v0.N §M` / `v0.8 §5`-style cites into `spec/RELEASE-v*.md`
+— files the corpus reform deleted from the tree. 180 sites across 16 modules,
+verified this tick: `src/Dispatcher.ts` 81, `src/cli.ts` 18, `src/job.ts` 18,
+`src/Prompt.ts` 12, then a long tail. Nothing in-file defines the section
+numbers, so none resolves for a reader today.
+
+Correctness-adjacent by one hop rather than directly: it is the audit
+dimension's own machinery. A tick cross-checking a diff against the section
+that governs it cannot follow the cite, so drift in that code is invisible to
+the check meant to catch it.
+
+Not filed — it needs a ruling on what these comments are *for*, and per-cite
+retargeting is not mechanical:
+
+- **A — retarget** each cite to the `spec/*.md` section that governs it now.
+  Truest, and the only option that restores the audit path; also the most
+  work, and some cites have no live successor section.
+- **B — delete** the release cites, keeping only `spec/*.md` ones. Cheap and
+  uniformly mechanical; loses the provenance trail (git still has it).
+- **C — keep as historical provenance**, and say so once at the top of each
+  file so a reader stops trying to follow them.
+
+Whichever wins, the promotion is a source-shape pin: no cite matching
+`RELEASE-v` / `v0.N §` outside a declared-historical marker — the rung
+`tests/retired-narration.test.ts` already occupies.
+
 ## `src/Dispatcher.ts` (4873 lines) bundles several jobs that read as separate homes (PARKED — trigger fired)
 
 Posture sweep (`.claude/rules/posture-sweep.md` standing lens: "a module carrying jobs that want separate homes") over the `src/Dispatcher.ts` neighborhood found the file's own `// ---------- X ----------` markers delineating distinct concerns: chain load+validate, tick-verdict I/O, singleton tick, fanout tick + per-entry fanout, worktree/friction/prior-attempt helpers, loop supervisor. Sibling engine files stay well under 1000 lines.

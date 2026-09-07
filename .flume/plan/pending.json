@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "LOADCHAINMODULE-DOC-ORPHANED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Move the orphaned block (:871-894) onto `loadChainModule` (:1062), which carries none; shrink its ESM-registry paragraph to a pointer at platform-facts.md rather than re-stating the fact."
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "Source-shape pin for the orphan shape, across the same prose scope this file already scans."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`src/Dispatcher.ts:871-894`'s \"Load + normalize + validate a chain module\" block documents `validateFrictionDeclaration`; the real `loadChainModule` (:1062) has no doc at all",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      "no doc block in the scanned prose scope is orphaned — a `*/` whose next non-blank line opens another `/**`, so it documents no symbol"
+    ],
+    "acceptance": "`loadChainModule` carries the block, `validateFrictionDeclaration` keeps its own, and re-orphaning either fails the suite.",
+    "notes": "Verified on disk this tick: the sole orphan across `src/`, `tests/`, `examples/`, `.flume/chain.ts`, so the pin is non-vacuous and clean today. The stranded block is the only in-code home for why per-tick re-resolution is a process boundary — and it restates platform-facts.md's ESM-registry fact in full, which CLAUDE.md calls a copy the harness should own. Same class and same `per` as DOC-CLAIMS-CONTRADICT-CODE (98d0652)."
+  }
+]
