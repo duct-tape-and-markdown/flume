@@ -396,6 +396,17 @@ const factory: ChainFactory = (api) => {
       // or a pickable-but-already-shipped entry loops decline/bail forever
       // (see anyVoluntaryBailRecord's doc).
       if (anyVoluntaryBailRecord(api.priorAttemptsDir)) return true;
+      // A park is a *committed* not-shipped outcome (build.shipped read the
+      // park file), so it writes no prior-attempt record and the check
+      // above can never see it; the last build verdict can. Without this,
+      // a parked entry stays pickable, plan declines, and build re-parks
+      // against the same fence forever (FLUMEAPI-PATHS, four attempts,
+      // 2026-09-07). The verdict is the engine's own durable record of the
+      // outcome — read, not re-derived from commit shape.
+      const lastBuild = api.readLatestVerdictsSync(ctx.flumeDir)[build.name];
+      if (lastBuild?.mergeOutcomes?.some((o) => o.outcome === "not-shipped")) {
+        return true;
+      }
       return inboxHasEntries();
     },
     promptArgs() {
