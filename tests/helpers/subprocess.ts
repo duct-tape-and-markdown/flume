@@ -8,10 +8,37 @@
  */
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
+
+/**
+ * Refuse when a spawned-CLI entry point is not on disk, naming the path and
+ * the provisioning that supplies it.
+ *
+ * Both entry points below are repo-root-adjacent absolute paths with no
+ * upward walk, so either can miss while Node's own resolution — which does
+ * walk up — still finds a parent checkout's copy and starts vitest. `node
+ * <missing>.mjs` then exits 1 without ever reaching flume, and that 1 is
+ * indistinguishable from the exit code the suite's `code).toBe(1)`
+ * assertions exist to check: a whole CLI suite passes over a CLI that never
+ * started (`.claude/rules/engineering.md`, "A green verdict is proven
+ * non-vacuous").
+ *
+ * The guard wraps the constants rather than `runCli`, because the two
+ * integration suites spawn `[TSX_CLI, CLI, ...]` themselves; an unresolvable
+ * entry point cannot be exported past this point by any caller.
+ */
+export function requireEntryPoint(path: string, remedy: string): string {
+  if (existsSync(path)) return path;
+  throw new Error(
+    `flume test harness: CLI entry point missing: ${path}\n` +
+      `The CLI cannot start, so every exit code this suite asserts would be ` +
+      `node's, not flume's. Fix: ${remedy}`,
+  );
+}
 
 // Run the source CLI through the project's own `tsx` (no build step in this
 // repo) — via `node <tsx cli.mjs>`, not the `.bin/tsx` shim: the shim is a
@@ -19,9 +46,16 @@ const exec = promisify(execFile);
 // shell (§6 spawn discipline). Absolute paths so cwd can be any caller's
 // temp repo; tsx resolves cli.ts's own imports relative to cli.ts,
 // independent of cwd.
-export const CLI = fileURLToPath(new URL("../../src/cli.ts", import.meta.url));
-export const TSX_CLI = fileURLToPath(
-  new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url),
+export const CLI = requireEntryPoint(
+  fileURLToPath(new URL("../../src/cli.ts", import.meta.url)),
+  "restore src/cli.ts — this checkout is missing the CLI source",
+);
+export const TSX_CLI = requireEntryPoint(
+  fileURLToPath(
+    new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url),
+  ),
+  "run `pnpm install --frozen-lockfile` in this worktree — a parent " +
+    "checkout's node_modules does not satisfy this path",
 );
 
 /**
@@ -65,6 +99,25 @@ export function hermeticEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * The exit status carried by a rejected `execFile`, or a refusal.
+ *
+ * `execFile` rejects for two unrelated reasons: the child ran and exited
+ * non-zero (numeric `code`), or the child never produced an exit status at
+ * all — spawn failure (`code` is an errno *string*) or a kill (`code` absent,
+ * `signal` set). Defaulting the second case to 1 reports a status no process
+ * returned, into assertions that check for exactly 1.
+ */
+export function exitStatusOf(err: unknown): number {
+  const e = err as { code?: unknown; signal?: unknown };
+  if (typeof e.code === "number") return e.code;
+  throw new Error(
+    `flume test harness: the CLI subprocess produced no exit status ` +
+      `(code=${String(e.code)}, signal=${String(e.signal)}) — it never ran, ` +
+      `or it was killed. Underlying failure: ${String(err)}`,
+  );
+}
+
 /** Spawn one real `flume <args>`; collect combined output + exit code. */
 export async function runCli(
   cwd: string,
@@ -79,8 +132,11 @@ export async function runCli(
     );
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+    const e = err as { stdout?: string; stderr?: string };
+    return {
+      out: (e.stdout ?? "") + (e.stderr ?? ""),
+      code: exitStatusOf(err),
+    };
   }
 }
 
