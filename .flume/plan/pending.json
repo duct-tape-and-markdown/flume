@@ -1,47 +1,5 @@
 [
   {
-    "tag": "TICKRESULT-PICKABLEAFTER-ROOTS-ENTRIES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Add TickResult.pickableAfter, flumeDir, configDir, and entries (fanout only: {tag, committed, shipped, reverted, declined?, noCommit?} per provisioned entry, before the wave's fold), per spec/chain.md What a hook receives."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Populate all four at TickResult construction (singleton tick and fanout wave-end); entries is absent on singleton and on a wave that provisioned nothing; top-level shippedTags/revertedTags/noCommit/declined stay the byte-identical fold."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "pickableAfter matches TickContext.pickable's verdict taken post-tick; a wave with one shipped and one bailed sibling reports the bailed entry's noCommit mode in entries even though the top-level noCommit is absent."
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "src/Phase.ts",
-      "tests/Dispatcher.test.ts",
-      "tests/chain.test.ts"
-    ],
-    "summary": "TickResult gains pickableAfter, flumeDir, configDir, and per-entry fanout outcomes (entries), so a bail isn't lost behind a sibling's ship",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a hook receives"
-    },
-    "tests": [
-      "TickResult.pickableAfter is pendingAfter filtered by the same verdict as TickContext.pickable",
-      "a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape"
-    ],
-    "acceptance": "handoff can read result.pickableAfter/flumeDir/configDir/entries without process.env or a re-picked isPickableNow call",
-    "notes": "src/Phase.ts/src/Dispatcher.ts already carry TickContext.pickable/priorAttempts (shipped) — this entry's TickResult fields land beside them, no remaining coupling."
-  },
-  {
     "tag": "FLUMEAPI-PATHS",
     "gate": {
       "kind": "open"
