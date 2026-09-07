@@ -148,3 +148,35 @@ Filed after the 0.13.0 cut commit; next-line scope. Source: temper's dogfood cha
    whose tip the trunk commit was picked from (teardown never ran), plus the
    worktree dirs the startup sweep already enumerates. Detect from those, never
    from commit shape or author.
+
+## 2026-09-06 — two field defects from temper's loop under 0.13.0 (temper-main via flume-main)
+
+1. **The startup sweep and the ticks disagree on the worktree base whenever the
+   chain declares it.** `flume loop` calls `sweepStaleWorktrees()` (`src/cli.ts:836`)
+   before `resolveChain()` (~851). A chain that sets `FLUME_WORKTREES_DIR` at module
+   load (temper chain.ts:43, off-repo per spec/worktrees.md *Placement*) is unread in
+   the supervisor, so the sweep bases on `<flumeDir>/worktrees` (present, empty),
+   removes nothing, then `git branch -D` fails for every `flume/*` branch:
+   `error: cannot delete branch 'flume/<slug>' used by worktree at '<real base>/<slug>'`,
+   logged and continued (`src/Dispatcher.ts:3566-3569`). Four instances at temper
+   b8ad8bd0 after a WSL shutdown; tick children load the chain and reused the
+   worktrees. Supersedes item 2 of the loss-audit entry above: a
+   `DispatcherOptions.worktreesDir` resolved from env in cli.ts still misses a
+   chain-set value. Fix shape: `Chain.worktreesDir`, read by the supervisor after
+   chain load and before the sweep, same value `createWorktree` uses. Whether the
+   env override survives beside it is a Placement ruling; do not derive until
+   spec/worktrees.md and spec/chain.md carry the field.
+
+2. **afterMerge revert rewinds over a foreign trunk commit.** spec/loop.md *Tip
+   verify*, "One window stays a refusal, deliberately", rules that a foreign commit
+   landing between an entry's cherry-pick and its afterMerge revert is refused loudly
+   with both shas. The site (`src/Dispatcher.ts` ~2460, "reverting only that entry")
+   calls `git.resetKeepTo(repoRoot, preCherry)` with no tip check; `reset --keep`
+   moves the ref whatever sits on top. Guard lost in 6cb9948, which replaced the
+   ownership-checked drop; `dropLastCommit` still guards the afterCommit leg only.
+   Field instance: temper at flume 0.13.0, entry a385660a cherry-picked, operator
+   commit 3da55a88 on top, `cargo test` failed afterMerge, trunk rewound to
+   pre-cherry-pick; recovered by merge of origin plus revert 56bc6727. Fix: revParse
+   the trunk before the reset, refuse when it is not `mergedSha`, route to the
+   existing revert-refused set. Test: cherry-pick, foreign commit on top, failing
+   afterMerge gate, assert tip unchanged and both shas in the refusal. Derivable now.
