@@ -1,56 +1,5 @@
 [
   {
-    "tag": "FLUMEAPI-PATHS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/flumeApi.ts",
-          "description": "Add FlumeApi.paths: {repoRoot, configDir, flumeDir}; buildFlumeApi(paths) takes them as a required argument instead of zero args. All three stay required — that requirement IS the mechanism the per section names."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "loadChainModule and diskChainLoader gain the roots and pass them to buildFlumeApi at the single factory-application seam (~:1064, `factory(buildFlumeApi())`). Also the supervisor's own diskChainLoader call (~:4574)."
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "Five diskChainLoader sites (~:126 chainRefusesPhase, :345 status, :478 check, :566 friction, :652 resolveChain), all in main() scope which already holds repoRoot (~:135) and flumeDir/configDir from resolveStateDirs (~:240). Pass flumeDir into runJobVerb (~:253) and repoRoot into jobRun (~:275)."
-        },
-        {
-          "path": "src/cliJobVerbs.ts",
-          "description": "runJobVerb(args, repoRoot, configDir) gains a fourth flumeDir param, used by `job status`'s diskChainLoader (~:42) and passed into JobNewOptions (~:116)."
-        },
-        {
-          "path": "src/job.ts",
-          "description": "JobNewOptions gains flumeDir, JobRunOptions gains repoRoot; thread both into the two loadChainModule calls (~:176 jobNew, ~:279 jobRun)."
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "chainLoadGate (~:260) reads ctx.repoRoot/configDir/flumeDir, all already on GateContext. Declare at the site that under afterCommit repoRoot is the ephemeral worktree while flumeDir is the primary checkout's state root (spec/chain.md, What a gate receives) — correct here since the gate validates a chain rather than running a tick, but it should read deliberate."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "A chain factory sees api.paths matching the Dispatcher's own resolved roots."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "FlumeApi carries paths {repoRoot, configDir, flumeDir}, the dispatcher's own resolved roots, by reference",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Per-run artifacts belong under `FLUME_DIR`"
-    },
-    "tests": [
-      "api.paths.flumeDir/configDir/repoRoot equal the Dispatcher's own resolved values at chain-load time"
-    ],
-    "acceptance": "a chain can resolve a per-run artifact against api.paths.flumeDir instead of process.env.FLUME_DIR with a `?? CHAIN_DIR` fallback",
-    "notes": "Fence widened by plan 2026-09-06 after four build parks: the change needs all nine call sites and only plan can declare them. Optional roots are NOT an option — attempt 1 (36907e3) defaulted them and handed chainLoadGate a repoRoot of .flume/ (engineering.md, Loud or nothing). tests/chain.test.ts and tests/examples.integration.test.ts also call buildFlumeApi() bare; they ride build's tests/** channel."
-  },
-  {
     "tag": "PRIORATTEMPT-GATE-DETAILS-KEEPS-FAILURES",
     "gate": {
       "kind": "open"
