@@ -736,7 +736,14 @@ describe("§3 job-dir link provisioning removed — bay resolution", () => {
           `} });\n`,
       );
 
-      const mod = await loadChainModule(join(jobDir, "chain.ts"));
+      // Deliberately pointing configDir at the job dir: this probe is about
+      // where Node resolves `@dtmd/flume` from for a chain living there, not
+      // about the residency invariant the CLI enforces.
+      const mod = await loadChainModule({
+        repoRoot: repo.dir,
+        configDir: jobDir,
+        flumeDir: jobDir,
+      });
       expect(mod.chain.phases[0]?.description.toLowerCase()).toBe(
         indexPath.toLowerCase(),
       );
@@ -787,6 +794,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
       const jobDir = await makeRunnableJob(repo.dir, "r1");
       const opts = {
         name: "r1",
+        repoRoot: repo.dir,
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
         log: () => {},
@@ -809,6 +817,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
 
       await jobRun({
         name: "r2",
+        repoRoot: repo.dir,
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
         log: () => {},
@@ -828,6 +837,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
       const lines: string[] = [];
       await jobRun({
         name: "r3",
+        repoRoot: repo.dir,
         flumeDir: jobDir,
         configDir: join(repo.dir, ".flume"),
         log: (l: string) => lines.push(l),
@@ -855,6 +865,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
 
       await jobRun({
         name: "ghost",
+        repoRoot: repo.dir,
         flumeDir,
         configDir: join(repo.dir, ".flume"),
         log: () => {},

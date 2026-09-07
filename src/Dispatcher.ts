@@ -40,7 +40,11 @@ import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
 // §6: `buildFlumeApi` is a function, not a constant, precisely so this
 // import participates safely in the builtinGates cycle — see its docstring.
-import { buildFlumeApi, type FlumeApi } from "./flumeApi.js";
+import {
+  buildFlumeApi,
+  type FlumeApi,
+  type FlumePaths,
+} from "./flumeApi.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { matchesAny, namespacedJoin } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
@@ -1013,7 +1017,14 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
   );
 }
 
-export async function loadChainModule(path: string): Promise<ChainModule> {
+export async function loadChainModule(
+  paths: FlumePaths,
+): Promise<ChainModule> {
+  // The chain lives at `<configDir>/chain.ts` and nowhere else (spec/chain.md
+  // "Chain residency"), so the file to load is computed from the roots the
+  // factory will receive rather than passed beside them — a second parameter
+  // could only disagree with `paths.configDir`.
+  const path = resolve(paths.configDir, "chain.ts");
   // win32 MAX_PATH: the single fix point for this check — every caller
   // (job.ts's jobNew/jobRun, builtinGates.ts's chainLoadGate, this file's
   // own default loader) reaches an existing chain.ts through here.
@@ -1061,7 +1072,10 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
     );
   }
 
-  const module = factory(buildFlumeApi()) as ChainModule | undefined;
+  // The one factory-application seam. The roots go in by reference, so
+  // `api.paths` is the dispatcher's own resolved answer rather than a copy
+  // the chain would otherwise rebuild from `process.env`.
+  const module = factory(buildFlumeApi(paths)) as ChainModule | undefined;
 
   // A returned thenable means an async factory: §6 specifies a synchronous
   // one, and awaiting here would silently accept a shape the contract does
@@ -1098,8 +1112,10 @@ export async function loadChainModule(path: string): Promise<ChainModule> {
  * Injecting `DispatcherOptions.chainLoader` replaces this wholesale — the
  * in-process unit-test seam (tests call `tick()` directly, no subprocess).
  */
-export function diskChainLoader(configDir: string): () => Promise<ChainModule> {
-  return () => loadChainModule(resolve(configDir, "chain.ts"));
+export function diskChainLoader(
+  paths: FlumePaths,
+): () => Promise<ChainModule> {
+  return () => loadChainModule(paths);
 }
 
 /**
@@ -1148,8 +1164,9 @@ export interface DispatcherOptions {
   agent: Agent;
   /**
    * Chain resolver, invoked once per tick. Defaults to
-   * `diskChainLoader(configDir)` (one load of `<configDir>/chain.ts` per
-   * process). Override for in-process test injection only (no subprocess).
+   * `diskChainLoader` over this dispatcher's own resolved roots (one load
+   * of `<configDir>/chain.ts` per process). Override for in-process test
+   * injection only (no subprocess).
    */
   chainLoader?: () => Promise<ChainModule>;
   /**
@@ -1461,7 +1478,13 @@ export class Dispatcher {
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.pendingPath = join(this.flumeDir, "plan", "pending.json");
-    this.chainLoader = opts.chainLoader ?? diskChainLoader(opts.configDir);
+    this.chainLoader =
+      opts.chainLoader ??
+      diskChainLoader({
+        repoRoot: opts.repoRoot,
+        configDir: opts.configDir,
+        flumeDir: this.flumeDir,
+      });
   }
 
   /** Run one phase × one tick. Returns hibernated outcome if nothing awake. */
@@ -4571,7 +4594,11 @@ export async function superviseLoop(
   // the loop-end summary, only silently withhold the friction line.
   const logFrictionSummary = async (): Promise<void> => {
     try {
-      const { chain } = await diskChainLoader(configDir)();
+      const { chain } = await diskChainLoader({
+        repoRoot: opts.repoRoot,
+        configDir,
+        flumeDir,
+      })();
       const line = await frictionCountLine(flumeDir, chain);
       if (line) log.info(`[flume] ${line}`);
     } catch {

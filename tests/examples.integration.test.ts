@@ -30,19 +30,12 @@ import type { GateContext } from "../src/Gate.ts";
 import type { Chain } from "../src/Phase.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
-import { buildFlumeApi } from "../src/flumeApi.ts";
+import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory from "../examples/cascade-chain.ts";
 import minimalFactory from "../examples/minimal-chain.ts";
 
 const exec = promisify(execFile);
-
-// v0.11 §6: examples default-export a factory, so the chains under test are
-// built the same way a real tick builds them — through the real API object,
-// not a hand-assembled stand-in.
-const { chain: backlogGroomerChain } = backlogGroomerFactory(buildFlumeApi());
-const { chain: cascadeChain } = cascadeFactory(buildFlumeApi());
-const { chain: minimalChain } = minimalFactory(buildFlumeApi());
 
 /**
  * `examples/`, resolved from this test file's own URL — `configDir` for the
@@ -50,6 +43,27 @@ const { chain: minimalChain } = minimalFactory(buildFlumeApi());
  * resolves to the real, committed prompt file rather than a copy.
  */
 const EXAMPLES_DIR = fileURLToPath(new URL("../examples", import.meta.url));
+
+/**
+ * The roots a real tick would resolve for these chains: `examples/` as the
+ * config dir, this repo above it, its `.flume` as the state root. None of the
+ * example chains reads `api.paths` yet — the values are here because
+ * `buildFlumeApi` requires them, which is the point of requiring them.
+ */
+const EXAMPLE_PATHS: FlumePaths = {
+  repoRoot: fileURLToPath(new URL("..", import.meta.url)),
+  configDir: EXAMPLES_DIR,
+  flumeDir: fileURLToPath(new URL("../.flume", import.meta.url)),
+};
+
+// v0.11 §6: examples default-export a factory, so the chains under test are
+// built the same way a real tick builds them — through the real API object,
+// not a hand-assembled stand-in.
+const { chain: backlogGroomerChain } = backlogGroomerFactory(
+  buildFlumeApi(EXAMPLE_PATHS),
+);
+const { chain: cascadeChain } = cascadeFactory(buildFlumeApi(EXAMPLE_PATHS));
+const { chain: minimalChain } = minimalFactory(buildFlumeApi(EXAMPLE_PATHS));
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{ dir: string; cleanup: () => Promise<void> }> {

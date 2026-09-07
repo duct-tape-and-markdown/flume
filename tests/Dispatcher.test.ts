@@ -51,6 +51,7 @@ import {
   // against what a chain factory receives.
   tscGate as realTscGate,
 } from "../src/builtinGates.ts";
+import type { FlumePaths } from "../src/flumeApi.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import {
@@ -292,6 +293,17 @@ function fanoutAgent(
       return { exitCode: 0, stdout: "", stderr: "" };
     },
   };
+}
+
+/**
+ * Fixture roots for a bare `loadChainModule` unit. The temp config dir is
+ * standing in for a whole checkout, so all three roots are the same
+ * directory — the load path only needs them to build the `FlumeApi` it hands
+ * the factory, and these chains never read `api.paths`. The suite below
+ * that *does* assert on `api.paths` drives the real Dispatcher instead.
+ */
+function chainPaths(cfg: string): FlumePaths {
+  return { repoRoot: cfg, configDir: cfg, flumeDir: cfg };
 }
 
 /**
@@ -8840,6 +8852,140 @@ describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
   });
 });
 
+// ---------- FlumeApi.paths (spec/chain.md "Per-run artifacts belong under
+// `FLUME_DIR`") ----------
+
+/**
+ * The roots reach the chain factory *by reference from the dispatcher's own
+ * resolution*, which is the whole claim: a chain placing a per-run artifact
+ * resolves it against `api.paths.flumeDir` rather than reading
+ * `process.env.FLUME_DIR` with a `?? CHAIN_DIR` fallback.
+ *
+ * Both cases drive the real `diskChainLoader` — no injected `chainLoader` —
+ * because the value under test is what the *Dispatcher* resolved, not what a
+ * fixture handed `loadChainModule` directly.
+ */
+describe(
+  "Dispatcher — FlumeApi.paths carries the dispatcher's own resolved roots (FLUMEAPI-PATHS)",
+  () => {
+    /** Chain source whose factory records `api.paths` at `recordPath`. */
+    function recordingChain(recordPath: string, phaseName: string): string {
+      return (
+        `import { writeFileSync } from "node:fs";\n` +
+        `export default (api) => {\n` +
+        `  writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(api.paths), "utf8");\n` +
+        `  return { chain: { phases: [{ name: ${JSON.stringify(phaseName)}, ` +
+        `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [] } };\n` +
+        `};\n`
+      );
+    }
+
+    it("a relocated state root reaches the factory: the chain writes its per-run artifact under api.paths.flumeDir", async () => {
+      const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-apipaths-"));
+      const stateRoot = await mkdtemp(join(tmpdir(), "flume-state-apipaths-"));
+      try {
+        // Pairwise-distinct roots are what gives the assertion teeth: with
+        // repoRoot === configDir === flumeDir, a chain that ignored
+        // `api.paths` and used its own directory would pass identically.
+        expect(new Set([fx.repo, cfg, stateRoot]).size).toBe(3);
+
+        await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+        // The artifact path is *derived by the chain* from api.paths.flumeDir
+        // — the acceptance shape, not a path the test baked in.
+        await writeFile(
+          join(cfg, "chain.ts"),
+          `import { writeFileSync } from "node:fs";\n` +
+            `import { resolve } from "node:path";\n` +
+            `export default (api) => {\n` +
+            `  writeFileSync(resolve(api.paths.flumeDir, "artifact.json"), ` +
+            `JSON.stringify(api.paths), "utf8");\n` +
+            `  return { chain: { phases: [{ name: "apipaths", description: "", ` +
+            `promptPath: "prompt.md", concurrency: "singleton", ` +
+            `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+            `humanOnly: [] } };\n` +
+            `};\n`,
+          "utf8",
+        );
+
+        new Baton(stateRoot).wake("apipaths");
+
+        const dispatcher = new Dispatcher({
+          repoRoot: fx.repo,
+          configDir: cfg,
+          flumeDir: stateRoot,
+          agent: singleAgent(async (cwd) => {
+            await writeAndCommit(cwd, "src/apipaths.ts", "x\n", "build: apipaths");
+          }),
+          log: silent,
+        });
+
+        const outcome = await dispatcher.tick();
+        expect(outcome.result?.committed).toBe(true);
+
+        // The artifact landed in the relocated state root — not beside
+        // chain.ts, and not under `<repoRoot>/.flume`.
+        expect(existsSync(join(cfg, "artifact.json"))).toBe(false);
+        const recorded = JSON.parse(
+          await readFile(join(stateRoot, "artifact.json"), "utf8"),
+        ) as FlumePaths;
+        expect(recorded).toEqual({
+          repoRoot: fx.repo,
+          configDir: cfg,
+          flumeDir: stateRoot,
+        });
+      } finally {
+        await rm(cfg, { recursive: true, force: true });
+        await rm(stateRoot, { recursive: true, force: true });
+      }
+    });
+
+    it("an undeclared flumeDir reaches the factory already defaulted to <repoRoot>/.flume, not undefined", async () => {
+      const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-apipaths-default-"));
+      const scratch = await mkdtemp(join(tmpdir(), "flume-rec-apipaths-"));
+      try {
+        const recordPath = join(scratch, "paths.json");
+        await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+        await writeFile(
+          join(cfg, "chain.ts"),
+          recordingChain(recordPath, "apipaths-default"),
+          "utf8",
+        );
+
+        new Baton(join(fx.repo, ".flume")).wake("apipaths-default");
+
+        // No `flumeDir` option: the dispatcher's own default is what the
+        // factory must see. Passing `opts.flumeDir` through unresolved would
+        // hand the chain `undefined` here.
+        const dispatcher = new Dispatcher({
+          repoRoot: fx.repo,
+          configDir: cfg,
+          agent: singleAgent(async (cwd) => {
+            await writeAndCommit(cwd, "src/apipaths-d.ts", "x\n", "build: d");
+          }),
+          log: silent,
+        });
+
+        const outcome = await dispatcher.tick();
+        expect(outcome.result?.committed).toBe(true);
+
+        const recorded = JSON.parse(
+          await readFile(recordPath, "utf8"),
+        ) as FlumePaths;
+        expect(recorded).toEqual({
+          repoRoot: fx.repo,
+          configDir: cfg,
+          flumeDir: join(fx.repo, ".flume"),
+        });
+      } finally {
+        await rm(cfg, { recursive: true, force: true });
+        await rm(scratch, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
 // ---------- chain-load gate + engine fallback (§3) ----------
 
 describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)", () => {
@@ -10829,7 +10975,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
       const abs = resolve(tmpdir(), "flume-friction-abs-target");
       await writeMinimalChain(cfg, JSON.stringify(abs));
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /friction .* as an absolute path/,
       );
     } finally {
@@ -10861,7 +11007,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
         "utf8",
       );
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       const gate = mod.chain.phases[0]!.gates[0];
       expect(gate).toBeDefined();
@@ -10892,7 +11038,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
         "utf8",
       );
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       const gates = mod.chain.phases[0]!.gates;
       expect(gates[0]).toBe(CjsContextLoadError);
@@ -10921,7 +11067,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
         "utf8",
       );
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       const gates = mod.chain.phases[0]!.gates;
       expect(gates[0]).toBe(readTickVerdicts);
@@ -10945,7 +11091,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
         "utf8",
       );
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /must default-export a chain factory/,
       );
     } finally {
@@ -10958,7 +11104,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     try {
       await writeMinimalChain(cfg, JSON.stringify("../escaped-friction"));
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /friction .* resolves outside the state root/,
       );
     } finally {
@@ -10971,7 +11117,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     try {
       await writeMinimalChain(cfg, JSON.stringify("friction"));
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       expect(mod.chain.friction).toBe("friction");
     } finally {
@@ -10984,7 +11130,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     try {
       await writeMinimalChain(cfg);
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       expect(mod.chain.friction).toBeUndefined();
       expect(mod.chain.phases).toHaveLength(1);
@@ -11009,7 +11155,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
         "utf8",
       );
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toThrow(
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /'build'.*entryChannelPaths.*scopeWritesToEntry/,
       );
     } finally {
@@ -11032,7 +11178,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
         "utf8",
       );
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       expect(mod.chain.phases).toHaveLength(1);
       expect(mod.chain.phases[0]!.gates[0]!.when).toBe("afterMerge");
@@ -11058,7 +11204,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
         "utf8",
       );
 
-      const mod = await loadChainModule(join(cfg, "chain.ts"));
+      const mod = await loadChainModule(chainPaths(cfg));
 
       expect(mod.chain.phases).toHaveLength(1);
       expect(mod.chain.phases[0]!.entryChannelPaths).toEqual([]);
@@ -11104,7 +11250,7 @@ describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => 
         `import { join as pathJoin } from "node:path";\nexport default { pathJoin };\n`,
       );
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toMatchObject({
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toMatchObject({
         name: "CjsContextLoadError",
         message: expect.stringContaining('"type": "module"'),
       });
@@ -11126,7 +11272,7 @@ describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => 
       );
       vi.mocked(tsImport).mockRejectedValueOnce(namespaceErr);
 
-      await expect(loadChainModule(join(cfg, "chain.ts"))).rejects.toMatchObject({
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toMatchObject({
         name: "CjsContextLoadError",
         message: expect.stringContaining('"type": "module"'),
       });
@@ -11145,7 +11291,7 @@ describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => 
 
       let caught: unknown;
       try {
-        await loadChainModule(join(cfg, "chain.ts"));
+        await loadChainModule(chainPaths(cfg));
       } catch (err) {
         caught = err;
       }
@@ -12656,7 +12802,7 @@ describe.runIf(process.platform === "win32")(
         // Pre-fix, the bare-join existsSync check here silently read this
         // chain.ts as absent and threw "chain config not found" even though
         // it genuinely exists.
-        const mod = await loadChainModule(chainPath);
+        const mod = await loadChainModule(chainPaths(cfg));
         expect(mod.chain.phases).toHaveLength(1);
       } finally {
         await rm(base, { recursive: true, force: true });

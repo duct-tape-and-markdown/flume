@@ -126,6 +126,14 @@ export interface JobNewOptions {
    * explicit `FLUME_CONFIG_DIR`.
    */
   configDir?: string;
+  /**
+   * State root the chain this verb loads is told to resolve per-run
+   * artifacts against (`FlumeApi.paths.flumeDir`). Defaults to
+   * `<repoRoot>/.flume`, the same default `configDir` takes and the same one
+   * the CLI resolves absent `FLUME_DIR`/`--job`; the CLI always passes its
+   * own `resolveStateDirs` answer explicitly.
+   */
+  flumeDir?: string;
   log?: (line: string) => void;
   /**
    * Override for the seed commit's message (engine-boundary.md "Capability
@@ -156,6 +164,7 @@ export interface JobNewOptions {
 export async function jobNew(opts: JobNewOptions): Promise<void> {
   const { repoRoot, name } = opts;
   const configDir = opts.configDir ?? join(repoRoot, ".flume");
+  const flumeDir = opts.flumeDir ?? join(repoRoot, ".flume");
   const log = opts.log ?? ((line: string) => console.log(line));
 
   const invalid = validateJobName(name);
@@ -173,7 +182,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
       `no chain at ${chainPath}; a job that could never \`run\` must not be creatable`,
     );
   }
-  const { chain } = await loadChainModule(chainPath);
+  const { chain } = await loadChainModule({ repoRoot, configDir, flumeDir });
 
   // 2. Validate a declared seedDir before touching the state root — a
   // declared-but-absent seedDir must not leave a stray empty job dir behind.
@@ -237,6 +246,8 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
 
 export interface JobRunOptions {
   name: string;
+  /** Primary repo root — one leg of the roots the chain factory receives. */
+  repoRoot: string;
   /** Job state root — where the baton lives (resolved by the CLI, §3). */
   flumeDir: string;
   /**
@@ -261,7 +272,7 @@ export interface JobRunOptions {
  * throw is an operational failure (exit 1).
  */
 export async function jobRun(opts: JobRunOptions): Promise<void> {
-  const { name, flumeDir, configDir } = opts;
+  const { name, repoRoot, flumeDir, configDir } = opts;
   const log = opts.log ?? ((line: string) => console.log(line));
 
   const invalid = validateJobName(name);
@@ -276,9 +287,7 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
     );
     return;
   }
-  const { chain } = await loadChainModule(
-    resolve(configDir, "chain.ts"),
-  );
+  const { chain } = await loadChainModule({ repoRoot, configDir, flumeDir });
   const entry = chain.phases[0];
   if (!entry) {
     throw new Error(`chain at ${configDir} declares no phases; nothing to wake`);

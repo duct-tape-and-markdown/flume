@@ -65,6 +65,7 @@ import {
 } from "./cliVerdict.js";
 import { HELP_TOP, HELP_SUB, HELP_JOB, isSubcommand, wantsHelp } from "./cliHelp.js";
 import { runJobVerb } from "./cliJobVerbs.js";
+import type { FlumePaths } from "./flumeApi.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -119,11 +120,11 @@ function parseMaxValue(value: string | undefined): number | null {
  * as it is for `status` and `tick`.
  */
 async function chainRefusesPhase(
-  configDir: string,
+  paths: FlumePaths,
   phase: string,
 ): Promise<boolean> {
   try {
-    const { chain } = await diskChainLoader(configDir)();
+    const { chain } = await diskChainLoader(paths)();
     return !chain.phases.some((p) => p.name === phase);
   } catch {
     return false;
@@ -249,8 +250,13 @@ async function main(): Promise<number> {
     throw err;
   }
 
+  // The one resolved-roots value every chain load in this process is built
+  // from — `FlumeApi.paths` by reference, so a chain reads the same answer
+  // `resolveStateDirs` reached rather than re-deriving one from the env.
+  const paths: FlumePaths = { repoRoot, configDir, flumeDir };
+
   if (jobVerbArgs !== undefined) {
-    return runJobVerb(jobVerbArgs, repoRoot, configDir);
+    return runJobVerb(jobVerbArgs, paths);
   }
 
   // `--job` / `FLUME_JOB` names an existing state root everywhere except
@@ -272,7 +278,7 @@ async function main(): Promise<number> {
   // branch a state root runs on.
   if (jobRunName !== undefined) {
     try {
-      await jobRun({ name: jobRunName, flumeDir, configDir });
+      await jobRun({ name: jobRunName, repoRoot, flumeDir, configDir });
     } catch (err) {
       if (err instanceof JobUsageError) {
         console.error(`[flume] ${err.message}`);
@@ -342,7 +348,7 @@ async function main(): Promise<number> {
     // pending count below then falls back to the default location).
     let chain: Chain | undefined;
     try {
-      ({ chain } = await diskChainLoader(configDir)());
+      ({ chain } = await diskChainLoader(paths)());
     } catch {
       chain = undefined;
     }
@@ -382,7 +388,7 @@ async function main(): Promise<number> {
       console.error("usage: flume wake <phase>");
       return 2;
     }
-    if (await chainRefusesPhase(configDir, phase)) {
+    if (await chainRefusesPhase(paths, phase)) {
       console.error(
         `[flume] wake refuses: '${phase}' is not a phase this chain declares`,
       );
@@ -399,7 +405,7 @@ async function main(): Promise<number> {
       console.error("usage: flume sleep <phase>");
       return 2;
     }
-    if (await chainRefusesPhase(configDir, phase)) {
+    if (await chainRefusesPhase(paths, phase)) {
       console.error(
         `[flume] sleep refuses: '${phase}' is not a phase this chain declares`,
       );
@@ -475,7 +481,7 @@ async function main(): Promise<number> {
     }
     let chain: Chain;
     try {
-      ({ chain } = await diskChainLoader(configDir)());
+      ({ chain } = await diskChainLoader(paths)());
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
         console.error(`[flume] ${err.message}`);
@@ -563,7 +569,7 @@ async function main(): Promise<number> {
 
     let chain: Chain;
     try {
-      ({ chain } = await diskChainLoader(configDir)());
+      ({ chain } = await diskChainLoader(paths)());
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
         console.error(`[flume] ${err.message}`);
@@ -649,7 +655,7 @@ async function main(): Promise<number> {
   // (one load per process — `flume loop` re-resolves by spawning a fresh
   // `flume tick` per iteration, §2); a chain.ts that exports `agent`
   // overrides the default agent per tick.
-  const resolveChain = diskChainLoader(configDir);
+  const resolveChain = diskChainLoader(paths);
   // §16 (RELEASE-v0.7): the `flume loop` supervisor's run-scoped quarantine
   // crosses the process boundary via this env var (set by
   // `defaultTickRunner`, `src/Dispatcher.ts`) — a slug named here is skipped

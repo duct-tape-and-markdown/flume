@@ -6,6 +6,7 @@
 
 import { jobNew, jobRm, jobStatus, JobUsageError } from "./job.js";
 import { diskChainLoader, CjsContextLoadError } from "./Dispatcher.js";
+import type { FlumePaths } from "./flumeApi.js";
 
 /**
  * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
@@ -13,16 +14,16 @@ import { diskChainLoader, CjsContextLoadError } from "./Dispatcher.js";
  * reaches here. Usage-shaped failures exit 2, operational failures 1 —
  * mirroring the JobUsageError split in the job verbs.
  *
- * `configDir` is the caller's single `resolveStateDirs()` result (§12/§14) —
- * this function never re-derives it from `process.env.FLUME_CONFIG_DIR`, so
- * a chain factory `status`/`new` loads sees the same canonicalized value
- * every other subcommand does.
+ * `paths` is the caller's single `resolveStateDirs()` result (§12/§14) —
+ * this function never re-derives a root from `process.env`, so a chain
+ * factory `status`/`new` loads sees the same canonicalized values every
+ * other subcommand does, `flumeDir` included.
  */
 export async function runJobVerb(
   args: readonly string[],
-  repoRoot: string,
-  configDir: string,
+  paths: FlumePaths,
 ): Promise<number> {
+  const { repoRoot, configDir, flumeDir } = paths;
   const [verb, ...rest] = args;
 
   if (verb === "status") {
@@ -39,7 +40,7 @@ export async function runJobVerb(
       let frictionDir: string | undefined;
       let pendingPath: string | undefined;
       try {
-        const { chain } = await diskChainLoader(configDir)();
+        const { chain } = await diskChainLoader(paths)();
         frictionDir = chain.friction;
         pendingPath = chain.pendingPath;
       } catch {
@@ -113,7 +114,7 @@ export async function runJobVerb(
   }
 
   try {
-    await jobNew({ repoRoot, name, configDir });
+    await jobNew({ repoRoot, name, configDir, flumeDir });
     return 0;
   } catch (err) {
     if (err instanceof CjsContextLoadError) {

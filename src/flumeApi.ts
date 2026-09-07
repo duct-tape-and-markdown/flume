@@ -54,6 +54,29 @@ import { InlineExecRenderError, renderPrompt } from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
 
 /**
+ * The three roots the runtime resolved for this run, handed to the chain
+ * rather than left for it to re-derive (`spec/chain.md`, *Per-run artifacts
+ * belong under `FLUME_DIR`*). All absolute, all canonicalized by
+ * `resolveStateDirs` (`src/cliJobResolution.ts`) before any code path
+ * constructs a chain.
+ *
+ * A chain that places a per-run artifact resolves it against `flumeDir`; it
+ * reads no `process.env.FLUME_DIR` and carries no `?? CHAIN_DIR` fallback,
+ * because there is nothing left for a fallback to cover.
+ */
+export interface FlumePaths {
+  /** Primary repo root — the checkout the run was invoked from. */
+  repoRoot: string;
+  /** Where `chain.ts` and its prompt files live. Never retargeted by a job. */
+  configDir: string;
+  /**
+   * Mutable-state root: baton (`awake/`), pending, worktrees, prior
+   * attempts. `--job`/`FLUME_JOB` moves this one and only this one.
+   */
+  flumeDir: string;
+}
+
+/**
  * The runtime surface a chain composes with. Declared with `typeof` against
  * the real implementations so the API cannot drift from what the engine
  * actually exports — a signature change breaks the interface at compile
@@ -64,6 +87,13 @@ import { setupWorktree } from "./setupWorktree.js";
  * at runtime.
  */
 export interface FlumeApi {
+  /**
+   * The runtime's own resolved roots, by reference — the identity-same
+   * values the dispatcher was constructed with, never resolved a second
+   * time. Required at construction: a caller that has not resolved its
+   * roots cannot build an API to hand a chain.
+   */
+  paths: FlumePaths;
   claudeCode: typeof claudeCode;
   withSessionCapture: typeof withSessionCapture;
   withTerminalRenderer: typeof withTerminalRenderer;
@@ -111,8 +141,9 @@ export interface FlumeApi {
  * property access until all modules have finished — the same
  * function-body-only discipline the existing cycle already mandates.
  */
-export function buildFlumeApi(): FlumeApi {
+export function buildFlumeApi(paths: FlumePaths): FlumeApi {
   return {
+    paths,
     claudeCode,
     withSessionCapture,
     withTerminalRenderer,

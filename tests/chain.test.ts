@@ -28,11 +28,21 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { loadChainModule, slugify, priorAttemptPath } from "../src/Dispatcher.ts";
-import { buildFlumeApi } from "../src/flumeApi.ts";
+import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 
-const CHAIN_PATH = fileURLToPath(new URL("../.flume/chain.ts", import.meta.url));
+/**
+ * The roots a real tick resolves for this repo's own chain: `.flume` is both
+ * the config dir and the default state root, the repo above it is repoRoot.
+ * `loadChainModule` derives `<configDir>/chain.ts` from these, so there is no
+ * separate chain path to keep in step.
+ */
+const REPO_PATHS: FlumePaths = {
+  repoRoot: fileURLToPath(new URL("..", import.meta.url)),
+  configDir: fileURLToPath(new URL("../.flume", import.meta.url)),
+  flumeDir: fileURLToPath(new URL("../.flume", import.meta.url)),
+};
 
 const EMPTY_INBOX =
   "# Inbox\n\nTransient queue.\n\n---\n\n<!-- entries below this line; newest first -->\n";
@@ -73,7 +83,7 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
   let priorFlumeDir: string | undefined;
 
   beforeAll(async () => {
-    const { chain } = await loadChainModule(CHAIN_PATH);
+    const { chain } = await loadChainModule(REPO_PATHS);
     const planPhase = chain.phases.find((p) => p.name === "plan");
     const buildPhase = chain.phases.find((p) => p.name === "build");
     expect(planPhase?.shouldRun).toBeDefined();
@@ -313,7 +323,7 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
    */
   function buildChainWithFakeInstall(): Phase {
     const { chain } = chainFactory({
-      ...buildFlumeApi(),
+      ...buildFlumeApi(REPO_PATHS),
       setupWorktree: async () => {},
     });
     const build = chain.phases.find((p) => p.name === "build");
@@ -369,13 +379,13 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
 
 describe("buildFlumeApi().matchesAny", () => {
   it("is the same matcher src/paths.ts exports, not a second copy", () => {
-    expect(buildFlumeApi().matchesAny).toBe(matchesAny);
+    expect(buildFlumeApi(REPO_PATHS).matchesAny).toBe(matchesAny);
   });
 });
 
 describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
   it("are the same functions src/Dispatcher.ts exports, not second copies a chain's shouldRun would drift from", () => {
-    const api = buildFlumeApi();
+    const api = buildFlumeApi(REPO_PATHS);
     expect(api.slugify).toBe(slugify);
     expect(api.priorAttemptPath).toBe(priorAttemptPath);
   });

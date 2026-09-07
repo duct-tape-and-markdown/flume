@@ -257,7 +257,18 @@ export const chainLoadGate: Gate = {
       return { ok: true, message: "chain.ts untouched — gate skipped" };
     }
     try {
-      await loadChainModule(join(ctx.configDir, "chain.ts"));
+      // Declared divergence: under `afterCommit` these three roots do not
+      // describe one tree — `repoRoot` is the tick's ephemeral worktree
+      // while `flumeDir` is the primary checkout's state root, which the
+      // worktree lives *inside* (spec/chain.md, "What a gate receives").
+      // That is the right pair here: the gate validates the committed
+      // chain in the worktree, and a `FlumeApi` built for a validation load
+      // must still name the state root a real tick would run against.
+      await loadChainModule({
+        repoRoot: ctx.repoRoot,
+        configDir: ctx.configDir,
+        flumeDir: ctx.flumeDir,
+      });
       return { ok: true, message: "chain.ts loads as a valid Chain" };
     } catch (err) {
       return {
