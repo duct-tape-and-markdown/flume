@@ -84,28 +84,19 @@ Proposed fix keys on the entry *as read* (slug + a hash of entry content, or the
 
 Filed as **gh#19** with full repro. The operator is opening the spec line for this (a startup check under the tip claim, or a `flume resume-merge` verb); do not derive further until that edit lands. Boundary note for whoever writes it: detect from the surviving `flume/<slug>` branch (teardown never ran) and the orphaned worktree dirs the startup sweep already enumerates — never from commit shape or authorship (`engine-boundary.md`, *Told, not inferred*).
 
-## Two facts the engine holds have no field to report them — both need a spec-enumeration amendment (PARKED)
+## A fanout entry whose `setupWorktree` threw reports nothing — spec-enumeration amendment needed (PARKED)
 
-Same shape, bundled for one sign-off. Each is a fact the dispatcher already
-computed, on a record whose spec section enumerates the fields verbatim — so
-neither can be derived without the human widening the enumeration first
-(`engineering.md`, *A fact the engine holds is reported, never rediscovered*).
+A fact the dispatcher already computed, on a record whose spec section
+enumerates the fields verbatim — so it cannot be derived without the human
+widening the enumeration first (`engineering.md`, *A fact the engine holds is
+reported, never rediscovered*).
 
-- **A gate cannot say "not applicable."** `GateResult` is
-  `{ok, message, details?, failingFiles?}` (`spec/chain.md`, *What a gate
-  returns*), so this chain's commit-scoped vitest skip (`6fd900b`) reports a
-  green with a message. A skip that reads as a pass is a green over nothing
-  (`engineering.md`, *A green verdict is proven non-vacuous*), and it also
-  inflates `gateResults.length`, which `build.handoff` uses as a wake signal.
-  Fork: add `skipped?: true` to `GateResult`, or rule that applicability is
-  the chain's business and a skip legitimately reports green.
-- **A fanout entry whose `setupWorktree` threw reports nothing.**
-  `setupFailedIndices` (`src/Dispatcher.ts:2260`) is consumed only to skip
-  the agent and reaches no surface. Such an entry appears in the newly-shipped
-  `TickResult.entries` as `{committed: false, shipped: false, reverted: false}`
-  with no `noCommit` and no `declined` — indistinguishable from an unexplained
-  nothing, and invisible to a chain reconciling a failed provision. The
-  enumeration in `spec/chain.md`, *What a hook receives*, would need the field.
+`setupFailedIndices` (`src/Dispatcher.ts:2260`) is consumed only to skip the
+agent and reaches no surface. Such an entry appears in `TickResult.entries` as
+`{committed: false, shipped: false, reverted: false}` with no `noCommit` and no
+`declined` — indistinguishable from an unexplained nothing, and invisible to a
+chain reconciling a failed provision. The enumeration in `spec/chain.md`, *What
+a hook receives*, would need the field.
 
 ## `spec/chain.md`'s closing **Gap:** note is false on both halves (PARKED — spec housekeeping)
 
@@ -145,7 +136,8 @@ carries the entry's last merge outcome directly. Either widens an enumeration
 in `spec/loop.md` (*Prior-outcome feedback*) and `spec/chain.md` (*What a hook
 receives*), so it is the human's edit first.
 
-Same shape as the two-facts question above; folds into one spec pass with it.
+Same shape as the `setupWorktree` question above; folds into one spec pass
+with it.
 
 ## `src/Agent.ts:47` carries the same singleton negation just fixed in `Phase.ts`
 

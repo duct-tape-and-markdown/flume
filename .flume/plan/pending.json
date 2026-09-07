@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "GATECTX-CONFIGDIR-ESCAPE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Route the afterCommit gate-context `configDir` rebase (:3404) through `computeStateRootRel` (:707) instead of a bare join."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pin both branches of the rebase."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Gate-context `configDir` rebase (src/Dispatcher.ts:3404) skips the escape check `computeStateRootRel` already performs, so a repo-external configDir rebases into a nonexistent path",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      "an afterCommit gate under a configDir relocated outside the repo receives that dir verbatim, not a path rebased onto the worktree",
+      "an afterCommit gate under an in-repo configDir (default, and relocated within the repo) still receives it rebased onto the worktree"
+    ],
+    "acceptance": "Both branches pinned; the escape test lives only in `computeStateRootRel`.",
+    "notes": "`computeStateRootRel`'s doc enumerates three consumers as the shared home and claims none re-derives the check; :3404 is the fourth and re-derives half (join, no escape test). afterMerge is unaffected — cwd===repoRoot makes the rebase a no-op. win32 cross-drive is the same case: `relative` returns an absolute path, which the helper's `isAbsolute` catches. Measured: repoRoot=/r, cwd=/r/.flume/worktrees/x, configDir=/home/shared -> /r/.flume/shared."
+  }
+]
