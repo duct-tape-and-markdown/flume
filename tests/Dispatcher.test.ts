@@ -58,7 +58,10 @@ import {
   TAG_MAX_LENGTH,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
-import { InlineExecRenderError as realInlineExecRenderError } from "../src/Prompt.ts";
+import {
+  InlineExecRenderError as realInlineExecRenderError,
+  type PriorAttempt,
+} from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer"): both
@@ -7858,6 +7861,134 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("tip-moved");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
+  }, 20_000);
+});
+
+describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a hook reads instead of re-deriving (spec/chain.md 'What a hook receives')", () => {
+  it("singleton shouldRun's TickContext.pickable agrees with the next fanout tick's own selection", async () => {
+    const entries: PendingEntry[] = [
+      makeEntry("OPEN-A", ["src/a.ts"]),
+      makeEntry("OPEN-B", ["src/b.ts"]),
+      {
+        ...makeEntry("BLOCKED", ["src/c.ts"]),
+        gate: { kind: "blockedBy", tags: ["OPEN-A"] },
+      },
+      {
+        ...makeEntry("PARKED", ["src/d.ts"]),
+        gate: { kind: "parked", reason: "human needed" },
+      },
+    ];
+    await writePending(fx.repo, entries);
+
+    let capturedPickable: readonly PendingEntry[] | undefined;
+    const planPhase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      // Declines every time — this test only wants the selection the
+      // dispatcher handed the hook, not a committed tick.
+      shouldRun: (ctx) => {
+        capturedPickable = ctx.pickable;
+        return false;
+      },
+    });
+    const buildPhase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [planPhase, buildPhase], humanOnly: [] };
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const planDispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+    await planDispatcher.tick();
+
+    expect(capturedPickable).toBeDefined();
+    expect(capturedPickable!.map((e) => e.tag).sort()).toEqual([
+      "OPEN-A",
+      "OPEN-B",
+    ]);
+
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const buildAgent = fanoutAgent({
+      "open-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "a\n", "build(OPEN-A): ship"),
+      "open-b": (cwd) =>
+        writeAndCommit(cwd, "src/b.ts", "b\n", "build(OPEN-B): ship"),
+    });
+    const buildDispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: buildAgent,
+      log: silent,
+    });
+    const outcome = await buildDispatcher.tick();
+
+    // The next fanout tick's own selection ships exactly the tags the
+    // singleton hook's ctx.pickable named — the two reads cannot disagree
+    // because both are the same `isPickable` computation over the same
+    // on-disk pending.json.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(
+      capturedPickable!.map((e) => e.tag).sort(),
+    );
+  }, 20_000);
+
+  it("TickContext.priorAttempts is keyed as the on-disk files are (tag slug / phase name) and a corrupt record reads as absent", async () => {
+    const entries: PendingEntry[] = [makeEntry("SHIPS", ["src/ships.ts"])];
+    await writePending(fx.repo, entries);
+
+    const flumeDir = join(fx.repo, ".flume");
+    await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+    const validRecord: PriorAttempt = {
+      mode: "voluntary-bail",
+      constraint: "off-writablePaths edit",
+      headSha: "0".repeat(40),
+      at: "2024-01-01T00:00:00.000Z",
+    };
+    // Written under the same slug the dispatcher itself would derive from
+    // the entry's tag — "the files are" keyed by slug, not raw tag.
+    await writeFile(
+      join(flumeDir, "prior-attempts", `${slugify("SHIPS")}.json`),
+      JSON.stringify(validRecord),
+    );
+    // Malformed JSON — readPriorAttempt's own tolerance ("a garbled record
+    // must not crash the tick") should drop this key, not surface it or throw.
+    await writeFile(
+      join(flumeDir, "prior-attempts", "corrupt.json"),
+      "{ not valid json",
+    );
+
+    let captured: ReadonlyMap<string, PriorAttempt> | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      shouldRun: (ctx) => {
+        captured = ctx.priorAttempts;
+        return false;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    new Baton(flumeDir).wake("build");
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({}),
+      log: silent,
+    });
+    await dispatcher.tick();
+
+    expect(captured).toBeDefined();
+    expect(captured!.get(slugify("SHIPS"))).toEqual(validRecord);
+    expect(captured!.has("corrupt")).toBe(false);
+    expect(captured!.size).toBe(1);
   }, 20_000);
 });
 

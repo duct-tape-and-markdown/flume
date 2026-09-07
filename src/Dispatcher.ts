@@ -1558,7 +1558,7 @@ export class Dispatcher {
     try {
       phaseOutcome =
         phase.concurrency === "singleton"
-          ? await this.runSingleton(phase, agent, chain)
+          ? await this.runSingleton(phase, agent, chain, forkResolver)
           : await this.runFanout(phase, agent, chain, forkResolver);
     } catch (err) {
       if (!(err instanceof PendingParseFailure)) throw err;
@@ -1680,10 +1680,23 @@ export class Dispatcher {
     phase: Phase,
     agent: Agent,
     chain: Chain,
+    forkResolver?: (repoRoot: string) => (slug: string) => boolean,
   ): Promise<PhaseTickOutcome> {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
+    // spec/chain.md "What a hook receives": the same selection verdict
+    // `runFanout` computes for its own batch, so a singleton `shouldRun` and
+    // the next fanout tick cannot disagree.
+    const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
+    const capabilities = new Set(chain.capabilities ?? []);
+    const quarantinedSlugs = this.opts.quarantinedSlugs;
+    const pickable = pending.filter(
+      (e) =>
+        isPickable(e, pending, isForkResolved, capabilities) &&
+        !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+    );
+    const priorAttempts = await this.readAllPriorAttempts();
 
     const key = this.priorAttemptKey(phase);
     const prior = await this.readPriorAttempt(key);
@@ -1749,7 +1762,13 @@ export class Dispatcher {
       }
     }
 
-    const ctx: TickContext = { cwd: wt.path, flumeDir: this.flumeDir, pending };
+    const ctx: TickContext = {
+      cwd: wt.path,
+      flumeDir: this.flumeDir,
+      pending,
+      pickable,
+      priorAttempts,
+    };
 
     let declined = false;
     let noCommit: NoCommitMode | undefined;
@@ -2244,6 +2263,11 @@ export class Dispatcher {
       }
     }
 
+    // spec/chain.md "What a hook receives": one read of prior-attempts/ for
+    // the whole wave — every entry's TickContext gets the same map, since
+    // the records on disk don't change mid-wave.
+    const priorAttempts = await this.readAllPriorAttempts();
+
     // Run agent in each worktree concurrently — skipping any entry whose
     // setupWorktree hook threw above. Its worktree/branch still get torn
     // down in the cleanup loop below; it just never reaches the agent or
@@ -2260,6 +2284,8 @@ export class Dispatcher {
             agent,
             chain,
             extraEnvByIndex[i],
+            pickable,
+            priorAttempts,
           ),
         ),
     );
@@ -2805,7 +2831,9 @@ export class Dispatcher {
     wt: { path: string; branch: string },
     agent: Agent,
     chain: Chain,
-    extraEnv?: Record<string, string>,
+    extraEnv: Record<string, string> | undefined,
+    pickable: readonly PendingEntry[],
+    priorAttempts: ReadonlyMap<string, PriorAttempt>,
   ): Promise<{
     entry: PendingEntry;
     committed: boolean;
@@ -2872,6 +2900,8 @@ export class Dispatcher {
       cwd: wt.path,
       flumeDir: this.flumeDir,
       assignedEntry: entry,
+      pickable,
+      priorAttempts,
     };
 
     // RELEASE-v0.11 §8: same seam as the singleton callsite, scoped to this
@@ -3795,6 +3825,36 @@ export class Dispatcher {
       // A garbled record must not crash the tick — degrade to "no prior".
       return undefined;
     }
+  }
+
+  /**
+   * Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`,
+   * keyed by the filename stem — exactly the key `readPriorAttempt` would
+   * have used to write it (`slugify` is idempotent on an already-slugified
+   * key, so re-feeding the stem back through `readPriorAttempt` resolves the
+   * same path). An absent or unreadable directory reads as no records, the
+   * same "no prior" degrade `readPriorAttempt` already applies per file — the
+   * whole of `TickContext.priorAttempts` (spec/chain.md "What a hook
+   * receives").
+   */
+  private async readAllPriorAttempts(): Promise<
+    ReadonlyMap<string, PriorAttempt>
+  > {
+    const dir = priorAttemptsDir(this.flumeDir);
+    let entries: Dirent[];
+    try {
+      entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
+    } catch {
+      return new Map();
+    }
+    const out = new Map<string, PriorAttempt>();
+    for (const e of entries) {
+      if (!e.isFile() || !e.name.endsWith(".json")) continue;
+      const key = e.name.slice(0, -".json".length);
+      const rec = await this.readPriorAttempt(key);
+      if (rec) out.set(key, rec);
+    }
+    return out;
   }
 
   /**

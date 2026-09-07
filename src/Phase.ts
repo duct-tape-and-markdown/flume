@@ -9,7 +9,7 @@
 import type { Agent } from "./Agent.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
-import type { NoCommitMode } from "./Prompt.js";
+import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
 
 /**
  * Concurrency model for a phase:
@@ -70,6 +70,32 @@ export interface TickContext {
   assignedEntry?: PendingEntry;
   /** All pending entries (singleton phases that read the plan). */
   pending?: readonly PendingEntry[];
+  /**
+   * The entries the dispatcher would select right now: the strict-read
+   * queue with `blockedBy` resolved, every declared fork checked through
+   * the chain's `forkResolver`, `requiresCapability` checked against
+   * `Chain.capabilities`, and this run's quarantine drop applied — the same
+   * computation fanout selection uses (`isPickable`, `src/Dispatcher.ts`),
+   * so a singleton `shouldRun` and the next fanout tick cannot disagree
+   * (spec/chain.md "What a hook receives"). A `shouldRun`/`promptArgs` hook
+   * reads this instead of re-deriving pickability with its own copy of the
+   * gate switch. Optional in the type — always set on a dispatcher-built
+   * context; the optionality exists for hand-built fixtures, mirroring
+   * `GateContext.commitSha`/`touchedPaths` (`src/Gate.ts`).
+   */
+  pickable?: readonly PendingEntry[];
+  /**
+   * Every persisted {@link PriorAttempt} record under
+   * `<flumeDir>/prior-attempts/`, keyed exactly as the files on disk are —
+   * the entry tag slug for a fanout record, the phase name for a singleton
+   * one (`src/Dispatcher.ts:priorAttemptKey`) — read with the dispatcher's
+   * own reader and its own tolerance: a corrupt or unrecognized-mode record
+   * is absent from the map rather than surfaced malformed. A `shouldRun`
+   * deciding "does some other phase have a standing bail to reconcile"
+   * reads this instead of scanning the directory itself. Optional in the
+   * type for the same hand-built-fixture reason as `pickable` above.
+   */
+  priorAttempts?: ReadonlyMap<string, PriorAttempt>;
 }
 
 /**
