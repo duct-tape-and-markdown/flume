@@ -1,7 +1,10 @@
 [
   {
     "tag": "AFTERMERGE-REVERT-TIP-CHECK",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -26,40 +29,18 @@
       "same refusal on the singleton leg"
     ],
     "acceptance": "resetKeepTo is only attempted when current trunk tip == mergedSha; a mismatch refuses loudly via the existing revert-refused path instead of resetting",
-    "notes": "Field-traced at temper 0.13.0 (entry a385660a cherry-picked, operator commit 3da55a88 landed on top, afterMerge gate failed, trunk rewound to pre-cherry-pick). Recovered manually. Inbox 2026-09-06 (temper-main)."
-  },
-  {
-    "tag": "CLAUDECODE-MODEL-OPTION",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Agent.ts",
-          "description": "Add ClaudeCodeOptions.model?: string, rendered as --model <value> on argv when set; no default, per spec/chain.md."
-        },
-        {
-          "path": "tests/Agent.test.ts",
-          "description": "Argv includes --model <value> when declared; omitted when not."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add ClaudeCodeOptions.model, rendered to --model <value>; undeclared emits no flag",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Per-phase agent assignment"
-    },
-    "tests": [
-      "claudeCode({model: 'x'}) appends --model x to argv",
-      "claudeCode({}) emits no --model flag"
-    ],
-    "acceptance": "ClaudeCodeOptions.model typed and rendered; AgentUsage.model (already present) is unaffected",
-    "notes": ".flume/chain.ts's phaseAgent extraArgs hack is a harness surface outside every phase's writablePaths — adoption is a separate chore(flume) commit, not part of this entry."
+    "notes": "Field-traced at temper 0.13.0 (entry a385660a cherry-picked, operator commit 3da55a88 landed on top, afterMerge gate failed, trunk rewound to pre-cherry-pick). Recovered manually. Inbox 2026-09-06 (temper-main).",
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "tests/Dispatcher.test.ts"
+    ]
   },
   {
     "tag": "AGENTRESULT-FINALMESSAGE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -96,7 +77,10 @@
   },
   {
     "tag": "TICKCONTEXT-PICKABLE-PRIORATTEMPTS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -133,7 +117,10 @@
   },
   {
     "tag": "TICKRESULT-PICKABLEAFTER-ROOTS-ENTRIES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -166,7 +153,10 @@
   },
   {
     "tag": "FLUMEAPI-PATHS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -198,7 +188,10 @@
   },
   {
     "tag": "CHAIN-PENDINGPATH",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -260,27 +253,5 @@
     ],
     "acceptance": "no site (dispatcher, cli.ts, job.ts, pendingGate) carries its own copy of the 'plan/pending.json' default; PendingGateOptions no longer has a pendingPath field",
     "notes": "Largest entry this tick — one fact, many readers. Chain.ts declares nothing today so behavior is unchanged there; no chore(flume) follow-up needed unless a chain wants to relocate the queue."
-  },
-  {
-    "tag": "DOCS-CLI-MISSING-VERBS",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CLI.md",
-          "description": "Add the four missing prose entries (stop, log, check, friction) matching the existing per-subcommand format and spec/cli.md's Subcommand surface descriptions (exit semantics, side effects, example invocation)."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "docs/CLI.md carries one prose entry per subcommand (add stop/log/check/friction) per spec/cli.md's own stated contract",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [],
-    "acceptance": "docs/CLI.md has ten subcommand entries, matching flume --help's ten verbs",
-    "notes": "Inbox 2026-09-06 loss-audit item 3. Spec already states the contract (\"docs/CLI.md carries one prose entry per subcommand\"); no ambiguity to ask about."
   }
 ]
