@@ -1,51 +1,5 @@
 [
   {
-    "tag": "TICKCONTEXT-PICKABLE-PRIORATTEMPTS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "Add TickContext.pickable (readonly PendingEntry[]) and TickContext.priorAttempts (map keyed as prior-attempt files are), per spec/chain.md What a hook receives."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Populate both at every TickContext construction site (singleton shouldRun/promptArgs, fanout per-entry), reusing the same isPickable + quarantine-drop computation fanout selection uses, and a full read of prior-attempts/ via the engine's own reader/tolerance."
-        },
-        {
-          "path": "src/index.ts",
-          "description": "Re-export type PriorAttempt from ./Prompt.js — not yet on the public surface."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "TickContext.pickable matches fanout selection's own verdict; priorAttempts reflects persisted records, tolerating a corrupt one as absent."
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "src/Phase.ts",
-      "src/index.ts",
-      "tests/Dispatcher.test.ts"
-    ],
-    "summary": "TickContext gains pickable (dispatcher's own selection verdict) and priorAttempts (persisted records), so a hook stops re-deriving either",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a hook receives"
-    },
-    "tests": [
-      "singleton shouldRun's TickContext.pickable agrees with the next fanout tick's own selection",
-      "TickContext.priorAttempts is keyed as the on-disk files are (tag slug / phase name) and a corrupt record reads as absent"
-    ],
-    "acceptance": "a shouldRun/promptArgs hook can read ctx.pickable and ctx.priorAttempts instead of calling isPickableNow or scanning prior-attempts/ itself",
-    "notes": ".flume/chain.ts's isPickableNow(shouldRun) call and hand-rolled anyVoluntaryBailRecord scan are out of build's writablePaths (harness surface) — adoption is a separate chore(flume) commit."
-  },
-  {
     "tag": "TICKRESULT-PICKABLEAFTER-ROOTS-ENTRIES",
     "gate": {
       "kind": "open"
