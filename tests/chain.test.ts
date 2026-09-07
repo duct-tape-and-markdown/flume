@@ -27,7 +27,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import { loadChainModule, slugify, priorAttemptPath } from "../src/Dispatcher.ts";
+import type { TickVerdict, TickVerdictMergeOutcome } from "../src/Dispatcher.ts";
+import {
+  loadChainModule,
+  readLatestVerdictsSync,
+  slugify,
+  priorAttemptPath,
+  writeTickVerdict,
+} from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
@@ -73,6 +80,31 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     shippedTags: [],
     revertedTags: [],
     ...overrides,
+  };
+}
+
+/**
+ * A {@link TickVerdict} for `phaseName` whose only load-bearing content is
+ * `mergeOutcomes` — the fact `plan.shouldRun`'s park leg reads. Every other
+ * field carries the minimum a verdict record needs to survive the log's own
+ * structural check; the tests below write these through the engine's real
+ * `writeTickVerdict`, never a hand-rolled log line.
+ */
+function buildVerdict(
+  phaseName: string,
+  mergeOutcomes: TickVerdictMergeOutcome[],
+): TickVerdict {
+  return {
+    phaseName,
+    tags: mergeOutcomes.map((o) => o.tag),
+    committed: true,
+    gateResults: [],
+    shippedTags: mergeOutcomes.filter((o) => o.outcome === "merged").map((o) => o.tag),
+    mergeOutcomes,
+    invocations: [],
+    summary: mergeOutcomes.map((o) => `${o.tag}=${o.outcome}`).join(", "),
+    headSha: "0".repeat(40),
+    at: new Date().toISOString(),
   };
 }
 
@@ -216,6 +248,47 @@ describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)",
       // No prior-attempts/ directory written at all — anyVoluntaryBailRecord's
       // readdirSync throw is caught and treated as "no records".
       await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      const ctx: TickContext = {
+        cwd: flumeDir,
+        flumeDir,
+        pending: [makeEntry("OPEN-1", { kind: "open" })],
+      };
+      expect(plan.shouldRun!(ctx)).toBe(false);
+    });
+
+    it("runs on a pickable-only queue when the last build verdict carries a not-shipped merge outcome (4ee48ee)", async () => {
+      // A park is a *committed* not-shipped outcome, so it writes no
+      // prior-attempt record and the voluntary-bail check above can never
+      // see it. Without this leg the parked entry stays pickable, plan
+      // declines, and build re-parks against the same fence forever.
+      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      await writeTickVerdict(
+        flumeDir,
+        buildVerdict(build.name, [{ tag: "PARKED-BY-BUILD", outcome: "not-shipped" }]),
+      );
+      // Non-vacuity: the leg reads the build phase's own latest verdict, so
+      // prove the writer put outcomes there under that key before judging.
+      expect(readLatestVerdictsSync(flumeDir)[build.name]?.mergeOutcomes).toHaveLength(1);
+      const ctx: TickContext = {
+        cwd: flumeDir,
+        flumeDir,
+        pending: [makeEntry("PARKED-BY-BUILD", { kind: "open" })],
+      };
+      expect(plan.shouldRun!(ctx)).toBe(true);
+    });
+
+    it("declines on a pickable-only queue when the last build verdict's merge outcomes are all shipped", async () => {
+      // The other leg: a verdict is present and readable, but nothing in it
+      // is a park — the queue's pickable entry is still build's to take.
+      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+      await writeTickVerdict(
+        flumeDir,
+        buildVerdict(build.name, [
+          { tag: "SHIPPED-1", outcome: "merged" },
+          { tag: "SHIPPED-2", outcome: "merged" },
+        ]),
+      );
+      expect(readLatestVerdictsSync(flumeDir)[build.name]?.mergeOutcomes).toHaveLength(2);
       const ctx: TickContext = {
         cwd: flumeDir,
         flumeDir,
