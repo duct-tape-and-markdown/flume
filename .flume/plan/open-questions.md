@@ -88,15 +88,18 @@ Filed as **gh#19** with full repro. The operator is opening the spec line for th
 
 CHAIN-PENDINGPATH (this tick) removed `PendingGateOptions.pendingPath` — the queue path is now the one `Chain.pendingPath` value every reader resolves (`src/Gate.ts` `GateContext.pendingPath`), per `spec/pending.md` "The pending queue". `docs/CHAIN-AUTHORING.md:290` still lists `pendingGate({ targetFence, extension?, pendingPath?, fenceWhen? })`. Out of this entry's fence (docs/ wasn't in `entry.files`); pure narration drift, no behavior at stake — a one-line doc fix for the next tick that touches that file, not a pending entry on its own.
 
-## FLUMEAPI-PATHS parked: `buildFlumeApi(paths)` needs four more `src/` files in its fence
+## FLUMEAPI-PATHS parked: fence-only — widen `files.edit` by four `src/` files
 
-The entry's declared fence is `src/flumeApi.ts`, `src/Dispatcher.ts`,
-`tests/Dispatcher.test.ts`. Making `buildFlumeApi` *require*
-`{repoRoot, configDir, flumeDir}` — which is the whole point of the spec
-section (`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*: "once
-`buildFlumeApi` requires the roots, a verb cannot construct the API without
-first resolving them") — forces `loadChainModule` / `diskChainLoader` to carry
-the roots too. Nine call sites do so today, and five of them are outside the
+**No human decision needed.** The design fork this section carried through two
+parks is closed: it rested on a signature-level reading that does not survive
+checking the call sites. What is left is a fence widening, which is plan's
+call.
+
+Making `buildFlumeApi` *require* `{repoRoot, configDir, flumeDir}` — the whole
+mechanism of `spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*
+("once `buildFlumeApi` requires the roots, a verb cannot construct the API
+without first resolving them") — forces `loadChainModule` / `diskChainLoader`
+to carry the roots too. Nine call sites do; five are outside this entry's
 fence:
 
 - `src/cli.ts:126` (`chainRefusesPhase`, wake/sleep), `:345` (`status`),
@@ -106,74 +109,70 @@ fence:
 - `src/job.ts:176` (`jobNew`), `:279` (`jobRun`'s entry-phase wake)
 - `src/builtinGates.ts:260` (`chainLoadGate`)
 
-**Correction (attempt 2, verified on disk this tick): only six of the nine
-sites are mechanical. Three do not hold all three roots, and two of those are
-a design call, not a thread.** The earlier claim here — "all five already hold
-all three roots in scope … one argument per site" — was wrong.
+### Correction (attempt 3, verified on disk): all nine are mechanical
 
-Mechanical (the root is already in scope, one argument):
+The previous park claimed three sites were a design call rather than a thread —
+`jobNew` has no `flumeDir`, `job status` has no single `flumeDir`, `jobRun` has
+no `repoRoot` — and asked the human to rule on what `flumeDir` means for a verb
+that is not running a tick. **That fork does not exist.** Those three claims are
+true of the *option-object signatures* and false of the *call sites*: every
+caller already holds the resolved value.
 
-- `src/cli.ts` `status` / `check` / `friction` / `resolveChain` — `main()`
-  holds `repoRoot`/`configDir`/`flumeDir` off `resolveStateDirs`.
-- `src/cli.ts:121` `chainRefusesPhase(configDir, phase)` — needs one more
-  parameter; its two callers (`:385`, `:402`) are inside `main()`.
-- `src/builtinGates.ts:260` `chainLoadGate` — `ctx.repoRoot`,
-  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext`.
+- `main()` resolves `repoRoot` at `src/cli.ts:135` and
+  `{flumeDir, configDir, job}` from `resolveStateDirs` at `:240` — **before**
+  it dispatches the job verbs at `:253`. The entry's own note is right that
+  `e814195` closed the ordering half of the spec's drift note; the consequence
+  is that no chain-loading verb reaches its load with roots unresolved.
+- `jobNew` ← `src/cliJobVerbs.ts:116`, inside
+  `runJobVerb(args, repoRoot, configDir)`. Give `runJobVerb` a fourth
+  `flumeDir` parameter from `cli.ts:253`; pass it into `JobNewOptions`.
+- `job status` ← `src/cliJobVerbs.ts:42` — the same fourth parameter.
+- `jobRun` ← `src/cli.ts:275`, inside `main()`, which holds `repoRoot` from
+  `:135`. Add `repoRoot` to `JobRunOptions`.
+- `chainLoadGate` ← `src/builtinGates.ts:260` — `ctx.repoRoot`,
+  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext`
+  (`src/Gate.ts:94`, `:79`, `:53`).
+- The five `src/cli.ts` sites are all in `main()` scope.
 
-Not mechanical:
+**No root is fabricated by this.** `flume job new <name>` and `flume job status`
+do not pass `--job`, so `resolveStateDirs` yields `<repoRoot>/.flume` — the repo
+state root, which is the honest root for that invocation, because the chain
+being loaded *is* the repo chain (`spec/chain.md`, *Chain residency*: job
+resolution never retargets `configDir`). This is the section's own first bullet
+already ratified: "This holds for every verb that loads a chain — `tick`,
+`loop`, `status`, `wake`, `sleep`, `check`, and the `job` verbs alike."
 
-- **`src/job.ts:176` `jobNew` — there is no `flumeDir` yet.**
-  `JobNewOptions` (`:119`) carries `repoRoot` + `configDir` and no state
-  root, deliberately: the chain load at `:176` runs *before* `jobDir` is
-  computed (`:194`) so a bad `seedDir` declaration leaves no stray job dir
-  (`spec/chain.md`, *`Chain.seedDir`*). Handing `api.paths.flumeDir` the
-  about-to-exist `<repoRoot>/.flume/jobs/<name>` means naming a directory
-  that does not exist; handing it `<repoRoot>/.flume` means lying about
-  which root this invocation is for.
-- **`src/cliJobVerbs.ts:42` `job status` — there is no single `flumeDir`.**
-  `runJobVerb(args, repoRoot, configDir)` has no state root at all, and the
-  verb enumerates *every* job under `.flume/jobs/*`. One chain load serves N
-  state roots, so no single value is the honest answer.
-- **`src/job.ts:279` `jobRun` — there is no `repoRoot`.** `JobRunOptions`
-  (`:238`) carries `flumeDir` + `configDir` only. Adding `repoRoot` to the
-  options is easy; it is still a public-shape change, not a thread.
+So `FlumeApiPaths` keeps all three members **required**. Optional or
+per-call-site-defaulted roots were the earlier recommendation; both are now
+unnecessary, and either would forfeit the mechanism the spec section is built
+on.
 
-**Ask — two forks, both needing a decision before the entry is pickable:**
+### What plan does next tick
 
-1. **Fence.** Widen `files.edit` to `src/cli.ts`, `src/cliJobVerbs.ts`,
-   `src/job.ts`, `src/builtinGates.ts` (plus `tests/chain.test.ts` and
-   `tests/examples.integration.test.ts`, which call `buildFlumeApi()` bare),
-   or split the threading into a follow-on entry FLUMEAPI-PATHS `blockedBy`.
-2. **What `flumeDir` means for a verb that is not running a tick.** Options:
-   (a) `FlumeApiPaths.flumeDir` stays required and the three sites above pass
-   the repo default `<repoRoot>/.flume`, declared and cited at each site as
-   "no tick, no job resolution"; (b) `flumeDir` becomes optional on
-   `FlumeApiPaths`, absent for non-tick loads, so a chain reading it outside a
-   tick fails loud instead of silently placing an artifact under the wrong
-   root — this is the *Loud or nothing* shape, at the cost of `?.` on the
-   chain's read path; (c) split the surface — a `paths` that always carries
-   `repoRoot`/`configDir`, and a separately-typed state root only the
-   dispatcher supplies. (b) looks right to me and keeps the spec's "a verb
-   cannot construct the API without first resolving them" true, but it is a
-   public-API shape call, so it is not mine to make.
+Widen `files.edit` to add `src/cli.ts`, `src/cliJobVerbs.ts`, `src/job.ts`,
+`src/builtinGates.ts`. `tests/chain.test.ts` and
+`tests/examples.integration.test.ts` also call `buildFlumeApi()` bare, but the
+build phase's `tests/**` channel already covers them — no declaration needed.
+Splitting into a `blockedBy` follow-on is available but buys nothing: the
+threading is one argument per site and is not separately testable.
 
-Why this is a park and not a shipped in-fence change: the only way to stay
-inside the declared fence is to leave `loadChainModule`'s `paths` parameter
-optional and fabricate roots when it is absent. The previous attempt
-(`36907e3`, reverted) did exactly that — `paths ?? { repoRoot: dirname(path),
-configDir: dirname(path), flumeDir: dirname(path) }` — which hands
-`chainLoadGate` and the job verbs a `repoRoot` of `.flume/` and a `flumeDir`
-that ignores `--job`. That is a substituted placeholder with nothing
-downstream refusing on it (`engineering.md`, *Loud or nothing*), and it
-re-opens the very re-derivation the section closes. The simple fix exists; it
-just needs the wider fence (`collaboration.md`, *Complexity is a signal*).
+Why this could not ship in-fence: the only shape that stays inside the current
+fence leaves `loadChainModule`'s `paths` optional and invents roots when it is
+absent. Attempt 1 (`36907e3`, reverted) did that — `paths ?? { repoRoot:
+dirname(path), … }` — handing `chainLoadGate` and the job verbs a `repoRoot`
+of `.flume/` and a `flumeDir` that ignores `--job`: a substituted placeholder
+with nothing refusing on it (`engineering.md`, *Loud or nothing*), re-opening
+the re-derivation the section closes. Making the parameter required instead
+breaks the five out-of-fence callers at compile time, so the `tsc` gate reverts
+the commit. There is no third option: the factory is applied *inside*
+`loadChainModule`, so the roots have no other seam to reach it through.
 
-One decision for whoever widens it: under `afterCommit`, `chainLoadGate`'s
-`ctx.repoRoot` is the ephemeral worktree while `ctx.flumeDir` is the primary
-checkout's state root (`spec/chain.md`, *What a gate receives*). Handing those
-two to a chain the gate is only *validating* looks right — the gate is not
-running a tick — but it should be named at the site rather than left to read
-as an accident.
+One thing for whoever writes it to declare at the site, not a blocker: under
+`afterCommit`, `chainLoadGate`'s `ctx.repoRoot` is the ephemeral worktree while
+`ctx.flumeDir` is the primary checkout's state root (`spec/chain.md`, *What a
+gate receives*). Handing a chain the gate is only *validating* those two is
+right — the gate is not running a tick — but it should read as deliberate
+rather than as an accident.
 
 ## Attempt 1 of FLUMEAPI-PATHS: the recorded revert cause is wrong, and the real one was truncated away
 
