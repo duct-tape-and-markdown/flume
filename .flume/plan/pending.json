@@ -39,7 +39,7 @@
       "a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape"
     ],
     "acceptance": "handoff can read result.pickableAfter/flumeDir/configDir/entries without process.env or a re-picked isPickableNow call",
-    "notes": "May collide with TICKCONTEXT-PICKABLE-PRIORATTEMPTS on src/Phase.ts and src/Dispatcher.ts (expected — sequential ship, not a design coupling)."
+    "notes": "src/Phase.ts/src/Dispatcher.ts already carry TickContext.pickable/priorAttempts (shipped) — this entry's TickResult fields land beside them, no remaining coupling."
   },
   {
     "tag": "FLUMEAPI-PATHS",
