@@ -106,15 +106,56 @@ fence:
 - `src/job.ts:176` (`jobNew`), `:279` (`jobRun`'s entry-phase wake)
 - `src/builtinGates.ts:260` (`chainLoadGate`)
 
-**All five already hold all three roots in scope** — `cli.ts` has
-`repoRoot`/`configDir`/`flumeDir` off `resolveStateDirs`, `job.ts` and
-`cliJobVerbs.ts` have `repoRoot`/`configDir` plus the job's state root, and
-`chainLoadGate` has `ctx.repoRoot`, `ctx.configDir`, `ctx.flumeDir` on
-`GateContext`. Threading is mechanical, one argument per site. **Ask: widen
-FLUMEAPI-PATHS's `files.edit` to include those four modules** (plus
-`tests/chain.test.ts` and `tests/examples.integration.test.ts`, which call
-`buildFlumeApi()` bare and need the new argument), or split the threading into
-a follow-on entry that FLUMEAPI-PATHS `blockedBy`.
+**Correction (attempt 2, verified on disk this tick): only six of the nine
+sites are mechanical. Three do not hold all three roots, and two of those are
+a design call, not a thread.** The earlier claim here — "all five already hold
+all three roots in scope … one argument per site" — was wrong.
+
+Mechanical (the root is already in scope, one argument):
+
+- `src/cli.ts` `status` / `check` / `friction` / `resolveChain` — `main()`
+  holds `repoRoot`/`configDir`/`flumeDir` off `resolveStateDirs`.
+- `src/cli.ts:121` `chainRefusesPhase(configDir, phase)` — needs one more
+  parameter; its two callers (`:385`, `:402`) are inside `main()`.
+- `src/builtinGates.ts:260` `chainLoadGate` — `ctx.repoRoot`,
+  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext`.
+
+Not mechanical:
+
+- **`src/job.ts:176` `jobNew` — there is no `flumeDir` yet.**
+  `JobNewOptions` (`:119`) carries `repoRoot` + `configDir` and no state
+  root, deliberately: the chain load at `:176` runs *before* `jobDir` is
+  computed (`:194`) so a bad `seedDir` declaration leaves no stray job dir
+  (`spec/chain.md`, *`Chain.seedDir`*). Handing `api.paths.flumeDir` the
+  about-to-exist `<repoRoot>/.flume/jobs/<name>` means naming a directory
+  that does not exist; handing it `<repoRoot>/.flume` means lying about
+  which root this invocation is for.
+- **`src/cliJobVerbs.ts:42` `job status` — there is no single `flumeDir`.**
+  `runJobVerb(args, repoRoot, configDir)` has no state root at all, and the
+  verb enumerates *every* job under `.flume/jobs/*`. One chain load serves N
+  state roots, so no single value is the honest answer.
+- **`src/job.ts:279` `jobRun` — there is no `repoRoot`.** `JobRunOptions`
+  (`:238`) carries `flumeDir` + `configDir` only. Adding `repoRoot` to the
+  options is easy; it is still a public-shape change, not a thread.
+
+**Ask — two forks, both needing a decision before the entry is pickable:**
+
+1. **Fence.** Widen `files.edit` to `src/cli.ts`, `src/cliJobVerbs.ts`,
+   `src/job.ts`, `src/builtinGates.ts` (plus `tests/chain.test.ts` and
+   `tests/examples.integration.test.ts`, which call `buildFlumeApi()` bare),
+   or split the threading into a follow-on entry FLUMEAPI-PATHS `blockedBy`.
+2. **What `flumeDir` means for a verb that is not running a tick.** Options:
+   (a) `FlumeApiPaths.flumeDir` stays required and the three sites above pass
+   the repo default `<repoRoot>/.flume`, declared and cited at each site as
+   "no tick, no job resolution"; (b) `flumeDir` becomes optional on
+   `FlumeApiPaths`, absent for non-tick loads, so a chain reading it outside a
+   tick fails loud instead of silently placing an artifact under the wrong
+   root — this is the *Loud or nothing* shape, at the cost of `?.` on the
+   chain's read path; (c) split the surface — a `paths` that always carries
+   `repoRoot`/`configDir`, and a separately-typed state root only the
+   dispatcher supplies. (b) looks right to me and keeps the spec's "a verb
+   cannot construct the API without first resolving them" true, but it is a
+   public-API shape call, so it is not mine to make.
 
 Why this is a park and not a shipped in-fence change: the only way to stay
 inside the declared fence is to leave `loadChainModule`'s `paths` parameter
@@ -134,44 +175,47 @@ two to a chain the gate is only *validating* looks right — the gate is not
 running a tick — but it should be named at the site rather than left to read
 as an accident.
 
-## Attempt 1 of FLUMEAPI-PATHS was reverted by the environment, not by its diff
+## Attempt 1 of FLUMEAPI-PATHS: the recorded revert cause is wrong, and the real one was truncated away
 
-Recorded so the next attempt does not chase a ghost. `36907e3` failed the
-`vitest` afterMerge gate with 4 tests across 2 files. Its own commit body
-diagnosed the cause: `tests/cli.test.ts`'s "hermeticEnv — strips every
-identity/provenance FLUME_* var" asserts `FLUME_QUARANTINED_SLUGS` and
-`FLUME_WORKTREES_DIR` are "never set as ambient input here"
-(`tests/cli.test.ts:97-99`), so both are excluded from
-`HERMETIC_ENV_STRIP_KEYS` (`tests/helpers/subprocess.ts`). That holds for an
-operator's plain `pnpm test`, but not inside this repo's own dogfood loop: a
-build-phase agent inherits `FLUME_QUARANTINED_SLUGS` from the outer
-`flume tick`/`flume loop` process tree whenever the run-scoped quarantine set
-is non-empty (`Dispatcher.ts:defaultTickRunner` sets it on the spawned
-child's env). The afterMerge gate runs in that same tree.
+Supersedes the diagnosis this section previously carried. That diagnosis said
+`36907e3` was reverted because `tests/cli.test.ts`'s hermeticEnv test assumes
+`FLUME_QUARANTINED_SLUGS` is never ambient, which fails inside this repo's own
+dogfood loop. **That cannot be what happened.** `91694b8` ("chore(flume):
+hermeticEnv strips FLUME_* by prefix, not by list") is an ancestor of
+`36907e3` — verified with `git merge-base --is-ancestor` this tick — so at
+attempt 1 `hermeticEnv()` already stripped by prefix and the test already
+asserted the prefix invariant rather than a key list. The trigger the
+diagnosis named could not fire. The options A/B/C it listed are moot: A is
+effectively what `91694b8` shipped.
 
-Re-verified this tick with the reverted diff re-applied to the working tree:
-`pnpm test --run` is **20 files / 763 passed, 0 failed** — this session's
-ambient env carries no `FLUME_QUARANTINED_SLUGS` (the quarantine set is
-empty), so the trigger is absent. A baseline run *without* the diff, by
-contrast, hit an unrelated `Hook timed out in 10000ms` in
-`tests/Dispatcher.test.ts` — the suite also carries load-coupled timeout
-flake independent of this entry.
+So **attempt 1's failure is unidentified**: 4 tests across 2 files, and the
+names of neither survive. The prior-attempt record
+(`.flume/prior-attempts/flumeapi-paths.json`) opens with
+`[truncated 16751 chars]…` and vitest's failure detail sits in the truncated
+head; what remains is the per-file pass listing and the counts. What the
+surviving tail does show is a run under heavy host contention — `transform
+37.21s / collect 106.51s` against `6.58s / 14.26s` for a quiet run, ~7×, with
+`tests 233.42s` inside `46.23s` wall — which is the shape of parallel fanout
+siblings each running their own suite. Load-coupled timeout flake is the
+best available reading, but it is a reading, not a finding.
 
-Consequence: the `vitest` afterMerge gate can revert an unrelated, correct
-commit on any build tick that runs after this repo records its first
-quarantine. Options, unchanged from the prior attempt's framing:
+Baseline this tick, same tree, nothing applied: **20 files / 762 passed /
+0 failed.**
 
-- **A — strip both keys unconditionally** in `hermeticEnv()`. Simplest;
-  changes the helper's contract for any chain consumer relying on either
-  surviving (the per-test config-override use case its comment names).
-- **B — fix the test's fixture, not `hermeticEnv()`.** Snapshot-and-clear
-  ambient `FLUME_QUARANTINED_SLUGS`/`FLUME_WORKTREES_DIR` for the duration of
-  that one test, exactly as it already does for `HERMETIC_ENV_STRIP_KEYS`
-  (`tests/cli.test.ts:103-109`). Leaves the helper's contract untouched.
-- **C — leave it**, accepting a spurious afterMerge revert under quarantine;
-  quarantine clears on supervisor restart (`spec/loop.md`), which bounds how
-  long the condition persists.
+Two things for plan, neither filed as an entry from here (build does not
+author the queue):
 
-No `per` cite either way — this is test-harness / gate-reliability shape, not
-spec-derived behavior. B looks right and is a one-test change; naming it here
-rather than folding it into an unrelated entry's commit.
+- **The prior-attempt record truncates from the head, which is where the
+  failing test names are.** `spec/chain.md` (*Containment is not recovery*)
+  rests the whole recovery story on the prior-outcome channel forwarding the
+  failure detail to the retrying tick; a head-truncated gate record forwards
+  the passing tests and drops the reason. Correctness-adjacent: it is the
+  difference between a retry that fixes the cause and one that guesses, and
+  this entry just spent an attempt guessing. Tail-truncation, or reserving a
+  budget for the reporter's failure block, would both keep it.
+- **Do not record a revert cause that was not read off the failing run.** The
+  superseded diagnosis above was plausible, cited real code, and was wrong;
+  it then rode two commit bodies and this file as settled fact
+  (`.claude/rules/engineering.md`, *A fix ships the test that would have
+  caught it*: a cause aimed at a described symptom instead of a reproduced
+  one is a guess).
