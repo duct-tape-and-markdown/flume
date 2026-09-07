@@ -19,6 +19,10 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "tests/Dispatcher.test.ts"
+    ],
     "summary": "afterMerge revert refuses instead of resetting over a foreign trunk commit, singleton and fanout alike",
     "per": {
       "path": "spec/loop.md",
@@ -29,11 +33,7 @@
       "same refusal on the singleton leg"
     ],
     "acceptance": "resetKeepTo is only attempted when current trunk tip == mergedSha; a mismatch refuses loudly via the existing revert-refused path instead of resetting",
-    "notes": "Field-traced at temper 0.13.0 (entry a385660a cherry-picked, operator commit 3da55a88 landed on top, afterMerge gate failed, trunk rewound to pre-cherry-pick). Recovered manually. Inbox 2026-09-06 (temper-main).",
-    "observedFiles": [
-      "src/Dispatcher.ts",
-      "tests/Dispatcher.test.ts"
-    ]
+    "notes": "Field-traced at temper 0.13.0 (entry a385660a cherry-picked, operator commit 3da55a88 landed on top, afterMerge gate failed, trunk rewound to pre-cherry-pick). Recovered manually. Inbox 2026-09-06 (temper-main)."
   },
   {
     "tag": "AGENTRESULT-FINALMESSAGE",
@@ -73,7 +73,13 @@
       "voluntary-bail record's constraint text is unchanged for existing fixtures after the move"
     ],
     "acceptance": "src/Dispatcher.ts holds no NDJSON re-parse of stdout for this purpose; the adapter is the one place provider transcript shape is read",
-    "notes": "Bounding (tailBound/MAX_PRIOR_NOCOMMIT) stays Dispatcher-side — record-size policy, not provider shape."
+    "notes": "Bounding (tailBound/MAX_PRIOR_NOCOMMIT) stays Dispatcher-side — record-size policy, not provider shape.",
+    "observedFiles": [
+      "src/Agent.ts",
+      "src/Dispatcher.ts",
+      "tests/Agent.test.ts",
+      "tests/Dispatcher.test.ts"
+    ]
   },
   {
     "tag": "TICKCONTEXT-PICKABLE-PRIORATTEMPTS",
