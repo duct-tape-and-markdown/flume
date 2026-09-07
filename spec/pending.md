@@ -341,14 +341,17 @@ and does not try to. It reports facts; the chain interprets them.
 
 `Phase.shipped?: (ctx: ShipContext) => boolean` is the injection point — a sibling of
 `shouldRun` and `handoff`, synchronous like both. `ShipContext` carries what the engine already
-holds at that moment: the entry, the merged sha, the commit's touched paths, the gate results,
-and the entry's worktree path *before teardown* — so a chain that wants to read something its
-own agent wrote can, without the engine knowing such a thing exists.
+holds at that moment: the entry, the merged sha, the span's base sha, the commit's touched
+paths, the gate results, and the entry's worktree path *before teardown* — so a chain that
+wants to read something its own agent wrote can, without the engine knowing such a thing
+exists.
 
 - **Undeclared means shipped.** A commit that landed and passed its gates ships. This is the
   whole behavior for a chain with no park concept, and it needs no ceremony to get it.
 - **Declared means the chain decides.** Returning `false` records the entry as `not-shipped`:
-  it stays in `pending.json`, and the commit stays on trunk.
+  it stays in `pending.json`, the commit stays on trunk, and a `not-shipped` `PriorAttempt`
+  record is written under the entry's key (`spec/loop.md`, *Prior-outcome feedback*) — the
+  same channel a revert or a bail uses, cleared the same way by a later clean ship.
 - **The engine holds no vocabulary for why.** Not "park", not "channel-only" — those are one
   chain's words for one chain's workflow. The engine records that the chain said no.
 - **The commit still lands either way.** This gates *classification*, not *landing*.

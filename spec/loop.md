@@ -482,8 +482,9 @@ attempted.
 A reverted tick that forwards no signal makes the loop amnesiac: the reset erases the
 sha, so `git log` shows nothing happened and the same wall is re-derived every attempt.
 When a prior tick for the same entry (fanout, keyed by tag slug) or phase (singleton,
-keyed by phase name) produced no usable commit, the next tick receives a **`PriorAttempt`
-record** — a mode-tagged union, exactly one variant — rendered into its prompt as a
+keyed by phase name) produced nothing the queue could consume — a revert, a bail, a
+refusal, or a commit that landed and the chain declared not shipped — the next tick
+receives a **`PriorAttempt` record** — a mode-tagged union, exactly one variant — rendered into its prompt as a
 dispatcher-owned `<prior-attempt>` block:
 
 - `gate-revert` — which gate phase reverted (`afterCommit` or `afterMerge`), the gate's
@@ -495,6 +496,12 @@ dispatcher-owned `<prior-attempt>` block:
 - `platform-preempt` — the failure class, marked as not a defect in the prior work.
 - `render-refused` — every failing inline-exec span's command text and stderr.
 - `tip-moved` — the expected and observed tips.
+- `not-shipped` — the chain's `shipped` hook returned `false` (`spec/pending.md`, *Ship
+  detection trusts the agent's own account*): the merged sha and the commit's touched
+  paths. No reason vocabulary — the engine records that the chain said no, never why.
+  The record is a fact the next tick and every `shouldRun` can read from
+  `TickContext.priorAttempts`; without it a park is visible only in the verdict log,
+  and two chains independently rebuilt "was the last build a park" from there.
 
 - **Cross-process by construction.** Persisted at
   `<flumeDir>/prior-attempts/<key>.json` — `priorAttemptPath(flumeDir, tag)`, the
@@ -525,10 +532,12 @@ dispatcher-owned `<prior-attempt>` block:
 Every tick that actually runs a phase writes **one verdict artifact** carrying: phase
 name, entry tags provisioned, `committed`, the no-commit class, `tipMoved`/`declined`,
 each gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
-verdict, its one-line `message`, and its captured `details` — where `writablePathsGate`
-lists the violating paths), shipped tags,
-each provisioned span's cherry-pick/merge fate with its footprint **and its head
-sha** — per entry under fanout, the phase's own single span under singleton — any
+verdict, its one-line `message`, its captured `details` — where `writablePathsGate`
+lists the violating paths — and its `skipped` reason when the gate declared one,
+`spec/chain.md`, *What a gate returns*), shipped tags,
+each provisioned span's cherry-pick/merge fate with its footprint, **its base sha,
+and its head sha** — per entry under fanout, the phase's own single span under
+singleton — any
 provisioning failures, and the tick's own one-line summary. The sha is recovery,
 not decoration: a span that was parked or refused after its gates passed must be
 re-cherry-pickable from the verdict alone, never re-run at full agent price —
@@ -582,8 +591,8 @@ store until gc, and the verdict is the only place their sha outlives the branch.
 - **No interpretation fields.** The artifact records what happened, never what it
   means. "Errored" is not stored: `superviseLoop` derives it at the read site from the
   facts (`gate-revert`, `platform-preempt`, `render-refused`, `tipMoved`, or a
-  provisioning failure that left nothing shipped — never `voluntary-bail`, which is the
-  agent correctly declining). "Park", "bail worth waking for" are chain readings, not
+  provisioning failure that left nothing shipped — never `voluntary-bail` or
+  `not-shipped`, which are the agent and the chain correctly declining). "Park", "bail worth waking for" are chain readings, not
   engine vocabulary.
 - **It is the supervisor's only fact channel.** Child stdio stays `inherit` —
   live-streamed agent output is operationally load-bearing, and piped-and-parsed stdout
@@ -673,9 +682,10 @@ abort exists to prevent, and after the invocation each lap is paid at full agent
 The accounting therefore covers **every per-entry failure fact the verdict records**,
 keyed by stage-tagged signature:
 
-- **provision** — a pre-tick worktree provisioning failure (sweep or create), recorded
-  as a `ProvisionFailure` (signature, and the entry tag when one can be blamed). Never
-  reaches agent invocation, so it is not a no-commit mode.
+- **provision** — a pre-tick worktree provisioning failure (sweep, create, or the
+  chain's `setupWorktree` hook throwing), recorded as a `ProvisionFailure` (signature,
+  and the entry tag when one can be blamed). Never reaches agent invocation, so it is
+  not a no-commit mode.
 - **merge** — a cherry-pick failure at the merge stage (a conflict, or a dirty trunk
   refusing the pick), recorded with the entry tag it kept pending.
 - **gate** — a gate revert, signature derived from the gate's name and failure output.

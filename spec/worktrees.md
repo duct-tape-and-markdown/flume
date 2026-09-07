@@ -136,7 +136,7 @@ than serialized — see `spec/jobs.md`.
 ## `setupWorktree` and `teardownWorktree` — the chain's provisioning hooks
 
 A fresh worktree holds only tracked files, so something has to materialize whatever the gates
-need before they run. Both hooks are optional, fanout-only, and receive the same
+need before they run. Both hooks are optional and receive the same
 `WorktreeSetupContext` — `{ worktreePath, repoRoot, entryTag }` (`src/Phase.ts`).
 
 - **`Phase.setupWorktree?(ctx): Promise<void | WorktreeSetupResult>`** runs after the worktree
@@ -147,6 +147,12 @@ need before they run. Both hooks are optional, fanout-only, and receive the same
   `extraEnv`. The scope is the agent invocation alone: gates spawn from the dispatcher's own
   env and do not see these vars. Both concurrencies carry the hooks and `extraEnv` — a
   singleton tick provisions a worktree like anything else (*Singleton runs in a worktree*).
+  **A throw is that entry's provisioning failure**, the same class as a failed create:
+  recorded as a `ProvisionFailure` under the entry's tag (`spec/loop.md`, *Repeated
+  identical failures*), the agent is not invoked, the worktree is still torn down, and
+  siblings proceed. The entry reaches `TickResult.provisionFailures` and the verdict, and
+  is absent from `TickResult.entries` — a hook that failed silently for one entry while
+  its siblings ran is otherwise a record with every flag false and nothing to explain it.
 - **`Phase.teardownWorktree?(ctx): Promise<void>`** runs after the agent and gates, before
   removal — drop a per-worktree DB, release a lease. Best-effort by contract: a throw is
   logged and removal proceeds. A leaked resource is recoverable; a stuck worktree is not.

@@ -480,12 +480,30 @@ confines side effects to disk inside `cwd`.
   dispatcher-built context.** The optionality exists for hand-built fixtures;
   a builtin that falls back to its own `git show --name-only` is covering the
   fixture case, never a real tick.
+- **`baseSha`** — the sha the span started from: the worktree's tip when the
+  tick branched, the same value the dispatcher cherry-picks from. Set on both
+  stages. It is how a gate tells an input the tick *ignored* from one it
+  *never saw*: `git log <baseSha>..HEAD -- <inputs>` names what landed on
+  trunk after the tick branched, and `git show <baseSha>:<path>` is the
+  input as the tick read it. Without it a gate reading trunk claims reverts
+  a tick for a note that post-dates it, and the chain rebuilds the base from
+  a worktree path convention the engine never promised.
 - **`log`** is the harness-side output channel; a gate does not write to stdout
   itself.
 
 ## What a gate returns
 
-`GateResult` (`src/Gate.ts:GateResult`) is `{ ok, message, details?, failingFiles? }`.
+`GateResult` (`src/Gate.ts:GateResult`) is `{ ok, message, details?, failingFiles?,
+skipped? }`.
+
+- **`skipped?: string`** — the gate did not run its judge, and says why: no
+  code path among the touched paths, a runner the chain scopes out by design.
+  `ok` stays required and stays the verdict the engine acts on; `skipped` is
+  the fact that the verdict was not earned by running anything. The engine
+  copies it onto the tick verdict's gate result verbatim and interprets it no
+  further. A gate that returns `ok: true` without `skipped` claims it ran
+  (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*:
+  vacuous-by-design is spelled, never inherited).
 
 - **`failingFiles?: string[]`** — repo-relative paths the gate attributes the
   failure to, when the gate's runner can name them (a test reporter's JSON, a
@@ -519,7 +537,9 @@ missing field, and the field is added rather than the chain excused.
     entries, phase name for singletons), read with the engine's own reader and
     the engine's own tolerance (a corrupt record is absent). A plan-phase
     `shouldRun` deciding "build has a standing bail to reconcile" reads this
-    map; it does not `readdirSync` the engine's directory.
+    map; it does not `readdirSync` the engine's directory. A park is in the
+    same map (`not-shipped`), so "build parked, plan reconciles" is a read of
+    this field too — never of the verdict log.
 - **`TickResult`** (`handoff`; `src/Phase.ts:TickResult`) — the existing
   facts (`committed`, `commitSha`, `gateResults`, `pendingAfter`,
   `shippedTags`, `revertedTags`, `noCommit`, `quarantinedTags`,
@@ -531,8 +551,12 @@ missing field, and the field is added rather than the chain excused.
     set, which is a different verdict with two inputs missing.
   - **`flumeDir`** and **`configDir`** — the resolved roots, so a handoff that
     writes or reads a state-root file has them without `process.env`.
-  - **`entries`** (fanout only) — one record per entry the wave provisioned,
-    `{ tag, committed, shipped, reverted, declined?, noCommit? }`, the same
+  - **`baseSha`** — the span's base, the same value `GateContext.baseSha`
+    carries (*What a gate receives*), so a handoff routing on "did anything
+    land on trunk that this tick could not have seen" compares against the
+    engine's number rather than the worktree's reflog.
+  - **`entries`** (fanout only) — one record per entry the wave handed to its
+    agent, `{ tag, committed, shipped, reverted, declined?, noCommit? }`, the same
     facts the wave already folds into `shippedTags`, `revertedTags`,
     `noCommit`, and `declined`, reported before the fold. The fold stays: the
     top-level fields are the wave's summary and remain byte-identical. What
@@ -540,10 +564,13 @@ missing field, and the field is added rather than the chain excused.
     whenever a sibling shipped — a bailed entry on a wave that also landed
     work is otherwise invisible to `handoff`, which re-picks it with the bail
     undrained. Absent on a singleton tick and on a wave that provisioned
-    nothing.
+    nothing. An entry whose provisioning failed — at create, or in the chain's
+    `setupWorktree` hook — is on **`provisionFailures`** under its tag instead
+    (`spec/worktrees.md`, *`setupWorktree` and `teardownWorktree`*), never a
+    record here with every flag false.
 - **`ShipContext`** (`shipped`; `spec/pending.md`, *Ship detection trusts the
-  agent's own account*) — unchanged: entry, merged sha, touched paths, gate
-  results, worktree path before teardown.
+  agent's own account*) — entry, merged sha, touched paths, gate results,
+  worktree path before teardown, and the same `baseSha`.
 
 Every addition is a fact the dispatcher already computed for its own use. None
 is an interpretation: the engine says which entries it *would* pick and which
