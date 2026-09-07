@@ -42,7 +42,7 @@
     "flume": "./bin/flume.js"
   },
   "scripts": {
-    "flume": "./bin/flume.js",
+    "flume": "node --import tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --mode integration",

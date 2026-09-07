@@ -21,7 +21,7 @@ Stack-specific conventions belong in `.claude/rules/<area>.md` and should be pat
 
 ## Workflow: Flume
 
-Two autonomous phases (plan, build) sharing one TypeScript dispatcher. Chain config in `.flume/chain.ts`; per-phase prompts in `.flume/prompts/{plan,build}.md`. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm exec flume` (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`). Plan output is structured JSON at `.flume/plan/pending.json`; prose at `.flume/plan/{state,open-questions}.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
+Two autonomous phases (plan, build) sharing one TypeScript dispatcher. Chain config in `.flume/chain.ts`; per-phase prompts in `.flume/prompts/{plan,build}.md`. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm flume` (a script that runs `src/cli.ts` under tsx; the `bin/` entries exec the published `dist/` build and are not for this repo) (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`). Plan output is structured JSON at `.flume/plan/pending.json`; prose at `.flume/plan/{state,open-questions}.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
 
 Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
@@ -31,9 +31,9 @@ Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
 - `pnpm tsc --noEmit` — typecheck
 - `pnpm test` — vitest
-- `pnpm exec flume status` — baton state
-- `pnpm exec flume tick` — one tick of whichever phase is awake
-- `pnpm exec flume loop` — autonomous loop until hibernation
+- `pnpm flume status` — baton state
+- `pnpm flume tick` — one tick of whichever phase is awake
+- `pnpm flume loop` — autonomous loop until hibernation
 
 ## Release cut
 

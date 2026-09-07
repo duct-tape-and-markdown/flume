@@ -72,4 +72,4 @@ When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (
 ## Where runtime lives
 
 - Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan,build}.md`. Runtime: `src/` (this repo).
-- CLI: `pnpm exec flume` — `flume --help` is the authority for subcommands.
+- CLI: `pnpm flume` (runs `src/cli.ts` under tsx) — `flume --help` is the authority for subcommands.
