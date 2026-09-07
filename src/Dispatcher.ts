@@ -109,7 +109,8 @@ type PriorAttemptDraft =
  * them at `<flumeDir>/sessions/`), but that placement is chain-supplied, not
  * runtime: the runtime owns only `flumeDir` itself and the baton/prior-attempt
  * dirs it derives from it. A chain that captures sessions roots them under
- * `process.env.FLUME_DIR` so the whole footprint tears down in one `rm`.
+ * `api.paths.flumeDir` (spec/chain.md, *Per-run artifacts belong under
+ * `FLUME_DIR`*) so the whole footprint tears down in one `rm`.
  */
 const PRIOR_ATTEMPTS_SUBDIR = "prior-attempts";
 

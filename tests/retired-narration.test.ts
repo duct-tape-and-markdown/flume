@@ -80,4 +80,28 @@ describe("retired chain-authoring shapes stay retired", () => {
       ).toEqual([]);
     });
   }
+
+  // The `?? …` pattern above catches the fallback leg only. The rest of the
+  // retirement — prose pointing a chain at the env var for artifact placement
+  // with no fallback beside it — reads in the same verbs as the two sentences
+  // that legitimately survive ("reads no `process.env.FLUME_DIR`", "is still
+  // set"), so no regex separates violation from denial. Inventory instead:
+  // every remaining mention is named, and a new one fails until it is.
+  const ALLOWED_ENV_MENTIONS: Record<string, string> = {
+    [join("src", "flumeApi.ts")]:
+      "FlumePaths' doc denies the env as a chain read path",
+    [join("docs", "CHAIN-AUTHORING.md")]:
+      "names the env as the child-process channel, not a read path",
+  };
+
+  it("names every surviving `process.env.FLUME_DIR` mention", () => {
+    const mentions = corpus
+      .filter((f) => f.text.includes("process.env.FLUME_DIR"))
+      .map((f) => f.path);
+    expect(
+      mentions.slice().sort(),
+      "a chain-authoring file mentions `process.env.FLUME_DIR`: point it at " +
+        "`api.paths.flumeDir`, or add it here with the reason it survives",
+    ).toEqual(Object.keys(ALLOWED_ENV_MENTIONS).sort());
+  });
 });
