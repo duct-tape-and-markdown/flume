@@ -148,6 +148,13 @@ const factory: ChainFactory = (api) => {
   // ---------- build fence ----------
 
   /**
+   * The single-file park build commits when an entry cannot ship — read back
+   * by `build.shipped` below, written per `prompts/build.md`. One constant so
+   * the instruction and the predicate cannot name different files.
+   */
+  const PARK_FILE = ".flume/plan/open-questions.md";
+
+  /**
    * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
    * declarations: every behavior-changing entry edits tests, and
    * open-questions.md is the always-writable parking lane (collaboration
@@ -160,13 +167,6 @@ const factory: ChainFactory = (api) => {
    * entry that edits it says so, and serializes against other entries that
    * do, which is correct.
    */
-  /**
-   * The single-file park build commits when an entry cannot ship — read back
-   * by `build.shipped` below, written per `prompts/build.md`. One constant so
-   * the instruction and the predicate cannot name different files.
-   */
-  const PARK_FILE = ".flume/plan/open-questions.md";
-
   const channelPaths = [PARK_FILE, "tests/**"];
 
   /**

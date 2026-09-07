@@ -140,11 +140,7 @@ describe("no doc block is orphaned", () => {
    * inventory shape the env-mention pin above uses. An entry leaves when the
    * block moves onto its symbol; a new orphan fails until it is named here.
    */
-  const ALLOWED_ORPHANS: Record<string, string> = {
-    [`${CHAIN_PATH}: Mandatory-on-every-entry surfaces ride the channel instead of per-entry`]:
-      "documents `channelPaths`, two blocks below it; `.flume/chain.ts` is " +
-      "outside build's fence, so it is filed in open-questions.md instead",
-  };
+  const ALLOWED_ORPHANS: Record<string, string> = {};
 
   type Orphan = { path: string; open: number; id: string };
 
