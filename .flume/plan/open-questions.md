@@ -139,20 +139,6 @@ receives*), so it is the human's edit first.
 Same shape as the `setupWorktree` question above; folds into one spec pass
 with it.
 
-## `src/Agent.ts:47` carries the same singleton negation just fixed in `Phase.ts`
-
-Found while shipping PHASE-SINGLETON-WORKTREE-NARRATION; `src/Agent.ts` is
-outside that entry's fence, so it stays unfixed.
-
-`AgentInvocation.extraEnv`'s doc (`src/Agent.ts:43-48`) says the dispatcher
-populates it "for fanout phases" and that "Singleton phases never carry
-extraEnv." The singleton path collects the hook's `extraEnv`
-(`src/Dispatcher.ts:1823`) and passes it to the agent (`:1908`) — same defect
-class as `Phase.setupWorktree`'s doc, same `spec/worktrees.md` *Singleton runs
-in a worktree* cite. Retarget to "the tick's `setupWorktree` return value,
-both concurrencies"; the behavior half is pinnable (a singleton hook returning
-`extraEnv` reaches `Agent.invoke`) and is unpinned today.
-
 ## A leaked `/tmp/.flume/stop` red-lines the default lane (observed, cause unattributed)
 
 Seen twice this tick (2026-09-06) while running `pnpm test --run` in a fanout
@@ -170,23 +156,3 @@ so a leak reverts innocent entries for host state no entry touched. Two forks
 sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
 and fix the writer. The first bounds the blast radius whatever the second
 turns up.
-
-## `src/Gate.ts:70-79` states the configDir rebase without its escape branch
-
-Found while shipping GATECTX-CONFIGDIR-ESCAPE; `src/Gate.ts` is outside that
-entry's fence, so it stays unfixed.
-
-`GateContext.configDir`'s doc says the value is "Rebased onto the gate's own
-`cwd` when that differs from the primary checkout." As of this tick that is
-half the rule: a configDir resolving *outside* `repoRoot` has no tracked
-mirror in the worktree checkout, so it is passed through verbatim
-(`src/Dispatcher.ts`, the `computeStateRootRel` call in the afterCommit
-gate-context build). A gate author reading only `Gate.ts` would expect a
-rebased path in the `FLUME_CONFIG_DIR=/elsewhere` case and get an absolute
-primary-checkout path.
-
-Mechanical retarget, no design fork: name the escape branch and point at
-`computeStateRootRel` as its owner, the same way `stateRootRel`'s doc two
-fields up already does. Behavior is pinned
-(`tests/Dispatcher.test.ts`, "GateContext.configDir rebase"); only the prose
-lags.
