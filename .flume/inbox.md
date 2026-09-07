@@ -34,3 +34,21 @@ Each entry is a markdown subsection:
 ---
 
 <!-- entries below this line; newest first -->
+
+## 2026-09-07 — a park is invisible on the surface chains already read (cascade-integrations via flume-main)
+
+1. **`not-shipped` leaves nothing where a chain looks for prior outcomes.** Two
+   chains hit the same livelock independently: flume's `plan.shouldRun` keyed on
+   bail records and the inbox (fixed chain-side in 4ee48ee by reading the last
+   build verdict), and cascade's `build.handoff` re-picks a capture-only commit
+   for the same reason (fixed chain-side there, 0.13-compatible). Cause in both:
+   a park is a committed `not-shipped` merge outcome, so no `PriorAttempt` is
+   written and neither `TickContext.priorAttempts` nor quarantine ever sees it —
+   the chain has to know to read the verdict log instead. Two consumers carrying
+   the same block is the detector (`engine-boundary.md`, *Surface, not
+   prescription*). Ruling needed: whether `not-shipped` writes a prior-attempt
+   record (a fact: "landed, chain said not shipped", no reason vocabulary), or
+   whether `TickContext` carries the entry's last merge outcome directly. Either
+   widens an enumeration in spec/loop.md (*Prior-outcome feedback*) and
+   spec/chain.md (*What a hook receives*), so it is the human's edit first; do
+   not derive.
