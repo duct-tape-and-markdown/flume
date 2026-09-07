@@ -132,22 +132,6 @@ entries for shipped work.
 Also in this file, unverified this tick: the closing **Gap:** note under *The
 package a chain loads through* refers to "the drift note above" as live.
 
-## `.flume/chain.ts` still env-sniffs the state root at four sites (PARKED — chain.ts, harness surface)
-
-`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*, now states the
-answer outright: a chain "never reads `process.env.FLUME_DIR`, and it never
-falls back to its own directory: a chain with a `?? CHAIN_DIR` leg is
-re-deriving a fact the engine already resolved." `FlumeApi.paths` shipped in
-`62b67e5` and the dogfood chain has not adopted it — `.flume/chain.ts:31`
-(inbox), `:56` (prior-attempts dir), `:314` (session capture), `:424`
-(state.md), plus the comment at `:310` justifying the fallback.
-
-**Recommendation:** replace all four with `api.paths.flumeDir` and delete
-`CHAIN_DIR`; no fork to weigh, the spec section decides it. Blocked only by
-lane — `.flume/chain.ts` is outside both phases, so this needs a human
-`chore(flume):` commit. `tests/chain.test.ts` already builds the API from a
-real `FlumePaths`, so the predicates keep their coverage across the change.
-
 ## A park is invisible on the surface chains already read — engine ruling needed (PARKED — do not derive)
 
 Drained from the inbox (2026-09-07, cascade-integrations via flume-main). Two

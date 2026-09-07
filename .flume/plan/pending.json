@@ -1,1 +1,94 @@
-[]
+[
+  {
+    "tag": "PHASE-SINGLETON-WORKTREE-NARRATION",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "`setupWorktree`'s doc (:341) asserts the negation of shipped behavior — \"Singleton phases run in the main repo and do not invoke this\". `src/Dispatcher.ts:1816` invokes it on the singleton path. Retarget it, and `WorktreeSetupContext.entryTag` (:370, \"Tag of the pending entry\") which carries `phase.name` there (`src/Dispatcher.ts:1820`)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "No case pins the singleton half of the hook contract — every existing setupWorktree case (~:2535) is fanout. Add beside the WORKTREE-CORE singleton block (~:423)."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Phase.setupWorktree's doc denies the singleton path src/Dispatcher.ts:1816 actually takes; retarget it plus entryTag's, and pin the singleton hook contract",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Singleton runs in a worktree"
+    },
+    "tests": [
+      "a singleton tick invokes setupWorktree, and teardownWorktree after the gates",
+      "the singleton hook's ctx.entryTag is the phase name and ctx.worktreePath is the provisioned worktree"
+    ],
+    "acceptance": "no src/ doc says a singleton phase skips setupWorktree; a Dispatcher case fails if the singleton path stops invoking the hook or changes the key it passes",
+    "notes": "Verified on disk: the spec ratifies the hook on singleton ticks, the dispatcher invokes it with `entryTag: phase.name`, and teardown uses the same key. The doc fix itself is unpinnable by regex (an English negation with no decidable shape) — declared exception, same as DISPATCHER-SESSIONS-ROOT-NARRATION. The tests[] lines pin the behavior the doc denies, which is the durable half and is unpinned today."
+  },
+  {
+    "tag": "SUBPROCESS-TSX-SENTINEL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "Home for the sentinel's own cases; the existing CLI suites all consume the helper rather than testing it."
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "`runCli`'s catch (:81) maps every spawn failure to `{code: e.code ?? 1}`, so a CLI that never started is indistinguishable from one that exited 1. Refuse loudly instead when `TSX_CLI` (:23) does not resolve, naming the install that fixes it."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "runCli launders a failed CLI spawn into {code:1}, so 14 exit-code-1 assertions pass over a CLI that never started; refuse loudly when TSX_CLI is absent",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      "an unresolvable CLI entry point refuses by name instead of returning an exit code",
+      "the real entry point resolves, so the refusal is not armed on a provisioned tree"
+    ],
+    "acceptance": "running the CLI suites from a tree where tsx does not resolve names the missing entry point once, instead of reporting assertion failures whose exit codes were never the CLI's",
+    "notes": "Verified this tick from a worktree with no node_modules: TSX_CLI is a repo-root-adjacent absolute path with no upward walk, so it missed while Node's own resolution reached the parent checkout. The suite reported 108 ordinary assertion failures and never the cause; the 14 `code).toBe(1)` sites in tests/{cli,job,job.integration,tip-claim.integration}.test.ts passed vacuously. platform-facts.md already prescribes the loud sentinel."
+  },
+  {
+    "tag": "RETIRED-NARRATION-CORPUS-CHAINTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "The `.flume/chain.ts` exclusion (~:25) names its own trigger — \"still carries four fallback legs, tracked as its own work\" — and the trigger fired in a997603. Drop the bullet and add the path to `scannedPaths()` (~:45), beside the `README.md` literal."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Widen the retired-narration corpus to .flume/chain.ts — its exclusion reason expired in a997603, leaving the pin blind to the surface the retired shape lived on longest",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      ".flume/chain.ts is in the scanned corpus, so a fallback leg or an --model extraArgs reappearing there fails"
+    ],
+    "acceptance": "the corpus test scans .flume/chain.ts and stays green; no exclusion in that file cites a trigger that has already fired",
+    "notes": "Verified on disk this tick that the widening lands green: chain.ts carries zero `process.env.FLUME_DIR` hits, and its one `extraArgs` (:292) opens with `--exclude-dynamic-system-prompt-sections`, not `--model`. So ALLOWED_ENV_MENTIONS needs no new key. The worktree a build tick runs in has the tracked chain.ts at the same offset, so REPO_ROOT resolution is unaffected."
+  }
+]
