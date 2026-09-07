@@ -63,6 +63,12 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      "src/Agent.ts",
+      "src/Dispatcher.ts",
+      "tests/Agent.test.ts",
+      "tests/Dispatcher.test.ts"
+    ],
     "summary": "Move stdout finalMessage extraction from Dispatcher into claudeCode's AgentResult.finalMessage",
     "per": {
       "path": "spec/chain.md",
@@ -73,13 +79,7 @@
       "voluntary-bail record's constraint text is unchanged for existing fixtures after the move"
     ],
     "acceptance": "src/Dispatcher.ts holds no NDJSON re-parse of stdout for this purpose; the adapter is the one place provider transcript shape is read",
-    "notes": "Bounding (tailBound/MAX_PRIOR_NOCOMMIT) stays Dispatcher-side — record-size policy, not provider shape.",
-    "observedFiles": [
-      "src/Agent.ts",
-      "src/Dispatcher.ts",
-      "tests/Agent.test.ts",
-      "tests/Dispatcher.test.ts"
-    ]
+    "notes": "Bounding (tailBound/MAX_PRIOR_NOCOMMIT) stays Dispatcher-side — record-size policy, not provider shape."
   },
   {
     "tag": "TICKCONTEXT-PICKABLE-PRIORATTEMPTS",
@@ -119,7 +119,13 @@
       "TickContext.priorAttempts is keyed as the on-disk files are (tag slug / phase name) and a corrupt record reads as absent"
     ],
     "acceptance": "a shouldRun/promptArgs hook can read ctx.pickable and ctx.priorAttempts instead of calling isPickableNow or scanning prior-attempts/ itself",
-    "notes": ".flume/chain.ts's isPickableNow(shouldRun) call and hand-rolled anyVoluntaryBailRecord scan are out of build's writablePaths (harness surface) — adoption is a separate chore(flume) commit."
+    "notes": ".flume/chain.ts's isPickableNow(shouldRun) call and hand-rolled anyVoluntaryBailRecord scan are out of build's writablePaths (harness surface) — adoption is a separate chore(flume) commit.",
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "src/Phase.ts",
+      "src/index.ts",
+      "tests/Dispatcher.test.ts"
+    ]
   },
   {
     "tag": "TICKRESULT-PICKABLEAFTER-ROOTS-ENTRIES",
