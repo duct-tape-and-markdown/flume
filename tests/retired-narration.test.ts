@@ -14,17 +14,19 @@ import { describe, expect, it } from "vitest";
 // mechanical was watching. This is that watch: the retirement promoted off
 // the page onto a rung that fails.
 //
-// Scope is what a chain author reads to learn the shapes — published prose
-// plus the engine's own doc comments. Excluded, each for a reason that is
-// about the file's job rather than convenience:
+// Scope is what a chain author reads to learn the shapes — published prose,
+// the engine's own doc comments, and the dogfood chain, which teaches by
+// being read as a worked example. Excluded, each for a reason that is about
+// the file's job rather than convenience:
 //   - `tests/` — a test legitimately drives the retired argv through
 //     `extraArgs` to pin that the passthrough still works
 //     (tests/Agent.test.ts).
 //   - `docs/MIGRATING-*.md` — a migration guide's job is to show the shape
 //     you are leaving alongside the one you are moving to.
-//   - `.flume/chain.ts` — the dogfood chain still carries four fallback legs,
-//     tracked as its own work.
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+/** The dogfood chain — the surface both retired shapes lived on longest. */
+const CHAIN_PATH = join(".flume", "chain.ts");
 
 const RETIRED = [
   {
@@ -50,7 +52,7 @@ function scannedPaths(): string[] {
   const src = readdirSync(join(REPO_ROOT, "src"))
     .filter((name) => name.endsWith(".ts"))
     .map((name) => join("src", name));
-  return [...docs, ...src, "README.md"];
+  return [...docs, ...src, "README.md", CHAIN_PATH];
 }
 
 describe("retired chain-authoring shapes stay retired", () => {
@@ -62,8 +64,11 @@ describe("retired chain-authoring shapes stay retired", () => {
   // Vacuity pins (engineering.md, "A green verdict is proven non-vacuous"):
   // a mis-built file list would scan nothing, or scan files that discuss
   // neither subject, and every refusal below would pass over an empty set.
+  // The chain pin is named separately: it contributes neither needle below,
+  // so nothing else here would notice it dropping out of the file list.
   it("scans a populated corpus that discusses both subjects", () => {
     expect(corpus.length).toBeGreaterThan(0);
+    expect(corpus.map((f) => f.path)).toContain(CHAIN_PATH);
     for (const needle of ["process.env.FLUME_DIR", "--model"]) {
       expect(
         corpus.filter((f) => f.text.includes(needle)).map((f) => f.path),
