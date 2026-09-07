@@ -42,9 +42,12 @@ export interface AgentInvocation {
   onStderr?: (chunk: string) => void;
   /**
    * Extra env vars to layer on top of `process.env` for the agent
-   * subprocess. The dispatcher populates this from
-   * `Phase.setupWorktree`'s `{ extraEnv }` return value for fanout
-   * phases. Singleton phases never carry extraEnv.
+   * subprocess. The dispatcher populates this from the tick's
+   * `Phase.setupWorktree` `{ extraEnv }` return value under either
+   * concurrency — each provisions a worktree and runs the hook against it
+   * (a fanout wave once per entry, a singleton tick once for its own
+   * worktree; spec/worktrees.md "Singleton runs in a worktree"). Absent
+   * when the phase declares no hook, or the hook returned no vars.
    */
   extraEnv?: Record<string, string>;
 }

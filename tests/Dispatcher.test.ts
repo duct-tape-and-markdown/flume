@@ -725,6 +725,55 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     // what it provisioned to what it releases.
     expect(teardownCtxs).toEqual(setupCtxs);
   });
+
+  it("a singleton setupWorktree's extraEnv reaches the agent invocation", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      setupWorktree: async (ctx) => ({
+        extraEnv: { WT_TAG: ctx.entryTag, WT_HANDLE: "singleton-handle" },
+      }),
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let seenExtraEnv: Record<string, string> | undefined;
+    const agent: Agent = {
+      name: "singleton-extraenv-capture",
+      async invoke(inv) {
+        seenExtraEnv = inv.extraEnv;
+        await writeAndCommit(
+          inv.cwd,
+          "src/plan-output.ts",
+          "ok\n",
+          "plan: derive",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The invocation happened at all — without this the env assertion below
+    // would pass over an agent that never ran.
+    expect(outcome.result?.committed).toBe(true);
+    // A singleton tick provisions one worktree and runs the hook against it,
+    // exactly as a fanout wave does per entry, so the vars the hook returned
+    // reach the agent process env instead of being dropped on the way.
+    expect(seenExtraEnv).toEqual({
+      WT_TAG: "plan",
+      WT_HANDLE: "singleton-handle",
+    });
+  });
 });
 
 describe("Dispatcher singleton — afterCommit gate failure reverts the commit", () => {
