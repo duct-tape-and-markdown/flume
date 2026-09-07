@@ -110,3 +110,101 @@ describe("retired chain-authoring shapes stay retired", () => {
     ).toEqual(Object.keys(ALLOWED_ENV_MENTIONS).sort());
   });
 });
+
+// Orphan pin (LOADCHAINMODULE-DOC-ORPHANED, per
+// .claude/rules/engineering.md "Narration is the ladder's bottom rung"): a
+// doc block whose next non-blank line opens another doc block documents no
+// symbol. It still reads as current narration about whatever follows it —
+// which is a different symbol's doc — so its subject can be renamed,
+// rewritten, or moved with nothing pointing at the staleness. Prose with no
+// owner; the rung that can hold it is a source-shape check.
+//
+// Scope is the TypeScript half of the corpus above: the same files, minus the
+// markdown ones, where a doc block is a source shape rather than a fenced
+// example.
+describe("no doc block is orphaned", () => {
+  const OPENER = /^\/\*\*/;
+  const CLOSER = /\*\/$/;
+  /** Same opener, counted across a whole file for the vacuity pin. */
+  const OPENER_ANYWHERE = /^\s*\/\*\*/gm;
+
+  /**
+   * A doc block that opens a file documents the module, so the block after it
+   * is its first symbol's, not evidence of an orphan. Spelled as a carve-out
+   * rather than inherited: every other block is judged.
+   */
+  const MODULE_HEADER_LINE = 1;
+
+  /**
+   * Orphans this fence cannot reach, each with why it survives — the same
+   * inventory shape the env-mention pin above uses. An entry leaves when the
+   * block moves onto its symbol; a new orphan fails until it is named here.
+   */
+  const ALLOWED_ORPHANS: Record<string, string> = {
+    [`${CHAIN_PATH}: Mandatory-on-every-entry surfaces ride the channel instead of per-entry`]:
+      "documents `channelPaths`, two blocks below it; `.flume/chain.ts` is " +
+      "outside build's fence, so it is filed in open-questions.md instead",
+  };
+
+  type Orphan = { path: string; open: number; id: string };
+
+  /**
+   * Every doc block in `text` whose close is followed — across blank lines
+   * only — by another doc block's open. Identified by its first content line
+   * rather than its line number, so the inventory above survives line drift.
+   */
+  function orphanedBlocks(path: string, text: string): Orphan[] {
+    const lines = text.split("\n").map((l) => l.trim());
+    const orphans: Orphan[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (!OPENER.test(lines[i]!)) continue;
+      const open = i;
+      // A single-line block closes on its own opener; otherwise scan forward.
+      while (i < lines.length && !CLOSER.test(lines[i]!)) i++;
+      let next = i + 1;
+      while (next < lines.length && lines[next] === "") next++;
+      if (next >= lines.length || !OPENER.test(lines[next]!)) continue;
+      if (open + 1 === MODULE_HEADER_LINE) continue;
+      const first = lines
+        .slice(open + 1, i + 1)
+        .map((l) => l.replace(/^\*\s?/, "").replace(CLOSER, "").trim())
+        .find((l) => l !== "");
+      orphans.push({ path, open: open + 1, id: `${path}: ${first ?? ""}` });
+    }
+    return orphans;
+  }
+
+  const sources = scannedPaths()
+    .filter((path) => path.endsWith(".ts"))
+    .map((path) => {
+      const text = readFileSync(join(REPO_ROOT, path), "utf8");
+      return { path, text, orphans: orphanedBlocks(path, text) };
+    });
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"): a
+  // scanner that matched no opener, or a file list that resolved to nothing,
+  // reports zero orphans over zero blocks and passes forever. Dispatcher.ts is
+  // named because it is the file this pin was written against — and it must
+  // still hold the block the pin exists to keep attached.
+  it("scans a populated set of doc blocks", () => {
+    expect(sources.length).toBeGreaterThan(0);
+    const dispatcher = sources.find(
+      (f) => f.path === join("src", "Dispatcher.ts"),
+    );
+    expect(dispatcher, "src/Dispatcher.ts left the scanned set").toBeDefined();
+    expect(
+      (dispatcher!.text.match(OPENER_ANYWHERE) ?? []).length,
+    ).toBeGreaterThan(10);
+  });
+
+  it("closes every doc block onto a symbol, never onto another block", () => {
+    const found = sources.flatMap((f) => f.orphans);
+    expect(
+      found.map((o) => o.id).sort(),
+      "a doc block is followed by another doc block, so it documents no " +
+        "symbol: move it onto the symbol it describes, delete it, or — if " +
+        "the file is outside this phase's fence — name it in ALLOWED_ORPHANS. " +
+        `Sites: ${found.map((o) => `${o.path}:${o.open}`).join(", ")}`,
+    ).toEqual(Object.keys(ALLOWED_ORPHANS).sort());
+  });
+});

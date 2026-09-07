@@ -185,3 +185,19 @@ so a leak reverts innocent entries for host state no entry touched. Two forks
 sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
 and fix the writer. The first bounds the blast radius whatever the second
 turns up.
+
+## `.flume/chain.ts:150` carries an orphaned doc block — needs a `chore(flume):` commit
+
+Found by the orphan pin this tick added
+(`tests/retired-narration.test.ts`, LOADCHAINMODULE-DOC-ORPHANED). The block
+opening "Mandatory-on-every-entry surfaces ride the channel instead of
+per-entry declarations" documents `channelPaths`, but sits two blocks above
+it — `PARK_FILE`'s own doc block was inserted between them, so the first
+block documents nothing and reads as if it were `PARK_FILE`'s.
+
+Mechanical fix (move the block down onto `const channelPaths`), no design
+call. Not shipped here because `.flume/chain.ts` is outside build's fence
+*and* outside its writable-paths ceiling — only a `chore(flume):` harness
+commit from an interactive session can touch it. Named in the pin's
+`ALLOWED_ORPHANS` inventory with that reason; delete the entry there in the
+same commit that moves the block, or the pin fails on the leftover name.

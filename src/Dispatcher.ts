@@ -868,31 +868,6 @@ export interface ChainModule {
 export type ChainFactory = (api: FlumeApi) => ChainModule;
 
 /**
- * Load + normalize + validate a chain module from an absolute `chain.ts`
- * path. Throws on a missing file, a compile/syntax error, or a shape that
- * isn't a Chain (no resolvable default export, or `phases` not an array).
- *
- * This is the single load+validate path the runtime trusts. `diskChainLoader`
- * wraps it (one load per call, no memo); `chainLoadGate` (builtinGates) calls
- * it to validate a just-committed `chain.ts` so a broken self-edit fails its
- * gate and is reverted before the next tick's process resolves it.
- *
- * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
- * dist/cli.js can resolve consumer chain.ts files without a node loader flag
- * (plain `await import()` would fail: node refuses .ts under node_modules,
- * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
- *
- * In-process this returns a *pinned* evaluation: Node's ESM module registry
- * is keyed by resolved URL and is non-evictable, so a fixed-path chain.ts is
- * frozen to its first load for the life of the process (verified on tsx 4.21
- * / Node 22.21 — no query string, tsImport namespace, or loader
- * re-registration evicts it). That is *why* per-tick re-resolution is a
- * process boundary, not in-process re-eval: `flume loop` spawns one
- * `flume tick` per iteration (§2), each a fresh process that loads chain.ts
- * exactly once. A rewritten chain.ts governs the next tick because the next
- * tick is a new process — not because anything re-imports it in-process.
- */
-/**
  * Validate a declared `Chain.friction` (§2, v0.6.2): must be relative and
  * must resolve inside the state root, else a usage-shaped error. The check
  * is base-independent — it resolves the declared path against an arbitrary
@@ -1059,6 +1034,29 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
   );
 }
 
+/**
+ * Load + normalize + validate a chain module from an absolute `chain.ts`
+ * path. Throws on a missing file, a compile/syntax error, or a shape that
+ * isn't a Chain (no resolvable default export, or `phases` not an array).
+ *
+ * This is the single load+validate path the runtime trusts. `diskChainLoader`
+ * wraps it (one load per call, no memo); `chainLoadGate` (builtinGates) calls
+ * it to validate a just-committed `chain.ts` so a broken self-edit fails its
+ * gate and is reverted before the next tick's process resolves it.
+ *
+ * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
+ * dist/cli.js can resolve consumer chain.ts files without a node loader flag
+ * (plain `await import()` would fail: node refuses .ts under node_modules,
+ * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
+ *
+ * In-process this returns a *pinned* evaluation — see .claude/rules/
+ * platform-facts.md, "Node's ESM registry is keyed by resolved URL and cannot
+ * be evicted". That is *why* per-tick re-resolution is a process boundary
+ * rather than in-process re-eval: `flume loop` spawns one `flume tick` per
+ * iteration (§2), each a fresh process that loads chain.ts exactly once. A
+ * rewritten chain.ts governs the next tick because the next tick is a new
+ * process — not because anything re-imports it in-process.
+ */
 export async function loadChainModule(
   paths: FlumePaths,
 ): Promise<ChainModule> {
@@ -3183,30 +3181,6 @@ export class Dispatcher {
   }
 
   /**
-   * RELEASE-v0.11 §5 tip verify's guarded revert, for a commit the agent
-   * made itself. `expectedSha` is `postHead`, the commit this call's own
-   * caller just observed.
-   *
-   * Mirrors `git.dropLastCommit`'s guarded-revert idiom — §5 cites it as its
-   * own precedent — reconfirming the tip is still `expectedSha` immediately
-   * before resetting, so a second race (the ref moving again in the gap
-   * between observing `postHead` and reverting it) refuses loudly rather
-   * than silently dropping a commit this call never observed at the tip.
-   * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
-   * fault, so it survives as uncommitted changes (§5 "agent output stays on
-   * disk") rather than being discarded.
-   *
-   * `resetToSha` is always the recorded base — every worktree branch (a
-   * fanout entry's, or, since spec/worktrees.md "Singleton runs in a
-   * worktree", a singleton phase's own) is a private ref with exactly one
-   * legitimate writer, so the target is always that branch's own start
-   * point. The trunk's former shared-ref ambiguity — which needed a
-   * commit-*count* revert because the dispatcher couldn't tell its own
-   * commits from an interleaved operator's — no longer has a caller: a
-   * singleton tick's agent now commits on a private branch same as a fanout
-   * entry's, never on the trunk directly.
-   */
-  /**
    * Tip verify's afterMerge-revert guard (spec/loop.md "Tip verify", "one
    * window stays a refusal, deliberately"). `resetKeepTo` below drops the
    * span this call's own caller cherry-picked onto trunk at `mergedSha` —
@@ -3233,6 +3207,30 @@ export class Dispatcher {
     );
   }
 
+  /**
+   * RELEASE-v0.11 §5 tip verify's guarded revert, for a commit the agent
+   * made itself. `expectedSha` is `postHead`, the commit this call's own
+   * caller just observed.
+   *
+   * Mirrors `git.dropLastCommit`'s guarded-revert idiom — §5 cites it as its
+   * own precedent — reconfirming the tip is still `expectedSha` immediately
+   * before resetting, so a second race (the ref moving again in the gap
+   * between observing `postHead` and reverting it) refuses loudly rather
+   * than silently dropping a commit this call never observed at the tip.
+   * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
+   * fault, so it survives as uncommitted changes (§5 "agent output stays on
+   * disk") rather than being discarded.
+   *
+   * `resetToSha` is always the recorded base — every worktree branch (a
+   * fanout entry's, or, since spec/worktrees.md "Singleton runs in a
+   * worktree", a singleton phase's own) is a private ref with exactly one
+   * legitimate writer, so the target is always that branch's own start
+   * point. The trunk's former shared-ref ambiguity — which needed a
+   * commit-*count* revert because the dispatcher couldn't tell its own
+   * commits from an interleaved operator's — no longer has a caller: a
+   * singleton tick's agent now commits on a private branch same as a fanout
+   * entry's, never on the trunk directly.
+   */
   private async revertTipMovedCommit(
     cwd: string,
     expectedSha: string,
