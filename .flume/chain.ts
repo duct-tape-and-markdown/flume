@@ -436,6 +436,40 @@ const factory: ChainFactory = (api) => {
     },
   };
 
+  /**
+   * The full suite, scoped to commits that touch code. A build commit that
+   * touches only plan artifacts (a park written to open-questions.md) has
+   * nothing for the suite to judge, and running it anyway exposes that
+   * commit to whatever the host is doing at the time — a sibling loop's
+   * cargo builds slowed vitest's transform 7× and two 8s-timeout tests
+   * reverted a park (2026-09-07). Declared skip, never inferred: the paths
+   * are the commit's own touched list from the dispatcher, and the skip is
+   * reported as its own message so a verdict reader can tell it from green.
+   * An empty touched list (unknown) runs the suite.
+   */
+  const vitestSuite = shellGate({
+    name: "vitest",
+    when: "afterMerge",
+    cmd: "pnpm",
+    args: ["test", "--run"],
+    failHint: "Tests failed — wave reverted",
+  });
+  const codePath =
+    /^(src|tests|examples|bin)\/|^\.flume\/chain\.ts$|^(package\.json|pnpm-lock\.yaml|tsconfig[^/]*\.json|vitest\.config\.ts)$/;
+  const vitestOnCode: typeof vitestSuite = {
+    ...vitestSuite,
+    run: async (ctx) => {
+      const touched = ctx.touchedPaths ?? [];
+      if (touched.length > 0 && !touched.some((p) => codePath.test(p))) {
+        return {
+          ok: true,
+          message: `vitest not run — no code path among ${touched.length} touched path(s)`,
+        };
+      }
+      return vitestSuite.run(ctx);
+    },
+  };
+
   const build: Phase = {
     name: "build",
     description: "Ship one (or N disjoint) pending entries to the trunk.",
@@ -475,16 +509,7 @@ const factory: ChainFactory = (api) => {
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
     // afterCommit — cheap, structural, catches type errors before merge.
-    gates: [
-      tscGate,
-      shellGate({
-        name: "vitest",
-        when: "afterMerge",
-        cmd: "pnpm",
-        args: ["test", "--run"],
-        failHint: "Tests failed — wave reverted",
-      }),
-    ],
+    gates: [tscGate, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {

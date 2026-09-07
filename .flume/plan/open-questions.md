@@ -88,19 +88,24 @@ Filed as **gh#19** with full repro. The operator is opening the spec line for th
 
 CHAIN-PENDINGPATH (this tick) removed `PendingGateOptions.pendingPath` — the queue path is now the one `Chain.pendingPath` value every reader resolves (`src/Gate.ts` `GateContext.pendingPath`), per `spec/pending.md` "The pending queue". `docs/CHAIN-AUTHORING.md:290` still lists `pendingGate({ targetFence, extension?, pendingPath?, fenceWhen? })`. Out of this entry's fence (docs/ wasn't in `entry.files`); pure narration drift, no behavior at stake — a one-line doc fix for the next tick that touches that file, not a pending entry on its own.
 
-## FLUMEAPI-PATHS parked: fence-only — widen `files.edit` by four `src/` files
+## FLUMEAPI-PATHS parked: fence-only — plan must widen `files.edit` by four `src/` files
 
-**No human decision needed.** The design fork this section carried through two
-parks is closed: it rested on a signature-level reading that does not survive
-checking the call sites. What is left is a fence widening, which is plan's
-call.
+**No human decision needed. This is plan's call, and only a plan tick can
+make it.** Attempt 4 re-parked because trunk tip is still `266d80c` — the
+attempt-3 park itself. Plan has not ticked since the park landed, so build was
+re-dispatched against the same three-file fence and could only park again.
+Re-dispatching build changes nothing; the entry needs a derive.
 
-Making `buildFlumeApi` *require* `{repoRoot, configDir, flumeDir}` — the whole
-mechanism of `spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*
-("once `buildFlumeApi` requires the roots, a verb cannot construct the API
-without first resolving them") — forces `loadChainModule` / `diskChainLoader`
-to carry the roots too. Nine call sites do; five are outside this entry's
-fence:
+### The blocker, verified on disk this tick
+
+`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*, makes
+`buildFlumeApi` **require** `{repoRoot, configDir, flumeDir}` — that is the
+whole mechanism ("once `buildFlumeApi` requires the roots, a verb cannot
+construct the API without first resolving them"). The factory is applied
+**inside** `loadChainModule` (`src/Dispatcher.ts:1064`,
+`factory(buildFlumeApi())`), which is the single seam: the roots can reach it
+only as a parameter on `loadChainModule` / `diskChainLoader`. Nine call sites
+carry it; five are outside this entry's fence:
 
 - `src/cli.ts:126` (`chainRefusesPhase`, wake/sleep), `:345` (`status`),
   `:478` (`check`), `:566` (`friction`), `:652` (`tick`/`loop`'s
@@ -109,112 +114,64 @@ fence:
 - `src/job.ts:176` (`jobNew`), `:279` (`jobRun`'s entry-phase wake)
 - `src/builtinGates.ts:260` (`chainLoadGate`)
 
-### Correction (attempt 3, verified on disk): all nine are mechanical
+Required breaks all five at compile time, so `tsc` reverts. Optional invents
+roots when absent — attempt 1 (`36907e3`, reverted) shipped
+`paths ?? { repoRoot: dirname(path), … }`, handing `chainLoadGate` and the job
+verbs a `repoRoot` of `.flume/` and a `flumeDir` that ignores `--job`: a
+substituted placeholder with nothing refusing on it (`engineering.md`, *Loud or
+nothing*), re-opening the very re-derivation the spec section closes. There is
+no third shape.
 
-The previous park claimed three sites were a design call rather than a thread —
-`jobNew` has no `flumeDir`, `job status` has no single `flumeDir`, `jobRun` has
-no `repoRoot` — and asked the human to rule on what `flumeDir` means for a verb
-that is not running a tick. **That fork does not exist.** Those three claims are
+### All nine sites are mechanical — no design fork
+
+An earlier park claimed three sites needed a human ruling on what `flumeDir`
+means for a verb that is not running a tick (`jobNew` has no `flumeDir`,
+`job status` has no single one, `jobRun` has no `repoRoot`). Those claims are
 true of the *option-object signatures* and false of the *call sites*: every
 caller already holds the resolved value.
 
 - `main()` resolves `repoRoot` at `src/cli.ts:135` and
   `{flumeDir, configDir, job}` from `resolveStateDirs` at `:240` — **before**
-  it dispatches the job verbs at `:253`. The entry's own note is right that
-  `e814195` closed the ordering half of the spec's drift note; the consequence
-  is that no chain-loading verb reaches its load with roots unresolved.
-- `jobNew` ← `src/cliJobVerbs.ts:116`, inside
-  `runJobVerb(args, repoRoot, configDir)`. Give `runJobVerb` a fourth
-  `flumeDir` parameter from `cli.ts:253`; pass it into `JobNewOptions`.
-- `job status` ← `src/cliJobVerbs.ts:42` — the same fourth parameter.
+  it dispatches the job verbs at `:253`. No chain-loading verb reaches its load
+  with roots unresolved (`e814195` closed that half of the spec's drift note).
+- `jobNew` ← `src/cliJobVerbs.ts:116` and `job status` ← `:42`, both inside
+  `runJobVerb(args, repoRoot, configDir)`: give it a fourth `flumeDir`
+  parameter from `cli.ts:253`, pass it into `JobNewOptions`.
 - `jobRun` ← `src/cli.ts:275`, inside `main()`, which holds `repoRoot` from
   `:135`. Add `repoRoot` to `JobRunOptions`.
 - `chainLoadGate` ← `src/builtinGates.ts:260` — `ctx.repoRoot`,
-  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext`
-  (`src/Gate.ts:94`, `:79`, `:53`).
-- The five `src/cli.ts` sites are all in `main()` scope.
+  `ctx.configDir`, `ctx.flumeDir` are all on `GateContext` (`src/Gate.ts:94`,
+  `:79`, `:53`).
 
-**No root is fabricated by this.** `flume job new <name>` and `flume job status`
-do not pass `--job`, so `resolveStateDirs` yields `<repoRoot>/.flume` — the repo
-state root, which is the honest root for that invocation, because the chain
-being loaded *is* the repo chain (`spec/chain.md`, *Chain residency*: job
-resolution never retargets `configDir`). This is the section's own first bullet
-already ratified: "This holds for every verb that loads a chain — `tick`,
-`loop`, `status`, `wake`, `sleep`, `check`, and the `job` verbs alike."
-
-So `FlumeApiPaths` keeps all three members **required**. Optional or
-per-call-site-defaulted roots were the earlier recommendation; both are now
-unnecessary, and either would forfeit the mechanism the spec section is built
-on.
+No root is fabricated. `flume job new` / `job status` pass no `--job`, so
+`resolveStateDirs` yields `<repoRoot>/.flume` — the honest root, because the
+chain being loaded *is* the repo chain (`spec/chain.md`, *Chain residency*).
+So `FlumeApiPaths` keeps all three members **required**.
 
 ### What plan does next tick
 
 Widen `files.edit` to add `src/cli.ts`, `src/cliJobVerbs.ts`, `src/job.ts`,
 `src/builtinGates.ts`. `tests/chain.test.ts` and
-`tests/examples.integration.test.ts` also call `buildFlumeApi()` bare, but the
-build phase's `tests/**` channel already covers them — no declaration needed.
-Splitting into a `blockedBy` follow-on is available but buys nothing: the
-threading is one argument per site and is not separately testable.
+`tests/examples.integration.test.ts` also call `buildFlumeApi()` bare, but
+build's `tests/**` channel already covers them. A `blockedBy` split buys
+nothing — the threading is one argument per site and is not separately
+testable.
 
-Why this could not ship in-fence: the only shape that stays inside the current
-fence leaves `loadChainModule`'s `paths` optional and invents roots when it is
-absent. Attempt 1 (`36907e3`, reverted) did that — `paths ?? { repoRoot:
-dirname(path), … }` — handing `chainLoadGate` and the job verbs a `repoRoot`
-of `.flume/` and a `flumeDir` that ignores `--job`: a substituted placeholder
-with nothing refusing on it (`engineering.md`, *Loud or nothing*), re-opening
-the re-derivation the section closes. Making the parameter required instead
-breaks the five out-of-fence callers at compile time, so the `tsc` gate reverts
-the commit. There is no third option: the factory is applied *inside*
-`loadChainModule`, so the roots have no other seam to reach it through.
+For whoever writes it, to declare at the site rather than treat as a blocker:
+under `afterCommit`, `chainLoadGate`'s `ctx.repoRoot` is the ephemeral worktree
+while `ctx.flumeDir` is the primary checkout's state root (`spec/chain.md`,
+*What a gate receives*). Handing a chain-under-validation those two is right —
+the gate is not running a tick — but it should read as deliberate.
 
-One thing for whoever writes it to declare at the site, not a blocker: under
-`afterCommit`, `chainLoadGate`'s `ctx.repoRoot` is the ephemeral worktree while
-`ctx.flumeDir` is the primary checkout's state root (`spec/chain.md`, *What a
-gate receives*). Handing a chain the gate is only *validating* those two is
-right — the gate is not running a tick — but it should read as deliberate
-rather than as an accident.
+### Attempt 1's revert cause is unidentified — do not derive from the record
 
-## Attempt 1 of FLUMEAPI-PATHS: the recorded revert cause is wrong, and the real one was truncated away
-
-Supersedes the diagnosis this section previously carried. That diagnosis said
-`36907e3` was reverted because `tests/cli.test.ts`'s hermeticEnv test assumes
-`FLUME_QUARANTINED_SLUGS` is never ambient, which fails inside this repo's own
-dogfood loop. **That cannot be what happened.** `91694b8` ("chore(flume):
-hermeticEnv strips FLUME_* by prefix, not by list") is an ancestor of
-`36907e3` — verified with `git merge-base --is-ancestor` this tick — so at
-attempt 1 `hermeticEnv()` already stripped by prefix and the test already
-asserted the prefix invariant rather than a key list. The trigger the
-diagnosis named could not fire. The options A/B/C it listed are moot: A is
-effectively what `91694b8` shipped.
-
-So **attempt 1's failure is unidentified**: 4 tests across 2 files, and the
-names of neither survive. The prior-attempt record
-(`.flume/prior-attempts/flumeapi-paths.json`) opens with
+`.flume/prior-attempts/flumeapi-paths.json` opens with
 `[truncated 16751 chars]…` and vitest's failure detail sits in the truncated
-head; what remains is the per-file pass listing and the counts. What the
-surviving tail does show is a run under heavy host contention — `transform
-37.21s / collect 106.51s` against `6.58s / 14.26s` for a quiet run, ~7×, with
-`tests 233.42s` inside `46.23s` wall — which is the shape of parallel fanout
-siblings each running their own suite. Load-coupled timeout flake is the
-best available reading, but it is a reading, not a finding.
-
-Baseline this tick, same tree, nothing applied: **20 files / 762 passed /
-0 failed.**
-
-Two things for plan, neither filed as an entry from here (build does not
-author the queue):
-
-- **The prior-attempt record truncates from the head, which is where the
-  failing test names are.** `spec/chain.md` (*Containment is not recovery*)
-  rests the whole recovery story on the prior-outcome channel forwarding the
-  failure detail to the retrying tick; a head-truncated gate record forwards
-  the passing tests and drops the reason. Correctness-adjacent: it is the
-  difference between a retry that fixes the cause and one that guesses, and
-  this entry just spent an attempt guessing. Tail-truncation, or reserving a
-  budget for the reporter's failure block, would both keep it.
-- **Do not record a revert cause that was not read off the failing run.** The
-  superseded diagnosis above was plausible, cited real code, and was wrong;
-  it then rode two commit bodies and this file as settled fact
-  (`.claude/rules/engineering.md`, *A fix ships the test that would have
-  caught it*: a cause aimed at a described symptom instead of a reproduced
-  one is a guess).
+head; 4 tests across 2 files failed and neither name survives. The diagnosis
+this file previously carried (a `hermeticEnv` / `FLUME_QUARANTINED_SLUGS`
+collision) is **wrong**: `91694b8` made `hermeticEnv()` strip by prefix and is
+an ancestor of `36907e3`, so that trigger could not fire. The surviving tail
+shows heavy host contention (`transform 37.21s / collect 106.51s` against
+`6.58s / 14.26s` quiet, ~7×) — load-coupled flake is the best available
+reading, but it is a reading, not a finding. Treat the shape defect above as
+the reason to change approach; treat the recorded cause as unknown.
