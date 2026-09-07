@@ -59,7 +59,13 @@ type GateResultEntry = {
   message: string;
   details?: string;
 };
-import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
+import type {
+  Chain,
+  FanoutEntryOutcome,
+  Phase,
+  TickContext,
+  TickResult,
+} from "./Phase.js";
 import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
 import type {
   PriorAttempt,
@@ -1691,10 +1697,11 @@ export class Dispatcher {
     const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
     const capabilities = new Set(chain.capabilities ?? []);
     const quarantinedSlugs = this.opts.quarantinedSlugs;
-    const pickable = pending.filter(
-      (e) =>
-        isPickable(e, pending, isForkResolved, capabilities) &&
-        !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+    const pickable = pickableEntries(
+      pending,
+      isForkResolved,
+      capabilities,
+      quarantinedSlugs,
     );
     const priorAttempts = await this.readAllPriorAttempts();
 
@@ -1706,6 +1713,9 @@ export class Dispatcher {
       committed: false,
       gateResults: [],
       pendingAfter: pending,
+      pickableAfter: pickable,
+      flumeDir: this.flumeDir,
+      configDir: this.opts.configDir,
       shippedTags: [],
       revertedTags: [],
     });
@@ -2036,13 +2046,22 @@ export class Dispatcher {
 
     await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
 
+    const pendingAfterSingleton = await this.readPendingTolerant();
     return {
       result: {
         phaseName: phase.name,
         committed,
         ...(commitSha ? { commitSha } : {}),
         gateResults,
-        pendingAfter: await this.readPendingTolerant(),
+        pendingAfter: pendingAfterSingleton,
+        pickableAfter: pickableEntries(
+          pendingAfterSingleton,
+          isForkResolved,
+          capabilities,
+          quarantinedSlugs,
+        ),
+        flumeDir: this.flumeDir,
+        configDir: this.opts.configDir,
         shippedTags: [],
         revertedTags: [],
       },
@@ -2137,6 +2156,9 @@ export class Dispatcher {
           committed: false,
           gateResults: [],
           pendingAfter: pending,
+          pickableAfter: pickable,
+          flumeDir: this.flumeDir,
+          configDir: this.opts.configDir,
           shippedTags: [],
           revertedTags: [],
           quarantinedTags,
@@ -2800,13 +2822,41 @@ export class Dispatcher {
       [...mergeReverted, ...revertRefused],
     );
 
+    // spec/chain.md "What a hook receives": one record per provisioned
+    // entry, before this wave's own shippedTags/revertedTags/noCommit/
+    // declined fold below — the bail a shipped sibling would otherwise hide
+    // from `handoff`. `perEntry` may omit an entry whose `setupWorktree` hook
+    // itself threw (never reached `runFanoutEntry`), so it's looked up by
+    // tag rather than assumed index-aligned to `provisioned`.
+    const entries: FanoutEntryOutcome[] = provisioned.map((entry) => {
+      const r = perEntry.find((p) => p.entry.tag === entry.tag);
+      return {
+        tag: entry.tag,
+        committed: r?.committed ?? false,
+        shipped: shipped.some((s) => s.tag === entry.tag),
+        reverted: mergeReverted.some((e) => e.tag === entry.tag),
+        ...(r?.declined ? { declined: true } : {}),
+        ...(r?.noCommit ? { noCommit: r.noCommit } : {}),
+      };
+    });
+
+    const pendingAfterWave = await this.readPendingTolerant();
     return {
       result: {
         phaseName: phase.name,
         committed: committedWave,
         ...(chorSha ? { commitSha: chorSha } : {}),
         gateResults: allGateResults,
-        pendingAfter: await this.readPendingTolerant(),
+        pendingAfter: pendingAfterWave,
+        pickableAfter: pickableEntries(
+          pendingAfterWave,
+          isForkResolved,
+          capabilities,
+          quarantinedSlugs,
+        ),
+        flumeDir: this.flumeDir,
+        configDir: this.opts.configDir,
+        ...(entries.length > 0 ? { entries } : {}),
         shippedTags: shipped.map((s) => s.tag),
         revertedTags: mergeReverted.map((e) => e.tag),
       },
@@ -4977,4 +5027,23 @@ function isPickable(
     case "requiresCapability":
       return capabilities.has(entry.gate.capability);
   }
+}
+
+/**
+ * `isPickable` plus the run's live quarantine drop — the same filter both
+ * `runSingleton`'s pre-tick selection and `TickResult.pickableAfter`'s
+ * post-tick re-derivation apply, so the two can never disagree on what
+ * "pickable" means at the moment each is taken.
+ */
+function pickableEntries(
+  pending: readonly PendingEntry[],
+  isForkResolved: (slug: string) => boolean,
+  capabilities: ReadonlySet<string>,
+  quarantinedSlugs?: ReadonlySet<string>,
+): PendingEntry[] {
+  return pending.filter(
+    (e) =>
+      isPickable(e, pending, isForkResolved, capabilities) &&
+      !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+  );
 }

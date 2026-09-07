@@ -99,6 +99,34 @@ export interface TickContext {
 }
 
 /**
+ * Facts about one fanout entry the wave provisioned, reported on
+ * {@link TickResult.entries} before the wave folds them into its own
+ * `shippedTags`/`revertedTags`/`noCommit`/`declined` summary. `committed`
+ * reflects only this entry's own worktree tick — a commit that passed every
+ * `afterCommit` gate — never whether the wave's later cherry-pick/afterMerge
+ * stage actually landed it on trunk; `shipped` and `reverted` cover that.
+ * A `committed: true` entry with both `shipped` and `reverted` false is a
+ * real, reportable state: a cherry-pick conflict, a foreign tip claim, or an
+ * afterMerge-gate revert whose own reset was itself refused — the commit
+ * exists but neither shipped nor was (successfully) reverted, and the engine
+ * never launders that into a claim it can't back.
+ */
+export interface FanoutEntryOutcome {
+  /** The entry's tag, as it appears in `pending.json`. */
+  tag: string;
+  /** This entry's own worktree tick produced a commit that passed every `afterCommit` gate. */
+  committed: boolean;
+  /** `committed` reached trunk and `phase.shipped` (undeclared counts as shipped) agreed — the entry left the queue. */
+  shipped: boolean;
+  /** This entry's merged commit failed an `afterMerge` gate and was reset off trunk. */
+  reverted: boolean;
+  /** `phase.shouldRun` declined this entry before the agent was invoked. Absent when it ran. */
+  declined?: boolean;
+  /** §6 mode when this entry produced no usable commit. Absent when it shipped or was declined. */
+  noCommit?: NoCommitMode;
+}
+
+/**
  * Result a phase reports back after a tick finishes. The handoff function
  * inspects this to decide which sibling phases to wake.
  */
@@ -117,6 +145,30 @@ export interface TickResult {
   }>;
   /** The pending list as it stands after this tick (re-parsed from disk). */
   pendingAfter: readonly PendingEntry[];
+  /**
+   * `pendingAfter` filtered by the same dispatcher verdict as
+   * `TickContext.pickable` (`isPickable`, `src/Dispatcher.ts`), taken at the
+   * same post-tick re-read as `pendingAfter` itself. A `handoff` that wakes a
+   * sibling phase on "anything pickable" reads this instead of calling
+   * `isPickableNow` with a default resolver and an empty capability set — a
+   * different verdict with two inputs missing (spec/chain.md "What a hook
+   * receives").
+   */
+  pickableAfter: readonly PendingEntry[];
+  /** Absolute, resolved flume state root — same value `TickContext.flumeDir` carries. */
+  flumeDir: string;
+  /** Absolute, resolved chain config directory (`<configDir>/chain.ts`). */
+  configDir: string;
+  /**
+   * One record per entry the wave provisioned, reported before the wave
+   * folds those same facts into `shippedTags`/`revertedTags`/`noCommit`/
+   * `declined` below. Absent on a singleton tick and on a wave that
+   * provisioned nothing (nothing pickable). What this adds beyond the fold:
+   * a bailed sibling's `noCommit` mode, otherwise invisible to `handoff`
+   * whenever another entry in the same wave shipped and the wave-level
+   * `noCommit` reads absent.
+   */
+  entries?: readonly FanoutEntryOutcome[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
   /**

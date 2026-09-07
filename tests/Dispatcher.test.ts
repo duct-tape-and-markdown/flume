@@ -7992,6 +7992,137 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
   }, 20_000);
 });
 
+describe("TickResult.pickableAfter / entries — dispatcher-computed facts a handoff reads instead of re-deriving (spec/chain.md 'What a hook receives')", () => {
+  it("pickableAfter is pendingAfter filtered by the same verdict as TickContext.pickable, taken post-tick", async () => {
+    await writePending(fx.repo, [
+      makeEntry("OPEN-A", ["src/a.ts"]),
+      {
+        ...makeEntry("BLOCKED-B", ["src/b.ts"]),
+        gate: { kind: "blockedBy", tags: ["OPEN-A"] },
+      },
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "open-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "a\n", "build(OPEN-A): ship"),
+      }),
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+
+    // OPEN-A shipped and left pendingAfter; BLOCKED-B's dependency is gone,
+    // so it is pickable in the exact post-tick state pickableAfter reads.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "BLOCKED-B",
+    ]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "BLOCKED-B",
+    ]);
+    expect(outcome.result?.flumeDir).toBe(join(fx.repo, ".flume"));
+    expect(outcome.result?.configDir).toBe(fx.configDir);
+
+    // Proven against a fresh tick's own pre-tick `ctx.pickable` over the same
+    // on-disk pending.json, never a second `isPickable` call inlined here —
+    // the same agreement shape as the singleton/fanout pair above.
+    let capturedPickable: readonly PendingEntry[] | undefined;
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const nextPhase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shouldRun: (ctx) => {
+        capturedPickable = ctx.pickable;
+        return false;
+      },
+    });
+    const nextChain: Chain = { phases: [nextPhase], humanOnly: [] };
+    const nextDispatcher = new Dispatcher({
+      chainLoader: staticLoader(nextChain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({}),
+      log: silent,
+    });
+    await nextDispatcher.tick();
+
+    expect(capturedPickable).toBeDefined();
+    expect(capturedPickable!.map((e) => e.tag)).toEqual(
+      outcome.result?.pickableAfter.map((e) => e.tag),
+    );
+  }, 20_000);
+
+  it("a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIPS", ["src/a.ts"]),
+      makeEntry("BAILS", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        ships: (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "a\n", "build(SHIPS): ship"),
+        // Clean exit, no commit — the voluntary-bail leg.
+        bails: async () => {},
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+    const outcome = await dispatcher.tick();
+
+    // The existing wave-summary shape is unchanged: a sibling shipped, so the
+    // wave-level noCommit reads absent even though BAILS bailed.
+    expect(outcome.result?.shippedTags).toEqual(["SHIPS"]);
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.noCommit).toBeUndefined();
+    expect(outcome.noCommit).toBeUndefined();
+
+    const entries = outcome.result?.entries;
+    expect(entries).toBeDefined();
+    // Non-vacuity: both entries this wave provisioned are actually present,
+    // not just the shipped one.
+    expect(entries!.map((e) => e.tag).sort()).toEqual(["BAILS", "SHIPS"]);
+    const byTag = new Map(entries!.map((e) => [e.tag, e]));
+    expect(byTag.get("SHIPS")).toEqual({
+      tag: "SHIPS",
+      committed: true,
+      shipped: true,
+      reverted: false,
+    });
+    expect(byTag.get("BAILS")).toEqual({
+      tag: "BAILS",
+      committed: false,
+      shipped: false,
+      reverted: false,
+      noCommit: "voluntary-bail",
+    });
+  }, 20_000);
+});
+
 // ---------- plan-tick prose durability (§8) ----------
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
@@ -8350,9 +8481,11 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
 
     // Every fact both ticks produce is deterministic except the
     // content-addressed commit sha (author/committer timestamps differ
-    // between the two independent commits) and the verdict's own `at`
+    // between the two independent commits), the verdict's own `at`
     // (wall-clock at the moment each `dispatcher.tick()` call built its
-    // verdict) — blank those out before comparing the rest byte-for-byte.
+    // verdict), and TickResult.flumeDir/configDir (each `runOnce` call gets
+    // its own fresh `mkdtemp` fixture) — blank those out before comparing the
+    // rest byte-for-byte.
     const normalize = (o: unknown) =>
       JSON.parse(
         JSON.stringify(o)
@@ -8360,7 +8493,8 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
           .replace(
             /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g,
             "<TIMESTAMP>",
-          ),
+          )
+          .replace(/flume-dispatcher-(repo|cfg)-[A-Za-z0-9]+/g, "flume-dispatcher-$1-<TMP>"),
       );
 
     expect(normalize(declaredTrue)).toEqual(normalize(undeclared));
