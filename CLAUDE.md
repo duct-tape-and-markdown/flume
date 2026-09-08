@@ -41,7 +41,9 @@ Mine the draft (`node scripts/build-changelog.mjs`), curate into CHANGELOG,
 bump `package.json`, `pnpm run smoke:install`, commit `chore(release): cut
 X.Y.Z`, tag `vX.Y.Z`, push with the tag. **npm auth: the token lives in
 `.env` (gitignored) as `NPM_TOKEN` — never ask the operator for it.**
-Publish: `. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKEN" pnpm publish`
+Publish: `. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKEN" npm publish --access public`
+— `npm`, not `pnpm`: pnpm ignores the env-var auth form and falls through to
+`~/.npmrc`, surfacing as a 404 on the PUT (measured, 0.14.0 cut).
 
 ## Quality Standard
 

@@ -35,6 +35,22 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-09-08 — the release publish is a local, hand-run step with a credential nothing checks (human via flume-main)
+
+1. **0.14.0's publish stalled a day on a dead token.** The recipe in CLAUDE.md
+   named a key `.env` did not hold, the key it did hold had expired in May, and
+   `pnpm publish` ignored the env-var auth form and read `~/.npmrc` instead,
+   reporting the whole thing as a 404. Tag and commit were already pushed, so
+   the registry lagged the tag by a day. Temper's `.github/workflows/release.yml`
+   is the shape to adopt: `on: push: tags: ["v*"]`, publish with
+   `secrets.NPM_TOKEN` through `setup-node`'s `registry-url`, **idempotent** —
+   skip when `npm view <pkg>@<version>` already resolves — and a post-publish
+   smoke that installs the published tarball from the registry and runs the
+   shim (`scripts/smoke-install.mjs` already does this against a local pack;
+   the job points it at the registry). `.github/**` is build's lane; the repo
+   secret is John's to set. Until it lands, the CLAUDE.md recipe is corrected
+   to `npm publish` and the token lives in `.env` as `NPM_TOKEN`.
+
 ## 2026-09-07 — the tick's base sha is on no surface a gate or handoff reads (temper via flume-main)
 
 1. **An afterMerge gate cannot tell an input the tick ignored from one it never
