@@ -35,6 +35,21 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-09-08 — ruling: no `regate` verb; re-gating a reverted span is chain process (human via cascade-integrations)
+
+1. **Declined, do not derive.** Proposed in the 0.14 cycle after six vitest
+   reverts re-ran good code at full agent price: a verb that re-cherry-picks a
+   reverted span from the verdict's sha and re-runs afterMerge without the
+   agent. John's reason, verbatim: "seems like we're proposing engine
+   functionality where this is a process / chain config correction." A
+   reverted span is the loop's record that it failed a gate; re-gating the
+   same bytes by operator hand, without the agent seeing the prior attempt,
+   routes around that record. The remedy for a gate that fired on a
+   foreign-commit window or a contended box is in the chain — gate placement,
+   `failingFiles` so the suspect-flake marker can fire, re-pick with the
+   prior attempt visible — not a new verb. Record as declined in the plan
+   commit body so it does not re-surface as an entry.
+
 ## 2026-09-08 — the release publish is a local, hand-run step with a credential nothing checks (human via flume-main)
 
 1. **0.14.0's publish stalled a day on a dead token.** The recipe in CLAUDE.md
