@@ -11,6 +11,90 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-08
+
+The roots release: **the chain is handed what the engine resolved.** Every
+chain surveyed this cycle carried the same two blocks by hand — an env read
+with a `?? CHAIN_DIR` fallback to find its own state root, and a re-run of the
+dispatcher's pickability verdict to decide whether to wake. Both are engine
+facts. This tag puts them on the surfaces a chain already reads, closes the
+livelocks the rebuilt copies caused, and hardens the merge path against the
+one field-traced data-loss window (temper, 0.13.0). Twenty-two entries.
+
+### Breaking
+
+- **`PendingGateOptions.pendingPath` is retired.** The queue path is declared
+  once, on `Chain.pendingPath` (default `plan/pending.json`, the `seedDir` /
+  `friction` idiom), and every reader — the dispatcher, `flume status`,
+  `flume check`, `flume job status`, and `pendingGate` through
+  `GateContext.pendingPath` — resolves that one value. A chain that passed
+  the option to `pendingGate` drops it; a chain that relocated the queue
+  declares it on the chain instead, and gets the same absolute / escapes-root
+  refusal `Chain.friction` already had.
+
+### Added
+
+- **`FlumeApi.paths`** — `{ repoRoot, configDir, flumeDir }`, absolute, the
+  identity-same values the dispatcher was constructed with. A chain placing a
+  per-run artifact resolves against `api.paths.flumeDir`; `process.env.FLUME_DIR`
+  remains the child-process channel spawned agents and gates inherit, not a
+  read path for chain code. The roots are required at API construction, so no
+  fallback leg exists to encode a wrong answer.
+- **`TickContext.pickable`** and **`TickContext.priorAttempts`** — the entries
+  the dispatcher would select right now (the same `isPickable`-plus-quarantine
+  computation fanout selection uses, now run for singleton ticks too), and
+  every persisted `PriorAttempt` record read with the engine's own reader.
+  `PriorAttempt` is exported so a chain can name the map's value type.
+- **`TickResult.pickableAfter`, `flumeDir`, `configDir`, and `entries`** —
+  `pendingAfter` filtered by the post-tick pickability verdict; the resolved
+  roots; and, under fanout, one `{ tag, committed, shipped, reverted,
+  declined?, noCommit? }` record per provisioned entry, reported before the
+  wave folds them into its summary. The fold loses a sibling's bail the
+  moment another entry ships; `entries` keeps it legible to `handoff`.
+- **`ClaudeCodeOptions.model`** renders `--model <value>`; undeclared, the
+  binary's own default applies. Replaces the `extraArgs: ["--model", m]`
+  helper two chains had each written.
+- **`src/paths.ts` owns the state root's layout** — `STATE_ROOT_NAMES` and one
+  accessor per runtime path (`awakeDir`, `priorAttemptsDir`, `loopLockPath`,
+  `stopFlagPath`, `resolvePendingPath`). Seventeen literal spellings across
+  four modules routed through it; a job's runtime `.gitignore` derives from
+  the same record.
+- `docs/CLI.md` documents `stop`, `log`, `check`, and `friction`.
+
+### Fixed
+
+- **The afterMerge revert refuses to rewind over a foreign commit.** A gate can
+  run long enough for an operator to commit to trunk behind it; the revert
+  reset the checkout to the pre-cherry-pick tip regardless, discarding that
+  commit with the entry's own. `checkMergedTipUnmoved` now compares the tip to
+  the merged sha immediately before the reset. A mismatch skips the reset and
+  routes through the existing revert-refused reporting: the commit stays on
+  trunk, the entry stays pending, and the verdict names both shas.
+- **A gate-revert digest keeps both ends.** The `<prior-attempt>` block carried
+  the last 8 KB of a gate's output — for vitest, the per-test pass lines and
+  the closing counts, with the `Failed Tests` section elided whole. Four
+  records in one day told a retry how many tests failed and never which. The
+  digest now keeps the head and a 1 KB tail with a visible elision marker.
+- **An afterCommit gate with a repo-external `configDir` receives it verbatim.**
+  The worktree rebase had no escape test, so `FLUME_CONFIG_DIR=/elsewhere`
+  rebased into a path the worktree never had. The rebase now delegates to
+  `computeStateRootRel`, which three sibling call sites already used.
+- **The test harness refuses a missing CLI entry point** instead of reporting
+  exit 1 — a status node returned for a file it could not find, which fourteen
+  `toBe(1)` assertions had been passing over.
+- **`claudeCode` extracts `finalMessage` from its own stdout.** The dispatcher
+  re-parsed the provider's stream-json a second time at bail-record time;
+  `Agent.ts` is the one module that knows a provider's transcript shape.
+
+### Changed
+
+- Documentation retargeted at the surfaces above: `docs/CHAIN-AUTHORING.md`'s
+  canonical decorator composition and per-run-artifact section, the
+  `setupWorktree` / `extraEnv` / `GateContext.configDir` doc comments (which
+  asserted the negation of shipped singleton behavior), and the two orphaned
+  doc blocks in `Dispatcher.ts`. `tests/retired-narration.test.ts` pins each
+  retired shape across `docs/`, `README.md`, `src/`, and `.flume/chain.ts`.
+
 ## [0.13.0] - 2026-09-03
 
 The feedback release: **the engine hands out what it knows.** Every entry
