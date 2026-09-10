@@ -441,19 +441,20 @@ const factory: ChainFactory = (api) => {
    * invocation*), one level down. The continuation marker this replaces was
    * the model's claim about the same fact.
    *
-   * Ladder order is dependency order: an operator's inbox note first, since
-   * it can invalidate anything below; audit next, so build's last outputs
-   * are verified before anything consumes them; derive next, so intent is
-   * current before work is planned against it — a queued entry citing a
-   * section the spec just rewrote is stale input, and building it ships
-   * wrong code; build, consuming a queue that is both verified and current;
-   * the posture sweep last, insurance behind product, and the one slice that
-   * yields to pickable work (`posture-sweep.md`, *The sweep yields*).
+   * Ladder order is dependency order: notes to plan first — an operator's
+   * inbox entry or a build refusal — since either can invalidate anything
+   * below; derive next, so intent is current before work is planned against
+   * it (a queued entry citing a section the spec just rewrote is stale
+   * input, and building it ships wrong code); build, consuming a current
+   * queue; the posture sweep last, insurance behind product, and the one
+   * slice that yields to pickable work (`posture-sweep.md`, *The sweep
+   * yields*). There is no review slice: the gates are the review — the
+   * suite, the named behaviors, the fence — and what they cannot judge is
+   * observed in the field and arrives through the inbox.
    */
   const { repoRoot } = api.paths;
   const BUILD = "build";
   const INBOX = "plan-inbox";
-  const AUDIT = "plan-audit";
   const DERIVE = "plan-derive";
   const SWEEP = "plan-sweep";
 
@@ -534,18 +535,8 @@ const factory: ChainFactory = (api) => {
   const SLICES: Slice[] = [
     {
       name: INBOX,
-      description: "Drain .flume/inbox.md: route each finding to an entry, a question, or accepted debt.",
+      description: "Drain .flume/inbox.md and build's refusals: route each to an entry, a question, or accepted debt.",
       live: ({ flumeDir }) => inboxHasEntries(flumeDir),
-    },
-    {
-      name: AUDIT,
-      description: "Cross-check commits past `Audited through:` against the sections they cite; reconcile build's bails and parks.",
-      live: ({ flumeDir }) => {
-        const stamp = stampOf(flumeDir, "Audited through:");
-        // Plan-artifact-only commits are not auditable work; they are passed
-        // by the cursor when a real window is processed.
-        return stamp === undefined || commitsPast(stamp, [".", ":!.flume/plan", ":!.flume/inbox.md"]);
-      },
     },
     {
       name: DERIVE,
@@ -615,7 +606,7 @@ const factory: ChainFactory = (api) => {
       perResolvesGate,
     ],
     shouldRun: (ctx) =>
-      (slice.name === AUDIT && reconcileDue(ctx.flumeDir)) ||
+      (slice.name === INBOX && reconcileDue(ctx.flumeDir)) ||
       slice.live({ flumeDir: ctx.flumeDir, pickable: pickableIn(ctx) }),
     promptArgs: () => ({ PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) }),
     handoff: (result) =>
@@ -634,7 +625,7 @@ const factory: ChainFactory = (api) => {
    * name carries the line (`.flume/vitestJudge.ts`). The second claim is
    * acceptance-driven backpressure — plan names the behavior, build titles
    * the test, the gate proves the name has a test — so "was it tested" is a
-   * gate's answer, not the audit's.
+   * gate's answer, not a reviewer's.
    *
    * Scoped to commits that touch code or name a behavior. A commit touching
    * only plan artifacts (a park) with nothing named has nothing to judge, and
@@ -742,17 +733,18 @@ const factory: ChainFactory = (api) => {
       };
     },
     handoff(result) {
-      // A refusal only plan can resolve wakes the audit slice regardless of
-      // what is pickable: a voluntary bail, or a commit that landed and this
-      // chain's `shipped` declined (a park) — else build re-picks the same
-      // entry into the same wall. Otherwise the ladder decides: the first
-      // live slice, or build while anything is pickable, or hibernate.
+      // A refusal only plan can resolve is build's note to plan and wakes
+      // the inbox slice regardless of what is pickable: a voluntary bail, or
+      // a commit that landed and this chain's `shipped` declined (a park) —
+      // else build re-picks the same entry into the same wall. Otherwise the
+      // ladder decides: the first live slice, or build while anything is
+      // pickable, or hibernate.
       const refused =
         result.noCommit === "voluntary-bail" ||
         (result.entries ?? []).some(
           (e) => e.noCommit === "voluntary-bail" || (e.committed && !e.shipped && !e.reverted),
         );
-      if (refused) return [AUDIT];
+      if (refused) return [INBOX];
       return nextPhase(result.flumeDir, result.pickableAfter.length > 0);
     },
   };

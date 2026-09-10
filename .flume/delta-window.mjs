@@ -8,7 +8,8 @@
 //
 // Runs as an inline-exec span in the tick's worktree, so `git` sees the
 // tick's own tree and `.flume/plan/state.md` is the tracked copy at the tip.
-// Runtime records (prior attempts, verdicts) live only under the primary
+// Runtime records (prior attempts, verdicts — build's refusals, which the
+// inbox slice reconciles) live only under the primary
 // state root, which the dispatcher hands every child as FLUME_DIR.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -17,7 +18,6 @@ import { join } from "node:path";
 const [mode, budgetArg] = process.argv.slice(2);
 const BUDGET = Number(budgetArg ?? 1200);
 const STATE = ".flume/plan/state.md";
-const PLAN_ONLY = /^\.flume\/(plan\/|inbox\.md$)/;
 const SWEEP_DOMAIN = [
   "src", "tests", "bin", "examples",
   ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
@@ -39,16 +39,14 @@ function commits(range, pathspec = []) {
   const raw = git("log", "--reverse", "--format=%H%x00%s", range, "--", ...pathspec).trim();
   return raw ? raw.split("\n").map((l) => { const [sha, subject] = l.split("\0"); return { sha, subject }; }) : [];
 }
-const touched = (sha) => git("show", "--format=", "--name-only", sha).trim().split("\n").filter(Boolean);
 const lines = (s) => (s.match(/\n/g) ?? []).length + 1;
 
 /** Oldest-first diffs within BUDGET; a commit over budget on its own still renders. */
-function renderPrefix(list, showArgs, skip = () => false) {
+function renderPrefix(list, showArgs) {
   let used = 0, rendered = 0, advance, stopped = false;
   const deferred = [];
   for (const c of list) {
     if (stopped) { deferred.push(c); continue; }
-    if (skip(c)) { out(`--- ${c.sha.slice(0, 12)} ${c.subject}  (plan artifacts only — no cross-check; the stamp passes it) ---`); advance = c.sha; continue; }
     const diff = git("show", "--stat", "-p", c.sha, ...showArgs);
     if (rendered > 0 && used + lines(diff) > BUDGET) { stopped = true; deferred.push(c); continue; }
     out(diff.trimEnd()); out();
@@ -62,25 +60,6 @@ function refuse(label, sha) {
 }
 
 switch (mode) {
-  case "audit": {
-    let stamp = stampOf("Audited through:");
-    let note = "";
-    if (!stamp) {
-      stamp = git("log", "--grep=^plan:", "-n", "1", "--format=%H").trim() || undefined;
-      note = " (bootstrap: no audit stamp — window falls back to the last plan: commit; stamp what you audit this tick)";
-    }
-    if (!stamp) { out("(bootstrap: no commits to audit — stamp HEAD)"); break; }
-    if (!resolves(stamp)) { refuse("audit stamp", stamp); break; }
-    const list = commits(`${stamp}..HEAD`);
-    out(`=== ${list.length} commit(s) since ${stamp}${note} ===`);
-    for (const c of list) out(`${c.sha} ${c.subject}`);
-    out();
-    if (list.length === 0) { out("(window empty)"); break; }
-    const { advance, rendered, deferred } = renderPrefix(list, [], (c) => touched(c.sha).every((p) => PLAN_ONLY.test(p)));
-    out(`=== rendered ${rendered} commit(s) in full; the stamp may advance to ${advance ?? stamp} ===`);
-    if (deferred.length) { out(`=== ${deferred.length} commit(s) beyond this tick's budget re-appear next tick: ===`); for (const c of deferred) out(`${c.sha} ${c.subject}`); }
-    break;
-  }
   case "derive": {
     const stamp = stampOf("Spec derived through:");
     if (!stamp) {
@@ -129,6 +108,6 @@ switch (mode) {
     break;
   }
   default:
-    console.error(`delta-window: unknown mode '${mode}' (audit | derive | sweep | build-records)`);
+    console.error(`delta-window: unknown mode '${mode}' (derive | sweep | build-records)`);
     process.exit(2);
 }

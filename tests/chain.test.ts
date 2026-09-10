@@ -134,12 +134,17 @@ async function initRepo(prefix: string): Promise<string> {
  * factory against a temp repo whose cursors, queue, inbox, and git history
  * the test controls, so each predicate is judged on the facts it reads.
  */
+/**
+ * Plan is three slices whose liveness the chain computes from disk
+ * (`.flume/PROTOCOL.md`, *Plan slices*). Every case here drives the real
+ * factory against a temp repo whose cursors, queue, inbox, and git history
+ * the test controls, so each predicate is judged on the facts it reads.
+ */
 describe("plan slices via the real .flume/chain.ts", () => {
   const INBOX = "plan-inbox";
-  const AUDIT = "plan-audit";
   const DERIVE = "plan-derive";
   const SWEEP = "plan-sweep";
-  const LADDER = [INBOX, AUDIT, DERIVE, SWEEP];
+  const LADDER = [INBOX, DERIVE, SWEEP];
 
   let repo: string;
   let flumeDir: string;
@@ -153,12 +158,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
     git(repo, ["commit", "-q", "-m", msg]);
     return git(repo, ["rev-parse", "HEAD"]);
   };
-  const writeState = async (over: Partial<Record<"audit" | "derive" | "sweep", string | null>> = {}, extra = "") => {
-    const line = (label: string, key: "audit" | "derive" | "sweep") =>
+  const writeState = async (over: Partial<Record<"derive" | "sweep", string | null>> = {}, extra = "") => {
+    const line = (label: string, key: "derive" | "sweep") =>
       over[key] === null ? "" : `${label} \`${over[key] ?? seed}\`\n\n`;
     await writeFile(
       join(flumeDir, "plan", "state.md"),
-      `# State\n\n${line("Spec derived through:", "derive")}${line("Audited through:", "audit")}${line("Posture swept through:", "sweep")}${extra}`,
+      `# State\n\n${line("Spec derived through:", "derive")}${line("Posture swept through:", "sweep")}${extra}`,
     );
   };
   const ctx = (pending: PendingEntry[] = []): TickContext => ({ cwd: repo, flumeDir, pending });
@@ -211,28 +216,20 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
     });
 
-    it("audit: live on a code commit past the cursor, not on a plan-artifact-only commit, and ahead of pickable work", async () => {
-      await commit(".flume/plan/pending.json", "[]\n", "plan: rewrite");
-      expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(false);
-      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
-      expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(true);
-      expect(phases[AUDIT]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(true);
-    });
-
-    it("audit: a standing voluntary-bail record or a park in the last build verdict wakes it even over pickable work", async () => {
+    it("inbox: a standing voluntary-bail record or a park in the last build verdict is build's note to plan and wakes it, even over pickable work", async () => {
       const pickable = ctx([open("OPEN-1")]);
-      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(false);
+      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(false);
 
       await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "not-shipped" }]));
       expect(readLatestVerdictsSync(flumeDir)["build"]?.mergeOutcomes).toHaveLength(1);
-      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(true);
+      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(true);
 
       await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "merged" }]));
-      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(false);
+      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(false);
 
       await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
       await writeFile(priorAttemptPath(flumeDir, "OPEN-1"), JSON.stringify({ mode: "voluntary-bail", constraint: "already shipped" }));
-      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(true);
+      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(true);
     });
 
     it("derive: live on a spec commit past the cursor, not on a code commit, and ahead of pickable work — a queued entry citing a rewritten section is stale input", async () => {
@@ -255,8 +252,8 @@ describe("plan slices via the real .flume/chain.ts", () => {
     });
 
     it("a slice with no cursor line is live (bootstrap)", async () => {
-      await writeState({ audit: null, derive: null, sweep: null });
-      for (const name of [AUDIT, DERIVE, SWEEP]) expect(phases[name]!.shouldRun!(ctx()), name).toBe(true);
+      await writeState({ derive: null, sweep: null });
+      for (const name of [DERIVE, SWEEP]) expect(phases[name]!.shouldRun!(ctx()), name).toBe(true);
     });
   });
 
@@ -265,14 +262,20 @@ describe("plan slices via the real .flume/chain.ts", () => {
       await writeFile(join(flumeDir, "inbox.md"), NONEMPTY_INBOX);
       expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([INBOX]);
       expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([]);
-      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
-      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([AUDIT]);
+      await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
+      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([DERIVE]);
+    });
+
+    it("a build refusal never re-wakes the inbox slice by itself: it is a reason to be woken, cleared only by a build wave", async () => {
+      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "not-shipped" }]));
+      expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
+      expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([]);
     });
 
     it("hands to build while anything is pickable and nothing earlier is live; hibernates when nothing is", async () => {
       const entry = open("OPEN-1");
-      expect(phases[AUDIT]!.handoff(result({ phaseName: AUDIT, committed: true, pendingAfter: [entry], pickableAfter: [entry] }))).toEqual(["build"]);
-      expect(phases[AUDIT]!.handoff(result({ phaseName: AUDIT, committed: true }))).toEqual([]);
+      expect(phases[DERIVE]!.handoff(result({ phaseName: DERIVE, committed: true, pendingAfter: [entry], pickableAfter: [entry] }))).toEqual(["build"]);
+      expect(phases[DERIVE]!.handoff(result({ phaseName: DERIVE, committed: true }))).toEqual([]);
     });
 
     it("the continuation marker is retired: 'Plan continues: yes' in state.md wakes nothing", async () => {
@@ -286,12 +289,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[SWEEP]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
     });
 
-    it("a refusal in the build wave wakes audit ahead of a still-pickable queue; a clean wave follows the ladder", async () => {
+    it("a refusal in the build wave wakes the inbox slice ahead of a still-pickable queue; a clean wave follows the ladder", async () => {
       const build = phases["build"]!;
       const entry = open("OPEN-1");
       const pickable = { pendingAfter: [entry], pickableAfter: [entry] };
       expect(build.handoff(result({ phaseName: "build", shippedTags: ["DONE"], ...pickable }))).toEqual(["build"]);
-      expect(build.handoff(result({ phaseName: "build", noCommit: "voluntary-bail", ...pickable }))).toEqual([AUDIT]);
+      expect(build.handoff(result({ phaseName: "build", noCommit: "voluntary-bail", ...pickable }))).toEqual([INBOX]);
       expect(
         build.handoff(
           result({
@@ -301,12 +304,18 @@ describe("plan slices via the real .flume/chain.ts", () => {
             ...pickable,
           }),
         ),
-      ).toEqual([AUDIT]);
-      // Nothing pickable, nothing live: a true no-op wave hibernates …
-      expect(build.handoff(result({ phaseName: "build" }))).toEqual([]);
-      // … and a shipped wave with code past the audit cursor goes to audit.
+      ).toEqual([INBOX]);
+      // Nothing pickable: a shipped wave has no reviewer to wake — the gates
+      // were its review — so the ladder falls through to the sweep, whose
+      // domain the shipped code touched …
       await commit("src/a.ts", "export const a = 2;\n", "build: change a");
-      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([AUDIT]);
+      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([SWEEP]);
+      // … and to derive ahead of it when intent moved.
+      await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
+      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([DERIVE]);
+      // A docs-only wave with nothing else live hibernates outright.
+      await writeState({ sweep: git(repo, ["rev-parse", "HEAD"]), derive: git(repo, ["rev-parse", "HEAD"]) });
+      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([]);
     });
   });
 });

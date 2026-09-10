@@ -59,7 +59,7 @@ No schema holds these; they are the plan tick's actual work.
 
 ## Plan slices
 
-Plan is four singleton phases, one job each — `plan-inbox`, `plan-audit`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`; the inbox is its own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. The order is dependency order — verify the last outputs, then update intent, then build against both — so only the sweep yields to pickable work. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
+Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Spec derived through:`, `Posture swept through:`; the inbox and build's refusal records are the inbox slice's own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. The order is dependency order — route notes to plan, update intent, then build against it — so only the sweep yields to pickable work. There is no review phase: the gates are the review (the suite, the behaviors an entry names, the fence), and what they cannot judge is observed in the field and arrives through the inbox. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
 
 ## Disk vs git log
 
@@ -72,5 +72,5 @@ When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (
 
 ## Where runtime lives
 
-- Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan-inbox,plan-audit,plan-derive,plan-sweep,build}.md`. Runtime: `src/` (this repo).
+- Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan-inbox,plan-derive,plan-sweep,build}.md`. Runtime: `src/` (this repo).
 - CLI: `pnpm flume` (runs `src/cli.ts` under tsx) — `flume --help` is the authority for subcommands.
