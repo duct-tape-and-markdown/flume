@@ -583,6 +583,14 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   split. Recorded when the agent emits them, absent per field when it does not; a chain
   wanting cost telemetry reads the verdict rather than re-parsing the agent's stream in a
   decorator beside it.
+
+  Each row also carries **`promptPath`**: the state-root-relative file holding the prompt
+  that invocation was handed, byte for byte — the renderer's output after every
+  transformation, written before the agent starts (`spec/prompt.md`, *The rendered prompt
+  is persisted before the agent runs*). It is the read side of the record the write fence
+  already keeps: what the tick was told. "Did this tick see X" is a lookup in that file,
+  never a reconstruction from the tree — and never the engine's reading of what the agent
+  went on to open, which it does not observe.
 - **`readTickVerdicts(flumeDir, n)` is exported** so a chain can render recent tick
   history into a prompt. Whether and what to render is the chain's call.
   **`readLatestVerdictsSync(flumeDir)`** is exported beside it, returning the most recent

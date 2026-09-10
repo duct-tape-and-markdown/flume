@@ -104,6 +104,7 @@ inside a job dir and the walk-up never passes through one.
 ```
 awake/
 prior-attempts/
+rendered-prompts/
 worktrees/
 node_modules/
 loop.pid

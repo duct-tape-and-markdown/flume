@@ -139,6 +139,40 @@ The mode union, its persistence, and what each mode means are owned by spec/loop
 render is the only part stated here. `render-refused` — the mode produced by this file's
 own refusal — is defined below.
 
+## The rendered prompt is persisted before the agent runs
+
+The dispatcher writes the fully rendered prompt — the exact bytes it hands to
+`agent.invoke` — to `<flumeDir>/rendered-prompts/<timestamp>-<key>.md` before the
+invocation begins. `key` is the slug of the phase name for a singleton tick and of the
+entry tag for a fanout entry, the same slug rule prior-attempt records are keyed by
+(`src/Dispatcher.ts:slugify`); the timestamp is the invocation's, so two ticks never
+share a name and two entries in one wave differ by key. The tick verdict's invocation row
+names the file as `promptPath`, relative to the state root (`spec/loop.md`, *The tick
+verdict*), so a reader holding the verdict holds the input.
+
+**Why the bytes, not a list.** A tick's write side is a declared fence: typed on the
+phase, rendered into `<harness>`, enforced by a gate. Its read side is whatever the
+renderer assembled from placeholders and inline-exec spans, and until that lands on disk
+no artifact says what a tick saw — the session capture tees the agent's *output* stream,
+and the prompt goes in on stdin. The prompt itself is the record. A path list with blob
+shas would say less: an inline-exec digest has no blob to name, and a tracked path's
+bytes at the span's base are already reachable through `baseSha` (`spec/chain.md`, *What
+a gate receives*).
+
+- **A fact about the input, never about the agent's reads.** What the agent opens after
+  receiving the prompt is not observed, counted, or fenced. Doing so would mean
+  interpreting tool calls in the agent's stream — provider vocabulary the engine does not
+  carry (`.claude/rules/engine-boundary.md`, *Told, not inferred*). A chain that wants
+  that reading decorates its agent; the raw stream already reaches decorators.
+- **Absent when nothing was rendered.** A declined tick and a render-refused tick write
+  no file, and their verdicts carry no invocation row — the row exists iff an agent ran.
+- **A write failure refuses the tick before the agent runs** (`.claude/rules/engineering.md`,
+  *Loud or nothing*): a tick whose record cannot be kept does not spend an invocation
+  that would leave no trace of its input.
+- **Retention is the operator's.** The directory is runtime-owned and gitignored, and
+  grows unbounded like a session-capture dir; `rm` is the policy, and a relocated state
+  root carries it along.
+
 ## Inline-exec spans reach `sh` through stdin, never argv
 
 `runInlineExec` (`src/Prompt.ts`) spawns `sh` with **no command arguments** and writes
