@@ -19,4 +19,3 @@ with `src/Gate.ts`; `src/Prompt.ts` with `src/PendingSchema.ts` and
 `src/Baton.ts`; `src/Dispatcher.ts` with its immediate imports; `examples/`'s
 three chain modules with `src/index.ts`.
 
-Plan continues: no

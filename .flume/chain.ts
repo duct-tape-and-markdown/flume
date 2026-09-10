@@ -1,5 +1,5 @@
 /**
- * Flume's own Flume chain — plan → build. Loaded by the flume CLI from
+ * Flume's own Flume chain — four plan slices → build. Loaded by the flume CLI from
  * `.flume/chain.ts`; the default export is the Chain.
  *
  * Dogfood note: chain.ts imports the in-repo runtime (`../src/`), not the
@@ -8,6 +8,7 @@
  * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
@@ -17,7 +18,7 @@ import { basename, join, relative, resolve } from "node:path";
  * that also uses `##`, hence the slice.
  *
  * Read synchronously and cheaply (one small file) per `shouldRun`'s contract —
- * the same idiom `plan.handoff` already uses for state.md. Any failure
+ * the same idiom the slices' cursor reads use for state.md. Any failure
  * returns `true`: plan's `shouldRun` treats an unreadable inbox as a reason
  * to run the tick, never to skip it.
  */
@@ -428,119 +429,203 @@ const factory: ChainFactory = (api) => {
   const planAgent = phaseAgent("claude-opus-5");
   const buildAgent = phaseAgent("claude-opus-5");
 
-  // ---------- phases ----------
+  // ---------- plan slices (one job per tick; liveness is a fact of disk) ----------
 
-  const plan: Phase = {
-    name: "plan",
-    description:
-      "Re-derive .flume/plan/{pending.json,state.md,open-questions.md} from spec/ + current src state; drain .flume/inbox.md.",
-    promptPath: "prompts/plan.md",
+  /**
+   * Plan is four singleton slices, each owning one cursor in state.md and one
+   * prompt that carries only that slice's material. Which slice is live is
+   * computed here from disk — the inbox, a cursor against git, the queue —
+   * never asked of the model: dispatch is the same kind of verdict
+   * `shouldRun` exists for (`spec/loop.md`, *Declining a tick before the
+   * invocation*), one level down. The continuation marker this replaces was
+   * the model's claim about the same fact.
+   *
+   * Ladder order is priority: an operator's inbox note first; then
+   * reconciling what landed (audit) before deriving new intent on top of it
+   * (derive); the posture sweep last, insurance behind product. Pickable
+   * work preempts audit, derive, and sweep — their windows are deferred,
+   * never lost — and never preempts the inbox or a build refusal that only
+   * plan can resolve.
+   */
+  const { repoRoot } = api.paths;
+  const BUILD = "build";
+  const INBOX = "plan-inbox";
+  const AUDIT = "plan-audit";
+  const DERIVE = "plan-derive";
+  const SWEEP = "plan-sweep";
+
+  const statePath = (flumeDir: string) => resolve(flumeDir, "plan", "state.md");
+
+  /** The sha on a cursor line of state.md, or undefined when the line is absent. */
+  function stampOf(flumeDir: string, label: string): string | undefined {
+    try {
+      const text = readFileSync(statePath(flumeDir), "utf8");
+      return new RegExp(`^${label}\\s*\`?([0-9a-f]{7,40})`, "m").exec(text)?.[1];
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The posture sweep records an open rotation as a paragraph opening `Rotation open`. */
+  function rotationOpen(flumeDir: string): boolean {
+    try {
+      return /^Rotation open/m.test(readFileSync(statePath(flumeDir), "utf8"));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Any commit past `stamp` touching `pathspec` — the window a slice would
+   * process. One synchronous `git log -n 1`, because `shouldRun` and
+   * `handoff` are synchronous by contract and this is the fact they decide
+   * on. Fails open: an unreadable window (a stamp that does not resolve)
+   * runs the slice, whose prompt refuses and says what to repair.
+   */
+  function commitsPast(stamp: string, pathspec: string[]): boolean {
+    try {
+      const out = execFileSync(
+        "git",
+        ["log", "--format=%H", "-n", "1", `${stamp}..HEAD`, "--", ...pathspec],
+        { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      );
+      return out.trim().length > 0;
+    } catch {
+      return true;
+    }
+  }
+
+  /** Same domain `.flume/delta-window.mjs sweep` renders, plus spec/ for the retired-claim delta. */
+  const SWEEP_DOMAIN = [
+    "src", "tests", "bin", "examples",
+    ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
+    "spec",
+  ];
+
+  /**
+   * A build refusal only plan can resolve: a standing voluntary-bail record,
+   * or a park in the last build wave (a committed `not-shipped` outcome,
+   * which writes no prior-attempt record and is visible only on the
+   * verdict). Without this leg a parked entry stays pickable, plan yields to
+   * build, and build re-parks against the same fence forever (four attempts,
+   * 2026-09-07). Read at `shouldRun` only — it is a reason to be woken, never
+   * a reason for a slice to re-wake itself, since only a build wave clears it.
+   */
+  function reconcileDue(flumeDir: string): boolean {
+    if (anyVoluntaryBailRecord(api.priorAttemptsDir, flumeDir)) return true;
+    const lastBuild = api.readLatestVerdictsSync(flumeDir)[BUILD];
+    return lastBuild?.mergeOutcomes?.some((o) => o.outcome === "not-shipped") ?? false;
+  }
+
+  interface SliceInputs {
+    flumeDir: string;
+    pickable: boolean;
+  }
+  interface Slice {
+    name: string;
+    description: string;
+    /** The slice's window is non-empty on disk. Pure over its inputs; no side effects. */
+    live: (inputs: SliceInputs) => boolean;
+  }
+
+  const SLICES: Slice[] = [
+    {
+      name: INBOX,
+      description: "Drain .flume/inbox.md: route each finding to an entry, a question, or accepted debt.",
+      live: ({ flumeDir }) => inboxHasEntries(flumeDir),
+    },
+    {
+      name: AUDIT,
+      description: "Cross-check commits past `Audited through:` against the sections they cite; reconcile build's bails and parks.",
+      live: ({ flumeDir, pickable }) => {
+        if (pickable) return false;
+        const stamp = stampOf(flumeDir, "Audited through:");
+        // Plan-artifact-only commits are not auditable work; they are passed
+        // by the cursor when a real window is processed.
+        return stamp === undefined || commitsPast(stamp, [".", ":!.flume/plan", ":!.flume/inbox.md"]);
+      },
+    },
+    {
+      name: DERIVE,
+      description: "Derive spec/ changes past `Spec derived through:` into pending entries.",
+      live: ({ flumeDir, pickable }) => {
+        if (pickable) return false;
+        const stamp = stampOf(flumeDir, "Spec derived through:");
+        return stamp === undefined || commitsPast(stamp, ["spec/"]);
+      },
+    },
+    {
+      name: SWEEP,
+      description: "One neighborhood of the posture sweep (`.claude/rules/posture-sweep.md`).",
+      live: ({ flumeDir, pickable }) => {
+        if (pickable) return false;
+        const stamp = stampOf(flumeDir, "Posture swept through:");
+        return stamp === undefined || rotationOpen(flumeDir) || commitsPast(stamp, SWEEP_DOMAIN);
+      },
+    },
+  ];
+
+  /**
+   * Pickability at `shouldRun`: the dispatcher's own verdict when it handed
+   * one (`ctx.pickable`, spec/chain.md *What a hook receives*); the bare
+   * gate-kind check only for a hand-built context that carries none.
+   */
+  const pickableIn = (ctx: TickContext): boolean =>
+    ctx.pickable
+      ? ctx.pickable.length > 0
+      : (ctx.pending ?? []).some((e) => isPickableNow(e, new Set()));
+
+  /**
+   * The next phase after a plan slice or a build wave: the first live slice,
+   * else build if anything is pickable, else hibernate. `exclude` is the
+   * slice that just ran without committing — no progress, no self-rewake, so
+   * an unroutable inbox note or a refused render costs one tick, not a loop.
+   * A slice that committed and is still live (a window larger than one
+   * tick's budget, an open rotation) re-wakes itself.
+   */
+  function nextPhase(flumeDir: string, pickable: boolean, exclude?: string): string[] {
+    const slice = SLICES.find((s) => s.name !== exclude && s.live({ flumeDir, pickable }));
+    if (slice) return [slice.name];
+    return pickable ? [BUILD] : [];
+  }
+
+  const planWritablePaths = [
+    ".flume/plan/pending.json",
+    ".flume/plan/state.md",
+    ".flume/plan/open-questions.md",
+    ".flume/inbox.md",
+    // spec/ is human-directed and edited in-session, never by a phase; a
+    // slice that finds ambiguity parks it in open-questions.md. Plan's own
+    // findings never pass through the inbox — that is the external surface
+    // the inbox slice drains.
+  ];
+
+  const slicePhase = (slice: Slice): Phase => ({
+    name: slice.name,
+    description: slice.description,
+    promptPath: `prompts/${slice.name}.md`,
     concurrency: "singleton",
     agent: planAgent,
-    writablePaths: [
-      ".flume/plan/pending.json",
-      ".flume/plan/state.md",
-      ".flume/plan/open-questions.md",
-      ".flume/inbox.md",
-      // NOTE: plan does NOT touch spec/. The spec corpus
-      // (spec/*.md) is human-directed, edited in-session not by a phase;
-      // if plan discovers ambiguity, it surfaces it via open-questions.md
-      // for a human to fold back into the spec.
-      //
-      // .flume/inbox.md IS writable: plan drains it each tick by routing
-      // each entry into pending.json, open-questions.md, or accepted-debt
-      // (recorded in the commit body). External writers (humans, future
-      // review skills) append; plan removes after routing. Plan's own audit
-      // findings do NOT pass through inbox — they're written directly to
-      // pending.json / open-questions.md, with narrative in the commit body.
-    ],
-    // The builtin composes core + this chain's extension for
-    // validation and pre-checks every entry's declared files against build's
-    // fence at plan time.
+    writablePaths: planWritablePaths,
+    // Every slice writes the queue, so every slice is held to its shape, the
+    // fence pre-check, and its cites resolving.
     gates: [
       pendingGate({ extension: entryExtension, targetFence: buildFence }),
       perResolvesGate,
     ],
-    /**
-     * Decline only a tick that provably has nothing to do but pass
-     * the baton: the queue already carries pickable work, so the sweep yields
-     * by rule (`posture-sweep.md`, *The sweep yields to pickable work*), and
-     * the inbox is empty, so there is nothing to drain.
-     *
-     * Audit and derive are **deferred, never lost**. A declined tick makes no
-     * commit, so `<commit-delta>`'s last-`plan:` window and `<spec-delta>`'s
-     * derive stamp both stay exactly where they were; the next tick that runs
-     * sees the whole backlog. Deferral is bounded — build drains the queue,
-     * nothing stays pickable forever, and the empty-queue tick runs in full.
-     *
-     * Not checked here: promotable `blockedBy` entries. An entry whose blocker
-     * has shipped reads as unpickable to the line below (its blocker is not in
-     * this tick's shipped set), so a queue of nothing but promotable entries
-     * takes the `return true` and plan runs. Adding a promote check would only
-     * make the predicate decline less often, for no correctness gain.
-     *
-     * Fails open everywhere it is unsure: an unreadable inbox runs the tick.
-     */
-    shouldRun(ctx: TickContext) {
-      const pending = ctx.pending ?? [];
-      if (!pending.some((e) => isPickableNow(e, new Set()))) return true;
-      // A standing voluntary-bail record means build already looked and said
-      // "this is plan's call" — reconcile before deferring to build again,
-      // or a pickable-but-already-shipped entry loops decline/bail forever
-      // (see anyVoluntaryBailRecord's doc).
-      if (anyVoluntaryBailRecord(api.priorAttemptsDir, ctx.flumeDir)) {
-        return true;
-      }
-      // A park is a *committed* not-shipped outcome (build.shipped read the
-      // park file), so it writes no prior-attempt record and the check
-      // above can never see it; the last build verdict can. Without this,
-      // a parked entry stays pickable, plan declines, and build re-parks
-      // against the same fence forever (FLUMEAPI-PATHS, four attempts,
-      // 2026-09-07). The verdict is the engine's own durable record of the
-      // outcome — read, not re-derived from commit shape.
-      const lastBuild = api.readLatestVerdictsSync(ctx.flumeDir)[build.name];
-      if (lastBuild?.mergeOutcomes?.some((o) => o.outcome === "not-shipped")) {
-        return true;
-      }
-      return inboxHasEntries(ctx.flumeDir);
-    },
-    promptArgs() {
-      return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
-    },
-    handoff(result) {
-      // Plan re-wakes itself while state.md carries `Plan continues: yes` —
-      // the vertical-slice signal (one focused mode per tick). The prompt
-      // mandates the marker; absence = stable. state.md lives under the
-      // relocatable state root, which the tick result reports — same idiom
-      // as the sessions dir above.
-      let planContinues = false;
-      try {
-        const stateText = readFileSync(
-          resolve(result.flumeDir, "plan", "state.md"),
-          "utf8",
-        );
-        planContinues = /^Plan continues:\s*yes\b/im.test(stateText);
-      } catch {
-        // state.md missing — treat as stable; build (if pickable) or hibernate.
-      }
+    shouldRun: (ctx) =>
+      (slice.name === AUDIT && reconcileDue(ctx.flumeDir)) ||
+      slice.live({ flumeDir: ctx.flumeDir, pickable: pickableIn(ctx) }),
+    promptArgs: () => ({ PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) }),
+    handoff: (result) =>
+      nextPhase(
+        result.flumeDir,
+        result.pickableAfter.length > 0,
+        result.committed ? undefined : slice.name,
+      ),
+  });
 
-      // Same pickability verdict the dispatcher will reach (blockedBy with
-      // shipped blockers, fork gates, capabilities) — not a hand-rolled
-      // subset that drifts as gate variants are added.
-      //
-      // Pickable work preempts the continue-marker (posture-sweep.md, "The
-      // sweep yields to pickable work"): a sweep tick that files an entry
-      // and leaves `Plan continues: yes` must still hand to build, or the
-      // baton loops on a declining plan (shouldRun defers to build while
-      // handoff defers to the marker) and build never runs.
-      const shipped = new Set(result.shippedTags);
-      const hasPickable = result.pendingAfter.some((e) =>
-        isPickableNow(e, shipped),
-      );
-      if (hasPickable) return [build.name];
-      return planContinues ? [plan.name] : [];
-    },
-  };
+  const planSlices = SLICES.map(slicePhase);
 
   /**
    * The full suite, scoped to commits that touch code. A build commit that
@@ -647,25 +732,23 @@ const factory: ChainFactory = (api) => {
       };
     },
     handoff(result) {
-      // Wake plan when the wave actually produced signal for it to audit:
-      // shipped commits to reconcile, gate fires that imply MAINTAIN
-      // entries, or a voluntary bail — the build prompt promises
-      // "plan re-derives next tick" on a park-and-bail, so plan must see it.
-      // A true no-op wave (nothing pickable) carries no signal — hibernate.
-      // Operator can `flume wake plan` to force a tick.
-      if (
-        result.shippedTags.length === 0 &&
-        result.gateResults.length === 0 &&
-        result.noCommit !== "voluntary-bail"
-      ) {
-        return [];
-      }
-      return [plan.name];
+      // A refusal only plan can resolve wakes the audit slice regardless of
+      // what is pickable: a voluntary bail, or a commit that landed and this
+      // chain's `shipped` declined (a park) — else build re-picks the same
+      // entry into the same wall. Otherwise the ladder decides: the first
+      // live slice, or build while anything is pickable, or hibernate.
+      const refused =
+        result.noCommit === "voluntary-bail" ||
+        (result.entries ?? []).some(
+          (e) => e.noCommit === "voluntary-bail" || (e.committed && !e.shipped && !e.reverted),
+        );
+      if (refused) return [AUDIT];
+      return nextPhase(result.flumeDir, result.pickableAfter.length > 0);
     },
   };
 
   const flumeChain: Chain = {
-    phases: [plan, build],
+    phases: [...planSlices, build],
     entryExtension,
     humanOnly: [], // no spec phase; spec corpus (spec/*.md) edited in-session, never by a phase
   };

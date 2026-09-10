@@ -56,10 +56,10 @@ Untouched modules never enter the frontier, so a quiet tree closes in one
 tick, never one tick per skip. **Quiet-on-clean is the normal verdict**,
 recorded by advancing the stamp alone.
 
-An armed or open rotation is a live plan job: it carries `Plan continues:
-yes` on ticks where it may advance (queue drained, above), and rides
-silently in state.md otherwise. Hibernation is the empty frontier's verdict
-alone.
+An armed or open rotation is a live plan job: the chain keeps the sweep
+slice live while state.md carries a `Rotation open` paragraph or commits
+past the stamp touch the domain, and lets it run only when the queue is
+drained (above). Hibernation is the empty frontier's verdict alone.
 
 ## A violation counts only when verified on disk this tick
 

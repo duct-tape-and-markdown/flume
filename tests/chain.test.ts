@@ -20,6 +20,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,268 +127,179 @@ async function initRepo(prefix: string): Promise<string> {
   return repo;
 }
 
-describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)", () => {
-  let plan: Phase;
-  let build: Phase;
-  let flumeDir: string;
+/**
+ * Plan is four slices whose liveness the chain computes from disk
+ * (`.flume/PROTOCOL.md`, *Plan slices*). Every case here drives the real
+ * factory against a temp repo whose cursors, queue, inbox, and git history
+ * the test controls, so each predicate is judged on the facts it reads.
+ */
+describe("plan slices via the real .flume/chain.ts", () => {
+  const INBOX = "plan-inbox";
+  const AUDIT = "plan-audit";
+  const DERIVE = "plan-derive";
+  const SWEEP = "plan-sweep";
+  const LADDER = [INBOX, AUDIT, DERIVE, SWEEP];
 
-  beforeAll(async () => {
-    const { chain } = await loadChainModule(REPO_PATHS);
-    const planPhase = chain.phases.find((p) => p.name === "plan");
-    const buildPhase = chain.phases.find((p) => p.name === "build");
-    expect(planPhase?.shouldRun).toBeDefined();
-    expect(buildPhase?.handoff).toBeDefined();
-    plan = planPhase!;
-    build = buildPhase!;
-  });
+  let repo: string;
+  let flumeDir: string;
+  let phases: Record<string, Phase>;
+  let seed: string;
+
+  const commit = async (rel: string, content: string, msg: string): Promise<string> => {
+    await mkdir(join(repo, rel, ".."), { recursive: true });
+    await writeFile(join(repo, rel), content);
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-q", "-m", msg]);
+    return git(repo, ["rev-parse", "HEAD"]);
+  };
+  const writeState = async (over: Partial<Record<"audit" | "derive" | "sweep", string | null>> = {}, extra = "") => {
+    const line = (label: string, key: "audit" | "derive" | "sweep") =>
+      over[key] === null ? "" : `${label} \`${over[key] ?? seed}\`\n\n`;
+    await writeFile(
+      join(flumeDir, "plan", "state.md"),
+      `# State\n\n${line("Spec derived through:", "derive")}${line("Audited through:", "audit")}${line("Posture swept through:", "sweep")}${extra}`,
+    );
+  };
+  const ctx = (pending: PendingEntry[] = []): TickContext => ({ cwd: repo, flumeDir, pending });
+  const open = (tag: string) => makeEntry(tag, { kind: "open" });
+  const result = (over: Partial<TickResult> = {}): TickResult =>
+    tickResult({ phaseName: INBOX, flumeDir, pendingAfter: [], pickableAfter: [], ...over });
 
   beforeEach(async () => {
-    flumeDir = await mkdtemp(join(tmpdir(), "flume-chain-test-"));
+    repo = await initRepo("flume-slices-");
+    flumeDir = join(repo, ".flume");
     await mkdir(join(flumeDir, "plan"), { recursive: true });
+    await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+    await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+    await mkdir(join(repo, "spec"), { recursive: true });
+    await writeFile(join(repo, "spec", "x.md"), "# X\n\n## A\n\nbody\n");
+    await mkdir(join(repo, "src"), { recursive: true });
+    await writeFile(join(repo, "src", "a.ts"), "export const a = 1;\n");
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-q", "-m", "seed"]);
+    seed = git(repo, ["rev-parse", "HEAD"]);
+    await writeState();
+    const { chain } = chainFactory(buildFlumeApi({ repoRoot: repo, configDir: flumeDir, flumeDir }));
+    phases = Object.fromEntries(chain.phases.map((p) => [p.name, p]));
   });
 
   afterEach(async () => {
-    await rm(flumeDir, { recursive: true, force: true });
+    await rm(repo, { recursive: true, force: true });
   });
 
-  describe("plan.shouldRun", () => {
-    it("declines when pending carries a pickable (open) entry and inbox.md is empty", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(false);
+  it("declares the ladder in priority order ahead of build, each slice with its own prompt file in this repo", async () => {
+    const { chain } = await loadChainModule(REPO_PATHS);
+    expect(chain.phases.map((p) => p.name)).toEqual([...LADDER, "build"]);
+    for (const name of LADDER) {
+      const slice = chain.phases.find((p) => p.name === name)!;
+      expect(slice.concurrency).toBe("singleton");
+      expect(slice.shouldRun).toBeDefined();
+      expect(existsSync(join(REPO_PATHS.configDir, slice.promptPath))).toBe(true);
+    }
+  });
+
+  describe("liveness (shouldRun)", () => {
+    it("every slice declines on a quiet tree: cursors at HEAD, empty inbox, empty queue", () => {
+      for (const name of LADDER) expect(phases[name]!.shouldRun!(ctx()), name).toBe(false);
     });
 
-    it("runs on a non-empty inbox, even with a pickable entry queued", async () => {
+    it("inbox: live iff an entry sits below the marker; an unreadable inbox runs the slice", async () => {
       await writeFile(join(flumeDir, "inbox.md"), NONEMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
+      expect(phases[INBOX]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(true);
+      await rm(join(flumeDir, "inbox.md"));
+      expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
     });
 
-    it("runs when inbox.md is missing entirely (fails open on an unreadable inbox)", () => {
-      // No inbox.md written — inboxHasEntries()'s catch treats an unreadable
-      // inbox as "run", never "decline".
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
+    it("audit: live on a code commit past the cursor, not on a plan-artifact-only commit, and yields to pickable work", async () => {
+      await commit(".flume/plan/pending.json", "[]\n", "plan: rewrite");
+      expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(false);
+      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
+      expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(true);
+      expect(phases[AUDIT]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
     });
 
-    it("runs on an empty queue", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = { cwd: flumeDir, flumeDir, pending: [] };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
+    it("audit: a standing voluntary-bail record or a park in the last build verdict wakes it even over pickable work", async () => {
+      const pickable = ctx([open("OPEN-1")]);
+      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(false);
 
-    it("runs on a parked-only queue", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("PARKED-1", { kind: "parked", reason: "needs a workshop" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
+      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "not-shipped" }]));
+      expect(readLatestVerdictsSync(flumeDir)["build"]?.mergeOutcomes).toHaveLength(1);
+      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(true);
 
-    it("runs on a live-blocked queue (blockedBy an upstream tag that hasn't shipped)", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("BLOCKED-1", { kind: "blockedBy", tags: ["STILL-PENDING-UPSTREAM"] })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
+      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "merged" }]));
+      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(false);
 
-    it("runs on a promotable-only queue (blockedBy a tag no longer in the queue, i.e. already shipped)", async () => {
-      // chain.ts's own docstring names this gap: isPickableNow is called with
-      // a fresh empty shippedTags Set here, so a blockedBy entry never reads
-      // as pickable to this predicate regardless of whether its blocker has
-      // actually shipped — the queue "takes the return true and plan runs".
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("PROMOTABLE-1", { kind: "blockedBy", tags: ["ALREADY-SHIPPED-TAG"] })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
-
-    it("runs when ctx.pending is undefined", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = { cwd: flumeDir, flumeDir };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
-
-    it("runs on a pickable-only queue when prior-attempts/ holds a voluntary-bail record (5e50102)", async () => {
-      // A standing voluntary-bail record is plan's to reconcile — shouldRun
-      // must not defer to build a second time on the same refusal
-      // (anyVoluntaryBailRecord's doc, chain.ts).
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
       await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
-      await writeFile(
-        join(flumeDir, "prior-attempts", "build-OPEN-1.json"),
-        JSON.stringify({ mode: "voluntary-bail", constraint: "off-writablePaths edit" }),
-      );
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
+      await writeFile(priorAttemptPath(flumeDir, "OPEN-1"), JSON.stringify({ mode: "voluntary-bail", constraint: "already shipped" }));
+      expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(true);
     });
 
-    it("declines on a pickable-only queue with an empty prior-attempts dir and empty inbox (baseline unchanged)", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(false);
+    it("derive: live on a spec commit past the cursor, not on a code commit, and yields to pickable work", async () => {
+      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
+      expect(phases[DERIVE]!.shouldRun!(ctx())).toBe(false);
+      await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
+      expect(phases[DERIVE]!.shouldRun!(ctx())).toBe(true);
+      expect(phases[DERIVE]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
     });
 
-    it("declines on a pickable-only queue with an absent prior-attempts dir and empty inbox (baseline unchanged)", async () => {
-      // No prior-attempts/ directory written at all — anyVoluntaryBailRecord's
-      // readdirSync throw is caught and treated as "no records".
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(false);
+    it("sweep: live on a domain commit, a spec deletion, or an open rotation; not on a docs-only commit; yields to pickable work", async () => {
+      await commit("docs/note.md", "note\n", "build: docs");
+      expect(phases[SWEEP]!.shouldRun!(ctx())).toBe(false);
+      await writeState({}, "Rotation open (phrase delta). Covered: `src/a.ts`.\n");
+      expect(phases[SWEEP]!.shouldRun!(ctx())).toBe(true);
+      await writeState();
+      await commit("spec/x.md", "# X\n", "spec: retire A");
+      expect(phases[SWEEP]!.shouldRun!(ctx())).toBe(true);
+      expect(phases[SWEEP]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
     });
 
-    it("runs on a pickable-only queue when the last build verdict carries a not-shipped merge outcome (4ee48ee)", async () => {
-      // A park is a *committed* not-shipped outcome, so it writes no
-      // prior-attempt record and the voluntary-bail check above can never
-      // see it. Without this leg the parked entry stays pickable, plan
-      // declines, and build re-parks against the same fence forever.
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      await writeTickVerdict(
-        flumeDir,
-        buildVerdict(build.name, [{ tag: "PARKED-BY-BUILD", outcome: "not-shipped" }]),
-      );
-      // Non-vacuity: the leg reads the build phase's own latest verdict, so
-      // prove the writer put outcomes there under that key before judging.
-      expect(readLatestVerdictsSync(flumeDir)[build.name]?.mergeOutcomes).toHaveLength(1);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("PARKED-BY-BUILD", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(true);
-    });
-
-    it("declines on a pickable-only queue when the last build verdict's merge outcomes are all shipped", async () => {
-      // The other leg: a verdict is present and readable, but nothing in it
-      // is a park — the queue's pickable entry is still build's to take.
-      await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
-      await writeTickVerdict(
-        flumeDir,
-        buildVerdict(build.name, [
-          { tag: "SHIPPED-1", outcome: "merged" },
-          { tag: "SHIPPED-2", outcome: "merged" },
-        ]),
-      );
-      expect(readLatestVerdictsSync(flumeDir)[build.name]?.mergeOutcomes).toHaveLength(2);
-      const ctx: TickContext = {
-        cwd: flumeDir,
-        flumeDir,
-        pending: [makeEntry("OPEN-1", { kind: "open" })],
-      };
-      expect(plan.shouldRun!(ctx)).toBe(false);
+    it("a slice with no cursor line is live (bootstrap)", async () => {
+      await writeState({ audit: null, derive: null, sweep: null });
+      for (const name of [AUDIT, DERIVE, SWEEP]) expect(phases[name]!.shouldRun!(ctx()), name).toBe(true);
     });
   });
 
-  describe("plan.handoff", () => {
-    it("re-wakes plan when state.md declares 'Plan continues: yes' and nothing remains pickable", async () => {
-      await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
-      const result = tickResult({ flumeDir, phaseName: "plan", pendingAfter: [] });
-      expect(plan.handoff(result)).toEqual(["plan"]);
+  describe("handoff — the ladder, then build, then hibernate", () => {
+    it("a slice that committed and is still live re-wakes itself; one that did not commit hands on", async () => {
+      await writeFile(join(flumeDir, "inbox.md"), NONEMPTY_INBOX);
+      expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([INBOX]);
+      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([]);
+      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
+      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([AUDIT]);
     });
 
-    it("hands off to build when state.md declares 'Plan continues: yes' but a pickable entry remains (posture-sweep.md, 'The sweep yields to pickable work')", async () => {
-      await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: yes\n");
-      const result = tickResult({
-        flumeDir,
-        phaseName: "plan",
-        pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
-      });
-      expect(plan.handoff(result)).toEqual(["build"]);
+    it("hands to build while anything is pickable and nothing earlier is live; hibernates when nothing is", async () => {
+      const entry = open("OPEN-1");
+      expect(phases[AUDIT]!.handoff(result({ phaseName: AUDIT, committed: true, pendingAfter: [entry], pickableAfter: [entry] }))).toEqual(["build"]);
+      expect(phases[AUDIT]!.handoff(result({ phaseName: AUDIT, committed: true }))).toEqual([]);
     });
 
-    it("hands off to build when state.md says 'no' and a pickable entry remains", async () => {
-      await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: no\n");
-      const result = tickResult({
-        flumeDir,
-        phaseName: "plan",
-        pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
-      });
-      expect(plan.handoff(result)).toEqual(["build"]);
+    it("the continuation marker is retired: 'Plan continues: yes' in state.md wakes nothing", async () => {
+      await writeState({}, "Plan continues: yes — more to do\n");
+      expect(phases[SWEEP]!.handoff(result({ phaseName: SWEEP, committed: true }))).toEqual([]);
     });
 
-    it("hibernates when state.md says 'no' and nothing remains pickable", async () => {
-      await writeFile(join(flumeDir, "plan", "state.md"), "Plan continues: no\n");
-      const result = tickResult({ flumeDir, phaseName: "plan", pendingAfter: [] });
-      expect(plan.handoff(result)).toEqual([]);
-    });
-
-    it("falls through to the pickability check when state.md carries no 'Plan continues:' line", async () => {
-      await writeFile(join(flumeDir, "plan", "state.md"), "# State\n\nno marker here\n");
-      const result = tickResult({
-        flumeDir,
-        phaseName: "plan",
-        pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
-      });
-      expect(plan.handoff(result)).toEqual(["build"]);
-    });
-
-    it("falls through to the pickability check when state.md is missing entirely (an absent line)", () => {
-      // No plan/state.md written at all — the readFileSync throw is caught
-      // and treated the same as an explicit "no".
-      const result = tickResult({
-        flumeDir,
-        phaseName: "plan",
-        pendingAfter: [makeEntry("OPEN-1", { kind: "open" })],
-      });
-      expect(plan.handoff(result)).toEqual(["build"]);
-    });
-  });
-
-  describe("build.handoff", () => {
-    it("stays quiet on a true no-op wave: nothing shipped, no gates ran, no bail", () => {
-      const result = tickResult({ phaseName: "build" });
-      expect(build.handoff(result)).toEqual([]);
-    });
-
-    it("wakes plan when the wave shipped a tag", () => {
-      const result = tickResult({ phaseName: "build", shippedTags: ["SHIPPED-1"] });
-      expect(build.handoff(result)).toEqual(["plan"]);
-    });
-
-    it("wakes plan when gates ran even without a ship (a gate fire implies a MAINTAIN entry)", () => {
-      const result = tickResult({
-        phaseName: "build",
-        gateResults: [{ gate: "tsc", ok: false, message: "type error" }],
-      });
-      expect(build.handoff(result)).toEqual(["plan"]);
-    });
-
-    it("wakes plan on a voluntary bail even with nothing shipped and no gates run", () => {
-      const result = tickResult({ phaseName: "build", noCommit: "voluntary-bail" });
-      expect(build.handoff(result)).toEqual(["plan"]);
+    it("a refusal in the build wave wakes audit ahead of a still-pickable queue; a clean wave follows the ladder", async () => {
+      const build = phases["build"]!;
+      const entry = open("OPEN-1");
+      const pickable = { pendingAfter: [entry], pickableAfter: [entry] };
+      expect(build.handoff(result({ phaseName: "build", shippedTags: ["DONE"], ...pickable }))).toEqual(["build"]);
+      expect(build.handoff(result({ phaseName: "build", noCommit: "voluntary-bail", ...pickable }))).toEqual([AUDIT]);
+      expect(
+        build.handoff(
+          result({
+            phaseName: "build",
+            committed: true,
+            entries: [{ tag: "OPEN-1", committed: true, shipped: false, reverted: false }],
+            ...pickable,
+          }),
+        ),
+      ).toEqual([AUDIT]);
+      // Nothing pickable, nothing live: a true no-op wave hibernates …
+      expect(build.handoff(result({ phaseName: "build" }))).toEqual([]);
+      // … and a shipped wave with code past the audit cursor goes to audit.
+      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
+      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([AUDIT]);
     });
   });
 });
@@ -539,7 +451,8 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
 
   beforeAll(async () => {
     const { chain } = await loadChainModule(REPO_PATHS);
-    const plan = chain.phases.find((p) => p.name === "plan")!;
+    // Every slice writes the queue and carries the gate; the inbox slice stands in for all four.
+    const plan = chain.phases.find((p) => p.name === "plan-inbox")!;
     build = chain.phases.find((p) => p.name === "build")!;
     gate = plan.gates.find((g) => g.name === "per cites resolve")!;
     expect(gate.when).toBe("afterCommit");

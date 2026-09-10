@@ -56,9 +56,9 @@ No schema holds these; they are the plan tick's actual work.
    finishes on the contract it started with*). Shipping the refusal semantics
    before the inheritance mechanism livelocked a live loop (2026-08-17).
 
-## Plan continuation marker
+## Plan slices
 
-Plan ticks process the *delta* since the last tick that did the work — each dimension windowed by its own stamp in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`), never by a `git log` grep, so a sliced dimension keeps its remainder. When the delta overflows what one tick can do well, plan writes `Plan continues: yes — <one-line reason>` into `state.md` and the harness re-wakes plan; `Plan continues: no` (or absence) hands to build (if pickable entries exist) or hibernates. The exact load-bearing predicate lives in `.flume/chain.ts` `plan.handoff`; the writer-side mandate in `.flume/prompts/plan.md`.
+Plan is four singleton phases, one job each — `plan-inbox`, `plan-audit`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`; the inbox is its own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. Pickable work preempts audit, derive, and sweep, never the inbox or a refusal. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
 
 ## Disk vs git log
 
@@ -71,5 +71,5 @@ When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (
 
 ## Where runtime lives
 
-- Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan,build}.md`. Runtime: `src/` (this repo).
+- Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan-inbox,plan-audit,plan-derive,plan-sweep,build}.md`. Runtime: `src/` (this repo).
 - CLI: `pnpm flume` (runs `src/cli.ts` under tsx) — `flume --help` is the authority for subcommands.
