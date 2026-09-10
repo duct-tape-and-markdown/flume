@@ -7,6 +7,8 @@
  * gates; the harness runs them; the prompt never reminds the agent to.
  */
 
+import type { PendingEntry } from "./PendingSchema.js";
+
 /**
  * When in the tick lifecycle a gate runs. `afterCommit` is the common case
  * (validate the agent's commit on its worktree branch); `afterMerge` runs
@@ -126,6 +128,16 @@ export interface GateContext {
    * above; every dispatcher-constructed context sets it.
    */
   baseSha?: string;
+  /**
+   * The pending entry this span was provisioned for, as the wave selected it
+   * — set at both stages under fanout, absent on a singleton tick, which
+   * carries no entry (spec/chain.md "What a gate receives"). A chain gate
+   * reads its extension fields (`tests[]`, an acceptance) through the
+   * chain's own schema to hold the commit to the entry's own contract; the
+   * engine reads none of them. Reported from the value the dispatcher
+   * already holds for the scoped fence, never re-read from the queue.
+   */
+  entry?: PendingEntry;
   /** Logger for harness-side output. Gates should not write to stdout directly. */
   log: (line: string) => void;
 }

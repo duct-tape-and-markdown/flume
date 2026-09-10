@@ -13702,3 +13702,61 @@ describe("src/index.ts — NoCommitMode barrel export (PROMPT-NOCOMMITMODE-UNEXP
     expect(noCommit).toBe("gate-revert");
   });
 });
+
+describe("GateContext.entry — the gated span's own entry (spec/chain.md 'What a gate receives')", () => {
+  const capture = (when: "afterCommit" | "afterMerge", seen: Record<string, string | null>): Gate => ({
+    name: `see-${when}`,
+    when,
+    async run(ctx) {
+      seen[when] = "entry" in ctx ? ctx.entry!.tag : null;
+      return { ok: true, message: "seen" };
+    },
+  });
+
+  it("fanout: both stages receive the entry the wave provisioned, by identity of tag", async () => {
+    await writePending(fx.repo, [makeEntry("CTX-ENTRY", ["src/e.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const seen: Record<string, string | null> = {};
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [capture("afterCommit", seen), capture("afterMerge", seen)],
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ctx-entry": async (cwd) => {
+          await writeAndCommit(cwd, "src/e.ts", "e\n", "build: e");
+        },
+      }),
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["CTX-ENTRY"]);
+    expect(seen).toEqual({ afterCommit: "CTX-ENTRY", afterMerge: "CTX-ENTRY" });
+  });
+
+  it("singleton: the key is absent at both stages — no entry exists to report", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const seen: Record<string, string | null> = {};
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [capture("afterCommit", seen), capture("afterMerge", seen)],
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/p.ts", "p\n", "plan: p");
+      }),
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+    expect(seen).toEqual({ afterCommit: null, afterMerge: null });
+  });
+});

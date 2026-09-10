@@ -2615,6 +2615,7 @@ export class Dispatcher {
           phaseName: phase.name,
           commitSha: mergedSha,
           touchedPaths: commitTouchedPaths,
+          entry: r.entry,
           // This entry's own span base, not `preCherry`: the tip its agent
           // branched from, so an afterMerge gate reading trunk can tell an
           // input the entry ignored from one that landed after it started
@@ -3481,6 +3482,7 @@ export class Dispatcher {
         commitSha,
         touchedPaths: commitTouchedPaths,
         baseSha: spanBase,
+        ...(assignedEntry ? { entry: assignedEntry } : {}),
         log: (l) => this.log.info(l),
       });
       results.push({
