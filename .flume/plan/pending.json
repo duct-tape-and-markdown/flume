@@ -1,41 +1,5 @@
 [
   {
-    "tag": "TICKRESULT-PROVISION-FAILURES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "`TickResult.provisionFailures`, the `ProvisionFailure[]` the wave already assembles."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Report it on both `TickResult` returns; `setupFailedIndices` (:2333) currently reaches no surface. The `entries` map at :2716 already omits a setup-failed tag by lookup — pin that, don't rebuild it."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Pins."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`TickResult.provisionFailures` — an entry whose create or `setupWorktree` failed reports on the handoff surface instead of appearing in `entries` with every flag false",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a hook receives"
-    },
-    "tests": [
-      "a fanout entry whose `setupWorktree` hook throws reaches `handoff` under `provisionFailures` with its tag, and is absent from `entries`",
-      "its siblings still run, ship, and appear in `entries`"
-    ],
-    "acceptance": "A chain reconciling a failed provision names the entry from `TickResult` alone; the pins fail on the pre-fix tree.",
-    "notes": "Closes the parked enumeration question — spec/worktrees.md and spec/chain.md now name the field (07e77d3). The dispatcher-side behaviour (isolate, skip the agent, still tear down, siblings proceed) already ships; only the reporting surface is missing."
-  },
-  {
     "tag": "GATE-RESULT-SKIPPED",
     "gate": {
       "kind": "open"
