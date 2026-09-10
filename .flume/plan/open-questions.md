@@ -185,3 +185,63 @@ so a leak reverts innocent entries for host state no entry touched. Two forks
 sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
 and fix the writer. The first bounds the blast radius whatever the second
 turns up.
+
+## A prior-attempt record whose entry left the queue without shipping is never cleared (PARKED — spec silent, and the fix forks)
+
+Drained from the inbox (2026-09-10, human via flume-main). Verified on disk
+this tick at `a83836f`: `.flume/prior-attempts/` holds four records
+(`buildpriorattempt-tail-bias-gate-revert-details`,
+`pending-schema-core-extension-split`, `friction-nonenoent-swallowed`,
+`test-hermeticenv-strips-tip-claim-held`); none of those tags is in
+`pending.json`. `clearPriorAttempt` runs only on a clean ship
+(`src/Dispatcher.ts:2123`, `:2797`), so a record whose entry plan retired,
+re-scoped under a new tag, or judged already-landed stands forever. The
+directory is engine-owned and outside every phase lane, so no autonomous tick
+can clear it — the operator `rm`s the files meanwhile.
+
+**Not derivable as filed.** `spec/loop.md` *Prior-outcome feedback to the
+retrying tick* states the property ("No false signal") and exactly one
+mechanism ("a clean ship clears the record"). It is silent on the non-ship
+exit — silence, not contradiction — so the line moves before any entry can
+cite it.
+
+**One correction to the filed shape.** The note proposes clearing at
+`commitPendingUpdate`'s rewrite, "which already knows which tags left the
+queue". That rewrite runs only in the fanout wave; these tags left via a
+**plan** commit, which the engine never diffs. Option A below therefore costs
+a new post-singleton queue read, not a free byproduct.
+
+**Keying obstacle for A and B.** `priorAttemptKey` is `slugify(entry.tag)` for
+fanout and `phase.name` for singleton, with no discriminator on disk. "Key not
+in the queue" cannot separate a retired tag from a live phase record without a
+rule for that collision.
+
+Options:
+
+- **A — engine clears.** A tag-keyed record whose tag is absent from the queue
+  after a plan commit is removed. Needs the discriminator above plus the new
+  read.
+- **B — engine reports.** `staleRecords` on the verdict / `TickContext`,
+  clearing nothing. Facts-not-verdicts (`engine-boundary.md`), but the files
+  still accumulate with no lane able to delete them.
+- **C — no engine change.** The chain already holds both halves: `TickContext`
+  carries `pending` *and* `priorAttempts`, and `api.priorAttemptPath` maps a
+  tag to its on-disk key without reimplementing `slugify`, so `reconcileDue`
+  can filter to records whose key is still in the queue. The routing rule
+  (`engine-boundary.md`) prefers this — a chain could have decided it.
+
+**Recommend C**, plus a `spec/loop.md` line naming what clears a record when an
+entry leaves the queue unshipped, so the on-disk accumulation gets a stated
+owner rather than standing as unattributed litter.
+
+Rider for whoever takes C: `.flume/chain.ts`'s `anyVoluntaryBailRecord` (:46)
+`readdirSync`s the prior-attempts directory itself, which the same spec section
+says a chain never does ("the same read populates `TickContext.priorAttempts`
+for `shouldRun` … so a chain never opens the directory itself") — `shouldRun`
+already receives the map. That restatement and the staleness filter are one
+edit. chain.ts is outside every phase lane, so it is a `chore(flume):` commit
+from an interactive session, never a pending entry.
+
+Filed separately, not blocked on this ruling: `PRIOR-ATTEMPT-ANCHOR-REFUSED` —
+all four records also predate `headSha`/`at`, and `readPriorAttempt` validates
+`mode` alone, so they enter the typed map un-anchored.

@@ -37,6 +37,39 @@
     "notes": "Closes the parked fork — the human ruled it the prior-attempt record, not a `TickContext` merge-outcome field (07e77d3). Two chains livelocked on the missing channel and each fixed it by reading the verdict log: flume's `plan.shouldRun` (4ee48ee), cascade's `build.handoff`."
   },
   {
+    "tag": "PRIOR-ATTEMPT-ANCHOR-REFUSED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "`readPriorAttempt` (:3981) validates `mode` alone and casts — refuse a record missing `headSha`/`at` the same way an unrecognized `mode` is refused, so `readAllPriorAttempts` cannot hand a non-`PriorAttempt` to `TickContext.priorAttempts`."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`readPriorAttempt` refuses a record missing its `headSha`/`at` anchor — it validates `mode` alone and casts, so an un-anchored record enters `TickContext.priorAttempts` typed",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "tests": [
+      "a record carrying a recognized `mode` but no `headSha` is absent from `TickContext.priorAttempts`, the degrade an unrecognized `mode` already earns",
+      "a record missing only `at` is refused too — the anchor is both fields",
+      "an anchored record of each union variant still reads back, so the refusal is not swallowing the map"
+    ],
+    "acceptance": "A chain comparing a `priorAttempts` record's `headSha` to the tip never reads `undefined`; the pins fail on the pre-fix tree.",
+    "notes": "Verified on disk this tick: all four records under `.flume/prior-attempts/` predate the anchor (Jul 30-Aug 17) and carry neither field, yet `readAllPriorAttempts` hands them to every `shouldRun`. `writePriorAttempt` always stamps both, so no live writer makes one — the defect is read-side tolerance against a required field. Renderer half is latent: `priorAttemptLines` emits `Recorded undefined, trunk tip undefined.` for a live key. Does not close the staleness fork (open-questions)."
+  },
+  {
     "tag": "TICKRESULT-PROVISION-FAILURES",
     "gate": {
       "kind": "open"
