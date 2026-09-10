@@ -2850,6 +2850,156 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
 });
 
 /**
+ * TICKRESULT-PROVISION-FAILURES — the reporting half of the isolation above.
+ * The dispatcher already drops a provision-failed entry from the wave; these
+ * pin where the chain learns of it: on the `TickResult` `handoff` receives,
+ * under the entry's own tag, and *not* as an `entries` record with every flag
+ * false (spec/chain.md "What a hook receives"). Nothing else on that surface
+ * names it — it is absent from every tag list and unchanged in `pendingAfter`
+ * — so before this the only way to reconcile a dropped entry was to re-derive
+ * the batch the chain never saw.
+ */
+describe("Dispatcher fanout — a dropped entry is named on TickResult.provisionFailures (TICKRESULT-PROVISION-FAILURES)", () => {
+  /** Runs one wave whose middle entry's setup hook throws; yields what `handoff` was handed. */
+  async function waveWithFailingHook(): Promise<TickResult> {
+    await writePending(fx.repo, [
+      makeEntry("FAIL-HOOK", ["src/fail-hook.ts"]),
+      makeEntry("OK-A", ["src/ok-a.ts"]),
+      makeEntry("OK-B", ["src/ok-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      setupWorktree: async (ctx) => {
+        if (ctx.entryTag === "FAIL-HOOK") {
+          throw new Error("setupWorktree boom for FAIL-HOOK");
+        }
+        return undefined;
+      },
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // `fanoutAgent` throws for an unregistered slug — FAIL-HOOK's worktree
+      // must never reach the agent, so only the two siblings are registered.
+      agent: fanoutAgent({
+        "ok-a": (cwd) =>
+          writeAndCommit(cwd, "src/ok-a.ts", "A\n", "build(OK-A): ship"),
+        "ok-b": (cwd) =>
+          writeAndCommit(cwd, "src/ok-b.ts", "B\n", "build(OK-B): ship"),
+      }),
+      log: silent,
+    });
+    await dispatcher.tick();
+
+    expect(handedToHandoff).toBeDefined();
+    return handedToHandoff!;
+  }
+
+  it("a fanout entry whose `setupWorktree` hook throws reaches `handoff` under `provisionFailures` with its tag, and is absent from `entries`", async () => {
+    const result = await waveWithFailingHook();
+
+    expect(result.provisionFailures).toEqual([
+      expect.objectContaining({
+        tag: "FAIL-HOOK",
+        signature: expect.stringContaining("setupWorktree boom"),
+        message: expect.stringContaining("setupWorktree boom"),
+      }),
+    ]);
+
+    // Non-vacuity: the wave really did report per-entry records — the
+    // absence below is FAIL-HOOK's alone, not an empty `entries`.
+    expect(result.entries).toBeDefined();
+    expect(result.entries!.length).toBe(2);
+    expect(result.entries!.map((e) => e.tag)).not.toContain("FAIL-HOOK");
+
+    // And no other field on this surface names it: it is in no tag list, and
+    // `pendingAfter` carries it exactly as an unpicked entry would look.
+    expect(result.shippedTags).not.toContain("FAIL-HOOK");
+    expect(result.revertedTags).not.toContain("FAIL-HOOK");
+    expect(result.pendingAfter.map((e) => e.tag)).toEqual(["FAIL-HOOK"]);
+  }, 30_000);
+
+  it("its siblings still run, ship, and appear in `entries`", async () => {
+    const result = await waveWithFailingHook();
+
+    expect(result.shippedTags.slice().sort()).toEqual(["OK-A", "OK-B"]);
+    const byTag = new Map((result.entries ?? []).map((e) => [e.tag, e]));
+    expect([...byTag.keys()].sort()).toEqual(["OK-A", "OK-B"]);
+    expect(byTag.get("OK-A")).toEqual({
+      tag: "OK-A",
+      committed: true,
+      shipped: true,
+      reverted: false,
+    });
+    expect(byTag.get("OK-B")).toEqual({
+      tag: "OK-B",
+      committed: true,
+      shipped: true,
+      reverted: false,
+    });
+  }, 30_000);
+
+  it("a singleton whose setupWorktree hook throws carries the same record on the TickResult handoff receives", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      setupWorktree: async () => {
+        throw new Error("setupWorktree boom for the singleton");
+      },
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // The hook throws before the agent — invoking it at all is a failure.
+      agent: {
+        name: "never-invoked",
+        async invoke() {
+          throw new Error("agent invoked after a failed setupWorktree hook");
+        },
+      },
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+
+    // A singleton has no entry tag, so the record is untagged — the fact the
+    // chain reads is that provisioning failed at all, which `committed: false`
+    // alone cannot distinguish from a tick that ran and did nothing.
+    expect(handedToHandoff?.committed).toBe(false);
+    expect(handedToHandoff?.provisionFailures).toEqual([
+      expect.objectContaining({
+        signature: expect.stringContaining("setupWorktree boom"),
+        message: expect.stringContaining("setupWorktree boom"),
+      }),
+    ]);
+    expect(outcome.provisionFailures).toEqual(
+      handedToHandoff?.provisionFailures,
+    );
+  }, 30_000);
+});
+
+/**
  * GITDELETEBRANCH-BROAD-SWALLOW — the teardown loop wraps `git.deleteBranch`
  * per §16's own removeWorktree/teardownWorktree pattern: a non-benign
  * failure (branch.ts now rethrows past the "not found" case) is logged by

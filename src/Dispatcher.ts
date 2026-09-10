@@ -1830,9 +1830,14 @@ export class Dispatcher {
       this.log.warn(
         `[flume] ${phase.name}: worktree provisioning failed (${signature}); no tick this cycle`,
       );
+      // Same record on both surfaces: the outcome envelope feeds the verdict
+      // and the quarantine accounting, `result` feeds `handoff` — a singleton
+      // whose worktree never existed is otherwise indistinguishable there
+      // from one that ran and did nothing.
+      const failures = [{ signature, message }];
       return {
-        result: noRunResult(),
-        provisionFailures: [{ signature, message }],
+        result: { ...noRunResult(), provisionFailures: failures },
+        provisionFailures: failures,
       };
     }
 
@@ -1852,9 +1857,10 @@ export class Dispatcher {
           `[flume] ${phase.name}: setupWorktree hook failed (${signature}); no tick this cycle`,
         );
         await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
+        const failures = [{ signature, message }];
         return {
-          result: noRunResult(),
-          provisionFailures: [{ signature, message }],
+          result: { ...noRunResult(), provisionFailures: failures },
+          provisionFailures: failures,
         };
       }
     }
@@ -2948,23 +2954,22 @@ export class Dispatcher {
       [...mergeReverted, ...revertRefused],
     );
 
-    // spec/chain.md "What a hook receives": one record per provisioned
-    // entry, before this wave's own shippedTags/revertedTags/noCommit/
-    // declined fold below — the bail a shipped sibling would otherwise hide
-    // from `handoff`. `perEntry` may omit an entry whose `setupWorktree` hook
-    // itself threw (never reached `runFanoutEntry`), so it's looked up by
-    // tag rather than assumed index-aligned to `provisioned`.
-    const entries: FanoutEntryOutcome[] = provisioned.map((entry) => {
-      const r = perEntry.find((p) => p.entry.tag === entry.tag);
-      return {
-        tag: entry.tag,
-        committed: r?.committed ?? false,
-        shipped: shipped.some((s) => s.tag === entry.tag),
-        reverted: mergeReverted.some((e) => e.tag === entry.tag),
-        ...(r?.declined ? { declined: true } : {}),
-        ...(r?.noCommit ? { noCommit: r.noCommit } : {}),
-      };
-    });
+    // spec/chain.md "What a hook receives": one record per entry this wave
+    // handed to its agent, before the wave's own shippedTags/revertedTags/
+    // noCommit/declined fold below — the bail a shipped sibling would
+    // otherwise hide from `handoff`. Mapped off `perEntry` itself, which is
+    // exactly that set: an entry whose `createWorktree` or `setupWorktree`
+    // failed never reached `runFanoutEntry`, and reports on
+    // `provisionFailures` under its tag instead of as a record here with
+    // every flag false.
+    const entries: FanoutEntryOutcome[] = perEntry.map((r) => ({
+      tag: r.entry.tag,
+      committed: r.committed,
+      shipped: shipped.some((s) => s.tag === r.entry.tag),
+      reverted: mergeReverted.some((e) => e.tag === r.entry.tag),
+      ...(r.declined ? { declined: true } : {}),
+      ...(r.noCommit ? { noCommit: r.noCommit } : {}),
+    }));
 
     const pendingAfterWave = await this.readPendingTolerant();
     return {
@@ -2989,6 +2994,10 @@ export class Dispatcher {
         // on that entry's own ShipContext.
         baseSha: preHead,
         ...(entries.length > 0 ? { entries } : {}),
+        // The entries this wave dropped before an agent ran are nameable
+        // from the handoff surface alone — they are absent from `entries`,
+        // untouched in `pendingAfter`, and in no tag list.
+        ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
         shippedTags: shipped.map((s) => s.tag),
         revertedTags: mergeReverted.map((e) => e.tag),
       },

@@ -7,6 +7,7 @@
  */
 
 import type { Agent } from "./Agent.js";
+import type { ProvisionFailure } from "./Dispatcher.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
@@ -108,7 +109,7 @@ export interface TickContext {
 }
 
 /**
- * Facts about one fanout entry the wave provisioned, reported on
+ * Facts about one fanout entry the wave handed to its agent, reported on
  * {@link TickResult.entries} before the wave folds them into its own
  * `shippedTags`/`revertedTags`/`noCommit`/`declined` summary. `committed`
  * reflects only this entry's own worktree tick — a commit that passed every
@@ -182,15 +183,37 @@ export interface TickResult {
    */
   baseSha?: string;
   /**
-   * One record per entry the wave provisioned, reported before the wave
-   * folds those same facts into `shippedTags`/`revertedTags`/`noCommit`/
-   * `declined` below. Absent on a singleton tick and on a wave that
-   * provisioned nothing (nothing pickable). What this adds beyond the fold:
-   * a bailed sibling's `noCommit` mode, otherwise invisible to `handoff`
-   * whenever another entry in the same wave shipped and the wave-level
-   * `noCommit` reads absent.
+   * One record per entry the wave handed to its agent, reported before the
+   * wave folds those same facts into `shippedTags`/`revertedTags`/
+   * `noCommit`/`declined` below. Absent on a singleton tick and on a wave
+   * that handed nothing to an agent (nothing pickable, or every entry's
+   * provisioning failed). What this adds beyond the fold: a bailed sibling's
+   * `noCommit` mode, otherwise invisible to `handoff` whenever another entry
+   * in the same wave shipped and the wave-level `noCommit` reads absent.
+   *
+   * An entry whose provisioning failed — at `createWorktree`, or in the
+   * chain's `setupWorktree` hook — never reaches an agent and so is on
+   * {@link TickResult.provisionFailures} under its tag instead, never a
+   * record here with every flag false (spec/chain.md "What a hook
+   * receives").
    */
   entries?: readonly FanoutEntryOutcome[];
+  /**
+   * Every provisioning failure this tick recorded, the same records the
+   * tick verdict persists: a per-entry `createWorktree` or `setupWorktree`
+   * failure carries the entry's `tag`, and a repo-level wall no single entry
+   * can be blamed for (a failed `git worktree prune`) carries none. Absent
+   * when provisioning was clean.
+   *
+   * This is the only surface naming an entry the wave dropped before its
+   * agent ran: such an entry is absent from `entries`, is unchanged in
+   * `pendingAfter`, and shows in no tag list. A `handoff` reconciling one —
+   * waking a sibling, holding the phase awake, counting a repeat — reads it
+   * here rather than diffing `pendingAfter` against the batch it never saw
+   * (spec/worktrees.md "`setupWorktree` and `teardownWorktree`"). The fact
+   * is the engine's; what to do about it stays the chain's.
+   */
+  provisionFailures?: readonly ProvisionFailure[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
   /**
