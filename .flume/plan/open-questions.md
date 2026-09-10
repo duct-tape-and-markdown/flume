@@ -35,15 +35,6 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `.flume/chain.ts`'s `fileAtCommit` needs a `chore(flume):` deletion once `API-GIT-READFILEATREF` ships
-
-`sectionOf`/`fileAtCommit` (added 5d030fd) hand-roll `git show <sha>:<path>`
-because `api.git` exposes only `showNameOnly`. The queue entry widens the API;
-the chain's copy has to leave in the adopting commit
-(`.claude/rules/engineering.md`, *A fact the engine holds is reported*), and
-`.flume/chain.ts` is outside every phase lane. Interactive session's to do,
-after the entry lands. `sectionOf` stays — the section grammar is the chain's.
-
 ## 180 doc cites in `src/` point at a spec corpus that no longer exists (PARKED)
 
 Posture sweep over the `src/Dispatcher.ts` neighborhood. Every `src/` module

@@ -8,7 +8,6 @@
  * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
@@ -110,19 +109,6 @@ function sectionOf(text: string, heading: string): string | undefined {
     }
   }
   return start === -1 ? undefined : lines.slice(start).join("\n").trimEnd();
-}
-
-/** `git show <sha>:<path>` from `repoRoot`, or `null` when the commit does not carry the path. */
-function fileAtCommit(repoRoot: string, sha: string, path: string): string | null {
-  try {
-    return execFileSync("git", ["show", `${sha}:${path}`], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    return null;
-  }
 }
 
 // ---------- chain factory (spec/chain.md: The chain is a plugin) ----------
@@ -289,11 +275,12 @@ const factory: ChainFactory = (api) => {
    * ladder's bottom rung*) — and retires the build-side "nearest equivalent
    * heading" fallback, which was a plan-side error read as build's latitude.
    *
-   * Reads the queue as of `ctx.commitSha`, the same at-sha read
-   * `pendingGate` makes (spec/pending.md, *Dispatch reads come from the
-   * tip*); declared after it, so the JSON is already known to parse when
-   * this runs. `per` is this chain's extension field, so the check is the
-   * chain's — the engine never reads it.
+   * Reads through the engine's own at-sha reader (`api.git.readFileAtRef`):
+   * a missing path is `null`, an unresolvable ref throws — never confused.
+   * The queue read is the same one `pendingGate` makes (spec/pending.md,
+   * *Dispatch reads come from the tip*); declared after it, so the JSON is
+   * already known to parse when this runs. `per` is this chain's extension
+   * field, so the check is the chain's — the engine never reads it.
    */
   const perResolvesGate: Gate = {
     name: "per cites resolve",
@@ -302,23 +289,35 @@ const factory: ChainFactory = (api) => {
       if (!ctx.commitSha) {
         return { ok: false, message: "per gate requires commitSha" };
       }
-      const queueRel = relative(ctx.flumeDir, ctx.pendingPath).split("\\").join("/");
+      const sha = ctx.commitSha;
+      const queueRel = relative(ctx.flumeDir, ctx.pendingPath);
       const raw =
         ctx.stateRootRel === undefined
           ? readFileSync(ctx.pendingPath, "utf8")
-          : fileAtCommit(ctx.repoRoot, ctx.commitSha, `${ctx.stateRootRel}/${queueRel}`.split("\\").join("/"));
+          : await api.git.readFileAtRef(ctx.repoRoot, sha, join(ctx.stateRootRel, queueRel));
       if (raw === null) {
-        return { ok: false, message: `${queueRel} missing at ${ctx.commitSha.slice(0, 7)}` };
+        return { ok: false, message: `${queueRel} missing at ${sha.slice(0, 7)}` };
       }
-      const entries = JSON.parse(raw) as { tag: string; per?: unknown }[];
+      const cites = (JSON.parse(raw) as { tag: string; per?: unknown }[]).map((e) => ({
+        tag: e.tag,
+        per: entryExtension.per.schema.parse(e.per),
+      }));
+      // One read per distinct path, concurrently — a queue cites a handful
+      // of files many times over.
+      const texts = new Map(
+        await Promise.all(
+          [...new Set(cites.map((c) => c.per.path))].map(
+            async (p) => [p, await api.git.readFileAtRef(ctx.repoRoot, sha, p)] as const,
+          ),
+        ),
+      );
       const unresolved: string[] = [];
-      for (const entry of entries) {
-        const per = entryExtension.per.schema.parse(entry.per);
-        const text = fileAtCommit(ctx.repoRoot, ctx.commitSha, per.path);
-        if (text === null) {
-          unresolved.push(`${entry.tag}: ${per.path} is not in the commit`);
+      for (const { tag, per } of cites) {
+        const text = texts.get(per.path);
+        if (text === null || text === undefined) {
+          unresolved.push(`${tag}: ${per.path} is not in the commit`);
         } else if (sectionOf(text, per.section) === undefined) {
-          unresolved.push(`${entry.tag}: no heading "${per.section}" in ${per.path}`);
+          unresolved.push(`${tag}: no heading "${per.section}" in ${per.path}`);
         }
       }
       if (unresolved.length > 0) {
@@ -328,7 +327,7 @@ const factory: ChainFactory = (api) => {
           details: unresolved.join("\n"),
         };
       }
-      return { ok: true, message: `${entries.length} per cite(s) resolve` };
+      return { ok: true, message: `${cites.length} per cite(s) resolve` };
     },
   };
 
