@@ -13760,3 +13760,225 @@ describe("GateContext.entry — the gated span's own entry (spec/chain.md 'What 
     expect(seen).toEqual({ afterCommit: null, afterMerge: null });
   });
 });
+
+describe("not-shipped PriorAttempt — the chain's `shipped: false` on the channel `TickContext.priorAttempts` already carries (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
+  /**
+   * A declined commit leaves the entry queued, so its next tick is a retry —
+   * and before this, the only trace was the verdict log, which a chain could
+   * reach only by re-deriving "was the last attempt declined" from history.
+   * The record carries what the engine already held at the ship decision (the
+   * merged sha, the commit's paths) and no reason: the predicate returned a
+   * boolean, and the engine holds no vocabulary for why.
+   */
+  it("a `shipped: false` verdict leaves a `not-shipped` prior-attempt record under the entry's key, carrying the merged sha and touched paths", async () => {
+    await writePending(fx.repo, [
+      makeEntry("DECLINED-ONCE", ["src/declined.ts"]),
+    ]);
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shipped: () => false,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "declined-once": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/declined.ts",
+            "landed\n",
+            "build(DECLINED-ONCE): land it",
+          ),
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    const trunkTip = await head(fx.repo);
+
+    // Non-vacuity: the leg under test really ran — the commit landed on trunk
+    // (no ledger commit follows a wave that shipped nothing) and the chain's
+    // predicate declined it.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      { tag: "DECLINED-ONCE", outcome: "not-shipped", headSha: trunkTip },
+    ]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "DECLINED-ONCE",
+    ]);
+
+    const record = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "DECLINED-ONCE"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(record.mode).toBe("not-shipped");
+    expect(record.mergedSha).toBe(trunkTip);
+    expect(record.touchedPaths).toEqual(["src/declined.ts"]);
+    // Anchored like every other variant (spec/loop.md "Every record is
+    // anchored"), and carrying nothing else: the exact key set is the pin on
+    // "no reason vocabulary" — a `reason`/`why` field cannot appear without
+    // failing here.
+    expect(Object.keys(record).sort()).toEqual([
+      "at",
+      "headSha",
+      "mergedSha",
+      "mode",
+      "touchedPaths",
+    ]);
+    expect(record.headSha).toBe(trunkTip);
+  }, 20_000);
+
+  it("the next tick's `TickContext.priorAttempts` carries it, and a later clean ship clears the slot", async () => {
+    await writePending(fx.repo, [
+      makeEntry("DECLINED-THEN-SHIPS", ["src/twice.ts"]),
+    ]);
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    baton.wake("build");
+
+    let decline = true;
+    const seen: Array<ReadonlyMap<string, PriorAttempt> | undefined> = [];
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: (ctx) => {
+        seen.push(ctx.priorAttempts);
+        return {};
+      },
+      shipped: () => !decline,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "declines-then-ships",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        await writeAndCommit(
+          inv.cwd,
+          "src/twice.ts",
+          `attempt-${prompts.length}\n`,
+          "build(DECLINED-THEN-SHIPS): land it",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick(); // attempt 1 → landed, declined
+    const declinedSha = await head(fx.repo);
+    baton.wake("build"); // re-wake (handoff () => [] slept it)
+    decline = false;
+    const second = await dispatcher.tick(); // attempt 2 → ships clean
+
+    expect(prompts).toHaveLength(2);
+    // No false signal on the first attempt — neither on the hook's map nor
+    // in the rendered prompt.
+    expect(seen[0]?.has(slugify("DECLINED-THEN-SHIPS"))).toBe(false);
+    expect(prompts[0]).not.toContain("<prior-attempt>");
+
+    // The retry reads the fact off `TickContext.priorAttempts` — no verdict
+    // log, no directory walk of its own.
+    const carried = seen[1]?.get(slugify("DECLINED-THEN-SHIPS"));
+    expect(carried).toEqual({
+      mode: "not-shipped",
+      mergedSha: declinedSha,
+      touchedPaths: ["src/twice.ts"],
+      headSha: declinedSha,
+      at: expect.any(String),
+    });
+    // …and the same record renders into the retry's prompt.
+    expect(prompts[1]).toContain("<prior-attempt>");
+    expect(prompts[1]).toContain(`Landed commit: ${declinedSha}`);
+    expect(prompts[1]).toContain("src/twice.ts");
+
+    // A clean ship clears the slot by the existing shipped-entry path.
+    expect(second.result?.shippedTags).toEqual(["DECLINED-THEN-SHIPS"]);
+    expect(
+      existsSync(priorAttemptPath(flumeDir, "DECLINED-THEN-SHIPS")),
+    ).toBe(false);
+  }, 20_000);
+
+  /**
+   * Agreement pin (engineering.md "A seam gate reads what the real writer
+   * wrote"): the verdict handed to `superviseLoop` is the one a real declined
+   * wave produced, not a fixture. A chain declining a landed commit is that
+   * chain's verdict, never a failure of the tick that produced it — the same
+   * reason `voluntary-bail` stays out of the errored derivation.
+   */
+  it("a run whose only no-commit fact is `not-shipped` is not derived as errored", async () => {
+    await writePending(fx.repo, [
+      makeEntry("DECLINED-RUN", ["src/declined-run.ts"]),
+    ]);
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    baton.wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shipped: () => false,
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "declined-run": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/declined-run.ts",
+            "landed\n",
+            "build(DECLINED-RUN): land it",
+          ),
+      }),
+      log: silent,
+    });
+
+    const verdict = (await dispatcher.tick()).verdict;
+    expect(verdict).toBeDefined();
+    // Non-vacuity: this run's only queue-unchanged fact is the decline —
+    // nothing shipped, no no-commit mode, no provision/merge/gate failure for
+    // the derivation to key off instead.
+    expect(verdict!.shippedTags).toEqual([]);
+    expect(verdict!.committed).toBe(false);
+    expect(verdict!.mergeOutcomes.map((m) => m.outcome)).toEqual([
+      "not-shipped",
+    ]);
+    expect(verdict!.noCommit).toBeUndefined();
+    expect(verdict!.provisionFailures ?? []).toEqual([]);
+    expect(verdict!.mergeFailures ?? []).toEqual([]);
+
+    baton.wake("build");
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick: async () => {
+        await writeTickVerdict(flumeDir, verdict!);
+        baton.sleep("build");
+        return { exitCode: 0 };
+      },
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(1);
+    expect(res.erroredTicks).toEqual([]);
+    expect(loopExitCode(res)).toBe(0);
+  }, 20_000);
+});

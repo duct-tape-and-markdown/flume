@@ -25,6 +25,7 @@ import type {
   PlatformPreemptAttempt,
   RenderRefusedAttempt,
   TipMovedAttempt,
+  NotShippedAttempt,
   PriorAttempt,
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
@@ -624,12 +625,21 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     at: AT,
   };
 
+  const notShipped: NotShippedAttempt = {
+    mode: "not-shipped",
+    mergedSha: "d".repeat(40),
+    touchedPaths: ["src/one.ts", "src/two.ts"],
+    headSha: HEAD_SHA,
+    at: AT,
+  };
+
   const variants: Array<[string, PriorAttempt]> = [
     ["gate-revert", gateRevert],
     ["voluntary-bail", voluntaryBail],
     ["platform-preempt", platformPreempt],
     ["render-refused", renderRefused],
     ["tip-moved", tipMoved],
+    ["not-shipped", notShipped],
   ];
 
   it.each(variants)(
@@ -650,6 +660,18 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       expect(bodyIdx).toBeGreaterThan(blockEnd);
     },
   );
+
+  it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
+    const whole = await renderWithPrior(notShipped);
+    expect(whole).toContain(`Landed commit: ${notShipped.mergedSha}`);
+    expect(whole).toContain("src/one.ts");
+    expect(whole).toContain("src/two.ts");
+    // No elision claimed when the list is whole.
+    expect(whole).not.toContain("more path(s)");
+
+    const bounded = await renderWithPrior({ ...notShipped, omittedPaths: 7 });
+    expect(bounded).toContain("…and 7 more path(s)");
+  });
 
   it("absent priorAttempt renders no block and no anchor line at all", async () => {
     const promptFile = join(dir, "prompt.md");

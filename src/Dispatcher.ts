@@ -87,6 +87,7 @@ import type {
   PlatformPreemptAttempt,
   RenderRefusedAttempt,
   TipMovedAttempt,
+  NotShippedAttempt,
   NoCommitMode,
 } from "./Prompt.js";
 import * as git from "./git.js";
@@ -105,7 +106,8 @@ type PriorAttemptDraft =
   | Omit<VoluntaryBailAttempt, "headSha" | "at">
   | Omit<PlatformPreemptAttempt, "headSha" | "at">
   | Omit<RenderRefusedAttempt, "headSha" | "at">
-  | Omit<TipMovedAttempt, "headSha" | "at">;
+  | Omit<TipMovedAttempt, "headSha" | "at">
+  | Omit<NotShippedAttempt, "headSha" | "at">;
 
 /**
  * Prior-attempt records live beside the baton, under `priorAttemptsDir`
@@ -646,6 +648,12 @@ const MAX_PRIOR_DIFFSTAT = 4 * 1024;
  * name the wall, not the transcript.
  */
 const MAX_PRIOR_NOCOMMIT = 4 * 1024;
+/**
+ * Bound on the persisted not-shipped record's path list. A footprint, like a
+ * diffstat, names what landed — a few hundred lines is already past what the
+ * retry reads, and the record renders straight into a prompt.
+ */
+const MAX_PRIOR_TOUCHED_PATHS = 200;
 
 /**
  * How an agent invocation ended. A clean exit with no commit is a
@@ -2756,6 +2764,18 @@ export class Dispatcher {
         this.log.warn(
           `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped returned false — commit stays on trunk, entry stays pending`,
         );
+        // spec/loop.md "Prior-outcome feedback to the retrying tick": the
+        // entry stays queued, so its next tick is a retry and gets the same
+        // channel every other queue-unchanged outcome gets. Without it the
+        // fact lives only in the verdict log, which a chain can only reach
+        // by re-deriving "was the last attempt declined" from history —
+        // exactly the rebuild `TickContext.priorAttempts` exists to spare
+        // it. Cleared by the existing shipped-entry sweep below the moment
+        // a later attempt ships clean.
+        await this.writePriorAttempt(
+          this.priorAttemptKey(phase, r.entry),
+          buildNotShipped(mergedSha, commitTouchedPaths),
+        );
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "not-shipped",
@@ -3977,7 +3997,7 @@ export class Dispatcher {
   /**
    * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
    * unrecognized `mode` discriminant → treated as absent: the renderer is
-   * exhaustive over the five known modes and must never be fed an unknown
+   * exhaustive over the known modes and must never be fed an unknown
    * shape (and a stale slot should never become a false signal).
    */
   private async readPriorAttempt(
@@ -3995,7 +4015,8 @@ export class Dispatcher {
           rec.mode === "voluntary-bail" ||
           rec.mode === "platform-preempt" ||
           rec.mode === "render-refused" ||
-          rec.mode === "tip-moved")
+          rec.mode === "tip-moved" ||
+          rec.mode === "not-shipped")
       ) {
         return rec as PriorAttempt;
       }
@@ -4038,7 +4059,7 @@ export class Dispatcher {
 
   /**
    * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") onto
-   * whatever mode-specific fields the caller built, so every one of the five
+   * whatever mode-specific fields the caller built, so every one of the
    * builders below stays ignorant of the anchor rather than each re-reading
    * the trunk tip itself. `this.opts.repoRoot`, never `key`'s worktree — the
    * anchor is the *trunk* tip regardless of which worktree produced the
@@ -4783,7 +4804,14 @@ export async function superviseLoop(
     // since it signals something else is writing to this ref), or a
     // provisioning or merge (cherry-pick) failure that left nothing shipped
     // — never a `voluntary-bail` (the agent correctly declining and naming
-    // the constraint is not evidence anything went wrong).
+    // the constraint is not evidence anything went wrong), and never a
+    // `not-shipped` merge outcome, for the same reason one rung up: the
+    // chain's `shipped` predicate declining a landed commit is that chain's
+    // own verdict, not a failure of the tick that produced it (spec/loop.md
+    // "The tick verdict — one facts artifact", *No interpretation fields*).
+    // The formula is an allowlist for exactly this — a fact absent from it
+    // is excluded by construction, and each of the two above stays named
+    // here so that exclusion reads as decided rather than overlooked.
     const verdict = await readTickVerdict(flumeDir);
     let countedAsErrored = false;
     if (verdict) {
@@ -5154,6 +5182,32 @@ function buildTipMoved(
   observedTip: string,
 ): Omit<TipMovedAttempt, "headSha" | "at"> {
   return { mode: "tip-moved", expectedTip, observedTip };
+}
+
+/**
+ * Build the not-shipped record from the facts the engine already holds at the
+ * ship decision — the cherry-picked sha and the paths that commit touched,
+ * the same two the chain's own predicate was handed. Nothing about *why* the
+ * chain declined: the engine has no such vocabulary (`engine-boundary.md`,
+ * *Told, not inferred*), and the predicate returned a boolean, not a reason.
+ *
+ * Bounded like every other variant (spec/loop.md "Bounded by construction"):
+ * a wide commit's footprint is elided to {@link MAX_PRIOR_TOUCHED_PATHS}
+ * entries with the omitted count stated, never silently cut — a truncated
+ * list passing for a whole footprint is the false signal the bound must not
+ * introduce.
+ */
+function buildNotShipped(
+  mergedSha: string,
+  touchedPaths: readonly string[],
+): Omit<NotShippedAttempt, "headSha" | "at"> {
+  const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
+  return {
+    mode: "not-shipped",
+    mergedSha,
+    touchedPaths: touchedPaths.slice(0, MAX_PRIOR_TOUCHED_PATHS),
+    ...(omitted > 0 ? { omittedPaths: omitted } : {}),
+  };
 }
 
 /**

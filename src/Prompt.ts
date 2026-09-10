@@ -21,10 +21,12 @@
  * (committed then a gate reverted it), `voluntary-bail` (exited cleanly
  * refusing a constraint), `platform-preempt` (the process failed for
  * non-work reasons — not a defect in the work), `render-refused` (the prompt
- * itself never resolved — the agent was never invoked); plus `tip-moved`
- * (RELEASE-v0.11 §5), a sibling fact rather than a fifth {@link NoCommitMode}
- * — the tick's commit was discarded because the ref moved out from under it,
- * never a defect the four modes classify. Each renders distinctly so the
+ * itself never resolved — the agent was never invoked); plus two sibling
+ * facts rather than further {@link NoCommitMode} members — `tip-moved`
+ * (RELEASE-v0.11 §5), the tick's commit discarded because the ref moved out
+ * from under it, and `not-shipped`, a commit that landed and passed every
+ * gate which the chain's own `shipped` predicate declined. Neither is a
+ * defect the four modes classify. Each renders distinctly so the
  * retry knows what actually happened. Like `<harness>` it is
  * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
  * `promptArgs`. Absent on a first attempt; cleared once an attempt ships.
@@ -167,10 +169,44 @@ export interface TipMovedAttempt {
 }
 
 /**
- * A prior no-commit attempt for one entry (fanout, keyed by tag) or phase
- * (singleton, keyed by phase name) — a mode-tagged union, exactly one
- * variant. The dispatcher persists this to disk when a tick yields no usable
- * commit and reads it back on the next tick: the carry is cross-process by
+ * The commit landed on trunk and passed every gate, and the chain's own
+ * `shipped` predicate then returned `false` (`spec/pending.md`, *Ship
+ * detection trusts the agent's own account*): the commit stays, the entry
+ * stays pending. A sibling fact beside the four {@link NoCommitMode}
+ * variants, exactly like {@link TipMovedAttempt} — a tick that committed is
+ * not a no-commit tick at all, and the cause here is the chain's verdict
+ * rather than any failure the four modes classify.
+ *
+ * **No reason vocabulary.** The engine records that the chain said no, never
+ * why: a park, a partial, a deliberate hand-off are one chain's words for
+ * one chain's workflow (`engine-boundary.md`, *Told, not inferred*). The
+ * facts carried are the ones the engine itself holds — the merged sha and
+ * what that commit touched.
+ */
+export interface NotShippedAttempt {
+  mode: "not-shipped";
+  /** The cherry-picked commit on trunk the predicate declined — still reachable, so the next tick can read it. */
+  mergedSha: string;
+  /**
+   * Paths that commit touched, bounded (see {@link omittedPaths}) — the same
+   * list the predicate itself was handed on `ShipContext.touchedPaths`.
+   */
+  touchedPaths: string[];
+  /** How many further paths the commit touched beyond {@link touchedPaths}'s bound. Absent when the list is whole. */
+  omittedPaths?: number;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
+}
+
+/**
+ * A prior attempt that left the queue unchanged, for one entry (fanout,
+ * keyed by tag) or phase (singleton, keyed by phase name) — a mode-tagged
+ * union, exactly one variant. The dispatcher persists this to disk when a
+ * tick yields nothing the queue could consume — no usable commit, or (the
+ * {@link NotShippedAttempt} leg) a commit the chain declined to count as
+ * shipped — and reads it back on the next tick: the carry is cross-process by
  * construction (each tick is a fresh process; there is no in-memory
  * handoff). Bounded by construction: a digest, not a transcript.
  */
@@ -179,7 +215,8 @@ export type PriorAttempt =
   | VoluntaryBailAttempt
   | PlatformPreemptAttempt
   | RenderRefusedAttempt
-  | TipMovedAttempt;
+  | TipMovedAttempt
+  | NotShippedAttempt;
 
 /**
  * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
@@ -479,11 +516,12 @@ function indentBlock(s: string): string {
  * `prependHarnessBlock`: structural, not authored — there is no `{{token}}`
  * for it in the prompt file. Absent (identity transform) on a first attempt,
  * so the slot carries no false signal. When present it tells the retrying
- * tick exactly which of the three §6 no-commit modes the prior attempt hit,
+ * tick exactly which {@link PriorAttempt} variant the prior attempt hit,
  * rendered distinctly per variant so the agent reads what actually happened
- * — a reverted commit, a refused constraint, or a platform cut-off that is
- * explicitly NOT its predecessor's fault — rather than blindly reconstructing
- * a wall that may not exist.
+ * — a reverted commit, a refused constraint, a platform cut-off that is
+ * explicitly NOT its predecessor's fault, or a commit that landed and the
+ * chain declined — rather than blindly reconstructing a wall that may not
+ * exist.
  */
 function prependPriorAttemptBlock(
   prior: PriorAttempt | undefined,
@@ -565,5 +603,32 @@ function modeLines(prior: PriorAttempt): string[] {
         `Tip expected at tick start: ${prior.expectedTip}`,
         `Tip actually found: ${prior.observedTip}`,
       ];
+    case "not-shipped":
+      return [
+        `A previous attempt at this work COMMITTED and passed every gate,`,
+        `and this chain's own \`shipped\` predicate then declined it: the`,
+        `commit is on trunk, the work is still queued. The harness records`,
+        `that the chain said no, never why — read the landed change below`,
+        `and the chain's own rules for what "shipped" means here before`,
+        `redoing anything. The commit is still reachable; do not reproduce`,
+        `what it already landed.`,
+        `Landed commit: ${prior.mergedSha}`,
+        `Paths it touched:`,
+        indentBlock(touchedPathsBlock(prior)),
+      ];
   }
+}
+
+/**
+ * The `not-shipped` record's path list as block text — one path per line,
+ * with the writer's own elision count stated rather than the truncated list
+ * passing for the whole footprint.
+ */
+function touchedPathsBlock(prior: NotShippedAttempt): string {
+  const lines =
+    prior.touchedPaths.length > 0 ? [...prior.touchedPaths] : ["(none)"];
+  if (prior.omittedPaths !== undefined && prior.omittedPaths > 0) {
+    lines.push(`…and ${prior.omittedPaths} more path(s)`);
+  }
+  return lines.join("\n");
 }

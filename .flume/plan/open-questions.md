@@ -245,3 +245,22 @@ from an interactive session, never a pending entry.
 Filed separately, not blocked on this ruling: `PRIOR-ATTEMPT-ANCHOR-REFUSED` —
 all four records also predate `headSha`/`at`, and `readPriorAttempt` validates
 `mode` alone, so they enter the typed map un-anchored.
+
+## `.flume/chain.ts`'s park detection now restates a fact the engine reports (adoption, not a question)
+
+`NOT-SHIPPED-PRIOR-ATTEMPT` shipped: a `shipped: false` verdict now writes a
+`not-shipped` prior-attempt record under the entry's key, so
+`TickContext.priorAttempts` carries the park. `reconcileDue`
+(`.flume/chain.ts:509-522`) still reads it off the verdict log via
+`readLatestVerdictsSync(...)[BUILD].mergeOutcomes`, and its doc comment now
+states something false — "writes no prior-attempt record and is visible only
+on the verdict". Both halves are `engineering.md` *A fact the engine holds is
+reported* residue against the chain, deleted in the adopting commit.
+
+The adoption is one edit with the rider already parked above (the
+`anyVoluntaryBailRecord` `readdirSync`): both legs of `reconcileDue` collapse
+into one scan of the `priorAttempts` map `shouldRun` already receives — `mode
+=== "voluntary-bail" || mode === "not-shipped"` — dropping the directory walk
+and the verdict-log read together. `.flume/chain.ts` is outside every phase
+lane, so it is a `chore(flume):` commit from an interactive session, never a
+pending entry.
