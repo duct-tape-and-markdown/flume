@@ -488,6 +488,15 @@ confines side effects to disk inside `cwd`.
   input as the tick read it. Without it a gate reading trunk claims reverts
   a tick for a note that post-dates it, and the chain rebuilds the base from
   a worktree path convention the engine never promised.
+- **`entry`** — the pending entry the gated span was provisioned for, as the
+  wave selected it; set at both stages under fanout, absent on a singleton
+  tick, which carries no entry. It is how a chain gate holds a commit to the
+  entry's *own* contract — the behaviors its `tests[]` names, an acceptance
+  its extension declares — rather than to the phase's uniform bar alone. The
+  engine reads none of those fields (`.flume/PROTOCOL.md`, *What an entry
+  carries*); a gate the chain declares may, and the dispatcher already holds
+  the entry for the scoped fence union, so it is reported rather than
+  re-read from the queue.
 - **`log`** is the harness-side output channel; a gate does not write to stdout
   itself.
 
