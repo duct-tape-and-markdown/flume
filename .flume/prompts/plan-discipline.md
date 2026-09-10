@@ -14,7 +14,7 @@ Not injected into any tick. Each slice prompt points here; read it before writin
 
 Where build may write is `phase.writablePaths` in the chain (`spec/pending.md`, *`files` is a prediction the scheduler consumes*). Declare exactly the paths the work will touch, tests included — as exact paths, never globs: the partitioner intersects literal strings, so a declared `tests/**` collides only with another literal `tests/**` and hides the real collision. Over-declaring costs wave width (measured over 171 queues at width 4: mean first batch 1.99 as declared, 3.17 with one over-declared path removed); under-declaring reverts the commit on the scoped fence. Accuracy satisfies both. Verify every path against build's `writablePaths`; an off-fence path is an open question proposing a chain amendment, never an entry.
 
-**Tests ride the entry.** One `tests[]` line per behavior the work must pin, stating the behavior only; the file it lands in is build's call and belongs in `files`. Never a follow-up `-TESTS` entry.
+**Tests ride the entry, and the gate reads them.** One `tests[]` line per behavior the work must pin, written as the title of the test that will pin it: present tense, one decidable behavior, no trailing period — build titles a passing test with the line verbatim and the `vitest` gate proves each line has one. A line no test could be titled with ("error handling is better") is not a behavior. The file it lands in is build's call and belongs in `files`. Never a follow-up `-TESTS` entry.
 
 ## Artifacts are the present; git is the log
 

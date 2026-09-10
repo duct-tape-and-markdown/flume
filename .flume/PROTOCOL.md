@@ -25,7 +25,8 @@ Three consumers, and only three:
   `summary` (what), `per` (why, and on whose authority — the repo shows what the
   code *is*, never what it should *become*), `acceptance` (what done means,
   decidably), `tests[]` (acceptance decomposed, one line per behavior the work
-  must pin — the behavior only; the file it lands in is build's call).
+  must pin, written as a test title — build titles a passing test with the
+  line and the `vitest` gate proves it; the file it lands in is build's call).
 - **The next plan tick** reads `observedFiles` — dispatcher-written, the real
   footprint of a reverted attempt.
 
@@ -58,7 +59,7 @@ No schema holds these; they are the plan tick's actual work.
 
 ## Plan slices
 
-Plan is four singleton phases, one job each — `plan-inbox`, `plan-audit`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`; the inbox is its own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. Pickable work preempts audit, derive, and sweep, never the inbox or a refusal. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
+Plan is four singleton phases, one job each — `plan-inbox`, `plan-audit`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Audited through:`, `Spec derived through:`, `Posture swept through:`; the inbox is its own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. The order is dependency order — verify the last outputs, then update intent, then build against both — so only the sweep yields to pickable work. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
 
 ## Disk vs git log
 

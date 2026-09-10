@@ -42,6 +42,7 @@ import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
+import { judgeVitestReport, parseVitestReport } from "../.flume/vitestJudge.ts";
 
 /**
  * The roots a real tick resolves for this repo's own chain: `.flume` is both
@@ -210,12 +211,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
     });
 
-    it("audit: live on a code commit past the cursor, not on a plan-artifact-only commit, and yields to pickable work", async () => {
+    it("audit: live on a code commit past the cursor, not on a plan-artifact-only commit, and ahead of pickable work", async () => {
       await commit(".flume/plan/pending.json", "[]\n", "plan: rewrite");
       expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(false);
       await commit("src/a.ts", "export const a = 2;\n", "build: change a");
       expect(phases[AUDIT]!.shouldRun!(ctx())).toBe(true);
-      expect(phases[AUDIT]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
+      expect(phases[AUDIT]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(true);
     });
 
     it("audit: a standing voluntary-bail record or a park in the last build verdict wakes it even over pickable work", async () => {
@@ -234,12 +235,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[AUDIT]!.shouldRun!(pickable)).toBe(true);
     });
 
-    it("derive: live on a spec commit past the cursor, not on a code commit, and yields to pickable work", async () => {
+    it("derive: live on a spec commit past the cursor, not on a code commit, and ahead of pickable work — a queued entry citing a rewritten section is stale input", async () => {
       await commit("src/a.ts", "export const a = 2;\n", "build: change a");
       expect(phases[DERIVE]!.shouldRun!(ctx())).toBe(false);
       await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
       expect(phases[DERIVE]!.shouldRun!(ctx())).toBe(true);
-      expect(phases[DERIVE]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
+      expect(phases[DERIVE]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(true);
     });
 
     it("sweep: live on a domain commit, a spec deletion, or an open rotation; not on a docs-only commit; yields to pickable work", async () => {
@@ -277,6 +278,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
     it("the continuation marker is retired: 'Plan continues: yes' in state.md wakes nothing", async () => {
       await writeState({}, "Plan continues: yes — more to do\n");
       expect(phases[SWEEP]!.handoff(result({ phaseName: SWEEP, committed: true }))).toEqual([]);
+    });
+
+    it("the sweep alone yields to pickable work", async () => {
+      await writeState({}, "Rotation open (phrase delta). Covered: `src/a.ts`.\n");
+      expect(phases[SWEEP]!.shouldRun!(ctx())).toBe(true);
+      expect(phases[SWEEP]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
     });
 
     it("a refusal in the build wave wakes audit ahead of a still-pickable queue; a clean wave follows the ladder", async () => {
@@ -552,5 +559,67 @@ describe("buildFlumeApi().git.readFileAtRef", () => {
     } finally {
       await rm(repo, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Acceptance-driven backpressure (`.flume/vitestJudge.ts`): the real
+ * reporter's JSON, produced by running vitest itself, through the real judge
+ * — never a hand-authored report.
+ */
+describe("judgeVitestReport — the vitest gate's two claims over the real reporter's output", () => {
+  let details: string;
+  let title: string;
+
+  beforeAll(() => {
+    const repoRoot = REPO_PATHS.repoRoot;
+    details = execFileSync(
+      process.execPath,
+      [join(repoRoot, "node_modules", "vitest", "vitest.mjs"), "run", "tests/paths.test.ts", "--reporter=json"],
+      { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 << 20 },
+    );
+    title = parseVitestReport(details)!.testResults[0]!.assertionResults[0]!.fullName;
+    expect(title.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("green suite, every named behavior has a passing test → ok, and says how many", () => {
+    const r = judgeVitestReport(details, true, [title, title.slice(0, 20)], REPO_PATHS.repoRoot);
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain("2 named behavior(s)");
+  });
+
+  it("green suite, a named behavior no test is titled with → refused, naming the line", () => {
+    const r = judgeVitestReport(details, true, [title, "a behavior nobody pinned"], REPO_PATHS.repoRoot);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("1 of 2 named behavior(s)");
+    expect(r.details).toContain("- a behavior nobody pinned");
+    expect(r.details).not.toContain(`- ${title}`);
+  });
+
+  it("nothing named → ok and says so (vacuous by design, spelled)", () => {
+    const r = judgeVitestReport(details, true, [], REPO_PATHS.repoRoot);
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain("no behavior named");
+  });
+
+  it("no report in the output → refused either way, never green over nothing", () => {
+    expect(judgeVitestReport("not json", true, [], REPO_PATHS.repoRoot).ok).toBe(false);
+    expect(judgeVitestReport(undefined, false, [], REPO_PATHS.repoRoot).ok).toBe(false);
+  });
+
+  it("a failing report → refused with the failing files attributed", () => {
+    const report = parseVitestReport(details)!;
+    const file = report.testResults[0]!;
+    const broken = {
+      ...report,
+      success: false,
+      numFailedTests: 1,
+      testResults: [{ ...file, status: "failed", assertionResults: [{ ...file.assertionResults[0]!, status: "failed", failureMessages: ["boom\nstack"] }] }],
+    };
+    const r = judgeVitestReport(JSON.stringify(broken), false, [title], REPO_PATHS.repoRoot);
+    expect(r.ok).toBe(false);
+    expect(r.failingFiles).toEqual(["tests/paths.test.ts"]);
+    expect(r.details).toContain("boom");
+    expect(r.details).not.toContain("stack");
   });
 });

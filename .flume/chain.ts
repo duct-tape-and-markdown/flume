@@ -76,6 +76,7 @@ import type { FlumeApi } from "../src/flumeApi.ts";
 
 import { z } from "zod";
 import type { EntryExtension } from "../src/PendingSchema.ts";
+import { judgeVitestReport } from "./vitestJudge.ts";
 
 
 
@@ -166,7 +167,7 @@ const factory: ChainFactory = (api) => {
      */
     tests: {
       schema: z.array(z.string().min(1)).default([]),
-      hint: `[ "behavior this pins" ] — one per behavior; build picks the file`,
+      hint: `[ "behavior this pins" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim and the vitest gate proves it; the file is build's call`,
     },
     acceptance: {
       schema: z.string().min(1),
@@ -440,12 +441,14 @@ const factory: ChainFactory = (api) => {
    * invocation*), one level down. The continuation marker this replaces was
    * the model's claim about the same fact.
    *
-   * Ladder order is priority: an operator's inbox note first; then
-   * reconciling what landed (audit) before deriving new intent on top of it
-   * (derive); the posture sweep last, insurance behind product. Pickable
-   * work preempts audit, derive, and sweep — their windows are deferred,
-   * never lost — and never preempts the inbox or a build refusal that only
-   * plan can resolve.
+   * Ladder order is dependency order: an operator's inbox note first, since
+   * it can invalidate anything below; audit next, so build's last outputs
+   * are verified before anything consumes them; derive next, so intent is
+   * current before work is planned against it — a queued entry citing a
+   * section the spec just rewrote is stale input, and building it ships
+   * wrong code; build, consuming a queue that is both verified and current;
+   * the posture sweep last, insurance behind product, and the one slice that
+   * yields to pickable work (`posture-sweep.md`, *The sweep yields*).
    */
   const { repoRoot } = api.paths;
   const BUILD = "build";
@@ -537,8 +540,7 @@ const factory: ChainFactory = (api) => {
     {
       name: AUDIT,
       description: "Cross-check commits past `Audited through:` against the sections they cite; reconcile build's bails and parks.",
-      live: ({ flumeDir, pickable }) => {
-        if (pickable) return false;
+      live: ({ flumeDir }) => {
         const stamp = stampOf(flumeDir, "Audited through:");
         // Plan-artifact-only commits are not auditable work; they are passed
         // by the cursor when a real window is processed.
@@ -548,8 +550,7 @@ const factory: ChainFactory = (api) => {
     {
       name: DERIVE,
       description: "Derive spec/ changes past `Spec derived through:` into pending entries.",
-      live: ({ flumeDir, pickable }) => {
-        if (pickable) return false;
+      live: ({ flumeDir }) => {
         const stamp = stampOf(flumeDir, "Spec derived through:");
         return stamp === undefined || commitsPast(stamp, ["spec/"]);
       },
@@ -628,36 +629,45 @@ const factory: ChainFactory = (api) => {
   const planSlices = SLICES.map(slicePhase);
 
   /**
-   * The full suite, scoped to commits that touch code. A build commit that
-   * touches only plan artifacts (a park written to open-questions.md) has
-   * nothing for the suite to judge, and running it anyway exposes that
-   * commit to whatever the host is doing at the time — a sibling loop's
-   * cargo builds slowed vitest's transform 7× and two 8s-timeout tests
-   * reverted a park (2026-09-07). Declared skip, never inferred: the paths
-   * are the commit's own touched list from the dispatcher, and the skip is
-   * reported as its own message so a verdict reader can tell it from green.
-   * An empty touched list (unknown) runs the suite.
+   * The full suite with a JSON report, judged twice: the suite is green, and
+   * every behavior the entry's `tests[]` names has a passing test whose full
+   * name carries the line (`.flume/vitestJudge.ts`). The second claim is
+   * acceptance-driven backpressure — plan names the behavior, build titles
+   * the test, the gate proves the name has a test — so "was it tested" is a
+   * gate's answer, not the audit's.
+   *
+   * Scoped to commits that touch code or name a behavior. A commit touching
+   * only plan artifacts (a park) with nothing named has nothing to judge, and
+   * running the suite anyway exposes it to whatever the host is doing — a
+   * sibling loop's cargo builds slowed vitest's transform 7× and two
+   * 8s-timeout tests reverted a park (2026-09-07). Declared skip, never
+   * inferred: the paths are the commit's own touched list, and the skip is
+   * its own message so a verdict reader tells it from green. An empty
+   * touched list (unknown) runs the suite.
    */
   const vitestSuite = shellGate({
     name: "vitest",
     when: "afterMerge",
     cmd: "pnpm",
-    args: ["test", "--run"],
+    args: ["vitest", "run", "--reporter=json"],
     failHint: "Tests failed — wave reverted",
   });
   const codePath =
-    /^(src|tests|examples|bin)\/|^\.flume\/chain\.ts$|^(package\.json|pnpm-lock\.yaml|tsconfig[^/]*\.json|vitest\.config\.ts)$/;
+    /^(src|tests|examples|bin)\/|^\.flume\/(chain|vitestJudge)\.ts$|^(package\.json|pnpm-lock\.yaml|tsconfig[^/]*\.json|vitest\.config\.ts)$/;
   const vitestOnCode: typeof vitestSuite = {
     ...vitestSuite,
     run: async (ctx) => {
+      // `tests[]` is this chain's extension field — narrow through its schema.
+      const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
       const touched = ctx.touchedPaths ?? [];
-      if (touched.length > 0 && !touched.some((p) => codePath.test(p))) {
+      if (named.length === 0 && touched.length > 0 && !touched.some((p) => codePath.test(p))) {
         return {
           ok: true,
-          message: `vitest not run — no code path among ${touched.length} touched path(s)`,
+          message: `vitest not run — no code path among ${touched.length} touched path(s), no behavior named`,
         };
       }
-      return vitestSuite.run(ctx);
+      const r = await vitestSuite.run(ctx);
+      return judgeVitestReport(r.details, r.ok, named, ctx.repoRoot);
     },
   };
 
