@@ -35,6 +35,88 @@ Each entry is a markdown subsection:
 
 <!-- entries below this line; newest first -->
 
+## 2026-09-10 — the tick's read set is prose; the write set is a fence (human via claude-desktop)
+
+1. **The posture is enforced on one side only.** "Harness enforces, prompts
+   state" holds for writes: `writablePaths` is typed, rendered into the
+   `<harness>` block, gated, reverted. What a tick *reads* is assembled by
+   the prompt template through placeholders and inline exec, and the engine
+   holds no declaration and no record of it. Writes are a contract; reads
+   are a gesture. The chain-side proof that the move is possible is already
+   in temper: `temper/.flume/chain.ts:118` (`scopedDelta`) says the build
+   prompt "used to instruct the agent to derive this itself; the render owns
+   it now" — rendered "as data instead of an errand". That was done once.
+   The prompts are still mostly errands.
+
+2. **The sharpest case is plan's dispatch.** `temper/.flume/prompts/plan.md`
+   says "take the FIRST live input in the order below" — four jobs whose
+   liveness is static (inbox non-empty; `specs/` commits past the cursor;
+   `src/` commits past the audit cursors; posture window non-empty). The
+   chain already computes two of them (`chain.ts:194-208`, `inboxNotes`,
+   `specsPastCursor`) — inside the marker-honesty gate, to grade the model's
+   `Plan continues` claim after the tick. The harness knows which job is
+   live, asks the model to derive it from a digest, then checks the answer.
+   Every tick then receives every job's material (`<spec-map>`,
+   `<cargo-check>`, `<sizing>`, `<ripple>`, `<gate-reverts>`, `<src-tree>`)
+   plus a paragraph on what to ignore, and the prompt's own words concede the
+   context is a pointer: "the state above is an orientation digest, not the
+   material — the prompt points, you read."
+
+3. **Remaining errands, both prompts** (each is judgment standing in for a
+   lookup the chain can make from `TickContext` + git):
+   - build: "Find the section named `{{PER_SECTION}}` (or the nearest
+     equivalent heading)" over the whole `cat` of the spec → extract the
+     section; "nearest equivalent" is a plan-side lie a pending gate should
+     refuse (`per.section` must resolve to a heading in `per.path`).
+   - build: `<src-tree>` (whole tree, model picks relevance) → deliver
+     `files[]` and `tests[]` contents plus the ripple set `ripple.mjs`
+     already computes for plan.
+   - build: "if green needs a file `files[]` didn't list — almost always an
+     existing test — file a capture" → ripple over `tests/` delivered as
+     likely collateral; the fence revert already records the actual miss.
+   - plan: "a note stamped `observed at <sha>` narrows the re-verify to
+     `git log <sha>..HEAD`" → `scopedDelta` keyed on the stamp.
+   - plan: "read each delta commit's diff (`git show <sha> -- specs/`)" →
+     render the diffs; the prompt names the exact command.
+   - both: incident dates as enforcement ("eleven of nineteen build attempts
+     on 2026-09-06", "three times on 2026-09-06") — rules the harness can
+     deliver as data; temper's own CLAUDE.md says a surface states the rule,
+     never the incident.
+
+4. **Engine ask, minimal.** A typed read-set declaration on `Phase` —
+   static paths plus a `(ctx: TickContext) => ReadSet` for entry-derived
+   sets — that the engine (a) materializes and renders as data the way it
+   renders the `<harness>` block, so the template states the task and the
+   harness states the input; (b) records on the tick verdict as the file
+   list with blob shas, beside `commitSha`. (b) is the general form of the
+   2026-09-07 entry above: a gate that cannot tell an ignored input from an
+   unseen one is a gate with no read set; with one recorded, it is a lookup.
+   Widens spec/chain.md (*What a gate receives*, `Phase` fields),
+   spec/prompt.md (what the renderer injects), spec/loop.md (*The tick
+   verdict*) — the human's spec edit first. **Declined alternative: a hard
+   read fence.** Blocking reads outside the set kills the arena's one real
+   advantage (the caller nobody listed). Soft: reads outside the declared
+   set are allowed and counted on the verdict as unplanned; that count is the
+   signal the declaration is wrong, and how it improves.
+
+5. **Chain-side, no engine change, temper's to file:** split plan into four
+   phases (`plan:inbox`, `plan:spec`, `plan:reconcile`, `plan:posture`),
+   each with `shouldRun` = its liveness predicate and handoff ordering them
+   by priority; each receives only its material, whole, not digest-plus-
+   pointer. Build receives the section, the files, the tests, the ripple —
+   not the spec and the tree. Dispatch then decides what the model works on;
+   the gates that decide whether its claims are believed stay exactly where
+   they are.
+
+6. **Why now.** A tick with a materialized read set is function-shaped:
+   auditable from the verdict alone, cheaper (only the live job's material
+   is paid for), and the only shape a 32k local model can take — the
+   claude-desktop calibration of 2026-09-10 (comment-taxonomy audit, 50
+   blocks, coder-agent vs qwen3.5:4b) failed on exactly the loose-context
+   axis: both models classified a neighbouring artifact that leaked into a
+   fixed-slice context window. Observed at flume `e1beccf`, temper
+   `d9a34e39`.
+
 ## 2026-09-08 — ruling: no `regate` verb; re-gating a reverted span is chain process (human via cascade-integrations)
 
 1. **Declined, do not derive.** Proposed in the 0.14 cycle after six vitest
