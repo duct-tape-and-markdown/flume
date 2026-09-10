@@ -1,5 +1,210 @@
 [
   {
+    "tag": "SPAN-BASE-SHA-ON-GATE-AND-HOOK",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "`GateContext.baseSha`, set at both stages."
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "`TickResult.baseSha`; `ShipContext.baseSha` beside `mergedSha` (spec/pending.md, *Ship detection trusts the agent's own account*)."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Populate from the values already held: `preWtHead` (:1908, singleton) and `r.spanBase` (:2505, fanout) — both gate-run sites, both `TickResult` returns, and the `phase.shipped` call at :2714."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`baseSha` on `GateContext` (both stages), `TickResult`, and `ShipContext` — the span base the dispatcher already holds as `preWtHead`/`r.spanBase` and hands out nowhere",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate receives"
+    },
+    "tests": [
+      "an afterCommit gate and an afterMerge gate on the same span both receive the sha the span branched from",
+      "`handoff` receives `baseSha` on `TickResult` under both concurrencies",
+      "the `shipped` hook receives the span base beside the merged sha"
+    ],
+    "acceptance": "A gate can answer `git log <baseSha>..HEAD -- <path>` without reading a worktree path or the reflog; the pins fail on the pre-fix tree.",
+    "notes": "Field-traced twice at temper (inbox 2026-09-07): an afterMerge honesty gate reverted a tick for a trunk commit that landed after it branched. The chain-side fix read `<FLUME_WORKTREES_DIR>/plan` HEAD — a path convention plus a teardown-ordering promise the engine never made. Temper also asked for the afterMerge worktree path; the base makes it unnecessary — file only on a second consumer."
+  },
+  {
+    "tag": "NOT-SHIPPED-PRIOR-ATTEMPT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "`NotShippedAttempt` variant on the `PriorAttempt` union and its `<prior-attempt>` render — merged sha and touched paths, no reason vocabulary."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Write the record under the entry's key on the `!shipVerdict` leg (:2728); a later clean ship clears it by the existing path. Exclude `not-shipped` from `superviseLoop`'s errored derivation, as `voluntary-bail` already is (spec/loop.md, *No interpretation fields*)."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A `not-shipped` `PriorAttempt` on the chain's `shipped: false` — the park two chains rebuilt from the verdict log, on the channel `TickContext.priorAttempts` already carries",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "tests": [
+      "a `shipped: false` verdict leaves a `not-shipped` prior-attempt record under the entry's key, carrying the merged sha and touched paths",
+      "the next tick's `TickContext.priorAttempts` carries it, and a later clean ship clears the slot",
+      "a run whose only no-commit fact is `not-shipped` is not derived as errored"
+    ],
+    "acceptance": "A chain answers \"was the last build a park\" from `priorAttempts` alone; the pins fail on the pre-fix tree.",
+    "notes": "Closes the parked fork — the human ruled it the prior-attempt record, not a `TickContext` merge-outcome field (07e77d3). Two chains livelocked on the missing channel and each fixed it by reading the verdict log: flume's `plan.shouldRun` (4ee48ee), cascade's `build.handoff`."
+  },
+  {
+    "tag": "TICKRESULT-PROVISION-FAILURES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "`TickResult.provisionFailures`, the `ProvisionFailure[]` the wave already assembles."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Report it on both `TickResult` returns; `setupFailedIndices` (:2333) currently reaches no surface. The `entries` map at :2716 already omits a setup-failed tag by lookup — pin that, don't rebuild it."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`TickResult.provisionFailures` — an entry whose create or `setupWorktree` failed reports on the handoff surface instead of appearing in `entries` with every flag false",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a hook receives"
+    },
+    "tests": [
+      "a fanout entry whose `setupWorktree` hook throws reaches `handoff` under `provisionFailures` with its tag, and is absent from `entries`",
+      "its siblings still run, ship, and appear in `entries`"
+    ],
+    "acceptance": "A chain reconciling a failed provision names the entry from `TickResult` alone; the pins fail on the pre-fix tree.",
+    "notes": "Closes the parked enumeration question — spec/worktrees.md and spec/chain.md now name the field (07e77d3). The dispatcher-side behaviour (isolate, skip the agent, still tear down, siblings proceed) already ships; only the reporting surface is missing."
+  },
+  {
+    "tag": "GATE-RESULT-SKIPPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "`GateResult.skipped?: string` — the fact that `ok` was not earned by running a judge. `ok` stays required and stays the verdict."
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "Copy onto `TickVerdictGateResult` (:199) verbatim, beside `details`; interpret no further."
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "`chainLoadGate`'s untouched-chain green (:257) is the standing instance — declare the reason instead of spelling it into `message`."
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "Pins."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`GateResult.skipped?: string` — a gate spells a verdict no judge earned, and the engine copies the reason onto the verdict's gate result verbatim",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate returns"
+    },
+    "tests": [
+      "a gate returning `skipped` lands its reason on the tick verdict's gate row unchanged",
+      "`chainLoadGate` over a commit that touched no chain file returns `ok: true` with a `skipped` reason",
+      "a gate that returned `ok: true` without `skipped` leaves no `skipped` on its verdict row"
+    ],
+    "acceptance": "A verdict reader tells a passed gate from a gate that never ran, without parsing `message`; the pins fail on the pre-fix tree.",
+    "notes": "`engineering.md`, *A green verdict is proven non-vacuous*: vacuous-by-design is spelled, never inherited. Today the only signal is prose inside `message` (\"chain.ts untouched — gate skipped\"), which is exactly the pattern-match the engine refuses elsewhere."
+  },
+  {
+    "tag": "VERDICT-SPAN-ROW-BASE-SHA",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "`baseSha` on `TickVerdictMergeOutcome` beside `headSha` (:290). Singleton emits no span row at all today — `mergeOutcomes` is fanout-only and `commitSha` is set only on success, so a gate-reverted singleton commit's sha survives nowhere on the verdict."
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "Pins."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The verdict's span row carries the span's base sha — and a singleton tick gains a span row at all, so its reverted commit is re-cherry-pickable from the verdict alone",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
+    "tests": [
+      "a fanout entry's span row carries the base it branched from beside its head sha",
+      "a singleton tick reverted by an afterCommit gate leaves a span row naming both shas"
+    ],
+    "acceptance": "Every span the verdict records is re-cherry-pickable from base and head without re-running the agent; the pins fail on the pre-fix tree.",
+    "notes": "The singleton half is pre-existing drift the base-sha widening surfaces: the section's \"the phase's own single span under singleton\" has never held for `headSha` either. Verified on disk this tick — `runSingleton`'s return sets no `mergeOutcomes`, and the afterCommit revert at :1946 drops `postWtHead` after `buildPriorAttempt`."
+  },
+  {
+    "tag": "API-GIT-READFILEATREF",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/flumeApi.ts",
+          "description": "`readFileAtRef` onto `api.git` beside `showNameOnly` — the engine's own reader, already consumed by `pendingGate`."
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "Pin driven through `buildFlumeApi`."
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`api.git.readFileAtRef` — two chains hand-roll `git show <sha>:<path>`; the engine already owns that read, with the ls-tree probe that splits missing-path from bad-ref",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "tests": [
+      "a chain factory receives `git.readFileAtRef` and reads a tracked path's bytes at a given sha",
+      "a path absent from that sha's tree reads as null, while an unresolvable ref fails loudly rather than reading as absent"
+    ],
+    "acceptance": "`api.git.readFileAtRef` is callable from a chain factory and the pins fail on the pre-fix tree.",
+    "notes": "5d030fd asked this tick to rule; it agrees. The chain's `fileAtCommit` catches every `execFileSync` throw as \"not in the commit\" — conflating a bad ref and a missing git with a missing path, the exact hazard `readFileAtRef`'s docstring names — and inherits execFileSync's 1 MB maxBuffer against the engine's 16 MB. Deleting the chain copy is a `chore(flume):` commit, out of build's lane."
+  },
+  {
     "tag": "PRE-0.10-CHAIN-SHAPE-TAUGHT",
     "gate": { "kind": "open" },
     "files": {

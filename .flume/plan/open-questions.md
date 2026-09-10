@@ -9,6 +9,41 @@ Status markers:
 
 <!-- questions below this line -->
 
+## The release publish is hand-run, and `spec/cli.md` ratifies that (PARKED — needs a spec amendment)
+
+Drained from the inbox (2026-09-08, human via flume-main). 0.14.0's publish
+stalled a day on a dead token: CLAUDE.md named a key `.env` did not hold, the
+key it did hold had expired in May, and `pnpm publish` ignored the env-var auth
+form and read `~/.npmrc`, surfacing as a 404 on the PUT. Tag and commit were
+already pushed, so the registry lagged the tag by a day.
+
+**Not derivable as filed.** `spec/cli.md` *Versioning policy* currently states
+"The version bump and `npm publish` are human-performed at cut time." A tagged
+CI publish contradicts that line, so the line moves first.
+
+Shape the finding proposes, carried here so the answering session need not
+re-derive it — temper's `.github/workflows/release.yml`: `on: push: tags:
+["v*"]`, publish with `secrets.NPM_TOKEN` through `setup-node`'s
+`registry-url`, **idempotent** (skip when `npm view <pkg>@<version>` already
+resolves), and a post-publish smoke that installs the published tarball from
+the registry and runs the shim — `scripts/smoke-install.mjs` already does this
+against a local pack; the job points it at the registry.
+
+Two things are the operator's regardless of the ruling: setting the repo
+secret, and whether release automation is wanted at all for a package whose
+cut is deliberately hand-curated (changelog mining, `smoke:install`).
+`.github/**` is already inside build's fence, so the work ships the moment the
+spec line moves.
+
+## `.flume/chain.ts`'s `fileAtCommit` needs a `chore(flume):` deletion once `API-GIT-READFILEATREF` ships
+
+`sectionOf`/`fileAtCommit` (added 5d030fd) hand-roll `git show <sha>:<path>`
+because `api.git` exposes only `showNameOnly`. The queue entry widens the API;
+the chain's copy has to leave in the adopting commit
+(`.claude/rules/engineering.md`, *A fact the engine holds is reported*), and
+`.flume/chain.ts` is outside every phase lane. Interactive session's to do,
+after the entry lands. `sectionOf` stays — the section grammar is the chain's.
+
 ## 180 doc cites in `src/` point at a spec corpus that no longer exists (PARKED)
 
 Posture sweep over the `src/Dispatcher.ts` neighborhood. Every `src/` module
@@ -121,20 +156,6 @@ Proposed fix keys on the entry *as read* (slug + a hash of entry content, or the
 
 Filed as **gh#19** with full repro. The operator is opening the spec line for this (a startup check under the tip claim, or a `flume resume-merge` verb); do not derive further until that edit lands. Boundary note for whoever writes it: detect from the surviving `flume/<slug>` branch (teardown never ran) and the orphaned worktree dirs the startup sweep already enumerates — never from commit shape or authorship (`engine-boundary.md`, *Told, not inferred*).
 
-## A fanout entry whose `setupWorktree` threw reports nothing — spec-enumeration amendment needed (PARKED)
-
-A fact the dispatcher already computed, on a record whose spec section
-enumerates the fields verbatim — so it cannot be derived without the human
-widening the enumeration first (`engineering.md`, *A fact the engine holds is
-reported, never rediscovered*).
-
-`setupFailedIndices` (`src/Dispatcher.ts:2260`) is consumed only to skip the
-agent and reaches no surface. Such an entry appears in `TickResult.entries` as
-`{committed: false, shipped: false, reverted: false}` with no `noCommit` and no
-`declined` — indistinguishable from an unexplained nothing, and invisible to a
-chain reconciling a failed provision. The enumeration in `spec/chain.md`, *What
-a hook receives*, would need the field.
-
 ## `spec/chain.md`'s closing **Gap:** note is false on both halves (PARKED — spec housekeeping)
 
 Residue of `62aa506`, which retired the five `Drift:` notes but left the
@@ -156,26 +177,6 @@ Both halves verified false on disk this tick:
 gap note plan's derive reads as live work is worse than none, and this one
 would file an entry for coverage that already ships.
 
-## A park is invisible on the surface chains already read — engine ruling needed (PARKED — do not derive)
-
-Drained from the inbox (2026-09-07, cascade-integrations via flume-main). Two
-chains hit the same livelock independently: flume's `plan.shouldRun` (fixed
-chain-side in `4ee48ee`) and cascade's `build.handoff` re-picking a
-capture-only commit (fixed chain-side there). Cause in both: a park is a
-committed `not-shipped` merge outcome, so no `PriorAttempt` is written and
-neither `TickContext.priorAttempts` nor quarantine ever sees it — each chain
-has to know to read the verdict log instead. Two consumers carrying the same
-block is the detector (`engine-boundary.md`, *Surface, not prescription*).
-
-Fork: whether `not-shipped` writes a prior-attempt record (a fact — "landed,
-chain said not shipped", no reason vocabulary), or whether `TickContext`
-carries the entry's last merge outcome directly. Either widens an enumeration
-in `spec/loop.md` (*Prior-outcome feedback*) and `spec/chain.md` (*What a hook
-receives*), so it is the human's edit first.
-
-Same shape as the `setupWorktree` question above; folds into one spec pass
-with it.
-
 ## A leaked `/tmp/.flume/stop` red-lines the default lane (observed, cause unattributed)
 
 Seen twice this tick (2026-09-06) while running `pnpm test --run` in a fanout
@@ -193,19 +194,3 @@ so a leak reverts innocent entries for host state no entry touched. Two forks
 sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
 and fix the writer. The first bounds the blast radius whatever the second
 turns up.
-
-## `.flume/chain.ts:150` carries an orphaned doc block — needs a `chore(flume):` commit
-
-Found by the orphan pin this tick added
-(`tests/retired-narration.test.ts`, LOADCHAINMODULE-DOC-ORPHANED). The block
-opening "Mandatory-on-every-entry surfaces ride the channel instead of
-per-entry declarations" documents `channelPaths`, but sits two blocks above
-it — `PARK_FILE`'s own doc block was inserted between them, so the first
-block documents nothing and reads as if it were `PARK_FILE`'s.
-
-Mechanical fix (move the block down onto `const channelPaths`), no design
-call. Not shipped here because `.flume/chain.ts` is outside build's fence
-*and* outside its writable-paths ceiling — only a `chore(flume):` harness
-commit from an interactive session can touch it. Named in the pin's
-`ALLOWED_ORPHANS` inventory with that reason; delete the entry there in the
-same commit that moves the block, or the pin fails on the leftover name.
