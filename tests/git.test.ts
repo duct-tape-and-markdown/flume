@@ -276,6 +276,12 @@ describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not 
     expect(await readFileAtRef(repo, "HEAD", "untracked.txt")).toBeNull();
   });
 
+  it("rejects on an unresolvable ref rather than reading it as an absent path — the two answers are never confused", async () => {
+    await expect(
+      readFileAtRef(repo, "refs/heads/no-such-branch", "anything.txt"),
+    ).rejects.toThrow();
+  });
+
   it("ignores an uncommitted edit to an otherwise-committed file — reads the committed content, not the dirty working tree", async () => {
     await writeFile(join(repo, "tracked.txt"), "committed version\n");
     await exec("git", ["add", "."], { cwd: repo });

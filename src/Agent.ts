@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { basename, join } from "node:path";
+import { fsStamp } from "./paths.js";
 
 /**
  * One agent run, parameterized by cwd, prompt, and stream/abort hooks. The
@@ -319,7 +320,7 @@ export function withSessionCapture(
 }
 
 function defaultCaptureFilename(inv: AgentInvocation): string {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const ts = fsStamp();
   const cwdName = basename(inv.cwd) || "tick";
   return `${ts}-${cwdName}.txt`;
 }

@@ -83,6 +83,16 @@ export const STATE_ROOT_NAMES = {
   stopFlag: "stop",
 } as const;
 
+/**
+ * The instant, in the filesystem-safe form every timestamp-prefixed runtime
+ * filename uses (`:` and `.` are not portable in a path component). One
+ * writer for the format, so a session capture, a revert note, a friction
+ * harvest, and a rendered-prompt record all sort and parse alike.
+ */
+export function fsStamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
 /** The baton's awake-flag dir — `<flumeDir>/awake` (`src/Baton.ts`). */
 export function awakeDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.awake);

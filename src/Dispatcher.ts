@@ -48,6 +48,7 @@ import {
 import { partitionByFileOverlap } from "./partition.js";
 import {
   matchesAny,
+  fsStamp,
   namespacedJoin,
   priorAttemptsDir,
   renderedPromptsDir,
@@ -663,10 +664,16 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
  * `process-failure` never "says" anything of its own — `failureClass` is
  * engine-authored, not agent prose — so it never blocks shipping on that
  * basis; a commit it left behind is honored exactly as a clean one would be.
+ *
+ * `promptPath` is the persisted rendered prompt the run was handed
+ * (spec/prompt.md "The rendered prompt is persisted before the agent runs").
+ * On the termination rather than beside it because `invokeAgent` is the one
+ * seam every run passes through: a run cannot exist without its record, and
+ * the type says so instead of a call-order comment.
  */
 type AgentTermination =
-  | { kind: "clean"; finalMessage: string; usage?: AgentUsage }
-  | { kind: "process-failure"; failureClass: string; usage?: AgentUsage };
+  | { kind: "clean"; promptPath: string; finalMessage: string; usage?: AgentUsage }
+  | { kind: "process-failure"; promptPath: string; failureClass: string; usage?: AgentUsage };
 
 /**
  * Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt
@@ -1491,8 +1498,9 @@ export interface TickOutcome {
    * too in that one case — every other `failed` path (chain resolution, a
    * decide-read parse failure with no agent run) carries none. The CLI's
    * `tick` command persists this via `writeTickVerdict`; `Dispatcher.tick()`
-   * itself never writes to disk, so a plain unit test calling it directly
-   * gains no untracked side effect.
+   * never writes the verdict itself, so a plain unit test calling it directly
+   * gains no verdict file (the tick's own records — prior attempts, rendered
+   * prompts — land under `flumeDir` as always).
    */
   verdict?: TickVerdict;
   /** Phase names awake after this tick. */
@@ -1872,10 +1880,9 @@ export class Dispatcher {
     // invocation entirely.
     let invocation: TickVerdictInvocation | undefined;
     // spec/chain.md "What a hook receives": the tip this tick's span
-    // branched from, reported on the result once it has been read — the
-    // same value the gates below receive. Absent on a declined or
-    // render-refused tick: no span was ever started.
-    let baseSha: string | undefined;
+    // branched from — the gates' base, reported on the result as `baseSha`.
+    // Unset on a declined or render-refused tick: no span was ever started.
+    let preWtHead: string | undefined;
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
     // the agent — a chain can decline a tick without spending one. Sees the
@@ -1906,23 +1913,25 @@ export class Dispatcher {
       }
 
       if (prompt !== undefined) {
-        const promptPath = await this.recordRenderedPrompt(key, prompt);
         // Fresh read, not `preHead`: the worktree branched from it, so the
         // two agree unless `setupWorktree` itself committed something — same
         // defensive re-read `runFanoutEntry` takes for the identical reason.
-        const preWtHead = await git.revParse(wt.path);
-        baseSha = preWtHead;
+        preWtHead = await git.revParse(wt.path);
         const tickTimeoutMs =
           chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
         const termination = await this.invokeAgent(
           phase,
+          key,
           wt.path,
           prompt,
           agent,
           tickTimeoutMs,
           extraEnv,
         );
-        invocation = { promptPath, ...(termination.usage ?? {}) };
+        invocation = {
+          promptPath: termination.promptPath,
+          ...(termination.usage ?? {}),
+        };
         const postWtHead = await git.revParse(wt.path);
         let wtCommitted = postWtHead !== preWtHead;
 
@@ -2145,7 +2154,7 @@ export class Dispatcher {
         ),
         flumeDir: this.flumeDir,
         configDir: this.opts.configDir,
-        ...(baseSha ? { baseSha } : {}),
+        ...(preWtHead ? { baseSha: preWtHead } : {}),
         shippedTags: [],
         revertedTags: [],
       },
@@ -2456,7 +2465,7 @@ export class Dispatcher {
       if (r.termination) {
         invocations.push({
           tag: r.entry.tag,
-          promptPath: r.promptPath!,
+          promptPath: r.termination.promptPath,
           ...(r.termination.usage ?? {}),
         });
       }
@@ -3041,8 +3050,6 @@ export class Dispatcher {
      * for ship classification to consult.
      */
     termination?: AgentTermination;
-    /** Set alongside `termination`: the persisted rendered prompt, relative to `flumeDir`. */
-    promptPath?: string;
   }> {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
@@ -3088,12 +3095,12 @@ export class Dispatcher {
       return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path };
     }
 
-    const promptPath = await this.recordRenderedPrompt(key, prompt);
     const preHead = await git.revParse(wt.path);
     const tickTimeoutMs =
       chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
     const termination = await this.invokeAgent(
       phase,
+      key,
       wt.path,
       prompt,
       agent,
@@ -3128,7 +3135,6 @@ export class Dispatcher {
           worktreePath: wt.path,
           headSha: postHead,
           termination,
-          promptPath,
         };
       }
     }
@@ -3141,7 +3147,7 @@ export class Dispatcher {
       // must be legible without reading session logs).
       const mode = await this.classifyNoCommit(key, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
-      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination, promptPath };
+      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination };
     }
 
     // The ancestry check above cleared the whole base..postHead span as one
@@ -3183,7 +3189,6 @@ export class Dispatcher {
         gateFailure,
         headSha: postHead,
         termination,
-        promptPath,
       };
     }
 
@@ -3194,7 +3199,6 @@ export class Dispatcher {
       spanBase: preHead,
       gateResults,
       termination,
-      promptPath,
       worktreePath: wt.path,
     };
   }
@@ -3331,12 +3335,17 @@ export class Dispatcher {
 
   private async invokeAgent(
     phase: Phase,
+    key: string,
     cwd: string,
     prompt: string,
     agent: Agent,
     tickTimeoutMs: number | undefined,
     extraEnv?: Record<string, string>,
   ): Promise<AgentTermination> {
+    // Before the try: a record that cannot be written refuses the run
+    // outright rather than reading as a platform-preempt of a run that
+    // never started (engineering.md "Loud or nothing").
+    const promptPath = await this.recordRenderedPrompt(key, prompt);
     try {
       const result = await agent.invoke({
         cwd,
@@ -3354,6 +3363,7 @@ export class Dispatcher {
         this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
         return {
           kind: "process-failure",
+          promptPath,
           failureClass,
           ...(result.usage ? { usage: result.usage } : {}),
         };
@@ -3363,6 +3373,7 @@ export class Dispatcher {
       // writablePaths/Rule-0/spec bail names the constraint it refused.
       return {
         kind: "clean",
+        promptPath,
         finalMessage: result.finalMessage ?? "",
         ...(result.usage ? { usage: result.usage } : {}),
       };
@@ -3378,7 +3389,7 @@ export class Dispatcher {
           ? "agent process aborted (per-tick timeout or dispatcher signal)"
           : `agent process error before exit: ${e.message}`;
       this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
-      return { kind: "process-failure", failureClass };
+      return { kind: "process-failure", promptPath, failureClass };
     }
   }
 
@@ -3386,17 +3397,16 @@ export class Dispatcher {
     phase: Phase,
     cwd: string,
     commitSha: string,
-    assignedEntry?: PendingEntry,
+    assignedEntry: PendingEntry | undefined,
     /**
-     * RELEASE-v0.11 §5: when set, touched paths are the cumulative
+     * RELEASE-v0.11 §5: touched paths are the cumulative
      * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
      * diff — the whole-span gate (spec/loop.md "N commits are completion").
-     * Every caller now passes it — both a fanout entry's worktree branch and
-     * a singleton phase's own (spec/worktrees.md "Singleton runs in a
-     * worktree") are private refs whose ancestry check clears a multi-commit
-     * span as one completed tick.
+     * Both a fanout entry's worktree branch and a singleton phase's own
+     * (spec/worktrees.md "Singleton runs in a worktree") are private refs
+     * whose ancestry check clears a multi-commit span as one completed tick.
      */
-    spanBase?: string,
+    spanBase: string,
   ): Promise<{
     ok: boolean;
     /** First failing gate, structured so callers can persist a §5 record. */
@@ -3436,9 +3446,7 @@ export class Dispatcher {
     // chainLoadGate and writablePathsGate read it off the context instead of
     // each shelling out its own `git show --name-only` for the same commit
     // (engineering.md "The fix lands at the mechanism").
-    const commitTouchedPaths = spanBase
-      ? await git.diffNameOnly(cwd, spanBase, commitSha)
-      : await git.showNameOnly(cwd, commitSha);
+    const commitTouchedPaths = await git.diffNameOnly(cwd, spanBase, commitSha);
     // `cwd` here is the fanout worktree (or a singleton's own worktree,
     // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
     // that holds only tracked files at the same relative layout as the
@@ -3472,7 +3480,7 @@ export class Dispatcher {
         phaseName: phase.name,
         commitSha,
         touchedPaths: commitTouchedPaths,
-        ...(spanBase ? { baseSha: spanBase } : {}),
+        baseSha: spanBase,
         log: (l) => this.log.info(l),
       });
       results.push({
@@ -3654,7 +3662,7 @@ export class Dispatcher {
     // precedent): siblings moved in the same call already disambiguate on
     // file.name, and a shared stamp still separates this call's files from
     // whatever a prior or later retry of the same tag harvests.
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const stamp = fsStamp();
     for (const file of files) {
       const src = join(mirrorDir, file.name);
       const dest = join(primaryDir, `${tag}--${stamp}--${file.name}`);
@@ -4221,7 +4229,7 @@ export class Dispatcher {
     if (chain.friction === undefined) return;
     try {
       const { subject, body } = await this.capturedCommitMessage(cwd, sha);
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const stamp = fsStamp();
       const primaryDir = join(this.flumeDir, chain.friction);
       // win32 MAX_PATH (`.claude/rules/platform-facts.md`): TAG_MAX_LENGTH
       // bounds only the filename component, not the friction dir's full
@@ -4332,8 +4340,7 @@ export class Dispatcher {
     prompt: string,
   ): Promise<string> {
     const dir = renderedPromptsDir(this.flumeDir);
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const name = `${ts}-${slugify(key)}.md`;
+    const name = `${fsStamp()}-${slugify(key)}.md`;
     await mkdir(namespacedJoin(dir), { recursive: true });
     await writeFile(namespacedJoin(dir, name), prompt, "utf8");
     return `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;

@@ -3368,10 +3368,14 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     ]);
 
     // No lingering cherry-pick state in the worktree — the dispatcher
-    // aborted it so the next tick starts clean.
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: fx.repo,
-    });
+    // aborted it so the next tick starts clean. Tracked state only: the
+    // claim is about the aborted pick, not about what runtime records the
+    // tick left under the state root.
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain", "--untracked-files=no"],
+      { cwd: fx.repo },
+    );
     expect(status.trim()).toBe("");
   }, 20_000);
 });
@@ -8916,15 +8920,10 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
       JSON.parse(
         JSON.stringify(o)
           .replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>")
+          // ISO form on the verdict, `fsStamp` form (src/paths.ts) in the
+          // rendered-prompt filename — one instant, two spellings.
           .replace(
-            /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g,
-            "<TIMESTAMP>",
-          )
-          // The rendered-prompt filename carries the same instant in its
-          // filesystem-safe form (spec/prompt.md "The rendered prompt is
-          // persisted before the agent runs").
-          .replace(
-            /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z/g,
+            /\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}[.-]\d{3}Z/g,
             "<TIMESTAMP>",
           )
           .replace(/flume-dispatcher-(repo|cfg)-[A-Za-z0-9]+/g, "flume-dispatcher-$1-<TMP>"),

@@ -111,6 +111,21 @@ function buildVerdict(
   };
 }
 
+/** Run git in `repo`; trimmed stdout. */
+function git(repo: string, args: string[]): string {
+  return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+}
+
+/** A fresh temp repo with commit identity pinned, for the gate fixtures below. */
+async function initRepo(prefix: string): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), prefix));
+  git(repo, ["init", "-q"]);
+  git(repo, ["config", "user.email", "t@example.com"]);
+  git(repo, ["config", "user.name", "t"]);
+  git(repo, ["config", "commit.gpgsign", "false"]);
+  return repo;
+}
+
 describe("plan/build predicates via the real .flume/chain.ts (loadChainModule)", () => {
   let plan: Phase;
   let build: Phase;
@@ -467,11 +482,9 @@ describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outco
 });
 
 describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one resolver", () => {
-  let plan: Phase;
   let build: Phase;
+  let gate: Phase["gates"][number];
   let repo: string;
-  const exec = (args: string[]) =>
-    execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 
   const SPEC = [
     "# Top",
@@ -504,9 +517,9 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
 
   async function commitQueue(entries: unknown[]): Promise<string> {
     await writeFile(join(repo, ".flume", "plan", "pending.json"), JSON.stringify(entries, null, 2));
-    exec(["add", "."]);
-    exec(["commit", "-q", "-m", "plan: queue"]);
-    return exec(["rev-parse", "HEAD"]);
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-q", "-m", "plan: queue"]);
+    return git(repo, ["rev-parse", "HEAD"]);
   }
 
   function gateCtx(sha: string) {
@@ -526,16 +539,14 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
 
   beforeAll(async () => {
     const { chain } = await loadChainModule(REPO_PATHS);
-    plan = chain.phases.find((p) => p.name === "plan")!;
+    const plan = chain.phases.find((p) => p.name === "plan")!;
     build = chain.phases.find((p) => p.name === "build")!;
+    gate = plan.gates.find((g) => g.name === "per cites resolve")!;
+    expect(gate.when).toBe("afterCommit");
   });
 
   beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "flume-per-gate-"));
-    exec(["init", "-q"]);
-    exec(["config", "user.email", "t@example.com"]);
-    exec(["config", "user.name", "t"]);
-    exec(["config", "commit.gpgsign", "false"]);
+    repo = await initRepo("flume-per-gate-");
     await mkdir(join(repo, "spec"), { recursive: true });
     await mkdir(join(repo, ".flume", "plan"), { recursive: true });
     await writeFile(join(repo, "spec", "x.md"), SPEC);
@@ -546,9 +557,6 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
   });
 
   it("refuses a commit whose queue cites a heading the file does not carry, naming the tag; passes once every cite resolves", async () => {
-    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
-    expect(gate.when).toBe("afterCommit");
-
     const bad = await commitQueue([
       entry("GOOD", "The section cited"),
       entry("BAD", "The section cited (or the nearest equivalent)"),
@@ -565,7 +573,6 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
   });
 
   it("refuses a cite whose path is not in the commit", async () => {
-    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
     const sha = await commitQueue([
       { ...entry("NOPATH", "The section cited"), per: { path: "spec/missing.md", section: "The section cited" } },
     ]);
@@ -575,7 +582,6 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
   });
 
   it("build renders exactly the section the gate accepted — heading through the last line before the next same-depth heading — and throws on a cite the gate would refuse", async () => {
-    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
     const sha = await commitQueue([entry("GOOD", "The section cited")]);
     expect((await gate.run(gateCtx(sha))).ok).toBe(true);
 
@@ -611,60 +617,27 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
  * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
  * rediscovered* — a chain gate that needs a commit's content reads it through
  * the engine's own reader instead of hand-rolling `git show <sha>:<path>`.
- * The hand-rolled copy's failure mode is what the second test pins: catching
- * the subprocess throw as "not in the commit" makes an unresolvable ref
- * indistinguishable from an absent path.
+ * The reader's own contract (null for an absent path, a throw for a bad ref)
+ * is pinned in tests/git.test.ts; this pins only that the api hands it out,
+ * and the `per cites resolve` block above is its real consumer.
  */
 describe("buildFlumeApi().git.readFileAtRef", () => {
-  let repo: string;
-  const exec = (args: string[]) =>
-    execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
-
-  /** Seeds one commit carrying `queue.json`, then dirties the working tree. */
-  async function seedCommit(): Promise<string> {
-    await writeFile(join(repo, "queue.json"), "committed bytes\n");
-    exec(["add", "."]);
-    exec(["commit", "-q", "-m", "seed"]);
-    const sha = exec(["rev-parse", "HEAD"]);
-    await writeFile(join(repo, "queue.json"), "dirty working tree\n");
-    return sha;
-  }
-
-  beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "flume-api-readfileatref-"));
-    exec(["init", "-q"]);
-    exec(["config", "user.email", "t@example.com"]);
-    exec(["config", "user.name", "t"]);
-    exec(["config", "commit.gpgsign", "false"]);
-  });
-
-  afterEach(async () => {
-    await rm(repo, { recursive: true, force: true });
-  });
-
-  it("is the engine's own reader on the api a chain factory receives, and reads a tracked path's bytes at a given sha", async () => {
+  it("is the engine's own reader on the api a chain factory receives, reading a tracked path's bytes at a given sha", async () => {
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.git.readFileAtRef).toBe(readFileAtRef);
 
-    // The real factory consumes this api object, so the member is on the
-    // surface a tick's chain actually holds — not a shape assembled here.
-    const { chain } = chainFactory(api);
-    expect(chain.phases.length).toBeGreaterThan(0);
-
-    const sha = await seedCommit();
-    expect(await api.git.readFileAtRef(repo, sha, "queue.json")).toBe(
-      "committed bytes\n",
-    );
-  });
-
-  it("reads a path absent from that sha's tree as null, while an unresolvable ref fails loudly rather than reading as absent", async () => {
-    const api = buildFlumeApi(REPO_PATHS);
-    const sha = await seedCommit();
-
-    expect(await api.git.readFileAtRef(repo, sha, "never-committed.json")).toBeNull();
-
-    await expect(
-      api.git.readFileAtRef(repo, "refs/heads/no-such-branch", "queue.json"),
-    ).rejects.toThrow();
+    const repo = await initRepo("flume-api-readfileatref-");
+    try {
+      await writeFile(join(repo, "queue.json"), "committed bytes\n");
+      git(repo, ["add", "."]);
+      git(repo, ["commit", "-q", "-m", "seed"]);
+      const sha = git(repo, ["rev-parse", "HEAD"]);
+      await writeFile(join(repo, "queue.json"), "dirty working tree\n");
+      expect(await api.git.readFileAtRef(repo, sha, "queue.json")).toBe(
+        "committed bytes\n",
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 });
