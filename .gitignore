@@ -5,6 +5,7 @@ dist/
 .flume/awake/
 .flume/sessions/
 .flume/prior-attempts/
+.flume/rendered-prompts/
 .flume/worktrees/
 .flume/last-tick.json
 .flume/loop.pid

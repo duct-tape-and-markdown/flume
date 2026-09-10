@@ -45,6 +45,7 @@ import {
 import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
 import {
   chainLoadGate,
   // §6 identity pin: the engine's own gate object, compared by reference
@@ -156,6 +157,13 @@ async function makeFixture(): Promise<Fixture> {
   // this pin git itself — not just Node's fs calls — refuses the path.
   await exec("git", ["config", "core.longpaths", "true"], opts);
   await writeFile(join(repo, "README.md"), "seed\n");
+  // What an adopting repo carries (README, "Relocating state"): the
+  // runtime's gitignored record dirs under the default `.flume/`, so a
+  // tick's own durable artifacts never read as untracked bystander work.
+  await writeFile(
+    join(repo, ".gitignore"),
+    RUNTIME_IGNORES.map((e) => `.flume/${e}`).join("\n") + "\n",
+  );
   await mkdir(join(repo, "src"), { recursive: true });
   await writeFile(join(repo, "src", "seed.ts"), "// seed\n");
   await exec("git", ["add", "."], opts);
@@ -7722,7 +7730,8 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.verdict!.invocations).toHaveLength(1);
 
-    const row = outcome.verdict!.invocations[0]!;
+    const { promptPath, ...row } = outcome.verdict!.invocations[0]!;
+    expect(promptPath).toMatch(/^rendered-prompts\/.+-plan\.md$/);
     expect(row).toEqual({
       model: "claude-fable-5-1",
       turns: 2,
@@ -7788,7 +7797,12 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
 
     const invocations = outcome.verdict!.invocations;
     expect(invocations).toHaveLength(2);
-    const byTag = Object.fromEntries(invocations.map((i) => [i.tag, i]));
+    for (const i of invocations) {
+      expect(i.promptPath).toMatch(/^rendered-prompts\/.+\.md$/);
+    }
+    const byTag = Object.fromEntries(
+      invocations.map(({ promptPath: _p, ...i }) => [i.tag, i]),
+    );
     expect(byTag["TEST-A"]).toEqual({
       tag: "TEST-A",
       model: "claude-fable-5-1",
@@ -7802,6 +7816,202 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       outputTokens: 50,
     });
   }, 20_000);
+});
+
+describe("The rendered prompt is persisted before the agent runs (spec/prompt.md)", () => {
+  /** Files under `<flumeDir>/rendered-prompts/`, or [] when the dir is absent. */
+  async function renderedFiles(): Promise<string[]> {
+    const dir = join(fx.repo, ".flume", "rendered-prompts");
+    return existsSync(dir) ? readdir(dir) : [];
+  }
+
+  it("singleton: the file the row names holds the exact bytes the agent was handed, and exists before invoke is called", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      "digest: !`printf 'live-%s' rendered`\nnon-ascii: —\n",
+      "utf8",
+    );
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let handed: string | undefined;
+    let onDiskAtInvoke: string[] = [];
+    let bytesAtInvoke: string | undefined;
+    const agent: Agent = {
+      name: "captures-prompt",
+      async invoke(inv) {
+        handed = inv.prompt;
+        // The record is durable before the agent starts, not after it ends.
+        onDiskAtInvoke = await renderedFiles();
+        if (onDiskAtInvoke.length === 1) {
+          bytesAtInvoke = await readFile(
+            join(fx.repo, ".flume", "rendered-prompts", onDiskAtInvoke[0]!),
+            "utf8",
+          );
+        }
+        await writeAndCommit(inv.cwd, "src/out.ts", "x\n", "plan: derive");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+
+    // Non-vacuous: the real renderer produced a prompt with the inline-exec
+    // digest resolved, and that is what reached the agent.
+    expect(handed).toBeDefined();
+    expect(handed).toContain("digest: live-rendered");
+    expect(handed).toContain("<harness>");
+
+    const row = outcome.verdict!.invocations[0]!;
+    expect(row.promptPath).toMatch(/^rendered-prompts\/[^/]+-plan\.md$/);
+    const recorded = await readFile(
+      join(fx.repo, ".flume", row.promptPath),
+      "utf8",
+    );
+    // Agreement: the real writer's bytes through the real reader — the
+    // file the verdict names is byte-identical to `inv.prompt`.
+    expect(recorded).toBe(handed);
+    expect(onDiskAtInvoke).toEqual([
+      row.promptPath.slice("rendered-prompts/".length),
+    ]);
+    expect(bytesAtInvoke).toBe(handed);
+  });
+
+  it("fanout: each entry's row names its own file, and each file matches the prompt that entry's agent received", async () => {
+    const entries = [
+      makeEntry("REC-A", ["src/a.ts"]),
+      makeEntry("REC-B", ["src/b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    await writeFile(join(fx.configDir, "prompt.md"), "entry: {{TAG}}\n", "utf8");
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      promptArgs: (ctx) => ({ TAG: ctx.assignedEntry!.tag }),
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const handed = new Map<string, string>();
+    const agent: Agent = {
+      name: "captures-per-entry",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        const file = slug === "rec-a" ? "src/a.ts" : "src/b.ts";
+        handed.set(slug, inv.prompt);
+        await writeAndCommit(inv.cwd, file, `${slug}\n`, `build: ${slug}`);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["REC-A", "REC-B"]);
+    expect(handed.size).toBe(2);
+
+    const rows = outcome.verdict!.invocations;
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.promptPath)).size).toBe(2);
+    for (const row of rows) {
+      const slug = row.tag!.toLowerCase();
+      expect(row.promptPath).toMatch(
+        new RegExp(`^rendered-prompts/[^/]+-${slug}\\.md$`),
+      );
+      const recorded = await readFile(
+        join(fx.repo, ".flume", row.promptPath),
+        "utf8",
+      );
+      expect(recorded).toContain(`entry: ${row.tag}`);
+      expect(recorded).toBe(handed.get(slug));
+    }
+    expect((await renderedFiles()).length).toBe(2);
+  });
+
+  it("declined and render-refused ticks write nothing: the record exists iff an agent ran", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          shouldRun: () => false,
+        }),
+      ],
+      humanOnly: [],
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+    const declined = await dispatcher.tick();
+    expect(declined.declined).toBe(true);
+    expect(declined.verdict?.invocations).toEqual([]);
+    expect(await renderedFiles()).toEqual([]);
+
+    // render-refused: the span fails, the agent never runs, no file.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await writeFile(join(fx.configDir, "prompt.md"), "digest: !`exit 3`\n", "utf8");
+    const refusing = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+    const refused = await refusing.tick();
+    expect(refused.noCommit).toBe("render-refused");
+    expect(refused.verdict?.invocations).toEqual([]);
+    expect(await renderedFiles()).toEqual([]);
+  });
+
+  it("the longest tag parsePending accepts yields a filename within NAME_MAX — the schema's ceiling driven through the real writer", async () => {
+    const tag = "A".repeat(TAG_MAX_LENGTH);
+    await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      [worktreeDirName(tag)]: async (cwd) => {
+        await writeAndCommit(cwd, "src/tag-len.ts", "ok\n", "build: ship");
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual([tag]);
+    const row = outcome.verdict!.invocations[0]!;
+    expect(basename(row.promptPath).length).toBeLessThanOrEqual(255);
+    expect(existsSync(join(fx.repo, ".flume", row.promptPath))).toBe(true);
+  });
 });
 
 describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/at on every variant (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
@@ -8708,6 +8918,13 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
           .replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>")
           .replace(
             /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g,
+            "<TIMESTAMP>",
+          )
+          // The rendered-prompt filename carries the same instant in its
+          // filesystem-safe form (spec/prompt.md "The rendered prompt is
+          // persisted before the agent runs").
+          .replace(
+            /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z/g,
             "<TIMESTAMP>",
           )
           .replace(/flume-dispatcher-(repo|cfg)-[A-Za-z0-9]+/g, "flume-dispatcher-$1-<TMP>"),

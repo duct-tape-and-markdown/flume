@@ -104,7 +104,8 @@ line between this and `seedDir` is the same line as "machinery vs.
 opinion" everywhere else in this doc:
 
 - Merging the runtime `.gitignore` entries (`awake/`, `prior-attempts/`,
-  `worktrees/`, `node_modules/`, `loop.pid`) into the job dir — creating
+  `rendered-prompts/`, `worktrees/`, `node_modules/`, `loop.pid`) into the
+  job dir — creating
   the file if `seedDir` carries none, preserving any lines it does.
 - Pinning `core.longpaths true` repo-locally on Windows.
 - Baseline-committing the seeded harness so subsequent plan/build ticks

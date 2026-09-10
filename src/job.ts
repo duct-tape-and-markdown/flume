@@ -52,6 +52,7 @@ export class JobUsageError extends Error {}
 export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.awake}/`,
   `${STATE_ROOT_NAMES.priorAttempts}/`,
+  `${STATE_ROOT_NAMES.renderedPrompts}/`,
   "worktrees/",
   "node_modules/",
   STATE_ROOT_NAMES.loopLock,

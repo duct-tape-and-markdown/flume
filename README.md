@@ -166,7 +166,8 @@ The two halves of `.flume/` relocate independently via env vars:
 
 - **`FLUME_DIR`** moves the **mutable state** — the baton (`awake/`), pending
   (`plan/`), worktrees (`worktrees/`), prior-attempt records
-  (`prior-attempts/`), and session logs (`sessions/`).
+  (`prior-attempts/`), each invocation's rendered prompt
+  (`rendered-prompts/`), and session logs (`sessions/`).
 - **`FLUME_CONFIG_DIR`** moves the **chain + prompts** — `chain.ts` and the
   prompt files it references.
 

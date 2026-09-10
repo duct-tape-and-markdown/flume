@@ -78,6 +78,7 @@ export function entryWriteScopeUnion(
 export const STATE_ROOT_NAMES = {
   awake: "awake",
   priorAttempts: "prior-attempts",
+  renderedPrompts: "rendered-prompts",
   loopLock: "loop.pid",
   stopFlag: "stop",
 } as const;
@@ -96,6 +97,16 @@ export function awakeDir(flumeDir: string): string {
  */
 export function priorAttemptsDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.priorAttempts);
+}
+
+/**
+ * Where each invocation's fully rendered prompt is persisted before the
+ * agent runs (spec/prompt.md "The rendered prompt is persisted before the
+ * agent runs") — the read-side record beside the prior-attempt dir, named on
+ * the tick verdict's invocation row as a path relative to `flumeDir`.
+ */
+export function renderedPromptsDir(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.renderedPrompts);
 }
 
 /**

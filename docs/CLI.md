@@ -92,7 +92,7 @@ Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever
 Every run (idempotent) also:
 
 - **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
-- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
+- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `rendered-prompts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
 - **Pins `core.longpaths true`** repo-locally on Windows.
 - **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit) on the current HEAD, so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
 
@@ -123,7 +123,7 @@ Throw the harness away, keep the work. Four steps:
 
 1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
 2. **`git rm -r .flume/jobs/<name>` + cleanup commit on the current HEAD.** The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index. No branch is checked out or touched.
-3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
+3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, `rendered-prompts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
 4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
 
 The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.10.md`](MIGRATING-0.10.md) § 5 for the recipe when a job's work needs to move onto a clean branch first.
@@ -138,7 +138,7 @@ flume job rm docs-refresh
 
 Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`); the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing.
 
-Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir's tracked files (chain, prompts, `plan/pending.json`) are branch-scoped and will not appear on a branch that never committed them. Its gitignored subdirs — `awake/`, `loop.pid`, `prior-attempts/`, `worktrees/` (`spec/jobs.md`, "Runtime ignores") — are untracked and outlive a branch switch, so a stale baton or `loop.pid` from a job dir seeded elsewhere can still surface after HEAD moves off that branch. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
+Observational, like `flume status`: nothing on disk changes — no chain load, no baton dirs materialized — so it is safe to bake into prompts and watch loops. Note it reads the working tree's checkout: a job dir's tracked files (chain, prompts, `plan/pending.json`) are branch-scoped and will not appear on a branch that never committed them. Its gitignored subdirs — `awake/`, `loop.pid`, `prior-attempts/`, `rendered-prompts/`, `worktrees/` (`spec/jobs.md`, "Runtime ignores") — are untracked and outlive a branch switch, so a stale baton or `loop.pid` from a job dir seeded elsewhere can still surface after HEAD moves off that branch. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
 
 ```sh
 flume job status

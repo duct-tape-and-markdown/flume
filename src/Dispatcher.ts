@@ -50,7 +50,9 @@ import {
   matchesAny,
   namespacedJoin,
   priorAttemptsDir,
+  renderedPromptsDir,
   resolvePendingPath,
+  STATE_ROOT_NAMES,
   stopFlagPath,
 } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
@@ -302,6 +304,15 @@ export interface TickVerdictMergeOutcome {
  */
 export interface TickVerdictInvocation extends AgentUsage {
   tag?: string;
+  /**
+   * spec/prompt.md "The rendered prompt is persisted before the agent runs":
+   * the file holding the prompt this invocation was handed, byte for byte,
+   * as a forward-slash path relative to `flumeDir`. Written before
+   * `agent.invoke`, so a row exists iff the file does — the read-side record
+   * beside the write fence, and the one place "what was this tick told"
+   * is answerable without re-rendering.
+   */
+  promptPath: string;
 }
 
 /**
@@ -1890,6 +1901,7 @@ export class Dispatcher {
       }
 
       if (prompt !== undefined) {
+        const promptPath = await this.recordRenderedPrompt(key, prompt);
         // Fresh read, not `preHead`: the worktree branched from it, so the
         // two agree unless `setupWorktree` itself committed something — same
         // defensive re-read `runFanoutEntry` takes for the identical reason.
@@ -1904,7 +1916,7 @@ export class Dispatcher {
           tickTimeoutMs,
           extraEnv,
         );
-        invocation = { ...(termination.usage ?? {}) };
+        invocation = { promptPath, ...(termination.usage ?? {}) };
         const postWtHead = await git.revParse(wt.path);
         let wtCommitted = postWtHead !== preWtHead;
 
@@ -2430,7 +2442,11 @@ export class Dispatcher {
 
     for (const r of perEntry) {
       if (r.termination) {
-        invocations.push({ tag: r.entry.tag, ...(r.termination.usage ?? {}) });
+        invocations.push({
+          tag: r.entry.tag,
+          promptPath: r.promptPath!,
+          ...(r.termination.usage ?? {}),
+        });
       }
       if (r.tipMoved) {
         waveTipMoved = true;
@@ -2999,6 +3015,8 @@ export class Dispatcher {
      * for ship classification to consult.
      */
     termination?: AgentTermination;
+    /** Set alongside `termination`: the persisted rendered prompt, relative to `flumeDir`. */
+    promptPath?: string;
   }> {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
@@ -3044,6 +3062,7 @@ export class Dispatcher {
       return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path };
     }
 
+    const promptPath = await this.recordRenderedPrompt(key, prompt);
     const preHead = await git.revParse(wt.path);
     const tickTimeoutMs =
       chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
@@ -3083,6 +3102,7 @@ export class Dispatcher {
           worktreePath: wt.path,
           headSha: postHead,
           termination,
+          promptPath,
         };
       }
     }
@@ -3095,7 +3115,7 @@ export class Dispatcher {
       // must be legible without reading session logs).
       const mode = await this.classifyNoCommit(key, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
-      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination };
+      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination, promptPath };
     }
 
     // The ancestry check above cleared the whole base..postHead span as one
@@ -3137,6 +3157,7 @@ export class Dispatcher {
         gateFailure,
         headSha: postHead,
         termination,
+        promptPath,
       };
     }
 
@@ -3147,6 +3168,7 @@ export class Dispatcher {
       spanBase: preHead,
       gateResults,
       termination,
+      promptPath,
       worktreePath: wt.path,
     };
   }
@@ -4265,6 +4287,29 @@ export class Dispatcher {
       buildPlatformPreempt(termination.failureClass),
     );
     return "platform-preempt";
+  }
+
+  /**
+   * Persist the fully rendered prompt before the agent runs (spec/prompt.md
+   * "The rendered prompt is persisted before the agent runs") and return
+   * its path relative to `flumeDir`, forward-slash, for the verdict's
+   * invocation row. `key` is the same prior-attempt key the retry record
+   * uses — the phase name for a singleton, the slugified tag for a fanout
+   * entry — so the two records for one span share a name. The timestamp
+   * keeps ticks apart; the key keeps a wave's entries apart. A write
+   * failure propagates: a tick whose input record cannot be kept does not
+   * spend an invocation (engineering.md "Loud or nothing").
+   */
+  private async recordRenderedPrompt(
+    key: string,
+    prompt: string,
+  ): Promise<string> {
+    const dir = renderedPromptsDir(this.flumeDir);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const name = `${ts}-${slugify(key)}.md`;
+    await mkdir(namespacedJoin(dir), { recursive: true });
+    await writeFile(namespacedJoin(dir, name), prompt, "utf8");
+    return `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;
   }
 
   /**
