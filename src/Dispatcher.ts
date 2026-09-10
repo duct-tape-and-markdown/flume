@@ -1871,6 +1871,11 @@ export class Dispatcher {
     // the commit — absent when `shouldRun`/render-refusal skipped the
     // invocation entirely.
     let invocation: TickVerdictInvocation | undefined;
+    // spec/chain.md "What a hook receives": the tip this tick's span
+    // branched from, reported on the result once it has been read — the
+    // same value the gates below receive. Absent on a declined or
+    // render-refused tick: no span was ever started.
+    let baseSha: string | undefined;
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
     // the agent — a chain can decline a tick without spending one. Sees the
@@ -1906,6 +1911,7 @@ export class Dispatcher {
         // two agree unless `setupWorktree` itself committed something — same
         // defensive re-read `runFanoutEntry` takes for the identical reason.
         const preWtHead = await git.revParse(wt.path);
+        baseSha = preWtHead;
         const tickTimeoutMs =
           chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
         const termination = await this.invokeAgent(
@@ -2020,6 +2026,11 @@ export class Dispatcher {
                 phaseName: phase.name,
                 commitSha: mergedSha,
                 touchedPaths: commitTouchedPaths,
+                // The span's base, not `preCherry`: an afterMerge gate
+                // reading trunk needs the tip the agent branched from to
+                // tell an input this tick ignored from one that landed
+                // after it started (spec/chain.md "What a gate receives").
+                baseSha: preWtHead,
                 log: (l) => this.log.info(l),
               });
               gateResults.push({
@@ -2134,6 +2145,7 @@ export class Dispatcher {
         ),
         flumeDir: this.flumeDir,
         configDir: this.opts.configDir,
+        ...(baseSha ? { baseSha } : {}),
         shippedTags: [],
         revertedTags: [],
       },
@@ -2594,6 +2606,13 @@ export class Dispatcher {
           phaseName: phase.name,
           commitSha: mergedSha,
           touchedPaths: commitTouchedPaths,
+          // This entry's own span base, not `preCherry`: the tip its agent
+          // branched from, so an afterMerge gate reading trunk can tell an
+          // input the entry ignored from one that landed after it started
+          // (spec/chain.md "What a gate receives"). Sibling entries in the
+          // same wave were provisioned from the same tip, and each carries
+          // its own value regardless.
+          baseSha: r.spanBase,
           log: (l) => this.log.info(l),
         });
         mergeGateResults.push({
@@ -2714,6 +2733,7 @@ export class Dispatcher {
         phase.shipped?.({
           entry: r.entry,
           mergedSha,
+          baseSha: r.spanBase,
           touchedPaths: commitTouchedPaths,
           gateResults: [
             ...r.gateResults,
@@ -2932,6 +2952,12 @@ export class Dispatcher {
         ),
         flumeDir: this.flumeDir,
         configDir: this.opts.configDir,
+        // The tip every worktree in this wave was provisioned from
+        // (`createWorktree(entry.tag, preHead)` above) — the wave-level
+        // answer to "what could this tick not have seen". A per-entry base
+        // that diverged from it (a `setupWorktree` hook that committed) is
+        // on that entry's own ShipContext.
+        baseSha: preHead,
         ...(entries.length > 0 ? { entries } : {}),
         shippedTags: shipped.map((s) => s.tag),
         revertedTags: mergeReverted.map((e) => e.tag),
@@ -3446,6 +3472,7 @@ export class Dispatcher {
         phaseName: phase.name,
         commitSha,
         touchedPaths: commitTouchedPaths,
+        ...(spanBase ? { baseSha: spanBase } : {}),
         log: (l) => this.log.info(l),
       });
       results.push({

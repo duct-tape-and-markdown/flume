@@ -41,6 +41,15 @@ export interface ShipContext {
   entry: PendingEntry;
   /** Sha of this entry's commit as cherry-picked onto trunk. */
   mergedSha: string;
+  /**
+   * The sha this entry's span branched from — its worktree's tip when the
+   * tick started, the same value `GateContext.baseSha` carries and the base
+   * the dispatcher cherry-picked the span from. A `shipped` predicate
+   * judging the commit against the inputs the agent actually read reads
+   * `git show <baseSha>:<path>`, and `git log <baseSha>..<mergedSha>` is the
+   * span itself (spec/chain.md "What a hook receives").
+   */
+  baseSha: string;
   /** Repo-relative paths the merged commit touched (`git show --name-only`). */
   touchedPaths: readonly string[];
   /** This entry's own gate results — `afterCommit` in the worktree, then `afterMerge` on trunk. */
@@ -159,6 +168,19 @@ export interface TickResult {
   flumeDir: string;
   /** Absolute, resolved chain config directory (`<configDir>/chain.ts`). */
   configDir: string;
+  /**
+   * The sha this tick's span branched from — the same value
+   * `GateContext.baseSha` carries, so a `handoff` routing on "did anything
+   * land on trunk that this tick could not have seen" compares against the
+   * engine's number rather than the worktree's reflog (spec/chain.md "What
+   * a hook receives"). Under fanout it is the trunk tip every worktree in
+   * the wave was provisioned from; a per-entry base that diverged from it
+   * (a `setupWorktree` hook that committed) is on that entry's own
+   * {@link ShipContext}. Absent when the tick provisioned no span at all —
+   * a provisioning failure, a nothing-pickable wave, or a singleton
+   * declined before its worktree tip was read.
+   */
+  baseSha?: string;
   /**
    * One record per entry the wave provisioned, reported before the wave
    * folds those same facts into `shippedTags`/`revertedTags`/`noCommit`/

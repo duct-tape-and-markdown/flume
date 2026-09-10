@@ -11155,6 +11155,268 @@ describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
   }, 20_000);
 });
 
+describe("Dispatcher — the span base is reported: GateContext.baseSha, TickResult.baseSha, ShipContext.baseSha (SPAN-BASE-SHA-ON-GATE-AND-HOOK, spec/chain.md 'What a gate receives')", () => {
+  it("fanout: an afterCommit gate and an afterMerge gate on the same span both receive the sha the span branched from", async () => {
+    // The field shape this closes: a trunk commit lands *after* the tick
+    // branched, and an afterMerge gate reading trunk must not charge the
+    // entry with ignoring it. Without `baseSha` the gate has no engine-given
+    // number to diff from and rebuilds one from a worktree path convention.
+    await writeAndCommit(fx.repo, "notes/claim.md", "old\n", "seed: claim");
+    await writePending(fx.repo, [makeEntry("BASE-FANOUT", ["src/base.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const branchedFrom = await head(fx.repo);
+
+    let commitBase: string | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-base",
+      when: "afterCommit",
+      run(ctx) {
+        commitBase = ctx.baseSha;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    let mergeBase: string | undefined;
+    let landedAfterBranch: string[] | undefined;
+    let claimAtBase: string | undefined;
+    const captureMerge: Gate = {
+      name: "capture-merge-base",
+      when: "afterMerge",
+      async run(ctx) {
+        mergeBase = ctx.baseSha;
+        // The acceptance shape: answer "what landed that this tick could
+        // not have seen" from the context alone — no worktree path, no
+        // reflog.
+        const { stdout } = await exec(
+          "git",
+          ["log", "--format=%s", `${ctx.baseSha}..HEAD`, "--", "notes/"],
+          { cwd: ctx.cwd },
+        );
+        landedAfterBranch = stdout.trim().split("\n").filter(Boolean);
+        const shown = await exec("git", ["show", `${ctx.baseSha}:notes/claim.md`], {
+          cwd: ctx.cwd,
+        });
+        claimAtBase = shown.stdout;
+        return { ok: true, message: "captured" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [captureCommit, captureMerge],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "base-fanout": async (cwd) => {
+        await writeAndCommit(cwd, "src/base.ts", "ok\n", "build(BASE-FANOUT): ship");
+        // A concurrent writer moves trunk while this tick is mid-flight —
+        // the entry's agent never saw this commit.
+        await writeAndCommit(fx.repo, "notes/late.md", "late\n", "docs: late note");
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: both gates actually ran on a span that actually shipped.
+    expect(outcome.result?.shippedTags).toEqual(["BASE-FANOUT"]);
+    expect(
+      outcome.result?.gateResults.map((g) => g.gate),
+    ).toEqual(expect.arrayContaining(["capture-commit-base", "capture-merge-base"]));
+
+    // Both stages see the same number: the tip the worktree branched from.
+    expect(commitBase).toBe(branchedFrom);
+    expect(mergeBase).toBe(branchedFrom);
+
+    // And it is usable as a range base on trunk: the note that landed after
+    // the branch point is named, the one that predates it is not.
+    expect(landedAfterBranch).toEqual(["docs: late note"]);
+    expect(claimAtBase).toBe("old\n");
+  }, 20_000);
+
+  it("singleton: an afterCommit gate and an afterMerge gate on the same span both receive the sha the span branched from", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const branchedFrom = await head(fx.repo);
+
+    let commitBase: string | undefined;
+    let mergeBase: string | undefined;
+    const captureCommit: Gate = {
+      name: "capture-commit-base",
+      when: "afterCommit",
+      run(ctx) {
+        commitBase = ctx.baseSha;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+    const captureMerge: Gate = {
+      name: "capture-merge-base",
+      when: "afterMerge",
+      run(ctx) {
+        mergeBase = ctx.baseSha;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [captureCommit, captureMerge],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(
+      outcome.result?.gateResults.map((g) => g.gate),
+    ).toEqual(expect.arrayContaining(["capture-commit-base", "capture-merge-base"]));
+    // The afterMerge stage reports the span's base, never the pre-cherry-pick
+    // trunk tip — here they coincide only because nothing else moved trunk.
+    expect(commitBase).toBe(branchedFrom);
+    expect(mergeBase).toBe(branchedFrom);
+  }, 20_000);
+
+  it("handoff receives baseSha on TickResult under both concurrencies", async () => {
+    // Singleton leg.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const planBranchedFrom = await head(fx.repo);
+
+    let planResult: TickResult | undefined;
+    const planPhase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        planResult = r;
+        return [];
+      },
+    });
+
+    const planDispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [planPhase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/plan-out.ts", "ok\n", "plan: derive");
+      }),
+      log: silent,
+    });
+    const planOutcome = await planDispatcher.tick();
+
+    expect(planOutcome.result?.committed).toBe(true);
+    expect(planResult).toBeDefined();
+    expect(planResult?.baseSha).toBe(planBranchedFrom);
+
+    // Fanout leg, on the tree the singleton leg just moved.
+    await writePending(fx.repo, [makeEntry("BASE-HANDOFF", ["src/handoff.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const waveBranchedFrom = await head(fx.repo);
+
+    let waveResult: TickResult | undefined;
+    const buildPhase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      handoff: (r) => {
+        waveResult = r;
+        return [];
+      },
+    });
+
+    const buildDispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [buildPhase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "base-handoff": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/handoff.ts",
+            "ok\n",
+            "build(BASE-HANDOFF): ship",
+          );
+        },
+      }),
+      log: silent,
+    });
+    const waveOutcome = await buildDispatcher.tick();
+
+    expect(waveOutcome.result?.shippedTags).toEqual(["BASE-HANDOFF"]);
+    expect(waveResult).toBeDefined();
+    expect(waveResult?.baseSha).toBe(waveBranchedFrom);
+    // Not the post-tick tip: the wave's own commits are inside the range.
+    expect(waveResult?.baseSha).not.toBe(await head(fx.repo));
+  }, 30_000);
+
+  it("the shipped hook receives the span base beside the merged sha", async () => {
+    await writePending(fx.repo, [makeEntry("BASE-SHIP", ["src/ship.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const branchedFrom = await head(fx.repo);
+
+    let seen: { baseSha: string; mergedSha: string } | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      shipped: (ctx) => {
+        seen = { baseSha: ctx.baseSha, mergedSha: ctx.mergedSha };
+        return true;
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "base-ship": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ship.ts",
+            "ok\n",
+            "build(BASE-SHIP): ship",
+          );
+        },
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["BASE-SHIP"]);
+    expect(seen).toBeDefined();
+    expect(seen?.baseSha).toBe(branchedFrom);
+    expect(seen?.mergedSha).not.toBe(branchedFrom);
+    // The pair brackets exactly this entry's span on trunk.
+    const { stdout } = await exec(
+      "git",
+      ["log", "--format=%s", `${seen!.baseSha}..${seen!.mergedSha}`],
+      { cwd: fx.repo },
+    );
+    expect(stdout.trim().split("\n").filter(Boolean)).toEqual([
+      "build(BASE-SHIP): ship",
+    ]);
+  }, 20_000);
+});
+
 describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, spec/chain.md 'What a gate receives')", () => {
   it("singleton tick: an afterCommit gate's stateRootRel is flumeDir's offset from repoRoot, with the worktree nested inside flumeDir (the real afterCommit shape)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");

@@ -111,6 +111,21 @@ export interface GateContext {
    * compiling; every dispatcher-constructed context sets it.
    */
   touchedPaths?: string[];
+  /**
+   * The sha the gated span started from — the worktree's tip when the tick
+   * branched, the same value the dispatcher cherry-picks the span from. Set
+   * at both stages: under `afterCommit` it is the base of the span being
+   * gated in the worktree; under `afterMerge` it is that same base, not the
+   * pre-cherry-pick trunk tip, so a gate reading trunk can tell an input the
+   * tick *ignored* from one it *never saw* — `git log <baseSha>..HEAD --
+   * <inputs>` names what landed after the tick branched, and
+   * `git show <baseSha>:<path>` is the input as the tick read it
+   * (spec/chain.md "What a gate receives"). Without it a chain rebuilds the
+   * base from a worktree path convention the engine never promised. Optional
+   * for the same hand-built-fixture reason as `commitSha`/`touchedPaths`
+   * above; every dispatcher-constructed context sets it.
+   */
+  baseSha?: string;
   /** Logger for harness-side output. Gates should not write to stdout directly. */
   log: (line: string) => void;
 }
