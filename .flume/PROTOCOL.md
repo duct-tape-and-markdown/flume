@@ -42,7 +42,7 @@ No schema holds these; they are the plan tick's actual work.
    entries, a spec section, or a decision nobody has made.
 2. **Independently shippable.** Its gates pass on its own; dependence on a sibling
    is `blockedBy`, declared, never assumed by queue order.
-3. **Cited, not invented.** `per` resolves to a section that justifies *this* work.
+3. **Cited, not invented.** `per` resolves to a section that justifies *this* work — that it resolves at all is gated (`per cites resolve`, `.flume/chain.ts`); that it justifies the work is plan's judgment.
    An entry that cannot carry a clean cite is an open question.
 4. **Acceptance is decidable.** Someone who did not write it runs it and gets yes
    or no. "Improve error handling" is not acceptance.

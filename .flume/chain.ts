@@ -8,8 +8,9 @@
  * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 
 /**
  * Does inbox.md carry an undrained finding? Entries are `##` subsections
@@ -69,6 +70,7 @@ import type {
   TickContext,
   WorktreeSetupContext,
 } from "../src/Phase.ts";
+import type { Gate } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
 import type { FlumeApi } from "../src/flumeApi.ts";
 
@@ -78,6 +80,50 @@ import type { EntryExtension } from "../src/PendingSchema.ts";
 
 
 
+
+/**
+ * The body of the markdown section whose heading text is exactly `heading`
+ * (any `#` depth, no trailing decoration), up to the next heading of the
+ * same or shallower depth — or `undefined` when no such heading exists.
+ *
+ * One grammar, two consumers: build's `promptArgs` renders the section a
+ * pending entry's `per` cites as prompt data, and plan's `per cites
+ * resolve` gate refuses a commit whose cite this function cannot resolve.
+ * Because both read through here, what plan is held to is exactly what
+ * build will be handed (`engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+function sectionOf(text: string, heading: string): string | undefined {
+  const lines = text.split("\n");
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]!);
+    if (!m) continue;
+    if (start === -1) {
+      if (m[2] === heading) {
+        depth = m[1]!.length;
+        start = i;
+      }
+    } else if (m[1]!.length <= depth) {
+      return lines.slice(start, i).join("\n").trimEnd();
+    }
+  }
+  return start === -1 ? undefined : lines.slice(start).join("\n").trimEnd();
+}
+
+/** `git show <sha>:<path>` from `repoRoot`, or `null` when the commit does not carry the path. */
+function fileAtCommit(repoRoot: string, sha: string, path: string): string | null {
+  try {
+    return execFileSync("git", ["show", `${sha}:${path}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
 
 // ---------- chain factory (spec/chain.md: The chain is a plugin) ----------
 
@@ -236,6 +282,57 @@ const factory: ChainFactory = (api) => {
   };
 
   /**
+   * Every entry's `per` cite resolves: the path is in the gated commit and
+   * the section is a heading in it, by the same resolver build renders the
+   * section with. Promotes the plan prompt's "the cite must resolve in the
+   * file it names" from prose to a gate (`engineering.md`, *Narration is the
+   * ladder's bottom rung*) — and retires the build-side "nearest equivalent
+   * heading" fallback, which was a plan-side error read as build's latitude.
+   *
+   * Reads the queue as of `ctx.commitSha`, the same at-sha read
+   * `pendingGate` makes (spec/pending.md, *Dispatch reads come from the
+   * tip*); declared after it, so the JSON is already known to parse when
+   * this runs. `per` is this chain's extension field, so the check is the
+   * chain's — the engine never reads it.
+   */
+  const perResolvesGate: Gate = {
+    name: "per cites resolve",
+    when: "afterCommit",
+    async run(ctx) {
+      if (!ctx.commitSha) {
+        return { ok: false, message: "per gate requires commitSha" };
+      }
+      const queueRel = relative(ctx.flumeDir, ctx.pendingPath).split("\\").join("/");
+      const raw =
+        ctx.stateRootRel === undefined
+          ? readFileSync(ctx.pendingPath, "utf8")
+          : fileAtCommit(ctx.repoRoot, ctx.commitSha, `${ctx.stateRootRel}/${queueRel}`.split("\\").join("/"));
+      if (raw === null) {
+        return { ok: false, message: `${queueRel} missing at ${ctx.commitSha.slice(0, 7)}` };
+      }
+      const entries = JSON.parse(raw) as { tag: string; per?: unknown }[];
+      const unresolved: string[] = [];
+      for (const entry of entries) {
+        const per = entryExtension.per.schema.parse(entry.per);
+        const text = fileAtCommit(ctx.repoRoot, ctx.commitSha, per.path);
+        if (text === null) {
+          unresolved.push(`${entry.tag}: ${per.path} is not in the commit`);
+        } else if (sectionOf(text, per.section) === undefined) {
+          unresolved.push(`${entry.tag}: no heading "${per.section}" in ${per.path}`);
+        }
+      }
+      if (unresolved.length > 0) {
+        return {
+          ok: false,
+          message: `${unresolved.length} per cite(s) do not resolve`,
+          details: unresolved.join("\n"),
+        };
+      }
+      return { ok: true, message: `${entries.length} per cite(s) resolve` };
+    },
+  };
+
+  /**
    * Materialize node_modules in a fresh build worktree, then assert it, so
    * missing deps fail here rather than surfacing post-agent as confusing
    * tsc/vitest "cannot find module" noise.
@@ -361,7 +458,10 @@ const factory: ChainFactory = (api) => {
     // The builtin composes core + this chain's extension for
     // validation and pre-checks every entry's declared files against build's
     // fence at plan time.
-    gates: [pendingGate({ extension: entryExtension, targetFence: buildFence })],
+    gates: [
+      pendingGate({ extension: entryExtension, targetFence: buildFence }),
+      perResolvesGate,
+    ],
     /**
      * Decline only a tick that provably has nothing to do but pass
      * the baton: the queue already carries pickable work, so the sweep yields
@@ -525,11 +625,26 @@ const factory: ChainFactory = (api) => {
       // `per` is this chain's own declared extension field — narrow it through
       // the same schema the parse gate validated it with.
       const per = entryExtension.per.schema.parse(ctx.assignedEntry.per);
+      // The cited section, rendered as data rather than an errand over the
+      // whole file (inbox 2026-09-10, *the tick's read set is prose*). Read
+      // from this tick's own tree. Plan's `per cites resolve` gate holds
+      // every queued cite to this resolver, so a miss here is a cite that
+      // changed under the entry — loud, never a stand-in section.
+      const section = sectionOf(
+        readFileSync(join(ctx.cwd, per.path), "utf8"),
+        per.section,
+      );
+      if (section === undefined) {
+        throw new Error(
+          `build: ${ctx.assignedEntry.tag} cites "${per.section}" in ${per.path}, which has no such heading`,
+        );
+      }
       return {
         ENTRY_JSON: JSON.stringify(ctx.assignedEntry, null, 2),
         TAG: ctx.assignedEntry.tag,
         PER_PATH: per.path,
         PER_SECTION: per.section,
+        PER_SECTION_TEXT: section,
       };
     },
     handoff(result) {

@@ -124,7 +124,7 @@ For `per.path`, use the file each section was derived from — one plan round ma
 - `spec/*.md` — the engine contract by topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`). The default for Derive and most Audit findings.
 - `.claude/rules/*.md` — what shape it takes. Sweep findings and shape defects cite the owning rule section (`engineering.md`, `engine-boundary.md`); these need no release-line home, which is what unblocks shape work between lines.
 
-For `per.section`, use that file's exact section heading text without the leading `## `. The `per` cite must resolve in the file it names.
+For `per.section`, use that file's exact section heading text without the leading `## `. The `per cites resolve` gate (`.flume/chain.ts`) refuses the commit when a cite does not resolve in the file it names.
 
 <schema>
 {{PENDING_SCHEMA}}

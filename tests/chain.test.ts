@@ -19,6 +19,7 @@
  * `.flume/inbox.md` / `.flume/plan/state.md` are never read or written.
  */
 
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -461,5 +462,146 @@ describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outco
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.slugify).toBe(slugify);
     expect(api.priorAttemptPath).toBe(priorAttemptPath);
+  });
+});
+
+describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one resolver", () => {
+  let plan: Phase;
+  let build: Phase;
+  let repo: string;
+  const exec = (args: string[]) =>
+    execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+
+  const SPEC = [
+    "# Top",
+    "",
+    "intro",
+    "",
+    "## The section cited",
+    "",
+    "body line one",
+    "",
+    "### A nested heading stays inside",
+    "",
+    "nested body",
+    "",
+    "## The next section",
+    "",
+    "not part of the cite",
+    "",
+  ].join("\n");
+
+  const entry = (tag: string, section: string) => ({
+    tag,
+    gate: { kind: "open" },
+    files: { new: [], edit: [{ path: "src/x.ts", description: "x" }], retire: [] },
+    summary: "s",
+    per: { path: "spec/x.md", section },
+    tests: [],
+    acceptance: "a",
+  });
+
+  async function commitQueue(entries: unknown[]): Promise<string> {
+    await writeFile(join(repo, ".flume", "plan", "pending.json"), JSON.stringify(entries, null, 2));
+    exec(["add", "."]);
+    exec(["commit", "-q", "-m", "plan: queue"]);
+    return exec(["rev-parse", "HEAD"]);
+  }
+
+  function gateCtx(sha: string) {
+    return {
+      cwd: repo,
+      repoRoot: repo,
+      flumeDir: join(repo, ".flume"),
+      stateRootRel: ".flume",
+      configDir: join(repo, ".flume"),
+      pendingPath: join(repo, ".flume", "plan", "pending.json"),
+      phaseName: "plan",
+      commitSha: sha,
+      touchedPaths: [],
+      log: () => {},
+    };
+  }
+
+  beforeAll(async () => {
+    const { chain } = await loadChainModule(REPO_PATHS);
+    plan = chain.phases.find((p) => p.name === "plan")!;
+    build = chain.phases.find((p) => p.name === "build")!;
+  });
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "flume-per-gate-"));
+    exec(["init", "-q"]);
+    exec(["config", "user.email", "t@example.com"]);
+    exec(["config", "user.name", "t"]);
+    exec(["config", "commit.gpgsign", "false"]);
+    await mkdir(join(repo, "spec"), { recursive: true });
+    await mkdir(join(repo, ".flume", "plan"), { recursive: true });
+    await writeFile(join(repo, "spec", "x.md"), SPEC);
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("refuses a commit whose queue cites a heading the file does not carry, naming the tag; passes once every cite resolves", async () => {
+    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
+    expect(gate.when).toBe("afterCommit");
+
+    const bad = await commitQueue([
+      entry("GOOD", "The section cited"),
+      entry("BAD", "The section cited (or the nearest equivalent)"),
+    ]);
+    const refused = await gate.run(gateCtx(bad));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain("BAD:");
+    expect(refused.details).not.toContain("GOOD:");
+
+    const good = await commitQueue([entry("GOOD", "The section cited")]);
+    const passed = await gate.run(gateCtx(good));
+    expect(passed.ok).toBe(true);
+    expect(passed.message).toBe("1 per cite(s) resolve");
+  });
+
+  it("refuses a cite whose path is not in the commit", async () => {
+    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
+    const sha = await commitQueue([
+      { ...entry("NOPATH", "The section cited"), per: { path: "spec/missing.md", section: "The section cited" } },
+    ]);
+    const refused = await gate.run(gateCtx(sha));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain("spec/missing.md is not in the commit");
+  });
+
+  it("build renders exactly the section the gate accepted — heading through the last line before the next same-depth heading — and throws on a cite the gate would refuse", async () => {
+    const gate = plan.gates.find((g) => g.name === "per cites resolve")!;
+    const sha = await commitQueue([entry("GOOD", "The section cited")]);
+    expect((await gate.run(gateCtx(sha))).ok).toBe(true);
+
+    const args = build.promptArgs!({
+      cwd: repo,
+      flumeDir: join(repo, ".flume"),
+      assignedEntry: entry("GOOD", "The section cited") as unknown as PendingEntry,
+    });
+    expect(args.PER_SECTION_TEXT).toBe(
+      [
+        "## The section cited",
+        "",
+        "body line one",
+        "",
+        "### A nested heading stays inside",
+        "",
+        "nested body",
+      ].join("\n"),
+    );
+    expect(args.PER_SECTION_TEXT).not.toContain("not part of the cite");
+
+    expect(() =>
+      build.promptArgs!({
+        cwd: repo,
+        flumeDir: join(repo, ".flume"),
+        assignedEntry: entry("BAD", "No such heading") as unknown as PendingEntry,
+      }),
+    ).toThrow(/BAD cites "No such heading" in spec\/x.md/);
   });
 });

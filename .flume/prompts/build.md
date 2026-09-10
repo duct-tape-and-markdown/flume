@@ -6,10 +6,10 @@
 
 # THE WHY
 
-Find the section named `{{PER_SECTION}}` in the spec. The rest of the spec is context for the broader ship target; cross-reference adjacent sections as needed.
+The section the entry's `per` cites, from `{{PER_PATH}}` as this tick's tree holds it. The rest of that file is context for the broader ship target — open it when an adjacent section matters.
 
-<spec path="{{PER_PATH}}">
-!`cat {{PER_PATH}} 2>/dev/null || echo "(spec not found: {{PER_PATH}})"`
+<spec path="{{PER_PATH}}" section="{{PER_SECTION}}">
+{{PER_SECTION_TEXT}}
 </spec>
 
 # CONTEXT
