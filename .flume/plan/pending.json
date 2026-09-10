@@ -1,42 +1,5 @@
 [
   {
-    "tag": "NOT-SHIPPED-PRIOR-ATTEMPT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "`NotShippedAttempt` variant on the `PriorAttempt` union and its `<prior-attempt>` render — merged sha and touched paths, no reason vocabulary."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Write the record under the entry's key on the `!shipVerdict` leg (:2728); a later clean ship clears it by the existing path. Exclude `not-shipped` from `superviseLoop`'s errored derivation, as `voluntary-bail` already is (spec/loop.md, *No interpretation fields*)."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Pins."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A `not-shipped` `PriorAttempt` on the chain's `shipped: false` — the park two chains rebuilt from the verdict log, on the channel `TickContext.priorAttempts` already carries",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Prior-outcome feedback to the retrying tick"
-    },
-    "tests": [
-      "a `shipped: false` verdict leaves a `not-shipped` prior-attempt record under the entry's key, carrying the merged sha and touched paths",
-      "the next tick's `TickContext.priorAttempts` carries it, and a later clean ship clears the slot",
-      "a run whose only no-commit fact is `not-shipped` is not derived as errored"
-    ],
-    "acceptance": "A chain answers \"was the last build a park\" from `priorAttempts` alone; the pins fail on the pre-fix tree.",
-    "notes": "Closes the parked fork — the human ruled it the prior-attempt record, not a `TickContext` merge-outcome field (07e77d3). Two chains livelocked on the missing channel and each fixed it by reading the verdict log: flume's `plan.shouldRun` (4ee48ee), cascade's `build.handoff`."
-  },
-  {
     "tag": "PRIOR-ATTEMPT-ANCHOR-REFUSED",
     "gate": {
       "kind": "open"
