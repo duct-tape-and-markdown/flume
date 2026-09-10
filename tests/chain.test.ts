@@ -38,6 +38,7 @@ import {
   writeTickVerdict,
 } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
+import { readFileAtRef } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 
@@ -603,5 +604,67 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
         assignedEntry: entry("BAD", "No such heading") as unknown as PendingEntry,
       }),
     ).toThrow(/BAD cites "No such heading" in spec\/x.md/);
+  });
+});
+
+/**
+ * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered* — a chain gate that needs a commit's content reads it through
+ * the engine's own reader instead of hand-rolling `git show <sha>:<path>`.
+ * The hand-rolled copy's failure mode is what the second test pins: catching
+ * the subprocess throw as "not in the commit" makes an unresolvable ref
+ * indistinguishable from an absent path.
+ */
+describe("buildFlumeApi().git.readFileAtRef", () => {
+  let repo: string;
+  const exec = (args: string[]) =>
+    execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+
+  /** Seeds one commit carrying `queue.json`, then dirties the working tree. */
+  async function seedCommit(): Promise<string> {
+    await writeFile(join(repo, "queue.json"), "committed bytes\n");
+    exec(["add", "."]);
+    exec(["commit", "-q", "-m", "seed"]);
+    const sha = exec(["rev-parse", "HEAD"]);
+    await writeFile(join(repo, "queue.json"), "dirty working tree\n");
+    return sha;
+  }
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "flume-api-readfileatref-"));
+    exec(["init", "-q"]);
+    exec(["config", "user.email", "t@example.com"]);
+    exec(["config", "user.name", "t"]);
+    exec(["config", "commit.gpgsign", "false"]);
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("is the engine's own reader on the api a chain factory receives, and reads a tracked path's bytes at a given sha", async () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    expect(api.git.readFileAtRef).toBe(readFileAtRef);
+
+    // The real factory consumes this api object, so the member is on the
+    // surface a tick's chain actually holds — not a shape assembled here.
+    const { chain } = chainFactory(api);
+    expect(chain.phases.length).toBeGreaterThan(0);
+
+    const sha = await seedCommit();
+    expect(await api.git.readFileAtRef(repo, sha, "queue.json")).toBe(
+      "committed bytes\n",
+    );
+  });
+
+  it("reads a path absent from that sha's tree as null, while an unresolvable ref fails loudly rather than reading as absent", async () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    const sha = await seedCommit();
+
+    expect(await api.git.readFileAtRef(repo, sha, "never-committed.json")).toBeNull();
+
+    await expect(
+      api.git.readFileAtRef(repo, "refs/heads/no-such-branch", "queue.json"),
+    ).rejects.toThrow();
   });
 });

@@ -39,7 +39,7 @@ import {
   priorAttemptPath,
   priorAttemptsDir,
 } from "./Dispatcher.js";
-import { showNameOnly, TipClaimHeldError } from "./git.js";
+import { readFileAtRef, showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { matchesAny } from "./paths.js";
 import {
@@ -123,6 +123,13 @@ export interface FlumeApi {
   /** Read-only git helpers a chain gate may need. */
   git: {
     showNameOnly: typeof showNameOnly;
+    /**
+     * The engine's own tip-read — the one `pendingGate` runs on. A gate
+     * reading a commit's content wants this rather than its own `git show`:
+     * the reimplementation classifies every failure as "absent from the
+     * commit", so a bad ref reads as a missing path instead of failing loud.
+     */
+    readFileAtRef: typeof readFileAtRef;
   };
   /** The error classes chains branch on with `instanceof`, no value import. */
   CjsContextLoadError: typeof CjsContextLoadError;
@@ -170,7 +177,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     slugify,
     priorAttemptPath,
     priorAttemptsDir,
-    git: { showNameOnly },
+    git: { showNameOnly, readFileAtRef },
     CjsContextLoadError,
     PendingParseFailure,
     InlineExecRenderError,
