@@ -1,45 +1,10 @@
 [
   {
-    "tag": "SPAN-BASE-SHA-ON-GATE-AND-HOOK",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "`GateContext.baseSha`, set at both stages."
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "`TickResult.baseSha`; `ShipContext.baseSha` beside `mergedSha` (spec/pending.md, *Ship detection trusts the agent's own account*)."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Populate from the values already held: `preWtHead` (:1908, singleton) and `r.spanBase` (:2505, fanout) — both gate-run sites, both `TickResult` returns, and the `phase.shipped` call at :2714."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Pins."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`baseSha` on `GateContext` (both stages), `TickResult`, and `ShipContext` — the span base the dispatcher already holds as `preWtHead`/`r.spanBase` and hands out nowhere",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate receives"
-    },
-    "tests": [
-      "an afterCommit gate and an afterMerge gate on the same span both receive the sha the span branched from",
-      "`handoff` receives `baseSha` on `TickResult` under both concurrencies",
-      "the `shipped` hook receives the span base beside the merged sha"
-    ],
-    "acceptance": "A gate can answer `git log <baseSha>..HEAD -- <path>` without reading a worktree path or the reflog; the pins fail on the pre-fix tree.",
-    "notes": "Field-traced twice at temper (inbox 2026-09-07): an afterMerge honesty gate reverted a tick for a trunk commit that landed after it branched. The chain-side fix read `<FLUME_WORKTREES_DIR>/plan` HEAD — a path convention plus a teardown-ordering promise the engine never made. Temper also asked for the afterMerge worktree path; the base makes it unnecessary — file only on a second consumer."
-  },
-  {
     "tag": "NOT-SHIPPED-PRIOR-ATTEMPT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -73,7 +38,10 @@
   },
   {
     "tag": "TICKRESULT-PROVISION-FAILURES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -106,7 +74,10 @@
   },
   {
     "tag": "GATE-RESULT-SKIPPED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -148,7 +119,10 @@
   },
   {
     "tag": "VERDICT-SPAN-ROW-BASE-SHA",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -176,37 +150,11 @@
     "notes": "The singleton half is pre-existing drift the base-sha widening surfaces: the section's \"the phase's own single span under singleton\" has never held for `headSha` either. Verified on disk this tick — `runSingleton`'s return sets no `mergeOutcomes`, and the afterCommit revert at :1946 drops `postWtHead` after `buildPriorAttempt`."
   },
   {
-    "tag": "API-GIT-READFILEATREF",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/flumeApi.ts",
-          "description": "`readFileAtRef` onto `api.git` beside `showNameOnly` — the engine's own reader, already consumed by `pendingGate`."
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "Pin driven through `buildFlumeApi`."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`api.git.readFileAtRef` — two chains hand-roll `git show <sha>:<path>`; the engine already owns that read, with the ls-tree probe that splits missing-path from bad-ref",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fact the engine holds is reported, never rediscovered"
-    },
-    "tests": [
-      "a chain factory receives `git.readFileAtRef` and reads a tracked path's bytes at a given sha",
-      "a path absent from that sha's tree reads as null, while an unresolvable ref fails loudly rather than reading as absent"
-    ],
-    "acceptance": "`api.git.readFileAtRef` is callable from a chain factory and the pins fail on the pre-fix tree.",
-    "notes": "5d030fd asked this tick to rule; it agrees. The chain's `fileAtCommit` catches every `execFileSync` throw as \"not in the commit\" — conflating a bad ref and a missing git with a missing path, the exact hazard `readFileAtRef`'s docstring names — and inherits execFileSync's 1 MB maxBuffer against the engine's 16 MB. Deleting the chain copy is a `chore(flume):` commit, out of build's lane."
-  },
-  {
     "tag": "PRE-0.10-CHAIN-SHAPE-TAUGHT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
