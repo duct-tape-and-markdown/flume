@@ -8420,6 +8420,97 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     expect(captured!.has("corrupt")).toBe(false);
     expect(captured!.size).toBe(1);
   }, 20_000);
+
+  /**
+   * Drop `records` (raw JSON, whatever shape) under `<flumeDir>/prior-attempts/`
+   * and return the `TickContext.priorAttempts` map a phase hook is handed for
+   * them — the only surface a chain reads a record through.
+   */
+  const priorAttemptsSeenBy = async (
+    records: Record<string, unknown>,
+  ): Promise<ReadonlyMap<string, PriorAttempt>> => {
+    await writePending(fx.repo, [makeEntry("SHIPS", ["src/ships.ts"])]);
+    const flumeDir = join(fx.repo, ".flume");
+    await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+    for (const [key, rec] of Object.entries(records)) {
+      await writeFile(
+        join(flumeDir, "prior-attempts", `${key}.json`),
+        JSON.stringify(rec),
+      );
+    }
+
+    let captured: ReadonlyMap<string, PriorAttempt> | undefined;
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          shouldRun: (ctx) => {
+            captured = ctx.priorAttempts;
+            return false;
+          },
+        }),
+      ],
+      humanOnly: [],
+    };
+    new Baton(flumeDir).wake("build");
+    await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({}),
+      log: silent,
+    }).tick();
+    expect(captured).toBeDefined();
+    return captured!;
+  };
+
+  it("a record carrying a recognized `mode` but no `headSha` is absent from `TickContext.priorAttempts`, the degrade an unrecognized `mode` already earns", async () => {
+    const captured = await priorAttemptsSeenBy({
+      "un-anchored": { mode: "voluntary-bail", constraint: "no anchor", at: "2024-01-01T00:00:00.000Z" },
+      "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), at: "2024-01-01T00:00:00.000Z" },
+    });
+
+    // The un-anchored record is refused exactly as the unrecognized-mode one
+    // is: a chain reading `headSha` off a `priorAttempts` value never gets
+    // `undefined` through a field the type declares required.
+    expect(captured.has("un-anchored")).toBe(false);
+    expect(captured.has("bad-mode")).toBe(false);
+    expect(captured.size).toBe(0);
+  }, 20_000);
+
+  it("a record missing only `at` is refused too — the anchor is both fields", async () => {
+    const captured = await priorAttemptsSeenBy({
+      "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), headSha: "0".repeat(40) },
+    });
+
+    expect(captured.has("no-at")).toBe(false);
+    expect(captured.size).toBe(0);
+  }, 20_000);
+
+  it("an anchored record of each union variant still reads back, so the refusal is not swallowing the map", async () => {
+    const anchor = { headSha: "0".repeat(40), at: "2024-01-01T00:00:00.000Z" };
+    // One record per arm of the union, so a refusal that over-fired on any
+    // single variant's own fields shows up as a missing key rather than
+    // hiding behind a sibling that happened to survive.
+    const anchored: Record<string, PriorAttempt> = {
+      "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", ...anchor },
+      "voluntary-bail": { mode: "voluntary-bail", constraint: "off-writablePaths edit", ...anchor },
+      "platform-preempt": { mode: "platform-preempt", failureClass: "rate-limit", ...anchor },
+      "render-refused": { mode: "render-refused", failures: "! `git log`: exit 128", ...anchor },
+      "tip-moved": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), ...anchor },
+      "not-shipped": { mode: "not-shipped", mergedSha: "c".repeat(40), touchedPaths: ["src/a.ts"], ...anchor },
+    };
+
+    const captured = await priorAttemptsSeenBy(anchored);
+
+    expect(Object.keys(anchored).length).toBe(6);
+    for (const [key, rec] of Object.entries(anchored)) {
+      expect(captured.get(key)).toEqual(rec);
+    }
+    expect(captured.size).toBe(6);
+  }, 20_000);
+
 });
 
 describe("TickResult.pickableAfter / entries — dispatcher-computed facts a handoff reads instead of re-deriving (spec/chain.md 'What a hook receives')", () => {

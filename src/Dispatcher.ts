@@ -3995,10 +3995,14 @@ export class Dispatcher {
   }
 
   /**
-   * Read a persisted prior-attempt record, if any. Corrupt, or carrying an
-   * unrecognized `mode` discriminant → treated as absent: the renderer is
-   * exhaustive over the known modes and must never be fed an unknown
-   * shape (and a stale slot should never become a false signal).
+   * Read a persisted prior-attempt record, if any. Corrupt, carrying an
+   * unrecognized `mode` discriminant, or missing the `headSha`/`at` anchor
+   * every record carries (spec/loop.md "Every record is anchored") →
+   * treated as absent. `mode` alone does not make a `PriorAttempt`: the
+   * renderer is exhaustive over the known modes and must never be fed an
+   * unknown shape, and a chain comparing a record's `headSha` to the tip
+   * reads a field the type promises is there. A record predating the anchor
+   * is a stale slot, and a stale slot must never become a false signal.
    */
   private async readPriorAttempt(
     key: string,
@@ -4006,9 +4010,11 @@ export class Dispatcher {
     const p = priorAttemptPath(this.flumeDir, key);
     if (!existsSync(toNamespacedPath(p))) return undefined;
     try {
-      const rec = JSON.parse(
-        await readFile(toNamespacedPath(p), "utf8"),
-      ) as { mode?: unknown };
+      const rec = JSON.parse(await readFile(toNamespacedPath(p), "utf8")) as {
+        mode?: unknown;
+        headSha?: unknown;
+        at?: unknown;
+      };
       if (
         rec &&
         (rec.mode === "gate-revert" ||
@@ -4016,7 +4022,9 @@ export class Dispatcher {
           rec.mode === "platform-preempt" ||
           rec.mode === "render-refused" ||
           rec.mode === "tip-moved" ||
-          rec.mode === "not-shipped")
+          rec.mode === "not-shipped") &&
+        typeof rec.headSha === "string" &&
+        typeof rec.at === "string"
       ) {
         return rec as PriorAttempt;
       }
