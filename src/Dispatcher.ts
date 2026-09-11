@@ -8,8 +8,9 @@
  * hibernation is a process-per-tick supervisor of its own
  * (`superviseLoop`, `src/loopSupervisor.ts`), the retry's input — the
  * prior-attempt records this file writes and reads back — lives in
- * `src/priorAttempts.ts`, and the friction channel it validates, counts
- * and harvests lives in `src/friction.ts`.
+ * `src/priorAttempts.ts`, the friction channel it validates, counts
+ * and harvests lives in `src/friction.ts`, and the ephemeral worktrees it
+ * provisions, tears down and sweeps live in `src/worktrees.ts`.
  */
 
 import {
@@ -29,7 +30,6 @@ import {
   relative,
   isAbsolute,
   sep,
-  toNamespacedPath,
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -48,10 +48,7 @@ import {
   type FlumeApi,
   type FlumePaths,
 } from "./flumeApi.js";
-import {
-  harvestFriction,
-  validateFrictionDeclaration,
-} from "./friction.js";
+import { validateFrictionDeclaration } from "./friction.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
   assertStateRootRelative,
@@ -66,7 +63,6 @@ import {
   STATE_ROOT_NAMES,
   tickVerdictPath,
   tickVerdictsLogPath,
-  worktreesBase,
 } from "./paths.js";
 import {
   buildCleanExit,
@@ -105,6 +101,12 @@ import type {
 import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
 import type { PriorAttempt, NoCommitMode } from "./Prompt.js";
 import * as git from "./git.js";
+import {
+  createWorktree,
+  sweepStaleWorktrees,
+  teardownWorktreeInstance,
+  type WorktreeContext,
+} from "./worktrees.js";
 
 const execFileP = promisify(execFile);
 
@@ -836,35 +838,6 @@ export function computeStateRootRel(
 }
 
 /**
- * Length bound for `createWorktree`'s directory-name component only.
- * `git worktree add` refuses a worktree path around 200 chars on
- * win32 (`fatal: '$GIT_DIR' too big`) — below MAX_PATH, unaffected by
- * `core.longpaths`, and unreachable by `toNamespacedPath`/`namespacedJoin`
- * because git builds that path itself before any Node fs call sees it.
- * `TAG_MAX_LENGTH` (`PendingSchema.ts`) sizes the schema off NAME_MAX (255),
- * a wider ceiling, so a schema-valid tag's raw slug can already exceed this
- * one. Chosen with room to spare under a `wtBase`/namespace prefix, not
- * tuned to the measured ~200-char wall itself.
- */
-const WORKTREE_DIRNAME_MAX = 48;
-
-/**
- * `createWorktree`'s fs directory name for an entry's tag — truncated to
- * `WORKTREE_DIRNAME_MAX` with a hash of the *full* tag appended so two tags
- * sharing a long common prefix still land on distinct directories. Only the
- * filesystem component is bounded: the branch name and the prior-attempt
- * key keep the untruncated `slugify(entry.tag)`, since neither is a git-
- * constructed worktree path and both are already bounded by the schema's
- * own `TAG_MAX_LENGTH`.
- */
-export function worktreeDirName(tag: string): string {
-  const slug = slugify(tag);
-  if (slug.length <= WORKTREE_DIRNAME_MAX) return slug;
-  const hash = createHash("sha1").update(tag).digest("hex").slice(0, 10);
-  return `${slug.slice(0, WORKTREE_DIRNAME_MAX - hash.length - 1)}-${hash}`;
-}
-
-/**
  * {@link GateFailure.signature}: derived from the gate's own name plus its
  * failure output, so two different gates failing with the same message text
  * (or the same gate failing with two different messages) never collide.
@@ -1489,6 +1462,13 @@ export class Dispatcher {
   private readonly tickTimeoutMs: number | undefined;
   private readonly flumeDir: string;
   private readonly stateRootRel: string | undefined;
+  /**
+   * This dispatcher's view of itself for `src/worktrees.ts` — the repo
+   * root, state root, that root's relative path, the job namespace and the
+   * logger the worktree lifecycle reads. Assembled once, from construction
+   * state that never changes after it.
+   */
+  private readonly worktreeCtx: WorktreeContext;
   private pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses. */
@@ -1500,6 +1480,13 @@ export class Dispatcher {
     this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
     this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;
+    this.worktreeCtx = {
+      repoRoot: opts.repoRoot,
+      flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
+      namespace: opts.namespace,
+      log: this.log,
+    };
     this.attempts = new PriorAttemptStore(
       this.flumeDir,
       opts.repoRoot,
@@ -1822,7 +1809,7 @@ export class Dispatcher {
 
     let wt: { path: string; branch: string };
     try {
-      wt = await this.createWorktree(phase.name, preHead);
+      wt = await createWorktree(phase.name, preHead, this.worktreeCtx);
     } catch (err) {
       const message = (err as Error).message;
       const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
@@ -1856,7 +1843,13 @@ export class Dispatcher {
         this.log.warn(
           `[flume] ${phase.name}: setupWorktree hook failed (${signature}); no tick this cycle`,
         );
-        await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
+        await teardownWorktreeInstance(
+      phase,
+      chain,
+      wt,
+      phase.name,
+      this.worktreeCtx,
+    );
         provisionFailures.push({ signature, message });
         const failures = [...provisionFailures];
         return {
@@ -2191,7 +2184,13 @@ export class Dispatcher {
       }
     }
 
-    await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
+    await teardownWorktreeInstance(
+          phase,
+          chain,
+          wt,
+          phase.name,
+          this.worktreeCtx,
+        );
 
     const pendingAfterSingleton = await this.readPendingTolerant();
     return {
@@ -2390,7 +2389,9 @@ export class Dispatcher {
     const provisioned: PendingEntry[] = [];
     for (const entry of batch) {
       try {
-        worktrees.push(await this.createWorktree(entry.tag, preHead));
+        worktrees.push(
+          await createWorktree(entry.tag, preHead, this.worktreeCtx),
+        );
         provisioned.push(entry);
       } catch (err) {
         const message = (err as Error).message;
@@ -3003,7 +3004,13 @@ export class Dispatcher {
     for (let i = 0; i < worktrees.length; i++) {
       const wt = worktrees[i]!;
       const tag = provisioned[i]!.tag;
-      const ok = await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, tag);
+      const ok = await teardownWorktreeInstance(
+        phase,
+        chain,
+        wt,
+        tag,
+        this.worktreeCtx,
+      );
       if (ok) cleaned++;
       else survivingPaths.push(wt.path);
     }
@@ -3743,272 +3750,15 @@ export class Dispatcher {
   }
 
   /**
-   * Tear down one worktree: the chain's best-effort `teardownWorktree` hook,
-   * the friction harvest, removal, then branch deletion — the exact
-   * per-worktree sequence `runFanout`'s wave-end cleanup loop ran inline,
-   * now shared with a singleton tick's own single worktree (spec/
-   * worktrees.md "Singleton runs in a worktree"). `tag` is the entry's tag
-   * or the phase name, passed straight through to the hook's `entryTag` and
-   * to the harvest's provenance prefix. Returns whether removal succeeded —
-   * the caller aggregates surviving paths itself, since a wave reports them
-   * once at wave level, not once per worktree.
-   */
-  private async teardownWorktreeInstance(
-    phase: Phase,
-    chain: Chain,
-    repoRoot: string,
-    wt: { path: string; branch: string },
-    tag: string,
-  ): Promise<boolean> {
-    if (phase.teardownWorktree) {
-      try {
-        await phase.teardownWorktree({
-          worktreePath: wt.path,
-          repoRoot,
-          entryTag: tag,
-        });
-      } catch (err) {
-        this.log.warn(
-          `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
-        );
-      }
-    }
-    await harvestFriction(chain, wt.path, tag, {
-      flumeDir: this.flumeDir,
-      stateRootRel: this.stateRootRel,
-      log: this.log,
-    });
-    let removed = false;
-    try {
-      await git.removeWorktree(repoRoot, wt.path);
-      removed = true;
-    } catch {
-      // Caller records the surviving path.
-    }
-    try {
-      await git.deleteBranch(repoRoot, wt.branch);
-    } catch (err) {
-      this.log.warn(
-        `[flume] deleteBranch failed for ${wt.branch}: ${(err as Error).message}`,
-      );
-    }
-    return removed;
-  }
-
-  /**
-   * Startup sweep (`spec/worktrees.md`, "Startup sweep — a dead wave's
-   * residue is removed at the next start"): a killed fanout tick abandons
-   * its worktrees and their `flume/**` branches — teardown never ran, and
-   * per-wave stale-slug removal (`createWorktree`, below) only ever covers
-   * an entry being re-provisioned, never one that left the queue entirely.
-   * `flume loop` / `flume job run` call this once, after the tip claim is
-   * acquired and before the first tick (`src/cli.ts`) — holding the claim
-   * is the guard: one flume writer per ref means no live sibling owns
-   * anything under this state root's worktree base. A bare `flume tick`
-   * never calls this; its per-wave prune and stale-slug removal are
-   * unchanged.
-   *
-   * Scope is exactly the engine's own residue: every directory directly
-   * under the worktree base — the same `worktreesBase` (`src/paths.ts`)
-   * `createWorktree` provisions into, namespace-scoped the same way its
-   * path is when a namespace is set. Without one,
-   * `sweepBase` is the bare worktrees dir, which a shared
-   * `FLUME_WORKTREES_DIR` also holds every *namespaced* sibling job's
-   * container directory (`<wtBase>/<their-namespace>/`) at that exact same
-   * top level — an arbitrary operator-chosen string, indistinguishable by
-   * name alone from one of this job's own bounded `dirName` entries. So a
-   * bare `readdir` + blind removal would delete a live sibling's entire
-   * worktree tree the first time its container directory sits at this
-   * level. The disambiguator is git's own registry, not a naming
-   * heuristic (`engine-boundary.md`, "told, not inferred"): `git worktree
-   * list --porcelain` names every path git currently considers a
-   * worktree, and only entries that are literally one of those paths are
-   * this job's own residue to remove through `git.removeWorktree` +
-   * win32-fallback (the same path teardown uses) — a sibling's container
-   * directory was never itself registered as a worktree, only the paths
-   * nested inside it are, so it is left untouched. Then a final `git
-   * worktree prune`; then every branch matching this instance's own
-   * `flume/[<namespace>/]…` grammar. Branch matching uses `for-each-ref`'s
-   * one-level glob (`flume/*` matches `flume/foo`, never `flume/ns/foo`)
-   * rather than `branch --list`'s pattern, whose `*` crosses `/` — the
-   * non-namespaced case must not sweep a namespaced sibling job's branches
-   * sharing the same repo.
-   *
-   * Never throws: an unreadable or absent base, a surviving worktree
-   * directory (locked handle, EBUSY), a prune failure, or a branch that
-   * won't delete are each logged and swallowed rather than propagated — a
-   * sweep that could abort the run would convert dead residue into a
-   * denial of service on the live queue. Silent on an absent or empty
-   * base, the normal case; a surviving worktree path is warned once for
-   * the whole run, not once per directory.
+   * Startup sweep over this dispatcher's own worktree base
+   * ({@link sweepStaleWorktrees}, `src/worktrees.ts` — what it removes, and
+   * what it deliberately leaves standing, is documented there). Stays a
+   * method because `flume loop` and `flume job run` reach it through the
+   * Dispatcher they already hold (`src/cli.ts`), after the tip claim is
+   * acquired and before the first tick.
    */
   async sweepStaleWorktrees(): Promise<void> {
-    const repoRoot = this.opts.repoRoot;
-    const wtBase = worktreesBase(this.flumeDir);
-    const sweepBase = this.opts.namespace
-      ? join(wtBase, this.opts.namespace)
-      : wtBase;
-
-    let entries: string[];
-    try {
-      entries = await readdir(namespacedJoin(sweepBase));
-    } catch (err) {
-      // Absent base is the normal, silent case. Anything else (e.g.
-      // permissions) is logged but never aborts the run.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-        this.log.warn(
-          `[flume] startup sweep: could not read ${sweepBase}: ${(err as Error).message}`,
-        );
-      }
-      return;
-    }
-
-    // Which top-level entries are actually this job's own worktrees, as
-    // opposed to a sibling namespaced job's container directory sitting at
-    // the same level under a shared FLUME_WORKTREES_DIR: git's own registry,
-    // not the entry's name. A container directory was never itself `git
-    // worktree add`ed, so it never appears here — only the paths nested
-    // inside it do.
-    const registeredWorktrees = new Set<string>();
-    try {
-      const { stdout } = await execFileP(
-        "git",
-        ["worktree", "list", "--porcelain"],
-        { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
-      );
-      for (const line of stdout.split("\n")) {
-        if (line.startsWith("worktree ")) {
-          registeredWorktrees.add(resolve(line.slice("worktree ".length).trim()));
-        }
-      }
-    } catch (err) {
-      this.log.warn(
-        `[flume] startup sweep: could not list registered worktrees: ${(err as Error).message}`,
-      );
-    }
-
-    const survivingPaths: string[] = [];
-    for (const name of entries) {
-      const path = join(sweepBase, name);
-      if (!registeredWorktrees.has(resolve(path))) {
-        // Not a worktree git knows about — most commonly a sibling
-        // namespaced job's container directory. Not this job's residue;
-        // leave it untouched.
-        continue;
-      }
-      try {
-        await git.removeWorktree(repoRoot, path);
-      } catch {
-        survivingPaths.push(path);
-      }
-    }
-    try {
-      await git.pruneWorktrees(repoRoot);
-    } catch (err) {
-      this.log.warn(
-        `[flume] startup sweep: worktree prune failed: ${(err as Error).message}`,
-      );
-    }
-
-    const branchPattern = this.opts.namespace
-      ? `flume/${this.opts.namespace}/*`
-      : "flume/*";
-    let branches: string[] = [];
-    try {
-      const { stdout } = await execFileP(
-        "git",
-        [
-          "for-each-ref",
-          "--format=%(refname:short)",
-          `refs/heads/${branchPattern}`,
-        ],
-        { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
-      );
-      branches = stdout
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-    } catch (err) {
-      this.log.warn(
-        `[flume] startup sweep: could not list ${branchPattern} branches: ${(err as Error).message}`,
-      );
-    }
-    for (const branch of branches) {
-      try {
-        await git.deleteBranch(repoRoot, branch);
-      } catch (err) {
-        this.log.warn(
-          `[flume] startup sweep: deleteBranch failed for ${branch}: ${(err as Error).message}`,
-        );
-      }
-    }
-
-    if (survivingPaths.length > 0) {
-      this.log.warn(
-        `[flume] startup sweep: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
-      );
-    }
-  }
-
-  /**
-   * Provision one worktree, branched `flume/[<namespace>/]<tag>` from
-   * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
-   * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md
-   * "Singleton runs in a worktree" keys its worktree on the phase instead).
-   * Both directory-name length-bounding and job-namespace scoping apply
-   * identically either way — the caller supplies the identifier, this method
-   * doesn't care what it names.
-   */
-  private async createWorktree(
-    tag: string,
-    fromRef: string,
-  ): Promise<{ path: string; branch: string }> {
-    const slug = slugify(tag);
-    // Job-scoped branch namespace: with a namespace, identical slugs across
-    // jobs land on disjoint branches; without one, the repo-global name
-    // stands (bare `.flume` harnesses unchanged).
-    const branch = this.opts.namespace
-      ? `flume/${this.opts.namespace}/${slug}`
-      : `flume/${slug}`;
-    // One resolution for the base, shared with the startup sweep
-    // (`worktreesBase`, src/paths.ts — which is also where the override's
-    // stray-write rationale lives).
-    const wtBase = worktreesBase(this.flumeDir);
-    // The path mirrors the branch namespacing: under a shared
-    // FLUME_WORKTREES_DIR two jobs with identical slugs would otherwise
-    // collide on <base>/<dirName>, and the stale-cleanup below would rm the
-    // OTHER job's live worktree. Namespaced unconditionally when set — the
-    // redundant level under a default per-job base is harmless.
-    //
-    // The fs directory name is length-bounded — git itself refuses a
-    // worktree path around 200 chars on win32, below `TAG_MAX_LENGTH`'s
-    // NAME_MAX-derived ceiling — while `branch` above keeps the untruncated
-    // slug: `tag` stays full-length everywhere except this one directory
-    // component. A phase name takes the same bound an entry tag does.
-    const dirName = worktreeDirName(tag);
-    const path = this.opts.namespace
-      ? join(wtBase, this.opts.namespace, dirName)
-      : join(wtBase, dirName);
-    if (existsSync(toNamespacedPath(path))) {
-      // Stale from a prior crashed run; clean up.
-      try {
-        await git.removeWorktree(this.opts.repoRoot, path);
-      } catch {
-        await rm(toNamespacedPath(path), { recursive: true, force: true });
-      }
-    }
-    await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
-    // Fanout worktrees nest at least as deep as the job dir they're cloned
-    // for — the identical win32 MAX_PATH gap job.ts's own baseline pin
-    // exists to spare.
-    await git.pinLongPaths(this.opts.repoRoot);
-    await git.addWorktree({
-      repoRoot: this.opts.repoRoot,
-      path,
-      branch,
-      fromRef,
-    });
-    return { path, branch };
+    await sweepStaleWorktrees(this.worktreeCtx);
   }
 
   // ---------- the operator's copy of a revert ----------
