@@ -148,6 +148,22 @@ export interface FanoutEntryOutcome {
 }
 
 /**
+ * One entry this run's quarantine dropped from a tick's pickable set
+ * (spec/loop.md "Repeated identical failures — quarantine, then abort").
+ *
+ * The `key` is the hold's own identity — the entry's slug plus a hash of its
+ * bytes in `pending.json` (`quarantineKey`, `src/Dispatcher.ts`) — reported
+ * beside the tag so a chain can see *which read* of the entry the hold
+ * stands under. Editing the entry on trunk changes its key and lifts the
+ * hold, so a chain comparing the key it saw last tick against this one reads
+ * "still held" versus "re-scoped, retried" without re-deriving either.
+ */
+export interface QuarantinedTag {
+  tag: string;
+  key: string;
+}
+
+/**
  * Result a phase reports back after a tick finishes. The handoff function
  * inspects this to decide which sibling phases to wake.
  */
@@ -243,15 +259,15 @@ export interface TickResult {
   noCommit?: NoCommitMode;
   /**
    * spec/loop.md "The no-commit taxonomy" / "Repeated identical failures":
-   * fanout only. Tags a live-quarantined slug (this run's
-   * `FLUME_QUARANTINED_SLUGS`) dropped from the pickable set this tick.
+   * fanout only. Every entry this run's live quarantine
+   * (`FLUME_QUARANTINED_SLUGS`) dropped from the pickable set this tick.
    * Empty, never absent, on a nothing-pickable tick with no quarantine in
    * effect; absent entirely on a tick that provisioned an entry. Lets a
    * chain's `handoff` tell a quarantined `open` entry — still `open` in
    * `pendingAfter`, since `pending.json` itself is untouched — from a
    * genuinely pickable one, without re-deriving it.
    */
-  quarantinedTags?: readonly string[];
+  quarantinedTags?: readonly QuarantinedTag[];
   /**
    * spec/loop.md "The no-commit taxonomy": true iff this fanout tick found
    * nothing pickable (after the quarantine drop above) and therefore never

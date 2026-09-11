@@ -33,6 +33,7 @@ import {
   EX_MOUNT_DEAD,
   worktreeDirName,
   slugify,
+  quarantineKey,
   priorAttemptPath,
   priorAttemptsDir,
   computeStateRootRel,
@@ -102,6 +103,21 @@ const silent: Logger = {
   warn: () => {},
   error: () => {},
 };
+
+/**
+ * The `tag`/`quarantineKey` pair a real tick's stage-failure record carries
+ * (`StageFailureEntry`, `src/Dispatcher.ts`). Hand-authored here because the
+ * `superviseLoop` suites write `tick-verdict.json` directly rather than
+ * running a wave — the supervisor treats the key as opaque, so any
+ * well-formed value exercises it. The engine-side formula is pinned instead
+ * by the suites that drive a real wave through a real failure.
+ */
+function blamedOnFixture(
+  tag: string,
+  hash = "00112233aa",
+): { tag: string; quarantineKey: string } {
+  return { tag, quarantineKey: `${slugify(tag)}@${hash}` };
+}
 
 /**
  * A minimally-valid {@link TickVerdict} — every field `readTickVerdicts`'s
@@ -3919,7 +3935,12 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     // the `details` above is a separate, richer channel; the signature is
     // the bounded comparison key superviseLoop's backstop keys off.
     expect(first.verdict?.gateFailures).toEqual([
-      { tag: "ISO-FAIL", signature: "iso-veto: iso veto", message: "iso veto" },
+      {
+        tag: "ISO-FAIL",
+        quarantineKey: expect.stringMatching(/^iso-fail@[0-9a-f]{10}$/),
+        signature: "iso-veto: iso veto",
+        message: "iso veto",
+      },
     ]);
 
     // Retry wave: only ISO-FAIL is still pickable. Its prompt carries the
@@ -5265,7 +5286,7 @@ describe("Dispatcher fanout — empty pickable set", () => {
 });
 
 describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-quarantine-visibility)", () => {
-  it("a fanout tick with every open entry quarantined reports nothingPickable:true and the dropped tags on quarantinedTags", async () => {
+  it("a fanout tick with every open entry quarantined reports nothingPickable:true, and a quarantined tag is reported with the key its hold stands under", async () => {
     const entries: PendingEntry[] = [
       makeEntry("QUARANTINED-A", ["src/a.ts"]),
       makeEntry("QUARANTINED-B", ["src/b.ts"]),
@@ -5283,22 +5304,32 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
 
     const preHead = await head(fx.repo);
 
+    // Quarantine keys are read off the queue as the dispatcher parses it —
+    // the same `parsePending` it uses, so the two sides cannot disagree on
+    // what an entry's bytes hash to.
+    const onDisk = await readPendingFromDisk(fx.repo);
+    const keys = onDisk.map((e) => quarantineKey(e));
+
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
       log: silent,
-      quarantinedSlugs: new Set(["quarantined-a", "quarantined-b"]),
+      quarantinedSlugs: new Set(keys),
     });
 
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.result?.nothingPickable).toBe(true);
-    expect([...(outcome.result?.quarantinedTags ?? [])].sort()).toEqual([
-      "QUARANTINED-A",
-      "QUARANTINED-B",
+    expect(
+      [...(outcome.result?.quarantinedTags ?? [])].sort((a, b) =>
+        a.tag.localeCompare(b.tag),
+      ),
+    ).toEqual([
+      { tag: "QUARANTINED-A", key: keys[0] },
+      { tag: "QUARANTINED-B", key: keys[1] },
     ]);
     // pending.json itself is untouched — the entries still read `open`.
     expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
@@ -5376,6 +5407,153 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
     expect(outcome.result?.nothingPickable).toBeUndefined();
     expect(outcome.result?.quarantinedTags).toBeUndefined();
   });
+});
+
+/**
+ * QUARANTINE-KEYS-THE-ENTRY-AS-READ (spec/loop.md "Repeated identical
+ * failures — quarantine, then abort"): the run-scoped quarantine holds an
+ * entry **as read** — slug plus a hash of its bytes in `pending.json` — so an
+ * edit on trunk mints a new key and lifts the hold inside the same run. A
+ * slug-only key survived a re-scope and forced stop-and-relaunch (field
+ * report, 0.12.0).
+ *
+ * Both cases drive the real writer into the real reader: the key the
+ * dispatcher reports on its own failure record is the one fed back to the
+ * next tick's drop filter, rather than a shape re-authored here.
+ */
+describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARANTINE-KEYS-THE-ENTRY-AS-READ)", () => {
+  const alwaysVeto: Gate = {
+    name: "always-veto",
+    when: "afterCommit",
+    async run() {
+      return { ok: false, message: "veto" };
+    },
+  };
+
+  it("a quarantine key is the entry's slug and a hash of its bytes in the queue", async () => {
+    await writePending(fx.repo, [makeEntry("REKEY-ME", ["src/rekey.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [alwaysVeto],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "rekey-me": (cwd) =>
+        writeAndCommit(cwd, "src/rekey.ts", "v1\n", "build(REKEY-ME): attempt"),
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+    const firstFailure = (first.verdict?.gateFailures ?? [])[0];
+    expect(firstFailure?.tag).toBe("REKEY-ME");
+    // Slug half, then a hash half — the entry is blamed by name *and* by the
+    // read it was blamed under.
+    expect(firstFailure?.quarantineKey).toMatch(/^rekey-me@[0-9a-f]{10}$/);
+    // And that hash is of the entry as the dispatcher parsed it, not of some
+    // other rendering of the same tag. Note the wave has since merged the
+    // reverted attempt's footprint onto the entry — `observedFiles` is the
+    // engine's own accretion and is excluded from the hash by name, so the
+    // key the blame was filed under still identifies the entry on disk.
+    const afterBlame = await readPendingFromDisk(fx.repo);
+    expect(afterBlame[0]?.observedFiles).toEqual(["src/rekey.ts"]);
+    expect(firstFailure?.quarantineKey).toBe(quarantineKey(afterBlame[0]!));
+
+    // Same tag, different bytes: re-scoped on trunk, gate still vetoes.
+    await writePending(fx.repo, [
+      makeEntry("REKEY-ME", ["src/rekey.ts", "src/widened.ts"]),
+    ]);
+    baton.wake("build");
+    const second = await dispatcher.tick();
+    const secondFailure = (second.verdict?.gateFailures ?? [])[0];
+
+    expect(secondFailure?.tag).toBe("REKEY-ME");
+    expect(secondFailure?.quarantineKey).toMatch(/^rekey-me@[0-9a-f]{10}$/);
+    // Slug half unchanged, hash half moved — the key tracks the bytes.
+    expect(secondFailure?.quarantineKey).not.toBe(firstFailure?.quarantineKey);
+  }, 30_000);
+
+  it("an entry re-scoped on trunk is pickable again without a relaunch", async () => {
+    await writePending(fx.repo, [makeEntry("RESCOPED", ["src/rescoped.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const agent = fanoutAgent({
+      rescoped: (cwd) =>
+        writeAndCommit(
+          cwd,
+          "src/rescoped.ts",
+          "shipped\n",
+          "build(RESCOPED): ship",
+        ),
+    });
+    const dispatcherOpts = {
+      chainLoader: staticLoader({
+        phases: [phase],
+        humanOnly: [],
+      } satisfies Chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    };
+
+    // The hold the supervisor would be carrying — taken from the real writer
+    // (a tick that blamed this entry through a vetoing gate), not re-derived
+    // here, so the drop filter below is read against exactly what the engine
+    // reports. The same Set instance then crosses both ticks: this is one
+    // run, and a relaunch is precisely what must not be needed.
+    const blaming = await new Dispatcher({
+      ...dispatcherOpts,
+      chainLoader: staticLoader({
+        phases: [makePhase({ ...phase, gates: [alwaysVeto] })],
+        humanOnly: [],
+      } satisfies Chain),
+    }).tick();
+    const heldKey = (blaming.verdict?.gateFailures ?? [])[0]?.quarantineKey;
+    const held = new Set([heldKey!]);
+    baton.wake("build");
+
+    const blocked = await new Dispatcher({
+      ...dispatcherOpts,
+      quarantinedSlugs: held,
+    }).tick();
+    // Non-vacuity: the hold really is in force before the re-scope.
+    expect(blocked.result?.nothingPickable).toBe(true);
+    expect(blocked.result?.shippedTags).toEqual([]);
+    expect(blocked.result?.quarantinedTags).toEqual([
+      { tag: "RESCOPED", key: [...held][0] },
+    ]);
+
+    // The operator widens the entry's scope on trunk — new bytes, new key.
+    await writePending(fx.repo, [
+      makeEntry("RESCOPED", ["src/rescoped.ts", "src/widened.ts"]),
+    ]);
+    baton.wake("build");
+
+    const after = await new Dispatcher({
+      ...dispatcherOpts,
+      quarantinedSlugs: held,
+    }).tick();
+
+    expect(after.result?.nothingPickable).toBeUndefined();
+    expect(after.result?.quarantinedTags).toBeUndefined();
+    expect(after.result?.shippedTags).toEqual(["RESCOPED"]);
+  }, 30_000);
 });
 
 describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
@@ -10641,7 +10819,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
             summary: "build: no commit — merge failed",
             mergeFailures: [
               {
-                tag: "CONFLICT-A",
+                ...blamedOnFixture("CONFLICT-A"),
                 signature: "cherry-pick conflict in src/shared.ts",
                 message: "error: could not apply ...: conflict in src/shared.ts",
               },
@@ -10686,7 +10864,11 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
             committed: false,
             summary: "build: no commit — merge failed",
             mergeFailures: [
-              { tag: `CONFLICT-${calls}`, signature, message: signature },
+              {
+                ...blamedOnFixture(`CONFLICT-${calls}`),
+                signature,
+                message: signature,
+              },
             ],
           }),
         ),
@@ -10723,7 +10905,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
             summary: "build shipped OK-A",
             mergeFailures: [
               {
-                tag: "CONFLICT-B",
+                ...blamedOnFixture("CONFLICT-B"),
                 signature: "cherry-pick conflict in src/shared.ts",
                 message: "error: could not apply ...: conflict in src/shared.ts",
               },
@@ -10786,7 +10968,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
               shippedTags: ["OK-A"],
               provisionFailures: [
                 {
-                  tag: "HELD-ENTRY",
+                  ...blamedOnFixture("HELD-ENTRY"),
                   signature: "EBUSY: resource busy or locked",
                   message: "EBUSY: resource busy or locked, rmdir '...'",
                 },
@@ -10826,7 +11008,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     // Nothing quarantined yet going into the first tick; the slug the first
     // tick's failure names is quarantined going into the second.
     expect(receivedSlugs[0]).toEqual([]);
-    expect(receivedSlugs[1]).toEqual(["held-entry"]);
+    expect(receivedSlugs[1]).toEqual(["held-entry@00112233aa"]);
     expect(
       warnings.some(
         (w) => w.includes("HELD-ENTRY") && w.includes("EBUSY"),
@@ -10898,7 +11080,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
             // actually repeating behind it.
             provisionFailures: [
               {
-                tag: `VARYING-${calls}`,
+                ...blamedOnFixture(`VARYING-${calls}`),
                 signature: `EBUSY: resource busy or locked (attempt ${calls})`,
                 message: `EBUSY: resource busy or locked (attempt ${calls})`,
               },
@@ -11020,7 +11202,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
               shippedTags: ["OK-A"],
               mergeFailures: [
                 {
-                  tag: "CONFLICT-B",
+                  ...blamedOnFixture("CONFLICT-B"),
                   signature: "cherry-pick conflict in src/shared.ts",
                   message: "error: could not apply ...: conflict in src/shared.ts",
                 },
@@ -11058,7 +11240,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(res.ticks).toBe(2);
     expect(res.shippedTags).toEqual(["OK-A"]);
     expect(receivedSlugs[0]).toEqual([]);
-    expect(receivedSlugs[1]).toEqual(["conflict-b"]);
+    expect(receivedSlugs[1]).toEqual(["conflict-b@00112233aa"]);
     expect(
       warnings.some((w) => w.includes("CONFLICT-B") && w.includes("merge-stage")),
     ).toBe(true);
@@ -11084,7 +11266,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
               shippedTags: ["OK-A"],
               gateFailures: [
                 {
-                  tag: "ISO-FAIL",
+                  ...blamedOnFixture("ISO-FAIL"),
                   signature: "iso-veto: iso veto",
                   message: "iso veto",
                 },
@@ -11121,7 +11303,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(res.hibernated).toBe(true);
     expect(res.ticks).toBe(2);
     expect(receivedSlugs[0]).toEqual([]);
-    expect(receivedSlugs[1]).toEqual(["iso-fail"]);
+    expect(receivedSlugs[1]).toEqual(["iso-fail@00112233aa"]);
     expect(
       warnings.some((w) => w.includes("ISO-FAIL") && w.includes("gate-stage")),
     ).toBe(true);
@@ -11141,7 +11323,11 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
           verdictFixture({
             committed: false,
             mergeFailures: [
-              { tag: "CONFLICT-B", signature: SIGNATURE, message: SIGNATURE },
+              {
+                ...blamedOnFixture("CONFLICT-B"),
+                signature: SIGNATURE,
+                message: SIGNATURE,
+              },
             ],
           }),
         ),
@@ -11275,7 +11461,11 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
             verdictFixture({
               committed: false,
               mergeFailures: [
-                { tag: "CONFLICT-B", signature: SHARED_TEXT, message: SHARED_TEXT },
+                {
+                  ...blamedOnFixture("CONFLICT-B"),
+                  signature: SHARED_TEXT,
+                  message: SHARED_TEXT,
+                },
               ],
             }),
           ),
@@ -11384,7 +11574,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
               committed: false,
               provisionFailures: [
                 {
-                  tag: "HELD-ENTRY",
+                  ...blamedOnFixture("HELD-ENTRY"),
                   signature: "EBUSY: resource busy or locked",
                   message: "EBUSY: resource busy or locked, rmdir '...'",
                 },
@@ -14424,6 +14614,7 @@ describe("src/index.ts — ProvisionFailure/TerminalMisconfiguration barrel expo
     // an LSP references check.
     const provisionFailure: ProvisionFailure = {
       tag: "SOME-ENTRY",
+      quarantineKey: "some-entry@00112233aa",
       signature: "worktree-create-failed",
       message: "git worktree add failed: ...",
     };

@@ -156,16 +156,7 @@ export { priorAttemptsDir };
  * {@link GateFailure} below now share its exact shape for the two stages
  * spec/loop.md's "Repeated identical failures" generalized the backstop to.
  */
-export interface ProvisionFailure {
-  /**
-   * The entry tag this failure is scoped to (a `createWorktree` failure for
-   * that specific slug). Absent for a repo-level failure (e.g. `git
-   * worktree prune`) no single entry can be blamed for — the run-scoped
-   * quarantine only ever isolates a *tagged* failure; an untagged one is
-   * exactly the "non-entry-scoped" class the consecutive-failure backstop
-   * exists for.
-   */
-  tag?: string;
+export type ProvisionFailure = StageFailureEntry & {
   /**
    * Comparable signature — the same deterministic wall (e.g. the same held
    * directory) yields the same signature tick over tick, letting the
@@ -175,22 +166,46 @@ export interface ProvisionFailure {
   signature: string;
   /** Full error message, for the quarantine/abort log lines. */
   message: string;
-}
+};
+
+/**
+ * Which entry a stage failure is blamed on — **both halves or neither**, so
+ * the supervisor's quarantine leg can never read a tag it has no key to
+ * hold it under (`engineering.md`, *Narration is the ladder's bottom rung*:
+ * the pairing is a type, not a comment asking each call site to remember).
+ *
+ * - `tag` is the entry the failure is scoped to (a `createWorktree` failure
+ *   for that specific slug, a cherry-pick conflict on that entry's commit, a
+ *   gate revert of it). Absent for a repo-level failure (e.g. `git worktree
+ *   prune`) or a singleton phase's own revert, where no single entry can be
+ *   blamed — the run-scoped quarantine only ever isolates a *blamed* failure;
+ *   an unblamed one is exactly the "non-entry-scoped" class the
+ *   consecutive-failure backstop exists for.
+ * - `quarantineKey` is that entry's key **as this tick read it** from
+ *   `pending.json` ({@link quarantineKey}), the value the supervisor holds
+ *   the quarantine under and crosses to the next child on
+ *   `FLUME_QUARANTINED_SLUGS`. Reported rather than recomputed: the
+ *   supervisor holds only the verdict, and a second read of `pending.json`
+ *   there would key the hold on bytes a *later* tick wrote
+ *   (`engineering.md`, *A fact the engine holds is reported*).
+ */
+export type StageFailureEntry =
+  | { tag: string; quarantineKey: string }
+  | { tag?: undefined; quarantineKey?: undefined };
 
 /**
  * A merge-stage failure (spec/loop.md "Repeated identical failures — quarantine,
  * then abort"): a cherry-pick conflict, or a dirty trunk refusing the pick, that
  * kept a worktree's already-agent-committed work off trunk. `tag` is the
  * fanout entry's tag; absent for a singleton phase's own merge-stage failure
- * (no entry to quarantine — same rationale as {@link GateFailure.tag}, it
+ * (no entry to quarantine — same rationale as {@link StageFailureEntry}, it
  * falls to the consecutive-failure backstop alone).
  */
-export interface MergeFailure {
-  tag?: string;
-  /** Same comparison-key contract as {@link ProvisionFailure.signature}. */
+export type MergeFailure = StageFailureEntry & {
+  /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;
-}
+};
 
 /**
  * A gate-stage failure (spec/loop.md "Repeated identical failures — quarantine,
@@ -200,12 +215,11 @@ export interface MergeFailure {
  * it falls to the consecutive-failure backstop alone) and present for a
  * fanout entry/wave gate revert.
  */
-export interface GateFailure {
-  tag?: string;
-  /** Same comparison-key contract as {@link ProvisionFailure.signature}. */
+export type GateFailure = StageFailureEntry & {
+  /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;
-}
+};
 
 /** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
 const MAX_FAILURE_SIGNATURE = 500;
@@ -749,6 +763,60 @@ type AgentTermination =
  */
 export function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+}
+
+/** Hex width of the entry-bytes half of a {@link quarantineKey}. */
+const QUARANTINE_KEY_HASH_LENGTH = 10;
+
+/**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": the
+ * run-scoped quarantine key for one entry **as read** — its slug and a hash
+ * of its bytes in `pending.json`, joined `slug@hash`.
+ *
+ * The hash covers the entry's whole parsed shape, so any edit to it — a
+ * re-scoped `files`, a widened `summary`, a changed gate — yields a new key
+ * and lifts a hold the old key still carries, with no stop-and-relaunch (a
+ * slug-only key survived a re-scope and forced exactly that, field report
+ * 0.12.0). The parse is `PendingSchema`'s strict object, so every field in
+ * the file survives into the hashed JSON and none is invented: two ticks
+ * reading identical file content always agree on the key, and a whitespace
+ * reformat — which re-scopes nothing — never lifts a hold.
+ *
+ * **`observedFiles` is excluded, declared divergence from spec/loop.md's
+ * "a hash of its bytes".** That field is the engine's own accretion, not a
+ * declaration anyone re-scoped: `commitPendingUpdate` merges a failed
+ * attempt's footprint onto the entry in the *same* wave that blames it, so
+ * hashing it would have every merge- and gate-stage quarantine mint a fresh
+ * key on the next read and lift its own hold — the run re-attempts the wall
+ * at full agent price, which is the burn the section exists to prevent.
+ * A key identifying the work as declared cannot be keyed on the engine's
+ * notes about it (`engine-boundary.md`, *Told, not inferred*). Every other
+ * write-back is a real state change and re-keys deliberately.
+ *
+ * Like a failure signature, the result is an **opaque equality key**:
+ * written by the engine, compared by the engine, never parsed apart by
+ * either side of the `FLUME_QUARANTINED_SLUGS` channel.
+ */
+export function quarantineKey(entry: PendingEntry): string {
+  const { observedFiles: _engineAccretion, ...declared } = entry;
+  const hash = createHash("sha1")
+    .update(JSON.stringify(declared))
+    .digest("hex")
+    .slice(0, QUARANTINE_KEY_HASH_LENGTH);
+  return `${slugify(entry.tag)}@${hash}`;
+}
+
+/**
+ * The entry-scoping half of every stage-failure record, filled from the
+ * entry the failure is blamed on. One home for the `tag`/`quarantineKey`
+ * pairing {@link StageFailureEntry} types — a call site that has the entry
+ * spreads this rather than rebuilding either half.
+ */
+function blamedOn(entry: PendingEntry): {
+  tag: string;
+  quarantineKey: string;
+} {
+  return { tag: entry.tag, quarantineKey: quarantineKey(entry) };
 }
 
 /**
@@ -1317,13 +1385,16 @@ export interface DispatcherOptions {
    */
   tickTimeoutMs?: number;
   /**
-   * §16 (RELEASE-v0.7): entry-tag slugs excluded from this tick's fanout
-   * pick even though `pending.json` still lists them as pickable —
-   * `pending.json` itself is untouched. The `flume loop` supervisor
-   * populates this (via the `tick` command's `FLUME_QUARANTINED_SLUGS` env
-   * var) from entries whose pre-tick worktree provisioning failed earlier
-   * in the run; the exclusion is run-scoped only — a fresh run/process
-   * always starts with nothing quarantined. Default: nothing quarantined.
+   * §16 (RELEASE-v0.7): {@link quarantineKey} values (`slug@hash`) excluded
+   * from this tick's fanout pick even though `pending.json` still lists them
+   * as pickable — `pending.json` itself is untouched. The `flume loop`
+   * supervisor populates this (via the `tick` command's
+   * `FLUME_QUARANTINED_SLUGS` env var, whose name predates the key and
+   * stands) from entries whose provision/merge/gate stage failed earlier in
+   * the run; the exclusion is run-scoped only — a fresh run/process always
+   * starts with nothing quarantined. Because the key covers the entry's
+   * bytes, an entry re-scoped on trunk no longer matches the held key and
+   * is pickable again without a relaunch. Default: nothing quarantined.
    */
   quarantinedSlugs?: ReadonlySet<string>;
   /**
@@ -2380,13 +2451,16 @@ export class Dispatcher {
     );
     // spec/loop.md "Repeated identical failures": entries the gate switch
     // would pick, but this run's live quarantine drops anyway — reported on
-    // the result (below) so a chain's handoff can tell "quarantined open"
-    // from "genuinely pickable" without re-deriving it from pendingAfter.
+    // the result (below), key beside tag, so a chain's handoff can tell
+    // "quarantined open" from "genuinely pickable" without re-deriving it
+    // from pendingAfter, and can see which read of the entry the hold stands
+    // under. Keyed on the entry as read: an entry re-scoped on trunk hashes
+    // to a new key, so this tick picks it up without a relaunch.
     const quarantinedTags = gateEligible
-      .filter((e) => quarantinedSlugs?.has(slugify(e.tag)) ?? false)
-      .map((e) => e.tag);
+      .filter((e) => quarantinedSlugs?.has(quarantineKey(e)) ?? false)
+      .map((e) => ({ tag: e.tag, key: quarantineKey(e) }));
     const pickable = gateEligible.filter(
-      (e) => !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+      (e) => !(quarantinedSlugs?.has(quarantineKey(e)) ?? false),
     );
 
     if (pickable.length === 0) {
@@ -2479,7 +2553,7 @@ export class Dispatcher {
       } catch (err) {
         const message = (err as Error).message;
         const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-        provisionFailures.push({ tag: entry.tag, signature, message });
+        provisionFailures.push({ ...blamedOn(entry), signature, message });
         this.log.warn(
           `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
         );
@@ -2513,7 +2587,7 @@ export class Dispatcher {
           } catch (err) {
             const message = (err as Error).message;
             const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-            provisionFailures.push({ tag: entry.tag, signature, message });
+            provisionFailures.push({ ...blamedOn(entry), signature, message });
             setupFailedIndices.add(i);
             this.log.warn(
               `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
@@ -2721,7 +2795,7 @@ export class Dispatcher {
         // superviseLoop's quarantine leg can isolate it exactly like a
         // tagged provisioning failure.
         mergeFailures.push({
-          tag: r.entry.tag,
+          ...blamedOn(r.entry),
           signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
           message,
         });
@@ -2818,7 +2892,7 @@ export class Dispatcher {
           record,
         );
         gateFailures.push({
-          tag: r.entry.tag,
+          ...blamedOn(r.entry),
           signature: gateFailureSignature(entryFailure),
           message: entryFailure.message,
         });
@@ -2849,7 +2923,7 @@ export class Dispatcher {
             headSha: mergedSha,
           });
           gateFailures.push({
-            tag: r.entry.tag,
+            ...blamedOn(r.entry),
             signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
             message: foreignTip,
           });
@@ -2872,7 +2946,7 @@ export class Dispatcher {
             headSha: mergedSha,
           });
           gateFailures.push({
-            tag: r.entry.tag,
+            ...blamedOn(r.entry),
             signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
             message,
           });
@@ -3359,7 +3433,7 @@ export class Dispatcher {
         postHead,
         ref,
         entry.tag,
-        entry.tag,
+        entry,
         verdict.failure!,
         verdict.touchedPaths,
       );
@@ -3706,9 +3780,11 @@ export class Dispatcher {
    * a tick tears down at the end.
    *
    * `label` names the entry tag or the phase name — both the revert note's
-   * filename and the log line use it. `gateFailureTag` is `label` for a
-   * fanout entry and `undefined` for a singleton phase's own revert (no
-   * entry to quarantine — {@link GateFailure.tag}'s doc).
+   * filename and the log line use it. `blamed` is the fanout entry this
+   * revert is scoped to, and `undefined` for a singleton phase's own revert
+   * (no entry to quarantine — {@link StageFailureEntry}'s doc). The entry,
+   * not its tag: the returned {@link GateFailure} carries the quarantine key
+   * beside the tag, and only the entry as read can supply it.
    */
   private async revertAfterCommitFailure(
     chain: Chain,
@@ -3716,7 +3792,7 @@ export class Dispatcher {
     sha: string,
     ref: PriorAttemptRef,
     label: string,
-    gateFailureTag: string | undefined,
+    blamed: PendingEntry | undefined,
     failure: {
       gate: string;
       message: string;
@@ -3740,7 +3816,7 @@ export class Dispatcher {
     return {
       footprint: touchedPaths,
       gateFailure: {
-        ...(gateFailureTag ? { tag: gateFailureTag } : {}),
+        ...(blamed ? blamedOn(blamed) : {}),
         signature: gateFailureSignature(failure),
         message: failure.message,
       },
@@ -4987,10 +5063,10 @@ export async function superviseLoop(
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
-  // §16: run-scoped quarantine (entry-tag slugs whose worktree provisioning
-  // failed on some earlier tick this run) plus the consecutive-identical-
-  // signature streak for the abort backstop. Both reset to empty on every
-  // fresh `superviseLoop` call — quarantine never outlives the run.
+  // §16: run-scoped quarantine ({@link quarantineKey} values — `slug@hash`
+  // of the entry as the failing tick read it) plus the consecutive-
+  // identical-signature streak for the abort backstop. Both reset to empty
+  // on every fresh `superviseLoop` call — quarantine never outlives the run.
   const quarantinedSlugs = new Set<string>();
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
   // generalizes both legs past provisioning to the merge and gate stages,
@@ -5067,12 +5143,13 @@ export async function superviseLoop(
     // verdict records, tagged with the stage it came from — a voluntary bail
     // or park never joins this list, since neither writes a provision/merge/
     // gate failure record at all.
-    const failures: Array<{
-      stage: "provision" | "merge" | "gate";
-      tag?: string;
-      signature: string;
-      message: string;
-    }> = [
+    const failures: Array<
+      StageFailureEntry & {
+        stage: "provision" | "merge" | "gate";
+        signature: string;
+        message: string;
+      }
+    > = [
       ...(verdict?.provisionFailures ?? []).map((f) => ({
         stage: "provision" as const,
         ...f,
@@ -5087,21 +5164,23 @@ export async function superviseLoop(
       })),
     ];
 
-    // Quarantine every *tagged* failure this tick named, whichever stage it
-    // came from — isolating the slug so the rest of the run stops
-    // re-attempting a wall it already hit once. A repo-level/untagged failure
-    // (no single entry to blame) falls to the backstop below instead. §8: a
+    // Quarantine every *blamed* failure this tick named, whichever stage it
+    // came from — isolating the entry so the rest of the run stops
+    // re-attempting a wall it already hit once. The hold stands under the
+    // key the failing tick reported (`StageFailureEntry`), never a key
+    // recomputed here: the supervisor holds only the verdict, and the queue
+    // on disk may already have moved. A repo-level/unblamed failure (no
+    // single entry to blame) falls to the backstop below instead. §8: a
     // chain declaring `quarantineScope: "none"` opts out of this leg
     // entirely — the backstop below still fires.
     if (quarantineScope !== "none") {
       for (const f of failures) {
         if (!f.tag) continue;
-        const slug = slugify(f.tag);
-        if (!quarantinedSlugs.has(slug)) {
-          quarantinedSlugs.add(slug);
+        if (!quarantinedSlugs.has(f.quarantineKey)) {
+          quarantinedSlugs.add(f.quarantineKey);
           log.warn(
-            `[flume] quarantining ${f.tag} for the rest of this run: ${f.stage}-stage ` +
-              `failure (${f.signature})`,
+            `[flume] quarantining ${f.tag} (${f.quarantineKey}) for the rest of this run: ` +
+              `${f.stage}-stage failure (${f.signature})`,
           );
         }
       }
@@ -5261,8 +5340,11 @@ export async function superviseLoop(
  * carries node flags (e.g. `--import tsx` when run from source); `argv[1]` is
  * the cli entrypoint (`dist/cli.js` built, `src/cli.ts` from source).
  * `quarantinedSlugs` (§16, RELEASE-v0.7) crosses the process boundary via the
- * `FLUME_QUARANTINED_SLUGS` env var — the CLI's `tick` command reads it back
- * into `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty.
+ * `FLUME_QUARANTINED_SLUGS` env var — comma-joined {@link quarantineKey}
+ * values, which the CLI's `tick` command reads back into
+ * `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty. The var
+ * name predates the key and stands; a key never contains a comma, so the
+ * join round-trips by construction.
  * `FLUME_TIP_CLAIM_HELD` (spec/loop.md "The loop lock and the tip claim")
  * carries this supervisor process's own pid — the one that acquired the tip
  * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
@@ -5478,6 +5560,6 @@ function pickableEntries(
   return pending.filter(
     (e) =>
       isPickable(e, pending, isForkResolved, capabilities) &&
-      !(quarantinedSlugs?.has(slugify(e.tag)) ?? false),
+      !(quarantinedSlugs?.has(quarantineKey(e)) ?? false),
   );
 }
