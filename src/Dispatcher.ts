@@ -3588,15 +3588,16 @@ export class Dispatcher {
   /**
    * Retire this wave's markers, once the hazard each one names is closed.
    *
-   * **Declared divergence from spec/loop.md's "the pending.json rewrite, the
-   * records, the verdict"**: `Dispatcher.tick()` never writes the verdict —
-   * the CLI's `tick` command does, after `tick()` has returned
-   * ({@link writeTickVerdict}) — so the last bookkeeping this wave can wait
-   * on is the ledger rewrite above. That is also the point the hazard closes:
-   * once the queue no longer carries a picked entry as `open`, a crash before
-   * the verdict write leaves nothing a second run would pick again, and
-   * refusing over it would be a false refusal. A ledger rewrite that
-   * *refused* (`WaveLedgerParseFailure`) throws past this call, so its
+   * The wait point is the ship bookkeeping spec/loop.md "Crash equals stop"
+   * names — the `pending.json` rewrite above and the prior-attempt record
+   * clears that ride with it. The verdict is not part of it and no marker is
+   * held for it: `Dispatcher.tick()` never writes the verdict, the CLI's
+   * `tick` command does, after `tick()` has returned
+   * ({@link writeTickVerdict}). The ledger rewrite is also where the hazard
+   * closes — once the queue no longer carries a picked entry as `open`, a
+   * crash before the verdict write leaves nothing a second run would pick
+   * again, and refusing over it would be a false refusal. A ledger rewrite
+   * that *refused* (`WaveLedgerParseFailure`) throws past this call, so its
    * markers survive exactly as a crash's would.
    */
   private async clearMergingMarkers(slugs: Iterable<string>): Promise<void> {
