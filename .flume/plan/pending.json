@@ -10,16 +10,16 @@
       "edit": [
         {
           "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the §2 `TickContext` summary gains `pickable` and `priorAttempts`"
+          "description": "the §2 `TickContext` summary gains `flumeDir`, `pickable` and `priorAttempts`"
         },
         {
           "path": "tests/retired-narration.test.ts",
-          "description": "the doc-to-source field pin, beside the `cwd` gloss pin"
+          "description": "the doc-to-source field pin and the decline-section pin, beside the `cwd` gloss pin"
         }
       ],
       "retire": []
     },
-    "summary": "docs/CHAIN-AUTHORING.md teaches TickContext as three fields; src/Phase.ts declares five, so `pickable` and `priorAttempts` are unlearnable from the page",
+    "summary": "docs/CHAIN-AUTHORING.md teaches TickContext as three fields; src/Phase.ts declares six, so `flumeDir`, `pickable` and `priorAttempts` are unlearnable from the page",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A fact the engine holds is reported, never rediscovered"
@@ -27,9 +27,11 @@
     "tests": [
       "the chain-authoring doc's TickContext summary names every field src/Phase.ts declares"
     ],
-    "pins": [],
-    "acceptance": "The §2 summary names all five fields, and a pin over `interfaceFields(Phase.ts, \"TickContext\")` refuses the next field added without its prose.",
-    "notes": "Drained from PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES's note; verified on disk. Doc at :234; `pickable` (src/Phase.ts:107) and `priorAttempts` (:119) are the two fields whose doc comments exist so a hook stops re-deriving pickability and stops scanning `prior-attempts/`. `interfaceFields` (tests/retired-narration.test.ts:399) already drives this family and already parses `TickContext` for the `cwd` gloss pin."
+    "pins": [
+      "the chain-authoring decline section names every TickContext field the quoted predicate reads"
+    ],
+    "acceptance": "The §2 summary names all six fields, and a pin over `interfaceFields(Phase.ts, \"TickContext\")` refuses the next field added without its prose.",
+    "notes": "Drained from PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES's note; verified on disk. Doc at :248 names cwd/assignedEntry/pending; Phase.ts declares six — `flumeDir` (:89), `pickable` (:107), `priorAttempts` (:119). `interfaceFields` (tests/retired-narration.test.ts:399) already drives this family. The pin rides from CASCADE-SHOULDRUN-FROM-DISK: §2's decline prose names what cascade's predicate reads, and only the §1 quote is pinned (:906)."
   },
   {
     "tag": "CASCADE-TESTS-JUDGED-BY-GATE",
