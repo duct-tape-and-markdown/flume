@@ -16,12 +16,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
-  slugify,
   tickVerdictPath,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
   type Logger,
 } from "../src/Dispatcher.ts";
+import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
 import {

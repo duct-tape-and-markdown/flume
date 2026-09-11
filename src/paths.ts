@@ -1,6 +1,7 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
- * glob matcher, and the layout of the flume state root itself.
+ * glob matcher, the filesystem-safe tag slug, and the layout of the flume
+ * state root itself.
  *
  * For the MAX_PATH idiom see `.claude/rules/platform-facts.md`, "Windows
  * MAX_PATH (~260 chars) breaks fs calls with no long component"; every call
@@ -54,6 +55,31 @@ export function entryWriteScopeUnion(
   channelPaths: string[],
 ): string[] {
   return [...new Set([...entryPaths, ...channelPaths])];
+}
+
+/**
+ * Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt
+ * keying. Never lengthens the input (runs of disallowed chars collapse to a
+ * single `-`), so anything bounding raw `tag` length also bounds this.
+ *
+ * Here rather than beside either consumer because both reach it: the
+ * dispatcher's worktree dir/branch naming and `src/priorAttempts.ts`'s record
+ * keying, plus the chain-facing copy handed out on `FlumeApi`. One spelling,
+ * so a worktree and the record keyed for the same entry cannot disagree.
+ *
+ * `tag` itself is length-bounded at the schema gate (`PendingSchema.ts`
+ * `TAG_MAX_LENGTH`), derived from the dispatcher's own
+ * tightest raw-tag consumer, `writeRevertNote`'s
+ * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
+ * component built from this slug (`createWorktree`'s worktree-dir and
+ * branch-name, `harvestFriction`'s `` `${tag}--${stamp}--${file.name}` ``)
+ * is looser and stays within filesystem NAME_MAX (255) by construction as a
+ * result.
+ * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
+ * "revert note to the friction channel (§5)", not asserted here.
+ */
+export function slugify(tag: string): string {
+  return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 }
 
 // ---------- the state root's layout ----------

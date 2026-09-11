@@ -35,13 +35,11 @@ import {
   PendingParseFailure,
   readTickVerdicts,
   readLatestVerdictsSync,
-  slugify,
-  priorAttemptPath,
-  priorAttemptsDir,
 } from "./Dispatcher.js";
 import { readFileAtRef, showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { matchesAny } from "./paths.js";
+import { matchesAny, slugify } from "./paths.js";
+import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 import {
   composePendingList,
   parsePending,

@@ -31,10 +31,7 @@ import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   worktreeDirName,
-  slugify,
   quarantineKey,
-  priorAttemptPath,
-  priorAttemptsDir,
   computeStateRootRel,
   tickVerdictPath,
   tickVerdictsLogPath,
@@ -43,6 +40,8 @@ import {
   type Logger,
   type TickVerdict,
 } from "../src/Dispatcher.ts";
+import { slugify } from "../src/paths.ts";
+import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
@@ -97,7 +96,8 @@ import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer"):
 // slugify/priorAttemptPath are the chain-facing exported rule (spec/loop.md
 // "Prior-outcome feedback to the retrying tick"), so a chain author needs to
-// reach them from the package entry point, not just src/Dispatcher.ts.
+// reach them from the package entry point, not just the module that defines
+// each.
 import {
   slugify as indexSlugify,
   priorAttemptPath as indexPriorAttemptPath,
@@ -6620,7 +6620,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
   // persisted gate-revert record mechanically, from list disjointness
   // against the reverted span's own touched paths — never from the gate's
   // prose. Exercised at the afterCommit revert site (singleton), the
-  // simplest path that reaches `buildPriorAttempt`; the afterMerge sites
+  // simplest path that reaches `buildGateRevert`; the afterMerge sites
   // thread the same `failingFiles` field through the same helper.
 
   async function readPlanPriorAttempt(): Promise<Record<string, unknown>> {
@@ -9204,7 +9204,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       join(flumeDir, "prior-attempts", `${slugify("SHIPS")}.json`),
       JSON.stringify(validRecord),
     );
-    // Malformed JSON — readPriorAttempt's own tolerance ("a garbled record
+    // Malformed JSON — PriorAttemptStore.read's own tolerance ("a garbled record
     // must not crash the tick") should drop this key, not surface it or throw.
     await writeFile(
       join(flumeDir, "prior-attempts", "corrupt.json"),
@@ -13047,12 +13047,12 @@ describe.runIf(process.platform === "win32")(
       }
     }, 20_000);
 
-    it("snapshotRevertedFiles lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
-      // snapshotRevertedFiles runs on the singleton afterCommit-revert path
+    it("PriorAttemptStore.snapshotReverted lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
+      // snapshotReverted runs on the singleton afterCommit-revert path
       // (§8, e.g. a plan tick's schema-invalid pending.json) — unlike
       // WRITEREVERTNOTE-A/HARVESTFRICTION-B above (fanout, depth from
       // chain.friction), the depth driver here is the reverted commit's own
-      // diff path: snapshotRevertedFiles joins prior-attempts/<key>.reverted
+      // diff path: snapshotReverted joins prior-attempts/<key>.reverted
       // with whatever `git show --name-only` reports, unwrapped.
       const baton = new Baton(join(fx.repo, ".flume"));
       baton.wake("plan");
@@ -13115,10 +13115,10 @@ describe.runIf(process.platform === "win32")(
       expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
     }, 20_000);
 
-    it("snapshotRevertedFiles clears a deep-path stale snapshot before rewriting on a repeat revert under the same key (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: repeat revert)", async () => {
+    it("PriorAttemptStore.snapshotReverted clears a deep-path stale snapshot before rewriting on a repeat revert under the same key (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: repeat revert)", async () => {
       // Same singleton/afterCommit-revert shape as SNAPSHOTREVERTEDFILES-
       // WIN32-PATH-TOTAL-LIMIT above, but ticked twice under the same
-      // priorAttemptKey ("plan"): snapshotRevertedFiles' own stale-snapshot
+      // priorAttemptKey ("plan"): snapshotReverted's own stale-snapshot
       // `rm(dir, ...)` runs before it rewrites, unwrapped — on a real win32
       // host that rm throws ENAMETOOLONG walking attempt 0's deep tree,
       // silently swallowed by the best-effort catch, so attempt 1 never
@@ -13195,8 +13195,8 @@ describe.runIf(process.platform === "win32")(
       expect(existsSync(pathA)).toBe(false);
     }, 20_000);
 
-    it("clearPriorAttempt clears a deep-path stale snapshot on a clean ship without the tick throwing (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: clean ship)", async () => {
-      // clearPriorAttempt's own `rm(revertedSnapshotDir(key), ...)` is
+    it("PriorAttemptStore.clear clears a deep-path stale snapshot on a clean ship without the tick throwing (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: clean ship)", async () => {
+      // PriorAttemptStore.clear's own `rm(snapshotDir(key), ...)` is
       // unwrapped and runs with no surrounding try/catch on its caller path
       // (runSingleton's clean-ship branch) — on a real win32 host, clearing
       // a deep snapshot left by a prior deep-path revert throws ENAMETOOLONG
@@ -13280,7 +13280,7 @@ describe.runIf(process.platform === "win32")(
     // git's own ~200-char win32 worktree-path refusal — this test reaches
     // the §5 round-trip it exists to pin instead of failing on git's
     // refusal first.
-    it("readPriorAttempt/writePriorAttempt/clearPriorAttempt round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+    it("PriorAttemptStore read/write/clear round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
       // from the reverted commit's own diff path), the depth driver here is
       // the §5 record's own flat filename: priorAttemptPath is
@@ -13351,7 +13351,7 @@ describe.runIf(process.platform === "win32")(
         `${slug}.json`,
       );
       expect(priorAttemptPath.length).toBeGreaterThan(260);
-      // writePriorAttempt's mkdir/writeFile landed the record instead of
+      // PriorAttemptStore.write's mkdir/writeFile landed the record instead of
       // throwing ENAMETOOLONG.
       expect(existsSync(priorAttemptPath)).toBe(true);
 
@@ -13359,14 +13359,14 @@ describe.runIf(process.platform === "win32")(
       const second = await dispatcher.tick();
       expect(second.result?.shippedTags).toEqual([tag]);
 
-      // readPriorAttempt actually decoded the deep-path record rather than
+      // PriorAttemptStore.read actually decoded the deep-path record rather than
       // existsSync silently reporting "no prior attempt": the gate-revert
       // block, carrying the first gate's own failure message, lands in the
       // second attempt's rendered prompt.
       expect(prompts[1]).toContain("<prior-attempt>");
       expect(prompts[1]).toContain("boom said no");
 
-      // clearPriorAttempt removed the deep-path record after the clean
+      // PriorAttemptStore.clear removed the deep-path record after the clean
       // ship-and-merge.
       expect(existsSync(priorAttemptPath)).toBe(false);
     }, 20_000);

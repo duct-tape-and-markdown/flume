@@ -65,6 +65,10 @@ export {
 
 export { partitionByFileOverlap } from "./partition.js";
 
+export { slugify } from "./paths.js";
+
+export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
+
 export {
   renderPrompt,
   type NoCommitMode,
@@ -79,9 +83,6 @@ export {
   consoleLogger,
   readTickVerdicts,
   readLatestVerdictsSync,
-  slugify,
-  priorAttemptPath,
-  priorAttemptsDir,
   type ChainModule,
   type ChainFactory,
   type DispatcherOptions,

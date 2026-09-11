@@ -6,7 +6,9 @@
  * needs comes from disk). `tick()` runs exactly one phase × one (or N for
  * fanout) agent invocation(s). The outer loop that repeats `tick()` until
  * hibernation is a process-per-tick supervisor of its own
- * (`superviseLoop`, `src/loopSupervisor.ts`).
+ * (`superviseLoop`, `src/loopSupervisor.ts`), and the retry's input — the
+ * prior-attempt records this file writes and reads back — lives in
+ * `src/priorAttempts.ts`.
  */
 
 import {
@@ -20,7 +22,7 @@ import {
 } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
-import { spawn, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   join,
@@ -39,6 +41,7 @@ import { tsImport } from "tsx/esm/api";
 import type { Agent, AgentUsage } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
+import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
 // `buildFlumeApi` is a function, not a constant, precisely so this
 // import participates safely in the builtinGates cycle — see its docstring.
@@ -52,17 +55,27 @@ import {
   matchesAny,
   fsStamp,
   namespacedJoin,
-  priorAttemptsDir,
+  slugify,
   mergingDir,
   mergingMarkerPath,
   renderedPromptsDir,
   resolvePendingPath,
   STATE_ROOT_NAMES,
-  stopFlagPath,
   tickVerdictPath,
   tickVerdictsLogPath,
   worktreesBase,
 } from "./paths.js";
+import {
+  buildCleanExit,
+  buildGateRevert,
+  buildNotShipped,
+  buildPlatformPreempt,
+  buildRenderRefused,
+  buildTipMoved,
+  priorAttemptRef,
+  PriorAttemptStore,
+  type PriorAttemptRef,
+} from "./priorAttempts.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 import { countFrictionFiles } from "./job.js";
@@ -88,66 +101,10 @@ import type {
   TickResult,
 } from "./Phase.js";
 import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
-import type {
-  PriorAttempt,
-  PriorAttemptKeyspace,
-  GateRevertAttempt,
-  CleanExitAttempt,
-  PlatformPreemptAttempt,
-  RenderRefusedAttempt,
-  TipMovedAttempt,
-  NotShippedAttempt,
-  NoCommitMode,
-} from "./Prompt.js";
+import type { PriorAttempt, NoCommitMode } from "./Prompt.js";
 import * as git from "./git.js";
 
 const execFileP = promisify(execFile);
-
-/**
- * A `PriorAttempt` variant before {@link Dispatcher.writePriorAttempt} stamps
- * the `headSha`/`at` anchor and the `key` keyspace — what each mode-specific
- * builder below actually produces. Kept as an explicit union (rather than a
- * distributed `Omit` over `PriorAttempt`) so each arm still carries its own
- * mode-specific fields rather than collapsing to their shared `mode` key.
- */
-type PriorAttemptDraft =
-  | Omit<GateRevertAttempt, "headSha" | "at" | "key">
-  | Omit<CleanExitAttempt, "headSha" | "at" | "key">
-  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key">
-  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key">
-  | Omit<TipMovedAttempt, "headSha" | "at" | "key">
-  | Omit<NotShippedAttempt, "headSha" | "at" | "key">;
-
-/**
- * Where one prior-attempt record lives and which keyspace that place belongs
- * to: `key` is the filename stem under `priorAttemptsDir` (an entry tag slug
- * or a phase name), `keyspace` the {@link PriorAttempt.key} value stamped
- * into the record written there. Produced only by
- * {@link Dispatcher.priorAttemptRef}, so the two halves cannot disagree.
- */
-interface PriorAttemptRef {
-  key: string;
-  keyspace: PriorAttemptKeyspace;
-}
-
-/**
- * Prior-attempt records live beside the baton, under `priorAttemptsDir`
- * (`src/paths.ts`, which owns the name): gitignored harness runtime state
- * under the flume state dir, NOT in the per-entry worktree (a fanout retry
- * gets a fresh worktree; the record must outlive it). One JSON file per key —
- * the entry tag slug (fanout) or phase name (singleton).
- *
- * Re-exported here because that is where a chain reaches it from
- * (`src/index.ts`, `src/flumeApi.ts`).
- *
- * Session logs sit alongside under the same root (the dogfood chain places
- * them at `<flumeDir>/sessions/`), but that placement is chain-supplied, not
- * runtime: the runtime owns only `flumeDir` itself and the baton/prior-attempt
- * dirs it derives from it. A chain that captures sessions roots them under
- * `api.paths.flumeDir` (spec/chain.md, *Per-run artifacts belong under
- * `FLUME_DIR`*) so the whole footprint tears down in one `rm`.
- */
-export { priorAttemptsDir };
 
 /**
  * One pre-tick worktree provisioning failure — the
@@ -768,29 +725,6 @@ export function readLatestVerdictsSync(
   return latest;
 }
 
-/** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
-const MAX_PRIOR_DETAILS = 8 * 1024;
-/**
- * Share of {@link MAX_PRIOR_DETAILS} reserved for the *tail* of a gate's
- * captured output — enough for a reporter's closing summary, small enough
- * that the head keeps a multi-failure block whole. See {@link headTailBound}.
- */
-const MAX_PRIOR_DETAILS_TAIL = 1024;
-/** Bound on the persisted `git show --stat` digest. */
-const MAX_PRIOR_DIFFSTAT = 4 * 1024;
-/**
- * Bound on the persisted clean-exit constraint / platform-preempt
- * failure class. Same telegraphic discipline as the gate digest: enough to
- * name the wall, not the transcript.
- */
-const MAX_PRIOR_NOCOMMIT = 4 * 1024;
-/**
- * Bound on the persisted not-shipped record's path list. A footprint, like a
- * diffstat, names what landed — a few hundred lines is already past what the
- * retry reads, and the record renders straight into a prompt.
- */
-const MAX_PRIOR_TOUCHED_PATHS = 200;
-
 /**
  * How an agent invocation ended. A clean exit with no commit is a
  * clean-exit (the agent refused a constraint and said so in its final
@@ -818,26 +752,6 @@ const MAX_PRIOR_TOUCHED_PATHS = 200;
 type AgentTermination =
   | { kind: "clean"; promptPath: string; finalMessage: string; usage?: AgentUsage }
   | { kind: "process-failure"; promptPath: string; failureClass: string; usage?: AgentUsage };
-
-/**
- * Filesystem-safe slug for a pending tag — shared by worktree + prior-attempt
- * keying. Never lengthens the input (runs of disallowed chars collapse to a
- * single `-`), so anything bounding raw `tag` length also bounds this.
- *
- * `tag` itself is length-bounded at the schema gate (`PendingSchema.ts`
- * `TAG_MAX_LENGTH`), derived from this module's own
- * tightest raw-tag consumer, `writeRevertNote`'s
- * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
- * component here (this `slug`/`createWorktree`'s worktree-dir and
- * branch-name, `harvestFriction`'s `` `${tag}--${stamp}--${file.name}` ``)
- * is looser and stays within filesystem NAME_MAX (255) by construction as a
- * result.
- * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
- * "revert note to the friction channel (§5)", not asserted here.
- */
-export function slugify(tag: string): string {
-  return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-}
 
 /** Hex width of the entry-bytes half of a {@link quarantineKey}. */
 const QUARANTINE_KEY_HASH_LENGTH = 10;
@@ -894,18 +808,6 @@ function blamedOn(entry: PendingEntry): {
 }
 
 /**
- * Filesystem path of a tag's/phase's prior-attempt record
- * (spec/loop.md "Prior-outcome feedback to the retrying tick": "the exported
- * rule"). Slugifies internally — idempotent on an already-slugified key — so
- * a chain-authored `shouldRun` can derive the same path the dispatcher
- * itself reads and writes from nothing but the raw tag/phase name it already
- * has, with no private dispatcher rule to reverse-engineer.
- */
-export function priorAttemptPath(flumeDir: string, tag: string): string {
-  return join(priorAttemptsDir(flumeDir), `${slugify(tag)}.json`);
-}
-
-/**
  * The state root's path relative to the primary repo root, or `undefined`
  * when the state root is relocated outside it (climbs out via `..`, or is
  * already absolute — a relocated `flumeDir` set by an absolute `FLUME_DIR`).
@@ -959,54 +861,6 @@ export function worktreeDirName(tag: string): string {
   return `${slug.slice(0, WORKTREE_DIRNAME_MAX - hash.length - 1)}-${hash}`;
 }
 
-/** Cap a string to `max` chars, marking the elision so truncation is visible. */
-function bound(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max) + `\n…[truncated ${s.length - max} chars]`;
-}
-
-/**
- * Keep the *last* `max` chars (the agent's final message lives at the tail
- * of stdout), marking the elision at the head so truncation is visible.
- */
-function tailBound(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return `[truncated ${s.length - max} chars]…\n` + s.slice(s.length - max);
-}
-
-/**
- * Keep both ends of `s` — `max - tailBudget` chars of head plus `tailBudget`
- * of tail — eliding the middle with a visible marker. The digest shape for a
- * gate's captured output, where the two ends carry different facts and the
- * middle is filler.
- *
- * Measured against this repo's own vitest afterMerge gate (2026-09-06, a
- * 22 KB capture): the reporter emits the `Failed Tests` section — which
- * tests failed, and the assertion text — in the **first** ~1 KB, then ~20 KB
- * of per-test pass lines, then the `Test Files … failed | … passed` counts
- * in the last ~200 bytes. A tail-only slice of that capture is pass lines
- * and a count: it says how many failed and never which. A head-only slice
- * loses the counts the moment a reporter puts its failure section last, as
- * some do. Keeping both ends is the content-agnostic answer — no line is
- * parsed, no reporter's layout is assumed, and neither end can be crowded
- * out by the other's length.
- *
- * Distinct from {@link tailBound} by design, not by oversight: that helper
- * keeps the tail *only*, which is right for an agent's final message, where
- * the refused constraint is the last thing said and everything before it is
- * transcript.
- */
-function headTailBound(s: string, max: number, tailBudget: number): string {
-  if (s.length <= max) return s;
-  const tail = Math.min(tailBudget, max);
-  const head = max - tail;
-  return (
-    s.slice(0, head) +
-    `\n…[truncated ${s.length - max} chars]…\n` +
-    s.slice(s.length - tail)
-  );
-}
-
 /**
  * {@link GateFailure.signature}: derived from the gate's own name plus its
  * failure output, so two different gates failing with the same message text
@@ -1014,24 +868,6 @@ function headTailBound(s: string, max: number, tailBudget: number): string {
  */
 function gateFailureSignature(failure: { gate: string; message: string }): string {
   return bound(`${failure.gate}: ${failure.message}`.trim(), MAX_FAILURE_SIGNATURE);
-}
-
-/**
- * spec/chain.md "What a gate returns": a gate-revert record earns
- * `suspectFlake: true` only when the gate named `failingFiles` AND every
- * named file is disjoint from the reverted span's own footprint — the
- * entry's own edits cannot have caused a failure in files it never touched.
- * Mechanical, from list disjointness alone; never inferred from gate prose,
- * and never derived from an absent or empty `failingFiles` (non-vacuous:
- * nothing named means nothing to disjoint-check).
- */
-function isSuspectFlake(
-  failingFiles: string[] | undefined,
-  footprint: string[],
-): boolean {
-  if (!failingFiles || failingFiles.length === 0) return false;
-  const touched = new Set(footprint);
-  return failingFiles.every((f) => !touched.has(f));
 }
 
 // ---------- public surface ----------
@@ -1724,6 +1560,8 @@ export interface TickOutcome {
 export class Dispatcher {
   private readonly opts: DispatcherOptions;
   private readonly baton: Baton;
+  /** Prior-attempt records: read, write, clear, and the revert snapshots. */
+  private readonly attempts: PriorAttemptStore;
   private readonly log: Logger;
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
@@ -1740,6 +1578,11 @@ export class Dispatcher {
     this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
     this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;
+    this.attempts = new PriorAttemptStore(
+      this.flumeDir,
+      opts.repoRoot,
+      this.log,
+    );
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.pendingPath = resolvePendingPath(this.flumeDir);
@@ -1992,10 +1835,10 @@ export class Dispatcher {
       capabilities,
       quarantinedSlugs,
     );
-    const priorAttempts = await this.readAllPriorAttempts();
+    const priorAttempts = await this.attempts.readAll();
 
-    const ref = this.priorAttemptRef(phase);
-    const prior = await this.readPriorAttempt(ref.key);
+    const ref = priorAttemptRef(phase);
+    const prior = await this.attempts.read(ref.key);
 
     const noRunResult = (): TickResult => ({
       phaseName: phase.name,
@@ -2335,14 +2178,14 @@ export class Dispatcher {
             this.log.warn(
               `[flume] afterMerge gate '${entryFailure.gate}' failed for ${phase.name}; reverting`,
             );
-            const record = await this.buildPriorAttempt(
+            const record = await buildGateRevert(
               "afterMerge",
               entryFailure,
               repoRoot,
               mergedSha,
               commitTouchedPaths,
             );
-            await this.writePriorAttempt(ref, record);
+            await this.attempts.write(ref, record);
             noCommit = "gate-revert";
             gateFailures.push({
               signature: gateFailureSignature(entryFailure),
@@ -2411,7 +2254,7 @@ export class Dispatcher {
             });
             // A clean ship clears the slot so the next tick starts with no
             // stale prior-attempt signal.
-            await this.clearPriorAttempt(ref.key);
+            await this.attempts.clear(ref.key);
           }
         }
       }
@@ -2511,7 +2354,7 @@ export class Dispatcher {
     // engine learns a tag has left the queue, so it is where records keyed
     // by a departed tag are retired — before selection, so nothing this
     // wave does reads one.
-    const clearedPriorAttempts = await this.clearStalePriorAttempts(pending);
+    const clearedPriorAttempts = await this.attempts.clearStale(pending);
 
     // Foundations governor: resolve the per-tick fork predicate once, then let
     // it gate selection alongside `blockedBy`. Default: every fork resolved.
@@ -2682,7 +2525,7 @@ export class Dispatcher {
     // spec/chain.md "What a hook receives": one read of prior-attempts/ for
     // the whole wave — every entry's TickContext gets the same map, since
     // the records on disk don't change mid-wave.
-    const priorAttempts = await this.readAllPriorAttempts();
+    const priorAttempts = await this.attempts.readAll();
 
     // Run agent in each worktree concurrently — skipping any entry whose
     // setupWorktree hook threw above. Its worktree/branch still get torn
@@ -2964,17 +2807,14 @@ export class Dispatcher {
         // cherry-picked SHA is still reachable, then drop ONLY this entry's
         // commit (reset to the pre-cherry-pick trunk), not the wave. The
         // entry stays pending; its retry carries this prior-attempt block.
-        const record = await this.buildPriorAttempt(
+        const record = await buildGateRevert(
           "afterMerge",
           entryFailure,
           repoRoot,
           mergedSha,
           commitTouchedPaths,
         );
-        await this.writePriorAttempt(
-          this.priorAttemptRef(phase, r.entry),
-          record,
-        );
+        await this.attempts.write(priorAttemptRef(phase, r.entry), record);
         gateFailures.push({
           ...blamedOn(r.entry),
           signature: gateFailureSignature(entryFailure),
@@ -3080,8 +2920,8 @@ export class Dispatcher {
         // exactly the rebuild `TickContext.priorAttempts` exists to spare
         // it. Cleared by the existing shipped-entry sweep below the moment
         // a later attempt ships clean.
-        await this.writePriorAttempt(
-          this.priorAttemptRef(phase, r.entry),
+        await this.attempts.write(
+          priorAttemptRef(phase, r.entry),
           buildNotShipped(mergedSha, commitTouchedPaths),
         );
         mergeOutcomes.push({
@@ -3125,7 +2965,7 @@ export class Dispatcher {
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
       for (const s of shipped) {
-        await this.clearPriorAttempt(this.priorAttemptRef(phase, s).key);
+        await this.attempts.clear(priorAttemptRef(phase, s).key);
       }
       const shippedTags = shipped.map((s) => s.tag);
       // The update can no-op (footprint already recorded, nothing shipped):
@@ -3421,8 +3261,8 @@ export class Dispatcher {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
     // survives into the next tick's brand-new worktree.
-    const ref = this.priorAttemptRef(phase, entry);
-    const prior = await this.readPriorAttempt(ref.key);
+    const ref = priorAttemptRef(phase, entry);
+    const prior = await this.attempts.read(ref.key);
 
     const ctx: TickContext = {
       cwd: wt.path,
@@ -3742,7 +3582,7 @@ export class Dispatcher {
     const ancestor = await git.isAncestor(cwd, preHead, postHead);
     if (ancestor) return false;
     await this.revertTipMovedCommit(cwd, postHead, preHead);
-    await this.writePriorAttempt(ref, buildTipMoved(preHead, postHead));
+    await this.attempts.write(ref, buildTipMoved(preHead, postHead));
     this.log.warn(
       `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${postHead}`,
     );
@@ -3958,7 +3798,7 @@ export class Dispatcher {
     },
     touchedPaths: string[],
   ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
-    const record = await this.buildPriorAttempt(
+    const record = await buildGateRevert(
       "afterCommit",
       failure,
       cwd,
@@ -3966,9 +3806,9 @@ export class Dispatcher {
       touchedPaths,
     );
     await this.writeRevertNote(chain, cwd, sha, label, failure);
-    await this.snapshotRevertedFiles(cwd, sha, ref.key);
+    await this.attempts.snapshotReverted(cwd, sha, ref.key);
     await git.dropLastCommit(cwd, sha);
-    await this.writePriorAttempt(ref, record);
+    await this.attempts.write(ref, record);
     this.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);
     return {
       footprint: touchedPaths,
@@ -4375,269 +4215,7 @@ export class Dispatcher {
     return { path, branch };
   }
 
-  // ---------- prior-attempt persistence ----------
-
-  /**
-   * Where a phase/entry's prior-attempt record lives: the entry tag slug for
-   * fanout, the phase name for singleton. A retry is scheduled "for that
-   * same entry (fanout) or phase (singleton)" — the key mirrors exactly that
-   * scope so the next tick reads its own predecessor.
-   *
-   * Key and keyspace are derived here together and travel as one value:
-   * which keyspace a stem belongs to is not recoverable from its text, and
-   * a pair threaded as two parameters is a pair a callsite can mismatch.
-   */
-  private priorAttemptRef(phase: Phase, entry?: PendingEntry): PriorAttemptRef {
-    return entry
-      ? { key: slugify(entry.tag), keyspace: "entry" }
-      : { key: phase.name, keyspace: "phase" };
-  }
-
-  /**
-   * Read a persisted prior-attempt record, if any. Corrupt, carrying an
-   * unrecognized `mode` discriminant, missing the `headSha`/`at` anchor
-   * every record carries (spec/loop.md "Every record is anchored"), or
-   * missing the `key` keyspace every record states (spec/loop.md "No false
-   * signal") → treated as absent. `mode` alone does not make a `PriorAttempt`: the
-   * renderer is exhaustive over the known modes and must never be fed an
-   * unknown shape, and a chain comparing a record's `headSha` to the tip
-   * reads a field the type promises is there. A record predating the anchor
-   * is a stale slot, and a stale slot must never become a false signal.
-   */
-  private async readPriorAttempt(
-    key: string,
-  ): Promise<PriorAttempt | undefined> {
-    const p = priorAttemptPath(this.flumeDir, key);
-    if (!existsSync(toNamespacedPath(p))) return undefined;
-    try {
-      const rec = JSON.parse(await readFile(toNamespacedPath(p), "utf8")) as {
-        mode?: unknown;
-        headSha?: unknown;
-        at?: unknown;
-        key?: unknown;
-      };
-      if (
-        rec &&
-        (rec.mode === "gate-revert" ||
-          rec.mode === "clean-exit" ||
-          rec.mode === "platform-preempt" ||
-          rec.mode === "render-refused" ||
-          rec.mode === "tip-moved" ||
-          rec.mode === "not-shipped") &&
-        typeof rec.headSha === "string" &&
-        typeof rec.at === "string" &&
-        (rec.key === "entry" || rec.key === "phase")
-      ) {
-        return rec as PriorAttempt;
-      }
-      return undefined;
-    } catch {
-      // A garbled record must not crash the tick — degrade to "no prior".
-      return undefined;
-    }
-  }
-
-  /**
-   * Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`,
-   * keyed by the filename stem — exactly the key `readPriorAttempt` would
-   * have used to write it (`slugify` is idempotent on an already-slugified
-   * key, so re-feeding the stem back through `readPriorAttempt` resolves the
-   * same path). An absent or unreadable directory reads as no records, the
-   * same "no prior" degrade `readPriorAttempt` already applies per file — the
-   * whole of `TickContext.priorAttempts` (spec/chain.md "What a hook
-   * receives").
-   */
-  private async readAllPriorAttempts(): Promise<
-    ReadonlyMap<string, PriorAttempt>
-  > {
-    const dir = priorAttemptsDir(this.flumeDir);
-    let entries: Dirent[];
-    try {
-      entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
-    } catch {
-      return new Map();
-    }
-    const out = new Map<string, PriorAttempt>();
-    for (const e of entries) {
-      if (!e.isFile() || !e.name.endsWith(".json")) continue;
-      const key = e.name.slice(0, -".json".length);
-      const rec = await this.readPriorAttempt(key);
-      if (rec) out.set(key, rec);
-    }
-    return out;
-  }
-
-  /**
-   * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") and the
-   * writing ref's keyspace onto whatever mode-specific fields the caller built, so every one of the
-   * builders below stays ignorant of the anchor rather than each re-reading
-   * the trunk tip itself. `this.opts.repoRoot`, never `key`'s worktree — the
-   * anchor is the *trunk* tip regardless of which worktree produced the
-   * record.
-   */
-  private async writePriorAttempt(
-    ref: PriorAttemptRef,
-    rec: PriorAttemptDraft,
-  ): Promise<void> {
-    const p = priorAttemptPath(this.flumeDir, ref.key);
-    const anchored: PriorAttempt = {
-      ...rec,
-      key: ref.keyspace,
-      headSha: await git.revParse(this.opts.repoRoot),
-      at: new Date().toISOString(),
-    };
-    await mkdir(toNamespacedPath(dirname(p)), { recursive: true });
-    await writeFile(
-      toNamespacedPath(p),
-      JSON.stringify(anchored, null, 2) + "\n",
-      "utf8",
-    );
-  }
-
-  /**
-   * Clear a prior-attempt record once a later attempt commits clean — both
-   * the record JSON and the reverted-prose snapshot, so a clean ship leaves
-   * no stale recovery artifact (the same no-false-signal invariant the
-   * record slot already holds, extended to the prose snapshot).
-   */
-  private async clearPriorAttempt(key: string): Promise<void> {
-    await rm(toNamespacedPath(priorAttemptPath(this.flumeDir, key)), {
-      force: true,
-    });
-    await rm(toNamespacedPath(this.revertedSnapshotDir(key)), {
-      recursive: true,
-      force: true,
-    });
-  }
-
-  /**
-   * Clear every entry-keyed prior-attempt record whose tag the queue no
-   * longer carries, and report the keys cleared (spec/loop.md "No false
-   * signal"). Such a record can never be read again on its own terms — the
-   * retry it was written for will not happen — but it stays visible to
-   * every `shouldRun`/`promptArgs` reading `TickContext.priorAttempts`, and
-   * a tag reused later would inherit a predecessor it never had.
-   *
-   * Keyed on the record's own `key` keyspace, never on the stem's text: a
-   * phase's record is named by a phase name, which no queue ever carries,
-   * so a stem-only test would clear the singleton records the queue has no
-   * say over. Records that read as absent (corrupt, unanchored, no
-   * keyspace) are not cleared — `readAllPriorAttempts` never surfaces them,
-   * and deleting a file this dispatcher cannot parse is a guess about
-   * what wrote it.
-   */
-  private async clearStalePriorAttempts(
-    pending: readonly PendingEntry[],
-  ): Promise<string[]> {
-    const queued = new Set(pending.map((e) => slugify(e.tag)));
-    const records = await this.readAllPriorAttempts();
-    const stale = [...records]
-      .filter(([key, rec]) => rec.key === "entry" && !queued.has(key))
-      .map(([key]) => key)
-      .sort();
-    for (const key of stale) await this.clearPriorAttempt(key);
-    if (stale.length > 0) {
-      this.log.info(
-        `[flume] cleared ${stale.length} stale prior-attempt record(s): ${stale.join(", ")}`,
-      );
-    }
-    return stale;
-  }
-
-  // ---------- reverted-prose durability ----------
-
-  /**
-   * Durable, gitignored snapshot dir for a gate-reverted commit's files.
-   * Sibling to the prior-attempt JSON under `<flumeDir>/prior-attempts/`
-   * (NOT the per-entry worktree) so it outlives both `git reset --hard` and
-   * a fanout worktree teardown — the same durability that record relies on.
-   */
-  private revertedSnapshotDir(key: string): string {
-    return join(priorAttemptsDir(this.flumeDir), `${key}.reverted`);
-  }
-
-  /**
-   * Snapshot every non-deleted file the reverted commit touched, verbatim,
-   * into the durable snapshot dir before the hard reset destroys it.
-   *
-   * A gate-reverted plan tick otherwise loses its state.md /
-   * open-questions.md prose to `git reset --hard`, recoverable only by a
-   * human reading `.flume/sessions/` logs. The snapshot is post-image content
-   * under a mirror of the repo path, so recovery is "open the file" — not
-   * "read a diff", not "grep a session log". `diffStat` (the record's
-   * digest) is `git show --stat`: filenames and counts, never content — it
-   * cannot recover findings, which is why this distinct artifact exists.
-   *
-   * Generic by construction: it snapshots whatever the reverted commit
-   * changed (for plan that is the prose plus the schema-failing
-   * pending.json), so the dispatcher needs no chain-specific notion of which
-   * artifact is "prose" vs "machine-checkable". Must run while `sha` is still
-   * reachable (before the drop). Best-effort — a snapshot failure must never
-   * block or fail the revert.
-   */
-  private async snapshotRevertedFiles(
-    cwd: string,
-    sha: string,
-    key: string,
-  ): Promise<void> {
-    const dir = this.revertedSnapshotDir(key);
-    try {
-      // The artifact tracks the *latest* reverted attempt only — drop any
-      // stale snapshot from an earlier revert under this key first.
-      await rm(toNamespacedPath(dir), { recursive: true, force: true });
-      const { stdout } = await execFileP(
-        "git",
-        [
-          "show",
-          "--name-only",
-          "--diff-filter=d",
-          "--format=",
-          "--no-color",
-          sha,
-        ],
-        { cwd, maxBuffer: 16 * 1024 * 1024 },
-      );
-      const files = stdout
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-      for (const rel of files) {
-        const { stdout: content } = await execFileP(
-          "git",
-          ["show", `${sha}:${rel}`],
-          { cwd, maxBuffer: 16 * 1024 * 1024 },
-        );
-        const dest = join(dir, rel);
-        // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth
-        // here is driven by the reverted diff's own path depth, not
-        // chain.friction, but it's the same join(dir, rel) unwrapped shape
-        // writeRevertNote/harvestFriction guard use — same idiom.
-        await mkdir(toNamespacedPath(dirname(dest)), { recursive: true });
-        await writeFile(toNamespacedPath(dest), content, "utf8");
-      }
-    } catch {
-      // Recovery is best-effort by spec; never block or fail the revert path.
-    }
-  }
-
-  /**
-   * Bounded `git show --stat` of the reverted commit — the prior-attempt
-   * digest, so the retry does not blindly reconstruct. Must be called while `sha` is still
-   * reachable (before the hard reset / commit drop). Best-effort: a failure
-   * here must not block the revert path.
-   */
-  private async capturedDiffStat(cwd: string, sha: string): Promise<string> {
-    try {
-      const { stdout } = await execFileP(
-        "git",
-        ["show", "--stat", "--oneline", "--no-color", sha],
-        { cwd, maxBuffer: 4 * 1024 * 1024 },
-      );
-      return bound(stdout.trimEnd(), MAX_PRIOR_DIFFSTAT);
-    } catch {
-      return "(diff stat unavailable)";
-    }
-  }
+  // ---------- the operator's copy of a revert ----------
 
   /**
    * Subject + body of a commit, read while `sha` is still reachable (before
@@ -4726,44 +4304,6 @@ export class Dispatcher {
     }
   }
 
-  private async buildPriorAttempt(
-    when: GateRevertAttempt["when"],
-    failure: {
-      gate: string;
-      message: string;
-      details?: string;
-      failingFiles?: string[];
-    },
-    diffCwd: string,
-    sha: string,
-    /**
-     * The reverted span's own touched paths (spec/chain.md "What a gate
-     * returns") — the footprint `suspectFlake` disjointness reads against.
-     */
-    footprint: string[],
-  ): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key">> {
-    const diffStat = await this.capturedDiffStat(diffCwd, sha);
-    return {
-      mode: "gate-revert",
-      when,
-      gate: failure.gate,
-      message: failure.message,
-      ...(failure.details
-        ? {
-            details: headTailBound(
-              failure.details,
-              MAX_PRIOR_DETAILS,
-              MAX_PRIOR_DETAILS_TAIL,
-            ),
-          }
-        : {}),
-      diffStat,
-      ...(isSuspectFlake(failure.failingFiles, footprint)
-        ? { suspectFlake: true }
-        : {}),
-    };
-  }
-
   /**
    * Classify a no-commit-no-gate tick and persist the matching
    * prior-attempt record so the retry's prompt carries it. A clean agent exit that
@@ -4778,13 +4318,10 @@ export class Dispatcher {
     termination: AgentTermination,
   ): Promise<NoCommitMode> {
     if (termination.kind === "clean") {
-      await this.writePriorAttempt(
-        ref,
-        buildCleanExit(termination.finalMessage),
-      );
+      await this.attempts.write(ref, buildCleanExit(termination.finalMessage));
       return "clean-exit";
     }
-    await this.writePriorAttempt(
+    await this.attempts.write(
       ref,
       buildPlatformPreempt(termination.failureClass),
     );
@@ -4829,7 +4366,7 @@ export class Dispatcher {
     label: string,
     err: InlineExecRenderError,
   ): Promise<void> {
-    await this.writePriorAttempt(ref, buildRenderRefused(err));
+    await this.attempts.write(ref, buildRenderRefused(err));
     this.log.warn(
       `[flume] ${label}: render-refused (no commit): ${err.message}`,
     );
@@ -5085,98 +4622,6 @@ function summarize(
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
   return parts.join(" ");
-}
-
-/**
- * Build the clean-exit record: the agent exited cleanly without
- * committing. What rides the record is the tail of its final message —
- * extracted from the full transcript by the adapter's own
- * `extractFinalMessage` (`src/Agent.ts`, spec/chain.md "The agent seam"),
- * unbound at that layer; `tailBound` here is record-size policy, not
- * provider shape, so it stays on this side of the seam. The message is
- * quoted, never classified: whether the exit was a refusal, a park, or
- * nothing to do is the chain's reading (`engine-boundary.md`, *Told, not
- * inferred*).
- */
-function buildCleanExit(
-  finalMessage: string,
-): Omit<CleanExitAttempt, "headSha" | "at" | "key"> {
-  const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
-  return {
-    mode: "clean-exit",
-    finalMessage:
-      message.length > 0
-        ? message
-        : "(agent exited cleanly without committing and produced no final message)",
-  };
-}
-
-/** Build the platform-preempt record from the non-work failure class. */
-function buildPlatformPreempt(
-  failureClass: string,
-): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key"> {
-  return {
-    mode: "platform-preempt",
-    failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
-  };
-}
-
-/**
- * Build the render-refused record from the render's own
- * {@link InlineExecRenderError} — its `message` already names every failing
- * span's command text and stderr.
- */
-function buildRenderRefused(
-  err: InlineExecRenderError,
-): Omit<RenderRefusedAttempt, "headSha" | "at" | "key"> {
-  return {
-    mode: "render-refused",
-    failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
-  };
-}
-
-/**
- * Build the tip-moved record: the ref this tick found didn't match the tip
- * it recorded at tick start. A sibling to the no-commit builders above, never a `NoCommitMode` — see {@link TipMovedAttempt}.
- *
- * `observedTip` is always the observed HEAD itself, never its parent — both
- * legs run the same ancestry check now (spec/worktrees.md "Singleton runs in
- * a worktree" retired the singleton leg's own parent-equality check, whose
- * "found" used to name the mismatched commit's parent instead), so the
- * agent's own top commit always stays discoverable rather than reading as
- * the intruder.
- */
-function buildTipMoved(
-  expectedTip: string,
-  observedTip: string,
-): Omit<TipMovedAttempt, "headSha" | "at" | "key"> {
-  return { mode: "tip-moved", expectedTip, observedTip };
-}
-
-/**
- * Build the not-shipped record from the facts the engine already holds at the
- * ship decision — the cherry-picked sha and the paths that commit touched,
- * the same two the chain's own predicate was handed. Nothing about *why* the
- * chain declined: the engine has no such vocabulary (`engine-boundary.md`,
- * *Told, not inferred*), and the predicate returned a boolean, not a reason.
- *
- * Bounded like every other variant (spec/loop.md "Bounded by construction"):
- * a wide commit's footprint is elided to {@link MAX_PRIOR_TOUCHED_PATHS}
- * entries with the omitted count stated, never silently cut — a truncated
- * list passing for a whole footprint is the false signal the bound must not
- * introduce.
- */
-function buildNotShipped(
-  mergedSha: string,
-  touchedPaths: readonly string[],
-): Omit<NotShippedAttempt, "headSha" | "at" | "key"> {
-  const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
-  return {
-    mode: "not-shipped",
-    mergedSha,
-    touchedPaths: touchedPaths.slice(0, MAX_PRIOR_TOUCHED_PATHS),
-    ...(omitted > 0 ? { omittedPaths: omitted } : {}),
-  };
 }
 
 /**
