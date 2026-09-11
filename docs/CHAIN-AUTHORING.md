@@ -3,9 +3,10 @@
 The long-form walkthrough for writing your own `.flume/chain.ts`; assumes
 you've read the README. The running example,
 [`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is the
-spec → plan → build pipeline this repo dogfoods — every section quotes a
+plan → build derivation pipeline this repo dogfoods — every section quotes a
 slice, so open it in a second pane. For the bare-minimum shape (no fanout,
-no spec separation), see [`minimal-chain.ts`](../examples/minimal-chain.ts).
+no plan/build split), see
+[`minimal-chain.ts`](../examples/minimal-chain.ts).
 
 **Two reference chains, one engine.** Cascade is the flagship: multi-phase,
 fanout, `pending.json`, the full derivation pipeline — but it is *an*
@@ -13,8 +14,8 @@ example, not the engine's assumption. The engine ships mechanism, never
 convention (`.claude/rules/engine-boundary.md`), and the second reference
 chain is the proof:
 [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts)
-is single-phase, has no spec corpus and no plan/build split, and reads a
-plain `BACKLOG.json` instead of `pending.json` — yet it composes the same
+is single-phase, has no plan/build split, and reads a plain
+`BACKLOG.json` instead of `pending.json` — yet it composes the same
 entry-schema, tag-refinement, and capability-gating machinery cascade uses
 (§§10-11 below), declared as its own small extension and its own tag
 convention. Where a section below quotes cascade, skim the groomer file
@@ -177,8 +178,6 @@ const plan: Phase = {
     ".flume/plan/pending.json",
     ".flume/plan/state.md",
     ".flume/plan/open-questions.md",
-    "specs/_aligned/**", // graduation moves files into here
-    "specs/active/**", // graduation removes them from here
   ],
   gates: [pendingGate({ targetFence: build, extension: entryExtension })],
   promptArgs() {
@@ -588,8 +587,8 @@ The choice is structural — it follows from what the phase outputs.
 ### Singleton
 
 Pick `"singleton"` when the phase derives a shared artifact that can't
-admit concurrent edits — plan derives the whole `pending.json` from disk;
-spec derives a corpus. Two parallel ticks would step on each other.
+admit concurrent edits — plan derives the whole `pending.json` from disk.
+Two parallel ticks would step on each other.
 
 Singleton phases run in the main repo (not a worktree) and commit directly
 to the trunk. Their `afterCommit` gates run on the trunk.
@@ -1421,8 +1420,8 @@ const factory: ChainFactory = (flume) => {
   // ... phases defined here, composing with the destructured values ...
 
   const cascadeChain: Chain = {
-    phases: [plan, build, spec],
-    humanOnly: ["spec"],
+    phases: [plan, build],
+    humanOnly: [],
   };
   return { chain: cascadeChain };
 };
@@ -1443,14 +1442,15 @@ must derive pending before anything can build.
 
 `humanOnly` lists phases the dispatcher
 cannot wake via another phase's `handoff` — humans wake them by touching
-`.flume/awake/<name>` (or `flume wake <name>`). Cascade marks `spec`
-human-only because it derives from human-authored workshop content.
+`.flume/awake/<name>` (or `flume wake <name>`). Reach for it when a phase
+consumes something a human authors between runs, so waking it from a
+sibling's handoff would only burn a tick. Cascade declares it empty: both
+its phases derive from disk, so either is safe to wake autonomously.
 
 ## Where to look next
 
 - [`examples/cascade-chain.ts`](../examples/cascade-chain.ts) — the
-  flagship spec → plan → build derivation chain this walkthrough quotes
-  from.
+  flagship plan → build derivation chain this walkthrough quotes from.
 - [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts) —
   the peer reference chain: single-phase, no plan/build split, its own
   entry extension and tag refinement on the same engine. See the intro

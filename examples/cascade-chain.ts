@@ -1,17 +1,16 @@
 /**
- * Cascade chain — the canonical workshop → spec → plan → code pipeline,
- * expressed as Flume Phases.
+ * Cascade chain — the canonical spec → plan → build pipeline, expressed as
+ * Flume Phases. The spec corpus is a human maintenance surface, so the chain
+ * itself is the two machine phases that derive from it:
  *
- * Three phases:
  *   - plan: re-derives pending.json + state.md from the spec corpus + src
  *     (singleton).
  *   - build: ships pending entries to the trunk (fanout).
- *   - spec: derives an aligned spec corpus from a workshop draft (singleton,
- *     human-woken).
  *
  * This file is the load-bearing example: it demonstrates the shape a chain
- * takes when it spans the full derivation pipeline. Read it alongside the
- * JSDoc on `Phase`, `Gate`, and the pending-schema exports.
+ * takes when derivation splits across a singleton deriver and a fanout
+ * shipper. Read it alongside the JSDoc on `Phase`, `Gate`, and the
+ * pending-schema exports.
  *
  * Imports come from `../src/index.ts` — the same public surface a consumer
  * sees as `import { ... } from "flume"`. Path is relative because this file
@@ -94,24 +93,6 @@ const factory: ChainFactory = (api) => {
   // ---------- project-specific gates ----------
 
   /**
-   * Corpus-health audit run after the spec phase commits. Asserts the aligned
-   * corpus is internally consistent — no orphaned cites, no duplicate entries
-   * — before the new spec state propagates to plan.
-   *
-   * Why custom: spec drift is corpus-shaped and project-defined; no language
-   * tool catches it. We use `shellGate` (the public escape hatch) to delegate
-   * the actual audit to a project-owned script, keeping the gate-as-data
-   * boundary clean.
-   */
-  const specAuditGate: Gate = shellGate({
-    name: "spec audit",
-    when: "afterCommit",
-    cmd: "pnpm",
-    args: ["spec:audit"],
-    failHint: "Spec corpus audit failed — commit reverted",
-  });
-
-  /**
    * The test suite, at `afterMerge` — the merged trunk is the only tree
    * anything validates as a whole, and this is the gate that says it is
    * still correct.
@@ -130,36 +111,6 @@ const factory: ChainFactory = (api) => {
   });
 
   // ---------- phases ----------
-
-  /**
-   * Spec phase — derives `specs/active/` from a workshop draft, sweeps drift,
-   * audits corpus health.
-   *
-   * Singleton: the spec corpus is a single shared artifact that doesn't admit
-   * concurrent edits. Human-woken (see `humanOnly` on the chain): the
-   * dispatcher cannot wake spec from another phase's handoff, because spec
-   * input is human-authored workshop content, not machine-derived signal.
-   *
-   * Gates the corpus through `specAuditGate` before yielding to plan; on green
-   * it hands off to plan so pending.json refreshes against the new spec state.
-   */
-  const spec: Phase = {
-    name: "spec",
-    description:
-      "Derive specs/active/ from workshop/; sweep drift; audit corpus health.",
-    promptPath: "prompts/spec.md",
-    concurrency: "singleton",
-    writablePaths: [
-      "specs/active/**",
-      "specs/_aligned/**", // pull-back from aligned when workshop targets it
-      "specs/09-spec-flags.md",
-      "workshop/_archive/**", // absorbed sources move here
-    ],
-    gates: [specAuditGate],
-    handoff(result) {
-      return result.committed ? ["plan"] : [];
-    },
-  };
 
   /**
    * Build phase — ships one or more disjoint pending entries to the trunk.
@@ -185,7 +136,7 @@ const factory: ChainFactory = (api) => {
    * Always hands off to plan so pending.json reconciles against the new trunk
    * state, regardless of success, bail, or validation-fail.
    *
-   * Declared above `plan` (rather than in the spec/plan/build reading order)
+   * Declared above `plan` (rather than in the plan/build reading order)
    * so `plan.gates` can reference `build` directly as `pendingGate`'s
    * `targetFence` — `build.writablePaths` is a static array literal here, not
    * declaration-driven, so no `get gates()` deferral is needed (contrast the
@@ -250,8 +201,6 @@ const factory: ChainFactory = (api) => {
       ".flume/plan/pending.json",
       ".flume/plan/state.md",
       ".flume/plan/open-questions.md",
-      "specs/_aligned/**", // graduation moves files into here
-      "specs/active/**", // graduation removes them from here
     ],
     gates: [pendingGate({ targetFence: build, extension: entryExtension })],
     promptArgs() {
@@ -266,9 +215,9 @@ const factory: ChainFactory = (api) => {
   // ---------- chain ----------
 
   const cascadeChain: Chain = {
-    phases: [plan, build, spec],
+    phases: [plan, build],
     entryExtension,
-    humanOnly: ["spec"], // dispatcher cannot wake spec; humans do, after workshop sessions
+    humanOnly: [], // both phases are machine-woken; the spec corpus a human edits is not a phase
   };
 
   return { chain: cascadeChain };
@@ -300,7 +249,8 @@ export default factory;
  *          } from "flume";
  *
  *   3. Adapt the phases to your project:
- *      - Trim phases you don't need (e.g. drop `spec` for a two-phase chain).
+ *      - Trim phases you don't need (e.g. drop `build` for a single-phase
+ *        chain, or add one of your own).
  *      - Update `writablePaths` to match your repo layout.
  *      - Swap in your own custom gates; drop the built-ins you don't use —
  *        they are destructured off `api` at the top of the factory.
