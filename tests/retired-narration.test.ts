@@ -2493,3 +2493,180 @@ describe("module-path cites in src/ and examples/ resolve against the tree", () 
     ).toEqual([]);
   });
 });
+
+/**
+ * `.claude/rules/spec-writing.md` ("A claim names behavior, never location")
+ * lets a spec sentence name behavior and public surface, and refuses a `src/`
+ * file path or a line number: where a symbol lives is layout, and layout is
+ * build's lane. That refusal is the one half of the spec-lint pin this scan
+ * carries — a locator rots on the next extraction while still reading as
+ * authoritative, and nothing but a reader's memory was watching for one.
+ *
+ * A path is not always a locator, which is why the `src/` half is an
+ * allowlist rather than a ban. Two claims take a module as their *subject*:
+ * the export inventory, which the rule itself names as public surface, and
+ * the deep-import specifier packaging refuses, where the string is what a
+ * consumer types. Each surviving path is named below with which it is; a new
+ * one fails until it is.
+ *
+ * The line-number half is a flat refusal — no claim in this corpus has a line
+ * as its subject — so it asserts the empty case explicitly (`engineering.md`,
+ * "A green verdict is proven non-vacuous"), with the grammar driven both ways
+ * beside it.
+ *
+ * Scope is `spec/` alone. The same shape in `src/` and `examples/` is swept
+ * by the cite scan above, which can resolve a cite against the tree; `spec/`
+ * is human-only (chain.ts writable-paths), so a finding here leaves as a
+ * directed edit rather than a build fix.
+ */
+
+/** Every `.md` page of `spec/`, read whole — fenced code included. */
+function specPages(): { path: string; text: string }[] {
+  return readdirSync(join(REPO_ROOT, "spec"))
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => {
+      const path = join("spec", name);
+      return { path, text: readFileSync(join(REPO_ROOT, path), "utf8") };
+    });
+}
+
+/**
+ * A `src/` file path. Matched wherever it starts, including inside a longer
+ * specifier — `@dtmd/flume/src/Dispatcher.ts` names the module as surely as a
+ * bare cite does. Segments carry no dots before the extension, which is what
+ * keeps a bare `src/` directory mention out — "a section that no longer
+ * matches `src/`" names the tree, not a route to a symbol, and the corpus
+ * writes that sentence routinely.
+ */
+const SPEC_SRC_PATH = /src\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.[A-Za-z]{1,5}/g;
+
+/**
+ * A `path:NN` line locator: any filename with an extension, followed
+ * immediately by a colon and digits. Not anchored to `src/` — a line number
+ * is refused wherever it points, and `spec/chain.md:120` would be the same
+ * defect aimed at a sibling page.
+ *
+ * The leading lookbehind bars a start inside a URL authority, so a
+ * `https://host:443/x` port is not read as a line. A path that merely *ends*
+ * a clause — "`spec/jobs.md`, *Runtime ignores*" — carries no digits and
+ * never reaches the colon.
+ */
+const SPEC_LINE_LOCATOR =
+  /(?<![A-Za-z0-9_.:/-])[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z]{1,5}:\d+/g;
+
+/**
+ * The `src/` paths a spec page may name, each with the claim that takes the
+ * module as its subject. An entry leaves in the commit that removes its last
+ * site; the equality below refuses a stale one as loudly as a new locator.
+ */
+const SPEC_SRC_PATH_ALLOWLIST: Record<string, string> = {
+  "src/index.ts":
+    "the export inventory is the claim's subject — spec-writing.md names an " +
+    "export of `src/index.ts` as public surface, and the pages point at the " +
+    "module instead of restating what it lists",
+  "src/flumeApi.ts":
+    "the second canonical export list, subject of the same pointer sentence " +
+    "in pending.md's *What the package exports*",
+  "src/Dispatcher.ts":
+    "the deep-import specifier packaging refuses " +
+    "(`@dtmd/flume/src/Dispatcher.ts`) — the string is what a consumer types, " +
+    "not a route to a symbol",
+};
+
+/** Distinct `src/` paths a page names, in source order. */
+function srcPathsIn(text: string): string[] {
+  return [...new Set(text.match(SPEC_SRC_PATH) ?? [])];
+}
+
+/** Every `path:NN` locator a page carries, as written. */
+function lineLocatorsIn(text: string): string[] {
+  return text.match(SPEC_LINE_LOCATOR) ?? [];
+}
+
+describe("spec/ names public surface, never a path locator", () => {
+  const pages = specPages();
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"): a
+  // page list built off a filtered or hand-kept subset would leave both
+  // refusals below passing over the pages they never read. Name the heaviest
+  // carriers, and require a page that carries nothing — coverage is the
+  // directory, not the set of hits.
+  it("the spec locator scan reads every page of spec/", () => {
+    expect(pages.length, "spec/ read empty — the scan is off target").toBeGreaterThan(0);
+    for (const page of pages) {
+      expect(page.text.length, `${page.path} read empty`).toBeGreaterThan(0);
+    }
+    for (const carrier of ["chain.md", "pending.md", "cli.md"]) {
+      expect(
+        pages.map((p) => p.path),
+        `spec/${carrier} left the scanned set`,
+      ).toContain(join("spec", carrier));
+    }
+    expect(
+      pages.filter((p) => srcPathsIn(p.text).length === 0).map((p) => p.path),
+      "every scanned page carries a path — the scan may be reading only carriers",
+    ).not.toEqual([]);
+  });
+
+  it("every `src/` file path in a spec page is one the locator allowlist declares", () => {
+    const sites = pages.flatMap((p) =>
+      srcPathsIn(p.text).map((path) => ({ page: p.path, path })),
+    );
+    const found = [...new Set(sites.map((s) => s.path))].sort();
+    expect(found.length, "no spec page names a `src/` path — prune the allowlist").toBeGreaterThan(0);
+    expect(
+      found,
+      "a spec sentence names a `src/` file path: state the behavior or the " +
+        "public name instead, or — where the module itself is the claim's " +
+        "subject — declare it in the allowlist with that reason. Sites: " +
+        sites.map((s) => `${s.page} → ${s.path}`).join(", "),
+    ).toEqual(Object.keys(SPEC_SRC_PATH_ALLOWLIST).sort());
+  });
+
+  it("no spec page carries a `path:NN` line locator", () => {
+    const sites = pages.flatMap((p) =>
+      lineLocatorsIn(p.text).map((hit) => `${p.path} → ${hit}`),
+    );
+    expect(
+      sites,
+      "a line number is layout at its most perishable — cite the heading or " +
+        "the public name the line declares",
+    ).toEqual([]);
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the line-locator refusal passes over an empty set by
+  // design, and the allowlist refusal reports its inventory whether the
+  // needle is watching or dead. Drive both over a real page with a locator
+  // injected — the corpus cannot produce the violation itself — and over the
+  // spellings the corpus does write, which must stay unflagged.
+  it("the locator grammar flags an injected `src/` path and an injected line locator", () => {
+    const clean = pages.find(
+      (p) => srcPathsIn(p.text).length === 0 && lineLocatorsIn(p.text).length === 0,
+    );
+    expect(clean, "no spec page is free of both shapes — nothing to inject into").toBeDefined();
+    const injectedPath = `${clean!.text}\nThe baton lives in \`src/Baton.ts\`.\n`;
+    expect(srcPathsIn(injectedPath)).toContain("src/Baton.ts");
+    const injectedLine = `${clean!.text}\nSee \`src/Baton.ts:42\` for the claim.\n`;
+    expect(lineLocatorsIn(injectedLine)).toContain("src/Baton.ts:42");
+    expect(
+      lineLocatorsIn(`${clean!.text}\nSee \`spec/chain.md:120\`.\n`),
+      "a line locator aimed at a sibling page is the same defect",
+    ).toContain("spec/chain.md:120");
+
+    for (const denied of [
+      "a section that no longer matches `src/` is a defect in one of them",
+      "the harness keeps `src/` and `.flume/` apart",
+    ]) {
+      expect(srcPathsIn(denied), `path needle over-fires on: ${denied}`).toEqual([]);
+    }
+    for (const denied of [
+      "receives the same runtime-ignore merge a job dir does (`spec/jobs.md`, *Runtime ignores*).",
+      "`enableGlobalVirtualStore` (`pnpm-workspace.yaml`, https://pnpm.io:443/git-worktrees) is documented",
+      "the exec-local doctrine lives in `spec/cli.md`; this page does not restate it",
+    ]) {
+      expect(lineLocatorsIn(denied), `line needle over-fires on: ${denied}`).toEqual([]);
+    }
+  });
+});
