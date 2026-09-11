@@ -1093,9 +1093,37 @@ enforce. Don't reiterate writable paths in your prompt.
 
 ### The `<prior-attempt>` block
 
-When a tick commits and a gate reverts it, the next tick scheduled for the
-same entry (fanout) or phase (singleton) gets a `<prior-attempt>` block
-right after `<harness>`:
+When a tick leaves the queue unchanged, the next tick scheduled for the same
+entry (fanout) or phase (singleton) gets a `<prior-attempt>` block right after
+`<harness>`. The record behind it is a mode-tagged union — exactly one variant
+per record — and the block renders the variant that fired:
+
+- `gate-revert` — the commit landed and a gate reverted it. Carries which gate
+  phase reverted (`afterCommit` or `afterMerge`), the failing gate's `name`,
+  its one-line `message`, its full `details`, and a `git show --stat` digest of
+  the reverted commit. Symmetric across both gate phases: an `afterMerge`
+  failure dies with the dispatcher process, and this is what survives it.
+- `clean-exit` — the agent exited cleanly and committed nothing. Carries the
+  tail of the agent's own final message, verbatim. The engine names no intent:
+  a refused constraint, a deliberate park and "nothing to do" all exit clean,
+  and the message is yours to read.
+- `platform-preempt` — the agent process failed for non-work reasons
+  (rate-limit, auth, per-tick timeout, dispatcher-killed). Carries the failure
+  class, marked as explicitly **not** a defect in the prior work — the retry
+  resumes rather than treating the cut-off as a wall.
+- `render-refused` — one or more inline-exec spans failed to resolve, so the
+  agent was never invoked. Carries every failing span's command text and its
+  stderr.
+- `tip-moved` — the ref moved between tick start and the point the commit
+  would have landed, so the commit was discarded. Carries the expected and the
+  observed tip. Like `platform-preempt`, not a defect in the work.
+- `not-shipped` — the commit landed, passed every gate, and your own `shipped`
+  predicate returned `false`. Carries the merged sha and the paths that commit
+  touched. No reason vocabulary: the engine records that the chain said no,
+  never why. This is what a chain reads instead of rebuilding "was the last
+  attempt a park" out of the verdict log.
+
+Rendered, for the `gate-revert` variant:
 
 ```text
 <prior-attempt>
@@ -1111,29 +1139,47 @@ Reverted change digest (git show --stat):
   build: wire prior-attempt persistence
    src/Dispatcher.ts | 48 ++++++++++++++++--
    1 file changed, 44 insertions(+), 4 deletions(-)
+Recorded 2026-03-04T11:22:31.004Z, trunk tip 9f2c1ab.
 </prior-attempt>
 ```
 
 Like `<harness>`, this is dispatcher-owned and structural — there is **no
-`{{token}}` for it** and you don't reference it in `promptArgs` or the
-prompt file. It carries the failing gate's `name`, its full `details` (not
-just the one-line `message`), and a bounded `git show --stat` digest of the
-reverted commit, so the retry doesn't re-derive the wall it already hit.
-It is symmetric across `afterCommit` and `afterMerge`. The carry is
-cross-process by construction — the record is persisted under
-`.flume/prior-attempts/` (gitignored, beside the baton) and read back by
-the next `flume tick`'s fresh process. The block is **absent on a first
-attempt** (no false signal), and a record clears two ways: an attempt that
-**ships clean** retires its own, and a **fanout wave's queue read** retires
-every entry-keyed record whose tag the queue no longer carries. That second
-clear runs before selection, so an entry you dropped or renamed in
-`pending.json` leaves nothing behind for a later tick to read — the retry
-those records were written for is never going to happen. The wave names the
-keys it cleared on the tick verdict (`clearedPriorAttempts`, absent when it
-cleared none); a singleton phase's own record is outside that sweep, since no
-queue entry governs it. Both the gate `message` and `details` feed the block
-— write `details` for the retrying agent to read (concrete paths and line
-numbers beat narration).
+`{{token}}` for it** and you don't reference it in `promptArgs` or the prompt
+file. For `gate-revert`, both the gate `message` and its `details` feed the
+block — write `details` for the retrying agent to read (concrete paths and
+line numbers beat narration).
+
+**Every record is anchored.** Whatever the variant, it carries `headSha` — the
+trunk tip when the record was written — and `at`, an ISO timestamp, rendered
+as the block's last line. A chain deciding "it bailed, and nothing has changed
+since" compares `headSha` against the current tip, never the record file's
+mtime against a commit time.
+
+**A gate that names its failing files earns a flake marker.** When a
+`gate-revert` record's gate returned `failingFiles` (above, §2) and every file
+it named is disjoint from the reverted span's own footprint, the record carries
+`suspectFlake: true` — the entry's own edits cannot have caused a failure in
+files they never touched. It is derived, never trusted: the dispatcher computes
+it from the two lists, and a gate reporting no `failingFiles` earns no marker.
+An absent field is never a claim of flakiness.
+
+The carry is cross-process by construction — the record is persisted under
+`.flume/prior-attempts/` (gitignored, beside the baton) and read back by the
+next `flume tick`'s fresh process. That same read hands every record to your
+hooks as `TickContext.priorAttempts`, keyed the way the files are (entry tag
+slug for a fanout record, phase name for a singleton one), so a `shouldRun` or
+`promptArgs` reading one — the `suspectFlake` marker included — never opens the
+directory itself.
+
+The block is **absent on a first attempt** (no false signal), and a record
+clears two ways: an attempt that **ships clean** retires its own, and a
+**fanout wave's queue read** retires every entry-keyed record whose tag the
+queue no longer carries. That second clear runs before selection, so an entry
+you dropped or renamed in `pending.json` leaves nothing behind for a later tick
+to read — the retry those records were written for is never going to happen.
+The wave names the keys it cleared on the tick verdict
+(`clearedPriorAttempts`, absent when it cleared none); a singleton phase's own
+record is outside that sweep, since no queue entry governs it.
 
 ## 6. The foundations governor (`forkResolver`)
 

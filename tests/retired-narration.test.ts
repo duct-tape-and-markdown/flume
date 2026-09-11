@@ -576,6 +576,126 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
   });
 });
 
+// Agreement pin (PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES, per
+// .claude/rules/engineering.md "A seam gate reads what the real writer
+// wrote"): §5 of docs/CHAIN-AUTHORING.md is where a chain author learns what
+// a `<prior-attempt>` block can say, and it taught one of the six variants
+// `src/Prompt.ts` declares — the `gate-revert` leg — as if it were the block.
+// A variant absent from the page is a signal no chain knows it receives:
+// `not-shipped` exists precisely so a chain stops rebuilding "was the last
+// attempt a park" from the verdict log, and a doc that never names it leaves
+// the rebuild in place. The rung that holds it is the same field-set
+// comparison the surface pins above make, with the section's mode bullets as
+// the restating side and the union's own `mode` literals as the declaring one.
+describe("the chain-authoring doc's `<prior-attempt>` section agrees with the engine union", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const promptSrc = read("src", "Prompt.ts");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+
+  /**
+   * The interface names `export type PriorAttempt` unions together, in
+   * declaration order. Read off the union rather than a list kept here: a
+   * seventh variant must arrive as a test failure, not as a doc gap nobody
+   * is watching.
+   */
+  function variantNames(): string[] {
+    const union = /export type PriorAttempt =([\s\S]*?);/.exec(promptSrc)?.[1];
+    if (!union) return [];
+    return [...union.matchAll(/\|\s*(\w+)/g)].map((m) => m[1]!);
+  }
+
+  /**
+   * The `mode` discriminant each variant declares, read out of that
+   * interface's own body — sliced brace-to-`\n}` the same way
+   * `interfaceFields` slices one, so a later interface's discriminant can
+   * never stand in for a variant that dropped its own.
+   */
+  function declaredModes(): string[] {
+    const modes: string[] = [];
+    for (const name of variantNames()) {
+      const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(promptSrc);
+      if (!open) continue;
+      const start = open.index + open[0].length;
+      const end = promptSrc.indexOf("\n}", start);
+      const body = promptSrc.slice(start, end === -1 ? undefined : end);
+      const mode = /^\s*mode:\s*"([a-z-]+)"/m.exec(body);
+      if (mode) modes.push(mode[1]!);
+    }
+    return modes;
+  }
+
+  /** The `<prior-attempt>` section: its heading through the next `## `. */
+  function section(): string {
+    return (
+      /^### The `<prior-attempt>` block$([\s\S]*?)^## /m.exec(doc)?.[1] ?? ""
+    );
+  }
+
+  /**
+   * The modes the section's bullet list teaches: one per bullet that opens
+   * with a backticked kebab-case token. Prose and the bolded paragraphs name
+   * `headSha`, `suspectFlake` and the gate phases freely — none of those
+   * opens a bullet in that spelling, so the reader counts variants only.
+   */
+  function docModes(): string[] {
+    return [...section().matchAll(/^- `([a-z][a-z-]*)` — /gm)].map((m) => m[1]!);
+  }
+
+  it("the chain-authoring doc's `<prior-attempt>` section names every PriorAttempt mode src/Prompt.ts declares", () => {
+    const declared = declaredModes();
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // reader that lost the union, or one that found interfaces but no `mode`
+    // literal, would compare two empty sets forever.
+    expect(
+      variantNames().length,
+      "src/Prompt.ts: the PriorAttempt union did not parse",
+    ).toBeGreaterThan(4);
+    expect(declared, "src/Prompt.ts: no `mode` literal parsed").toContain(
+      "gate-revert",
+    );
+    expect(
+      declared.length,
+      "src/Prompt.ts: a PriorAttempt variant declared no `mode` literal",
+    ).toBe(variantNames().length);
+    expect(
+      docModes(),
+      "docs/CHAIN-AUTHORING.md: the `<prior-attempt>` section's mode bullets " +
+        "did not parse — the heading was reworded, or the list moved",
+    ).toContain("gate-revert");
+    expect(
+      docModes().slice().sort(),
+      "docs/CHAIN-AUTHORING.md's `<prior-attempt>` section enumerates the " +
+        "PriorAttempt union: every mode src/Prompt.ts declares gets a bullet, " +
+        "and nothing it does not declare does",
+    ).toEqual(declared.slice().sort());
+  });
+
+  it("the `<prior-attempt>` section teaches the anchor every record carries and the record-side flake marker", () => {
+    const body = section();
+    // Vacuity: hold the doc against what the union actually declares, so a
+    // renamed engine field fails here rather than leaving the doc teaching a
+    // field no record has.
+    for (const name of variantNames()) {
+      expect(
+        interfaceFields(promptSrc, name),
+        `src/Prompt.ts: ${name} lost its anchor fields`,
+      ).toEqual(expect.arrayContaining(["headSha", "at"]));
+    }
+    expect(
+      interfaceFields(promptSrc, "GateRevertAttempt"),
+      "src/Prompt.ts: GateRevertAttempt no longer declares `suspectFlake`",
+    ).toContain("suspectFlake");
+    for (const field of ["headSha", "at", "suspectFlake"]) {
+      expect(
+        body,
+        `docs/CHAIN-AUTHORING.md: the \`<prior-attempt>\` section never names ` +
+          `\`${field}\`, so a chain author cannot learn it from the page`,
+      ).toContain(`\`${field}\``);
+    }
+  });
+});
+
 // Prose pin (SHOULDRUN-SINGLETON-CWD-PROSE, per .claude/rules/engineering.md
 // "Narration is the ladder's bottom rung"): `runSingleton` consults
 // `shouldRun` before it provisions anything, so the context it hands the
