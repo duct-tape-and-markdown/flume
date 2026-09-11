@@ -516,6 +516,35 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
       }),
     ).toThrow(/BAD cites "No such heading" in spec\/x.md/);
   });
+
+  // Agreement pin (engineering.md, *A seam gate reads what the real writer
+  // wrote*): the shipped template is read off disk and both phases' real
+  // promptArgs run, so a hand-written second copy of the tests[]/pins[]
+  // contract in either surface fails here rather than drifting quietly.
+  it("build's prompt states the tests[] and pins[] contracts from the entry extension's own hints, and restates neither by hand", async () => {
+    const sha = await commitQueue([entry("GOOD", "The section cited")]);
+    expect((await gate.run(gateCtx(sha))).ok).toBe(true);
+    const args = build.promptArgs!({
+      cwd: repo,
+      flumeDir: join(repo, ".flume"),
+      assignedEntry: entry("GOOD", "The section cited") as unknown as PendingEntry,
+    });
+    const template = readFileSync(join(REPO_PATHS.configDir, build.promptPath), "utf8");
+    const placeholders = [...template.matchAll(/\{\{([A-Z][A-Z0-9_]*)\}\}/g)].map((m) => m[1]!);
+    expect(placeholders).toContain("TESTS_HINT");
+    expect(placeholders).toContain("PINS_HINT");
+    expect(placeholders.filter((k) => k !== "FLUME_DIR" && !(k in args))).toEqual([]);
+
+    const { chain } = await loadChainModule(REPO_PATHS);
+    const schemaBlock = chain.phases.find((p) => p.name === "plan-inbox")!.promptArgs!({ cwd: repo, flumeDir: join(repo, ".flume") }).PENDING_SCHEMA!;
+    for (const key of ["TESTS_HINT", "PINS_HINT"] as const) {
+      const hint = args[key]!;
+      expect(hint.length).toBeGreaterThan(0);
+      expect(schemaBlock).toContain(hint);
+    }
+    // The prose that used to carry the contract is gone; only the framing stays.
+    expect(template).not.toMatch(/judged green only|already passes there/);
+  });
 });
 
 /**
@@ -722,6 +751,23 @@ describe("records gate and the park predicate — one file each", () => {
     const r = await gateOf(build).run(gateCtx(sha, "build", makeEntry("OPEN-1", { kind: "open" })));
     expect(r.ok).toBe(true);
     expect(r.message).toBe("no records touched");
+  });
+
+  it("declared span: a build span meeting none of a non-empty files declaration is refused; a partial span, an empty declaration, and a park pass", async () => {
+    const gate = build.gates.find((g) => g.name === "declared span")!;
+    expect(gate.when).toBe("afterCommit");
+    const entry: PendingEntry = { ...makeEntry("OPEN-1", { kind: "open" }), files: { new: [], edit: [{ path: "src/a.ts", description: "x" }, { path: "src/b.ts", description: "y" }], retire: [] } };
+    const run = (touchedPaths: string[], e: PendingEntry = entry) => gate.run({ ...gateCtx("HEAD", "build", e), touchedPaths });
+
+    const none = await run(["tests/a.test.ts"]);
+    expect(none.ok).toBe(false);
+    expect(none.message).toBe("0 of 2 declared path(s) touched");
+    expect(none.details).toContain("touched: tests/a.test.ts");
+
+    expect((await run(["src/a.ts", "tests/a.test.ts"])).message).toBe("1 of 2 declared path(s) touched");
+    expect((await run([NOTE])).message).toBe("park: the note alone, not judged");
+    expect((await run(["tests/a.test.ts"], makeEntry("EMPTY", { kind: "open" }))).message).toBe("entry declares no files");
+    expect((await run(["tests/a.test.ts"], entry)).ok).toBe(false);
   });
 
   it("build.shipped: a commit whose only path is the entry's own note is a park; the note beside code, or any other sole file, is a ship", () => {

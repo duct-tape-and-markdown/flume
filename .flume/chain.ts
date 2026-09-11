@@ -11,6 +11,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
+import { worktreesBase } from "../src/paths.ts";
 
 /**
  * Records are files, one each (`.flume/PROTOCOL.md`, *Records: one file
@@ -43,7 +44,7 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
 
 import { z } from "zod";
-import type { EntryExtension } from "../src/PendingSchema.ts";
+import { declaredPaths, type EntryExtension, type PendingEntry } from "../src/PendingSchema.ts";
 import { filesPinning, judgeRedOnBase, judgeVitestReport, materializeBase, removeWorktree } from "./vitestJudge.ts";
 
 
@@ -327,6 +328,47 @@ const factory: ChainFactory = (api) => {
   };
 
   /**
+   * The park shape, read once: a commit whose only path is the entry's own
+   * note. `build.shipped` and the `declared span` gate both key on it, so
+   * the two never disagree about what a park looks like.
+   */
+  const isPark = (entry: PendingEntry, touchedPaths: readonly string[]): boolean =>
+    touchedPaths.length > 0 && touchedPaths.every((p) => p === notePath(entry.tag));
+
+  /**
+   * The floor of a declared-files judgement: a build span that touched
+   * **none** of a non-empty `files` declaration is refused, never shipped.
+   * `files` is a prediction, so a partial span is plan's to re-derive and
+   * passes here; the empty declaration is spelled as its own vacuous pass;
+   * a park is the note alone and is not judged. What the three classes
+   * claim about the tree stays `examples/cascade-chain.ts`'s to teach —
+   * this chain wants only the refusal that stops `tests/**` (a channel
+   * path) from retiring an entry whose whole declaration went unmet.
+   * (`.claude/rules/engineering.md`, *Loud or nothing*.)
+   */
+  const declaredSpanGate: Gate = {
+    name: "declared span",
+    when: "afterCommit",
+    async run(ctx) {
+      const { entry, touchedPaths } = ctx;
+      if (!entry) return { ok: true, message: "no entry on this tick" };
+      if (!touchedPaths) return { ok: false, message: "declared span gate requires touchedPaths" };
+      const declared = declaredPaths(entry);
+      if (declared.length === 0) return { ok: true, message: "entry declares no files" };
+      if (isPark(entry, touchedPaths)) return { ok: true, message: "park: the note alone, not judged" };
+      const met = declared.filter((p) => touchedPaths.includes(p));
+      if (met.length === 0) {
+        return {
+          ok: false,
+          message: `0 of ${declared.length} declared path(s) touched`,
+          details: [`declared: ${declared.join(", ")}`, `touched: ${touchedPaths.join(", ")}`].join("\n"),
+        };
+      }
+      return { ok: true, message: `${met.length} of ${declared.length} declared path(s) touched` };
+    },
+  };
+
+  /**
    * Every entry's `per` cite resolves: the path is in the gated commit and
    * the section is a heading in it, by the same resolver build renders the
    * section with. Promotes the plan prompt's "the cite must resolve in the
@@ -350,6 +392,9 @@ const factory: ChainFactory = (api) => {
       }
       const sha = ctx.commitSha;
       const queueRel = relative(ctx.flumeDir, ctx.pendingPath);
+      // The sanctioned queue-read idiom: `stateRootRel` + the queue's
+      // state-relative path, at the gated commit (spec/chain.md, *What a
+      // gate receives*) — a report, not a restatement.
       const raw =
         ctx.stateRootRel === undefined
           ? readFileSync(ctx.pendingPath, "utf8")
@@ -741,7 +786,11 @@ const factory: ChainFactory = (api) => {
       return { ok: false, message: "red-on-base needs baseSha and commitSha on the gate context" };
     }
     const files = filesPinning(details, named, ctx.repoRoot);
-    const wt = join(api.paths.flumeDir, "worktrees", `red-on-base-${ctx.commitSha.slice(0, 7)}`);
+    // Under the base every other worktree uses, so a gate that dies mid-run
+    // leaves a directory the engine's stale-worktree sweep reclaims. Imported
+    // from the in-repo runtime — this chain dogfoods `../src/`; a downstream
+    // chain would need it on `FlumeApi.paths`, filed the day one asks.
+    const wt = join(worktreesBase(api.paths.flumeDir), `red-on-base-${ctx.commitSha.slice(0, 7)}`);
     try {
       await materializeBase(ctx.repoRoot, ctx.baseSha, ctx.commitSha, files, wt, api.git.readFileAtRef);
       await setupBuildWorktree({ worktreePath: wt, repoRoot: ctx.repoRoot, entryTag: ctx.entry?.tag ?? "red-on-base" });
@@ -812,16 +861,12 @@ const factory: ChainFactory = (api) => {
      * tests — a real case (CHAINTS-PREDICATE-COVERAGE shipped that way).
      * Only the entry's note, and nothing else, is a park.
      */
-    shipped: ({ entry, touchedPaths }) =>
-      !(
-        touchedPaths.length > 0 &&
-        touchedPaths.every((p) => p === notePath(entry.tag))
-      ),
+    shipped: ({ entry, touchedPaths }) => !isPark(entry, touchedPaths),
     // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
     // afterCommit — cheap, structural, catches type errors before merge.
-    gates: [tscGate, recordsGate, vitestOnCode],
+    gates: [tscGate, recordsGate, declaredSpanGate, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {
@@ -850,6 +895,13 @@ const factory: ChainFactory = (api) => {
         PER_PATH: per.path,
         PER_SECTION: per.section,
         PER_SECTION_TEXT: section,
+        // The contracts `vitestOnCode` holds this commit to, handed to the
+        // agent that has to meet them — rendered from each field's own
+        // declaration, the same strings `renderSchemaForPrompt` puts in
+        // plan's schema block. A sentence hand-written into the prompt
+        // instead would be a second copy of a rule the gate reverts over.
+        TESTS_HINT: entryExtension.tests.hint,
+        PINS_HINT: entryExtension.pins.hint,
       };
     },
     handoff(result) {
