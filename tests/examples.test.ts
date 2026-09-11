@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import type { Chain } from "../src/Phase.ts";
+import type { Chain, TickContext } from "../src/Phase.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
+import type { PriorAttempt } from "../src/Prompt.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory from "../examples/cascade-chain.ts";
@@ -157,5 +159,88 @@ describe("cascade-chain.ts — plan phase gates through the pendingGate builtin"
     const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
     expect(planPhase).toBeDefined();
     expect(planPhase!.gates.map((g) => g.name)).toContain("pending-gate");
+  });
+});
+
+/**
+ * spec/chain.md, *What a hook receives* — `shouldRun` is one of the chain's
+ * four interpretation points, and the section's own worked case is a plan
+ * phase deciding "build has a standing bail to reconcile" off
+ * `TickContext.priorAttempts` rather than a `readdirSync` of the engine's
+ * directory. No shipped example declared the hook at all, so an adopter
+ * learning the shape from `examples/` never saw a phase decline a tick.
+ *
+ * Both verdicts are driven here: the decline (the queue already carries work
+ * build can pick, and nothing stands unreconciled) and the two runs. The
+ * fixture's `cwd`/`flumeDir` point at a directory that does not exist —
+ * a predicate that scanned disk instead of reading the context would throw
+ * or answer differently, so the pin holds the "from `TickContext`" half of
+ * the claim too.
+ */
+describe("cascade-chain.ts — plan decides from the TickContext", () => {
+  const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+
+  const openEntry = (tag: string): PendingEntry => ({
+    tag,
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: { new: [], edit: [], retire: [] },
+  });
+
+  const standingBail: PriorAttempt = {
+    mode: "clean-exit",
+    finalMessage: "parked: the entry needs a wider fence",
+    key: "entry",
+    headSha: "0".repeat(40),
+    at: "2026-09-11T00:00:00.000Z",
+  };
+
+  const ctx = (over: Partial<TickContext>): TickContext => ({
+    cwd: "/nonexistent/cascade-shouldRun-fixture",
+    flumeDir: "/nonexistent/cascade-shouldRun-fixture/.flume",
+    ...over,
+  });
+
+  it("the cascade example's plan phase declines a tick when nothing on disk gives it work", () => {
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // an undeclared hook, or an empty `pickable`, would make the decline
+    // below assert nothing about a predicate that read the queue.
+    expect(planPhase, "cascade declares a plan phase").toBeDefined();
+    expect(
+      planPhase!.shouldRun,
+      "examples/cascade-chain.ts: plan declares `shouldRun` — the hook is " +
+        "what this pin exists to drive",
+    ).toBeTypeOf("function");
+
+    const pickable = [openEntry("ALREADY-PICKABLE")];
+    expect(pickable.length).toBeGreaterThan(0);
+
+    expect(
+      planPhase!.shouldRun!(
+        ctx({ pending: pickable, pickable, priorAttempts: new Map() }),
+      ),
+    ).toBe(false);
+  });
+
+  it("the cascade example's plan phase runs when the queue is empty or a prior attempt stands", () => {
+    expect(planPhase!.shouldRun).toBeTypeOf("function");
+
+    // Nothing build could pick — the queue is plan's to refill.
+    expect(
+      planPhase!.shouldRun!(
+        ctx({ pending: [], pickable: [], priorAttempts: new Map() }),
+      ),
+    ).toBe(true);
+
+    // Pickable work exists, but a record stands unreconciled: the decline
+    // above must not swallow this case.
+    const pickable = [openEntry("ALREADY-PICKABLE")];
+    const priorAttempts = new Map([["PARKED-ENTRY", standingBail]]);
+    expect(priorAttempts.size).toBeGreaterThan(0);
+    expect(
+      planPhase!.shouldRun!(
+        ctx({ pending: pickable, pickable, priorAttempts }),
+      ),
+    ).toBe(true);
   });
 });

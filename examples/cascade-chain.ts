@@ -191,6 +191,10 @@ const factory: ChainFactory = (api) => {
    *
    * Hands off to build when at least one entry is `gate.kind === "open"`
    * (pickable); otherwise hibernates and waits for human signal.
+   *
+   * Declares `shouldRun` so the "is there anything to re-derive against"
+   * question is answered from the `TickContext` the dispatcher already built,
+   * before the invocation rather than after one that commits nothing.
    */
   const plan: Phase = {
     name: "plan",
@@ -203,6 +207,19 @@ const factory: ChainFactory = (api) => {
       ".flume/plan/open-questions.md",
     ],
     gates: [pendingGate({ targetFence: build, extension: entryExtension })],
+    shouldRun(ctx) {
+      // Build hands the baton back on every tick, so most plan wakes land on
+      // a queue plan already agrees with — a full invocation that re-derives,
+      // concludes nothing changed, and commits nothing. Two facts the
+      // dispatcher already computed say otherwise, and both arrive on the
+      // TickContext: a standing prior-attempt record (build bailed, or its
+      // commit was declined) that only a re-derive reconciles, and a queue
+      // with nothing build can pick. Read from the context, never from
+      // process.env or a readdir of the engine's prior-attempts directory.
+      const hasStandingAttempt = (ctx.priorAttempts?.size ?? 0) > 0;
+      const pickable = ctx.pickable ?? [];
+      return hasStandingAttempt || pickable.length === 0;
+    },
     promptArgs() {
       return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
     },

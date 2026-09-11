@@ -195,6 +195,19 @@ const plan: Phase = {
     ".flume/plan/open-questions.md",
   ],
   gates: [pendingGate({ targetFence: build, extension: entryExtension })],
+  shouldRun(ctx) {
+    // Build hands the baton back on every tick, so most plan wakes land on
+    // a queue plan already agrees with — a full invocation that re-derives,
+    // concludes nothing changed, and commits nothing. Two facts the
+    // dispatcher already computed say otherwise, and both arrive on the
+    // TickContext: a standing prior-attempt record (build bailed, or its
+    // commit was declined) that only a re-derive reconciles, and a queue
+    // with nothing build can pick. Read from the context, never from
+    // process.env or a readdir of the engine's prior-attempts directory.
+    const hasStandingAttempt = (ctx.priorAttempts?.size ?? 0) > 0;
+    const pickable = ctx.pickable ?? [];
+    return hasStandingAttempt || pickable.length === 0;
+  },
   promptArgs() {
     return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
   },
@@ -245,24 +258,16 @@ can only be answered *after* spending a full agent invocation — the agent
 re-derives the plan, concludes nothing changed, and commits nothing. On one
 measured 50-tick run, 14 plan ticks (28%) did exactly that. `shouldRun` lets
 the chain answer the question before the invocation, from the same
-`TickContext` `promptArgs` sees — every field but `cwd`, below:
+`TickContext` `promptArgs` sees — every field but `cwd`, below.
 
-```ts
-const plan: Phase = {
-  name: "plan",
-  // ...
-  shouldRun(ctx) {
-    // Decline when nothing changed since the plan's own last derive stamp —
-    // whatever cheap, synchronous check the chain already has for "is there
-    // new work to re-plan against".
-    return hasUnplannedChanges(ctx);
-  },
-  handoff(result) {
-    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
-    return hasPickable ? ["build"] : [];
-  },
-};
-```
+`examples/cascade-chain.ts` ships that predicate on its `plan` phase, and §1
+above quotes the declaration whole. It reads two facts the dispatcher already
+computed: `ctx.pickable` — the entries build would select right now, so a
+non-empty list means the queue needs no re-derive — and `ctx.priorAttempts`,
+the standing records only a re-derive reconciles. Neither is re-derived by
+the chain: a predicate reaching for `process.env` or a `readdir` of the
+engine's `prior-attempts/` directory is naming a `TickContext` field that
+should exist instead.
 
 - **Undeclared is unchanged behavior.** A phase without `shouldRun` always
   runs; a phase whose `shouldRun` returns `true` is byte-identical to one
