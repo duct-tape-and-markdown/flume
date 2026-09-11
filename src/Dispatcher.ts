@@ -1842,12 +1842,22 @@ export class Dispatcher {
     // (there is no entry tag) — through the same machinery `runFanout` uses
     // per entry, so a provisioning wall costs this tick exactly what it
     // would cost a one-entry wave.
+    //
+    // Every provisioning failure this tick records accumulates here and
+    // rides every exit — spec/loop.md "Repeated identical failures": the
+    // accounting covers *every* per-entry failure fact the verdict records,
+    // so a prune wall whose `createWorktree` then succeeds still reaches the
+    // backstop. Repo-level, hence untagged (there is no entry to blame on a
+    // singleton at all), same shape `runFanout` gives its wave-level prune.
+    const provisionFailures: ProvisionFailure[] = [];
     try {
       await git.pruneWorktrees(repoRoot);
     } catch (err) {
       const message = (err as Error).message;
+      const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+      provisionFailures.push({ signature, message });
       this.log.warn(
-        `[flume] ${phase.name}: worktree prune failed (${bound(message.trim(), MAX_FAILURE_SIGNATURE)}); continuing — worktree creation may still fail`,
+        `[flume] ${phase.name}: worktree prune failed (${signature}); continuing — worktree creation may still fail`,
       );
     }
 
@@ -1864,7 +1874,8 @@ export class Dispatcher {
       // and the quarantine accounting, `result` feeds `handoff` — a singleton
       // whose worktree never existed is otherwise indistinguishable there
       // from one that ran and did nothing.
-      const failures = [{ signature, message }];
+      provisionFailures.push({ signature, message });
+      const failures = [...provisionFailures];
       return {
         result: { ...noRunResult(), provisionFailures: failures },
         provisionFailures: failures,
@@ -1887,7 +1898,8 @@ export class Dispatcher {
           `[flume] ${phase.name}: setupWorktree hook failed (${signature}); no tick this cycle`,
         );
         await this.teardownWorktreeInstance(phase, chain, repoRoot, wt, phase.name);
-        const failures = [{ signature, message }];
+        provisionFailures.push({ signature, message });
+        const failures = [...provisionFailures];
         return {
           result: { ...noRunResult(), provisionFailures: failures },
           provisionFailures: failures,
@@ -2252,11 +2264,13 @@ export class Dispatcher {
         ...(preWtHead ? { baseSha: preWtHead } : {}),
         shippedTags: [],
         revertedTags: [],
+        ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       },
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
       ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
+      ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       ...(gateFailures.length > 0 ? { gateFailures } : {}),
       ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
       mergeOutcomes,

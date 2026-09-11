@@ -3102,6 +3102,127 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
 });
 
 /**
+ * SINGLETON-PRUNE-PROVISION-FAILURE — `runSingleton`'s pre-tick
+ * `pruneWorktrees` used to warn and drop the throw on the floor, so a
+ * deterministic prune wall on a singleton-only chain repeated every tick
+ * with the consecutive-failure backstop blind to it (spec/loop.md "Repeated
+ * identical failures": the accounting covers every per-entry failure fact
+ * the verdict records, and prune is one of the three provision-stage
+ * sources it names). `runFanout` already accumulated its wave-level prune
+ * throw; these pin the same shape on the singleton path, including the leg
+ * that costs nothing today — creation succeeding afterwards.
+ */
+describe("Dispatcher singleton — a worktree-prune throw is recorded, not just logged (SINGLETON-PRUNE-PROVISION-FAILURE)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a singleton whose worktree prune throws and whose creation then succeeds still reports the prune failure", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    vi.spyOn(git, "pruneWorktrees").mockImplementation(async () => {
+      throw new Error("prune wall: .git/worktrees metadata is unreadable");
+    });
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent((cwd) =>
+        writeAndCommit(cwd, "src/pruned.ts", "landed\n", "plan: ship"),
+      ),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, and the whole point of this leg: creation survived the
+    // prune wall and the tick shipped. Before the fix this was the exact
+    // shape that recorded nothing at all.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.verdict?.committed).toBe(true);
+
+    const expected = [
+      expect.objectContaining({
+        signature: expect.stringContaining("prune wall"),
+        message: expect.stringContaining("prune wall"),
+      }),
+    ];
+    expect(outcome.provisionFailures).toEqual(expected);
+    expect(outcome.result?.provisionFailures).toEqual(expected);
+    expect(handedToHandoff?.provisionFailures).toEqual(expected);
+    // The verdict is what `superviseLoop`'s backstop reads off disk — a
+    // record that stops here is a streak that never accumulates.
+    expect(outcome.verdict?.provisionFailures).toEqual(expected);
+    // Repo-level: there is no entry to blame on a singleton, so nothing
+    // quarantinable rides the record.
+    expect(outcome.provisionFailures?.[0]?.tag).toBeUndefined();
+  }, 30_000);
+
+  it("a singleton's worktree-prune failure reaches both the tick result and the outcome envelope", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    vi.spyOn(git, "pruneWorktrees").mockImplementation(async () => {
+      throw new Error("prune wall: .git/worktrees metadata is unreadable");
+    });
+    vi.spyOn(git, "addWorktree").mockImplementation(async () => {
+      throw new Error("worktree directory survived removal fallback");
+    });
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "never-invoked",
+        async invoke() {
+          throw new Error("agent invoked after a failed worktree provision");
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Both provision-stage throws ride, in the order they happened — the
+    // prune record is not swallowed by the create record that follows it.
+    const expected = [
+      expect.objectContaining({
+        signature: expect.stringContaining("prune wall"),
+      }),
+      expect.objectContaining({
+        signature: expect.stringContaining("survived removal fallback"),
+      }),
+    ];
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.provisionFailures).toEqual(expected);
+    expect(outcome.result?.provisionFailures).toEqual(expected);
+    expect(handedToHandoff?.provisionFailures).toEqual(expected);
+    expect(outcome.verdict?.provisionFailures).toEqual(expected);
+  }, 30_000);
+});
+
+/**
  * GITDELETEBRANCH-BROAD-SWALLOW — the teardown loop wraps `git.deleteBranch`
  * per §16's own removeWorktree/teardownWorktree pattern: a non-benign
  * failure (branch.ts now rethrows past the "not found" case) is logged by
