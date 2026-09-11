@@ -1,7 +1,9 @@
 [
   {
     "tag": "SPEC-CITE-MODULE-PATH-PINNED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -25,10 +27,11 @@
     "pins": [
       "every `src/<file>.ts:<symbol>` cite in `spec/` names a file that holds that symbol",
       "every `` `<symbol>` (`src/<file>.ts`) `` cite in `spec/` names a file that holds that symbol",
+      "a cite whose symbol is dotted resolves against its last segment in the named file",
       "the spec module-path scan reads a populated set of cites in both shapes",
       "a spec cite whose module no longer holds its symbol is flagged"
     ],
     "acceptance": "`pnpm test` green with the spec module-path scan in `tests/retired-narration.test.ts`; `src/cli.ts:686` names `src/loopSupervisor.ts`.",
-    "notes": "Four extraction waves shipped fourteen stale cites; the amendment repointed them (a18b40e), so the scan is green today — 74 cites across the two path-carrying shapes, all resolving, verified this tick. `Class.method` cites (`PriorAttemptStore.clear`, `Dispatcher.sweepStaleWorktrees`) need a member list and bare-symbol cites resolve nowhere — both out of scope, declared at the site. Scan `spec/` only."
+    "notes": "Four extraction waves stranded fourteen cites; a18b40e repointed them, so all 71 path-carrying cites resolve today — verified this tick. Two carry a dotted symbol inside the scanned shape (`src/Agent.ts:ClaudeCodeOptions.model`, `src/priorAttempts.ts:PriorAttemptStore.snapshotReverted`), hence the last-segment pin. Bare `Class.method` cites with no module path reach no file — out of scope, declared at the site. Scan `spec/` only."
   }
 ]
