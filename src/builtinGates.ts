@@ -124,10 +124,19 @@ export function shellGate(opts: ShellGateOptions): Gate {
  * verb grammar has no bare `npm tsc --noEmit` — it needs `args: ["exec",
  * "--", "tsc", "--noEmit"]`. Omit both for pnpm — byte-identical to before
  * this option existed.
+ *
+ * `when` is the same injection point for gate placement, which is
+ * chain-authoring doctrine and not the engine's to fix (spec/chain.md "Gate
+ * placement is the chain's decision"): a chain that wants the same check over
+ * the merged tree says `when: "afterMerge"` instead of copying the builtin's
+ * own `cmd`/`args` into a hand-rolled `shellGate` (engine-boundary.md
+ * "Surface, not prescription" — verbatim copying is the detector). Omitted
+ * stays `afterCommit`.
  */
 export interface PkgManagerOverride {
   cmd?: string;
   args?: string[];
+  when?: GatePhase;
 }
 
 /**
@@ -136,8 +145,9 @@ export interface PkgManagerOverride {
  * call site that drops these straight into a `gates: []` array keeps
  * compiling unchanged. Called (`tscGate({ cmd: "npm", args: ["exec", "--",
  * "tsc", "--noEmit"] })`) it returns the identical check run through a
- * different package-manager binary and arg shape — the injection point a
- * non-pnpm chain needs without hand-rolling `shellGate` from scratch.
+ * different package-manager binary, arg shape, or gate point — the injection
+ * point a non-pnpm chain (or one gating the merged tree) needs without
+ * hand-rolling `shellGate` from scratch.
  */
 export interface PkgManagerGate extends Gate {
   (override?: PkgManagerOverride): Gate;
@@ -148,11 +158,15 @@ function pkgManagerGate(
   args: string[],
   failHint: string,
 ): PkgManagerGate {
-  const build = (cmd: string, gateArgs: string[]): Gate =>
-    shellGate({ name, when: "afterCommit", cmd, args: gateArgs, failHint });
-  const defaultGate = build("pnpm", args);
+  const build = (cmd: string, gateArgs: string[], when: GatePhase): Gate =>
+    shellGate({ name, when, cmd, args: gateArgs, failHint });
+  const defaultGate = build("pnpm", args, "afterCommit");
   const fn = ((override) =>
-    build(override?.cmd ?? "pnpm", override?.args ?? args)) as PkgManagerGate;
+    build(
+      override?.cmd ?? "pnpm",
+      override?.args ?? args,
+      override?.when ?? "afterCommit",
+    )) as PkgManagerGate;
   Object.defineProperty(fn, "name", {
     value: defaultGate.name,
     configurable: true,
@@ -168,7 +182,8 @@ function pkgManagerGate(
  * the commit ships; on failure the dispatcher drops the commit and the
  * pending entry stays in queue for the next tick. Call with `{ cmd, args }`
  * to run a different package manager's `tsc --noEmit` — e.g. npm needs
- * `{ cmd: "npm", args: ["exec", "--", "tsc", "--noEmit"] }`.
+ * `{ cmd: "npm", args: ["exec", "--", "tsc", "--noEmit"] }` — or with
+ * `{ when }` to place the same check at the other gate point.
  */
 export const tscGate: PkgManagerGate = pkgManagerGate(
   "tsc",
@@ -180,7 +195,8 @@ export const tscGate: PkgManagerGate = pkgManagerGate(
  * `pnpm test --run` (vitest non-watch) after the agent's commit. A red
  * suite reverts the commit; pair with `tscGate` (run first) so type errors
  * are caught before vitest even attempts to load the changed module. Call
- * with `{ cmd, args }` to run a different package manager's `test --run`.
+ * with `{ cmd, args }` to run a different package manager's `test --run`, or
+ * with `{ when }` to place it at the other gate point.
  */
 export const vitestGate: PkgManagerGate = pkgManagerGate(
   "vitest",
@@ -192,7 +208,8 @@ export const vitestGate: PkgManagerGate = pkgManagerGate(
  * `pnpm lint` (ESLint) after the agent's commit. Opt-in: only meaningful
  * for chains that wire `scripts.lint` in their `package.json`. Failures
  * revert the commit just like the other afterCommit gates. Call with
- * `{ cmd, args }` to run a different package manager's `lint`.
+ * `{ cmd, args }` to run a different package manager's `lint`, or with
+ * `{ when }` to place it at the other gate point.
  */
 export const eslintGate: PkgManagerGate = pkgManagerGate(
   "eslint",

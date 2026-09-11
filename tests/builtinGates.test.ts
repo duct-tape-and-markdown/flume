@@ -15,7 +15,10 @@
  * args override that rides alongside it (BUILTINGATES-CMD-OVERRIDE-PNPM-
  * SHAPED-ARGS): cmd alone only swaps the binary while args stay pnpm-shaped,
  * which silently misreports an npm chain's gate (npm has no bare `npm tsc`
- * verb) as "TypeScript errors" when npm never ran tsc at all.
+ * verb) as "TypeScript errors" when npm never ran tsc at all. And the
+ * gate-placement override (BUILTINGATES-WHEN-OVERRIDE): placement is the
+ * chain's decision, so relocating a builtin to afterMerge must not cost the
+ * chain a hand-rolled shellGate restating the builtin's own command.
  */
 
 import { execFile } from "node:child_process";
@@ -620,6 +623,63 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
     },
     30_000,
   );
+});
+
+describe("tscGate / vitestGate / eslintGate — gate-placement override (BUILTINGATES-WHEN-OVERRIDE)", () => {
+  it("tscGate({ when: 'afterMerge' }) returns a gate whose phase is afterMerge", () => {
+    // Placement is the chain's decision (spec/chain.md, "Gate placement is
+    // the chain's decision"). Pre-fix, `when` was hardcoded to afterCommit
+    // inside pkgManagerGate, so a chain wanting tsc over the merged tree had
+    // to restate the builtin's own cmd/args in a hand-rolled shellGate.
+    const merged = tscGate({ when: "afterMerge" });
+    expect(merged.when).toBe("afterMerge");
+    // Same check, only relocated: the command line is untouched.
+    expect(merged.command).toBe("pnpm tsc --noEmit");
+    expect(merged.name).toBe("tsc");
+  });
+
+  it.each([
+    ["vitestGate", vitestGate, "vitest", "pnpm test --run"],
+    ["eslintGate", eslintGate, "eslint", "pnpm lint"],
+  ] as const)(
+    "%s({ when: 'afterMerge' }) relocates without restating its command",
+    (_label, gate, name, command) => {
+      const merged = gate({ when: "afterMerge" });
+      expect(merged.when).toBe("afterMerge");
+      expect(merged.name).toBe(name);
+      expect(merged.command).toBe(command);
+    },
+  );
+
+  it("when composes with the cmd/args override rather than replacing it", () => {
+    const merged = tscGate({
+      cmd: "npm",
+      args: ["exec", "--", "tsc", "--noEmit"],
+      when: "afterMerge",
+    });
+    expect(merged.when).toBe("afterMerge");
+    expect(merged.command).toBe("npm exec -- tsc --noEmit");
+  });
+
+  it("tscGate, vitestGate and eslintGate stay at afterCommit when called with no override", () => {
+    // The default survives every shape of the injection point: the bare gate
+    // object, the empty call, and a partial override that names cmd/args but
+    // not `when`.
+    for (const gate of [tscGate, vitestGate, eslintGate]) {
+      expect(gate.when).toBe("afterCommit");
+      expect(gate().when).toBe("afterCommit");
+      expect(gate({}).when).toBe("afterCommit");
+      expect(gate({ cmd: "npm" }).when).toBe("afterCommit");
+      expect(gate({ args: ["run", "check"] }).when).toBe("afterCommit");
+    }
+  });
+
+  it("an explicit when: 'afterCommit' override is byte-identical to omitting it", () => {
+    const explicit = tscGate({ when: "afterCommit" });
+    expect(explicit.when).toBe(tscGate.when);
+    expect(explicit.command).toBe(tscGate.command);
+    expect(explicit.name).toBe(tscGate.name);
+  });
 });
 
 // win32-only: proves the *default* (omitted cmd) invocation is literally

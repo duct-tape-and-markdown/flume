@@ -388,6 +388,12 @@ const factory: ChainFactory = (flume) => {
 - `tscGate` — `pnpm tsc --noEmit`.
 - `vitestGate` — `pnpm test --run`.
 - `eslintGate` — `pnpm lint`. Opt-in.
+- Each of those three doubles as its own factory:
+  `tscGate({ cmd?, args?, when? })` returns the same check run through a
+  different package-manager binary (`{ cmd: "npm", args: ["exec", "--",
+  "tsc", "--noEmit"] }`) or placed at the other gate point
+  (`{ when: "afterMerge" }`, see *Where to place a gate* below). Used bare
+  (`gates: [tscGate]`) each *is* the pnpm-flavored `afterCommit` gate.
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
 - `pendingGate({ targetFence, extension?, fenceWhen?, hint? })` —
@@ -556,6 +562,11 @@ This is a default, not a law. A suite whose N parallel copies still finish
 well inside their timeout can stay at `afterCommit`, where it buys the
 pre-merge catch as well. Move it to `afterMerge` once running it N-wide is
 itself what makes it flake.
+
+Moving a builtin costs nothing: `tscGate({ when: "afterMerge" })` is the
+same check at the other point. Don't hand-roll a `shellGate` restating the
+builtin's own `cmd`/`args` to relocate it — a chain-side copy of a command
+the engine already owns goes stale the moment the builtin's does.
 
 ### Don't gate the in-worktree build on host-level integration tests
 

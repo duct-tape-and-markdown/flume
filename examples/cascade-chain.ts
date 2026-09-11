@@ -350,12 +350,12 @@ const factory: ChainFactory = (api) => {
    * still correct — judged twice: the suite is green, and every behavior the
    * entry's `tests[]` names has a passing test (`judgedByEntryTests` above).
    *
-   * Why `shellGate` and not the `vitestGate` builtin: that builtin fixes
-   * `when: "afterCommit"` and takes no placement override, so composing the
-   * public escape hatch is how a chain moves a language check to the trunk.
-   * Same command, different gate point — and the escape hatch is also what
-   * lets the command ask for `--reporter=json`, which is the second claim's
-   * whole input.
+   * Why `shellGate` and not `vitestGate({ when: "afterMerge" })`: placement
+   * alone the builtin now takes, but the second claim needs the suite's
+   * `--reporter=json` output, and overriding `args` to ask for it would
+   * restate the builtin's whole command anyway. A chain that only wants the
+   * suite relocated says `vitestGate({ when: "afterMerge" })` and stops
+   * there.
    */
   const vitestOnTrunk: Gate = judgedByEntryTests(
     shellGate({
