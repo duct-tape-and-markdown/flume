@@ -14,7 +14,7 @@
         },
         {
           "path": "tests/examples.test.ts",
-          "description": "the gate's context read — fast lane, where the vitest gate looks"
+          "description": "the gate's context read \u2014 fast lane, where the vitest gate looks"
         }
       ],
       "retire": []
@@ -30,6 +30,102 @@
     "pins": [],
     "acceptance": "A cascade gate scopes its verdict to the entry it is gating and to the span `baseSha..commitSha`, reading both off `GateContext` rather than re-deriving them.",
     "notes": "Ruling of 2026-09-11 (option C), third promotion. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
+  },
+  {
+    "tag": "TICKCONTEXT-DOC-TABULATES-FIELDS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "\u00a71 teaches TickContext as a field table, beside Phase's"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the set-equality pin; the paragraph readers it replaces"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The TickContext doc pin holds one direction only \u2014 a field removed from src/Phase.ts leaves its paragraph standing and nothing fails",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "the chain-authoring doc's TickContext field table names every field src/Phase.ts declares and no others"
+    ],
+    "pins": [],
+    "acceptance": "The doc's restating side is a table the existing row/first-column reader parses, compared set-equal both ways against `interfaceFields(Phase.ts, \"TickContext\")`.",
+    "notes": "Drained from TICKCONTEXT-DOC-NAMES-ALL-FIELDS's note. Free prose cannot carry the reverse direction \u2014 the paragraph backticks siblings (`shouldRun`, `{{FLUME_DIR}}`) legitimately. Three pins ride that paragraph and move with it: the summary pin and its sensitivity pin (tests/retired-narration.test.ts:900, :934) and the `cwd` gloss pin (:824). Six fields today."
+  },
+  {
+    "tag": "CASCADE-BUILD-PROMPT-STATES-TESTS-CONTRACT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/prompts/build.md",
+          "description": "the placeholder carrying the contract"
+        },
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "build's promptArgs renders the declared hint"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the agreement pin \u2014 fast lane, where the vitest gate looks"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade's build prompt never states the tests[] title contract its own trunk gate enforces, so a build agent learns it from a revert",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "The chain-declared extension"
+    },
+    "tests": [
+      "cascade's build prompt states the tests[] title contract from the entry extension's own hint"
+    ],
+    "pins": [],
+    "acceptance": "One declaration drives every surface that reads it: build's prompt renders `entryExtension.tests.hint` rather than a second hand-written sentence, and the pin fails if the two diverge.",
+    "notes": "Drained from CASCADE-TESTS-JUDGED-BY-GATE's note, gap 2. Build's promptArgs passes ENTRY_JSON/TAG/PER_PATH/PER_SECTION alone (examples/cascade-chain.ts:274); the hint renders into plan's prompt only. docs/CHAIN-AUTHORING.md's illustrative promptArgs block claims no quote of cascade and stays out of scope."
+  },
+  {
+    "tag": "CASCADE-SHIPPED-GATE-DRIVES-REFUSAL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the refusal drives the factory's own gate object \u2014 fast lane"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade's tests[] refusal is driven over a wrapper the test re-composes; nothing drives the gate object the chain actually ships to build",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [],
+    "pins": [
+      "the vitest gate cascade ships to build refuses an entry whose named behavior has no passing test"
+    ],
+    "acceptance": "Unwrapping `vitestOnTrunk` fails the pin: the stub suite enters through the factory's own `api.shellGate`, so the composition under test is the one the chain returns.",
+    "notes": "Drained from CASCADE-TESTS-JUDGED-BY-GATE's note, gap 1. No engine surface needed \u2014 the factory destructures `shellGate` off `api` (examples/cascade-chain.ts:190-196), so a doctored api drives the shipped composition. The report stays hand-authored, per the cited section's refusal carve-out."
   },
   {
     "tag": "CASCADE-PLAN-SLICES-ORDERED-HANDOFF",
@@ -57,7 +153,7 @@
         },
         {
           "path": "tests/examples.test.ts",
-          "description": "the slice order — fast lane, where the vitest gate looks"
+          "description": "the slice order \u2014 fast lane, where the vitest gate looks"
         }
       ],
       "retire": []
@@ -72,7 +168,7 @@
     ],
     "pins": [],
     "acceptance": "cascade declares more than one plan slice, each computing its own liveness from disk, with a handoff that passes the baton down a declared order; the integration test ticks the ladder.",
-    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
+    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) \u2014 the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
   },
   {
     "tag": "RELEASE-CITES-PINNED",
@@ -152,7 +248,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, the supervisor's tests move with it and differ only in import path.",
-    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) — take it first."
+    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) \u2014 take it first."
   },
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
@@ -182,7 +278,7 @@
       ],
       "retire": []
     },
-    "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
+    "summary": "Prior-attempt persistence \u2014 key, read, write, clear, revert snapshots, record builders \u2014 is a separate home inside Dispatcher.ts",
     "per": {
       "path": ".claude/rules/posture-sweep.md",
       "section": "A violation counts only when verified on disk this tick"
@@ -232,7 +328,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction."
+    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share \u2014 the new module keeps that direction."
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",

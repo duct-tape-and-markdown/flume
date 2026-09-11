@@ -306,5 +306,11 @@ declares its named behavior over the fast-lane surface it exposes, or carries no
 `tests[]` line at all. No fork, no mechanism, one `chore(flume):`. Parked only
 because `.flume/prompts/**` is outside every phase lane.
 
-I have re-homed all four `CASCADE-*` entries onto `tests/examples.test.ts`
+**Reported independently from the field** (inbox, 2026-09-11, human), which
+names the alternative and rejects it: the `vitest` gate could run the
+integration lane whenever an entry touches `examples/` — a second full suite
+per merge, paid on every such entry to buy a lane the fast one already
+exposes. The prose clause above stays the right default.
+
+I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
