@@ -1,39 +1,5 @@
 [
   {
-    "tag": "SPEC-TEST-CITE-NEEDLE-ROOTLESS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/specLocators.ts",
-          "description": "widen the tests/ half of the spec locator scan to rootless filenames; retire the doc comment's park"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      "tests/retired-narration.test.ts"
-    ],
-    "summary": "Widen the spec test-cite needle past its tests/ root to a bare *.test.ts filename, leaving the lane's glob",
-    "per": {
-      "path": ".claude/rules/spec-writing.md",
-      "section": "A claim names behavior, never location"
-    },
-    "tests": [
-      "the test-cite needle flags a bare `Dispatcher.test.ts` filename carrying no root"
-    ],
-    "pins": [
-      "the test-cite needle leaves the `*.integration.test.ts` lane convention unflagged",
-      "no spec page cites a bare test filename"
-    ],
-    "acceptance": "the widened needle is green over the corpus, and the needle's doc comment no longer parks the rootless half as a human question",
-    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker, so the needle matches a concrete filename and leaves the glob. Green today — `spec/worktrees.md`'s last rootless site was rewritten — and the doc comment deferring the rootless half to a human is expired narration, retired in the same commit. Reverted 9e9b326 is a working implementation. The needle now lives in `tests/helpers/specLocators.ts`, so `tests[]` goes red on the base."
-  },
-  {
     "tag": "ORPHAN-ID-SINGLE-LINE-BLOCK",
     "gate": {
       "kind": "open"
