@@ -1,40 +1,29 @@
 [
   {
-    "tag": "CLI-FIXTURE-ANCESTOR-PROOF",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "tests/helpers/subprocess.ts", "description": "a fixture-rooting idiom beside hermeticEnv()" },
-        { "path": "tests/cli.test.ts", "description": "the tmpdir()-rooted fixtures the walk-up reaches past" },
-        { "path": "tests/cliJobResolution.test.ts", "description": "same" }
-      ],
-      "retire": []
-    },
-    "summary": "CLI fixtures under tmpdir() resolve repoRoot through /tmp's ancestors; root them so a `.flume` above the fixture cannot change a verdict",
-    "per": { "path": "spec/cli.md", "section": "Bay discovery walks up to the nearest `.flume`" },
-    "tests": [
-      "a `.flume` planted above the fixture does not change `flume status`'s verdict",
-      "a `.flume` planted above the fixture does not change a job verb's resolved state root"
-    ],
-    "acceptance": "Both named behaviors pin, and the eight tests a leaked /tmp/.flume red-lined pass with a `.flume` planted above their base. A fixture that must assert the no-ancestor fallback and cannot be rooted is named in the note instead of parking the entry.",
-    "notes": "The walk runs to the filesystem root (`resolveRepoRoot`, src/cliJobResolution.ts:48); the cited section ratifies FLUME_DIR/FLUME_CONFIG_DIR as the outright override, so a fixture that sets them never walks. Blast-radius bound, independent of who writes the litter."
-  },
-  {
     "tag": "TMP-STATE-ROOT-WRITER-NAMED",
-    "gate": { "kind": "blockedBy", "tags": ["CLI-FIXTURE-ANCESTOR-PROOF"] },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "tests/helpers/subprocess.ts", "description": "the guard, beside the fixture-rooting idiom" },
-        { "path": "vitest.config.ts", "description": "wire the guard suite-wide if that is where it lands" }
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the guard, beside the fixture-rooting idiom"
+        },
+        {
+          "path": "vitest.config.ts",
+          "description": "wire the guard suite-wide if that is where it lands"
+        }
       ],
       "retire": []
     },
     "summary": "A run intermittently plants /tmp/.flume (awake/ + empty stop) and red-lines 8 CLI tests on later runs; make the suite refuse it and name the writer",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
     "tests": [
       "a run that creates a state root above its own fixture fails the suite and names the offender"
     ],
@@ -42,40 +31,30 @@
     "notes": "Observed twice 2026-09-06; `rm -rf /tmp/.flume` made all 8 pass unchanged. The Baton constructor mkdirs `awake/` (src/job.ts:494), so any Baton built at a repoRoot that resolved to /tmp is a candidate. No src/ module reads tmpdir()."
   },
   {
-    "tag": "SINGLETON-SHOULDRUN-BEFORE-PROVISIONING",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "src/Dispatcher.ts", "description": "runSingleton consults shouldRun ahead of the prune, the worktree and setupWorktree" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the decline's cost and its ctx.cwd" }
-      ],
-      "retire": []
-    },
-    "summary": "A singleton decline pays a prune, a worktree and an install before shouldRun is consulted; consult it first, with ctx.cwd at the repo root",
-    "per": { "path": "spec/loop.md", "section": "Declining a tick before the invocation" },
-    "tests": [
-      "a singleton decline creates no worktree",
-      "a singleton shouldRun receives ctx.cwd at the repo root"
-    ],
-    "acceptance": "`runSingleton` consults `shouldRun` before the prune, `createWorktree` and `setupWorktree`; `promptArgs` still sees the worktree path, and every other `TickContext` field is identical on both calls.",
-    "notes": "Ruling of 2026-09-11, option A over option B. Today the provisioning runs at src/Dispatcher.ts:1846-1874 and the check at :1941 — three plan slices pay it most ticks. Closes the parked disagreement of the same name."
-  },
-  {
     "tag": "CHECK-NO-FANOUT-VACUOUS-PASS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "check's fence step, skipped when no phase consumes the queue" },
-        { "path": "tests/cli.test.ts", "description": "a chain fixture declaring no fanout phase" }
+        {
+          "path": "src/cli.ts",
+          "description": "check's fence step, skipped when no phase consumes the queue"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "a chain fixture declaring no fanout phase"
+        }
       ],
       "retire": []
     },
     "summary": "`flume check` on a chain with no fanout phase reads every declared path as a violation; skip the fence and say so instead",
-    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
     "tests": [
       "flume check exits 0 for a chain with no fanout phase whose entries declare files",
       "flume check names the absent fanout consumer rather than the declared paths"
@@ -85,20 +64,37 @@
   },
   {
     "tag": "WORKTREE-BASE-RESOLVED-ONCE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/paths.ts", "description": "the one base resolver, and `worktrees` joining STATE_ROOT_NAMES now the fork is closed" },
-        { "path": "src/Dispatcher.ts", "description": "createWorktree, the per-wave stale-slug removal and sweepStaleWorktrees take the base from there" },
-        { "path": "src/job.ts", "description": "the RUNTIME_IGNORES narration citing the closed fork" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the single-resolution pin" }
+        {
+          "path": "src/paths.ts",
+          "description": "the one base resolver, and `worktrees` joining STATE_ROOT_NAMES now the fork is closed"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "createWorktree, the per-wave stale-slug removal and sweepStaleWorktrees take the base from there"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "the RUNTIME_IGNORES narration citing the closed fork"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the single-resolution pin"
+        }
       ],
       "retire": []
     },
     "summary": "Two separate FLUME_WORKTREES_DIR resolutions agree only by luck; resolve the worktree base once and let every reader take it from there",
-    "per": { "path": "spec/worktrees.md", "section": "Placement — the worktree base and the job namespace" },
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Placement — the worktree base and the job namespace"
+    },
     "tests": [
       "src/ resolves the worktree base in exactly one place",
       "STATE_ROOT_NAMES names the worktrees dir"
@@ -108,21 +104,41 @@
   },
   {
     "tag": "RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/paths.ts", "description": "STATE_ROOT_NAMES gains the two tick-verdict filenames, with accessors" },
-        { "path": "src/Dispatcher.ts", "description": "TICK_VERDICT_FILE / TICK_VERDICTS_LOG_FILE take their names from paths.ts" },
-        { "path": "src/job.ts", "description": "the three new lines in RUNTIME_IGNORES, derived not respelled" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the job-seed gitignore list moves with the set" },
-        { "path": "tests/job.test.ts", "description": "the set's content" }
+        {
+          "path": "src/paths.ts",
+          "description": "STATE_ROOT_NAMES gains the two tick-verdict filenames, with accessors"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "TICK_VERDICT_FILE / TICK_VERDICTS_LOG_FILE take their names from paths.ts"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "the three new lines in RUNTIME_IGNORES, derived not respelled"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the job-seed gitignore list moves with the set"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "the set's content"
+        }
       ],
       "retire": []
     },
     "summary": "RUNTIME_IGNORES misses `stop`, `last-tick.json` and `tick-verdicts.jsonl`, so three runtime files stay trackable in every state root it seeds",
-    "per": { "path": "spec/jobs.md", "section": "Runtime ignores" },
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "Runtime ignores"
+    },
     "tests": [
       "RUNTIME_IGNORES names the stop flag, the latest-tick verdict and the verdict log",
       "the tick-verdict filenames are spelled once, in STATE_ROOT_NAMES"
@@ -132,18 +148,29 @@
   },
   {
     "tag": "RUNTIME-IGNORES-AT-DEFAULT-STATE-ROOT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "the merge at loop / job run start, under the tip claim and ahead of the startup sweep" },
-        { "path": "tests/cli.test.ts", "description": "the start-time merge" }
+        {
+          "path": "src/cli.ts",
+          "description": "the merge at loop / job run start, under the tip claim and ahead of the startup sweep"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the start-time merge"
+        }
       ],
       "retire": []
     },
     "summary": "The default `<repoRoot>/.flume` root receives no runtime-ignore merge, so a fresh adopter commits tick artifacts; merge at every loop / job run start",
-    "per": { "path": "spec/jobs.md", "section": "Runtime ignores" },
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "Runtime ignores"
+    },
     "tests": [
       "a loop start merges the runtime ignores into the default state root's .gitignore"
     ],
@@ -152,21 +179,41 @@
   },
   {
     "tag": "MERGE-INTERRUPTED-MARKER",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/paths.ts", "description": "the merging-marker dir and path" },
-        { "path": "src/Dispatcher.ts", "description": "written before the pick, removed after the ship bookkeeping" },
-        { "path": "src/cli.ts", "description": "the startup refusal, under the tip claim and ahead of the sweep" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the marker's lifecycle" },
-        { "path": "tests/cli.test.ts", "description": "the refusal" }
+        {
+          "path": "src/paths.ts",
+          "description": "the merging-marker dir and path"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "written before the pick, removed after the ship bookkeeping"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the startup refusal, under the tip claim and ahead of the sweep"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the marker's lifecycle"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the refusal"
+        }
       ],
       "retire": []
     },
     "summary": "A crash between the cherry-pick and the ship bookkeeping leaves an ungated commit on trunk with its entry still open; mark the merge and refuse the next start",
-    "per": { "path": "spec/loop.md", "section": "Crash equals stop" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Crash equals stop"
+    },
     "tests": [
       "the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick",
       "the merging marker is gone once the ship bookkeeping has landed",
@@ -177,20 +224,37 @@
   },
   {
     "tag": "PRIOR-ATTEMPT-STALE-RECORDS-CLEARED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Prompt.ts", "description": "every PriorAttempt variant carries its keyspace" },
-        { "path": "src/Dispatcher.ts", "description": "write and validate the keyspace; clear stale entry-keyed records at the wave's queue read; report them on the verdict" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the clear, the phase-record exemption, the verdict field" },
-        { "path": "tests/Prompt.test.ts", "description": "the keyspace on the record" }
+        {
+          "path": "src/Prompt.ts",
+          "description": "every PriorAttempt variant carries its keyspace"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "write and validate the keyspace; clear stale entry-keyed records at the wave's queue read; report them on the verdict"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the clear, the phase-record exemption, the verdict field"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the keyspace on the record"
+        }
       ],
       "retire": []
     },
     "summary": "A prior-attempt record whose entry left the queue unshipped stands forever; clear it at the wave's queue read and report the keys cleared",
-    "per": { "path": "spec/loop.md", "section": "Prior-outcome feedback to the retrying tick" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
     "tests": [
       "a prior-attempt record names the keyspace its key belongs to",
       "a wave clears a prior-attempt record whose entry tag the queue no longer carries",
@@ -202,20 +266,37 @@
   },
   {
     "tag": "QUARANTINE-KEYS-THE-ENTRY-AS-READ",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the key, the per-entry failure records that carry it, the drop filter, the supervisor's set" },
-        { "path": "src/Phase.ts", "description": "quarantinedTags reports the key beside the tag" },
-        { "path": "src/cli.ts", "description": "the FLUME_QUARANTINED_SLUGS parse" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the re-scope lift and the reported key" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the key, the per-entry failure records that carry it, the drop filter, the supervisor's set"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "quarantinedTags reports the key beside the tag"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the FLUME_QUARANTINED_SLUGS parse"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the re-scope lift and the reported key"
+        }
       ],
       "retire": []
     },
     "summary": "A run-scoped quarantine keyed on the slug alone survives a re-scope and forces stop-and-relaunch; key on the entry as read and report the key",
-    "per": { "path": "spec/loop.md", "section": "Repeated identical failures — quarantine, then abort" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Repeated identical failures — quarantine, then abort"
+    },
     "tests": [
       "a quarantine key is the entry's slug and a hash of its bytes in the queue",
       "an entry re-scoped on trunk is pickable again without a relaunch",
@@ -226,26 +307,62 @@
   },
   {
     "tag": "CLEAN-EXIT-TAXONOMY",
-    "gate": { "kind": "parked", "reason": ".flume/chain.ts:852 compares noCommit === \"voluntary-bail\"; off every phase lane, so the paired chore(flume): lands first or tsc reverts the tick" },
+    "gate": {
+      "kind": "parked",
+      "reason": ".flume/chain.ts:852 compares noCommit === \"voluntary-bail\"; off every phase lane, so the paired chore(flume): lands first or tsc reverts the tick"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Prompt.ts", "description": "the NoCommitMode member, the record variant, the rendered block" },
-        { "path": "src/Dispatcher.ts", "description": "classification, wave precedence, the record builder, the verdict's errored formula, the quarantine exclusion" },
-        { "path": "src/Agent.ts", "description": "the two narration sites" },
-        { "path": "src/Phase.ts", "description": "the narration site" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the taxonomy prose" },
-        { "path": "tests/Prompt.test.ts", "description": "the record and its rendering" },
-        { "path": "tests/Dispatcher.test.ts", "description": "classification and precedence" },
-        { "path": "tests/cliVerdict.test.ts", "description": "the summary lines" },
-        { "path": "tests/chain.test.ts", "description": "the mode literals" },
-        { "path": "tests/examples.integration.test.ts", "description": "the expected mode" }
+        {
+          "path": "src/Prompt.ts",
+          "description": "the NoCommitMode member, the record variant, the rendered block"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "classification, wave precedence, the record builder, the verdict's errored formula, the quarantine exclusion"
+        },
+        {
+          "path": "src/Agent.ts",
+          "description": "the two narration sites"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "the narration site"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the taxonomy prose"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the record and its rendering"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "classification and precedence"
+        },
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "the summary lines"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "the mode literals"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the expected mode"
+        }
       ],
       "retire": []
     },
     "summary": "`voluntary-bail` names an intent the engine inferred; rename it `clean-exit` and record the final message's tail without saying what the exit meant",
-    "per": { "path": "spec/loop.md", "section": "The no-commit taxonomy" },
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The no-commit taxonomy"
+    },
     "tests": [
       "a clean exit with no commit is classified clean-exit",
       "the prior-attempt block quotes the prior attempt's final message without naming a refused constraint"
@@ -254,36 +371,30 @@
     "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. chain.ts already reads both modes through a ReadonlySet<string> (:573); the one `===` at :852-854 is what parks this. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) all carry the old name."
   },
   {
-    "tag": "DOCS-CLI-CHAIN-LOAD-REPORTED",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "docs/CLI.md", "description": "the status paragraph's chain-derived-extras clause (:23), and job status if it repeats the claim" }
-      ],
-      "retire": []
-    },
-    "summary": "docs/CLI.md says a broken chain withholds the chain-derived lines and stays silent about the stderr report the spec now requires",
-    "per": { "path": "spec/cli.md", "section": "`flume status` owes exactly this" },
-    "tests": [],
-    "acceptance": "The doc says the load names its own failure on stderr while withholding nothing above that line — true of both halves, not just stdout.",
-    "notes": "The last leg of CHAIN-LOAD-FAILURE-REPORTED: src/ ships it and the two spec lines moved with the 2026-09-11 rulings, leaving the doc alone in stating the retired behavior. Closes the parked question of the same name."
-  },
-  {
     "tag": "HANDOFF-ENTRY-MERGE-OUTCOME",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Phase.ts", "description": "FanoutEntryOutcome gains the per-entry merge outcome" },
-        { "path": "src/Dispatcher.ts", "description": "the `entries` map reads the wave's own mergeOutcomes" }
+        {
+          "path": "src/Phase.ts",
+          "description": "FanoutEntryOutcome gains the per-entry merge outcome"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the `entries` map reads the wave's own mergeOutcomes"
+        }
       ],
       "retire": []
     },
     "summary": "A park and a cherry-pick conflict read identically on TickResult.entries, so a handoff routing a park wakes plan on a conflict too and pays a declined tick",
-    "per": { "path": "spec/chain.md", "section": "What a hook receives" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a hook receives"
+    },
     "tests": [
       "TickResult.entries reports the merge outcome of an entry whose cherry-pick conflicted",
       "TickResult.entries reports the merge outcome of an entry the chain declined to ship"
@@ -292,41 +403,36 @@
     "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
   },
   {
-    "tag": "CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the job-seed `.gitignore` list (:111-:112) and the harness-managed run-in (:69-:70)" },
-        { "path": "tests/retired-narration.test.ts", "description": "a `RUNTIME_IGNORES` agreement pin, and the state-list check flipped to equality, in the shipped harness-managed scan" }
-      ],
-      "retire": []
-    },
-    "summary": "docs/CHAIN-AUTHORING.md hand-lists RUNTIME_IGNORES and names 5 of the 9 state-root names src/ spells, neither held in the src-to-doc direction",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A seam gate reads what the real writer wrote" },
-    "tests": [
-      "the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES carries and no others",
-      "the docs' harness-managed state list names every path src/ spells"
-    ],
-    "acceptance": "Both doc lists equal their writers. The state-list equality fails on the pre-fix tree; the RUNTIME_IGNORES pin is green on arrival and rides a sensitivity control.",
-    "notes": "Seed list (:111) equals RUNTIME_IGNORES (src/job.ts:52) today, so its pin needs the sensitivity control the shipped scan rides (tests/retired-narration.test.ts:918). The run-in (:69) omits `stop`, the tick-verdict pair, and `plan/pending.json` of the 9 `namesSrcSpells()` resolves; README already carries all 9. 6abd604's body claims both lists carry them — oversight, not a declared cut."
-  },
-  {
     "tag": "EXAMPLES-SPEC-PHASE-CUT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "drop the `spec` phase, its gate, its writable partition and `humanOnly`" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the excerpts quoting the cut phase (:176-:177, :1409)" },
-        { "path": "tests/examples.integration.test.ts", "description": "expectations that named the removed phase" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "drop the `spec` phase, its gate, its writable partition and `humanOnly`"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the excerpts quoting the cut phase (:176-:177, :1409)"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "expectations that named the removed phase"
+        }
       ],
-      "retire": ["examples/prompts/spec.md"]
+      "retire": [
+        "examples/prompts/spec.md"
+      ]
     },
     "summary": "Cut examples/prompts/spec.md and cascade's spec phase together, so the shipped example models the plan+build shape flume's own chain runs",
-    "per": { "path": ".claude/rules/engineering.md", "section": "An export earns its consumer" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "An export earns its consumer"
+    },
     "tests": [
       "the cascade example declares plan and build and no spec phase"
     ],
@@ -335,69 +441,107 @@
   },
   {
     "tag": "INTENT-DOC-RECONCILED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "docs/INTENT.md", "description": "the Provenance bullet (:19), the v0 success criterion (:44), the executed corpus-reform item (:54)" }
+        {
+          "path": "docs/INTENT.md",
+          "description": "the Provenance bullet (:19), the v0 success criterion (:44), the executed corpus-reform item (:54)"
+        }
       ],
       "retire": []
     },
     "summary": "docs/INTENT.md claims the harness verifies typed citations, carries a v0 success criterion whose target no longer exists, and lists an executed decision as pending",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [],
     "acceptance": "The Provenance bullet states the 0.8+ truth — `per` is a chain-declared extension the engine never parses, and citation discipline is the chain's `per cites resolve` gate; the v0 success criterion section is gone; the corpus-reform section is gone.",
     "notes": "Ruling of 2026-09-11: (a) restate, (b) retire outright — the comparison target (`bin/flume-bash`, gen2 specs) exists in no tree and a restated target would be a claim nobody has measured, (c) delete. The quality-lenses section at :72 is untouched: it has not executed."
   },
   {
     "tag": "MIGRATING-012-AFTERMERGE-RESTORATION",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "docs/MIGRATING-0.12.md", "description": "§1, one line naming afterMerge placement as a restoration of v0's" }
+        {
+          "path": "docs/MIGRATING-0.12.md",
+          "description": "§1, one line naming afterMerge placement as a restoration of v0's"
+        }
       ],
       "retire": []
     },
     "summary": "MIGRATING-0.12 §1 reads as a new requirement, so a v0-shaped chain that never moved its correctness gates cannot tell it is already compliant",
-    "per": { "path": "spec/chain.md", "section": "Gate placement is the chain's decision" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Gate placement is the chain's decision"
+    },
     "tests": [],
     "acceptance": "§1 says in one line that afterMerge is where v0 put correctness gates, so a chain that never moved reads itself as compliant rather than as owing a migration step.",
     "notes": "Ruling of 2026-09-11. The cumulative symbol-to-release index from the same backlog is declined until the 1.0 cut and is not in this queue."
   },
   {
     "tag": "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the opening orientation (:3-:15) names `.flume/chain.ts` as the living reference and the examples as its shipped floor" }
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the opening orientation (:3-:15) names `.flume/chain.ts` as the living reference and the examples as its shipped floor"
+        }
       ],
       "retire": []
     },
     "summary": "The doc calls cascade-chain.ts the reference and never names `.flume/chain.ts`, which is the only chain carrying the current shape",
-    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Surface, not prescription" },
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Surface, not prescription"
+    },
     "tests": [],
     "acceptance": "A reader opening the doc learns that `.flume/chain.ts` in this repo is the living reference chain and that `examples/` is the shipped floor — the recommended shape ships by name, not as a default.",
     "notes": "Ruling of 2026-09-11 (option C, first half). The promotions into cascade-chain.ts follow as their own entries, blocked on this one so the doc's claim lands before the shapes it points at."
   },
   {
     "tag": "CASCADE-SHOULDRUN-FROM-DISK",
-    "gate": { "kind": "blockedBy", "tags": ["CHAIN-AUTHORING-NAMES-LIVING-REFERENCE"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "a `shouldRun` on one phase computed from TickContext" },
-        { "path": "tests/examples.integration.test.ts", "description": "the decline case" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "a `shouldRun` on one phase computed from TickContext"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the decline case"
+        }
       ],
       "retire": []
     },
     "summary": "No shipped example declares `shouldRun`, so a new adopter never sees a phase decline a tick from what is on disk",
-    "per": { "path": "spec/chain.md", "section": "What a hook receives" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a hook receives"
+    },
     "tests": [
       "the cascade example's plan phase declines a tick when nothing on disk gives it work"
     ],
@@ -406,18 +550,32 @@
   },
   {
     "tag": "CASCADE-TESTS-JUDGED-BY-GATE",
-    "gate": { "kind": "blockedBy", "tags": ["CASCADE-SHOULDRUN-FROM-DISK"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "CASCADE-SHOULDRUN-FROM-DISK"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "a gate reading the entry's `tests[]` out of a test reporter's output" },
-        { "path": "tests/examples.integration.test.ts", "description": "the refusal case" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "a gate reading the entry's `tests[]` out of a test reporter's output"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the refusal case"
+        }
       ],
       "retire": []
     },
     "summary": "cascade declares a `tests[]` extension field nothing judges, so the example teaches the field without the gate that makes it load-bearing",
-    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Surface, not prescription" },
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Surface, not prescription"
+    },
     "tests": [
       "the cascade example's test gate refuses an entry whose named behavior has no passing test"
     ],
@@ -426,18 +584,32 @@
   },
   {
     "tag": "CASCADE-GATE-READS-ENTRY-AND-BASE",
-    "gate": { "kind": "blockedBy", "tags": ["CASCADE-TESTS-JUDGED-BY-GATE"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "CASCADE-TESTS-JUDGED-BY-GATE"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "a gate reading `GateContext.entry` and `baseSha`" },
-        { "path": "tests/examples.integration.test.ts", "description": "the gate's context read" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "a gate reading `GateContext.entry` and `baseSha`"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the gate's context read"
+        }
       ],
       "retire": []
     },
     "summary": "No shipped example reads `GateContext.entry` or `baseSha`, so the two facts a per-entry gate most needs look unavailable to an adopter",
-    "per": { "path": "spec/chain.md", "section": "What a gate receives" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate receives"
+    },
     "tests": [
       "the cascade example's gate reads the entry tag and the span's base sha from its gate context"
     ],
@@ -446,20 +618,40 @@
   },
   {
     "tag": "CASCADE-PLAN-SLICES-ORDERED-HANDOFF",
-    "gate": { "kind": "blockedBy", "tags": ["CASCADE-GATE-READS-ENTRY-AND-BASE"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "CASCADE-GATE-READS-ENTRY-AND-BASE"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "plan split into slices, with a handoff that orders them" },
-        { "path": "examples/prompts/plan.md", "description": "per-slice material if the split needs it" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the block quoting cascade's `plan` phase, held by an agreement pin" },
-        { "path": "tests/examples.integration.test.ts", "description": "the slice order" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "plan split into slices, with a handoff that orders them"
+        },
+        {
+          "path": "examples/prompts/plan.md",
+          "description": "per-slice material if the split needs it"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the block quoting cascade's `plan` phase, held by an agreement pin"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the slice order"
+        }
       ],
       "retire": []
     },
     "summary": "cascade's plan is one phase, so the example never shows slices sharing a dispatcher with a dependency-ordered handoff",
-    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Surface, not prescription" },
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Surface, not prescription"
+    },
     "tests": [
       "the cascade example's plan slices hand off in dependency order"
     ],
@@ -468,17 +660,25 @@
   },
   {
     "tag": "RELEASE-CITES-CUT-DISPATCHER",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "81 `RELEASE-v0.N §M` / `v0.N §M` cites" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "81 `RELEASE-v0.N §M` / `v0.N §M` cites"
+        }
       ],
       "retire": []
     },
     "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted — a cite no reader can follow",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [
       "src/Dispatcher.ts carries no release-numbered spec cite"
     ],
@@ -487,31 +687,81 @@
   },
   {
     "tag": "RELEASE-CITES-CUT-SRC-TAIL",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "src/cli.ts", "description": "18 cites" },
-        { "path": "src/job.ts", "description": "16" },
-        { "path": "src/Prompt.ts", "description": "12" },
-        { "path": "src/PendingSchema.ts", "description": "9" },
-        { "path": "src/git.ts", "description": "7" },
-        { "path": "src/Phase.ts", "description": "7" },
-        { "path": "src/cliVerdict.ts", "description": "6" },
-        { "path": "src/cliHelp.ts", "description": "6" },
-        { "path": "src/cliJobResolution.ts", "description": "4" },
-        { "path": "src/builtinGates.ts", "description": "3" },
-        { "path": "src/Gate.ts", "description": "2" },
-        { "path": "src/cliJobVerbs.ts", "description": "2" },
-        { "path": "src/paths.ts", "description": "1" },
-        { "path": "src/standardSchema.ts", "description": "1" },
-        { "path": "src/flumeApi.ts", "description": "1" }
+        {
+          "path": "src/cli.ts",
+          "description": "18 cites"
+        },
+        {
+          "path": "src/job.ts",
+          "description": "16"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "12"
+        },
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "9"
+        },
+        {
+          "path": "src/git.ts",
+          "description": "7"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "7"
+        },
+        {
+          "path": "src/cliVerdict.ts",
+          "description": "6"
+        },
+        {
+          "path": "src/cliHelp.ts",
+          "description": "6"
+        },
+        {
+          "path": "src/cliJobResolution.ts",
+          "description": "4"
+        },
+        {
+          "path": "src/builtinGates.ts",
+          "description": "3"
+        },
+        {
+          "path": "src/Gate.ts",
+          "description": "2"
+        },
+        {
+          "path": "src/cliJobVerbs.ts",
+          "description": "2"
+        },
+        {
+          "path": "src/paths.ts",
+          "description": "1"
+        },
+        {
+          "path": "src/standardSchema.ts",
+          "description": "1"
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "1"
+        }
       ],
       "retire": []
     },
     "summary": "The other 95 dead release cites in src/, across fifteen modules — same grammar, same reason, split off Dispatcher.ts so each lands green in a tick",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [
       "no src/ module outside Dispatcher.ts carries a release-numbered spec cite"
     ],
@@ -520,20 +770,41 @@
   },
   {
     "tag": "RELEASE-CITES-PINNED",
-    "gate": { "kind": "blockedBy", "tags": ["RELEASE-CITES-CUT-DISPATCHER", "RELEASE-CITES-CUT-SRC-TAIL"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RELEASE-CITES-CUT-DISPATCHER",
+        "RELEASE-CITES-CUT-SRC-TAIL"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
-        { "path": "examples/cascade-chain.ts", "description": "2 cites" },
-        { "path": "examples/backlog-groomer-chain.ts", "description": "4" },
-        { "path": "examples/minimal-chain.ts", "description": "1" },
-        { "path": "tests/retired-narration.test.ts", "description": "the refusal, beside the retired-narration pins" }
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "2 cites"
+        },
+        {
+          "path": "examples/backlog-groomer-chain.ts",
+          "description": "4"
+        },
+        {
+          "path": "examples/minimal-chain.ts",
+          "description": "1"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the refusal, beside the retired-narration pins"
+        }
       ],
       "retire": []
     },
     "summary": "Finish the release-cite cut in examples/ and promote it a rung: a source-shape pin refusing any new cite matching that grammar under src/ or examples/",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
     "tests": [
       "no file under src/ or examples/ carries a release-numbered spec cite outside a declared-historical marker"
     ],
@@ -542,20 +813,37 @@
   },
   {
     "tag": "DISPATCHER-EXTRACT-LOOP-SUPERVISOR",
-    "gate": { "kind": "blockedBy", "tags": ["RELEASE-CITES-PINNED"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RELEASE-CITES-PINNED"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "src/loopSupervisor.ts", "description": "superviseLoop and its options/result types, moved whole" }
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "superviseLoop and its options/result types, moved whole"
+        }
       ],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the loop-supervisor section leaves" },
-        { "path": "src/cli.ts", "description": "import path" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the loop-supervisor section leaves"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "import path"
+        }
       ],
       "retire": []
     },
     "summary": "The loop supervisor is module-scope code in a 5400-line Dispatcher.ts and shares none of the buildFlumeApi cycle constraint that keeps chain-load colocated",
-    "per": { "path": ".claude/rules/posture-sweep.md", "section": "A violation counts only when verified on disk this tick" },
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "A violation counts only when verified on disk this tick"
+    },
     "tests": [
       "superviseLoop is exported from src/loopSupervisor.ts"
     ],
@@ -564,20 +852,37 @@
   },
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
-    "gate": { "kind": "blockedBy", "tags": ["RELEASE-CITES-PINNED"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RELEASE-CITES-PINNED"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "src/priorAttempts.ts", "description": "the prior-attempt read/write/clear surface and the record builders" }
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "the prior-attempt read/write/clear surface and the record builders"
+        }
       ],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the prior-attempt section leaves; the class calls the module" },
-        { "path": "src/index.ts", "description": "re-export path for slugify / priorAttemptPath / priorAttemptsDir" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the prior-attempt section leaves; the class calls the module"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "re-export path for slugify / priorAttemptPath / priorAttemptsDir"
+        }
       ],
       "retire": []
     },
     "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
-    "per": { "path": ".claude/rules/posture-sweep.md", "section": "A violation counts only when verified on disk this tick" },
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "A violation counts only when verified on disk this tick"
+    },
     "tests": [
       "the prior-attempt record builders are exported from src/priorAttempts.ts"
     ],
@@ -586,20 +891,37 @@
   },
   {
     "tag": "DISPATCHER-EXTRACT-FRICTION",
-    "gate": { "kind": "blockedBy", "tags": ["RELEASE-CITES-PINNED"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RELEASE-CITES-PINNED"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "src/friction.ts", "description": "harvest, count line, and the friction declaration check" }
+        {
+          "path": "src/friction.ts",
+          "description": "harvest, count line, and the friction declaration check"
+        }
       ],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the friction helpers leave" },
-        { "path": "src/cli.ts", "description": "import path for frictionCountLine" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the friction helpers leave"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "import path for frictionCountLine"
+        }
       ],
       "retire": []
     },
     "summary": "Friction harvesting, the count line and the friction declaration validator are one job spread through Dispatcher.ts",
-    "per": { "path": ".claude/rules/posture-sweep.md", "section": "A violation counts only when verified on disk this tick" },
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "A violation counts only when verified on disk this tick"
+    },
     "tests": [
       "frictionCountLine is exported from src/friction.ts"
     ],
@@ -608,19 +930,33 @@
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
-    "gate": { "kind": "blockedBy", "tags": ["RELEASE-CITES-PINNED"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RELEASE-CITES-PINNED"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "src/worktrees.ts", "description": "create, teardown and the stale sweep" }
+        {
+          "path": "src/worktrees.ts",
+          "description": "create, teardown and the stale sweep"
+        }
       ],
       "edit": [
-        { "path": "src/Dispatcher.ts", "description": "the worktree helpers leave; sweepStaleWorktrees stays as the method cli.ts calls" }
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the worktree helpers leave; sweepStaleWorktrees stays as the method cli.ts calls"
+        }
       ],
       "retire": []
     },
     "summary": "Worktree provisioning, teardown and the stale sweep are a separate home inside Dispatcher.ts, beside src/setupWorktree.ts which already owns the hook half",
-    "per": { "path": ".claude/rules/posture-sweep.md", "section": "A violation counts only when verified on disk this tick" },
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "A violation counts only when verified on disk this tick"
+    },
     "tests": [
       "worktree provisioning and teardown are exported from src/worktrees.ts"
     ],
