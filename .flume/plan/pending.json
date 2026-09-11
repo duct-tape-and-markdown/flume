@@ -1,69 +1,5 @@
 [
   {
-    "tag": "CLEAN-EXIT-TAXONOMY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "the NoCommitMode member, the record variant, the rendered block"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "classification, wave precedence, the record builder, the verdict's errored formula, the quarantine exclusion"
-        },
-        {
-          "path": "src/Agent.ts",
-          "description": "the two narration sites"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "the narration site"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the taxonomy prose"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "the record and its rendering"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "classification and precedence"
-        },
-        {
-          "path": "tests/cliVerdict.test.ts",
-          "description": "the summary lines"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "the mode literals"
-        },
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "the expected mode"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`voluntary-bail` names an intent the engine inferred; rename it `clean-exit` and record the final message's tail without saying what the exit meant",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The no-commit taxonomy"
-    },
-    "tests": [
-      "a clean exit with no commit is classified clean-exit",
-      "the prior-attempt block quotes the prior attempt's final message without naming a refused constraint"
-    ],
-    "acceptance": "`NoCommitMode` carries `clean-exit` in place of `voluntary-bail` across src/, the record carries the bounded final-message tail under a neutral field, and the rendered block says what happened without saying why.",
-    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. Unparked: `.flume/chain.ts` reads both modes as `string` (`REFUSAL_MODES` :584, `bailed` :879), so the rename no longer trips its tsc gate; the chore dropping the `voluntary-bail` arms is owed once this ships. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) carry the old name. The decline bullets it edits carry a pin: exactly one names both singleton and fanout — do not reintroduce the pair."
-  },
-  {
     "tag": "RUNTIME-IGNORES-NAMES-MERGING",
     "gate": {
       "kind": "open"
@@ -98,38 +34,6 @@
     "pins": [],
     "acceptance": "`RUNTIME_IGNORES` carries `merging/` off `STATE_ROOT_NAMES.merging`, the doc's job-seed list agrees under its equality pin, and a fresh `job new` .gitignore covers the marker.",
     "notes": "The amendment this waited on landed at 17cf6a3 — the open question's `merging/` half is closed. `STATE_ROOT_NAMES.merging` already exists (src/paths.ts:81): one name, one accessor, no second spelling. docs/CHAIN-AUTHORING.md:117-119 is equality-pinned to RUNTIME_IGNORES (tests/retired-narration.test.ts:1375), so the two move in one commit or the pin reverts the tick."
-  },
-  {
-    "tag": "PENDINGSCHEMA-PARKED-GLOSS-DECHAINED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "the `parked` doc gloss :48 and the rendered example :515"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "the rendered-block pin, :925"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The engine's `parked` gloss and its rendered schema both name `workshop`, one chain's phase layer, so every downstream plan prompt is taught a convention the engine does not own",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Capability vs convention"
-    },
-    "tests": [
-      "the rendered pending schema carries no `workshop` phase name"
-    ],
-    "pins": [],
-    "acceptance": "Neither the `parked` doc comment nor the rendered schema block names a phase; both state what `parked` means by mechanism — human action the entry waits on.",
-    "notes": "Drained from PHASE-HUMANONLY-DOC-DECHAINED's note; verified on disk (src/PendingSchema.ts:48, :515). Same class as that entry, one rung out: the rendered block is injected into every downstream chain's plan prompt, so the gloss ships this repo's vocabulary with the engine's authority. The two sites are an agreement pair — tests/PendingSchema.test.ts:925 holds the rendered text verbatim."
   },
   {
     "tag": "MERGING-MARKER-DIVERGENCE-RETIRED",
@@ -190,6 +94,7 @@
       "TickResult.entries reports the merge outcome of an entry whose cherry-pick conflicted",
       "TickResult.entries reports the merge outcome of an entry the chain declined to ship"
     ],
+    "pins": [],
     "acceptance": "`handoff` separates `cherry-pick-conflict` from `not-shipped` off `result.entries` alone, without reading the verdict log.",
     "notes": "Ratified at 17cf6a3 — the section now enumerates `mergeOutcome?` and names `merged` / `not-shipped` / `cherry-pick-conflict`. `mergeOutcomes` is in scope at the `entries` map (declared src/Dispatcher.ts:2736, mapped :3275); read it, never re-derive. `MergeOutcome` is Dispatcher's and already on the barrel, and src/Phase.ts:10 already imports type-only from ./Dispatcher.js — the field adds no edge. The existing entries[] shape test is tests/Dispatcher.test.ts:9530."
   },
@@ -219,6 +124,7 @@
       "section": "The package a chain loads through"
     },
     "tests": [],
+    "pins": [],
     "acceptance": "Both types resolve from the package entry point, pinned the way `NoCommitMode` and `ProvisionFailure` are — each pin fails tsc if its re-export drops.",
     "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED and QUARANTINE-KEYS-THE-ENTRY-AS-READ notes; verified on disk (src/Prompt.ts:73, src/Phase.ts:161; neither in src/index.ts). One entry, not two: same file, same one-line shape, and two would serialize into separate waves. tests[] empty by construction — the pins are type-level, so tsc is their gate and vitest is green over the base either way (`.flume/vitestJudge.ts`, judgeRedOnBase)."
   },
@@ -244,6 +150,7 @@
       "section": "Prior-outcome feedback to the retrying tick"
     },
     "tests": [],
+    "pins": [],
     "acceptance": "The block names both clears — a clean ship, and the wave queue read that retires a record whose tag the queue no longer carries, reported as `clearedPriorAttempts` on the verdict.",
     "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED's note; the second clear shipped at d9a2bdb. tests[] empty: the doc omits rather than denies, and no agreement pin drives this block — authoring one is WORKTREE-BASE-DOCS-PINNED's shape, file that if it drifts again."
   },
@@ -269,6 +176,7 @@
       "section": "Surface, not prescription"
     },
     "tests": [],
+    "pins": [],
     "acceptance": "A reader opening the doc learns that `.flume/chain.ts` in this repo is the living reference chain and that `examples/` is the shipped floor — the recommended shape ships by name, not as a default.",
     "notes": "Ruling of 2026-09-11 (option C, first half). The promotions into cascade-chain.ts follow as their own entries, blocked on this one so the doc's claim lands before the shapes it points at."
   },
@@ -303,6 +211,7 @@
     "tests": [
       "the cascade example's plan phase declines a tick when nothing on disk gives it work"
     ],
+    "pins": [],
     "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` — not `process.env`, not a directory scan — and the integration test drives both the decline and the run.",
     "notes": "Ruling of 2026-09-11 (option C): promote the shapes a new adopter most needs, in order. This is the first."
   },
@@ -337,6 +246,7 @@
     "tests": [
       "the cascade example's test gate refuses an entry whose named behavior has no passing test"
     ],
+    "pins": [],
     "acceptance": "A `tests[]` line on a cascade entry is judged by a gate fed from the reporter's own output, and an entry naming a behavior no test carries fails that gate.",
     "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry — that fork is still open."
   },
@@ -371,6 +281,7 @@
     "tests": [
       "the cascade example's gate reads the entry tag and the span's base sha from its gate context"
     ],
+    "pins": [],
     "acceptance": "A cascade gate scopes its verdict to the entry it is gating and to the span `baseSha..commitSha`, reading both off `GateContext` rather than re-deriving them.",
     "notes": "Ruling of 2026-09-11 (option C), third promotion."
   },
@@ -413,6 +324,7 @@
     "tests": [
       "the cascade example's plan slices hand off in dependency order"
     ],
+    "pins": [],
     "acceptance": "cascade declares more than one plan slice, each computing its own liveness from disk, with a handoff that passes the baton down a declared order; the integration test ticks the ladder.",
     "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick."
   },
@@ -440,6 +352,7 @@
     "tests": [
       "src/Dispatcher.ts carries no release-numbered spec cite"
     ],
+    "pins": [],
     "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
     "notes": "Ruling of 2026-09-11, option B: git carries provenance. Split by module because 183 sites across 19 files is more than one tick can land green; this is the largest."
   },
@@ -523,6 +436,7 @@
     "tests": [
       "no src/ module outside Dispatcher.ts carries a release-numbered spec cite"
     ],
+    "pins": [],
     "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains under src/ outside Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand.",
     "notes": "Counts verified on disk 2026-09-11. Sibling of RELEASE-CITES-CUT-DISPATCHER; the two collide on nothing and the pin entry waits on both."
   },
@@ -566,6 +480,7 @@
     "tests": [
       "no file under src/ or examples/ carries a release-numbered spec cite outside a declared-historical marker"
     ],
+    "pins": [],
     "acceptance": "The grammar is refused mechanically, so the cut cannot regress, and a site that genuinely wants historical provenance says so in a declared marker the pin recognizes.",
     "notes": "Ruling of 2026-09-11: the promotion rides the same pass. Blocked on both cut entries because the pin is red until they land. docs/ and README are out of scope."
   },
@@ -605,6 +520,7 @@
     "tests": [
       "superviseLoop is exported from src/loopSupervisor.ts"
     ],
+    "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, the supervisor's tests move with it and differ only in import path.",
     "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) — take it first."
   },
@@ -644,6 +560,7 @@
     "tests": [
       "the prior-attempt record builders are exported from src/priorAttempts.ts"
     ],
+    "pins": [],
     "acceptance": "A pure move: no behavior change, the package's public surface through `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
     "notes": "Sections at src/Dispatcher.ts:4106-:4460 plus the builders at :5267-:5359; `slugify`, `priorAttemptPath` and `priorAttemptsDir` are already public and must resolve identically from `flume`."
   },
@@ -683,6 +600,7 @@
     "tests": [
       "frictionCountLine is exported from src/friction.ts"
     ],
+    "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
     "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction."
   },
@@ -718,6 +636,7 @@
     "tests": [
       "worktree provisioning and teardown are exported from src/worktrees.ts"
     ],
+    "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, `dispatcher.sweepStaleWorktrees()` stays callable from cli.ts, tests move with their subjects and differ only in import path.",
     "notes": "`createWorktree` (src/Dispatcher.ts:4050), `teardownWorktreeInstance` (:3847), `sweepStaleWorktrees` (:3931), `worktreeDirName` (:793). Take last of the four: it is the group most entangled with the class's own state."
   }
