@@ -535,12 +535,25 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     expect(branches.trim()).toBe("");
   });
 
-  it("the worktree and branch are torn down even on a declined (shouldRun=false) tick", async () => {
+  it("a singleton decline creates no worktree", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
+    // The two worktree hooks are the only witnesses a worktree ever
+    // existed: teardown removes the directory and the branch, so a
+    // post-tick `existsSync` cannot tell "never provisioned" from
+    // "provisioned and cleaned up".
+    let setupCalls = 0;
+    let teardownCalls = 0;
     const phase = makePhase({
       name: "plan",
       concurrency: "singleton",
       shouldRun: () => false,
+      setupWorktree: async () => {
+        setupCalls++;
+        return undefined;
+      },
+      teardownWorktree: async () => {
+        teardownCalls++;
+      },
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -565,6 +578,8 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
 
     expect(invoked).toBe(false);
     expect(outcome.declined).toBe(true);
+    expect(setupCalls).toBe(0);
+    expect(teardownCalls).toBe(0);
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
       false,
     );
@@ -9434,6 +9449,48 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
     expect(outcome.verdict?.declined).toBeUndefined();
   });
 
+  it("a singleton shouldRun receives ctx.cwd at the repo root", async () => {
+    await writePending(fx.repo, [makeEntry("CTX-CHECK", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let shouldRunCtx: TickContext | undefined;
+    let promptArgsCtx: TickContext | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: (ctx) => {
+        shouldRunCtx = ctx;
+        return true;
+      },
+      promptArgs: (ctx) => {
+        promptArgsCtx = ctx;
+        return {};
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/out.ts", "x\n", "plan: derive");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    // Consulted before anything is provisioned, so the only cwd there is to
+    // hand it is the repo root; `promptArgs`, which runs after, sees the
+    // worktree the tick went on to build.
+    expect(shouldRunCtx?.cwd).toBe(fx.repo);
+    expect(promptArgsCtx?.cwd).toBe(
+      join(fx.repo, ".flume", "worktrees", "plan"),
+    );
+  });
+
   it("shouldRun sees the same TickContext promptArgs sees (singleton: pending)", async () => {
     await writePending(fx.repo, [makeEntry("CTX-CHECK", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -9468,7 +9525,18 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
     await dispatcher.tick();
 
     expect(shouldRunCtx).toBeDefined();
-    expect(shouldRunCtx).toBe(promptArgsCtx);
+    expect(promptArgsCtx).toBeDefined();
+    // `cwd` is the one field the two calls disagree on (the decline runs
+    // before the worktree exists) — every other field is the same value,
+    // handed out from one object.
+    const { cwd: _srCwd, ...shouldRunRest } = shouldRunCtx!;
+    const { cwd: _paCwd, ...promptArgsRest } = promptArgsCtx!;
+    expect(Object.keys(shouldRunRest).sort()).toEqual(
+      Object.keys(promptArgsRest).sort(),
+    );
+    for (const k of Object.keys(shouldRunRest) as (keyof typeof shouldRunRest)[]) {
+      expect(shouldRunRest[k], k).toBe(promptArgsRest[k]);
+    }
     expect(shouldRunCtx?.pending?.map((e) => e.tag)).toEqual(["CTX-CHECK"]);
   });
 
