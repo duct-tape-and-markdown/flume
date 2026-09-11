@@ -25,7 +25,7 @@
       "no spec page cites a path under tests/",
       "the test-cite needle flags an injected tests/ path and leaves the bin/, scripts/ and examples/ cites the corpus writes"
     ],
-    "acceptance": "The clause refusing a test title or fixture has a needle, green over a corpus with zero sites and driven both ways.",
-    "notes": "The three tests/ cites the path pin left behind went at bbc39b2, so this is a flat refusal over an empty set — spell the empty case, never inherit it. Scope is tests/ alone: the bin/, scripts/ and examples/ cites in cli.md, pending.md and chain.md are claim subjects, and the page refuses neither."
+    "acceptance": "The tests/ path half of the clause has a needle, green over a corpus with zero sites and driven both ways.",
+    "notes": "The three tests/ cites the path pin left behind went at bbc39b2, so this is a flat refusal over an empty set — spell the empty case, never inherit it. Scope is tests/ paths alone: the bin/, scripts/ and examples/ cites in cli.md, pending.md and chain.md are claim subjects, and the page refuses neither. worktrees.md's bare `Dispatcher.test.ts` is a live violation no lane can clear — see open-questions; keep the needle anchored on the tests/ root."
   }
 ]
