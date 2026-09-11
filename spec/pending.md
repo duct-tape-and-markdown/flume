@@ -306,7 +306,7 @@ substantially every entry, mean first-batch wave width fell from 3.17 to 1.99 at
 The capability stays because a chain may legitimately want blast-radius bounding on a risky
 entry, and because the mechanism is already correct — `writablePathsGate` takes its entry scope
 as an optional parameter and runs the ceiling check unconditionally. The dispatcher supplies
-that parameter only when the phase asks for it (`Dispatcher.runAfterCommitGates` consults
+that parameter only when the phase asks for it (it consults
 `phase.scopeWritesToEntry`), so narrowing is a chain declaration rather than engine behavior.
 Flume's own chain does not declare it: its build phase runs under `writablePaths` alone,
 and `files` there is the partition prediction and nothing else (`.flume/chain.ts`). It did
@@ -464,7 +464,7 @@ that did not know the extension is how declared fields get destroyed.
 
 ## What the package exports
 
-`src/index.ts` and `FlumeApi` (`src/flumeApi.ts`) are the canonical lists. Both carry the *values*
+`src/index.ts` and `FlumeApi` are the canonical lists. Both carry the *values*
 `composePendingList`, `parsePending`, `parsePendingLoose`, `renderSchemaForPrompt`,
 `touchedPaths`, `isPickableNow`, `partitionByFileOverlap`, `slugify`, and `priorAttemptPath`.
 The last two are the tag-to-filename rule and the record path built from it

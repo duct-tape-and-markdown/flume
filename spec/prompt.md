@@ -107,7 +107,7 @@ Both come from the same computation the guard consumes, so neither can drift fro
 
 The union is computed once and consumed by both the rendered fence and the
 enforcing gate. The two can never state a different fence
-because there is only one derivation. `tests/Prompt.test.ts` carries the agreement case
+because there is only one derivation. The agreement case is pinned
 — a path the rendered fence names is accepted by the real gate, and a ceiling-only path
 the fence omits is rejected by it — driving the real writer's output through the real
 consumer rather than a fixture. The unscoped byte shape is separately pinned.
@@ -265,5 +265,5 @@ Under the engine/implementation boundary this is engine business: an implementat
 cannot choose its own prompt-render transport, and the engine reports the fact (a span
 did not resolve) that a chain would otherwise have to infer from prompt text.
 
-The transport is pinned by the U+2014 repro in `tests/Prompt.test.ts` and its
+The transport is pinned by the U+2014 repro and its
 ASCII-hyphen twin — a non-ASCII case that passes on POSIX regardless pins nothing.

@@ -2565,9 +2565,6 @@ const SPEC_SRC_PATH_ALLOWLIST: Record<string, string> = {
     "the export inventory is the claim's subject — spec-writing.md names an " +
     "export of `src/index.ts` as public surface, and the pages point at the " +
     "module instead of restating what it lists",
-  "src/flumeApi.ts":
-    "the second canonical export list, subject of the same pointer sentence " +
-    "in pending.md's *What the package exports*",
   "src/Dispatcher.ts":
     "the deep-import specifier packaging refuses " +
     "(`@dtmd/flume/src/Dispatcher.ts`) — the string is what a consumer types, " +

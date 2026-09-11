@@ -129,8 +129,8 @@ Supervisor liveness is on `status` because the awake markers alone cannot
 answer the question an operator asks before relaunching. A tree whose
 supervisor is still working reads `hibernating` from the baton, and two
 supervisors against one tree is what that misreading produces. The liveness
-verdict is the one `flume job status` and `flume job rm` report for the same
-pidfile — one detection, never re-derived per surface.
+verdict is the one `flume loop`'s startup refusal and `flume job rm` report for
+the same pidfile — one detection, never re-derived per surface.
 
 The friction count line has one home: `flume status` and the loop-end
 completion summary print the same line from one source. The engine announces that mail exists and

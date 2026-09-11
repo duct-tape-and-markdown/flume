@@ -47,8 +47,7 @@ grammar (the engine-records-never-navigates doctrine; see `spec/loop.md`).
 The only branch grammar the engine holds is the ephemeral fanout branches declared below
 (`addWorktree`'s `-B`, `deleteBranch`'s `git branch -D`).
 
-- `DispatcherOptions.trunkBranch` does not exist; the absence is pinned type-level
-  (`tests/Dispatcher.test.ts`, "Trunk contract — HEAD-is-truth").
+- `DispatcherOptions.trunkBranch` does not exist; the absence is pinned type-level.
 - **Declared fanout carve-out.** The engine does construct ephemeral worktree branch names —
   `flume/<slug>`, or `flume/<namespace>/<slug>` when a namespace is set —
   does create them (`addWorktree`, `-B`), does delete them at teardown
