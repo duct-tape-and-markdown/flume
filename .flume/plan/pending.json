@@ -42,6 +42,235 @@
     "notes": "Observed twice 2026-09-06; `rm -rf /tmp/.flume` made all 8 pass unchanged. The Baton constructor mkdirs `awake/` (src/job.ts:494), so any Baton built at a repoRoot that resolved to /tmp is a candidate. No src/ module reads tmpdir()."
   },
   {
+    "tag": "SINGLETON-SHOULDRUN-BEFORE-PROVISIONING",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "runSingleton consults shouldRun ahead of the prune, the worktree and setupWorktree" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the decline's cost and its ctx.cwd" }
+      ],
+      "retire": []
+    },
+    "summary": "A singleton decline pays a prune, a worktree and an install before shouldRun is consulted; consult it first, with ctx.cwd at the repo root",
+    "per": { "path": "spec/loop.md", "section": "Declining a tick before the invocation" },
+    "tests": [
+      "a singleton decline creates no worktree",
+      "a singleton shouldRun receives ctx.cwd at the repo root"
+    ],
+    "acceptance": "`runSingleton` consults `shouldRun` before the prune, `createWorktree` and `setupWorktree`; `promptArgs` still sees the worktree path, and every other `TickContext` field is identical on both calls.",
+    "notes": "Ruling of 2026-09-11, option A over option B. Today the provisioning runs at src/Dispatcher.ts:1846-1874 and the check at :1941 — three plan slices pay it most ticks. Closes the parked disagreement of the same name."
+  },
+  {
+    "tag": "CHECK-NO-FANOUT-VACUOUS-PASS",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "check's fence step, skipped when no phase consumes the queue" },
+        { "path": "tests/cli.test.ts", "description": "a chain fixture declaring no fanout phase" }
+      ],
+      "retire": []
+    },
+    "summary": "`flume check` on a chain with no fanout phase reads every declared path as a violation; skip the fence and say so instead",
+    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "tests": [
+      "flume check exits 0 for a chain with no fanout phase whose entries declare files",
+      "flume check names the absent fanout consumer rather than the declared paths"
+    ],
+    "acceptance": "The parse still runs; the fence step is skipped and prints `no fanout phase declared; fence not checked` — vacuous by design and spelled in its own test, never a refusal of every declared path.",
+    "notes": "Ruling of 2026-09-11, option A. `consumerPhases` (src/cli.ts:539) is empty for such a chain, so `entryWriteScopeUnion` yields an empty fence and every entry fails it. Closes the parked question of the same name."
+  },
+  {
+    "tag": "WORKTREE-BASE-RESOLVED-ONCE",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "the one base resolver, and `worktrees` joining STATE_ROOT_NAMES now the fork is closed" },
+        { "path": "src/Dispatcher.ts", "description": "createWorktree, the per-wave stale-slug removal and sweepStaleWorktrees take the base from there" },
+        { "path": "src/job.ts", "description": "the RUNTIME_IGNORES narration citing the closed fork" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the single-resolution pin" }
+      ],
+      "retire": []
+    },
+    "summary": "Two separate FLUME_WORKTREES_DIR resolutions agree only by luck; resolve the worktree base once and let every reader take it from there",
+    "per": { "path": "spec/worktrees.md", "section": "Placement — the worktree base and the job namespace" },
+    "tests": [
+      "src/ resolves the worktree base in exactly one place",
+      "STATE_ROOT_NAMES names the worktrees dir"
+    ],
+    "acceptance": "One resolver computes the base and `createWorktree`, the per-wave stale-slug removal and the startup sweep all call it; no second `FLUME_WORKTREES_DIR` read remains in src/, and the closed-fork narration goes with it.",
+    "notes": "Ruling of 2026-09-11: there is no `Chain.worktreesDir` — placement is machine-local, the operator's per host. Sites today: src/Dispatcher.ts:3933 and :4066. The field-traced divergence (sweep on the default, creation on the override) is what the single resolver closes. Closes the parked question."
+  },
+  {
+    "tag": "RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "STATE_ROOT_NAMES gains the two tick-verdict filenames, with accessors" },
+        { "path": "src/Dispatcher.ts", "description": "TICK_VERDICT_FILE / TICK_VERDICTS_LOG_FILE take their names from paths.ts" },
+        { "path": "src/job.ts", "description": "the three new lines in RUNTIME_IGNORES, derived not respelled" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the job-seed gitignore list moves with the set" },
+        { "path": "tests/job.test.ts", "description": "the set's content" }
+      ],
+      "retire": []
+    },
+    "summary": "RUNTIME_IGNORES misses `stop`, `last-tick.json` and `tick-verdicts.jsonl`, so three runtime files stay trackable in every state root it seeds",
+    "per": { "path": "spec/jobs.md", "section": "Runtime ignores" },
+    "tests": [
+      "RUNTIME_IGNORES names the stop flag, the latest-tick verdict and the verdict log",
+      "the tick-verdict filenames are spelled once, in STATE_ROOT_NAMES"
+    ],
+    "acceptance": "`RUNTIME_IGNORES` equals the spec's block, each new line derived from the accessor that owns the name.",
+    "notes": "`stopFlag` is already in STATE_ROOT_NAMES; the two verdict names are spelled in src/Dispatcher.ts (:504 and its sibling) and move. docs/CHAIN-AUTHORING.md's seed list is declared here because CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT pins it to this set — whichever lands second moves both."
+  },
+  {
+    "tag": "RUNTIME-IGNORES-AT-DEFAULT-STATE-ROOT",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "the merge at loop / job run start, under the tip claim and ahead of the startup sweep" },
+        { "path": "tests/cli.test.ts", "description": "the start-time merge" }
+      ],
+      "retire": []
+    },
+    "summary": "The default `<repoRoot>/.flume` root receives no runtime-ignore merge, so a fresh adopter commits tick artifacts; merge at every loop / job run start",
+    "per": { "path": "spec/jobs.md", "section": "Runtime ignores" },
+    "tests": [
+      "a loop start merges the runtime ignores into the default state root's .gitignore"
+    ],
+    "acceptance": "`loop` and `job run` ensure `<stateRoot>/.gitignore` carries RUNTIME_IGNORES at start; a root already carrying them is left byte-identical, and nothing about the tick changes.",
+    "notes": "Ruling of 2026-09-11 against options A and B; `spec/chain.md` *Per-run artifacts belong under `FLUME_DIR`* now points here. `ensureRuntimeIgnores` (src/job.ts:102) already takes a dir — today its one caller is `job new` (:231). In this repo the resulting `.flume/.gitignore` is a new untracked file; committing it is the operator's."
+  },
+  {
+    "tag": "MERGE-INTERRUPTED-MARKER",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "the merging-marker dir and path" },
+        { "path": "src/Dispatcher.ts", "description": "written before the pick, removed after the ship bookkeeping" },
+        { "path": "src/cli.ts", "description": "the startup refusal, under the tip claim and ahead of the sweep" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the marker's lifecycle" },
+        { "path": "tests/cli.test.ts", "description": "the refusal" }
+      ],
+      "retire": []
+    },
+    "summary": "A crash between the cherry-pick and the ship bookkeeping leaves an ungated commit on trunk with its entry still open; mark the merge and refuse the next start",
+    "per": { "path": "spec/loop.md", "section": "Crash equals stop" },
+    "tests": [
+      "the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick",
+      "the merging marker is gone once the ship bookkeeping has landed",
+      "a surviving merging marker refuses the next loop start with EX_CONFIG"
+    ],
+    "acceptance": "`<flumeDir>/merging/<slug>.json` exists only between the pick and the bookkeeping; a survivor makes `loop` / `job run` exit 78 naming the file, the branch and the entry, touch nothing, and never reach the startup sweep.",
+    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator."
+  },
+  {
+    "tag": "PRIOR-ATTEMPT-STALE-RECORDS-CLEARED",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Prompt.ts", "description": "every PriorAttempt variant carries its keyspace" },
+        { "path": "src/Dispatcher.ts", "description": "write and validate the keyspace; clear stale entry-keyed records at the wave's queue read; report them on the verdict" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the clear, the phase-record exemption, the verdict field" },
+        { "path": "tests/Prompt.test.ts", "description": "the keyspace on the record" }
+      ],
+      "retire": []
+    },
+    "summary": "A prior-attempt record whose entry left the queue unshipped stands forever; clear it at the wave's queue read and report the keys cleared",
+    "per": { "path": "spec/loop.md", "section": "Prior-outcome feedback to the retrying tick" },
+    "tests": [
+      "a prior-attempt record names the keyspace its key belongs to",
+      "a wave clears a prior-attempt record whose entry tag the queue no longer carries",
+      "a wave leaves a phase-keyed prior-attempt record standing",
+      "the tick verdict reports the prior-attempt keys the wave cleared"
+    ],
+    "acceptance": "Every record carries `key: \"entry\" | \"phase\"`; the wave that reads the queue clears each entry-keyed record whose tag is absent and reports the keys as `clearedPriorAttempts`. A record without the discriminator reads as absent, like an unanchored one.",
+    "notes": "Ruling of 2026-09-11 against the recommended option C. Four such records stood at a83836f. `priorAttemptKey` (src/Dispatcher.ts:4114) has no on-disk discriminator, so 'key not in the queue' cannot tell a retired tag from a live phase record — the keyspace field is what makes the clear decidable. Closes the parked question."
+  },
+  {
+    "tag": "QUARANTINE-KEYS-THE-ENTRY-AS-READ",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "the key, the per-entry failure records that carry it, the drop filter, the supervisor's set" },
+        { "path": "src/Phase.ts", "description": "quarantinedTags reports the key beside the tag" },
+        { "path": "src/cli.ts", "description": "the FLUME_QUARANTINED_SLUGS parse" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the re-scope lift and the reported key" }
+      ],
+      "retire": []
+    },
+    "summary": "A run-scoped quarantine keyed on the slug alone survives a re-scope and forces stop-and-relaunch; key on the entry as read and report the key",
+    "per": { "path": "spec/loop.md", "section": "Repeated identical failures — quarantine, then abort" },
+    "tests": [
+      "a quarantine key is the entry's slug and a hash of its bytes in the queue",
+      "an entry re-scoped on trunk is pickable again without a relaunch",
+      "a quarantined tag is reported with the key its hold stands under"
+    ],
+    "acceptance": "`FLUME_QUARANTINED_SLUGS` carries `slug@hash` values (the name stands), the drop filter matches the entry as read, and `TickResult.quarantinedTags` names the key beside each tag.",
+    "notes": "Ruling of 2026-09-11 (field report, 0.12.0). The supervisor holds only the verdict, so the key rides the per-entry failure records it already tags (ProvisionFailure / MergeFailure / GateFailure) rather than a second read of pending.json (`engineering.md`, *A fact the engine holds is reported*). Closes the parked question."
+  },
+  {
+    "tag": "CLEAN-EXIT-TAXONOMY",
+    "gate": { "kind": "parked", "reason": ".flume/chain.ts:852 compares noCommit === \"voluntary-bail\"; off every phase lane, so the paired chore(flume): lands first or tsc reverts the tick" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Prompt.ts", "description": "the NoCommitMode member, the record variant, the rendered block" },
+        { "path": "src/Dispatcher.ts", "description": "classification, wave precedence, the record builder, the verdict's errored formula, the quarantine exclusion" },
+        { "path": "src/Agent.ts", "description": "the two narration sites" },
+        { "path": "src/Phase.ts", "description": "the narration site" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the taxonomy prose" },
+        { "path": "tests/Prompt.test.ts", "description": "the record and its rendering" },
+        { "path": "tests/Dispatcher.test.ts", "description": "classification and precedence" },
+        { "path": "tests/cliVerdict.test.ts", "description": "the summary lines" },
+        { "path": "tests/chain.test.ts", "description": "the mode literals" },
+        { "path": "tests/examples.integration.test.ts", "description": "the expected mode" }
+      ],
+      "retire": []
+    },
+    "summary": "`voluntary-bail` names an intent the engine inferred; rename it `clean-exit` and record the final message's tail without saying what the exit meant",
+    "per": { "path": "spec/loop.md", "section": "The no-commit taxonomy" },
+    "tests": [
+      "a clean exit with no commit is classified clean-exit",
+      "the prior-attempt block quotes the prior attempt's final message without naming a refused constraint"
+    ],
+    "acceptance": "`NoCommitMode` carries `clean-exit` in place of `voluntary-bail` across src/, the record carries the bounded final-message tail under a neutral field, and the rendered block says what happened without saying why.",
+    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. chain.ts already reads both modes through a ReadonlySet<string> (:573); the one `===` at :852-854 is what parks this. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) all carry the old name."
+  },
+  {
+    "tag": "DOCS-CLI-CHAIN-LOAD-REPORTED",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "docs/CLI.md", "description": "the status paragraph's chain-derived-extras clause (:23), and job status if it repeats the claim" }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CLI.md says a broken chain withholds the chain-derived lines and stays silent about the stderr report the spec now requires",
+    "per": { "path": "spec/cli.md", "section": "`flume status` owes exactly this" },
+    "tests": [],
+    "acceptance": "The doc says the load names its own failure on stderr while withholding nothing above that line — true of both halves, not just stdout.",
+    "notes": "The last leg of CHAIN-LOAD-FAILURE-REPORTED: src/ ships it and the two spec lines moved with the 2026-09-11 rulings, leaving the doc alone in stating the retired behavior. Closes the parked question of the same name."
+  },
+  {
     "tag": "HANDOFF-ENTRY-MERGE-OUTCOME",
     "gate": { "kind": "open" },
     "dependsOnForks": [],

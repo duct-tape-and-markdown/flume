@@ -35,234 +35,54 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `flume check`'s fence collapses to universal rejection when a chain declares zero fanout phases (PARKED)
+## `.flume/chain.ts` still carries two engine restatements (adoption, not a question)
 
-`src/cli.ts` derives `check`'s fence from `chain.phases.filter(p => p.concurrency === "fanout")`. Nothing in `src/Phase.ts`'s `Concurrency` type or chain-load validation requires at least one fanout phase — per `spec/pending.md` ("Selection is the sole site; a singleton phase does not pick from pending"), a chain with only singleton phases is structurally legal, it just never consumes `pending.json`. For such a chain, `consumerPhases` is `[]`, the fence is empty, and every declared path in `pending.json` reads as a violation — misdiagnosed as "declares files outside the consumer phase's fence" when the real story is "no consumer phase exists." `spec/cli.md`'s `check` description doesn't address this case.
+Two legs of the 2026-09-10 finding are adopted (`dd258df`): `parkStanding` reads
+`TickContext.priorAttempts` alone, and the prior-attempts `readdirSync` and the
+verdict-log read are both gone. Two remain, and neither is a pending entry —
+`.flume/chain.ts` is outside every phase lane, so each is a `chore(flume):` from an
+interactive session.
 
-Options:
-- **A — vacuous pass.** Zero fanout phases means nothing will ever pick from the queue; skip the fence step (mirrors how `check` already treats an absent `pending.json`).
-- **B — keep rejection, fix the message.** Name "no fanout phase declared" distinctly from "paths outside the fence."
-- **C — enforce the invariant earlier.** Chain-load validation refuses a chain with zero fanout phases and a non-empty `pending.json` outright.
+**The park predicate, third copy.** `build.handoff`'s `refused` (`.flume/chain.ts:851-855`)
+still reads a park as `committed && !shipped && !reverted` over `result.entries`. A
+cherry-pick conflict satisfies that, so a conflicting wave wakes `plan-inbox`, whose
+`parkStanding` counts only the records — no record is written for a conflict — and the
+slice declines: one wasted tick, then the ladder retries from the new base. The site
+names the bound in a comment meanwhile. `HANDOFF-ENTRY-MERGE-OUTCOME` is the engine
+half: once `TickResult.entries` carries the per-entry merge outcome, the predicate and
+its comment go in the adopting commit.
 
-This repo's own `.flume/chain.ts` always declares one fanout phase (`build`), so the case doesn't manifest here — a second-implementation question (`engine-boundary.md`), not a bug against current usage.
+**The clean-exit rename is parked on the other.** `CLEAN-EXIT-TAXONOMY` renames
+`voluntary-bail` to `clean-exit` in `NoCommitMode`; `.flume/chain.ts:852-854` compares
+`result.noCommit` and `e.noCommit` against the literal `"voluntary-bail"`, a TS2367
+error the moment the member leaves the union — and chain.ts is in `tsconfig.json`'s
+`include`, so the build tick would revert on its own tsc gate. `REFUSAL_MODES` (:573) is
+already forward-compatible; only the `===` arms are not. Deleting them unparks the entry,
+and it is the same edit as the predicate above.
 
-## `Chain.worktreesDir` — Placement ruling needed before deriving (PARKED)
-
-Two inbox findings converge on the same defect: a chain that relocates the worktree base (`FLUME_WORKTREES_DIR`, off-repo per `spec/worktrees.md` *Placement*) is read by `createWorktree` but not by the loop-startup sweep (`sweepStaleWorktrees()` runs before `resolveChain()`) — the sweep bases on the default location, finds it empty, removes nothing, then `git branch -D` fails for every `flume/*` branch still held by a worktree at the real (relocated) base. Field-traced four times at temper after a WSL shutdown.
-
-Fix shape both findings agree on: `Chain.worktreesDir`, read by the supervisor after chain load and before the sweep — the same value `createWorktree` uses. What's undecided: whether the existing `FLUME_WORKTREES_DIR` env override survives alongside the new field, or is retired in its favor. **Do not derive until `spec/worktrees.md` and `spec/chain.md` carry the field** — this needs the Placement ruling first, not a guess.
-
-Supersedes the `DispatcherOptions.worktreesDir`-resolved-in-cli.ts framing from the earlier loss-audit finding (that shape still misses a chain-set value; `Chain.worktreesDir` is the corrected fix shape).
-
-## Voluntary-bail is inferred intent — taxonomy ruling needed (PARKED — do not derive)
-
-A clean exit with no commit is recorded as "the agent refused a constraint" (`classifyNoCommit`), and that label is persisted into the prior-attempt record the next tick renders. An agent that ran out of turns, or found nothing to do, gets a block saying it refused to cross a constraint. Predates v0.3.
-
-Fix shape is a chain-declared bail signal with the engine recording only `clean-exit` — a taxonomy change, not a mechanical fix. Filed here per the original inbox instruction: parked for the human, do not derive.
-
-## Quarantine keying survives a re-scope — spec amendment needed first (PARKED)
-
-`spec/loop.md` *Repeated identical failures — quarantine, then abort* deliberately keys the run-scoped quarantine by **slug alone** — current code matches spec exactly, this is not a bug. Field report (temper, 0.12.0): an operator's re-scope commit on trunk doesn't lift the quarantine on that slug, because the key never changed; the only recovery is stop-and-relaunch.
-
-Proposed fix keys on the entry *as read* (slug + a hash of entry content, or the sha it was read at) so a changed entry is a new key, with the key reported alongside `quarantinedTags` so a chain can see why it stands. This is a deliberate change to ratified behavior, not a derivable gap — needs a `spec/loop.md` amendment before any pending entry can cite it.
-
-## Supervisor killed mid-merge leaves an ungated, unrecorded commit on trunk — spec edit pending (PARKED, gh#19)
-
-`spec/loop.md` *Crash equals stop* covers the worktree side of a crash but not a commit already cherry-picked to trunk past the last verdict's `headSha` with no afterMerge gates run and no ship bookkeeping. Field-traced once at temper (0.12.0): a background task killed mid-merge left a cherry-picked commit ungated, `pending.json` still listing the entry open (next run would have double-cherry-picked), four orphaned worktrees, no lock or pid.
-
-Filed as **gh#19** with full repro. The operator is opening the spec line for this (a startup check under the tip claim, or a `flume resume-merge` verb); do not derive further until that edit lands. Boundary note for whoever writes it: detect from the surviving `flume/<slug>` branch (teardown never ran) and the orphaned worktree dirs the startup sweep already enumerates — never from commit shape or authorship (`engine-boundary.md`, *Told, not inferred*).
-
-## `spec/chain.md`'s closing **Gap:** note is false on both halves (PARKED — spec housekeeping)
-
-Residue of `62aa506`, which retired the five `Drift:` notes but left the
-`Gap:` note under *The package a chain loads through* (`spec/chain.md:688`)
-citing one of them.
-
-Both halves verified false on disk this tick:
-
-- "see the drift note above" has **no referent** — `grep "Drift:" spec/chain.md`
-  returns zero after `62aa506`.
-- "whose chain fixture is pre-factory" — `scripts/smoke-install.mjs:64-83`
-  declares `const factory: ChainFactory = (api) => ...; export default
-  factory`, packs the real tarball, installs it, and runs `status` through the
-  generated shim. So the note's conclusion — "nothing currently proves a
-  *published* package loads a factory-shaped chain end to end" — is what the
-  smoke has proven since the fixture moved to the factory shape.
-
-**Recommend:** delete the note. Same reasoning as `62aa506`'s own body — a
-gap note plan's derive reads as live work is worse than none, and this one
-would file an entry for coverage that already ships.
-
-## A prior-attempt record whose entry left the queue without shipping is never cleared (PARKED — spec silent, and the fix forks)
-
-Drained from the inbox (2026-09-10, human via flume-main). Verified on disk
-this tick at `a83836f`: `.flume/prior-attempts/` holds four records
-(`buildpriorattempt-tail-bias-gate-revert-details`,
-`pending-schema-core-extension-split`, `friction-nonenoent-swallowed`,
-`test-hermeticenv-strips-tip-claim-held`); none of those tags is in
-`pending.json`. `clearPriorAttempt` runs only on a clean ship
-(`src/Dispatcher.ts:2123`, `:2797`), so a record whose entry plan retired,
-re-scoped under a new tag, or judged already-landed stands forever. The
-directory is engine-owned and outside every phase lane, so no autonomous tick
-can clear it — the operator `rm`s the files meanwhile.
-
-**Not derivable as filed.** `spec/loop.md` *Prior-outcome feedback to the
-retrying tick* states the property ("No false signal") and exactly one
-mechanism ("a clean ship clears the record"). It is silent on the non-ship
-exit — silence, not contradiction — so the line moves before any entry can
-cite it.
-
-**One correction to the filed shape.** The note proposes clearing at
-`commitPendingUpdate`'s rewrite, "which already knows which tags left the
-queue". That rewrite runs only in the fanout wave; these tags left via a
-**plan** commit, which the engine never diffs. Option A below therefore costs
-a new post-singleton queue read, not a free byproduct.
-
-**Keying obstacle for A and B.** `priorAttemptKey` is `slugify(entry.tag)` for
-fanout and `phase.name` for singleton, with no discriminator on disk. "Key not
-in the queue" cannot separate a retired tag from a live phase record without a
-rule for that collision.
-
-Options:
-
-- **A — engine clears.** A tag-keyed record whose tag is absent from the queue
-  after a plan commit is removed. Needs the discriminator above plus the new
-  read.
-- **B — engine reports.** `staleRecords` on the verdict / `TickContext`,
-  clearing nothing. Facts-not-verdicts (`engine-boundary.md`), but the files
-  still accumulate with no lane able to delete them.
-- **C — no engine change.** The chain already holds both halves: `TickContext`
-  carries `pending` *and* `priorAttempts`, and `api.priorAttemptPath` maps a
-  tag to its on-disk key without reimplementing `slugify`, so `reconcileDue`
-  can filter to records whose key is still in the queue. The routing rule
-  (`engine-boundary.md`) prefers this — a chain could have decided it.
-
-**Recommend C**, plus a `spec/loop.md` line naming what clears a record when an
-entry leaves the queue unshipped, so the on-disk accumulation gets a stated
-owner rather than standing as unattributed litter.
-
-Rider for whoever takes C: `.flume/chain.ts`'s `anyVoluntaryBailRecord` (:46)
-`readdirSync`s the prior-attempts directory itself, which the same spec section
-says a chain never does ("the same read populates `TickContext.priorAttempts`
-for `shouldRun` … so a chain never opens the directory itself") — `shouldRun`
-already receives the map. That restatement and the staleness filter are one
-edit. chain.ts is outside every phase lane, so it is a `chore(flume):` commit
-from an interactive session, never a pending entry.
-
-Filed separately, not blocked on this ruling: `PRIOR-ATTEMPT-ANCHOR-REFUSED` —
-all four records also predate `headSha`/`at`, and `readPriorAttempt` validates
-`mode` alone, so they enter the typed map un-anchored.
-
-## `.flume/chain.ts`'s park detection now restates a fact the engine reports (adoption, not a question)
-
-`NOT-SHIPPED-PRIOR-ATTEMPT` shipped: a `shipped: false` verdict now writes a
-`not-shipped` prior-attempt record under the entry's key, so
-`TickContext.priorAttempts` carries the park. `reconcileDue`
-(`.flume/chain.ts:509-522`) still reads it off the verdict log via
-`readLatestVerdictsSync(...)[BUILD].mergeOutcomes`, and its doc comment now
-states something false — "writes no prior-attempt record and is visible only
-on the verdict". Both halves are `engineering.md` *A fact the engine holds is
-reported* residue against the chain, deleted in the adopting commit.
-
-The adoption is one edit with the rider already parked above (the
-`anyVoluntaryBailRecord` `readdirSync`): both legs of `reconcileDue` collapse
-into one scan of the `priorAttempts` map `shouldRun` already receives — `mode
-=== "voluntary-bail" || mode === "not-shipped"` — dropping the directory walk
-and the verdict-log read together. `.flume/chain.ts` is outside every phase
-lane, so it is a `chore(flume):` commit from an interactive session, never a
-pending entry.
-
-**Third copy, and it disagrees.** `build.handoff`'s `refused`
-(`.flume/chain.ts:825-828`) reads a park as `committed && !shipped &&
-!reverted` over `result.entries`. A cherry-pick conflict satisfies that, so
-the 2026-09-11 wave (LOG-TAGLESS-SPAN-ROW, `mergeOutcomes[].outcome:
-"cherry-pick-conflict"`) woke `plan-inbox`, whose `reconcileDue` counts only
-`"not-shipped"` and a bail record — the slice declined and the tick did
-nothing. The comment's "a refusal only plan can resolve" is false for a
-conflict, which the next wave retries from the new base. One predicate over
-the records, used by both legs, with conflict excluded
-(`engineering.md`, *Derived state is computed, never restated beside its
-source*) — same edit as the collapse above.
-
-`HANDOFF-ENTRY-MERGE-OUTCOME` is the engine half: once `TickResult.entries`
-carries the per-entry merge outcome, the third copy reads it directly and the
-`committed && !shipped && !reverted` predicate and its comment go in the
-adopting commit.
-
-Riding the same commit, by the 2026-09-11 ruling on `stateRootRel`: the
-`perResolvesGate` read of `pending.json` at `ctx.commitSha`
-(`.flume/chain.ts:374-381`) **stays**. `spec/chain.md` *What a gate receives*
-ratifies `stateRootRel` as the queue-read idiom and the second read is the
-price of genericity; a queue-specific `GateContext` field would be one
-artifact's convention on the engine's surface. The site gains a one-line cite
-naming it the sanctioned idiom, so a later sweep does not re-file it as
+Riding whichever commit lands first, by the 2026-09-11 ruling on `stateRootRel`: the
+`perResolvesGate` read of `pending.json` at `ctx.commitSha` (`.flume/chain.ts:340-345`)
+**stays**, and gains a one-line cite naming it the sanctioned queue-read idiom
+(`spec/chain.md`, *What a gate receives*) so a later sweep does not re-file it as
 restatement.
 
-## Runtime ignores reach the default state root only through the repo's own `.gitignore` (PARKED — layer ownership)
+## `merging/` is new runtime state at the state root and the ignore block does not name it (NEEDS AMENDMENT)
 
-Drained from the inbox (2026-09-10, human). `RUNTIME_IGNORES` (`src/job.ts:52`)
-is merged into a **job** dir's `.gitignore` (`ensureRuntimeIgnores`, called
-once at `src/job.ts:231`). The default `<repoRoot>/.flume` root gets nothing:
-this repo's committed `.gitignore` carries each runtime directory by hand, and
-`rendered-prompts/` was added that way on 2026-09-10. There is no `flume init`
-verb. A downstream repo that misses a line commits tick artifacts.
+The 2026-09-11 rulings landed two lines that pull against each other. `spec/loop.md`
+*Crash equals stop* introduces `<flumeDir>/merging/<slug>.json`, written and removed by
+the dispatcher on every merge — runtime state directly under the state root.
+`spec/jobs.md` *Runtime ignores* enumerates `RUNTIME_IGNORES` as a closed block, and
+`merging/` is not in it. The ruling's own stated purpose is that "a fresh adopter never
+commits a tick artifact because a line was missing", so the omission reads as an
+oversight rather than a decision, but the block is explicit enough that filling it
+silently would be plan choosing for the human.
 
-`spec/chain.md:654-656` says the default root "stays ignored as it already
-is" — which assumes it already is, and nothing establishes that for a new
-adopter. `spec/jobs.md` *Runtime ignores* is scoped to job dirs.
+Both entries are derived and independently shippable either way
+(`MERGE-INTERRUPTED-MARKER`, `RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`); only the line
+is missing.
 
-Options:
-
-- **A — engine writes `.git/info/exclude`** for its runtime dirs at the
-  default root. Untracked, so no repo commit; but the engine writing into
-  `.git/` for a convenience is a large hammer.
-- **B — a `flume init` verb** writes them once, opted into.
-- **C — the repo's job, enforced**: the spec says so and a gate refuses a
-  commit adding a path under the state root that `RUNTIME_IGNORES` names.
-
-Whichever wins, the spec line moves first.
-
-## The loop spec and the dispatcher disagree on a singleton decline's cost (PARKED — one side is the defect)
-
-Drained from the inbox (2026-09-10, human). `spec/loop.md` *Declining a tick
-before the invocation* (:399-400): "A singleton decline
-(`Dispatcher.runSingleton`) costs a `rev-parse` and the pending read, nothing
-else." Verified on disk: `runSingleton` prunes (`src/Dispatcher.ts:1846`),
-creates the worktree (:1857) and runs `setupWorktree` (:1874) before
-consulting `shouldRun` (:1941). Every declined plan slice pays a worktree and
-an install — three slices, most ticks.
-
-Options:
-
-- **A — engine moves `shouldRun` ahead of provisioning.** Makes the spec
-  sentence true and is the real saving. It changes the ratified contract:
-  `ctx.cwd` becomes the repo root on the declining call, which the same spec
-  section must then say — and the section currently contrasts this case
-  against fanout's deliberately post-provision placement.
-- **B — correct the spec sentence** to what the code does, mirroring the
-  fanout bullet directly below it. Human edit, no behavior change, and the
-  per-slice worktree cost stands.
-
-Route is the operator's; **A** is the one that pays for itself, at the cost of
-a contract edit.
-
-## `status`'s chain-load failure is reported, and three prose sites still say "silently" (PARKED — spec housekeeping)
-
-From `.flume/plan/notes/CHAIN-LOAD-FAILURE-REPORTED.md`. `status` / `job
-status` now report a chain-load failure on stderr before printing counts
-rebased on the default queue path (`src/cliChainLoad.ts`,
-`loadChainForObservation`). Three sites state the retired behavior, verified
-on disk this tick:
-
-- `spec/cli.md:111-112` — "a missing or broken chain **silently withholds**
-  them" (the §6 chain-declared extras).
-- `spec/jobs.md:177-178` — "**silently** withholds the friction counts and
-  never fails the verb."
-- `docs/CLI.md:23` — "a broken or missing chain withholds only these, never
-  the lines above it": true of stdout, silent about the report.
-
-The two spec lines are the human's (`spec-plan-build.md`) and both want the
-same one clause: the load never fails the verb and never withholds a line
-above it, *and* names its own failure. `docs/CLI.md` is build-writable but
-would then cite a spec sentence that is still wrong — so it rides the same
-pass rather than shipping first.
+**Recommend:** add `merging/` to the `spec/jobs.md` block, at which point it joins
+`STATE_ROOT_NAMES` and `RUNTIME_IGNORES` in the marker entry's own commit — one name,
+one accessor, no second spelling. The alternative — the marker lives somewhere already
+ignored — would put crash-recovery state under `prior-attempts/`, whose lifecycle
+(cleared on a clean ship) is the wrong one for a file only the operator may remove.
