@@ -596,24 +596,28 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     message: "gate said no",
     details: "GATE-DETAIL",
     diffStat: "1 file changed",
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };
   const voluntaryBail: VoluntaryBailAttempt = {
     mode: "voluntary-bail",
     constraint: "off-writablePaths edit refused",
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };
   const platformPreempt: PlatformPreemptAttempt = {
     mode: "platform-preempt",
     failureClass: "exited with code 137",
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };
   const renderRefused: RenderRefusedAttempt = {
     mode: "render-refused",
     failures: "cmd: exit 3\nstderr: boom",
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -621,6 +625,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     mode: "tip-moved",
     expectedTip: "b".repeat(40),
     observedTip: "c".repeat(40),
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -629,6 +634,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     mode: "not-shipped",
     mergedSha: "d".repeat(40),
     touchedPaths: ["src/one.ts", "src/two.ts"],
+    key: "entry",
     headSha: HEAD_SHA,
     at: AT,
   };

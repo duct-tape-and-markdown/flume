@@ -29,7 +29,8 @@
  * defect the four modes classify. Each renders distinctly so the
  * retry knows what actually happened. Like `<harness>` it is
  * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
- * `promptArgs`. Absent on a first attempt; cleared once an attempt ships.
+ * `promptArgs`. Absent on a first attempt; cleared once an attempt ships,
+ * and cleared as stale once the entry its key names leaves the queue.
  */
 
 import { spawn } from "node:child_process";
@@ -62,6 +63,16 @@ export type NoCommitMode =
   | "render-refused";
 
 /**
+ * Which keyspace a persisted record's key belongs to: `"entry"` for a fanout
+ * entry's tag slug, `"phase"` for a singleton phase's name. The key's own
+ * text cannot say — a stem the queue no longer carries is a retired tag in
+ * one keyspace and a live phase in the other — so every record states it,
+ * and the wave that clears stale entry-keyed records reads this rather than
+ * guessing from the filename (spec/loop.md "No false signal").
+ */
+export type PriorAttemptKeyspace = "entry" | "phase";
+
+/**
  * A prior attempt that committed and was then REVERTED by a gate
  * (`afterCommit` or `afterMerge`). The only variant shipped at §5; §6 widens
  * the union around it without reshaping it.
@@ -86,6 +97,11 @@ export interface GateRevertAttempt {
    * missing or the lists overlap: an absent field is never read as flaky.
    */
   suspectFlake?: boolean;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -107,6 +123,11 @@ export interface VoluntaryBailAttempt {
    * on a bail, so its tail is where the constraint is named.
    */
   constraint: string;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -123,6 +144,11 @@ export interface PlatformPreemptAttempt {
   mode: "platform-preempt";
   /** The non-work failure class, bounded. */
   failureClass: string;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -141,6 +167,11 @@ export interface RenderRefusedAttempt {
   mode: "render-refused";
   /** Every failing span's command text and stderr, bounded. */
   failures: string;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -162,6 +193,11 @@ export interface TipMovedAttempt {
   expectedTip: string;
   /** Tip the harness actually found immediately before it would have committed. */
   observedTip: string;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -194,6 +230,11 @@ export interface NotShippedAttempt {
   touchedPaths: string[];
   /** How many further paths the commit touched beyond {@link touchedPaths}'s bound. Absent when the list is whole. */
   omittedPaths?: number;
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */

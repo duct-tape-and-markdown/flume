@@ -86,6 +86,7 @@ import type {
 import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
 import type {
   PriorAttempt,
+  PriorAttemptKeyspace,
   GateRevertAttempt,
   VoluntaryBailAttempt,
   PlatformPreemptAttempt,
@@ -100,18 +101,30 @@ const execFileP = promisify(execFile);
 
 /**
  * A `PriorAttempt` variant before {@link Dispatcher.writePriorAttempt} stamps
- * the `headSha`/`at` anchor — what each mode-specific builder below actually
- * produces. Kept as an explicit union (rather than a distributed `Omit` over
- * `PriorAttempt`) so each arm still carries its own mode-specific fields
- * rather than collapsing to their shared `mode` key.
+ * the `headSha`/`at` anchor and the `key` keyspace — what each mode-specific
+ * builder below actually produces. Kept as an explicit union (rather than a
+ * distributed `Omit` over `PriorAttempt`) so each arm still carries its own
+ * mode-specific fields rather than collapsing to their shared `mode` key.
  */
 type PriorAttemptDraft =
-  | Omit<GateRevertAttempt, "headSha" | "at">
-  | Omit<VoluntaryBailAttempt, "headSha" | "at">
-  | Omit<PlatformPreemptAttempt, "headSha" | "at">
-  | Omit<RenderRefusedAttempt, "headSha" | "at">
-  | Omit<TipMovedAttempt, "headSha" | "at">
-  | Omit<NotShippedAttempt, "headSha" | "at">;
+  | Omit<GateRevertAttempt, "headSha" | "at" | "key">
+  | Omit<VoluntaryBailAttempt, "headSha" | "at" | "key">
+  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key">
+  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key">
+  | Omit<TipMovedAttempt, "headSha" | "at" | "key">
+  | Omit<NotShippedAttempt, "headSha" | "at" | "key">;
+
+/**
+ * Where one prior-attempt record lives and which keyspace that place belongs
+ * to: `key` is the filename stem under `priorAttemptsDir` (an entry tag slug
+ * or a phase name), `keyspace` the {@link PriorAttempt.key} value stamped
+ * into the record written there. Produced only by
+ * {@link Dispatcher.priorAttemptRef}, so the two halves cannot disagree.
+ */
+interface PriorAttemptRef {
+  key: string;
+  keyspace: PriorAttemptKeyspace;
+}
 
 /**
  * Prior-attempt records live beside the baton, under `priorAttemptsDir`
@@ -446,6 +459,16 @@ export interface TickVerdict {
    * tick hit none.
    */
   gateFailures?: GateFailure[];
+  /**
+   * spec/loop.md "No false signal": prior-attempt records this tick cleared
+   * as stale — entry-keyed records whose tag the queue the wave read no
+   * longer carries — by the key each was filed under. The retry those
+   * records were written for will never happen, so the wave that observes
+   * the tag's absence is what retires them, and says which. Absent/empty
+   * when the wave found none, and on a singleton tick, which selects no
+   * entries from the queue.
+   */
+  clearedPriorAttempts?: string[];
   /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
   summary: string;
   /**
@@ -483,6 +506,8 @@ type PhaseTickOutcome = {
   mergeOutcomes?: TickVerdictMergeOutcome[];
   /** See {@link TickVerdict.invocations}. */
   invocations?: TickVerdictInvocation[];
+  /** See {@link TickVerdict.clearedPriorAttempts}; fanout only. */
+  clearedPriorAttempts?: string[];
 };
 
 /**
@@ -1713,6 +1738,7 @@ export class Dispatcher {
       tags,
       mergeOutcomes,
       invocations,
+      clearedPriorAttempts,
     } = phaseOutcome;
 
     // §15: fold the already-computed no-commit classification into the
@@ -1769,6 +1795,9 @@ export class Dispatcher {
         : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
+      ...(clearedPriorAttempts && clearedPriorAttempts.length > 0
+        ? { clearedPriorAttempts }
+        : {}),
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
       at: new Date().toISOString(),
@@ -1817,8 +1846,8 @@ export class Dispatcher {
     );
     const priorAttempts = await this.readAllPriorAttempts();
 
-    const key = this.priorAttemptKey(phase);
-    const prior = await this.readPriorAttempt(key);
+    const ref = this.priorAttemptRef(phase);
+    const prior = await this.readPriorAttempt(ref.key);
 
     const noRunResult = (): TickResult => ({
       phaseName: phase.name,
@@ -1978,7 +2007,7 @@ export class Dispatcher {
       // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render
       // — the agent is never invoked. Distinct from voluntary-bail/
       // platform-preempt: no agent ran at all.
-      await this.persistRenderRefused(key, phase.name, err);
+      await this.persistRenderRefused(ref, phase.name, err);
       noCommit = "render-refused";
     }
 
@@ -1991,7 +2020,7 @@ export class Dispatcher {
         chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
       const termination = await this.invokeAgent(
         phase,
-        key,
+        ref.key,
         wt.path,
         prompt,
         agent,
@@ -2013,7 +2042,7 @@ export class Dispatcher {
         tipMoved = await this.checkTipMovedPerEntry(
           wt.path,
           phase.name,
-          key,
+          ref,
           preWtHead,
           postWtHead,
         );
@@ -2042,7 +2071,7 @@ export class Dispatcher {
               chain,
               wt.path,
               postWtHead,
-              key,
+              ref,
               phase.name,
               undefined,
               verdict.failure!,
@@ -2165,7 +2194,7 @@ export class Dispatcher {
               mergedSha,
               commitTouchedPaths,
             );
-            await this.writePriorAttempt(key, record);
+            await this.writePriorAttempt(ref, record);
             noCommit = "gate-revert";
             gateFailures.push({
               signature: gateFailureSignature(entryFailure),
@@ -2234,7 +2263,7 @@ export class Dispatcher {
             });
             // A clean ship clears the slot so the next tick starts with no
             // stale prior-attempt signal.
-            await this.clearPriorAttempt(key);
+            await this.clearPriorAttempt(ref.key);
           }
         }
       }
@@ -2244,7 +2273,7 @@ export class Dispatcher {
         // termination (§6). A clean exit that produced nothing is a
         // voluntary-bail; any process failure is a platform-preempt (not a
         // defect in the work).
-        noCommit = await this.classifyNoCommit(key, termination);
+        noCommit = await this.classifyNoCommit(ref, termination);
         this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
       }
     }
@@ -2330,6 +2359,11 @@ export class Dispatcher {
     const repoRoot = this.opts.repoRoot;
     const preHead = await git.revParse(repoRoot);
     const pending = await this.readPending();
+    // spec/loop.md "No false signal": this queue read is the one place the
+    // engine learns a tag has left the queue, so it is where records keyed
+    // by a departed tag are retired — before selection, so nothing this
+    // wave does reads one.
+    const clearedPriorAttempts = await this.clearStalePriorAttempts(pending);
 
     // Foundations governor: resolve the per-tick fork predicate once, then let
     // it gate selection alongside `blockedBy`. Default: every fork resolved.
@@ -2372,6 +2406,7 @@ export class Dispatcher {
           quarantinedTags,
           nothingPickable: true,
         },
+        ...(clearedPriorAttempts.length > 0 ? { clearedPriorAttempts } : {}),
       };
     }
 
@@ -2779,7 +2814,7 @@ export class Dispatcher {
           commitTouchedPaths,
         );
         await this.writePriorAttempt(
-          this.priorAttemptKey(phase, r.entry),
+          this.priorAttemptRef(phase, r.entry),
           record,
         );
         gateFailures.push({
@@ -2888,7 +2923,7 @@ export class Dispatcher {
         // it. Cleared by the existing shipped-entry sweep below the moment
         // a later attempt ships clean.
         await this.writePriorAttempt(
-          this.priorAttemptKey(phase, r.entry),
+          this.priorAttemptRef(phase, r.entry),
           buildNotShipped(mergedSha, commitTouchedPaths),
         );
         mergeOutcomes.push({
@@ -2932,7 +2967,7 @@ export class Dispatcher {
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
       for (const s of shipped) {
-        await this.clearPriorAttempt(this.priorAttemptKey(phase, s));
+        await this.clearPriorAttempt(this.priorAttemptRef(phase, s).key);
       }
       const shippedTags = shipped.map((s) => s.tag);
       // The update can no-op (footprint already recorded, nothing shipped):
@@ -2986,6 +3021,9 @@ export class Dispatcher {
           ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
           ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
           ...(gateFailures.length > 0 ? { gateFailures } : {}),
+          ...(clearedPriorAttempts.length > 0
+            ? { clearedPriorAttempts }
+            : {}),
           summary:
             shippedTags.length > 0
               ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${err.message})`
@@ -3122,6 +3160,7 @@ export class Dispatcher {
       tags: provisioned.map((e) => e.tag),
       mergeOutcomes,
       invocations,
+      ...(clearedPriorAttempts.length > 0 ? { clearedPriorAttempts } : {}),
     };
   }
 
@@ -3198,8 +3237,8 @@ export class Dispatcher {
     // The prior-attempt record lives at the repo root (not this fresh
     // worktree), keyed by the entry tag — so a reverted attempt's record
     // survives into the next tick's brand-new worktree.
-    const key = this.priorAttemptKey(phase, entry);
-    const prior = await this.readPriorAttempt(key);
+    const ref = this.priorAttemptRef(phase, entry);
+    const prior = await this.readPriorAttempt(ref.key);
 
     const ctx: TickContext = {
       cwd: wt.path,
@@ -3235,7 +3274,7 @@ export class Dispatcher {
       if (!(err instanceof InlineExecRenderError)) throw err;
       // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
       // this entry — the agent for this entry is never invoked.
-      await this.persistRenderRefused(key, entry.tag, err);
+      await this.persistRenderRefused(ref, entry.tag, err);
       return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path };
     }
 
@@ -3244,7 +3283,7 @@ export class Dispatcher {
       chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
     const termination = await this.invokeAgent(
       phase,
-      key,
+      ref.key,
       wt.path,
       prompt,
       agent,
@@ -3266,7 +3305,7 @@ export class Dispatcher {
       const tipMoved = await this.checkTipMovedPerEntry(
         wt.path,
         entry.tag,
-        key,
+        ref,
         preHead,
         postHead,
       );
@@ -3290,7 +3329,7 @@ export class Dispatcher {
       // record (the durable per-entry channel §6 names — corpus-config-example
       // bailed at the same writablePaths wall five sessions running; that
       // must be legible without reading session logs).
-      const mode = await this.classifyNoCommit(key, termination);
+      const mode = await this.classifyNoCommit(ref, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
       return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination };
     }
@@ -3318,7 +3357,7 @@ export class Dispatcher {
         chain,
         wt.path,
         postHead,
-        key,
+        ref,
         entry.tag,
         entry.tag,
         verdict.failure!,
@@ -3465,14 +3504,14 @@ export class Dispatcher {
   private async checkTipMovedPerEntry(
     cwd: string,
     label: string,
-    key: string,
+    ref: PriorAttemptRef,
     preHead: string,
     postHead: string,
   ): Promise<boolean> {
     const ancestor = await git.isAncestor(cwd, preHead, postHead);
     if (ancestor) return false;
     await this.revertTipMovedCommit(cwd, postHead, preHead);
-    await this.writePriorAttempt(key, buildTipMoved(preHead, postHead));
+    await this.writePriorAttempt(ref, buildTipMoved(preHead, postHead));
     this.log.warn(
       `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${postHead}`,
     );
@@ -3675,7 +3714,7 @@ export class Dispatcher {
     chain: Chain,
     cwd: string,
     sha: string,
-    key: string,
+    ref: PriorAttemptRef,
     label: string,
     gateFailureTag: string | undefined,
     failure: {
@@ -3694,9 +3733,9 @@ export class Dispatcher {
       touchedPaths,
     );
     await this.writeRevertNote(chain, cwd, sha, label, failure);
-    await this.snapshotRevertedFiles(cwd, sha, key);
+    await this.snapshotRevertedFiles(cwd, sha, ref.key);
     await git.dropLastCommit(cwd, sha);
-    await this.writePriorAttempt(key, record);
+    await this.writePriorAttempt(ref, record);
     this.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);
     return {
       footprint: touchedPaths,
@@ -4106,20 +4145,27 @@ export class Dispatcher {
   // ---------- prior-attempt persistence (§5) ----------
 
   /**
-   * Key under which a phase/entry's prior-attempt record lives: the entry
-   * tag slug for fanout, the phase name for singleton. A retry is scheduled
-   * "for that same entry (fanout) or phase (singleton)" — the key mirrors
-   * exactly that scope so the next tick reads its own predecessor.
+   * Where a phase/entry's prior-attempt record lives: the entry tag slug for
+   * fanout, the phase name for singleton. A retry is scheduled "for that
+   * same entry (fanout) or phase (singleton)" — the key mirrors exactly that
+   * scope so the next tick reads its own predecessor.
+   *
+   * Key and keyspace are derived here together and travel as one value:
+   * which keyspace a stem belongs to is not recoverable from its text, and
+   * a pair threaded as two parameters is a pair a callsite can mismatch.
    */
-  private priorAttemptKey(phase: Phase, entry?: PendingEntry): string {
-    return entry ? slugify(entry.tag) : phase.name;
+  private priorAttemptRef(phase: Phase, entry?: PendingEntry): PriorAttemptRef {
+    return entry
+      ? { key: slugify(entry.tag), keyspace: "entry" }
+      : { key: phase.name, keyspace: "phase" };
   }
 
   /**
    * Read a persisted prior-attempt record, if any. Corrupt, carrying an
-   * unrecognized `mode` discriminant, or missing the `headSha`/`at` anchor
-   * every record carries (spec/loop.md "Every record is anchored") →
-   * treated as absent. `mode` alone does not make a `PriorAttempt`: the
+   * unrecognized `mode` discriminant, missing the `headSha`/`at` anchor
+   * every record carries (spec/loop.md "Every record is anchored"), or
+   * missing the `key` keyspace every record states (spec/loop.md "No false
+   * signal") → treated as absent. `mode` alone does not make a `PriorAttempt`: the
    * renderer is exhaustive over the known modes and must never be fed an
    * unknown shape, and a chain comparing a record's `headSha` to the tip
    * reads a field the type promises is there. A record predating the anchor
@@ -4135,6 +4181,7 @@ export class Dispatcher {
         mode?: unknown;
         headSha?: unknown;
         at?: unknown;
+        key?: unknown;
       };
       if (
         rec &&
@@ -4145,7 +4192,8 @@ export class Dispatcher {
           rec.mode === "tip-moved" ||
           rec.mode === "not-shipped") &&
         typeof rec.headSha === "string" &&
-        typeof rec.at === "string"
+        typeof rec.at === "string" &&
+        (rec.key === "entry" || rec.key === "phase")
       ) {
         return rec as PriorAttempt;
       }
@@ -4187,20 +4235,21 @@ export class Dispatcher {
   }
 
   /**
-   * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") onto
-   * whatever mode-specific fields the caller built, so every one of the
+   * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") and the
+   * writing ref's keyspace onto whatever mode-specific fields the caller built, so every one of the
    * builders below stays ignorant of the anchor rather than each re-reading
    * the trunk tip itself. `this.opts.repoRoot`, never `key`'s worktree — the
    * anchor is the *trunk* tip regardless of which worktree produced the
    * record.
    */
   private async writePriorAttempt(
-    key: string,
+    ref: PriorAttemptRef,
     rec: PriorAttemptDraft,
   ): Promise<void> {
-    const p = priorAttemptPath(this.flumeDir, key);
+    const p = priorAttemptPath(this.flumeDir, ref.key);
     const anchored: PriorAttempt = {
       ...rec,
+      key: ref.keyspace,
       headSha: await git.revParse(this.opts.repoRoot),
       at: new Date().toISOString(),
     };
@@ -4226,6 +4275,40 @@ export class Dispatcher {
       recursive: true,
       force: true,
     });
+  }
+
+  /**
+   * Clear every entry-keyed prior-attempt record whose tag the queue no
+   * longer carries, and report the keys cleared (spec/loop.md "No false
+   * signal"). Such a record can never be read again on its own terms — the
+   * retry it was written for will not happen — but it stays visible to
+   * every `shouldRun`/`promptArgs` reading `TickContext.priorAttempts`, and
+   * a tag reused later would inherit a predecessor it never had.
+   *
+   * Keyed on the record's own `key` keyspace, never on the stem's text: a
+   * phase's record is named by a phase name, which no queue ever carries,
+   * so a stem-only test would clear the singleton records the queue has no
+   * say over. Records that read as absent (corrupt, unanchored, no
+   * keyspace) are not cleared — `readAllPriorAttempts` never surfaces them,
+   * and deleting a file this dispatcher cannot parse is a guess about
+   * what wrote it.
+   */
+  private async clearStalePriorAttempts(
+    pending: readonly PendingEntry[],
+  ): Promise<string[]> {
+    const queued = new Set(pending.map((e) => slugify(e.tag)));
+    const records = await this.readAllPriorAttempts();
+    const stale = [...records]
+      .filter(([key, rec]) => rec.key === "entry" && !queued.has(key))
+      .map(([key]) => key)
+      .sort();
+    for (const key of stale) await this.clearPriorAttempt(key);
+    if (stale.length > 0) {
+      this.log.info(
+        `[flume] cleared ${stale.length} stale prior-attempt record(s): ${stale.join(", ")}`,
+      );
+    }
+    return stale;
   }
 
   // ---------- reverted-prose durability (§8) ----------
@@ -4426,7 +4509,7 @@ export class Dispatcher {
      * returns") — the footprint `suspectFlake` disjointness reads against.
      */
     footprint: string[],
-  ): Promise<Omit<GateRevertAttempt, "headSha" | "at">> {
+  ): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key">> {
     const diffStat = await this.capturedDiffStat(diffCwd, sha);
     return {
       mode: "gate-revert",
@@ -4459,18 +4542,18 @@ export class Dispatcher {
    * the mode for `TickOutcome` / the logger record.
    */
   private async classifyNoCommit(
-    key: string,
+    ref: PriorAttemptRef,
     termination: AgentTermination,
   ): Promise<NoCommitMode> {
     if (termination.kind === "clean") {
       await this.writePriorAttempt(
-        key,
+        ref,
         buildVoluntaryBail(termination.finalMessage),
       );
       return "voluntary-bail";
     }
     await this.writePriorAttempt(
-      key,
+      ref,
       buildPlatformPreempt(termination.failureClass),
     );
     return "platform-preempt";
@@ -4509,11 +4592,11 @@ export class Dispatcher {
    * itself was derived from.
    */
   private async persistRenderRefused(
-    key: string,
+    ref: PriorAttemptRef,
     label: string,
     err: InlineExecRenderError,
   ): Promise<void> {
-    await this.writePriorAttempt(key, buildRenderRefused(err));
+    await this.writePriorAttempt(ref, buildRenderRefused(err));
     this.log.warn(
       `[flume] ${label}: render-refused (no commit): ${err.message}`,
     );
@@ -5266,7 +5349,7 @@ function summarize(
  */
 function buildVoluntaryBail(
   finalMessage: string,
-): Omit<VoluntaryBailAttempt, "headSha" | "at"> {
+): Omit<VoluntaryBailAttempt, "headSha" | "at" | "key"> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "voluntary-bail",
@@ -5280,7 +5363,7 @@ function buildVoluntaryBail(
 /** Build the §6 platform-preempt record from the non-work failure class. */
 function buildPlatformPreempt(
   failureClass: string,
-): Omit<PlatformPreemptAttempt, "headSha" | "at"> {
+): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key"> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
@@ -5294,7 +5377,7 @@ function buildPlatformPreempt(
  */
 function buildRenderRefused(
   err: InlineExecRenderError,
-): Omit<RenderRefusedAttempt, "headSha" | "at"> {
+): Omit<RenderRefusedAttempt, "headSha" | "at" | "key"> {
   return {
     mode: "render-refused",
     failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
@@ -5316,7 +5399,7 @@ function buildRenderRefused(
 function buildTipMoved(
   expectedTip: string,
   observedTip: string,
-): Omit<TipMovedAttempt, "headSha" | "at"> {
+): Omit<TipMovedAttempt, "headSha" | "at" | "key"> {
   return { mode: "tip-moved", expectedTip, observedTip };
 }
 
@@ -5336,7 +5419,7 @@ function buildTipMoved(
 function buildNotShipped(
   mergedSha: string,
   touchedPaths: readonly string[],
-): Omit<NotShippedAttempt, "headSha" | "at"> {
+): Omit<NotShippedAttempt, "headSha" | "at" | "key"> {
   const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
   return {
     mode: "not-shipped",

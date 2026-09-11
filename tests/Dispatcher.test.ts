@@ -7847,10 +7847,16 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
           .join("<EXPECTED>")
           .split(observedTip)
           .join("<OBSERVED>")
-          .replace(/"at": "[^"]*"/, '"at": "<AT>"');
+          .replace(/"at": "[^"]*"/, '"at": "<AT>"')
+          // The keyspace is the one field that legitimately differs between
+          // the legs (spec/loop.md "No false signal") — normalized out of
+          // the byte pin and asserted on its own below.
+          .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"');
       expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
         normalize(singletonRecord, singletonPreHead, singletonObservedHead),
       );
+      expect(JSON.parse(singletonRecord).key).toBe("phase");
+      expect(JSON.parse(fanoutRecord).key).toBe("entry");
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
 
@@ -8697,6 +8703,185 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
   }, 20_000);
 });
 
+describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'No false signal')", () => {
+  const revertGate: Gate = {
+    name: "revert-gate",
+    when: "afterCommit",
+    async run() {
+      return { ok: false, message: "no" };
+    },
+  };
+
+  const buildDispatcher = (agent: Agent, gates: Gate[] = []): Dispatcher =>
+    new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout", gates })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+  /** Commits each named entry's own declared file, so the wave reaches its gates. */
+  const committingAgent = (slugs: string[]): Agent =>
+    fanoutAgent(
+      Object.fromEntries(
+        slugs.map((slug) => [
+          slug,
+          async (cwd: string) => {
+            await writeAndCommit(cwd, `src/${slug}.ts`, "x\n", `build: ${slug}`);
+          },
+        ]),
+      ),
+    );
+
+  /** Exits clean without committing — a voluntary-bail, so nothing ships. */
+  const bailingAgent = (slugs: string[]): Agent =>
+    fanoutAgent(Object.fromEntries(slugs.map((slug) => [slug, async () => {}])));
+
+  const entryFor = (slug: string): PendingEntry =>
+    makeEntry(slug.toUpperCase(), [`src/${slug}.ts`]);
+
+  /**
+   * Run one wave over `slugs` under a gate that reverts every commit, so the
+   * real writer leaves a gate-revert record under each entry's key. Returns
+   * once those records are on disk.
+   */
+  const waveLeavingRecords = async (slugs: string[]): Promise<void> => {
+    await writePending(fx.repo, slugs.map(entryFor));
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    await buildDispatcher(committingAgent(slugs), [revertGate]).tick();
+    for (const slug of slugs) {
+      expect(
+        existsSync(priorAttemptPath(join(fx.repo, ".flume"), slug)),
+      ).toBe(true);
+    }
+  };
+
+  it("a prior-attempt record names the keyspace its key belongs to", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+
+    // Fanout: the record is filed under the entry's tag slug.
+    await waveLeavingRecords(["keyed-entry"]);
+    const entryRecord = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "KEYED-ENTRY"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(entryRecord.mode).toBe("gate-revert");
+    expect(entryRecord.key).toBe("entry");
+
+    // Singleton: the record is filed under the phase name. Same writer, and
+    // the key's own text is the only thing that differs on disk — which is
+    // exactly why the keyspace has to be stated rather than read off it.
+    new Baton(flumeDir).wake("plan");
+    await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "bailing-singleton",
+        async invoke() {
+          return { exitCode: 0, stdout: "bailed\n", stderr: "" };
+        },
+      },
+      log: silent,
+    }).tick();
+    const phaseRecord = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(phaseRecord.mode).toBe("voluntary-bail");
+    expect(phaseRecord.key).toBe("phase");
+  }, 30_000);
+
+  it("a wave clears a prior-attempt record whose entry tag the queue no longer carries", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await waveLeavingRecords(["stale-one", "live-one"]);
+
+    // STALE-ONE leaves the queue without ever shipping — a plan tick
+    // retiring it, a human editing the ledger. Its record can never be read
+    // on its own terms again.
+    await writePending(fx.repo, [entryFor("live-one")]);
+    new Baton(flumeDir).wake("build");
+    await buildDispatcher(bailingAgent(["live-one"])).tick();
+
+    expect(existsSync(priorAttemptPath(flumeDir, "STALE-ONE"))).toBe(false);
+    // The entry still queued keeps its record — the clear is keyed on the
+    // queue, not on age.
+    expect(existsSync(priorAttemptPath(flumeDir, "LIVE-ONE"))).toBe(true);
+  }, 30_000);
+
+  it("a wave leaves a phase-keyed prior-attempt record standing", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await waveLeavingRecords(["retired-one", "live-one"]);
+
+    // A singleton phase's own record, filed under a phase name the queue
+    // never carries — indistinguishable from a retired tag by key text.
+    new Baton(flumeDir).wake("plan");
+    await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "bailing-singleton",
+        async invoke() {
+          return { exitCode: 0, stdout: "bailed\n", stderr: "" };
+        },
+      },
+      log: silent,
+    }).tick();
+    expect(existsSync(priorAttemptPath(flumeDir, "plan"))).toBe(true);
+
+    await writePending(fx.repo, [entryFor("live-one")]);
+    new Baton(flumeDir).wake("build");
+    await buildDispatcher(bailingAgent(["live-one"])).tick();
+
+    // The sweep ran on this wave — the retired tag's record is gone …
+    expect(existsSync(priorAttemptPath(flumeDir, "RETIRED-ONE"))).toBe(false);
+    // … and the phase's record survived it intact.
+    expect(existsSync(priorAttemptPath(flumeDir, "plan"))).toBe(true);
+    const phaseRecord = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(phaseRecord.key).toBe("phase");
+    expect(phaseRecord.mode).toBe("voluntary-bail");
+  }, 30_000);
+
+  it("the tick verdict reports the prior-attempt keys the wave cleared", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await writePending(fx.repo, [
+      entryFor("stale-a"),
+      entryFor("stale-b"),
+      entryFor("live-one"),
+    ]);
+    new Baton(flumeDir).wake("build");
+    const first = await buildDispatcher(
+      committingAgent(["stale-a", "stale-b", "live-one"]),
+      [revertGate],
+    ).tick();
+    // Nothing had left the queue yet, so the field is absent rather than
+    // an empty list — a wave that cleared nothing claims nothing.
+    expect(first.verdict?.clearedPriorAttempts).toBeUndefined();
+
+    await writePending(fx.repo, [entryFor("live-one")]);
+    new Baton(flumeDir).wake("build");
+    const second = await buildDispatcher(bailingAgent(["live-one"])).tick();
+
+    expect(second.verdict?.clearedPriorAttempts).toEqual([
+      slugify("STALE-A"),
+      slugify("STALE-B"),
+    ]);
+    expect(existsSync(priorAttemptPath(flumeDir, "LIVE-ONE"))).toBe(true);
+  }, 30_000);
+});
+
 describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a hook reads instead of re-deriving (spec/chain.md 'What a hook receives')", () => {
   it("singleton shouldRun's TickContext.pickable agrees with the next fanout tick's own selection", async () => {
     const entries: PendingEntry[] = [
@@ -8781,6 +8966,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     const validRecord: PriorAttempt = {
       mode: "voluntary-bail",
       constraint: "off-writablePaths edit",
+      key: "entry",
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
@@ -8870,8 +9056,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
   it("a record carrying a recognized `mode` but no `headSha` is absent from `TickContext.priorAttempts`, the degrade an unrecognized `mode` already earns", async () => {
     const captured = await priorAttemptsSeenBy({
-      "un-anchored": { mode: "voluntary-bail", constraint: "no anchor", at: "2024-01-01T00:00:00.000Z" },
-      "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), at: "2024-01-01T00:00:00.000Z" },
+      "un-anchored": { mode: "voluntary-bail", constraint: "no anchor", key: "phase", at: "2024-01-01T00:00:00.000Z" },
+      "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), key: "phase", at: "2024-01-01T00:00:00.000Z" },
     });
 
     // The un-anchored record is refused exactly as the unrecognized-mode one
@@ -8884,7 +9070,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
   it("a record missing only `at` is refused too — the anchor is both fields", async () => {
     const captured = await priorAttemptsSeenBy({
-      "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), headSha: "0".repeat(40) },
+      "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), key: "phase", headSha: "0".repeat(40) },
     });
 
     expect(captured.has("no-at")).toBe(false);
@@ -8892,7 +9078,15 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
   }, 20_000);
 
   it("an anchored record of each union variant still reads back, so the refusal is not swallowing the map", async () => {
-    const anchor = { headSha: "0".repeat(40), at: "2024-01-01T00:00:00.000Z" };
+    // `key: "phase"` on every arm: these stems name no queue entry, and the
+    // wave's stale sweep retires entry-keyed records whose tag the queue no
+    // longer carries — a keyspace this test is not about would delete its
+    // own subject before the hook ever sees it.
+    const anchor = {
+      key: "phase",
+      headSha: "0".repeat(40),
+      at: "2024-01-01T00:00:00.000Z",
+    } as const;
     // One record per arm of the union, so a refusal that over-fired on any
     // single variant's own fields shows up as a missing key rather than
     // hiding behind a sibling that happened to survive.
@@ -9293,8 +9487,14 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     const normalizeAnchor = (raw: string) =>
       raw
         .replace(/"headSha": "[^"]*"/, '"headSha": "<HEAD>"')
-        .replace(/"at": "[^"]*"/, '"at": "<AT>"');
+        .replace(/"at": "[^"]*"/, '"at": "<AT>"')
+        // The keyspace legitimately differs — singleton records are
+        // phase-keyed, fanout records entry-keyed (spec/loop.md "No false
+        // signal") — so it is normalized out here and asserted directly.
+        .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"');
     expect(normalizeAnchor(fanoutRecord)).toBe(normalizeAnchor(singletonRecord));
+    expect(JSON.parse(singletonRecord).key).toBe("phase");
+    expect(JSON.parse(fanoutRecord).key).toBe("entry");
 
     // Both callsites log through the same template —
     // "[flume] <label>: render-refused (no commit): <message>" — with only
@@ -14380,10 +14580,12 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(Object.keys(record).sort()).toEqual([
       "at",
       "headSha",
+      "key",
       "mergedSha",
       "mode",
       "touchedPaths",
     ]);
+    expect(record.key).toBe("entry");
     expect(record.headSha).toBe(trunkTip);
   }, 20_000);
 
@@ -14451,6 +14653,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       mode: "not-shipped",
       mergedSha: declinedSha,
       touchedPaths: ["src/twice.ts"],
+      key: "entry",
       headSha: declinedSha,
       at: expect.any(String),
     });
