@@ -1,11 +1,22 @@
 /**
- * Fast-lane shape pins over the shipped example chains. Everything here is a
- * pure read of the chain object a factory returns — no fixture repo, no
- * subprocess — so it belongs in the default `vitest run` lane rather than
- * beside the tick-cycle drives in `examples.integration.test.ts`.
+ * Fast-lane shape pins over the shipped example chains. Most of what follows
+ * is a pure read of the chain object a factory returns — no fixture repo, no
+ * subprocess.
+ *
+ * The exception is the ladder's agreement drive, which runs
+ * `Dispatcher.tick()` over a temp git repo: the claim there is that the
+ * engine's `TickResult` and the chain's `handoff` agree, and only the real
+ * writer can prove it (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*). It stays in this lane deliberately — raw git
+ * plumbing on a fixture is not a lane trigger; Node startup, a real agent and
+ * wall-clock assertions are, and it has none (spec/worktrees.md, *The default
+ * test lane must stay fast*). The full tick-cycle drives that do spawn stay
+ * in `examples.integration.test.ts`.
  */
 
+import { execFile } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -16,6 +27,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -23,16 +35,21 @@ import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
+import { Baton } from "../src/Baton.ts";
+import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
 import {
   buildFlumeApi,
   type FlumeApi,
   type FlumePaths,
 } from "../src/flumeApi.ts";
+import { makeFixture, silent } from "./helpers/dispatcherFixture.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
   declaredFilesGate,
 } from "../examples/cascade-chain.ts";
 import minimalFactory from "../examples/minimal-chain.ts";
+
+const exec = promisify(execFile);
 
 /** The roots a real tick would resolve for an `examples/`-hosted chain. */
 const EXAMPLE_PATHS: FlumePaths = {
@@ -293,6 +310,16 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
  * `<flumeDir>/inbox/`, a directory no engine field reports, so the facts the
  * ladder walks are put on disk here rather than stubbed behind the predicate
  * that reads them.
+ *
+ * What the hand-built `TickResult` here stands in for is the **build wave's**
+ * own result — a refusal shape, or a wave that shipped. Driving one costs a
+ * fanout tick whose afterCommit gates shell `pnpm tsc` and eslint per entry,
+ * which is the measured cost the lane boundary excludes (spec/worktrees.md,
+ * *The default test lane must stay fast*). The plan slices carry no such
+ * gate, so every rung of theirs is driven off a real `Dispatcher.tick()` in
+ * the describe below — the agreement claim this seam owes
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  */
 describe("cascade-chain.ts — the plan ladder", () => {
   const planSlices = cascadeChain.phases.filter((p) => p.name !== "build");
@@ -334,7 +361,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
   const from = (phase: Phase, over: Partial<TickResult> = {}): string[] =>
     phase.handoff(after({ phaseName: phase.name, ...over }));
 
-  it("the cascade example's plan slices hand off in dependency order", () => {
+  it("a shipped build wave hands the baton to the ladder's live rung", () => {
     // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
     // a single-slice plan, or a chain that lost `build`, would satisfy every
     // routing claim below over a ladder with nothing to order.
@@ -351,37 +378,23 @@ describe("cascade-chain.ts — the plan ladder", () => {
     expect(planSlices.every((p) => p.concurrency === "singleton")).toBe(true);
 
     // A finding on disk: the slice that owns it is the ladder's first rung,
-    // and every handoff in the chain answers with it — the upstream slice's
-    // own window, a downstream slice's, and a shipped build wave's.
+    // and a shipped wave answers with it rather than with a sibling's name.
     writeFileSync(finding(), "# a report from the field\n");
-    expect(from(first)).toEqual([first.name]);
-    expect(from(second)).toEqual([first.name]);
     expect(from(buildPhase!, { shippedTags: ["SHIPPED"] })).toEqual([
       first.name,
     ]);
 
     // Drained, and the baton falls through to the next rung down.
     rmSync(finding());
-    expect(from(first)).toEqual([second.name]);
     expect(from(buildPhase!, { shippedTags: ["SHIPPED"] })).toEqual([
       second.name,
     ]);
 
-    // A slice that committed nothing does not re-wake itself on a window it
-    // just failed to close: the ladder skips it and carries on down, so an
-    // unroutable finding costs one tick rather than a loop.
-    writeFileSync(finding(), "# a report nothing routes\n");
-    expect(from(first, { committed: false })).toEqual([second.name]);
-    // Its sibling is not skipped for it — the exclusion is the slice's own.
-    expect(from(second, { committed: false })).toEqual([first.name]);
-
-    // Below the ladder: build while the queue carries work, and nobody when
-    // the queue is empty and the slice that would refill it just declined to.
-    rmSync(finding());
+    // Below the ladder: build while the queue carries work.
     const pickable = { pendingAfter: [openEntry], pickableAfter: [openEntry] };
-    expect(from(second, pickable)).toEqual([buildPhase!.name]);
-    expect(from(first, pickable)).toEqual([buildPhase!.name]);
-    expect(from(second, { committed: false })).toEqual([]);
+    expect(from(buildPhase!, { shippedTags: ["SHIPPED"], ...pickable })).toEqual(
+      [buildPhase!.name],
+    );
   });
 
   it("a build wave that refused wakes the slice that reconciles it, whatever is pickable", () => {
@@ -433,6 +446,216 @@ describe("cascade-chain.ts — the plan ladder", () => {
       }),
     ).toEqual([buildPhase!.name]);
   });
+});
+
+/**
+ * `.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote* — the ladder's claim is that the chain's `handoff` and the engine's
+ * `TickResult` agree, and a fixture folded by the tester's hand re-authors
+ * the engine's half of that vocabulary. A field renamed, dropped, or filled
+ * differently in `src/Dispatcher.ts` then ships green over a suite that
+ * still hands the old shape to `handoff`.
+ *
+ * So every rung is walked here by `Dispatcher.tick()` itself: the real
+ * dispatcher provisions the slice's worktree, invokes the agent, carries the
+ * commit back to trunk through its own gates, re-reads the queue, hands the
+ * result it built to cascade's own `handoff`, and writes the answer to the
+ * baton — `awakeAfter` is that baton, so nothing between the two sides is
+ * this test's. What stays the test's is the disk the ladder reads (a finding
+ * under `<flumeDir>/inbox/`, the queue under `<flumeDir>/plan/`) and the
+ * agent, which stands in for the model with a `git commit` — the section's
+ * subject is the result the engine builds around that commit, not the
+ * content the model would have written.
+ *
+ * Fast lane: no Node startup, no agent process, no gate that shells a
+ * package manager — cascade's plan slices gate on `pendingGate` alone. Raw
+ * git plumbing on a temp fixture is not a lane trigger (spec/worktrees.md,
+ * *The default test lane must stay fast*).
+ */
+describe("cascade-chain.ts — the plan ladder over a real tick", () => {
+  const planSlices = cascadeChain.phases.filter((p) => p.name !== "build");
+  const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
+
+  /** What the re-derive leg files: pickable, and inside build's fence. */
+  const filedEntry = {
+    tag: "LADDER-PICKABLE",
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: {
+      new: [],
+      edit: [{ path: "src/seed.ts", description: "the work this entry ships" }],
+      retire: [],
+    },
+    summary: "one entry for the rung below the ladder",
+    per: { path: "spec/loop.md", section: "The baton" },
+    tests: [],
+    acceptance: "the ladder hands the baton to build",
+  };
+
+  it("cascade's plan ladder routes the baton from a TickResult the dispatcher produced", async () => {
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a one-slice plan, or a chain that lost `build`, would satisfy the
+    // routing below over a ladder with nothing to order.
+    expect(
+      planSlices.length,
+      "cascade's plan is a ladder — one slice orders nothing",
+    ).toBe(2);
+    expect(buildPhase, "cascade declares a build phase").toBeDefined();
+    const [inbox, derive] = planSlices as [Phase, Phase];
+
+    const fx = await makeFixture();
+    try {
+      const repo = fx.repo;
+      const flumeDir = join(repo, ".flume");
+      const report = join(flumeDir, "inbox", "2026-09-11-report.md");
+
+      // The disk the ladder reads, committed: a singleton runs in a fresh
+      // worktree, which holds tracked content only, so an uncommitted
+      // finding is simply absent where the agent runs.
+      mkdirSync(join(flumeDir, "inbox"), { recursive: true });
+      mkdirSync(join(flumeDir, "plan"), { recursive: true });
+      writeFileSync(report, "# a report from the field\n");
+      writeFileSync(join(flumeDir, "plan", "pending.json"), "[]\n");
+      await exec("git", ["add", "-A"], { cwd: repo });
+      await exec("git", ["commit", "-q", "-m", "seed the plan artifacts"], {
+        cwd: repo,
+      });
+
+      // The real `Phase.promptPath` ("prompts/plan.md"), resolved against a
+      // config dir this test owns. The shipped prompt's body is not this
+      // seam — it is the agent's input, and the agent here is a stub — while
+      // its inline-exec spans would put `pnpm tsc` on the fast lane once per
+      // tick below.
+      mkdirSync(join(fx.configDir, "prompts"), { recursive: true });
+      writeFileSync(
+        join(fx.configDir, "prompts", "plan.md"),
+        "{{SLICE_JOB}}\n\n{{PENDING_SCHEMA}}\n",
+      );
+
+      /** The agent's whole contribution: a commit the engine has to classify. */
+      const commits =
+        (message: string, edit: (cwd: string) => void) =>
+        async (cwd: string): Promise<void> => {
+          edit(cwd);
+          await exec("git", ["add", "-A"], { cwd });
+          await exec("git", ["commit", "-q", "-m", message], { cwd });
+        };
+      /** An agent that exits clean having produced nothing. */
+      const commitsNothing = async (): Promise<void> => {};
+
+      /**
+       * One real tick of `name`, with exactly that phase awake so the
+       * returned `awakeAfter` is this tick's handoff and no leftover flag.
+       */
+      const tick = async (
+        name: string,
+        act: (cwd: string) => Promise<void>,
+      ): Promise<TickOutcome> => {
+        const baton = new Baton(flumeDir);
+        for (const p of cascadeChain.phases) baton.sleep(p.name);
+        baton.wake(name);
+        const outcome = await new Dispatcher({
+          repoRoot: repo,
+          configDir: fx.configDir,
+          flumeDir,
+          agent: {
+            name: "ladder-stub",
+            async invoke({ cwd }) {
+              await act(cwd);
+              return { exitCode: 0, stdout: "", stderr: "" };
+            },
+          },
+          chainLoader: async () => ({ chain: cascadeChain }),
+          log: silent,
+        }).tick();
+        // Vacuity pin: a declined, hibernated or failed tick answers with a
+        // baton the chain's `handoff` never saw, and every leg below would
+        // be asserting over the flags this test set itself.
+        expect(outcome.hibernated, outcome.summary).toBe(false);
+        expect(outcome.failed, outcome.summary).toBeUndefined();
+        expect(outcome.declined, outcome.summary).toBeUndefined();
+        expect(outcome.result?.phaseName, outcome.summary).toBe(name);
+        expect(outcome.result?.flumeDir).toBe(flumeDir);
+        return outcome;
+      };
+
+      // The finding is still on disk after the slice committed: a window
+      // wider than one tick's budget re-wakes its own slice.
+      const held = await tick(
+        inbox.name,
+        commits("plan: record what the report says", (cwd) =>
+          writeFileSync(join(cwd, ".flume", "plan", "state.md"), "# state\n"),
+        ),
+      );
+      expect(held.result?.committed).toBe(true);
+      expect(held.result?.gateResults.length).toBeGreaterThan(0);
+      expect(held.result?.gateResults.every((g) => g.ok)).toBe(true);
+      expect(held.awakeAfter).toEqual([inbox.name]);
+
+      // Same window, and this time the slice closed nothing: it does not
+      // re-wake itself, so an unroutable finding costs one tick, not a loop.
+      const unroutable = await tick(inbox.name, commitsNothing);
+      expect(unroutable.result?.committed).toBe(false);
+      expect(unroutable.noCommit).toBe("clean-exit");
+      expect(unroutable.awakeAfter).toEqual([derive.name]);
+
+      // The exclusion is the slice's own: its sibling still answers with the
+      // rung above, whose window is open.
+      const sibling = await tick(derive.name, commitsNothing);
+      expect(sibling.result?.committed).toBe(false);
+      expect(sibling.awakeAfter).toEqual([inbox.name]);
+
+      // Drained — through a commit the engine carried back to the trunk the
+      // ladder's predicate reads — and the baton falls to the next rung.
+      const drained = await tick(
+        inbox.name,
+        commits("plan: drain the inbox", (cwd) =>
+          rmSync(join(cwd, ".flume", "inbox", "2026-09-11-report.md")),
+        ),
+      );
+      expect(drained.result?.committed).toBe(true);
+      expect(drained.result?.gateResults.length).toBeGreaterThan(0);
+      expect(drained.result?.gateResults.every((g) => g.ok)).toBe(true);
+      // git removes the directory with its last tracked file, so the drained
+      // state the predicate answers on is the ENOENT leg of its own read.
+      expect(existsSync(report)).toBe(false);
+      expect(existsSync(join(flumeDir, "inbox"))).toBe(false);
+      expect(drained.awakeAfter).toEqual([derive.name]);
+
+      // Nothing above, nothing pickable, and the slice that would refill the
+      // queue just declined to: hibernation, read off the engine's own
+      // post-tick re-read of the queue.
+      const quiet = await tick(derive.name, commitsNothing);
+      expect(quiet.result?.committed).toBe(false);
+      expect(quiet.result?.pickableAfter).toEqual([]);
+      expect(quiet.awakeAfter).toEqual([]);
+
+      // The re-derive files one entry. `pickableAfter` is the dispatcher's
+      // own verdict over the queue this commit wrote — the fact the ladder's
+      // bottom rung turns on.
+      const refilled = await tick(
+        derive.name,
+        commits("plan: file one entry", (cwd) =>
+          writeFileSync(
+            join(cwd, ".flume", "plan", "pending.json"),
+            `${JSON.stringify([filedEntry], null, 2)}\n`,
+          ),
+        ),
+      );
+      expect(refilled.result?.committed).toBe(true);
+      expect(
+        refilled.result?.gateResults.filter(
+          (g) => g.gate === "pending-gate" && g.ok,
+        ),
+      ).toHaveLength(1);
+      expect(refilled.result?.pickableAfter.map((e) => e.tag)).toEqual([
+        filedEntry.tag,
+      ]);
+      expect(refilled.awakeAfter).toEqual([buildPhase!.name]);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
 });
 
 /**
