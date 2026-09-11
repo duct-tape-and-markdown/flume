@@ -1,77 +1,8 @@
 [
   {
-    "tag": "TICKCONTEXT-DOC-NAMES-ALL-FIELDS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the §2 `TickContext` summary gains `flumeDir`, `pickable` and `priorAttempts`"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "the doc-to-source field pin and the decline-section pin, beside the `cwd` gloss pin"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "docs/CHAIN-AUTHORING.md teaches TickContext as three fields; src/Phase.ts declares six, so `flumeDir`, `pickable` and `priorAttempts` are unlearnable from the page",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fact the engine holds is reported, never rediscovered"
-    },
-    "tests": [
-      "the chain-authoring doc's TickContext summary names every field src/Phase.ts declares"
-    ],
-    "pins": [
-      "the chain-authoring decline section names every TickContext field the quoted predicate reads"
-    ],
-    "acceptance": "The §2 summary names all six fields, and a pin over `interfaceFields(Phase.ts, \"TickContext\")` refuses the next field added without its prose.",
-    "notes": "Drained from PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES's note; verified on disk. Doc at :248 names cwd/assignedEntry/pending; Phase.ts declares six — `flumeDir` (:89), `pickable` (:107), `priorAttempts` (:119). `interfaceFields` (tests/retired-narration.test.ts:399) already drives this family. The pin rides from CASCADE-SHOULDRUN-FROM-DISK: §2's decline prose names what cascade's predicate reads, and only the §1 quote is pinned (:906)."
-  },
-  {
-    "tag": "CASCADE-TESTS-JUDGED-BY-GATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "a gate reading the entry's `tests[]` out of a test reporter's output"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the refusal case — fast lane, where the vitest gate looks"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade declares a `tests[]` extension field nothing judges, so the example teaches the field without the gate that makes it load-bearing",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Surface, not prescription"
-    },
-    "tests": [
-      "the cascade example's test gate refuses an entry whose named behavior has no passing test"
-    ],
-    "pins": [],
-    "acceptance": "A `tests[]` line on a cascade entry is judged by a gate fed from the reporter's own output, and an entry naming a behavior no test carries fails that gate.",
-    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry — that fork is still open. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park: the gate's own refusal drives off a hand-authored reporter payload, which `engineering.md` *A seam gate reads what the real writer wrote* sanctions for refusal tests."
-  },
-  {
     "tag": "CASCADE-GATE-READS-ENTRY-AND-BASE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "CASCADE-TESTS-JUDGED-BY-GATE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
