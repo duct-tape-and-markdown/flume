@@ -1,37 +1,5 @@
 [
   {
-    "tag": "CHAIN-AUTHORING-DOC-AGREEMENT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the `interface Gate` block and the quoted plan phase"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "extend the field-set helper to Gate; pin the quoted phase against the example"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Two more hand-copied blocks in docs/CHAIN-AUTHORING.md with nothing comparing them to their source: `interface Gate`, and the quoted cascade plan phase",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [
-      "the chain-authoring doc's Gate block names every field src/Gate.ts declares",
-      "the chain-authoring doc's quoted plan phase agrees with examples/cascade-chain.ts"
-    ],
-    "acceptance": "Both blocks are compared against the real source by a pin that fails on the pre-fix tree; the doc's `interface Gate` names `command?` and its quoted phase's `gates`/`promptArgs` match the example's.",
-    "notes": "docs/CHAIN-AUTHORING.md:259-263 omits `command?` (src/Gate.ts:199) — the field a chain reads so its prompt need not restate a gate's command line; the existing interfaceFields helper (tests/retired-narration.test.ts:341) generalizes by one name. :157 claims to quote examples/cascade-chain.ts's plan phase; :169 shows `gates: [pendingParseGate]` where the file declares `pendingGate({...})` (:232), and promptArgs drops the extension."
-  },
-  {
     "tag": "DOC-HARNESS-STATE-OWNERSHIP",
     "gate": {
       "kind": "open"
