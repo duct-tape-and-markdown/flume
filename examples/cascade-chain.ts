@@ -36,10 +36,12 @@ import type {
 /**
  * This project's pending-entry fields beyond the engine core
  * (tag/gate/dependsOnForks/files). Declared once — the same record drives
- * the parse-gate validator (`pendingGate({ extension: entryExtension, ... })`)
- * and the prompt schema (`renderSchemaForPrompt(entryExtension)`), so the
- * prompt and the parser cannot drift. The engine consumes none of these
- * fields; they are this chain's spec→plan→build workflow.
+ * the parse-gate validator (`pendingGate({ extension: entryExtension, ... })`),
+ * the prompt schema plan writes against (`renderSchemaForPrompt(entryExtension)`),
+ * the gates that judge the fields (`judgedByEntryTests`, `declaredFilesGate`)
+ * and the hints build's prompt quotes back to the agent held to them — so no
+ * surface can drift from the rule another one enforces. The engine consumes
+ * none of these fields; they are this chain's spec→plan→build workflow.
  */
 const entryExtension = {
   summary: {
@@ -435,6 +437,12 @@ const factory: ChainFactory = (api) => {
         TAG: ctx.assignedEntry.tag,
         PER_PATH: per.path,
         PER_SECTION: per.section,
+        // The contract `judgedByEntryTests` holds this commit to, handed to
+        // the agent that has to meet it — rendered from the field's own
+        // declaration, the same string `renderSchemaForPrompt` puts in plan's
+        // schema block. A sentence hand-written here instead would be a second
+        // copy of a rule the gate reverts commits over.
+        TESTS_HINT: entryExtension.tests.hint,
       };
     },
     handoff() {

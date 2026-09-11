@@ -26,6 +26,9 @@ Execute the assigned entry. Implement completely — no placeholders, no stubs.
 
 - Touch only the files declared in `entry.files`. Anything else reverts the commit.
 - The acceptance criterion (`entry.acceptance`) must turn green.
+- The entry's `tests[]` is judged on the trunk against the contract this
+  chain declares for the field, quoted here from that declaration:
+  {{TESTS_HINT}}
 - Search before assuming "not implemented" (`rg`, `grep`).
 - Schema-invalidating changes are clean-slate (`prisma db push --accept-data-loss` + reseed); never hand-roll backfill SQL.
 - New excluded directories update `tsconfig.json → exclude` AND `eslint.config.mjs → ignores` AND `.gitignore` in the same commit.

@@ -5,7 +5,7 @@
  * beside the tick-cycle drives in `examples.integration.test.ts`.
  */
 
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -569,5 +569,81 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     expect(partial.message).toContain("1 declared path(s)");
     expect(partial.skipped).toBeUndefined();
     expect(reader.asked.map((a) => a.path)).toEqual(["src/kept.ts", "src/kept.ts"]);
+  });
+});
+
+/**
+ * spec/pending.md, *The chain-declared extension* — one declaration drives
+ * every surface that reads it. Cascade's `tests[]` carries a title contract
+ * `judgedByEntryTests` reverts commits over, and build's prompt stated none of
+ * it: the agent held to the rule met it first as a revert. Build's promptArgs
+ * now renders the field's own `hint`, so the surface that states the contract
+ * and the surface that enforces it read the same string.
+ *
+ * Agreement pin (engineering.md, *A seam gate reads what the real writer
+ * wrote*): the shipped prompt template is read off disk and both phases' real
+ * `promptArgs` run, so a second sentence hand-written into either surface
+ * fails here rather than drifting quietly. The fixture's roots name a
+ * directory that does not exist — neither builder may reach disk for this.
+ */
+describe("cascade-chain.ts — build's prompt quotes the declaration it is judged by", () => {
+  const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
+  const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+
+  const ctx = (over: Partial<TickContext>): TickContext => ({
+    cwd: "/nonexistent/build-prompt-fixture",
+    flumeDir: "/nonexistent/build-prompt-fixture/.flume",
+    ...over,
+  });
+
+  it("cascade's build prompt states the tests[] title contract from the entry extension's own hint", () => {
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // an undeclared builder on either phase would leave every claim below
+    // asserted over nothing.
+    expect(buildPhase?.promptArgs, "cascade's build declares promptArgs")
+      .toBeTypeOf("function");
+    expect(planPhase?.promptArgs, "cascade's plan declares promptArgs")
+      .toBeTypeOf("function");
+
+    const args = buildPhase!.promptArgs!(
+      ctx({
+        assignedEntry: {
+          tag: "BUILD-PROMPT-FIXTURE",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: { new: [], edit: [], retire: [] },
+          per: {
+            path: "spec/pending.md",
+            section: "The chain-declared extension",
+          },
+        } satisfies PendingEntry,
+      }),
+    );
+
+    // The template the phase names, not a copy of it: `renderPrompt` throws on
+    // a `{{KEY}}` no promptArgs supplies, so the two are read together.
+    const template = readFileSync(
+      fileURLToPath(
+        new URL(`../examples/${buildPhase!.promptPath}`, import.meta.url),
+      ),
+      "utf8",
+    );
+    const placeholders = [...template.matchAll(/\{\{([A-Z][A-Z0-9_]*)\}\}/g)].map(
+      (m) => m[1]!,
+    );
+    expect(placeholders.length).toBeGreaterThan(0);
+    expect(placeholders).toContain("TESTS_HINT");
+    // FLUME_DIR is the dispatcher's reserved arg, injected past promptArgs.
+    expect(
+      placeholders.filter((k) => k !== "FLUME_DIR" && !(k in args)),
+    ).toEqual([]);
+
+    // The contract itself, and the other surface rendered from the same field:
+    // plan writes entries against `renderSchemaForPrompt`'s block, so a hint
+    // build restated by hand would no longer be found inside it.
+    const hint = args.TESTS_HINT!;
+    expect(hint.length).toBeGreaterThan(0);
+    const schemaBlock = planPhase!.promptArgs!(ctx({})).PENDING_SCHEMA!;
+    expect(schemaBlock).toContain(`"tests": ${hint}`);
   });
 });
