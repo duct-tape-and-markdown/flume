@@ -575,6 +575,151 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
   });
 });
 
+// Prose pin (SHOULDRUN-SINGLETON-CWD-PROSE, per .claude/rules/engineering.md
+// "Narration is the ladder's bottom rung"): `runSingleton` consults
+// `shouldRun` before it provisions anything, so the context it hands the
+// predicate carries the repo root — there is no worktree yet. Both prose
+// surfaces a chain author learns the hook from said only "the same
+// `TickContext` `promptArgs` sees", which tells a singleton predicate
+// reading `ctx.cwd` that it has a worktree it does not have. Nothing
+// mechanical watched the claim; this is that watch. The side the prose is
+// held to is the singleton callsite's own `cwd` argument.
+describe("the shouldRun cwd split is taught where a chain author reads it", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const phaseSrc = read("src", "Phase.ts");
+  const dispatcherSrc = read("src", "Dispatcher.ts");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+
+  /**
+   * The doc block immediately above `cwd: string;` inside `TickContext`:
+   * the nearest one, matched so that no block terminator may fall between
+   * it and the field, so a preceding member's comment cannot stand in.
+   */
+  function cwdDoc(): string {
+    const body =
+      /export interface TickContext \{([\s\S]*?)\n\}/.exec(phaseSrc)?.[1] ?? "";
+    return (
+      /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*cwd: string;/.exec(body)?.[1] ?? ""
+    );
+  }
+
+  /**
+   * The `cwd` the dispatcher's **singleton** consult passes. It builds its
+   * context inline (`phase.shouldRun({ cwd: …, ...ctxFacts })`) where the
+   * fanout consult passes an already-named `ctx`, so the object-literal form
+   * identifies the singleton site on its own. Returns every match, so a
+   * second inline consult appearing later cannot hide behind the first.
+   */
+  function singletonConsultRoots(): string[] {
+    return [...dispatcherSrc.matchAll(/phase\.shouldRun\(\{\s*cwd:\s*(\w+)/g)].map(
+      (m) => m[1]!,
+    );
+  }
+
+  /**
+   * The bullet list under the `shouldRun` section heading, one entry each,
+   * with the markdown wrapping collapsed — a phrase this pin looks for may
+   * straddle a line break, and where the author happened to wrap is not
+   * what is being held.
+   */
+  function declineBullets(): string[] {
+    const section =
+      /^### `shouldRun`: decline a tick before the invocation$([\s\S]*?)^## /m.exec(
+        doc,
+      )?.[1] ?? "";
+    return section
+      .split(/\n(?=- )/)
+      .filter((b) => b.startsWith("- "))
+      .map((b) => b.replace(/\s+/g, " ").trim());
+  }
+
+  it("the TickContext.cwd doc comment names the repo root a singleton shouldRun sees", () => {
+    const block = cwdDoc();
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
+    // interface or field reader that found nothing would pass every content
+    // assertion below against the empty string.
+    expect(
+      block,
+      "src/Phase.ts: TickContext.cwd's own doc block did not parse — the " +
+        "interface was renamed, or the field lost its comment",
+    ).not.toBe("");
+    // The engine side of the claim: the singleton consult really does pass
+    // the repo root. If it ever stops doing so, this fails here rather than
+    // leaving the comment quietly wrong.
+    expect(
+      singletonConsultRoots(),
+      "src/Dispatcher.ts: the singleton shouldRun consult no longer builds " +
+        "its context inline — re-read what root it passes before trusting " +
+        "the doc comment",
+    ).toEqual(["repoRoot"]);
+    expect(block, "the comment must name the consult that diverges").toMatch(
+      /singleton/i,
+    );
+    expect(block, "…and the hook it diverges on").toMatch(/shouldRun/);
+    expect(
+      block,
+      "…and the root that consult's `cwd` actually carries",
+    ).toMatch(/repo root/i);
+  });
+
+  it("the chain-authoring decline section separates what a singleton decline saves from a fanout one", () => {
+    const bullets = declineBullets();
+    // Vacuity: the section heading still parses and still carries its list.
+    expect(
+      bullets.length,
+      "docs/CHAIN-AUTHORING.md: the `shouldRun` section's bullet list did " +
+        "not parse — the heading was reworded, or the section moved",
+    ).toBeGreaterThan(3);
+    const split = bullets.filter(
+      (b) => /\bsingleton\b/i.test(b) && /\bfanout\b/i.test(b),
+    );
+    expect(
+      split,
+      "docs/CHAIN-AUTHORING.md: exactly one bullet in the decline section " +
+        "contrasts a singleton decline with a fanout one — the split has " +
+        "one home, and a reader who misses it resolves paths off a `cwd` " +
+        "that is not a worktree",
+    ).toHaveLength(1);
+    const bullet = split[0]!;
+    expect(
+      bullet,
+      "the singleton side names the root its `ctx.cwd` carries",
+    ).toMatch(/repo root/i);
+    expect(
+      bullet,
+      "…and that the consult precedes provisioning, which is what it saves",
+    ).toMatch(/provision/i);
+    expect(
+      bullet,
+      "the fanout side names the worktree its `ctx.cwd` carries",
+    ).toMatch(/worktree/i);
+    expect(
+      bullet,
+      "…and that a fanout decline saves the invocation, not that worktree",
+    ).toMatch(/agent invocation/i);
+  });
+
+  it("the sentence introducing `TickContext.cwd` sends a reader to the singleton exception", () => {
+    // The gloss on `cwd` alone — the parenthetical right after it. Scoped
+    // that tightly because the same sentence glosses `pending` as "for
+    // singleton phases", which would satisfy a match over the whole
+    // sentence while `cwd` still read as unconditionally a worktree.
+    const gloss = (
+      /`TickContext` carries `cwd` \(([^)]*)\)/.exec(doc)?.[1] ?? ""
+    ).replace(/\s+/g, " ");
+    expect(
+      gloss,
+      "docs/CHAIN-AUTHORING.md: the `TickContext` summary's gloss on `cwd` " +
+        "was reworded — it is the first place a reader learns what `cwd` is",
+    ).not.toBe("");
+    expect(
+      gloss,
+      "the gloss must not teach `cwd` as unconditionally a worktree path",
+    ).toMatch(/singleton/i);
+  });
+});
+
 // Agreement pin (CHAIN-AUTHORING-DOC-AGREEMENT, per
 // .claude/rules/engineering.md "A seam gate reads what the real writer
 // wrote"): docs/CHAIN-AUTHORING.md introduces a fenced block as "the `plan`

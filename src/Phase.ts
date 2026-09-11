@@ -66,7 +66,18 @@ export interface ShipContext {
  * agent invocation for one tick.
  */
 export interface TickContext {
-  /** Absolute path of the worktree this tick runs in. */
+  /**
+   * Absolute path this tick works in: the worktree the dispatcher
+   * provisioned for it, which is what `promptArgs` and every in-worktree
+   * hook read.
+   *
+   * One consult sees a different root. A **singleton** `shouldRun` runs
+   * before the worktree exists, so its `cwd` is the repo root (spec/loop.md,
+   * *Declining a tick before the invocation*); a **fanout** `shouldRun` runs
+   * inside the entry's already-provisioned worktree and sees that. A
+   * predicate resolving paths off `cwd` therefore cannot assume a worktree —
+   * `flumeDir` is absolute and identical across both consults.
+   */
   cwd: string;
   /**
    * Absolute, resolved flume state root (`flumeDir`; default
@@ -348,8 +359,16 @@ export interface Phase {
    * `shouldRun` always runs, byte-identically to a phase whose `shouldRun`
    * returns `true`.
    *
-   * Sees the same `TickContext` `promptArgs` sees — no new plumbing. Must
-   * be synchronous and cheap: it runs before every invocation, so I/O
+   * Sees the same `TickContext` fields `promptArgs` sees; `cwd` is the one
+   * value that differs, and with it what a decline buys. A **singleton**
+   * consult runs ahead of the prune, `createWorktree` and `setupWorktree`,
+   * so `cwd` is the repo root and declining costs a `rev-parse` and the
+   * pending read. A **fanout** consult runs per entry inside a worktree the
+   * wave has already built and installed, so `cwd` is that worktree and
+   * declining saves the agent invocation alone (spec/loop.md, *Declining a
+   * tick before the invocation*).
+   *
+   * Must be synchronous and cheap: it runs before every invocation, so I/O
    * belongs in the tick it would be trying to avoid.
    */
   shouldRun?: (ctx: TickContext) => boolean;

@@ -216,7 +216,8 @@ promptArgs(ctx) {
 }
 ```
 
-`TickContext` carries `cwd` (the worktree path), `assignedEntry` (fanout
+`TickContext` carries `cwd` (the path the tick works in — its worktree, with
+one exception a singleton `shouldRun` hits, below), `assignedEntry` (fanout
 only), and `pending` (the full list, for singleton phases reasoning about
 queue state).
 
@@ -229,7 +230,7 @@ can only be answered *after* spending a full agent invocation — the agent
 re-derives the plan, concludes nothing changed, and commits nothing. On one
 measured 50-tick run, 14 plan ticks (28%) did exactly that. `shouldRun` lets
 the chain answer the question before the invocation, from the same
-`TickContext` `promptArgs` sees:
+`TickContext` `promptArgs` sees — every field but `cwd`, below:
 
 ```ts
 const plan: Phase = {
@@ -255,10 +256,21 @@ const plan: Phase = {
   invocation, no commit — but `handoff` still runs on the unchanged prior
   result, and the baton sleeps/wakes exactly as it would on any other
   no-commit tick, so the chain can still pass the baton on.
-- **Synchronous, and cheap by contract.** It runs before every invocation —
-  once per tick for a singleton phase, once per assigned entry for a fanout
-  phase. A predicate needing I/O is doing too much; that work belongs in the
-  tick it is trying to avoid, not in the gate that decides whether to run it.
+- **What a decline saves depends on the concurrency — and so does `ctx.cwd`.**
+  A **singleton** phase is consulted once per tick, ahead of all provisioning
+  (the worktree prune, `createWorktree`, `setupWorktree`), so `ctx.cwd` is the
+  repo root — no worktree exists yet, and declining costs a `rev-parse` and
+  the pending read, nothing more. A **fanout** phase is consulted once per
+  assigned entry, *inside* that entry's worktree, after the whole wave has
+  been provisioned and every `setupWorktree` has finished its dependency
+  install; `ctx.cwd` is that worktree, and declining saves the agent
+  invocation alone — the worktree is built, skipped, and torn down with the
+  wave. So a predicate resolving paths off `ctx.cwd` must not assume a
+  worktree on a singleton phase; `ctx.flumeDir` is absolute and the same
+  either way.
+- **Synchronous, and cheap by contract.** A predicate needing I/O is doing too
+  much; that work belongs in the tick it is trying to avoid, not in the gate
+  that decides whether to run it.
 - **A declined tick is a distinguishable fact**, not a silent no-op — it
   reports its own outcome, separate from a voluntary bail (the agent ran and
   refused) and from hibernation (nothing was awake).
