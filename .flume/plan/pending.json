@@ -1,46 +1,5 @@
 [
   {
-    "tag": "RELEASE-CITES-REACH-DOCS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CLI.md",
-          "description": "the eight dead cites go"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the four dead cites go"
-        },
-        {
-          "path": "src/Agent.ts",
-          "description": "the bare `§6` at :501 the grammar cannot see"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "the scan domain partitions docs/"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "docs/CLI.md and docs/CHAIN-AUTHORING.md ship twelve cites into the deleted RELEASE corpus, and the scan that would refuse them stops at src/ and examples/",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      "no current-reference docs page carries a release-numbered spec cite",
-      "every docs page is either scanned for release cites or declared a dated record"
-    ],
-    "pins": [],
-    "acceptance": "The two current-reference pages carry no cite into the deleted corpus, the scan reaches docs/, and an unclassified new docs page fails loud.",
-    "notes": "From RELEASE-CITES-PINNED's note. 16 needle hits in docs/; three pages are dated records legitimately naming the world they left — CASCADE-DRY-RUN.md, MIGRATING-0.10.md:20, PRD-dock-collapse.md. Partition, never exclude: scanned ∪ dated = readdir(docs), so a new page forces a classification. src/Agent.ts:501 rides here — same dead corpus, invisible to the grammar; its cut is unpinnable, name that in the body."
-  },
-  {
     "tag": "CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT",
     "gate": {
       "kind": "open"
@@ -66,44 +25,11 @@
     ],
     "pins": [],
     "acceptance": "At least one ladder rung transition is read off a real `Dispatcher.tick()` outcome instead of the `after()` fixture; the hand-authored cases that remain are the refusal shapes the section's carve-out allows.",
-    "notes": "From CASCADE-PLAN-SLICES-ORDERED-HANDOFF's note. tests/examples.test.ts:322 `after()` hand-authors pickableAfter/shippedTags/noCommit/mergeOutcome. Cascade declares no phase agent, so `DispatcherOptions.agent` reaches it (src/Dispatcher.ts:1844) and the backlog-groomer drive's fixture shape applies. Fast lane: no Node startup, no real agent (spec/worktrees.md, the lane split). Build-wave refusal legs spawn children — out of scope."
-  },
-  {
-    "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "the prior-attempt read/write/clear surface and the record builders"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the prior-attempt section leaves; the class calls the module"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "re-export path for slugify / priorAttemptPath / priorAttemptsDir"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
-    "per": {
-      "path": ".claude/rules/posture-sweep.md",
-      "section": "A violation counts only when verified on disk this tick"
-    },
-    "tests": [
-      "the prior-attempt record builders are exported from src/priorAttempts.ts"
-    ],
-    "pins": [],
-    "acceptance": "A pure move: no behavior change, the package's public surface through `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "Sections at src/Dispatcher.ts:4106-:4460 plus the builders at :5267-:5359; `slugify`, `priorAttemptPath` and `priorAttemptsDir` are already public and must resolve identically from `flume`."
+    "notes": "From CASCADE-PLAN-SLICES-ORDERED-HANDOFF's note. tests/examples.test.ts:322 `after()` hand-authors pickableAfter/shippedTags/noCommit/mergeOutcome. Cascade declares no phase agent, so `DispatcherOptions.agent` reaches it (src/Dispatcher.ts:1844) and the backlog-groomer drive's fixture shape applies. Fast lane: no Node startup, no real agent (spec/worktrees.md, the lane split). Build-wave refusal legs spawn children — out of scope.",
+    "observedFiles": [
+      ".flume/plan/notes/CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT.md",
+      "tests/examples.test.ts"
+    ]
   },
   {
     "tag": "DISPATCHER-EXTRACT-FRICTION",
