@@ -215,6 +215,19 @@ defect rather than a workaround the operator owes the engine:
   stale-slug removal only ever covered entries being re-provisioned; an abandoned
   entry that left the queue leaked its worktree indefinitely, which was the one
   observed gap between this guarantee and the tree.
+- **A merge the crash interrupted is refused, never resumed.** Before the merge stage
+  picks an entry's span onto trunk the dispatcher writes `<flumeDir>/merging/<slug>.json`
+  — the branch, the base sha, the entry tag — and removes it only after the ship
+  bookkeeping (the `pending.json` rewrite, the records, the verdict) has landed. A file
+  surviving at the next `loop` / `job run` start is a merge that died between the pick
+  and the bookkeeping: the commit may sit on trunk ungated with its entry still `open`,
+  and a second run would pick it again (field-traced once, 0.12.0, gh#19). The run
+  refuses to start (exit `EX_CONFIG`), naming the file, the branch, and the entry, and
+  touches nothing — the startup sweep runs after this check, so the branch survives for
+  the operator. The operator reconciles (reverts the commit, or marks the entry
+  shipped) and removes the file; as with the stop flag, removal is the acknowledgement
+  and no engine verb performs it. The fact is the marker the engine wrote, never commit
+  shape or authorship (`engine-boundary.md`, *Told, not inferred*).
 
 The guarantee is bounded by git's own: a child killed inside a git mutation can
 leave `index.lock` or an in-progress cherry-pick behind, which git refuses loudly
@@ -389,15 +402,18 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
 - **Undeclared is unchanged behavior.** A phase without `shouldRun` always runs,
   byte-identically to one whose predicate returns `true`. A capability with an
   injection point, not a policy — the engine ships no default that skips anything.
-- **Context is the engine's facts.** The predicate sees the same `TickContext`
-  `promptArgs` sees: `cwd`, `flumeDir`, `pending` (all entries, for singleton phases
+- **Context is the engine's facts.** The predicate sees the same `TickContext` fields
+  `promptArgs` sees (`cwd` differs for a singleton — below): `cwd`, `flumeDir`, `pending` (all entries, for singleton phases
   that read the plan), `assignedEntry` (fanout), `pickable` (the dispatcher's own
   selection verdict), and `priorAttempts` (every persisted record, keyed as on disk).
   See `spec/chain.md`, *What a hook receives*.
 - **Synchronous, and cheap by contract.** It runs before every invocation; a predicate
   needing I/O is doing work that belongs in the tick it is trying to avoid.
 - **What a decline saves depends on the concurrency.** A singleton decline
-  (`Dispatcher.runSingleton`) costs a `rev-parse` and the pending read, nothing else.
+  (`Dispatcher.runSingleton`) is consulted **before** provisioning — before the prune,
+  the worktree, and `setupWorktree` — with `ctx.cwd` at the repo root, so it costs a
+  `rev-parse` and the pending read, nothing else; `promptArgs`, which runs after
+  provisioning, sees `ctx.cwd` as the worktree and every other field identical.
   A fanout decline is per-entry and consulted inside `Dispatcher.runFanoutEntry`, with
   `ctx.cwd` set to that entry's worktree — which means it runs *after* the whole batch
   has been provisioned (`createWorktree`, serially) and after every `setupWorktree`
@@ -405,8 +421,8 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
   saves the agent invocation, not the worktree or its install; the worktree is built,
   skipped, and torn down with the wave.
 - **A declined tick is a distinguishable fact**, never a silent no-op: `declined: true`
-  on `TickOutcome` and on the tick verdict, separate from `voluntary-bail` (the agent
-  ran and refused) and from hibernation (nothing was awake). A supervisor must be able
+  on `TickOutcome` and on the tick verdict, separate from `clean-exit` (the agent
+  ran and committed nothing) and from hibernation (nothing was awake). A supervisor must be able
   to tell "the chain declined" from "the agent bailed" without reading session logs.
   Per-entry under fanout: a wave sets `declined` if any provisioned entry declined,
   even when its siblings shipped.
@@ -425,7 +441,7 @@ platform failures stop masquerading as agent failures:
 | mode | meaning |
 | --- | --- |
 | `gate-revert` | a commit was made and a gate reverted it |
-| `voluntary-bail` | the agent exited cleanly without committing — it refused a constraint rather than do the wrong thing |
+| `clean-exit` | the agent exited cleanly without committing. The engine records that it did, and the tail of its final message; whether that was a refused constraint, a bail, or nothing to do is the chain's reading of the message, never an engine label — an inferred intent is an opinion with no owner (`engine-boundary.md`, *Told, not inferred*) |
 | `platform-preempt` | the agent process failed for non-work reasons (rate-limit, auth, dispatcher-killed, or a per-tick timeout where one is set — below) — explicitly **not** a defect in the work |
 | `render-refused` | the prompt itself never resolved, so the agent was never invoked (`spec/prompt.md`) |
 
@@ -470,8 +486,8 @@ attempted.
 - **The classification reaches disk.** It rides `TickOutcome.noCommit`, the tick verdict,
   and the per-entry prior-attempt record.
 - **A wave reports one representative cause** when it shipped nothing, by precedence
-  `gate-revert > render-refused > platform-preempt > voluntary-bail`: platform failures
-  outrank bails because a platform failure masquerading as an agent failure is the harm
+  `gate-revert > render-refused > platform-preempt > clean-exit`: platform failures
+  outrank clean exits because a platform failure masquerading as an agent failure is the harm
   this taxonomy exists to prevent, and a render refusal is a real defect in the
   prompt/config, so it outranks both non-defect classes. Each entry's own mode is still
   persisted to its own prior-attempt record, and reported on `TickResult.entries`
@@ -491,8 +507,9 @@ dispatcher-owned `<prior-attempt>` block:
   `name`, its one-line `message`, its full `details`, and a `git show --stat` digest of
   the reverted commit. Fires for `afterMerge` as well as `afterCommit`: a merge-time
   failure that dies with the dispatcher process is the anti-pattern this closes.
-- `voluntary-bail` — the constraint the agent refused to cross, taken from the tail of
-  `AgentResult.finalMessage` (the adapter's field, `spec/chain.md`, *The agent seam*).
+- `clean-exit` — the tail of `AgentResult.finalMessage` (the adapter's field,
+  `spec/chain.md`, *The agent seam*). The engine names no intent: a refused constraint,
+  a bail, and "nothing to do" all exit clean, and the message is the chain's to read.
 - `platform-preempt` — the failure class, marked as not a defect in the prior work.
 - `render-refused` — every failing inline-exec span's command text and stderr.
 - `tip-moved` — the expected and observed tips.
@@ -523,7 +540,12 @@ dispatcher-owned `<prior-attempt>` block:
   and agent messages are each capped at a few KB with an explicit truncation marker.
 - **No false signal.** The slot is absent on a first attempt, and a clean ship clears
   the record. A corrupt record, or one carrying an unrecognized `mode`, is treated as
-  absent rather than fed to the renderer.
+  absent rather than fed to the renderer. A record whose key is an entry tag the queue
+  no longer carries is stale: the wave that reads the queue (`spec/pending.md`,
+  *Dispatch reads come from the tip*) clears every such record before selection and
+  reports the cleared keys on the verdict (`clearedPriorAttempts`). A record says which
+  keyspace it belongs to — `key: "entry"` for a tag slug, `key: "phase"` for a phase
+  name — so a phase's record is never mistaken for a retired tag's.
   > **Note:** the block is dispatcher-owned and structural — a prompt file declares
   > no `<prior-attempt>` slot and cannot position or suppress it. See `spec/prompt.md`.
 
@@ -599,7 +621,7 @@ store until gc, and the verdict is the only place their sha outlives the branch.
 - **No interpretation fields.** The artifact records what happened, never what it
   means. "Errored" is not stored: `superviseLoop` derives it at the read site from the
   facts (`gate-revert`, `platform-preempt`, `render-refused`, `tipMoved`, or a
-  provisioning failure that left nothing shipped — never `voluntary-bail` or
+  provisioning failure that left nothing shipped — never `clean-exit` or
   `not-shipped`, which are the agent and the chain correctly declining). "Park", "bail worth waking for" are chain readings, not
   engine vocabulary.
 - **It is the supervisor's only fact channel.** Child stdio stays `inherit` —
@@ -701,18 +723,23 @@ keyed by stage-tagged signature:
   breaks the streak by construction; only byte-identical repetition accumulates, and
   output noise that defeats equality merely makes the brake conservative.
 
-A voluntary bail or park never joins the accounting — an agent correctly declining and
-naming its constraint is not evidence anything went wrong. A signature is the bounded,
+A clean exit or park never joins the accounting — an agent that committed nothing is
+not evidence anything went wrong. A signature is the bounded,
 trimmed failure message used as an **opaque equality key**: compared, never parsed, so
 no stage's message grammar becomes engine-read prose (`engine-boundary.md`, *Told, not
 inferred*).
 
 Two legs, not either alone:
 
-- **Per-entry quarantine.** The supervisor quarantines the failing entry's slug for the
-  remainder of the run: the entry stays in `pending.json` untouched, other entries keep
-  dispatching. The quarantine crosses to each child via `FLUME_QUARANTINED_SLUGS`. It
-  is run-scoped — a fresh run retries the slug, so a transient hold costs at most the
+- **Per-entry quarantine.** The supervisor quarantines the failing entry **as read** —
+  keyed by its slug and a hash of its bytes in `pending.json` — for the remainder of
+  the run: the entry stays in `pending.json` untouched, other entries keep dispatching.
+  A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
+  relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
+  report, 0.12.0). The keys cross to each child via `FLUME_QUARANTINED_SLUGS` (the name
+  stands; each value is `slug@hash`), and the key is reported beside each tag on
+  `TickResult.quarantinedTags` so a chain can see why the hold stands. It is
+  run-scoped — a fresh run retries the key, so a transient hold costs at most the
   rest of one batch — and logged distinctly (tag, stage, failure signature) so the skip
   is visible, never silent, and reported to the chain on `TickResult.quarantinedTags`
   (*The no-commit taxonomy*) so a handoff can tell a quarantined `open` entry from a
