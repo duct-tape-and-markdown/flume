@@ -13,7 +13,10 @@ its recorded base, which may not be the tree it merged into. If your
 correctness gate (test suite, typecheck-of-the-whole) sits at `afterCommit`,
 move it to `afterMerge` or accept the staleness window knowingly. This was
 always the safe placement; 0.12 makes it the stated contract
-(`spec/chain.md`, *Gate placement*).
+(`spec/chain.md`, *Gate placement*). If yours are already there, this item is
+a no-op — `afterMerge` has been the merged-tree gate point since v0.1
+(`src/Gate.ts`), so a chain that never moved its correctness gates is already
+compliant and owes nothing here.
 
 ## 2. Singleton phases now provision worktrees (chains with singleton phases)
 
