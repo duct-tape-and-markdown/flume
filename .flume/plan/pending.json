@@ -23,6 +23,6 @@
       "the locator grammar flags an injected `src/` path and an injected line locator"
     ],
     "acceptance": "`pnpm test` green with the scan present; each allowlist entry carries its claim-subject reason at the site.",
-    "notes": "Measured at 7367b79: zero `:NN` locators; the only `src/` file paths are `src/index.ts` (export inventory, 3 sites), `src/flumeApi.ts` (pending.md export-map sentence) and `src/Dispatcher.ts` (chain.md deep-import example). Bare `src/` and `examples/` directory mentions are not paths. The rule sentence's symbol half is red on the base — see open-questions, spec residue."
+    "notes": "Re-measured at eb69567: zero `:NN` locators; the only `src/` file paths are `src/index.ts` (export inventory, 4 sites), `src/flumeApi.ts` (pending.md export-map sentence) and `src/Dispatcher.ts` (chain.md deep-import example). Bare `src/` and `examples/` directory mentions are not paths. The rule sentence's symbol half is red on the base — see open-questions, spec residue."
   }
 ]

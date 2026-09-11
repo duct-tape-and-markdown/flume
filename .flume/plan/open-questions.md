@@ -315,3 +315,33 @@ in order to say it does **not** exist (`DispatcherOptions.trunkBranch`,
 `Chain.harvest`, `Chain.worktreesDir`). Recommend a declared allowlist at the
 scan, the same shape as the path one — never a negation read off the
 surrounding prose.
+
+## `spec/cli.md` names `flume job status` as a liveness surface; it reports none (NEEDS AMENDMENT)
+
+Derived from `eb69567`, which restated the supervisor-liveness sentence in
+`spec/cli.md` *`flume status` owes exactly this* as:
+
+> The liveness verdict is the one `flume job status` and `flume job rm` report
+> for the same pidfile — one detection, never re-derived per surface.
+
+`flume job status` reports no liveness verdict. `spec/jobs.md` *`flume job
+status`* enumerates what it prints — awake phases or `hibernating`, the pending
+count, the friction count — and the implementation returns exactly that shape
+per job; nothing reads `loop.pid`. The surfaces that do report one are `flume
+loop`'s startup refusal, `flume status`'s supervisor line, and `flume job rm`'s
+refusal, which is what the sibling sentence in `spec/jobs.md` *`flume job rm
+<name>` — the discard ending* already says, correctly and in the same commit.
+
+**Recommend:** swap `flume job status` for `flume loop`'s startup refusal, so
+the two sentences name the same three surfaces. The line becomes: *the liveness
+verdict is the one `flume loop`'s startup refusal and `flume job rm` report for
+the same pidfile.*
+
+**Not derived as an entry**, and this is the fork worth naming: the alternative
+reading is that `flume job status` *should* grow a liveness column, and the
+sentence is the ship target rather than a slip. Nothing else in the corpus asks
+for one — `spec/jobs.md` enumerates the columns without it, and the sentence's
+own subject is "one detection, never re-derived", not a new column. So this
+reads as a wrong surface name, not a feature. If it is the feature, it wants
+saying in `spec/jobs.md` where job status's output is specced, and `spec/cli.md`
+still wants the surface list fixed either way.
