@@ -28,7 +28,7 @@ A consequence for anything built on flume: a layer that wants *ephemeral* pipeli
 
 ## What stays prose
 
-Specs, workshop notes, ADRs, READMEs, plan-State summaries, open-questions lists. These are documentation surfaces for humans and prose-aware agents. Markdown is correct here.
+Specs, rules pages, ADRs, READMEs, plan-State summaries, open-questions lists, findings records. These are documentation surfaces for humans and prose-aware agents. Markdown is correct here.
 
 ## What becomes JSON
 
@@ -38,7 +38,7 @@ Anything the dispatcher mechanically consumes — Pending entries, gate results,
 
 - **Session continuity.** Reintroduces in-memory state the protocol exiles. Every tick is fresh.
 - **In-agent iteration.** A tick is one invocation. The dispatcher decides re-runs.
-- **Hardcoded chain.** Workshop → specs → plan → code is the default, not the framework.
+- **Hardcoded chain.** Spec → plan → build is one default, not the framework.
 - **Multi-provider agent abstraction (v0).** Claude-only via `claude -p`, single named seam for later swap.
 
 ## Parallelism
