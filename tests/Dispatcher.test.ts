@@ -88,6 +88,13 @@ import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts
 import type { NoCommitMode } from "../src/index.ts";
 
 // Barrel-export pin (engineering.md "An export earns its consumer"):
+// PriorAttemptKeyspace is the field type of every PriorAttempt variant's
+// .key, and QuarantinedTag the element type of TickResult.quarantinedTags,
+// so a chain author needs to name both from the package entry point. These
+// imports fail tsc if either drops from src/index.ts.
+import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
+
+// Barrel-export pin (engineering.md "An export earns its consumer"):
 // slugify/priorAttemptPath are the chain-facing exported rule (spec/loop.md
 // "Prior-outcome feedback to the retrying tick"), so a chain author needs to
 // reach them from the package entry point, not just src/Dispatcher.ts.
@@ -14806,6 +14813,35 @@ describe("src/index.ts — NoCommitMode barrel export (PROMPT-NOCOMMITMODE-UNEXP
     const noCommit: NoCommitMode = "gate-revert";
 
     expect(noCommit).toBe("gate-revert");
+  });
+});
+
+describe("src/index.ts — PriorAttemptKeyspace barrel export (INDEX-EXPORTS-ORPHANED-TYPES)", () => {
+  it("re-exports PriorAttemptKeyspace as a named type a chain author can consume", () => {
+    // The imported type comes from src/index.ts rather than src/Prompt.ts,
+    // so it is what a chain author would actually reach for to type their
+    // own handling of a PriorAttempt's .key — if it drops from the barrel
+    // this fails tsc, not just an LSP references check.
+    const entryKeyed: PriorAttemptKeyspace = "entry";
+    const phaseKeyed: PriorAttemptKeyspace = "phase";
+
+    expect([entryKeyed, phaseKeyed]).toEqual(["entry", "phase"]);
+  });
+});
+
+describe("src/index.ts — QuarantinedTag barrel export (INDEX-EXPORTS-ORPHANED-TYPES)", () => {
+  it("re-exports QuarantinedTag as a named type a chain author can consume", () => {
+    // The imported type comes from src/index.ts rather than src/Phase.ts, so
+    // it is what a chain author would actually reach for to type their own
+    // handling of TickResult.quarantinedTags — if it drops from the barrel
+    // this fails tsc, not just an LSP references check.
+    const held: QuarantinedTag = {
+      tag: "SOME-ENTRY",
+      key: "some-entry@00112233aa",
+    };
+
+    expect(held.tag).toBe("SOME-ENTRY");
+    expect(held.key).toBe("some-entry@00112233aa");
   });
 });
 

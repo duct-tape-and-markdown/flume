@@ -20,6 +20,7 @@ export type {
   Chain,
   Concurrency,
   Phase,
+  QuarantinedTag,
   TickContext,
   ShipContext,
   TickResult,
@@ -64,7 +65,12 @@ export {
 
 export { partitionByFileOverlap } from "./partition.js";
 
-export { renderPrompt, type NoCommitMode, type PriorAttempt } from "./Prompt.js";
+export {
+  renderPrompt,
+  type NoCommitMode,
+  type PriorAttempt,
+  type PriorAttemptKeyspace,
+} from "./Prompt.js";
 
 export { type FlumeApi } from "./flumeApi.js";
 
