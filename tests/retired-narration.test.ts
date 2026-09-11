@@ -373,6 +373,41 @@ describe("retired chain-authoring shapes stay retired", () => {
   });
 });
 
+/**
+ * Field names declared by `interface <name>` in `text` — the span from its
+ * opening brace to the first `}` at column 0, with block and line comments
+ * stripped so only declarations are read. Deliberately not `<name>`-aware
+ * beyond the word boundary, and deliberately the same reader for every
+ * caller: a doc's fenced `ts` block and the engine's own source are the same
+ * grammar, so one parser keeps the comparison honest.
+ *
+ * Both callable spellings count as the same field: a member declared as a
+ * property (`run: (ctx) => …`, how `src/Gate.ts` writes it) and the same
+ * member written as method shorthand (`run(ctx): …`, how the doc writes it)
+ * name one field, and a reader that saw only the first would call the doc's
+ * block short by a name it does declare.
+ *
+ * Only lines at the body's shallowest indentation are members. A member
+ * whose type wraps across lines indents its continuation deeper — the
+ * `ctx: WorktreeSetupContext,` parameter line of `Phase.setupWorktree` is
+ * the live case — and a reader that took every match would report `ctx` as
+ * a field the interface declares.
+ */
+function interfaceFields(text: string, name: string): string[] {
+  const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(text);
+  if (!open) return [];
+  const start = open.index + open[0].length;
+  const end = text.indexOf("\n}", start);
+  const body = text
+    .slice(start, end === -1 ? undefined : end)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+  const matches = [...body.matchAll(/^([ \t]*)(\w+)\??\s*[:(]/gm)];
+  if (matches.length === 0) return [];
+  const member = Math.min(...matches.map((m) => m[1]!.length));
+  return matches.filter((m) => m[1]!.length === member).map((m) => m[2]!);
+}
+
 // Agreement pin (CHAIN-AUTHORING-GATE-SURFACE, per .claude/rules/engineering.md
 // "A fact the engine holds is reported, never rediscovered"):
 // docs/CHAIN-AUTHORING.md is where a chain author learns the gate surface, and
@@ -386,32 +421,6 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
   const read = (...parts: string[]): string =>
     readFileSync(join(REPO_ROOT, ...parts), "utf8");
   const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /**
-   * Field names declared by `interface <name>` in `text` — the span from its
-   * opening brace to the first `}` at column 0, with block and line comments
-   * stripped so only declarations are read. Deliberately not `<name>`-aware
-   * beyond the word boundary, and deliberately the same reader for both
-   * sides: the doc's fenced `ts` block and the engine's own source are the
-   * same grammar, so one parser keeps the comparison honest.
-   *
-   * Both callable spellings count as the same field: a member declared as a
-   * property (`run: (ctx) => …`, how `src/Gate.ts` writes it) and the same
-   * member written as method shorthand (`run(ctx): …`, how the doc writes
-   * it) name one field, and a reader that saw only the first would call the
-   * doc's block short by a name it does declare.
-   */
-  function interfaceFields(text: string, name: string): string[] {
-    const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(text);
-    if (!open) return [];
-    const start = open.index + open[0].length;
-    const end = text.indexOf("\n}", start);
-    const body = text
-      .slice(start, end === -1 ? undefined : end)
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/\/\/[^\n]*/g, "");
-    return [...body.matchAll(/^\s*(\w+)\??\s*[:(]/gm)].map((m) => m[1]!);
-  }
 
   /**
    * The option names the doc's built-ins list teaches, off the one line that
@@ -473,6 +482,94 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
         "signature: it names the options PendingGateOptions declares, and no " +
         "option it does not",
     ).toEqual(declared.slice().sort());
+  });
+});
+
+// Agreement pin (CHAIN-AUTHORING-PHASE-TABLE-AGREEMENT, per
+// .claude/rules/engineering.md "A seam gate reads what the real writer
+// wrote"): §1 of docs/CHAIN-AUTHORING.md is where a chain author learns what
+// a `Phase` can declare, and it learned it from a hand-kept table that named
+// twelve of the fifteen fields `src/Phase.ts` declares. A field absent from
+// the table is a capability no chain knows it has — `scopeWritesToEntry` and
+// `shipped` were unlearnable from the doc, and `entryChannelPaths` was taught
+// downstream with no row, so the one spelling the doc gave a reader was the
+// one the loader refuses. The rung that holds it is the same field-set
+// comparison the gate-surface pins above make, with the markdown table as the
+// restating side.
+describe("the chain-authoring doc's Phase surface agrees with the engine type", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+
+  /**
+   * Field names the §1 table teaches: the first markdown table under the
+   * section heading, read one row at a time, taking the backticked name in
+   * the **first** column only. Second-column prose names sibling fields
+   * freely — the `entryChannelPaths` row cites `scopeWritesToEntry` — so a
+   * reader that took every backticked span in a row would count fields the
+   * table never gives a row.
+   *
+   * Keyed on the heading rather than a line number, so the pin follows the
+   * section when the doc moves.
+   */
+  function docPhaseFields(): string[] {
+    const section = doc.split(/^## 1\. Declaring a Phase$/m)[1] ?? "";
+    const rows = section.split("\n");
+    const start = rows.findIndex((l) => /^\| Field\s*\| Role/.test(l));
+    if (start === -1) return [];
+    const fields: string[] = [];
+    for (const row of rows.slice(start + 2)) {
+      if (!row.startsWith("|")) break;
+      const name = /^\|\s*`([^`]+)`\s*\|/.exec(row);
+      if (name) fields.push(name[1]!);
+    }
+    return fields;
+  }
+
+  it("the chain-authoring doc's Phase field table names every field src/Phase.ts declares", () => {
+    const declared = interfaceFields(read("src", "Phase.ts"), "Phase");
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // parser that found nothing on either side would compare two empty sets
+    // forever, and one that stopped at the first wrapped member would agree
+    // with a table missing everything after it.
+    expect(declared, "src/Phase.ts: Phase did not parse").toContain("name");
+    expect(
+      declared,
+      "src/Phase.ts: Phase declares `teardownWorktree` last — the reader " +
+        "stopped short of it",
+    ).toContain("teardownWorktree");
+    expect(declared.length).toBeGreaterThan(10);
+    expect(
+      docPhaseFields(),
+      "docs/CHAIN-AUTHORING.md §1: the field table did not parse — the " +
+        "heading was reworded, or the table moved",
+    ).toContain("name");
+    expect(
+      docPhaseFields().slice().sort(),
+      "docs/CHAIN-AUTHORING.md §1 tabulates Phase: every field src/Phase.ts " +
+        "declares gets a row, and nothing it does not declare does",
+    ).toEqual(declared.slice().sort());
+  });
+
+  // Sensitivity pin: the comparison above is only worth its green if the
+  // table reader is keyed on rows and on the first column. Drive both
+  // failures the reader is shaped to avoid.
+  it("the Phase table reader counts one field per row, from the first column only", () => {
+    const fields = docPhaseFields();
+    expect(fields.length, "the table yielded no rows").toBeGreaterThan(10);
+    // One name per row, no duplicates — the `entryChannelPaths` row's prose
+    // cites `scopeWritesToEntry`, which has its own row and must not be
+    // counted twice.
+    expect(new Set(fields).size).toBe(fields.length);
+    const citing = doc
+      .split("\n")
+      .filter((l) => /^\|\s*`entryChannelPaths`/.test(l));
+    expect(citing, "the entryChannelPaths row left the table").toHaveLength(1);
+    expect(
+      citing[0],
+      "the second-column cross-reference this reader must ignore is gone — " +
+        "the sensitivity check is vacuous",
+    ).toContain("`scopeWritesToEntry`");
   });
 });
 

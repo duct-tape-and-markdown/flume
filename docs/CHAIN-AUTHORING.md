@@ -139,7 +139,9 @@ no compatibility window to observe.
 
 A `Phase` is plain data the dispatcher interprets. No per-phase imperative
 code path; the harness owns the tick lifecycle and reads the fields you
-set. The full interface lives in `src/Phase.ts`. The fields that matter:
+set. The full interface lives in `src/Phase.ts`; every field it declares is
+below, in declaration order. A field whose role opens with *Optional* may be
+omitted; the rest are required.
 
 | Field           | Role                                                                                                                              |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -149,10 +151,13 @@ set. The full interface lives in `src/Phase.ts`. The fields that matter:
 | `concurrency`   | `"singleton"` or `"fanout"` — see §3.                                                                                             |
 | `agent`         | Optional per-phase `Agent` override; resolution `phase.agent ?? chainModule.agent ?? dispatcher default`. See §4.                  |
 | `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit.                                              |
+| `entryChannelPaths` | Optional globs always writable on an entry-scoped fanout tick, whatever the assigned entry declared — the cross-tick channel (a build phase reporting into `.flume/plan/open-questions.md`). Only consulted when `scopeWritesToEntry` is `true`, and declaring it without that flag is refused at chain load. Default `[]`. |
+| `scopeWritesToEntry` | Optional opt-in narrowing a fanout tick's write allowance to `entry.files ∪ entryChannelPaths`, with `writablePaths` as the outer ceiling both checks clear. Default `false` — the fence is `writablePaths` alone, byte-identical to a singleton tick's. See the `<harness>` block in §5. |
 | `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
-| `promptArgs`    | Builds the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                                       |
+| `promptArgs`    | Optional builder for the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                          |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
 | `shouldRun`     | Optional predicate consulted before the agent is invoked. Returning `false` declines the tick — see below.                       |
+| `shipped`       | Optional predicate deciding whether a fanout entry whose commit landed and passed every gate leaves the queue. Reads the facts on `ShipContext`; returning `false` keeps the commit on trunk and the entry in `pending.json`. Undeclared means shipped. |
 | `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. See §3. |
 | `teardownWorktree` | Optional fanout hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. See §3. |
 
