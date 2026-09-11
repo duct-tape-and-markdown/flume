@@ -41,7 +41,7 @@
       "the tick-verdict filenames are spelled once, in STATE_ROOT_NAMES"
     ],
     "acceptance": "`RUNTIME_IGNORES` equals the spec's block, each new line derived from the accessor that owns the name.",
-    "notes": "`stopFlag` is already in STATE_ROOT_NAMES; the two verdict names are spelled in src/Dispatcher.ts (:504 and its sibling) and move. docs/CHAIN-AUTHORING.md's seed list is declared here because CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT pins it to this set — whichever lands second moves both."
+    "notes": "`stopFlag` is already in STATE_ROOT_NAMES; the two verdict names are spelled in src/Dispatcher.ts (:504 and its sibling) and move. docs/CHAIN-AUTHORING.md's seed list is declared here because CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT pins it to this set \u2014 whichever lands second moves both."
   },
   {
     "tag": "RUNTIME-IGNORES-AT-DEFAULT-STATE-ROOT",
@@ -72,7 +72,7 @@
       "a loop start merges the runtime ignores into the default state root's .gitignore"
     ],
     "acceptance": "`loop` and `job run` ensure `<stateRoot>/.gitignore` carries RUNTIME_IGNORES at start; a root already carrying them is left byte-identical, and nothing about the tick changes.",
-    "notes": "Ruling of 2026-09-11 against options A and B; `spec/chain.md` *Per-run artifacts belong under `FLUME_DIR`* now points here. `ensureRuntimeIgnores` (src/job.ts:102) already takes a dir — today its one caller is `job new` (:231). In this repo the resulting `.flume/.gitignore` is a new untracked file; committing it is the operator's."
+    "notes": "Ruling of 2026-09-11 against options A and B; `spec/chain.md` *Per-run artifacts belong under `FLUME_DIR`* now points here. `ensureRuntimeIgnores` (src/job.ts:102) already takes a dir \u2014 today its one caller is `job new` (:231). In this repo the resulting `.flume/.gitignore` is a new untracked file; committing it is the operator's."
   },
   {
     "tag": "MERGE-INTERRUPTED-MARKER",
@@ -117,7 +117,7 @@
       "a surviving merging marker refuses the next loop start with EX_CONFIG"
     ],
     "acceptance": "`<flumeDir>/merging/<slug>.json` exists only between the pick and the bookkeeping; a survivor makes `loop` / `job run` exit 78 naming the file, the branch and the entry, touch nothing, and never reach the startup sweep.",
-    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator."
+    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement \u2014 no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator."
   },
   {
     "tag": "PRIOR-ATTEMPT-STALE-RECORDS-CLEARED",
@@ -159,7 +159,7 @@
       "the tick verdict reports the prior-attempt keys the wave cleared"
     ],
     "acceptance": "Every record carries `key: \"entry\" | \"phase\"`; the wave that reads the queue clears each entry-keyed record whose tag is absent and reports the keys as `clearedPriorAttempts`. A record without the discriminator reads as absent, like an unanchored one.",
-    "notes": "Ruling of 2026-09-11 against the recommended option C. Four such records stood at a83836f. `priorAttemptKey` (src/Dispatcher.ts:4114) has no on-disk discriminator, so 'key not in the queue' cannot tell a retired tag from a live phase record — the keyspace field is what makes the clear decidable. Closes the parked question."
+    "notes": "Ruling of 2026-09-11 against the recommended option C. Four such records stood at a83836f. `priorAttemptKey` (src/Dispatcher.ts:4114) has no on-disk discriminator, so 'key not in the queue' cannot tell a retired tag from a live phase record \u2014 the keyspace field is what makes the clear decidable. Closes the parked question."
   },
   {
     "tag": "QUARANTINE-KEYS-THE-ENTRY-AS-READ",
@@ -192,7 +192,7 @@
     "summary": "A run-scoped quarantine keyed on the slug alone survives a re-scope and forces stop-and-relaunch; key on the entry as read and report the key",
     "per": {
       "path": "spec/loop.md",
-      "section": "Repeated identical failures — quarantine, then abort"
+      "section": "Repeated identical failures \u2014 quarantine, then abort"
     },
     "tests": [
       "a quarantine key is the entry's slug and a hash of its bytes in the queue",
@@ -265,7 +265,7 @@
       "the prior-attempt block quotes the prior attempt's final message without naming a refused constraint"
     ],
     "acceptance": "`NoCommitMode` carries `clean-exit` in place of `voluntary-bail` across src/, the record carries the bounded final-message tail under a neutral field, and the rendered block says what happened without saying why.",
-    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. chain.ts already reads both modes through a ReadonlySet<string> (:573); the one `===` at :852-854 is what parks this. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) all carry the old name."
+    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. chain.ts already reads both modes through a ReadonlySet<string> (:573); the one `===` at :852-854 is what parks this. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) carry the old name. The decline bullets it edits carry a pin: exactly one names both singleton and fanout \u2014 do not reintroduce the pair."
   },
   {
     "tag": "HANDOFF-ENTRY-MERGE-OUTCOME",
@@ -297,7 +297,7 @@
       "TickResult.entries reports the merge outcome of an entry the chain declined to ship"
     ],
     "acceptance": "`handoff` separates `cherry-pick-conflict` from `not-shipped` off `result.entries` alone, without reading the verdict log.",
-    "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
+    "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` \u2014 that list wants the human's amendment once this lands."
   },
   {
     "tag": "EXAMPLES-SPEC-PHASE-CUT",
@@ -358,8 +358,8 @@
       "section": "Narration is the ladder's bottom rung"
     },
     "tests": [],
-    "acceptance": "The Provenance bullet states the 0.8+ truth — `per` is a chain-declared extension the engine never parses, and citation discipline is the chain's `per cites resolve` gate; the v0 success criterion section is gone; the corpus-reform section is gone.",
-    "notes": "Ruling of 2026-09-11: (a) restate, (b) retire outright — the comparison target (`bin/flume-bash`, gen2 specs) exists in no tree and a restated target would be a claim nobody has measured, (c) delete. The quality-lenses section at :72 is untouched: it has not executed."
+    "acceptance": "The Provenance bullet states the 0.8+ truth \u2014 `per` is a chain-declared extension the engine never parses, and citation discipline is the chain's `per cites resolve` gate; the v0 success criterion section is gone; the corpus-reform section is gone.",
+    "notes": "Ruling of 2026-09-11: (a) restate, (b) retire outright \u2014 the comparison target (`bin/flume-bash`, gen2 specs) exists in no tree and a restated target would be a claim nobody has measured, (c) delete. The quality-lenses section at :72 is untouched: it has not executed."
   },
   {
     "tag": "MIGRATING-012-AFTERMERGE-RESTORATION",
@@ -372,19 +372,91 @@
       "edit": [
         {
           "path": "docs/MIGRATING-0.12.md",
-          "description": "§1, one line naming afterMerge placement as a restoration of v0's"
+          "description": "\u00a71, one line naming afterMerge placement as a restoration of v0's"
         }
       ],
       "retire": []
     },
-    "summary": "MIGRATING-0.12 §1 reads as a new requirement, so a v0-shaped chain that never moved its correctness gates cannot tell it is already compliant",
+    "summary": "MIGRATING-0.12 \u00a71 reads as a new requirement, so a v0-shaped chain that never moved its correctness gates cannot tell it is already compliant",
     "per": {
       "path": "spec/chain.md",
       "section": "Gate placement is the chain's decision"
     },
     "tests": [],
-    "acceptance": "§1 says in one line that afterMerge is where v0 put correctness gates, so a chain that never moved reads itself as compliant rather than as owing a migration step.",
+    "acceptance": "\u00a71 says in one line that afterMerge is where v0 put correctness gates, so a chain that never moved reads itself as compliant rather than as owing a migration step.",
     "notes": "Ruling of 2026-09-11. The cumulative symbol-to-release index from the same backlog is declined until the 1.0 cut and is not in this queue."
+  },
+  {
+    "tag": "CHECK-NO-FANOUT-SKIP-IN-PROSE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cliHelp.ts",
+          "description": "`check`'s exit-code block, the 0 paragraph (:209)"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the `flume check` entry and its sample output (:176-:194)"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "both prose surfaces against the message cli.ts prints"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`check`'s help text and docs/CLI.md describe the fence as unconditional, so the no-fanout skip the spec ratifies is a third way to 0 nobody documents",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "tests": [
+      "flume check --help names the no-fanout skip among the ways check exits 0",
+      "docs/CLI.md's flume check section names the no-fanout skip"
+    ],
+    "acceptance": "Both prose surfaces name the no-consumer route to 0, and each pin reads the skip line `src/cli.ts:549` actually prints rather than a hand-copied phrase.",
+    "notes": "Drained from CHECK-NO-FANOUT-VACUOUS-PASS's note. The skip shipped at src/cli.ts:549; spec/cli.md already states it (`vacuous by design and spelled`). tests/cliHelp.test.ts:21 is the standing precedent for holding a help block against the code's real range."
+  },
+  {
+    "tag": "WORKTREE-BASE-DOCS-PINNED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "the base formula at :225-:227"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the base formula at :770-:772"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the agreement pin, beside the harness-state and job-seed pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "README and CHAIN-AUTHORING each spell the worktree-base formula by hand, a third and fourth copy of what worktreesBase now single-sources, held by nothing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the docs' worktree-base formula agrees with the base worktreesBase resolves",
+      "the worktree-base scan flags a doc formula that drifts from worktreesBase"
+    ],
+    "acceptance": "Both doc claims are driven against `worktreesBase` (src/paths.ts) itself \u2014 default and override \u2014 and a doc edited away from the resolver turns the pin red.",
+    "notes": "Drained from WORKTREE-BASE-RESOLVED-ONCE's note; both copies are correct today. Same seam as DOC-HARNESS-STATE-OWNERSHIP and CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, whose pins in tests/retired-narration.test.ts already read src/ for their claims."
   },
   {
     "tag": "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE",
@@ -408,7 +480,7 @@
       "section": "Surface, not prescription"
     },
     "tests": [],
-    "acceptance": "A reader opening the doc learns that `.flume/chain.ts` in this repo is the living reference chain and that `examples/` is the shipped floor — the recommended shape ships by name, not as a default.",
+    "acceptance": "A reader opening the doc learns that `.flume/chain.ts` in this repo is the living reference chain and that `examples/` is the shipped floor \u2014 the recommended shape ships by name, not as a default.",
     "notes": "Ruling of 2026-09-11 (option C, first half). The promotions into cascade-chain.ts follow as their own entries, blocked on this one so the doc's claim lands before the shapes it points at."
   },
   {
@@ -442,7 +514,7 @@
     "tests": [
       "the cascade example's plan phase declines a tick when nothing on disk gives it work"
     ],
-    "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` — not `process.env`, not a directory scan — and the integration test drives both the decline and the run.",
+    "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` \u2014 not `process.env`, not a directory scan \u2014 and the integration test drives both the decline and the run.",
     "notes": "Ruling of 2026-09-11 (option C): promote the shapes a new adopter most needs, in order. This is the first."
   },
   {
@@ -477,7 +549,7 @@
       "the cascade example's test gate refuses an entry whose named behavior has no passing test"
     ],
     "acceptance": "A `tests[]` line on a cascade entry is judged by a gate fed from the reporter's own output, and an entry naming a behavior no test carries fails that gate.",
-    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry — that fork is still open."
+    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry \u2014 that fork is still open."
   },
   {
     "tag": "CASCADE-GATE-READS-ENTRY-AND-BASE",
@@ -553,7 +625,7 @@
       "the cascade example's plan slices hand off in dependency order"
     ],
     "acceptance": "cascade declares more than one plan slice, each computing its own liveness from disk, with a handoff that passes the baton down a declared order; the integration test ticks the ladder.",
-    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick."
+    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) \u2014 the quote moves in the same commit or the pin reverts the tick."
   },
   {
     "tag": "RELEASE-CITES-CUT-DISPATCHER",
@@ -566,12 +638,12 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "81 `RELEASE-v0.N §M` / `v0.N §M` cites"
+          "description": "81 `RELEASE-v0.N \u00a7M` / `v0.N \u00a7M` cites"
         }
       ],
       "retire": []
     },
-    "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted — a cite no reader can follow",
+    "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted \u2014 a cite no reader can follow",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -579,7 +651,7 @@
     "tests": [
       "src/Dispatcher.ts carries no release-numbered spec cite"
     ],
-    "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
+    "acceptance": "No `RELEASE-v0.N \u00a7M` or `v0.N \u00a7M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
     "notes": "Ruling of 2026-09-11, option B: git carries provenance. Split by module because 183 sites across 19 files is more than one tick can land green; this is the largest."
   },
   {
@@ -654,7 +726,7 @@
       ],
       "retire": []
     },
-    "summary": "The other 95 dead release cites in src/, across fifteen modules — same grammar, same reason, split off Dispatcher.ts so each lands green in a tick",
+    "summary": "The other 95 dead release cites in src/, across fifteen modules \u2014 same grammar, same reason, split off Dispatcher.ts so each lands green in a tick",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -662,7 +734,7 @@
     "tests": [
       "no src/ module outside Dispatcher.ts carries a release-numbered spec cite"
     ],
-    "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains under src/ outside Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand.",
+    "acceptance": "No `RELEASE-v0.N \u00a7M` or `v0.N \u00a7M` cite remains under src/ outside Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand.",
     "notes": "Counts verified on disk 2026-09-11. Sibling of RELEASE-CITES-CUT-DISPATCHER; the two collide on nothing and the pin entry waits on both."
   },
   {
@@ -745,7 +817,7 @@
       "superviseLoop is exported from src/loopSupervisor.ts"
     ],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, the supervisor's tests move with it and differ only in import path.",
-    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) — take it first."
+    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) \u2014 take it first."
   },
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
@@ -775,7 +847,7 @@
       ],
       "retire": []
     },
-    "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
+    "summary": "Prior-attempt persistence \u2014 key, read, write, clear, revert snapshots, record builders \u2014 is a separate home inside Dispatcher.ts",
     "per": {
       "path": ".claude/rules/posture-sweep.md",
       "section": "A violation counts only when verified on disk this tick"
@@ -823,7 +895,7 @@
       "frictionCountLine is exported from src/friction.ts"
     ],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction."
+    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share \u2014 the new module keeps that direction."
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
