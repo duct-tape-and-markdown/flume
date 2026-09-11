@@ -499,10 +499,10 @@ cheap enough to run N-wide and you want type errors stopped before merge.
 Split by cost: fast deterministic checks gate the merge; heavy or
 timing-sensitive correctness gates gate the trunk.
 
-This is a default, not a law. A small, fast suite can stay at
-`afterCommit` — the cascade example keeps `vitestGate` there because its
-suite is trivial. Move it to `afterMerge` once the suite is heavy enough
-that running it N-wide is itself what makes it flake.
+This is a default, not a law. A suite whose N parallel copies still finish
+well inside their timeout can stay at `afterCommit`, where it buys the
+pre-merge catch as well. Move it to `afterMerge` once running it N-wide is
+itself what makes it flake.
 
 ### Don't gate the in-worktree build on host-level integration tests
 
