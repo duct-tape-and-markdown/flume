@@ -38,7 +38,7 @@ import type { Agent, AgentUsage } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import type { Gate, GateResult } from "./Gate.js";
 import { writablePathsGate } from "./builtinGates.js";
-// §6: `buildFlumeApi` is a function, not a constant, precisely so this
+// `buildFlumeApi` is a function, not a constant, precisely so this
 // import participates safely in the builtinGates cycle — see its docstring.
 import {
   buildFlumeApi,
@@ -69,7 +69,7 @@ import { countFrictionFiles } from "./job.js";
  * Local-mutable shape for accumulating gate results before they widen to
  * TickResult.gateResults (which erases `details`) or a {@link TickVerdict}'s
  * `gateResults` (which keeps it) — `details` is where a failing
- * writable-paths gate lists the actual violating paths (v0.8 §5).
+ * writable-paths gate lists the actual violating paths.
  */
 type GateResultEntry = {
   gate: string;
@@ -148,7 +148,7 @@ interface PriorAttemptRef {
 export { priorAttemptsDir };
 
 /**
- * §16 (RELEASE-v0.7): one pre-tick worktree provisioning failure — the
+ * One pre-tick worktree provisioning failure — the
  * dispatcher never reached the agent for the affected entry (or, for a
  * repo-level failure, for any entry this tick).
  *
@@ -229,8 +229,8 @@ const MAX_FAILURE_SIGNATURE = 500;
 /**
  * One gate's result as recorded in a {@link TickVerdict} — unlike
  * `TickResult.gateResults` (`./Phase.js`), this keeps `details`: for a
- * failing writable-paths gate that is the actual list of violating paths
- * (v0.8 §5's "gate results ... violating paths"), not a re-derived summary.
+ * failing writable-paths gate that is the actual list of violating paths,
+ * not a re-derived summary.
  */
 export interface TickVerdictGateResult {
   gate: string;
@@ -249,7 +249,7 @@ export interface TickVerdictGateResult {
 
 /**
  * How a fanout entry's landed worktree commit fared once the wave tried to
- * put it on trunk (v0.8 §5's "cherry-pick/merge outcome"):
+ * put it on trunk:
  *  - `merged`                cherry-picked, passed every afterMerge gate,
  *                            and the agent's own termination never stated a
  *                            park — counted shipped.
@@ -271,7 +271,7 @@ export interface TickVerdictGateResult {
  *                            evidence left for the operator rather than a
  *                            forced wipe.
  *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
- *                            gate (§13, RELEASE-v0.7); never reached
+ *                            gate; never reached
  *                            cherry-pick, so it never touched trunk on its
  *                            own.
  *  - `not-shipped`           landed and passed every gate, but the phase's
@@ -318,9 +318,9 @@ export type MergeOutcome =
  * `afterMerge-reverted`, `afterCommit-reverted`) where a captured diff
  * exists; absent when the outcome carries no footprint of its own (`merged`,
  * `not-shipped`, or a best-effort capture that failed). `commitPendingUpdate`
- * sources a wave's footprint commit from this same field (v0.8 §5: "now
- * generated from the same verdict record rather than separate capture") —
- * no independently-maintained observed-files map.
+ * sources a wave's footprint commit from this same field — the same verdict
+ * record, never a separate capture, so there is no
+ * independently-maintained observed-files map.
  */
 export interface TickVerdictMergeOutcome {
   /**
@@ -379,16 +379,15 @@ export interface TickVerdictInvocation extends AgentUsage {
 }
 
 /**
- * v0.8 §5: the one facts artifact every tick that actually runs a phase
- * writes — phase, entry tag(s), committed/no-commit class, gate results,
- * shipped tags, and (fanout) each provisioned entry's cherry-pick/merge
- * fate. Supersedes three v0.7 partial channels: the §4-amendment
- * `last-tick.json` counts file, §13's footprint-only capture, and §15's
- * in-process-only `TickResult.noCommit`.
+ * The one facts artifact every tick that actually runs a phase writes —
+ * phase, entry tag(s), committed/no-commit class, gate results, shipped
+ * tags, and (fanout) each provisioned entry's cherry-pick/merge fate. The
+ * only such channel: no counts file, no footprint-only capture, and no
+ * in-process-only `TickResult.noCommit` beside it.
  *
  * No interpretation fields: this is what happened, never what it means —
  * "park", "bail worth waking for" are a chain's own readings, not engine
- * vocabulary. `errored` (v0.7 §4's run-level failure classification) is
+ * vocabulary. `errored` (the run-level failure classification) is
  * deliberately absent from this shape for the same reason: `superviseLoop`
  * derives it from the facts below at the read site (see its call to {@link
  * readTickVerdict}) rather than storing a precomputed judgment on disk.
@@ -402,13 +401,13 @@ export interface TickVerdict {
   tags: string[];
   committed: boolean;
   /**
-   * RELEASE-v0.2 §6 no-commit classification, present iff the tick (or, for
+   * No-commit classification, present iff the tick (or, for
    * a fanout wave, the whole wave) produced no usable commit. Absent on a
    * committed tick or a nothing-pickable no-op (no agent ran).
    */
   noCommit?: NoCommitMode;
   /**
-   * RELEASE-v0.11 §5: set when this tick (or, for a fanout wave, any part of
+   * Set when this tick (or, for a fanout wave, any part of
    * it) refused to commit because the ref moved between the tip it recorded
    * at tick start and the point a commit would have landed onto it — the
    * tip-verify backstop. A sibling fact to `noCommit`, never folded into it:
@@ -420,7 +419,7 @@ export interface TickVerdict {
    */
   tipMoved?: boolean;
   /**
-   * RELEASE-v0.11 §8: set when this tick (or, for a fanout wave, any part
+   * Set when this tick (or, for a fanout wave, any part
    * of it) never invoked the agent because `phase.shouldRun` returned
    * `false` — a sibling fact to `noCommit`/`tipMoved`, never a fifth
    * `NoCommitMode`: the chain declined the tick outright, which is not one
@@ -458,19 +457,19 @@ export interface TickVerdict {
    */
   invocations: TickVerdictInvocation[];
   /**
-   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
+   * Pre-tick worktree provisioning failures (sweep or
    * create) this tick recorded, before any agent ran for the affected
    * entries. Absent/empty when the tick hit none.
    */
   provisionFailures?: ProvisionFailure[];
   /**
-   * §16 (generalized past provisioning, spec/loop.md "Repeated identical
-   * failures"): merge-stage cherry-pick-conflict failures this tick recorded.
+   * Merge-stage cherry-pick-conflict failures this tick recorded (spec/
+   * loop.md "Repeated identical failures").
    * Absent/empty when the tick hit none.
    */
   mergeFailures?: MergeFailure[];
   /**
-   * §16 (generalized past provisioning): gate-stage failures — an afterCommit
+   * Gate-stage failures — an afterCommit
    * or afterMerge gate revert — this tick recorded. Absent/empty when the
    * tick hit none.
    */
@@ -505,20 +504,20 @@ export interface TickVerdict {
 type PhaseTickOutcome = {
   result: TickResult;
   noCommit?: NoCommitMode;
-  /** RELEASE-v0.11 §5: sibling to `noCommit` — see {@link TickVerdict.tipMoved}. */
+  /** Sibling to `noCommit` — see {@link TickVerdict.tipMoved}. */
   tipMoved?: boolean;
-  /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
+  /** Sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
   declined?: boolean;
   /** See {@link TickVerdict.bystanderCheckpointSha}. */
   bystanderCheckpointSha?: string;
   provisionFailures?: ProvisionFailure[];
-  /** §16 (generalized) — see {@link TickVerdict.mergeFailures}. */
+  /** See {@link TickVerdict.mergeFailures}. */
   mergeFailures?: MergeFailure[];
-  /** §16 (generalized) — see {@link TickVerdict.gateFailures}. */
+  /** See {@link TickVerdict.gateFailures}. */
   gateFailures?: GateFailure[];
-  /** Entry tags this wave provisioned a worktree/agent for (fanout only; §5); absent for a singleton phase. */
+  /** Entry tags this wave provisioned a worktree/agent for (fanout only); absent for a singleton phase. */
   tags?: string[];
-  /** Fanout only (§5): each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
+  /** Fanout only: each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
   mergeOutcomes?: TickVerdictMergeOutcome[];
   /** See {@link TickVerdict.invocations}. */
   invocations?: TickVerdictInvocation[];
@@ -527,7 +526,7 @@ type PhaseTickOutcome = {
 };
 
 /**
- * v0.8 §5: two files under the state dir, both stable paths, neither a
+ * Two files under the state dir, both stable paths, neither a
  * dogfood convention. Their names live in `STATE_ROOT_NAMES`
  * (`src/paths.ts`) with the rest of the state root's layout, so the job
  * `.gitignore` seed carries them without a second spelling; the accessors
@@ -699,7 +698,7 @@ async function readTickVerdict(
 
 /**
  * Read up to the last `n` verdicts (oldest first), for a chain to render
- * recent tick history into a prompt (v0.8 §5). Corrupt lines are skipped,
+ * recent tick history into a prompt. Corrupt lines are skipped,
  * never thrown; an absent log reads as empty history — same no-false-signal
  * posture as every other artifact this dispatcher persists.
  */
@@ -794,9 +793,9 @@ const MAX_PRIOR_TOUCHED_PATHS = 200;
  * clean-exit (the agent refused a constraint and said so in its final
  * message, captured here as `finalMessage` — lifted from the transcript by
  * the adapter's own `extractFinalMessage`, spec/chain.md "The agent seam");
- * any process failure is a platform-preempt (not a defect in the work) — §6
- * classification consults this distinction only when the tick produced no
- * commit.
+ * any process failure is a platform-preempt (not a defect in the work); the
+ * no-commit classification consults this distinction only when the tick
+ * produced nothing usable.
  *
  * When a commit lands, `runFanout`'s ship classification consults it too
  * (spec/pending.md "Ship detection trusts the agent's own account", ruling
@@ -822,8 +821,8 @@ type AgentTermination =
  * keying. Never lengthens the input (runs of disallowed chars collapse to a
  * single `-`), so anything bounding raw `tag` length also bounds this.
  *
- * `tag` itself is length-bounded at the schema gate (v0.8 §3,
- * `PendingSchema.ts` `TAG_MAX_LENGTH`), derived from this module's own
+ * `tag` itself is length-bounded at the schema gate (`PendingSchema.ts`
+ * `TAG_MAX_LENGTH`), derived from this module's own
  * tightest raw-tag consumer, `writeRevertNote`'s
  * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
  * component here (this `slug`/`createWorktree`'s worktree-dir and
@@ -929,8 +928,8 @@ export function computeStateRootRel(
 }
 
 /**
- * Length bound for `createWorktree`'s directory-name component only (§9,
- * v0.11). `git worktree add` refuses a worktree path around 200 chars on
+ * Length bound for `createWorktree`'s directory-name component only.
+ * `git worktree add` refuses a worktree path around 200 chars on
  * win32 (`fatal: '$GIT_DIR' too big`) — below MAX_PATH, unaffected by
  * `core.longpaths`, and unreachable by `toNamespacedPath`/`namespacedJoin`
  * because git builds that path itself before any Node fs call sees it.
@@ -945,7 +944,7 @@ const WORKTREE_DIRNAME_MAX = 48;
  * `createWorktree`'s fs directory name for an entry's tag — truncated to
  * `WORKTREE_DIRNAME_MAX` with a hash of the *full* tag appended so two tags
  * sharing a long common prefix still land on distinct directories. Only the
- * filesystem component is bounded: the branch name and the §5 prior-attempt
+ * filesystem component is bounded: the branch name and the prior-attempt
  * key keep the untruncated `slugify(entry.tag)`, since neither is a git-
  * constructed worktree path and both are already bounded by the schema's
  * own `TAG_MAX_LENGTH`.
@@ -1057,14 +1056,15 @@ export const consoleLogger: Logger = {
 };
 
 /**
- * What a chain factory returns (RELEASE-v0.11 §6): the `Chain` plus an
- * optional `agent` override and an optional `forkResolver` (the foundations
- * governor, §v0.3). The per-tick resolver returns this; a rewritten chain.ts
- * changes all three for the next tick.
+ * What a chain factory returns: the `Chain` plus an optional `agent`
+ * override and an optional `forkResolver` (the foundations governor). The
+ * per-tick resolver returns this; a rewritten chain.ts changes all three for
+ * the next tick.
  *
  * `agent` and `forkResolver` ride the factory's return rather than named
  * module exports because a named export cannot receive the API — leaving
- * them as exports would preserve exactly the resolution path §6 removes.
+ * them as exports would preserve exactly the resolution path the factory
+ * shape removes.
  */
 export interface ChainModule {
   chain: Chain;
@@ -1073,7 +1073,7 @@ export interface ChainModule {
 }
 
 /**
- * What `.flume/chain.ts` default-exports (RELEASE-v0.11 §6): a factory the
+ * What `.flume/chain.ts` default-exports: a factory the
  * engine calls with its own surface. The chain imports no engine *value*, so
  * a second physical engine in one process is unreachable rather than merely
  * detected.
@@ -1081,7 +1081,7 @@ export interface ChainModule {
 export type ChainFactory = (api: FlumeApi) => ChainModule;
 
 /**
- * Validate a declared `Chain.friction` (§2, v0.6.2): must be relative and
+ * Validate a declared `Chain.friction`: must be relative and
  * must resolve inside the state root, else a usage-shaped error. The check
  * is base-independent — it resolves the declared path against an arbitrary
  * sentinel root and asks whether the result still sits under that root —
@@ -1089,7 +1089,7 @@ export type ChainFactory = (api: FlumeApi) => ChainModule;
  * per call site (a job-scoped run's state root differs from `configDir`,
  * where `chain.ts` itself lives), but "does this relative path escape
  * whatever root it's joined to" is a property of the path string alone.
- * Undeclared `friction` is a strict no-op, per §2.
+ * Undeclared `friction` is a strict no-op.
  */
 function validateFrictionDeclaration(chain: Chain): void {
   if (chain.friction === undefined) return;
@@ -1147,8 +1147,8 @@ function validatePendingPathDeclaration(chain: Chain): void {
 }
 
 /**
- * Refuse the one decidable dead-declaration shape (§2, *A dead declaration
- * is refused at load*): a chain field whose only consumer is statically
+ * Refuse the one decidable dead-declaration shape (spec/chain.md, *A dead
+ * declaration is refused at load*): a chain field whose only consumer is statically
  * unreachable from the rest of the same declaration. Checkable from the
  * declaration alone, no tick required, so the loader — not a tick — refuses
  * it.
@@ -1173,12 +1173,12 @@ function validateNoDeadDeclarations(chain: Chain): void {
 
 /**
  * The friction count line shared by `flume status`, `flume job status`, and
- * the loop-end summary (§6, v0.6.2): count of files directly under the
+ * the loop-end summary: count of files directly under the
  * declared friction dir, resolved against `stateRoot` — whichever state
  * root is in play for the caller (the repo's `flumeDir`, or a job's dir).
  * `undefined` when `Chain.friction` is undeclared, the dir is absent
  * (`ENOENT`), or it holds no files — callers print a line only when this
- * resolves to a string (§6: "when declared and non-empty"). When the dir
+ * resolves to a string — declared and non-empty. When the dir
  * exists but `readdir` fails for any other reason (permission denied, a
  * path too long for the platform, …), that is a real unresolved input, not
  * a legitimate zero: it reads `"friction: unreadable"` rather than folding
@@ -1204,13 +1204,13 @@ export async function frictionCountLine(
 /**
  * tsx's ESM loader failing to recognize the chain as a module because the
  * host repo's `package.json` (or one beside `.flume/chain.ts`) lacks
- * `"type": "module"` (RELEASE-v0.7 §5) — two known empirical shapes:
+ * `"type": "module"` — two known empirical shapes:
  * tsx 4.21 falls through to a CJS parse of the compiled output and Node's
  * CJS loader rejects the `import`/`export` syntax outright; tsx 4.23
  * instead fails resolution one step earlier, `ERR_MODULE_NOT_FOUND` against
  * a path carrying its internal `tsImport` `?namespace=` query, percent-
  * encoded because the failed resolution treated the query as part of a
- * literal file path. Declining to support CJS-context hosts (§1); this
+ * literal file path. Declining to support CJS-context hosts; this
  * class exists only so `loadChainModule`'s caller can refuse with a fix
  * instead of relaying either raw shape as a stack trace.
  */
@@ -1232,7 +1232,7 @@ const CJS_CONTEXT_IMPORT_OUTSIDE_MODULE =
 const CJS_CONTEXT_NAMESPACE_QUERY = /%3Fnamespace%3D/i;
 
 /**
- * Empirical match only (§5) — never a false positive at the cost of missing
+ * Empirical match only — never a false positive at the cost of missing
  * a shape: a genuinely missing dependency (a bare `ERR_MODULE_NOT_FOUND`
  * with no `tsImport` namespace query in the path) must keep surfacing as
  * itself, unshadowed by this refusal.
@@ -1250,7 +1250,7 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
 /**
  * Load + normalize + validate a chain module from an absolute `chain.ts`
  * path. Throws on a missing file, a compile/syntax error, or a module that is
- * not the §6 factory shape: a default export that is not a function, or a
+ * not the factory shape: a default export that is not a function, or a
  * factory whose return carries no `chain` with a `phases[]` array.
  *
  * This is the single load+validate path the runtime trusts. `diskChainLoader`
@@ -1267,7 +1267,7 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * platform-facts.md, "Node's ESM registry is keyed by resolved URL and cannot
  * be evicted". That is *why* per-tick re-resolution is a process boundary
  * rather than in-process re-eval: `flume loop` spawns one `flume tick` per
- * iteration (§2), each a fresh process that loads chain.ts exactly once. A
+ * iteration, each a fresh process that loads chain.ts exactly once. A
  * rewritten chain.ts governs the next tick because the next tick is a new
  * process — not because anything re-imports it in-process.
  */
@@ -1314,10 +1314,10 @@ export async function loadChainModule(
     "default" in d;
   const factory = (interop ? d!.default : d) as ChainFactory | undefined;
 
-  // §6: a non-function default export is refused, never accepted as the
-  // pre-§6 `Chain` object the factory replaced. A silent fallback would readmit the very thing
-  // the section removes — a chain resolving engine values through its own
-  // import, and with them a second physical engine.
+  // A non-function default export is refused, never accepted as the older
+  // `Chain` object the factory replaced. A silent fallback would readmit the
+  // very thing the factory shape removes — a chain resolving engine values
+  // through its own import, and with them a second physical engine.
   if (typeof factory !== "function") {
     throw new Error(
       `${path} must default-export a chain factory: (api) => ({ chain }). ` +
@@ -1332,9 +1332,9 @@ export async function loadChainModule(
   // the chain would otherwise rebuild from `process.env`.
   const module = factory(buildFlumeApi(paths)) as ChainModule | undefined;
 
-  // A returned thenable means an async factory: §6 specifies a synchronous
-  // one, and awaiting here would silently accept a shape the contract does
-  // not carry. Name it rather than failing later on `chain.phases`.
+  // A returned thenable means an async factory: the factory shape is
+  // synchronous, and awaiting here would silently accept a shape the
+  // contract does not carry. Name it rather than failing later on `chain.phases`.
   if (module && typeof (module as { then?: unknown }).then === "function") {
     throw new Error(
       `${path}'s chain factory returned a Promise; the factory must be synchronous. ` +
@@ -1360,7 +1360,7 @@ export async function loadChainModule(
 /**
  * Build the default per-tick chain resolver: load `<configDir>/chain.ts` via
  * `loadChainModule`, once per call. No memoization: each `flume tick` is a
- * fresh process (§2), so there is exactly one resolution per process and
+ * fresh process, so there is exactly one resolution per process and
  * nothing to memoize across — cost is one small `tsImport` per tick,
  * dominated by orders of magnitude by the agent invocation.
  *
@@ -1381,7 +1381,7 @@ export function diskChainLoader(
  * No prebuilt `Chain` is accepted — the dispatcher resolves
  * `<configDir>/chain.ts` once at the start of its tick. Re-resolution across
  * ticks is a process boundary, not in-process: `flume loop` spawns one
- * `flume tick` per iteration (§2), so a tick that rewrites the chain is
+ * `flume tick` per iteration, so a tick that rewrites the chain is
  * governed by the new chain on the next tick's fresh process.
  */
 export interface DispatcherOptions {
@@ -1400,7 +1400,7 @@ export interface DispatcherOptions {
    */
   flumeDir?: string;
   /**
-   * Fanout branch namespace (v0.5 §4). When set, ephemeral worktree branches
+   * Fanout branch namespace. When set, ephemeral worktree branches
    * are `flume/<namespace>/<slug>` instead of the repo-global `flume/<slug>`,
    * and worktree paths are `<wtBase>/<namespace>/<slug>` instead of
    * `<wtBase>/<slug>`, so two jobs whose pending entries share a tag slug fan
@@ -1425,12 +1425,12 @@ export interface DispatcherOptions {
    */
   chainLoader?: () => Promise<ChainModule>;
   /**
-   * Foundations governor (§v0.3). Given the repo root, returns a predicate
+   * Foundations governor. Given the repo root, returns a predicate
    * answering "is this open-question fork resolved?". Consulted once per tick;
    * an entry whose `dependsOnForks` contains any unresolved slug is not
    * pickable, skipped in favour of a foundation-settled sibling (or the tick
    * idles if none). Default: every fork resolved — a chain that supplies no
-   * resolver is behaviourally identical to v0.2. The runtime stays
+   * resolver never holds an entry back. The runtime stays
    * format-agnostic: how a project records and resolves forks lives in the
    * resolver, not here.
    */
@@ -1456,7 +1456,7 @@ export interface DispatcherOptions {
    */
   tickTimeoutMs?: number;
   /**
-   * §16 (RELEASE-v0.7): {@link quarantineKey} values (`slug@hash`) excluded
+   * {@link quarantineKey} values (`slug@hash`) excluded
    * from this tick's fanout pick even though `pending.json` still lists them
    * as pickable — `pending.json` itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's
@@ -1502,7 +1502,7 @@ export interface DispatcherOptions {
 }
 
 /**
- * `flume tick` exit code for an Axis-C terminal misconfiguration (§3):
+ * `flume tick` exit code for an Axis-C terminal misconfiguration:
  * sysexits.h `EX_CONFIG`. Distinct from 0 (clean hibernate), 1 (other
  * harness errors), and {@link EX_MOUNT_DEAD} (the chain never resolved at
  * all) so the process boundary classifies the failure without reading logs.
@@ -1511,7 +1511,7 @@ export interface DispatcherOptions {
 export const EX_TERMINAL_MISCONFIG = 78;
 
 /**
- * `flume tick` exit code for the mount-dead failure class (v0.7 §4): the
+ * `flume tick` exit code for the mount-dead failure class: the
  * chain module cannot load, the state root is missing, or its declaration is
  * invalid — no agent ran, nothing here is retryable by waiting. Sibling to
  * {@link EX_TERMINAL_MISCONFIG}, not a variant of it: terminal misconfiguration
@@ -1571,7 +1571,7 @@ class WaveLedgerParseFailure extends PendingParseFailure {
 }
 
 /**
- * Axis-C terminal misconfiguration (§3): the declared world is inconsistent —
+ * Axis-C terminal misconfiguration: the declared world is inconsistent —
  * deterministic, non-retryable, no agent ran. `kind` is a union open to
  * future Axis-C members; `"orphaned-awake"` (awake flags naming phases the
  * chain does not declare) is its founding member.
@@ -1593,8 +1593,8 @@ export interface TickOutcome {
   result?: TickResult;
   /**
    * True when the tick could not run at all — chain resolution threw and no
-   * `chainLoadGate` reverted the producing commit (§3): the mount-dead
-   * failure class (v0.7 §4). The `flume tick` process exits
+   * `chainLoadGate` reverted the producing commit: the mount-dead
+   * failure class. The `flume tick` process exits
    * {@link EX_MOUNT_DEAD}; the `flume loop` supervisor fail-fasts on it
    * (aborting the run) rather than proceeding to the next tick — a mount-dead
    * chain is exactly as dead next tick as this one. Distinct from
@@ -1603,7 +1603,7 @@ export interface TickOutcome {
    */
   failed?: boolean;
   /**
-   * Set when chain resolution failed with the RELEASE-v0.7 §5 CJS-context
+   * Set when chain resolution failed with the CJS-context
    * signature — a usage error (the host repo's package.json is missing
    * `"type": "module"`) with a concrete, nameable fix, not a mount-dead
    * chain nothing can retry. `flume tick` exits 2 (usage), never
@@ -1612,7 +1612,7 @@ export interface TickOutcome {
    */
   usageError?: boolean;
   /**
-   * For a no-commit tick (§6, widened by RELEASE-v0.10 §3): which of the
+   * For a no-commit tick: which of the
    * four causally-distinct modes produced no usable commit —
    *  - `gate-revert`      a commit was made then a gate reverted it,
    *  - `clean-exit`       the agent exited cleanly without committing —
@@ -1629,17 +1629,17 @@ export interface TickOutcome {
    * attempted and the render itself is what failed). For a fanout wave it
    * is the representative cause when the whole wave shipped nothing
    * (precedence gate-revert > render-refused > platform-preempt >
-   * clean-exit — §6's stated harm is platform failures masquerading as
-   * agent failures, so platform-preempt outranks clean-exit in the wave
+   * clean-exit — the harm being guarded is platform failures masquerading
+   * as agent failures, so platform-preempt outranks clean-exit in the wave
    * summary; render-refused is a real defect in the prompt/config, ranked
    * above the two non-defect classes); each entry's own mode is persisted
-   * to its §5 prior-attempt record (the durable per-entry channel §6
-   * mandates for telling clean-exit loops from platform-preempt runs
-   * without reading session logs).
+   * to its prior-attempt record, the durable per-entry channel for telling
+   * clean-exit loops from platform-preempt runs without reading session
+   * logs.
    */
   noCommit?: NoCommitMode;
   /**
-   * RELEASE-v0.11 §5: mirrors {@link TickVerdict.tipMoved} — set when this
+   * Mirrors {@link TickVerdict.tipMoved} — set when this
    * tick refused a commit because the ref moved out from under the tip it
    * recorded at tick start. A sibling fact to `noCommit` above, never a
    * fifth `NoCommitMode`: the tip-verify backstop is a harness-mechanical
@@ -1647,7 +1647,7 @@ export interface TickOutcome {
    */
   tipMoved?: boolean;
   /**
-   * RELEASE-v0.11 §8: set when this tick refused to invoke the agent
+   * Set when this tick refused to invoke the agent
    * because `phase.shouldRun` returned `false` — a sibling fact to
    * `noCommit`/`tipMoved`, never a fifth `NoCommitMode`: the chain declined
    * the tick before rendering the prompt, so there is no agent termination
@@ -1659,7 +1659,7 @@ export interface TickOutcome {
    */
   declined?: boolean;
   /**
-   * Axis-C terminal misconfiguration (§3) — sibling of `hibernated` /
+   * Axis-C terminal misconfiguration — sibling of `hibernated` /
    * `failed`, never a `NoCommitMode` member (no agent ran, no entry exists
    * to retry). Set when every awake flag names a phase the chain does not
    * declare. The flags are deliberately left on disk: clearing them would
@@ -1668,10 +1668,10 @@ export interface TickOutcome {
    */
   terminal?: TerminalMisconfiguration;
   /**
-   * §16 (RELEASE-v0.7): pre-tick worktree provisioning failures (sweep or
+   * Pre-tick worktree provisioning failures (sweep or
    * create) this fanout tick recorded, before any agent ran for the
    * affected entries. Distinct from `noCommit` — a provisioning failure
-   * never reaches agent invocation, so it is not a §6 no-commit mode; a
+   * never reaches agent invocation, so it is not a no-commit mode; a
    * tick can carry both (this entry's provisioning failed while its
    * siblings ran and shipped) or `provisionFailures` alone with
    * `noCommit` unset (every other entry shipped, so the wave itself
@@ -1680,18 +1680,18 @@ export interface TickOutcome {
    */
   provisionFailures?: ProvisionFailure[];
   /**
-   * §16 (generalized past provisioning) — see {@link TickVerdict.mergeFailures}.
+   * See {@link TickVerdict.mergeFailures}.
    * Present only when the tick hit at least one; absent on a singleton tick or
    * a fanout wave with no cherry-pick conflict.
    */
   mergeFailures?: MergeFailure[];
   /**
-   * §16 (generalized past provisioning) — see {@link TickVerdict.gateFailures}.
+   * See {@link TickVerdict.gateFailures}.
    * Present only when the tick hit at least one; absent on a clean tick.
    */
   gateFailures?: GateFailure[];
   /**
-   * v0.8 §5: this tick's unified facts artifact, present iff a phase
+   * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
    * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
    * whose `commitPendingUpdate` rewrite hit a `PendingParseFailure`
@@ -1727,7 +1727,7 @@ export class Dispatcher {
   private readonly stateRootRel: string | undefined;
   private pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
-  /** Set when tick() loads the chain; composes pending parses (v0.8 §2). */
+  /** Set when tick() loads the chain; composes pending parses. */
   private entryExtension: EntryExtension | undefined;
 
   constructor(opts: DispatcherOptions) {
@@ -1757,13 +1757,13 @@ export class Dispatcher {
     // *this is a new process* (the supervisor spawned it) — not via any
     // in-process reload. The chain's optional `agent` export resolves with it.
     //
-    // Engine resolution-failure fallback (§3): there is no in-process
+    // Engine resolution-failure fallback: there is no in-process
     // "last-good chain" to retain — recovery is structural, not in-memory. A
     // chainLoadGate-guarded broken chain.ts is reverted by its producing
     // tick, so the next tick's fresh process reads the restored file. An
     // *unguarded* broken chain.ts has nothing to run: log loudly and return a
     // no-work failed outcome. The `flume tick` process exits {@link
-    // EX_MOUNT_DEAD} (v0.7 §4); the `flume loop` supervisor aborts the run on
+    // EX_MOUNT_DEAD}; the `flume loop` supervisor aborts the run on
     // first occurrence rather than proceeding — a mount-dead chain is exactly
     // as dead next tick as this one, so it does not burn the remaining
     // `--max` ticks re-hitting the same wall.
@@ -1772,7 +1772,7 @@ export class Dispatcher {
       chainModule = await this.chainLoader();
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
-        // §5: a nameable usage fix, not a dead chain — `flume tick` exits 2
+        // A nameable usage fix, not a dead chain — `flume tick` exits 2
         // (usage), not EX_MOUNT_DEAD; distinct from `failed` below.
         this.log.error(`[flume] ${err.message}`);
         return {
@@ -1797,7 +1797,7 @@ export class Dispatcher {
     }
     const chain = chainModule.chain;
     // Pending parses compose core + the chain's declared entry extension
-    // (v0.8 §2); remembered here because readPending runs downstream of the
+    // remembered here because readPending runs downstream of the
     // one place the chain is loaded.
     this.entryExtension = chain.entryExtension;
     // spec/pending.md "The pending queue": Chain.pendingPath replaces the
@@ -1812,7 +1812,7 @@ export class Dispatcher {
 
     if (!phase) {
       if (awake.length > 0) {
-        // Axis C (§3): every awake flag names a phase the chain does not
+        // Axis C: every awake flag names a phase the chain does not
         // declare. Not Axis B (nothing here is quiescent — the flags persist)
         // and not Axis A (no agent ran, nothing to retry). The flags stay on
         // disk so the human inspects, then `flume sleep <phase>` or fixes
@@ -1835,7 +1835,7 @@ export class Dispatcher {
       };
     }
 
-    // Per-phase delegation (§4): the phase's own agent is the innermost
+    // Per-phase delegation: the phase's own agent is the innermost
     // scope of the chain-level override chain.
     const agent = phase.agent ?? chainModule.agent ?? this.opts.agent;
 
@@ -1849,7 +1849,7 @@ export class Dispatcher {
           : await this.runFanout(phase, agent, chain, forkResolver);
     } catch (err) {
       if (!(err instanceof PendingParseFailure)) throw err;
-      // Same failure class as an unresolved chain (v0.7 §4): no agent ran
+      // Same failure class as an unresolved chain: no agent ran
       // (singleton/fanout's decide-read refused before invoking one) or a
       // wave's shipped work landed on trunk but the rewrite that would clear
       // it from pending.json refused rather than deriving `[]` from a parse
@@ -1885,10 +1885,10 @@ export class Dispatcher {
       clearedPriorAttempts,
     } = phaseOutcome;
 
-    // §15: fold the already-computed no-commit classification into the
+    // Fold the already-computed no-commit classification into the
     // TickResult before handoff — a chain's `handoff` is the only place a
     // clean-exit wave can be distinguished from a genuine no-op.
-    // `tipMoved` (RELEASE-v0.11 §5) does NOT fold in here: `TickResult`
+    // `tipMoved` does NOT fold in here: `TickResult`
     // (`src/Phase.ts`) carries no field for it — the fact lives on
     // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
     // this same tick's synchronous `handoff`.
@@ -1911,7 +1911,7 @@ export class Dispatcher {
       declined,
     );
 
-    // v0.8 §5: the unified facts artifact — a pure value, built here so
+    // The unified facts artifact — a pure value, built here so
     // `TickOutcome` carries everything the CLI's `tick` command needs to
     // persist it verbatim via `writeTickVerdict`. Building it is not itself
     // a disk write (the concern `writeTickVerdict`'s own doc names for
@@ -2105,7 +2105,7 @@ export class Dispatcher {
     // stage actually begins a pick range — see the checkpoint call below.
     let bystanderCheckpointSha: string | undefined;
     const gateResults: GateResultEntry[] = [];
-    // §16 (generalized): a singleton's own afterCommit/afterMerge gate
+    // A singleton's own afterCommit/afterMerge gate
     // revert carries no entry tag (nothing to quarantine — see
     // GateFailure's doc), so it falls to the consecutive-failure backstop
     // alone. Same for a merge-stage failure — see MergeFailure's doc.
@@ -2148,8 +2148,8 @@ export class Dispatcher {
       });
     } catch (err) {
       if (!(err instanceof InlineExecRenderError)) throw err;
-      // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render
-      // — the agent is never invoked. Distinct from clean-exit/
+      // An unresolved inline-exec span aborts the render — the agent is
+      // never invoked. Distinct from clean-exit/
       // platform-preempt: no agent ran at all.
       await this.persistRenderRefused(ref, phase.name, err);
       noCommit = "render-refused";
@@ -2179,7 +2179,7 @@ export class Dispatcher {
       let wtCommitted = postWtHead !== preWtHead;
 
       if (wtCommitted) {
-        // RELEASE-v0.11 §5 tip verify: the agent now commits on this
+        // Tip verify: the agent commits on this
         // tick's own private worktree branch, same as a fanout entry — the
         // ancestry check, not parent equality (spec/worktrees.md
         // "Singleton runs in a worktree" retires the shared-ref leg).
@@ -2414,7 +2414,7 @@ export class Dispatcher {
 
       if (!committed && !tipMoved && !noCommit && !mergeFailure) {
         // No commit landed and nothing else classified it: the agent's own
-        // termination (§6). A clean exit that produced nothing is a
+        // termination. A clean exit that produced nothing is a
         // clean-exit; any process failure is a platform-preempt (not a
         // defect in the work).
         noCommit = await this.classifyNoCommit(ref, termination);
@@ -2457,18 +2457,17 @@ export class Dispatcher {
   }
 
   /**
-   * Wave-level §6 no-commit cause, only meaningful when the wave shipped
+   * Wave-level no-commit cause, only meaningful when the wave shipped
    * nothing usable — shared by the wave's normal-completion verdict and by
    * `WaveLedgerParseFailure`'s partial verdict (engineering.md "Derived
    * state is computed, never restated beside its source"), so a ledger
    * refusal reports the same cause a clean completion would have. Precedence
    * gate-revert > render-refused > platform-preempt > clean-exit:
    * gate-revert means work was produced and lost (highest signal);
-   * render-refused (§3) is a real defect in the prompt/config, ranked above
+   * render-refused is a real defect in the prompt/config, ranked above
    * the non-defect classes; platform-preempt outranks clean-exit so a
    * rate-limited wave is not misread as the agents exiting on their own —
-   * §6's explicit
-   * "platform failures masquerade as agent failures" harm.
+   * the "platform failures masquerade as agent failures" harm.
    */
   private waveNoCommitCause(
     committedWave: boolean,
@@ -2479,8 +2478,8 @@ export class Dispatcher {
     const modes = new Set<NoCommitMode>(
       perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
     );
-    // Per-entry afterMerge isolation (§7b) wrote a gate-revert §5 record for
-    // each merge-reverted entry; reflect that in the wave-level cause.
+    // Per-entry afterMerge isolation wrote a gate-revert prior-attempt
+    // record for each merge-reverted entry; reflect that in the wave-level cause.
     if (mergeReverted.length > 0) modes.add("gate-revert");
     return modes.has("gate-revert")
       ? "gate-revert"
@@ -2513,11 +2512,11 @@ export class Dispatcher {
     // Foundations governor: resolve the per-tick fork predicate once, then let
     // it gate selection alongside `blockedBy`. Default: every fork resolved.
     const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
-    // §16: a slug the supervisor quarantined earlier this run (its worktree
+    // A slug the supervisor quarantined earlier this run (its worktree
     // provisioning failed on a prior tick) is skipped here — `pending.json`
     // itself is untouched, so a fresh run/process retries it from scratch.
     const quarantinedSlugs = this.opts.quarantinedSlugs;
-    // v0.8 §4: the environment facts this chain asserts, matched against
+    // The environment facts this chain asserts, matched against
     // each entry's `requiresCapability` gate.
     const capabilities = new Set(chain.capabilities ?? []);
     const gateEligible = pending.filter((e) =>
@@ -2538,7 +2537,7 @@ export class Dispatcher {
     );
 
     if (pickable.length === 0) {
-      // No agent ran — not a no-commit *agent* tick, so no §6 classification.
+      // No agent ran — not a no-commit *agent* tick, so nothing to classify.
       this.log.info(`[flume] ${phase.name}: nothing pickable`);
       return {
         result: {
@@ -2579,7 +2578,7 @@ export class Dispatcher {
       `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,
     );
 
-    // §16: a repo-level provisioning wall (prune itself fails — no single
+    // A repo-level provisioning wall (prune itself fails — no single
     // entry to blame) is recorded, not thrown — the per-entry loop below
     // still gets a chance per slug (prune's own purpose is defensive: most
     // slugs are unaffected by one stale metadata entry), and the
@@ -2602,7 +2601,7 @@ export class Dispatcher {
       );
     }
 
-    // Serialize worktree creation (§4). `createWorktree` internally does
+    // Serialize worktree creation. `createWorktree` internally does
     // `git worktree remove` (stale-slug cleanup) then `git worktree add`,
     // both mutating the shared `.git/worktrees/` metadata dir — and git is
     // NOT concurrency-safe there: a sibling's `--force` remove can fail
@@ -2611,7 +2610,7 @@ export class Dispatcher {
     // agent fanout below stays parallel — that is the expensive work, and
     // it does not touch `.git/worktrees/`.
     //
-    // §16: a provisioning failure (sweep or create) is isolated to the
+    // A provisioning failure (sweep or create) is isolated to the
     // entry whose slug hit it — a held/EBUSY worktree dir on one entry must
     // not crash the whole batch when its siblings are perfectly pickable
     // (the ship-detection-declared-files-diff incident: 12/16 ticks burned
@@ -2640,7 +2639,7 @@ export class Dispatcher {
     // from a chain that provisioned an ephemeral DB at setup time).
     //
     // Isolated the same way `createWorktree` above isolates a per-entry
-    // failure (§16): a hook throw for one entry must not reject the
+    // failure: a hook throw for one entry must not reject the
     // `Promise.all` and crash the whole wave when its siblings' hooks
     // succeeded. The worktree this entry got from `createWorktree` still
     // exists and still needs teardown below, so `worktrees`/`provisioned`
@@ -2704,7 +2703,7 @@ export class Dispatcher {
     );
 
     // Cherry-pick winners onto trunk in batch order, gating each at
-    // afterMerge individually (§7b). The offending entry is the one whose
+    // afterMerge individually. The offending entry is the one whose
     // cherry-pick turns an afterMerge gate red — nothing else changed since
     // its pre-cherry-pick trunk — so revert *only* its commit (reset to that
     // point) and leave it pending. The N−1 clean siblings already on trunk
@@ -2725,25 +2724,23 @@ export class Dispatcher {
     // whether the follow-up reset landed.
     const revertRefused: PendingEntry[] = [];
     const mergeGateResults: GateResultEntry[] = [];
-    // v0.8 §5: each provisioned entry's cherry-pick/merge fate, for this
+    // Each provisioned entry's cherry-pick/merge fate, for this
     // wave's TickVerdict — the sole capture of what happened to each entry,
     // footprint included. `commitPendingUpdate` below reads a wave's
     // merge-failure footprints straight off these records (the same ones
     // `tick()` persists as `verdict.mergeOutcomes`) rather than a second,
-    // independently-maintained observed-files map — "now generated from the
-    // same verdict record rather than separate capture" (§5). An
-    // afterCommit gate-revert or a plain no-commit entry never reaches
-    // cherry-pick, so it gets an outcome here only when it carried a
-    // captured footprint (§13).
+    // independently-maintained observed-files map. An afterCommit
+    // gate-revert or a plain no-commit entry never reaches cherry-pick, so
+    // it gets an outcome here only when it carried a captured footprint.
     const mergeOutcomes: TickVerdictMergeOutcome[] = [];
-    // §16 (generalized past provisioning): merge-stage and gate-stage
+    // Merge-stage and gate-stage
     // failures this wave recorded — sibling accounting to `provisionFailures`
     // above, fed to the same wave-level verdict for superviseLoop's quarantine
     // + consecutive-identical backstop to key off.
     const mergeFailures: MergeFailure[] = [];
     const gateFailures: GateFailure[] = [];
     let waveTipMoved = false;
-    // RELEASE-v0.11 §8: mirrors `waveTipMoved` — a wave that declined at
+    // Mirrors `waveTipMoved` — a wave that declined at
     // least one entry sets this even when it also shipped (entries
     // `shouldRun` let through are unaffected by their siblings declining).
     let waveDeclined = false;
@@ -2772,7 +2769,7 @@ export class Dispatcher {
       }
       if (r.tipMoved) {
         waveTipMoved = true;
-        // RELEASE-v0.11 §5 (per-entry leg): this entry's own ancestry check
+        // Per-entry tip-verify leg: this entry's own ancestry check
         // refused before ever reaching cherry-pick — a real, dropped-work
         // fact, not silence a partial ship summary would otherwise paper
         // over (spec/loop.md "Tip verify"). Distinct from the wave-level
@@ -2787,7 +2784,7 @@ export class Dispatcher {
       }
       if (r.declined) waveDeclined = true;
       if (!r.committed || !r.commitSha || !r.spanBase) {
-        // §13: an in-worktree afterCommit gate revert never reaches
+        // An in-worktree afterCommit gate revert never reaches
         // cherry-pick, so it never touches trunk on its own — record its
         // captured footprint here so commitPendingUpdate below lands it on
         // trunk instead of it living only in the gitignored prior-attempt
@@ -2874,7 +2871,7 @@ export class Dispatcher {
           baseSha: r.spanBase,
           headSha: r.commitSha,
         });
-        // §16 (generalized): a merge-stage failure — always entry-scoped, so
+        // A merge-stage failure — always entry-scoped, so
         // superviseLoop's quarantine leg can isolate it exactly like a
         // tagged provisioning failure.
         mergeFailures.push({
@@ -2958,8 +2955,8 @@ export class Dispatcher {
         this.log.warn(
           `[flume] afterMerge gate '${entryFailure.gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
         );
-        // §5: afterMerge previously surfaced nothing to the agent — the
-        // explicit anti-pattern this closes. Capture the digest while the
+        // An afterMerge failure must surface to the agent, never vanish.
+        // Capture the digest while the
         // cherry-picked SHA is still reachable, then drop ONLY this entry's
         // commit (reset to the pre-cherry-pick trunk), not the wave. The
         // entry stays pending; its retry carries this prior-attempt block.
@@ -3224,15 +3221,15 @@ export class Dispatcher {
     // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
     // releases while the worktree path still exists. Teardown failures are
     // logged but do not block worktree removal — leaks are recoverable, a
-    // stuck worktree is not. Friction harvest (§4) runs in the same
+    // stuck worktree is not. Friction harvest runs in the same
     // best-effort slot, immediately before removal — the last point the
     // worktree-local mirror is still readable.
     let cleaned = 0;
-    // §7: a worktree whose directory survives even the fallback removal is
+    // A worktree whose directory survives even the fallback removal is
     // reported once for the whole wave, not once per worktree — a locked
     // node_modules on one entry shouldn't produce N identical log lines.
     const survivingPaths: string[] = [];
-    // Serialize teardown for the same reason as setup (§4): N concurrent
+    // Serialize teardown for the same reason as setup: N concurrent
     // `git worktree remove --force` calls race the shared `.git/worktrees/`
     // dir. The chain's `teardownWorktree` hook and branch deletion ride the
     // same serial loop — teardown is off the critical path, so a simple
@@ -3256,7 +3253,7 @@ export class Dispatcher {
       `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
     );
 
-    // Wave-level §6 cause, only when the wave shipped nothing usable —
+    // Wave-level no-commit cause, only when the wave shipped nothing usable —
     // `allGateResults`/`committedWave` were already computed above, ahead of
     // `commitPendingUpdate`, so `WaveLedgerParseFailure`'s partial verdict
     // could read them too.
@@ -3355,7 +3352,7 @@ export class Dispatcher {
     committed: boolean;
     commitSha?: string;
     /**
-     * RELEASE-v0.11 §5 (per-entry leg): the tip this entry's worktree was
+     * The tip this entry's worktree was
      * provisioned from — the ancestry check's recorded base, and the range
      * start the wave loop cherry-picks and diffs from (`base..commitSha`,
      * spec/loop.md "N commits are completion"). Set on every path that
@@ -3366,11 +3363,11 @@ export class Dispatcher {
      */
     spanBase?: string;
     gateResults: GateResultEntry[];
-    /** §6 mode when this entry produced no usable commit; absent when it shipped. */
+    /** No-commit mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
-    /** RELEASE-v0.11 §5: sibling to `noCommit`, set when this entry's own worktree commit landed on a moved tip. */
+    /** Sibling to `noCommit`, set when this entry's own worktree commit landed on a moved tip. */
     tipMoved?: boolean;
-    /** RELEASE-v0.11 §8: sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
+    /** Sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
     declined?: boolean;
     /**
      * The worktree-branch commit this entry made and then lost before ever
@@ -3393,14 +3390,14 @@ export class Dispatcher {
      */
     branch: string;
     /**
-     * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
+     * The reverted commit's actual touched paths, captured
      * before `dropLastCommit` discards it — set only on an in-worktree
      * `afterCommit` gate revert, so the wave loop can feed it into `observed`
      * the same way an `afterMerge` failure's footprint is fed in.
      */
     footprint?: string[];
     /**
-     * §16 (generalized): set only alongside a `noCommit: "gate-revert"`
+     * Set only alongside a `noCommit: "gate-revert"`
      * afterCommit revert — the wave loop folds this entry-tagged record into
      * its own `gateFailures` the same way it folds `footprint` into
      * `mergeOutcomes`.
@@ -3431,7 +3428,7 @@ export class Dispatcher {
       priorAttempts,
     };
 
-    // RELEASE-v0.11 §8: same seam as the singleton callsite, scoped to this
+    // Same seam as the singleton callsite, scoped to this
     // entry — sees the same ctx `promptArgs` sees.
     if (phase.shouldRun && !phase.shouldRun(ctx)) {
       this.log.info(
@@ -3455,7 +3452,7 @@ export class Dispatcher {
       });
     } catch (err) {
       if (!(err instanceof InlineExecRenderError)) throw err;
-      // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
+      // Same abort as the singleton callsite, scoped to
       // this entry — the agent for this entry is never invoked.
       await this.persistRenderRefused(ref, entry.tag, err);
       return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path, branch: wt.branch };
@@ -3477,7 +3474,7 @@ export class Dispatcher {
     let committed = postHead !== preHead;
 
     if (committed) {
-      // RELEASE-v0.11 §5 tip verify, per-entry leg (spec/loop.md "Tip
+      // Tip verify, per-entry leg (spec/loop.md "Tip
       // verify"): the agent commits directly in this worktree, so verify
       // after the fact — but ancestry, not parent equality. The worktree's
       // own branch is private to this entry/tick, so an agent that commits,
@@ -3509,10 +3506,10 @@ export class Dispatcher {
 
     const gateResults: GateResultEntry[] = [];
     if (!committed) {
-      // No commit, no gate: classify per-entry and persist the matching §5
-      // record (the durable per-entry channel §6 names — an entry that keeps
-      // exiting clean at the same wall must be legible without reading
-      // session logs).
+      // No commit, no gate: classify per-entry and persist the matching
+      // prior-attempt record — the durable per-entry channel, so an entry
+      // that keeps exiting clean at the same wall is legible without reading
+      // session logs.
       const mode = await this.classifyNoCommit(ref, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
       return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, branch: wt.branch, termination };
@@ -3531,7 +3528,7 @@ export class Dispatcher {
     );
     gateResults.push(...verdict.results);
     if (!verdict.ok) {
-      // §13: this revert never reaches cherry-pick, so it's the only chance
+      // This revert never reaches cherry-pick, so it's the only chance
       // to capture what the commit actually touched — runAfterCommitGates
       // already computed this for its gate loop (engineering.md "The fix
       // lands at the mechanism"), so reuse it instead of re-deriving via a
@@ -3675,18 +3672,18 @@ export class Dispatcher {
   }
 
   /**
-   * RELEASE-v0.11 §5 tip verify's guarded revert, for a commit the agent
+   * Tip verify's guarded revert, for a commit the agent
    * made itself. `expectedSha` is `postHead`, the commit this call's own
    * caller just observed.
    *
-   * Mirrors `git.dropLastCommit`'s guarded-revert idiom — §5 cites it as its
-   * own precedent — reconfirming the tip is still `expectedSha` immediately
+   * Mirrors `git.dropLastCommit`'s guarded-revert idiom, reconfirming the
+   * tip is still `expectedSha` immediately
    * before resetting, so a second race (the ref moving again in the gap
    * between observing `postHead` and reverting it) refuses loudly rather
    * than silently dropping a commit this call never observed at the tip.
    * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
-   * fault, so it survives as uncommitted changes (§5 "agent output stays on
-   * disk") rather than being discarded.
+   * fault, so it survives as uncommitted changes on disk rather than being
+   * discarded.
    *
    * `resetToSha` is always the recorded base — every worktree branch (a
    * fanout entry's, or, since spec/worktrees.md "Singleton runs in a
@@ -3715,7 +3712,7 @@ export class Dispatcher {
   }
 
   /**
-   * RELEASE-v0.11 §5 tip verify (spec/loop.md "Tip verify", "Per-entry leg —
+   * Tip verify (spec/loop.md "Tip verify", "Per-entry leg —
    * private ref, ancestry, N commits are completion"). Every worktree branch
    * — a fanout entry's or a singleton phase's own (spec/worktrees.md
    * "Singleton runs in a worktree") — has exactly one legitimate writer:
@@ -3773,7 +3770,7 @@ export class Dispatcher {
       if (result.exitCode !== 0) {
         // A non-zero exit is a process failure, not the agent's own clean
         // exit: crash, OOM/SIGKILL, auth, or rate-limit surfaced as a
-        // non-zero code. §6 platform-preempt — not a defect in the work.
+        // non-zero code. A platform-preempt — not a defect in the work.
         const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
         this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
         return {
@@ -3797,7 +3794,7 @@ export class Dispatcher {
       // tear down the loop. The post-invocation `git rev-parse` still runs,
       // so any commit the agent managed to make before aborting is honored;
       // otherwise the phase falls through with `committed: false`. Either way
-      // this is a §6 platform-preempt — not a defect in the work.
+      // this is a platform-preempt — not a defect in the work.
       const e = err as Error & { name?: string; code?: string };
       const failureClass =
         e.name === "AbortError" || e.code === "ABORT_ERR"
@@ -3814,7 +3811,7 @@ export class Dispatcher {
     commitSha: string,
     assignedEntry: PendingEntry | undefined,
     /**
-     * RELEASE-v0.11 §5: touched paths are the cumulative
+     * Touched paths are the cumulative
      * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
      * diff — the whole-span gate (spec/loop.md "N commits are completion").
      * Both a fanout entry's worktree branch and a singleton phase's own
@@ -3824,7 +3821,7 @@ export class Dispatcher {
     spanBase: string,
   ): Promise<{
     ok: boolean;
-    /** First failing gate, structured so callers can persist a §5 record. */
+    /** First failing gate, structured so callers can persist a prior-attempt record. */
     failure?: {
       gate: string;
       message: string;
@@ -3929,8 +3926,8 @@ export class Dispatcher {
    * survives the reset"): every afterCommit gate revert — a fanout entry's
    * worktree commit or, since singleton moved into a worktree too (spec/
    * worktrees.md "Singleton runs in a worktree"), a singleton phase's own —
-   * snapshots the commit's files before dropping it (§8) and writes the
-   * operator's revert note (§5), whichever worktree it ran in. The former
+   * snapshots the commit's files before dropping it and writes the
+   * operator's revert note, whichever worktree it ran in. The former
    * asymmetry — snapshot singleton-only, note fanout-only — collapsed with
    * the paths themselves once both concurrencies commit to a private branch
    * a tick tears down at the end.
@@ -3980,7 +3977,7 @@ export class Dispatcher {
   }
 
   /**
-   * §4 (RELEASE-v0.6.2): before a fanout worktree is torn down, move every
+   * Before a fanout worktree is torn down, move every
    * file its declared friction channel holds *that is untracked at the
    * worktree's own HEAD* into the primary friction dir, prefixed
    * `<tag>--<stamp>--` for provenance and collision-freedom — the stamp
@@ -4006,10 +4003,10 @@ export class Dispatcher {
    *
    * Undeclared `chain.friction` — no-op. A relocated state root (`flumeDir`
    * outside the repo tree) has no worktree-local mirror to harvest from —
-   * also a no-op, per §4's stated scope. Any failure here (missing dir,
-   * unreadable file, locked handle) is logged and swallowed: harvest must
-   * never abort the wave, and whatever it can't move is left for §7's
-   * removal-fallback sweep to surface.
+   * also a no-op. Any failure here (missing dir, unreadable file, locked
+   * handle) is logged and swallowed: harvest must never abort the wave, and
+   * whatever it can't move is left for the removal-fallback sweep to
+   * surface.
    */
   private async harvestFriction(
     chain: Chain,
@@ -4030,7 +4027,7 @@ export class Dispatcher {
       });
     } catch (err) {
       // Absent dir (no friction written this tick) is expected and silent.
-      // Anything else — unreadable dir, e.g. permissions — is §4's
+      // Anything else — unreadable dir, e.g. permissions — is the
       // log-and-continue failure class, not a silent no-op.
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         this.log.warn(
@@ -4077,7 +4074,7 @@ export class Dispatcher {
       return;
     }
 
-    // Stamped once per harvest call, not per file (§5's writeRevertNote
+    // Stamped once per harvest call, not per file (the `writeRevertNote`
     // precedent): siblings moved in the same call already disambiguate on
     // file.name, and a shared stamp still separates this call's files from
     // whatever a prior or later retry of the same tag harvests.
@@ -4111,14 +4108,14 @@ export class Dispatcher {
 
   /**
    * Tear down one worktree: the chain's best-effort `teardownWorktree` hook,
-   * the friction harvest (§4), removal, then branch deletion — the exact
+   * the friction harvest, removal, then branch deletion — the exact
    * per-worktree sequence `runFanout`'s wave-end cleanup loop ran inline,
    * now shared with a singleton tick's own single worktree (spec/
    * worktrees.md "Singleton runs in a worktree"). `tag` is the entry's tag
    * or the phase name, passed straight through to the hook's `entryTag` and
    * to the harvest's provenance prefix. Returns whether removal succeeded —
    * the caller aggregates surviving paths itself, since a wave reports them
-   * once at wave level (§7), not once per worktree.
+   * once at wave level, not once per worktree.
    */
   private async teardownWorktreeInstance(
     phase: Phase,
@@ -4318,7 +4315,7 @@ export class Dispatcher {
    * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
    * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md
    * "Singleton runs in a worktree" keys its worktree on the phase instead).
-   * Both directory-name length-bounding (§9) and job-namespace scoping apply
+   * Both directory-name length-bounding and job-namespace scoping apply
    * identically either way — the caller supplies the identifier, this method
    * doesn't care what it names.
    */
@@ -4327,9 +4324,9 @@ export class Dispatcher {
     fromRef: string,
   ): Promise<{ path: string; branch: string }> {
     const slug = slugify(tag);
-    // Job-scoped branch namespace (v0.5 §4): with a namespace, identical
-    // slugs across jobs land on disjoint branches; without one, the legacy
-    // repo-global name stands (bare `.flume` harnesses unchanged).
+    // Job-scoped branch namespace: with a namespace, identical slugs across
+    // jobs land on disjoint branches; without one, the repo-global name
+    // stands (bare `.flume` harnesses unchanged).
     const branch = this.opts.namespace
       ? `flume/${this.opts.namespace}/${slug}`
       : `flume/${slug}`;
@@ -4343,7 +4340,7 @@ export class Dispatcher {
     // OTHER job's live worktree. Namespaced unconditionally when set — the
     // redundant level under a default per-job base is harmless.
     //
-    // The fs directory name is length-bounded (§9) — git itself refuses a
+    // The fs directory name is length-bounded — git itself refuses a
     // worktree path around 200 chars on win32, below `TAG_MAX_LENGTH`'s
     // NAME_MAX-derived ceiling — while `branch` above keeps the untruncated
     // slug: `tag` stays full-length everywhere except this one directory
@@ -4362,8 +4359,8 @@ export class Dispatcher {
     }
     await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
     // Fanout worktrees nest at least as deep as the job dir they're cloned
-    // for (v0.4 §6) — the identical win32 MAX_PATH gap job.ts's own baseline
-    // pin exists to spare.
+    // for — the identical win32 MAX_PATH gap job.ts's own baseline pin
+    // exists to spare.
     await git.pinLongPaths(this.opts.repoRoot);
     await git.addWorktree({
       repoRoot: this.opts.repoRoot,
@@ -4374,7 +4371,7 @@ export class Dispatcher {
     return { path, branch };
   }
 
-  // ---------- prior-attempt persistence (§5) ----------
+  // ---------- prior-attempt persistence ----------
 
   /**
    * Where a phase/entry's prior-attempt record lives: the entry tag slug for
@@ -4495,9 +4492,9 @@ export class Dispatcher {
 
   /**
    * Clear a prior-attempt record once a later attempt commits clean — both
-   * the §5 JSON and the §8 reverted-prose snapshot, so a clean ship leaves no
-   * stale recovery artifact (the same no-false-signal invariant the §5 slot
-   * already holds, extended to the prose snapshot).
+   * the record JSON and the reverted-prose snapshot, so a clean ship leaves
+   * no stale recovery artifact (the same no-false-signal invariant the
+   * record slot already holds, extended to the prose snapshot).
    */
   private async clearPriorAttempt(key: string): Promise<void> {
     await rm(toNamespacedPath(priorAttemptPath(this.flumeDir, key)), {
@@ -4543,13 +4540,13 @@ export class Dispatcher {
     return stale;
   }
 
-  // ---------- reverted-prose durability (§8) ----------
+  // ---------- reverted-prose durability ----------
 
   /**
    * Durable, gitignored snapshot dir for a gate-reverted commit's files.
-   * Sibling to the §5 JSON under `<flumeDir>/prior-attempts/` (NOT the
-   * per-entry worktree) so it outlives both `git reset --hard` and a fanout
-   * worktree teardown — the same durability the §5 record relies on.
+   * Sibling to the prior-attempt JSON under `<flumeDir>/prior-attempts/`
+   * (NOT the per-entry worktree) so it outlives both `git reset --hard` and
+   * a fanout worktree teardown — the same durability that record relies on.
    */
   private revertedSnapshotDir(key: string): string {
     return join(priorAttemptsDir(this.flumeDir), `${key}.reverted`);
@@ -4557,23 +4554,22 @@ export class Dispatcher {
 
   /**
    * Snapshot every non-deleted file the reverted commit touched, verbatim,
-   * into the durable snapshot dir before the hard reset destroys it (§8).
+   * into the durable snapshot dir before the hard reset destroys it.
    *
    * A gate-reverted plan tick otherwise loses its state.md /
    * open-questions.md prose to `git reset --hard`, recoverable only by a
    * human reading `.flume/sessions/` logs. The snapshot is post-image content
    * under a mirror of the repo path, so recovery is "open the file" — not
-   * "read a diff", not "grep a session log". `diffStat` (the §5 digest) is
-   * `git show --stat`: filenames and counts, never content — it cannot
-   * recover findings, which is why §8 needs this distinct artifact.
+   * "read a diff", not "grep a session log". `diffStat` (the record's
+   * digest) is `git show --stat`: filenames and counts, never content — it
+   * cannot recover findings, which is why this distinct artifact exists.
    *
    * Generic by construction: it snapshots whatever the reverted commit
    * changed (for plan that is the prose plus the schema-failing
    * pending.json), so the dispatcher needs no chain-specific notion of which
    * artifact is "prose" vs "machine-checkable". Must run while `sha` is still
-   * reachable (before the drop). Best-effort: §8 mandates the property, not a
-   * guarantee under a broken git — a snapshot failure must never block or
-   * fail the revert.
+   * reachable (before the drop). Best-effort — a snapshot failure must never
+   * block or fail the revert.
    */
   private async snapshotRevertedFiles(
     cwd: string,
@@ -4621,8 +4617,8 @@ export class Dispatcher {
   }
 
   /**
-   * Bounded `git show --stat` of the reverted commit — the §5 digest so the
-   * retry does not blindly reconstruct. Must be called while `sha` is still
+   * Bounded `git show --stat` of the reverted commit — the prior-attempt
+   * digest, so the retry does not blindly reconstruct. Must be called while `sha` is still
    * reachable (before the hard reset / commit drop). Best-effort: a failure
    * here must not block the revert path.
    */
@@ -4666,7 +4662,7 @@ export class Dispatcher {
   }
 
   /**
-   * §5 (RELEASE-v0.6.2): when an afterCommit gate reverts a worktree's
+   * When an afterCommit gate reverts a worktree's
    * commit and `Chain.friction` is declared, write the operator's copy of
    * the verdict — the gate name/message/details plus the reverted commit's
    * subject+body — to `<friction>/<ISO-timestamp>--<tag>--reverted.md`
@@ -4683,7 +4679,7 @@ export class Dispatcher {
    * checkout until it was gated; now it lives in a worktree the tick tears
    * down, so the note is what remains).
    *
-   * Undeclared `chain.friction` is a no-op, per §2. Best-effort: a
+   * Undeclared `chain.friction` is a no-op. Best-effort: a
    * note-write failure must never block the revert it is documenting.
    */
   private async writeRevertNote(
@@ -4765,8 +4761,8 @@ export class Dispatcher {
   }
 
   /**
-   * Classify a no-commit-no-gate tick (§6) and persist the matching §5
-   * record so the retry's prompt carries it. A clean agent exit that
+   * Classify a no-commit-no-gate tick and persist the matching
+   * prior-attempt record so the retry's prompt carries it. A clean agent exit that
    * produced nothing is a **clean-exit** — the record carries the tail of
    * the agent's final message and nothing about what the exit meant; a
    * **platform-preempt** otherwise — the non-work failure class, explicitly
@@ -4814,10 +4810,11 @@ export class Dispatcher {
   }
 
   /**
-   * Persist the RELEASE-v0.10 §3 render-refused record and log it — the one
+   * Persist the render-refused record and log it — the one
    * shared shape both the singleton and fanout render callsites route
    * through (engineering.md "The fix lands at the mechanism"), the same way
-   * {@link classifyNoCommit} above already centralizes the §6 persist+log.
+   * {@link classifyNoCommit} above already centralizes the no-commit
+   * persist+log.
    * Each callsite still builds its own return shape from here, matching how
    * `classifyNoCommit`'s two callers already differ. `label` is the
    * phase name (singleton) or entry tag (fanout) — whichever scope `key`
@@ -4924,7 +4921,7 @@ export class Dispatcher {
     mergeOutcomes: readonly TickVerdictMergeOutcome[],
     partitionIgnore: string[],
   ): Promise<{ sha: string; tipMoved: boolean }> {
-    // v0.8 §5: footprint content sources from the wave's own TickVerdict
+    // Footprint content sources from the wave's own TickVerdict
     // record (mergeOutcomes) rather than a separately maintained map — a
     // view over the same facts `tick()` persists, not a second capture.
     // spec/pending.md "Fanout partition — disjoint touched paths": the
@@ -5042,7 +5039,7 @@ export class Dispatcher {
   }
 }
 
-// ---------- loop supervisor (§2) ----------
+// ---------- loop supervisor ----------
 
 /** Options for {@link superviseLoop}. */
 export interface SuperviseLoopOptions {
@@ -5057,7 +5054,7 @@ export interface SuperviseLoopOptions {
   flumeDir?: string;
   /**
    * Chain+prompts dir the supervisor loads the chain from for the loop-end
-   * friction summary (§6, v0.6.2) — repo-resident, never a job dir (mirrors
+   * friction summary — repo-resident, never a job dir (mirrors
    * every other `configDir` default). Defaults to `<repoRoot>/.flume`.
    */
   configDir?: string;
@@ -5065,24 +5062,23 @@ export interface SuperviseLoopOptions {
   maxTicks?: number;
   log?: Logger;
   /**
-   * §8 (v0.8, RELEASE-v0.8): chain-declared override for §16's run-scoped
-   * quarantine (RELEASE-v0.7; generalized past provisioning to the merge and
-   * gate stages, spec/loop.md "Repeated identical failures"). `"none"`
+   * Chain-declared override for the run-scoped quarantine (spec/loop.md
+   * "Repeated identical failures", which covers the provision, merge and
+   * gate stages alike). `"none"`
    * disables per-entry quarantine outright — a tagged provision/merge/gate
    * failure is never withheld from later ticks this run — while the
    * consecutive-identical-failure backstop (`abortThreshold` below) still
    * applies. Default `"run"`: quarantine a tagged failure's slug for the
    * rest of the run — exact default byte shape pinned by
-   * tests/Dispatcher.test.ts's "a chain declaring neither knob gets the v0.7
-   * §16 defaults, byte-identical" case. The CLI forwards this from the
+   * tests/Dispatcher.test.ts's "a chain declaring neither knob gets the
+   * supervisor-policy defaults, byte-identical" case. The CLI forwards this from the
    * resolved chain's `supervisorPolicy.quarantineScope` (`src/Phase.ts`);
    * undeclared falls through to the default here.
    */
   quarantineScope?: "run" | "none";
   /**
-   * §8: chain-declared override for §16's consecutive-identical-failure
-   * abort threshold (RELEASE-v0.7; generalized past provisioning) — the
-   * number of consecutive ticks the same *stage-tagged* signature
+   * Chain-declared override for the consecutive-identical-failure abort
+   * threshold — the number of consecutive ticks the same *stage-tagged* signature
    * (provision, merge, or gate) must repeat, with no successful tick between
    * them, before the run aborts. Default 3, pinned by the same
    * tests/Dispatcher.test.ts case cited on `quarantineScope` above. The CLI
@@ -5095,7 +5091,7 @@ export interface SuperviseLoopOptions {
    * code when it exits. Defaults to re-execing the running flume entrypoint
    * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
    * the built `dist/cli.js` or `tsx src/cli.ts`). Injected by tests — the
-   * stubbed-spawn seam. `quarantinedSlugs` (§16, RELEASE-v0.7) is this run's
+   * stubbed-spawn seam. `quarantinedSlugs` is this run's
    * accumulated run-scoped quarantine so far — the default runner carries it
    * to the child via the `FLUME_QUARANTINED_SLUGS` env var; a test stub may
    * ignore it.
@@ -5111,45 +5107,43 @@ export interface SuperviseResult {
   hibernated: boolean;
   /**
    * Set when the loop fail-fasted on a child exiting
-   * {@link EX_TERMINAL_MISCONFIG} (§3). `phases` are the orphaned awake
+   * {@link EX_TERMINAL_MISCONFIG}. `phases` are the orphaned awake
    * flags read off disk for the summary — the stop *decision* is the exit
    * code alone.
    */
   terminal?: TerminalMisconfiguration;
   /**
    * Set when the loop fail-fasted on a child exiting {@link EX_MOUNT_DEAD}
-   * (v0.7 §4): the mount-dead failure class (chain cannot load, state root
+   * the mount-dead failure class (chain cannot load, state root
    * missing, declaration invalid). Distinct from `terminal` — a
    * mount-dead run never resolved a chain at all, so there is no phase list
    * to name in the summary, only the fact of the abort.
    */
   mountDead?: boolean;
   /**
-   * Every entry tag shipped by any child tick this run (v0.7 §4 amendment),
-   * accumulated across iterations from each child's on-disk {@link
-   * TickVerdict} — the run-level exit-code decision (§4: non-zero iff ≥1
-   * tick errored AND zero entries shipped) needs the whole run's total, not
+   * Every entry tag shipped by any child tick this run, accumulated across
+   * iterations from each child's on-disk {@link TickVerdict} — the run-level
+   * exit-code decision (non-zero iff ≥1 tick errored AND zero entries
+   * shipped) needs the whole run's total, not
    * just the last tick's.
    */
   shippedTags: string[];
   /**
    * One line per child tick that errored — a genuine tick-level failure
    * (`gate-revert` or `platform-preempt`, derived from the tick's {@link
-   * TickVerdict} at the read site; v0.8 §5) — this run, in tick order, read
+   * TickVerdict} at the read site) — this run, in tick order, read
    * alongside `shippedTags`. Non-empty even on a 0 exit (partial success:
    * ships landed despite some tick errors) — `flume loop`'s completion
-   * summary names these so they never vanish into a silent green exit (§4).
+   * summary names these so they never vanish into a silent green exit.
    */
   erroredTicks: string[];
   /**
-   * §16 (RELEASE-v0.7; generalized past provisioning to the merge and gate
-   * stages, spec/loop.md "Repeated identical failures"): set when the run
-   * aborted because the same stage-tagged signature repeated on
-   * `abortThreshold` (default 3, v0.8 §8) consecutive ticks with no
-   * successful tick between them — the consecutive-failure backstop for
-   * non-entry-scoped walls the run-scoped quarantine can't isolate
-   * (generalizes §4's mount-dead abort past its class without touching §4's
-   * own semantics). `signature` is the raw comparison key, never prefixed
+   * Set when the run aborted because the same stage-tagged signature
+   * repeated on `abortThreshold` (default 3) consecutive ticks with no
+   * successful tick between them (spec/loop.md "Repeated identical
+   * failures") — the consecutive-failure backstop for non-entry-scoped
+   * walls the run-scoped quarantine can't isolate, and a wider abort than
+   * the mount-dead one, which keeps its own semantics. `signature` is the raw comparison key, never prefixed
    * with the stage it came from — the stage only disambiguates the internal
    * streak, never the reported shape. Distinct from `mountDead` — the chain
    * resolved and ran fine; only a provision, merge, or gate wall kept
@@ -5171,7 +5165,7 @@ export interface SuperviseResult {
 }
 
 /**
- * `flume loop` supervisor (§2). Spawns exactly one `flume tick` child process
+ * `flume loop` supervisor. Spawns exactly one `flume tick` child process
  * per iteration, carrying no in-memory chain or phase state across them — the
  * only correct re-resolution mechanism (Node's ESM registry is non-evictable,
  * so an in-process loop is pinned to chain.ts's first evaluation; see
@@ -5180,7 +5174,7 @@ export interface SuperviseResult {
  * a plain tick failure (agent-level, per-entry) is logged and the loop
  * proceeds — the supervisor never crashes — except
  * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration) and
- * {@link EX_MOUNT_DEAD} (v0.7 §4 mount-dead: the chain never resolved),
+ * {@link EX_MOUNT_DEAD} (mount-dead: the chain never resolved),
  * either of which stops the loop immediately: both defeat the hibernation
  * check (nothing on disk changed to reflect them), so proceeding would
  * hot-spin to `--max` while masquerading each iteration as routine. Bounded
@@ -5196,7 +5190,7 @@ export async function superviseLoop(
   const baton = new Baton(flumeDir);
   const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
 
-  // §6 (v0.6.2): best-effort — a missing or broken chain must never fail
+  // Best-effort — a missing or broken chain must never fail
   // the loop-end summary, only silently withhold the friction line.
   const logFrictionSummary = async (): Promise<void> => {
     try {
@@ -5212,14 +5206,14 @@ export async function superviseLoop(
     }
   };
 
-  // §8: engine defaults, overridable per opts above.
+  // Engine defaults, overridable per opts above.
   const quarantineScope = opts.quarantineScope ?? "run";
   const abortThreshold = opts.abortThreshold ?? 3;
 
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
-  // §16: run-scoped quarantine ({@link quarantineKey} values — `slug@hash`
+  // Run-scoped quarantine ({@link quarantineKey} values — `slug@hash`
   // of the entry as the failing tick read it) plus the consecutive-
   // identical-signature streak for the abort backstop. Both reset to empty
   // on every fresh `superviseLoop` call — quarantine never outlives the run.
@@ -5240,16 +5234,16 @@ export async function superviseLoop(
     const { exitCode } = await runTick(quarantinedSlugs);
     ticks++;
 
-    // v0.8 §5: recover this tick's facts from its verdict artifact — the
+    // Recover this tick's facts from its verdict artifact — the
     // exit code alone (settled/errored/mount-dead) is the only signal that
     // crosses the child→supervisor boundary today (child stdio stays
     // `inherit`), and it can't carry a run-wide total. Absent on a tick that
     // returned before reaching the write (chain-load failure, hibernation,
     // terminal misconfiguration) — nothing to add. `errored` is not a stored
-    // field on the verdict (v0.8 §5: facts only) — derived here, at the read
-    // site, from the same formula v0.7 §4 used: a genuine tick-level failure
-    // is `gate-revert`/`platform-preempt`/`render-refused` (RELEASE-v0.10
-    // §3: the prompt itself was broken), `tipMoved` (RELEASE-v0.11 §5: the
+    // field on the verdict (which carries facts only) — derived here, at the
+    // read site: a genuine tick-level failure is
+    // `gate-revert`/`platform-preempt`/`render-refused` (the prompt itself
+    // was broken), `tipMoved` (the
     // ref moved out from under this tick — worth surfacing even on a wave
     // that also shipped something, unlike the provisioning/merge legs below,
     // since it signals something else is writing to this ref), or a
@@ -5295,7 +5289,7 @@ export async function superviseLoop(
       }
     }
 
-    // §16 (generalized past provisioning): every per-entry failure fact the
+    // Every per-entry failure fact the
     // verdict records, tagged with the stage it came from — a clean exit
     // never joins this list, since it writes no provision/merge/gate failure
     // record at all.
@@ -5326,7 +5320,7 @@ export async function superviseLoop(
     // key the failing tick reported (`StageFailureEntry`), never a key
     // recomputed here: the supervisor holds only the verdict, and the queue
     // on disk may already have moved. A repo-level/unblamed failure (no
-    // single entry to blame) falls to the backstop below instead. §8: a
+    // single entry to blame) falls to the backstop below instead. A
     // chain declaring `quarantineScope: "none"` opts out of this leg
     // entirely — the backstop below still fires.
     if (quarantineScope !== "none") {
@@ -5384,7 +5378,7 @@ export async function superviseLoop(
     }
 
     if (exitCode === EX_TERMINAL_MISCONFIG) {
-      // Axis-C fail-fast (§3): the child classified a terminal
+      // Axis-C fail-fast: the child classified a terminal
       // misconfiguration (orphaned awake flags). The decision comes from the
       // exit signal alone — the orphaned flags definitionally defeat
       // `baton.hibernating()`, so it is never consulted here. The flags are
@@ -5407,7 +5401,7 @@ export async function superviseLoop(
       };
     }
     if (exitCode === EX_MOUNT_DEAD) {
-      // Mount-dead fail-fast (v0.7 §4): the child could not resolve a chain
+      // Mount-dead fail-fast: the child could not resolve a chain
       // at all — no agent ran, nothing here is retryable by waiting. A chain
       // that fails to load now is exactly as unloadable next tick as this
       // one, so continuing would only burn the remaining `--max` ticks
@@ -5495,7 +5489,7 @@ export async function superviseLoop(
  * process mirroring however the supervisor itself was launched. `execArgv`
  * carries node flags (e.g. `--import tsx` when run from source); `argv[1]` is
  * the cli entrypoint (`dist/cli.js` built, `src/cli.ts` from source).
- * `quarantinedSlugs` (§16, RELEASE-v0.7) crosses the process boundary via the
+ * `quarantinedSlugs` crosses the process boundary via the
  * `FLUME_QUARANTINED_SLUGS` env var — comma-joined {@link quarantineKey}
  * values, which the CLI's `tick` command reads back into
  * `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty. The var
@@ -5550,16 +5544,16 @@ function summarize(
     } else if (result.commitSha) {
       parts.push(`committed ${result.commitSha.slice(0, 8)}`);
     }
-    // A wave can ship *and* hit the §5 backstop (some entries landed before
-    // the ref moved; the rest, or the trailing ledger commit, refused) or
-    // the §8 decline (some entries declined while their siblings ran).
+    // A wave can ship *and* hit the tip-verify backstop (some entries landed
+    // before the ref moved; the rest, or the trailing ledger commit,
+    // refused) or a decline (some entries declined while their siblings ran).
     if (tipMoved) parts.push("(tip-moved for part of this tick)");
     if (declined) parts.push("(declined for part of this tick)");
   } else {
-    // The §6 mode in the one-liner is the logger record that lets a
+    // The no-commit mode in the one-liner is the logger record that lets a
     // clean-exit loop be told from a platform-preempt run without
-    // reading session logs. `tip-moved` (RELEASE-v0.11 §5) and `declined`
-    // (RELEASE-v0.11 §8) are reported the same way even though neither is
+    // reading session logs. `tip-moved` and `declined` are reported the same
+    // way even though neither is
     // ever a `NoCommitMode` — the one-liner is a rendering, not the typed
     // fact itself.
     parts.push(
@@ -5578,7 +5572,7 @@ function summarize(
 }
 
 /**
- * Build the §6 clean-exit record: the agent exited cleanly without
+ * Build the clean-exit record: the agent exited cleanly without
  * committing. What rides the record is the tail of its final message —
  * extracted from the full transcript by the adapter's own
  * `extractFinalMessage` (`src/Agent.ts`, spec/chain.md "The agent seam"),
@@ -5601,7 +5595,7 @@ function buildCleanExit(
   };
 }
 
-/** Build the §6 platform-preempt record from the non-work failure class. */
+/** Build the platform-preempt record from the non-work failure class. */
 function buildPlatformPreempt(
   failureClass: string,
 ): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key"> {
@@ -5612,7 +5606,7 @@ function buildPlatformPreempt(
 }
 
 /**
- * Build the RELEASE-v0.10 §3 render-refused record from the render's own
+ * Build the render-refused record from the render's own
  * {@link InlineExecRenderError} — its `message` already names every failing
  * span's command text and stderr.
  */
@@ -5626,9 +5620,8 @@ function buildRenderRefused(
 }
 
 /**
- * Build the RELEASE-v0.11 §5 tip-moved record: the ref this tick found
- * didn't match the tip it recorded at tick start. A sibling to the §6
- * builders above, never a `NoCommitMode` — see {@link TipMovedAttempt}.
+ * Build the tip-moved record: the ref this tick found didn't match the tip
+ * it recorded at tick start. A sibling to the no-commit builders above, never a `NoCommitMode` — see {@link TipMovedAttempt}.
  *
  * `observedTip` is always the observed HEAD itself, never its parent — both
  * legs run the same ancestry check now (spec/worktrees.md "Singleton runs in
@@ -5674,9 +5667,9 @@ function buildNotShipped(
  * Pickability in the fanout context. The dispatcher's model: a dep is
  * satisfied iff it is no longer in pending (we remove entries on ship).
  * `requiresCapability` is pickable iff the chain's declared `capabilities`
- * (v0.8 §4) asserts the entry's named capability.
+ * asserts the entry's named capability.
  *
- * The foundations governor (§v0.3) runs first: an entry whose `dependsOnForks`
+ * The foundations governor runs first: an entry whose `dependsOnForks`
  * contains any unresolved slug is not pickable, regardless of gate kind.
  * `isForkResolved` defaults to always-resolved so the check is a no-op when no
  * resolver is wired or no entry declares a fork dependency.

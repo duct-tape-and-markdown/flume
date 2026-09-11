@@ -11918,13 +11918,13 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     expect(res.hibernated).toBe(true);
     expect(res.ticks).toBe(3);
     // Every tick sees an empty quarantine set — the same tagged slug that
-    // §16's default suite proves gets quarantined after tick 1 here never
+    // the default suite proves gets quarantined after tick 1 here never
     // does, because the identical signature repeats only twice before the
     // baton sleeps (never reaching the untouched abortThreshold default).
     expect(receivedSlugs).toEqual([[], [], []]);
   });
 
-  it("a chain declaring neither knob gets the v0.7 §16 defaults, byte-identical", async () => {
+  it("a chain declaring neither knob gets the supervisor-policy defaults, byte-identical", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 

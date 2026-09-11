@@ -1735,11 +1735,11 @@ describe("the docs' worktree-base claims agree with worktreesBase", () => {
  * (engineering.md, "Narration is the ladder's bottom rung"). Git carries the
  * provenance those cites were standing in for.
  *
- * `src/Dispatcher.ts` is the one exclusion, and it is temporary: its sites
- * ship as the sibling entry RELEASE-CITES-CUT-DISPATCHER, and the follow-on
- * RELEASE-CITES-PINNED widens this pin to the whole of `src/` and `examples/`
- * once both cuts land. That entry is the named actor that deletes the
- * exclusion.
+ * `src/Dispatcher.ts` stays out of the loop's scanned set below only because
+ * it is pinned on its own, immediately after — its cut has landed. The
+ * follow-on RELEASE-CITES-PINNED widens this pin to the whole of `src/` and
+ * `examples/`; that entry is the named actor that deletes both the exclusion
+ * and the standalone case.
  */
 const CITE_EXCLUDED = "Dispatcher.ts";
 
@@ -1823,6 +1823,30 @@ describe("dead release cites are gone from the engine's prose", () => {
     ]) {
       expect(RELEASE_CITE_RE.test(live), `${live} was flagged`).toBe(false);
     }
+  });
+
+  // Scanned on its own because `citeScannedModules` still excludes it (see
+  // `CITE_EXCLUDED` above). Same needle, same grammar — one module rather
+  // than a set, so the cut is pinned a rung up instead of resting on the
+  // exclusion's prose.
+  it("src/Dispatcher.ts carries no release-numbered spec cite", () => {
+    const prose = unwrapProse(
+      readFileSync(join(REPO_ROOT, "src", CITE_EXCLUDED), "utf8"),
+    );
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a mis-resolved path reads as empty prose and the refusal below passes
+    // over nothing. Require the engine's largest module's own doc prose, and
+    // require it to still carry the live pointers the needle must not flag —
+    // a cut that also deleted those would pass an emptier refusal.
+    expect(prose.length, "no prose read — wrong path, or unwrapProse is off target").toBeGreaterThan(10_000);
+    for (const live of ["spec/loop.md", ".claude/rules/platform-facts.md"]) {
+      expect(prose, `${live} pointer left the module`).toContain(live);
+    }
+    expect(
+      RELEASE_CITE_RE.exec(prose)?.[0],
+      "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
+        "reform deleted — state the fact, or let git carry the provenance",
+    ).toBeUndefined();
   });
 
   it("no src/ module outside Dispatcher.ts carries a release-numbered spec cite", () => {
