@@ -164,7 +164,7 @@ default export that is not a factory, no `phases[]`. Two layers, both required.
   — the engine refuses with a usage-shaped message naming the fix (`"type":
   "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
   exits **2**, not the mount-dead constant
-  (`src/Dispatcher.ts:CjsContextLoadError`, `src/cli.ts:tickExitCode`, which
+  (`src/Dispatcher.ts:CjsContextLoadError`, `src/cliVerdict.ts:tickExitCode`, which
   checks it first). Matching is deliberately narrow: a genuinely missing
   dependency must keep surfacing as itself, unshadowed. Supporting a
   CJS-context host is declined; relaying a raw loader stack is the defect.
@@ -192,7 +192,7 @@ The chain lives at `<configDir>/chain.ts`, and **job resolution never retargets
 `configDir`**. `--job`/`FLUME_JOB` moves only the state root (`flumeDir` →
 `<repoRoot>/.flume/jobs/<name>`); `configDir` stays `<repoRoot>/.flume`, or an
 explicit `FLUME_CONFIG_DIR`, which composes with a job
-(`src/cli.ts:resolveStateDirs`). There is no job-local chain.
+(`src/cliJobResolution.ts:resolveStateDirs`). There is no job-local chain.
 
 - **A `chain.ts` inside a job dir is inert, and stays unpoliced.** The runtime
   never looks there; machinery does not police caller-owned content. No probe,
@@ -200,7 +200,7 @@ explicit `FLUME_CONFIG_DIR`, which composes with a job
   to enforce.
 - **Per-job variation is already served**: a chain is code, and `FLUME_JOB` is
   written back into the environment when the state roots resolve
-  (`src/cli.ts:resolveStateDirs`), before the tick's chain load, so one repo
+  (`src/cliJobResolution.ts:resolveStateDirs`), before the tick's chain load, so one repo
   chain can dispatch on it. Operator-run worktrees give concurrent divergence,
   each checkout resolving its own chain.
 - `promptPath` mechanics follow for free: it joins `configDir`

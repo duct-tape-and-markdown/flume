@@ -145,7 +145,7 @@ The dispatcher writes the fully rendered prompt — the exact bytes it hands to
 `agent.invoke` — to `<flumeDir>/rendered-prompts/<timestamp>-<key>.md` before the
 invocation begins. `key` is the slug of the phase name for a singleton tick and of the
 entry tag for a fanout entry, the same slug rule prior-attempt records are keyed by
-(`src/Dispatcher.ts:slugify`); the timestamp is the invocation's, so two ticks never
+(`src/paths.ts:slugify`); the timestamp is the invocation's, so two ticks never
 share a name and two entries in one wave differ by key. The tick verdict's invocation row
 names the file as `promptPath`, relative to the state root (`spec/loop.md`, *The tick
 verdict*), so a reader holding the verdict holds the input.
