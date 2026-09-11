@@ -97,9 +97,9 @@ invokes the agent, and applies validation gates.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
-  1   Harness error (unexpected exception), or HEAD is detached (v0.11 §4:
-      the tick record's meaning is advancing a named tip; checkout a branch
-      first). No claim is taken or checked — that's loop-level only.
+  1   Harness error (unexpected exception), or HEAD is detached (the tick
+      record's meaning is advancing a named tip; checkout a branch first).
+      No claim is taken or checked — that's loop-level only.
   2   Usage: a stray trailing positional (\`tick\` consumes none — running
       something other than whichever phase is awake is refused, not
       honored); or the chain load failed with the CJS-context refusal — the
@@ -126,13 +126,12 @@ Exit codes:
   1   Harness error, another live loop holds the lock; also, the stop flag
       (\`.flume/stop\`) is already present (refusal names the path — remove
       it to acknowledge the stop, spec/loop.md "Graceful stop"); also, HEAD
-      is detached (v0.11 §4: checkout a branch first — the tip claim below
-      keys on the ref); also, another process holds the tip claim (v0.11
-      §4: the refusal names the holder pid and claim path); also, at least
-      one tick errored and the run shipped nothing (v0.7 §4); also, an
-      identical pre-tick worktree provisioning failure repeated 3
-      consecutive ticks with no successful tick between them (v0.7 §16) —
-      the completion summary names the repeated signature. A single
+      is detached (checkout a branch first — the tip claim below keys on the
+      ref); also, another process holds the tip claim (the refusal names the
+      holder pid and claim path); also, at least one tick errored and the
+      run shipped nothing; also, an identical pre-tick worktree provisioning
+      failure repeated 3 consecutive ticks with no successful tick between
+      them — the completion summary names the repeated signature. A single
       entry's provisioning failure alone does not abort: it quarantines
       that entry for the rest of the run while the others keep dispatching.
       A graceful stop mid-run (\`.flume/stop\` written while the loop is
@@ -311,9 +310,9 @@ Exit codes:
       always, including no jobs).
   1   Git or filesystem failure (provisioning, commit); for run also:
       harness error, another live loop holds the job's lock, at least one
-      tick errored and the run shipped nothing (v0.7 §4), or an identical
-      pre-tick worktree provisioning failure repeated 3 consecutive ticks
-      (v0.7 §16); for rm also: the job's loop is still live.
+      tick errored and the run shipped nothing, or an identical pre-tick
+      worktree provisioning failure repeated 3 consecutive ticks; for rm
+      also: the job's loop is still live.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, rm on a <name> whose job dir does

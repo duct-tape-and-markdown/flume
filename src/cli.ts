@@ -118,10 +118,10 @@ function readPackageVersion(): string {
 }
 
 /**
- * Shared `--max` numeric parse for `job run` (rewrites into `loop` below)
- * and `loop` itself — a non-numeric or negative value must refuse identically
- * on both surfaces, and `job run` must refuse before its preflight wakes the
- * entry phase (v0.11 §2/§3), not after rewriting into `loop`.
+ * Shared `--max` numeric parse for `job run` (rewrites into `loop` below) and
+ * `loop` itself — a non-numeric or negative value must refuse identically on
+ * both surfaces, and `job run` must refuse before its preflight wakes the
+ * entry phase, not after rewriting into `loop`.
  */
 function parseMaxValue(value: string | undefined): number | null {
   const parsed = value !== undefined ? Number(value) : NaN;
@@ -129,13 +129,13 @@ function parseMaxValue(value: string | undefined): number | null {
 }
 
 /**
- * `wake`/`sleep`'s best-effort chain load, mirroring `status`'s pattern
- * (§3 above): a missing or broken chain must never block the marker
- * mutation — there is nothing to validate the phase name against. Only a
- * chain that loads *successfully* and does not declare `phase` among its
- * `chain.phases` refuses. Reached with `configDir` (repo-resident, §2) —
- * `--job` never retargets it, so a job-dir `chain.ts` is inert here exactly
- * as it is for `status` and `tick`.
+ * `wake`/`sleep`'s best-effort chain load, mirroring `status`'s pattern: a
+ * missing or broken chain must never block the marker mutation — there is
+ * nothing to validate the phase name against. Only a chain that loads
+ * *successfully* and does not declare `phase` among its `chain.phases`
+ * refuses. Reached with `configDir` (repo-resident) — `--job` never retargets
+ * it, so a job-dir `chain.ts` is inert here exactly as it is for `status` and
+ * `tick`.
  */
 async function chainRefusesPhase(
   paths: FlumePaths,
@@ -153,8 +153,8 @@ async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const repoRoot = resolveRepoRoot(process.cwd());
 
-  // Global `--job <name>` (v0.5 §3): extract it wherever it appears so it
-  // composes with every subcommand, before any dispatch.
+  // Global `--job <name>`: extract it wherever it appears so it composes with
+  // every subcommand, before any dispatch.
   let jobFlag: string | undefined;
   const jobIdx = argv.indexOf("--job");
   if (jobIdx >= 0) {
@@ -190,16 +190,15 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // `flume job <verb>` (v0.5 §5). `run` is the exception — it IS the
-  // standard loop under the job resolution (§5b-3), so it rewrites itself
-  // into `--job <name> loop [--max N]` and falls through; only its preflight
-  // (branch + entry-phase wake) runs before the loop, below. The other verbs
-  // (`status`/`rm`/`new`) are stashed in `jobVerbArgs` and dispatched to
-  // `runJobVerb` *after* state-dir resolution below (§12/§14) — they operate
-  // on the repo and the job dir named by their own argument, not on a
-  // resolved state root, but they still need the single canonicalized
-  // `configDir` every other subcommand reads, not a re-derivation from raw
-  // `process.env.FLUME_CONFIG_DIR`.
+  // `flume job <verb>`. `run` is the exception — it IS the standard loop under
+  // the job resolution, so it rewrites itself into `--job <name> loop [--max
+  // N]` and falls through; only its preflight (branch + entry-phase wake) runs
+  // before the loop, below. The other verbs (`status`/`rm`/`new`) are stashed
+  // in `jobVerbArgs` and dispatched to `runJobVerb` *after* state-dir
+  // resolution below — they operate on the repo and the job dir named by their
+  // own argument, not on a resolved state root, but they still need the single
+  // canonicalized `configDir` every other subcommand reads, not a
+  // re-derivation from raw `process.env.FLUME_CONFIG_DIR`.
   let jobRunName: string | undefined;
   let jobVerbArgs: readonly string[] | undefined;
   if (cmd === "job") {
@@ -240,18 +239,17 @@ async function main(): Promise<number> {
     }
   }
 
-  // Resolve both state roots up front and canonicalize them back into the env
-  // (§12). `flumeDir` is the mutable-state root (baton, pending, worktrees,
+  // Resolve both state roots up front and canonicalize them back into the env.
+  // `flumeDir` is the mutable-state root (baton, pending, worktrees,
   // prior-attempts); `configDir` is the chain+prompt dir. Both default to
   // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them, and
   // `--job` / `FLUME_JOB` retargets only the flumeDir default to
-  // `.flume/jobs/<name>` — configDir never follows the job (v0.6 §2/§3).
-  // Resolving here (not constructing) lets the values survive the
-  // `loop` → `tick` process boundary — children inherit the (now
-  // absolute-canonical) env vars — and lets a chain loaded later in this
-  // process read one authoritative state root. This runs ahead of every
-  // subcommand branch, `job status`/`rm`/`new` included, so none of them
-  // re-derives `configDir` independently.
+  // `.flume/jobs/<name>` — configDir never follows the job. Resolving here
+  // (not constructing) lets the values survive the `loop` → `tick` process
+  // boundary — children inherit the (now absolute-canonical) env vars — and
+  // lets a chain loaded later in this process read one authoritative state
+  // root. This runs ahead of every subcommand branch, `job status`/`rm`/`new`
+  // included, so none of them re-derives `configDir` independently.
   let flumeDir: string;
   let configDir: string;
   let job: string | undefined;
@@ -290,10 +288,10 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  // `job run` preflight (v0.11 §2/§3): wake the entry phase iff hibernating.
-  // Placed after the resolution (a conflict must refuse before any
-  // mutation). No branch assertion — the engine has no opinion on which
-  // branch a state root runs on.
+  // `job run` preflight: wake the entry phase iff hibernating. Placed after
+  // the resolution (a conflict must refuse before any mutation). No branch
+  // assertion — the engine has no opinion on which branch a state root runs
+  // on.
   if (jobRunName !== undefined) {
     try {
       await jobRun({ name: jobRunName, repoRoot, flumeDir, configDir });
@@ -313,10 +311,10 @@ async function main(): Promise<number> {
     const baton = new Baton(flumeDir);
     const awake = baton.awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
-    // §17: surface supervisor liveness beside the awake markers — the
-    // 2026-07-29 incident's "hibernating" reading left the operator to
-    // infer relaunch-safety instead of being told it. No pidfile: silent,
-    // unchanged from pre-§17 output.
+    // Surface supervisor liveness beside the awake markers — the 2026-07-29
+    // incident's "hibernating" reading left the operator to infer
+    // relaunch-safety instead of being told it. No pidfile: silent, leaving
+    // the output as it read before this line existed.
     let supervisorLive = false;
     if (existsSync(namespacedJoin(loopLockPath(flumeDir)))) {
       const pid = await liveLoopPid(flumeDir);
@@ -341,10 +339,10 @@ async function main(): Promise<number> {
               "to start until it is removed",
       );
     }
-    // v0.11 §4: report the current tip's claim alongside supervisor
-    // liveness, observational and best-effort — a detached HEAD (no ref to
-    // key the claim on), a non-repository cwd, or a git invocation failure
-    // all read as silence, the same precedent as the no-pidfile case above.
+    // Report the current tip's claim alongside supervisor liveness,
+    // observational and best-effort — a detached HEAD (no ref to key the claim
+    // on), a non-repository cwd, or a git invocation failure all read as
+    // silence, the same precedent as the no-pidfile case above.
     const headRefForStatus = await currentRefPath(repoRoot);
     if (headRefForStatus.kind === "ref") {
       const claimPath = tipClaimPath(
@@ -360,14 +358,14 @@ async function main(): Promise<number> {
         );
       }
     }
-    // §6 (v0.6.2) / spec/pending.md "The pending queue": best-effort — a
-    // missing or broken chain must never fail `status` — but never silent:
-    // the shared load (`loadChainForObservation`, src/cliChainLoad.ts)
-    // reports the failure and names what it costs, because the pending
-    // count below then rebases on the default queue path.
+    // spec/pending.md "The pending queue": best-effort — a missing or broken
+    // chain must never fail `status` — but never silent: the shared load
+    // (`loadChainForObservation`, src/cliChainLoad.ts) reports the failure and
+    // names what it costs, because the pending count below then rebases on the
+    // default queue path.
     const chain = await loadChainForObservation(paths, "status");
-    // §3: the pending entry count, independent of whether the chain loads —
-    // `flume job status` probes the same file the same way (`readPendingLoose`,
+    // The pending entry count, independent of whether the chain loads — `flume
+    // job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
     // on both surfaces.
     const pending = readPendingLoose(
@@ -379,8 +377,8 @@ async function main(): Promise<number> {
     if (chain) {
       const line = await frictionCountLine(flumeDir, chain);
       if (line) console.log(line);
-      // v0.8 §4: name entries stuck on a capability this chain hasn't
-      // asserted — a `requiresCapability` skip must never be silent.
+      // Name entries stuck on a capability this chain hasn't asserted — a
+      // `requiresCapability` skip must never be silent.
       const capabilities = new Set(chain.capabilities ?? []);
       for (const entry of pending.entries) {
         if (
@@ -679,20 +677,19 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Dispatcher resolves .flume/chain.ts from configDir once at tick start
-  // (one load per process — `flume loop` re-resolves by spawning a fresh
-  // `flume tick` per iteration, §2); a chain.ts whose factory returns
-  // `agent` overrides the default agent per tick.
+  // Dispatcher resolves .flume/chain.ts from configDir once at tick start (one
+  // load per process — `flume loop` re-resolves by spawning a fresh `flume
+  // tick` per iteration); a chain.ts whose factory returns `agent` overrides
+  // the default agent per tick.
   const resolveChain = diskChainLoader(paths);
-  // §16 (RELEASE-v0.7): the `flume loop` supervisor's run-scoped quarantine
-  // crosses the process boundary via this env var (set by
-  // `defaultTickRunner`, `src/Dispatcher.ts`) — an entry whose quarantine key
-  // (`slug@hash` of its bytes in the queue) is named here is skipped by this
-  // tick's fanout pick without touching pending.json. The values are opaque
-  // equality keys, split apart on the comma the writer joined on and never
-  // parsed further: the hash half means an entry re-scoped since the failing
-  // tick simply stops matching, which is how a re-scope lifts a hold without
-  // a relaunch.
+  // The `flume loop` supervisor's run-scoped quarantine crosses the process
+  // boundary via this env var (set by `defaultTickRunner`,
+  // `src/Dispatcher.ts`) — an entry whose quarantine key (`slug@hash` of its
+  // bytes in the queue) is named here is skipped by this tick's fanout pick
+  // without touching pending.json. The values are opaque equality keys, split
+  // apart on the comma the writer joined on and never parsed further: the hash
+  // half means an entry re-scoped since the failing tick simply stops
+  // matching, which is how a re-scope lifts a hold without a relaunch.
   const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
@@ -711,9 +708,9 @@ async function main(): Promise<number> {
     flumeDir,
     agent: claudeCode(),
     ownTipClaimPid,
-    // Fanout branch namespace (v0.5 §4): the job resolution above is the one
-    // authority; the dispatcher receives it as an option, never re-derives it
-    // from flumeDir.
+    // Fanout branch namespace: the job resolution above is the one authority;
+    // the dispatcher receives it as an option, never re-derives it from
+    // flumeDir.
     ...(job !== undefined ? { namespace: job } : {}),
     ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });
@@ -728,17 +725,17 @@ async function main(): Promise<number> {
       console.error("usage: flume tick");
       return 2;
     }
-    // v0.8 §5: clear any stale verdict before this tick's own work — a tick
-    // that returns below without an agent having run (chain-load failure,
-    // hibernation, terminal misconfiguration, the detached-HEAD refusal
-    // below) must leave no record for `flume loop`'s supervisor to misread
-    // as its own.
+    // Clear any stale verdict before this tick's own work — a tick that
+    // returns below without an agent having run (chain-load failure,
+    // hibernation, terminal misconfiguration, the detached-HEAD refusal below)
+    // must leave no record for `flume loop`'s supervisor to misread as its
+    // own.
     await clearTickVerdict(flumeDir);
-    // v0.11 §4: tick and loop both refuse before any tick when HEAD does not
-    // name a ref — the tick record's meaning is advancing a named tip, and
-    // the (loop-level) claim that guards it keys on a ref. A bare tick
-    // takes no claim itself but still refuses here so the behavior is
-    // identical whether or not a loop wraps it.
+    // Tick and loop both refuse before any tick when HEAD does not name a ref
+    // — the tick record's meaning is advancing a named tip, and the
+    // (loop-level) claim that guards it keys on a ref. A bare tick takes no
+    // claim itself but still refuses here so the behavior is identical whether
+    // or not a loop wraps it.
     const tickHeadRef = await currentRefPath(repoRoot);
     if (tickHeadRef.kind !== "ref") {
       console.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);
@@ -769,10 +766,9 @@ async function main(): Promise<number> {
       if (outcome.verdict) {
         await writeTickVerdict(flumeDir, outcome.verdict);
       }
-      // Fail loudly on the Axis-C exits (§3) so the supervisor — and any
-      // human watching exit codes — classifies the failure without reading
-      // logs: 78 terminal misconfiguration, 1 resolution failure, 0
-      // otherwise.
+      // Fail loudly on the classifying exits so the supervisor — and any human
+      // watching exit codes — classifies the failure without reading logs: 78
+      // terminal misconfiguration, 1 resolution failure, 0 otherwise.
       return tickExitCode(outcome);
     } finally {
       bareTipClaim?.release();
@@ -795,8 +791,8 @@ async function main(): Promise<number> {
     }
     // loop consumes zero positionals — an unexpected trailing token past
     // `--max N` runs something other than what the operator typed, the same
-    // harm class as `job run`'s pre-existing `words.length > 1` check (§ CLI
-    // "Subcommand surface", gh#1).
+    // harm class as `job run`'s pre-existing `words.length > 1` check
+    // (spec/cli.md "Subcommand surface", gh#1).
     if (words.length > 0) {
       console.error("usage: flume loop [--max N]");
       return 2;
@@ -813,19 +809,19 @@ async function main(): Promise<number> {
       );
       return 1;
     }
-    // v0.11 §4: refuse before any tick when HEAD does not name a ref — the
-    // tip claim acquired below keys on the ref HEAD resolves to.
+    // Refuse before any tick when HEAD does not name a ref — the tip claim
+    // acquired below keys on the ref HEAD resolves to.
     const headRefResult = await currentRefPath(repoRoot);
     if (headRefResult.kind !== "ref") {
       console.error(`[flume] loop refuses: ${describeRefFailure(headRefResult)}`);
       return 1;
     }
     const headRef = headRefResult.path;
-    // Cross-process loop lock: one supervisor per state root. A stale
-    // pidfile (dead pid) is reclaimed; a live one refuses the second loop —
-    // two supervisors against one state root race plan/build state. Lives
-    // under flumeDir (§16): the state root is what races, and a relocated
-    // dock must carry its lock with it.
+    // Cross-process loop lock: one supervisor per state root. A stale pidfile
+    // (dead pid) is reclaimed; a live one refuses the second loop — two
+    // supervisors against one state root race plan/build state. Lives under
+    // flumeDir: the state root is what races, and a relocated dock must carry
+    // its lock with it.
     // win32 MAX_PATH: flumeDir can nest deep under a job/state root;
     // namespacedJoin (src/paths.ts) is the shared idiom — see
     // .claude/rules/platform-facts.md.
@@ -839,10 +835,10 @@ async function main(): Promise<number> {
       return 1;
     }
     writeFileSync(lockPath, String(process.pid));
-    // v0.11 §4: advisory per-ref tip claim — one flume writer per tip, the
-    // resource multiple jobs under one checkout actually contend on. Guards
-    // a different resource than loop.pid (a ref vs. a state root); both
-    // stand. A refusal here rolls back the loop.pid claim just taken above.
+    // Advisory per-ref tip claim — one flume writer per tip, the resource
+    // multiple jobs under one checkout actually contend on. Guards a different
+    // resource than loop.pid (a ref vs. a state root); both stand. A refusal
+    // here rolls back the loop.pid claim just taken above.
     let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>>;
     try {
       tipClaim = await acquireTipClaim(repoRoot, headRef);
@@ -905,13 +901,12 @@ async function main(): Promise<number> {
       );
       return EX_TERMINAL_MISCONFIG;
     }
-    // v0.8 §8: best-effort read of the chain, for the two consumers below —
-    // the `friction` dir the ignore merge folds in, and the
-    // `supervisorPolicy` override the supervisor reads. A chain that fails
-    // to load here surfaces nothing new: the merge still writes the base
-    // runtime set, the first child tick still reports mount-dead exactly as
-    // it does today, and `superviseLoop` falls through to the v0.7 §16
-    // defaults meanwhile.
+    // Best-effort read of the chain, for the two consumers below — the
+    // `friction` dir the ignore merge folds in, and the `supervisorPolicy`
+    // override the supervisor reads. A chain that fails to load here surfaces
+    // nothing new: the merge still writes the base runtime set, the first
+    // child tick still reports mount-dead exactly as it does today, and
+    // `superviseLoop` falls through to the engine defaults meanwhile.
     let supervisorPolicy: Chain["supervisorPolicy"];
     let friction: Chain["friction"];
     try {
@@ -942,13 +937,12 @@ async function main(): Promise<number> {
     // `job run` reaches this same branch via its `cmd = "loop"` rewrite
     // above, so it shares this call; a bare `flume tick` never does.
     await dispatcher.sweepStaleWorktrees();
-    // Supervisor: one fresh `flume tick` process per iteration (§2). Past
-    // the sweep call above, the dispatcher constructed above is otherwise
-    // unused on this path — each child builds its own and resolves
-    // chain.ts in its own process. A terminal
-    // stop (§3) or a mount-dead abort (v0.7 §4) propagates the child's exit
-    // code out of `flume loop` too: exiting 0 here would re-mask either as
-    // clean at the next process boundary up.
+    // Supervisor: one fresh `flume tick` process per iteration. Past the sweep
+    // call above, the dispatcher constructed above is otherwise unused on this
+    // path — each child builds its own and resolves chain.ts in its own
+    // process. A terminal stop or a mount-dead abort propagates the child's
+    // exit code out of `flume loop` too: exiting 0 here would re-mask either
+    // as clean at the next process boundary up.
     //
     // `supervisorPolicy` was read above, alongside the ignore merge's
     // `friction`, from the one best-effort chain resolve this start makes.
@@ -964,8 +958,8 @@ async function main(): Promise<number> {
         ? { abortThreshold: supervisorPolicy.abortThreshold }
         : {}),
     });
-    // v0.7 §4 amendment: name surfaced tick errors in the completion summary
-    // even on a 0 exit (partial success) — they must not vanish silently.
+    // Name surfaced tick errors in the completion summary even on a 0 exit
+    // (partial success) — they must not vanish silently.
     const completion = loopCompletionSummary(supervised);
     if (completion) console.log(completion);
     return loopExitCode(supervised);
@@ -977,12 +971,12 @@ async function main(): Promise<number> {
 }
 
 // Run only when invoked as the binary, not when imported (tests reach in for
-// `resolveStateDirs` at the resolution seam, §14).
+// `resolveStateDirs` at the resolution seam).
 //
 // import.meta.url resolves through junctions/symlinks to the file's realpath;
 // process.argv[1] keeps the invoked path verbatim. Through a junction- or
 // symlink-based install (pnpm's linked store) the two never match on a raw
-// string comparison, so resolve argv[1]'s realpath first (RELEASE-v0.7 §3).
+// string comparison, so resolve argv[1]'s realpath first.
 // realpathSync throws if argv[1] doesn't exist on disk — fall back to the raw
 // comparison rather than crash the import.
 export function isInvokedDirectly(argv1: string | undefined): boolean {

@@ -1604,3 +1604,112 @@ describe("the docs' worktree-base claims agree with worktreesBase", () => {
     delete process.env[formula!.env];
   });
 });
+
+// ---------- dead release cites ----------
+
+/**
+ * The release-spec corpus (`spec/RELEASE-v*.md`) is gone: one topic file per
+ * subject replaced it, and no file carries a `§` numbering a reader can
+ * follow. Every `RELEASE-v0.N §M` / `v0.N §M` cite left in `src/` therefore
+ * points at a file that does not exist — narration outliving its referent
+ * (engineering.md, "Narration is the ladder's bottom rung"). Git carries the
+ * provenance those cites were standing in for.
+ *
+ * `src/Dispatcher.ts` is the one exclusion, and it is temporary: its sites
+ * ship as the sibling entry RELEASE-CITES-CUT-DISPATCHER, and the follow-on
+ * RELEASE-CITES-PINNED widens this pin to the whole of `src/` and `examples/`
+ * once both cuts land. That entry is the named actor that deletes the
+ * exclusion.
+ */
+const CITE_EXCLUDED = "Dispatcher.ts";
+
+/**
+ * The cite grammar: a `RELEASE-v` prefix on its own, or a version token and a
+ * `§` close enough together to be one citation rather than two unrelated
+ * mentions. Both orders occur — `v0.8 §4` and `(§6, v0.6.2)` — so both are
+ * spelled. Neither alternative crosses a newline, which after `unwrapProse`
+ * below survives only where the source left prose.
+ */
+const RELEASE_CITE_RE =
+  /RELEASE-v\d+\.\d+(?:\.\d+)?|v\d+\.\d+(?:\.\d+)?[^§\n]{0,24}§|§[^§v\n]{0,24}v\d+\.\d+(?:\.\d+)?/;
+
+/**
+ * Comment prose as one reader-visible run: strip each comment line's `*` /
+ * `//` marker and join, so a cite wrapped across two lines still reads as one
+ * phrase. Code lines become newlines, which the needle above refuses to
+ * cross — two unrelated mentions on either side of a statement never compose
+ * into a false hit.
+ */
+function unwrapProse(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      /^\s*(?:\*|\/\/)/.test(line) ? line.replace(/^\s*(?:\*|\/\/)\s?/, "") : "\n",
+    )
+    .join(" ");
+}
+
+/** Modules under `src/`, sorted, minus the one still-excluded file. */
+function citeScannedModules(): string[] {
+  return readdirSync(join(REPO_ROOT, "src"))
+    .filter((name) => name.endsWith(".ts") && name !== CITE_EXCLUDED)
+    .map((name) => join("src", name))
+    .sort();
+}
+
+describe("dead release cites are gone from the engine's prose", () => {
+  const modules = citeScannedModules().map((path) => ({
+    path,
+    prose: unwrapProse(readFileSync(join(REPO_ROOT, path), "utf8")),
+  }));
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"): a
+  // mis-built file list scans nothing — or scans only files that never
+  // carried a cite — and the refusal below passes over an empty set. Name the
+  // heaviest carriers the cut had to reach, and require the scan to have
+  // found prose at all.
+  it("scans a populated set of src/ modules, the cut's heaviest carriers included", () => {
+    expect(modules.length).toBeGreaterThan(0);
+    for (const name of ["cli.ts", "job.ts", "Prompt.ts", "PendingSchema.ts"]) {
+      expect(modules.map((m) => m.path)).toContain(join("src", name));
+    }
+    expect(
+      modules.filter((m) => m.prose.trim().length > 0).map((m) => m.path),
+      "no scanned module yielded prose — unwrapProse is off target",
+    ).not.toEqual([]);
+  });
+
+  // Sensitivity pin: the refusal reports an empty list whether it is watching
+  // or dead. Drive both orders of the grammar, and drive the live pointers
+  // that must stay unflagged — a needle that also caught `spec/`,
+  // `.claude/rules/`, `docs/` or a quoted test title would delete the
+  // engine's working references along with the dead ones.
+  it("the release-cite needle flags both orders of the grammar and no live pointer", () => {
+    for (const cited of [
+      "the fence (RELEASE-v0.7 §2, §5)",
+      "pickability (v0.8 §4)",
+      "branch grammar retired v0.11 §2/§3",
+      "the friction dir (§6, v0.6.2)",
+      "supervisor policy (v0.7 §16, opened v0.8 §8)",
+    ]) {
+      expect(RELEASE_CITE_RE.test(cited), `${cited} went unflagged`).toBe(true);
+    }
+    for (const live of [
+      'spec/pending.md "The pending queue"',
+      '`.claude/rules/engineering.md`, "Loud or nothing"',
+      'tests/Dispatcher.test.ts, "revert note to the friction channel (§5)": a gate-revert on the longest tag',
+      "`docs/MIGRATING-0.10.md` § 5",
+      "the v0.6.1 dogfood symptom: three build waves",
+    ]) {
+      expect(RELEASE_CITE_RE.test(live), `${live} was flagged`).toBe(false);
+    }
+  });
+
+  it("no src/ module outside Dispatcher.ts carries a release-numbered spec cite", () => {
+    expect(
+      modules.filter((m) => RELEASE_CITE_RE.test(m.prose)).map((m) => m.path),
+      "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
+        "reform deleted — state the fact, or let git carry the provenance",
+    ).toEqual([]);
+  });
+});

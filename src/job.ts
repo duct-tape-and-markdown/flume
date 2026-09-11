@@ -1,13 +1,11 @@
 /**
- * `flume job` — lifecycle verbs over a job (v0.5 §5, branch grammar retired
- * v0.11 §2/§3): a job is `.flume/jobs/<name>/` — tracked files in the
- * working tree, on whatever branch the operator is on. Nothing more.
- * Machinery only: no presets, no encoded checks, no harness content —
- * content arrives via the repo chain's `Chain.seedDir` (v0.6 §4),
- * chain-owned. `new`/`run`/`rm` construct, assert, and checkout no branch.
- * The clean-history ending (`extract`) is removed (v0.11 §3) — a side
- * branch plus ordinary git is the operator's recipe now, documented in
- * `docs/MIGRATING-0.10.md` § 5.
+ * `flume job` — lifecycle verbs over a job: a job is `.flume/jobs/<name>/` —
+ * tracked files in the working tree, on whatever branch the operator is on.
+ * Nothing more. Machinery only: no presets, no encoded checks, no harness
+ * content — content arrives via the repo chain's `Chain.seedDir`, chain-owned.
+ * `new`/`run`/`rm` construct, assert, and checkout no branch. There is no
+ * clean-history ending: a side branch plus ordinary git is the operator's
+ * recipe, documented in `docs/MIGRATING-0.10.md` § 5.
  *
  * `src/cli.ts` routes `flume job <verb>` here. Git access is a local thin
  * wrapper: the verbs speak porcelain (`add`, `commit`, `rm`, `config`), a
@@ -39,9 +37,9 @@ const exec = promisify(execFile);
 export class JobUsageError extends Error {}
 
 /**
- * Runtime-owned entries ensured in every job dir's `.gitignore` (§5a-3).
- * The runtime owns its layout; chain-convention dirs (`sessions/`) are the
- * template's to add.
+ * Runtime-owned entries ensured in every job dir's `.gitignore`. The runtime
+ * owns its layout; chain-convention dirs (`sessions/`) are the template's to
+ * add.
  *
  * Derived from `STATE_ROOT_NAMES` (`src/paths.ts`) wherever an accessor owns
  * the name, so renaming a runtime path cannot leave the ignore behind
@@ -101,11 +99,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries
- * (a declared `Chain.friction` dir, per v0.6.2 §3) — into `<jobDir>/.gitignore`:
- * create the file if absent, append only the missing entries otherwise.
- * Idempotent; template-authored lines (and their order) are preserved
- * verbatim.
+ * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries (a
+ * declared `Chain.friction` dir) — into `<jobDir>/.gitignore`: create the file
+ * if absent, append only the missing entries otherwise. Idempotent;
+ * template-authored lines (and their order) are preserved verbatim.
  */
 export async function ensureRuntimeIgnores(
   jobDir: string,
@@ -148,9 +145,9 @@ export interface JobNewOptions {
   name: string;
   /**
    * Chain + prompts dir the repo chain (and a declared `Chain.seedDir`)
-   * resolve against — repo-resident (v0.6 §2), never the job dir. Defaults
-   * to `<repoRoot>/.flume`, the same default the CLI resolves absent an
-   * explicit `FLUME_CONFIG_DIR`.
+   * resolve against — repo-resident, never the job dir. Defaults to
+   * `<repoRoot>/.flume`, the same default the CLI resolves absent an explicit
+   * `FLUME_CONFIG_DIR`.
    */
   configDir?: string;
   /**
@@ -173,17 +170,15 @@ export interface JobNewOptions {
 }
 
 /**
- * `flume job new <name>` (v0.6 §4; branch grammar retired, v0.11 §2/§3).
- * Load the repo chain — no `<configDir>/chain.ts` is a usage error, since a
- * job that could never `run` must not be creatable — then copy its declared
- * `seedDir` into `.flume/jobs/<name>/` verbatim, skip-existing (a
- * declared-but-absent `seedDir` is the same class of usage error; an
- * undeclared `seedDir` seeds nothing, no warning), ensure runtime ignores,
- * pin `core.longpaths` (win32), baseline-commit the harness on the current
- * HEAD. No branch is created or checked out — HEAD stays wherever the
+ * `flume job new <name>`. Load the repo chain — no `<configDir>/chain.ts` is a
+ * usage error, since a job that could never `run` must not be creatable — then
+ * copy its declared `seedDir` into `.flume/jobs/<name>/` verbatim,
+ * skip-existing (a declared-but-absent `seedDir` is the same class of usage
+ * error; an undeclared `seedDir` seeds nothing, no warning), ensure runtime
+ * ignores, pin `core.longpaths` (win32), baseline-commit the harness on the
+ * current HEAD. No branch is created or checked out — HEAD stays wherever the
  * operator left it. Idempotent on re-run. `import "@dtmd/flume"` from a job
- * chain resolves via the bay's own install — no per-job link is provisioned
- * (v0.9 §3).
+ * chain resolves via the bay's own install — no per-job link is provisioned.
  *
  * Throws {@link JobUsageError} on usage-shaped input (exit 2 at the CLI);
  * any other throw is an operational failure (exit 1).
@@ -197,9 +192,8 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
 
-  // 1. Load the repo chain. The residency invariant (v0.6 §2) guarantees a
-  // chain exists before any job does; a chainless repo cannot run the job
-  // it would create.
+  // 1. Load the repo chain. The residency invariant guarantees a chain exists
+  // before any job does; a chainless repo cannot run the job it would create.
   const chainPath = resolve(configDir, "chain.ts");
   // win32 MAX_PATH (`.claude/rules/platform-facts.md`): configDir can nest
   // deep enough that the total path crosses the limit with no single
@@ -223,10 +217,10 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
     }
   }
 
-  // 3. Seed the state root — configDir-relative, verbatim copy,
-  // skip-existing (v0.6 §4): re-run fills gaps (a stub added to the seed
-  // dir reaches existing jobs) and never clobbers a worked file. Absent
-  // seedDir → bare job; state accretes from ticks, no warning.
+  // 3. Seed the state root — configDir-relative, verbatim copy, skip-existing:
+  // re-run fills gaps (a stub added to the seed dir reaches existing jobs) and
+  // never clobbers a worked file. Absent seedDir → bare job; state accretes
+  // from ticks, no warning.
   const jobDir = join(repoRoot, ".flume", "jobs", name);
   // win32 MAX_PATH: jobDir nests under the state root; namespacedJoin
   // (src/paths.ts) is the shared idiom for every fs call built from it.
@@ -240,8 +234,8 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   }
 
   // 4. Runtime ignores — written before the baseline add so runtime state
-  // never enters the commit. A declared Chain.friction dir folds into the
-  // same set (§3): gitignored by machinery, not by per-repo habit.
+  // never enters the commit. A declared Chain.friction dir folds into the same
+  // set: gitignored by machinery, not by per-repo habit.
   await ensureRuntimeIgnores(
     jobDir,
     chain.friction !== undefined ? [frictionIgnoreEntry(chain.friction)] : [],
@@ -275,11 +269,11 @@ export interface JobRunOptions {
   name: string;
   /** Primary repo root — one leg of the roots the chain factory receives. */
   repoRoot: string;
-  /** Job state root — where the baton lives (resolved by the CLI, §3). */
+  /** Job state root — where the baton lives (resolved by the CLI). */
   flumeDir: string;
   /**
-   * Chain+prompts dir — repo-resident (v0.6 §2), never the job dir; arrives
-   * already resolved from the CLI (`<repoRoot>/.flume` or explicit
+   * Chain+prompts dir — repo-resident, never the job dir; arrives already
+   * resolved from the CLI (`<repoRoot>/.flume` or explicit
    * `FLUME_CONFIG_DIR`).
    */
   configDir: string;
@@ -287,13 +281,13 @@ export interface JobRunOptions {
 }
 
 /**
- * `flume job run <name>` preflight (v0.11 §2/§3): wake the chain's entry
- * phase — `chain.phases[0]`, a content-free convention (decision 6, no
- * hardcoded phase names) — iff the baton is hibernating. A non-hibernating
- * baton is left untouched (mid-job resume). No branch is asserted or
- * checked out — the engine has no opinion on which branch a state root
- * runs on. The loop itself (§5b-3) is the CLI's standard `flume loop` path
- * under the job resolution; this function owns only the wake step before it.
+ * `flume job run <name>` preflight: wake the chain's entry phase —
+ * `chain.phases[0]`, a content-free convention (decision 6, no hardcoded phase
+ * names) — iff the baton is hibernating. A non-hibernating baton is left
+ * untouched (mid-job resume). No branch is asserted or checked out — the
+ * engine has no opinion on which branch a state root runs on. The loop itself
+ * is the CLI's standard `flume loop` path under the job resolution; this
+ * function owns only the wake step before it.
  *
  * Throws {@link JobUsageError} on a bad name (exit 2 at the CLI); any other
  * throw is an operational failure (exit 1).
@@ -306,7 +300,7 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
   if (invalid) throw new JobUsageError(invalid);
 
   // Wake the entry phase iff hibernating. The chain is repo-resident
-  // (`<configDir>/chain.ts`, v0.6 §2).
+  // (`<configDir>/chain.ts`).
   const baton = new Baton(flumeDir);
   if (!baton.hibernating()) {
     log(
@@ -324,11 +318,11 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
 }
 
 /**
- * The pid recorded in `<dir>/loop.pid`, when it names a live process —
- * `null` for no pidfile, an unparsable one, or a dead/not-ours pid (stale;
- * callers reclaim silently). Same liveness probe as the loop lock. Exported
- * for reuse (`flume status`'s supervisor-liveness probe, v0.7 §17) rather
- * than a second implementation of the same pid-liveness check.
+ * The pid recorded in `<dir>/loop.pid`, when it names a live process — `null`
+ * for no pidfile, an unparsable one, or a dead/not-ours pid (stale; callers
+ * reclaim silently). Same liveness probe as the loop lock. Exported for reuse
+ * (`flume status`'s supervisor-liveness probe) rather than a second
+ * implementation of the same pid-liveness check.
  */
 export async function liveLoopPid(dir: string): Promise<number | null> {
   // win32 MAX_PATH: dir is a job/state root that can nest deep; namespacedJoin
@@ -360,12 +354,11 @@ export interface JobRmOptions {
 }
 
 /**
- * `flume job rm <name>` (v0.5 §5c; branch grammar retired, v0.11 §2/§3) —
- * the discard ending: throw the harness away, keep the work. Refuse while
- * the job's `loop.pid` records a live pid; `git rm -r` the tracked harness
- * plus a cleanup commit on the current HEAD; remove untracked runtime
- * remnants; `git worktree prune`. No branch is checked out or touched — the
- * operator's branches are never rm's business.
+ * `flume job rm <name>` — the discard ending: throw the harness away, keep the
+ * work. Refuse while the job's `loop.pid` records a live pid; `git rm -r` the
+ * tracked harness plus a cleanup commit on the current HEAD; remove untracked
+ * runtime remnants; `git worktree prune`. No branch is checked out or touched
+ * — the operator's branches are never rm's business.
  *
  * Throws {@link JobUsageError} on a bad name or a name that names no job
  * (exit 2 at the CLI); a live loop or git failure is an operational error
@@ -421,7 +414,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   log(`[flume] removed ${rel}`);
 }
 
-/** One row of `flume job status` (v0.5 §5d). */
+/** One row of `flume job status`. */
 export interface JobStatus {
   /** Job name — the directory segment under `.flume/jobs/`. */
   name: string;
@@ -434,15 +427,15 @@ export interface JobStatus {
    */
   pending: number | null;
   /**
-   * Files under the job's declared friction dir (§6, v0.6.2), counted when
-   * the caller supplies `frictionDir` (the repo chain's `Chain.friction`,
+   * Files under the job's declared friction dir, counted when the caller
+   * supplies `frictionDir` (the repo chain's `Chain.friction`,
    * job-dir-relative — `jobStatus` has no chain of its own to load, so the
    * caller resolves it once and passes it in). `undefined` when no
    * `frictionDir` is given; `null` when `frictionDir` is given but the dir's
    * contents could not be read for a reason other than the dir being absent
-   * (permission denied, a path too long for the platform, …) — surfaced
-   * rather than folded into "0 files" (`.claude/rules/engineering.md`,
-   * "Loud or nothing").
+   * (permission denied, a path too long for the platform, …) — surfaced rather
+   * than folded into "0 files" (`.claude/rules/engineering.md`, "Loud or
+   * nothing").
    */
   frictionCount?: number | null;
 }
@@ -503,15 +496,15 @@ export function readPendingLoose(pendingPath: string): ParseResult {
 }
 
 /**
- * `flume job status` (v0.5 §5d): enumerate `.flume/jobs/*` in the working
- * tree — awake phases + pending count per job. Observational: reads only
- * what exists and writes nothing. The Baton constructor mkdirs `awake/`, so
- * it is constructed only when that dir is already on disk (mkdir on an
- * existing dir is a no-op); non-directories under `jobs/` are skipped.
+ * `flume job status`: enumerate `.flume/jobs/*` in the working tree — awake
+ * phases + pending count per job. Observational: reads only what exists and
+ * writes nothing. The Baton constructor mkdirs `awake/`, so it is constructed
+ * only when that dir is already on disk (mkdir on an existing dir is a no-op);
+ * non-directories under `jobs/` are skipped.
  *
- * `frictionDir` (§6, v0.6.2), when supplied, is the repo chain's declared
- * `Chain.friction` — job-dir-relative, so the same string applies to every
- * job. Omitted → every row's `frictionCount` is `undefined`.
+ * `frictionDir`, when supplied, is the repo chain's declared `Chain.friction`
+ * — job-dir-relative, so the same string applies to every job. Omitted → every
+ * row's `frictionCount` is `undefined`.
  *
  * `pendingPath` (spec/pending.md "The pending queue"), when supplied, is the
  * repo chain's declared `Chain.pendingPath` — job-dir-relative, the same

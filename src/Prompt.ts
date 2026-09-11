@@ -16,21 +16,20 @@
  *
  * A `<prior-attempt>` block follows it whenever the dispatcher hands in a
  * persisted {@link PriorAttempt} — the bounded record of a previous no-commit
- * attempt, tagged with exactly one of the four causally-distinct modes
- * (§6 no-commit taxonomy, widened by RELEASE-v0.10 §3): `gate-revert`
- * (committed then a gate reverted it), `clean-exit` (the agent exited
- * cleanly without committing), `platform-preempt` (the process failed for
- * non-work reasons — not a defect in the work), `render-refused` (the prompt
- * itself never resolved — the agent was never invoked); plus two sibling
- * facts rather than further {@link NoCommitMode} members — `tip-moved`
- * (RELEASE-v0.11 §5), the tick's commit discarded because the ref moved out
- * from under it, and `not-shipped`, a commit that landed and passed every
- * gate which the chain's own `shipped` predicate declined. Neither is a
- * defect the four modes classify. Each renders distinctly so the
- * retry knows what actually happened. Like `<harness>` it is
+ * attempt, tagged with exactly one of the four causally-distinct modes of the
+ * no-commit taxonomy: `gate-revert` (committed then a gate reverted it),
+ * `clean-exit` (the agent exited cleanly without committing),
+ * `platform-preempt` (the process failed for non-work reasons — not a defect
+ * in the work), `render-refused` (the prompt itself never resolved — the agent
+ * was never invoked); plus two sibling facts rather than further
+ * {@link NoCommitMode} members — `tip-moved`, the tick's commit discarded
+ * because the ref moved out from under it, and `not-shipped`, a commit that
+ * landed and passed every gate which the chain's own `shipped` predicate
+ * declined. Neither is a defect the four modes classify. Each renders
+ * distinctly so the retry knows what actually happened. Like `<harness>` it is
  * dispatcher-owned and structural: no `{{token}}` in the prompt file, no
- * `promptArgs`. Absent on a first attempt; cleared once an attempt ships,
- * and cleared as stale once the entry its key names leaves the queue.
+ * `promptArgs`. Absent on a first attempt; cleared once an attempt ships, and
+ * cleared as stale once the entry its key names leaves the queue.
  */
 
 import { spawn } from "node:child_process";
@@ -44,17 +43,16 @@ const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 
 /**
- * Output cap for one inline-exec span (RELEASE-v0.10 §2). `spawn` has no
- * `maxBuffer` (unlike `execFile`), so the cap is enforced by hand: overrun
- * kills the child and rejects rather than truncating silently.
+ * Output cap for one inline-exec span. `spawn` has no `maxBuffer` (unlike
+ * `execFile`), so the cap is enforced by hand: overrun kills the child and
+ * rejects rather than truncating silently.
  */
 const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
 
 /**
- * The four causally-distinct ways a tick produces no usable commit (§6,
- * widened by RELEASE-v0.10 §3). The discriminant of {@link PriorAttempt} and
- * the value carried on `TickOutcome.noCommit`; exactly one per no-commit
- * tick.
+ * The four causally-distinct ways a tick produces no usable commit. The
+ * discriminant of {@link PriorAttempt} and the value carried on
+ * `TickOutcome.noCommit`; exactly one per no-commit tick.
  */
 export type NoCommitMode =
   | "gate-revert"
@@ -74,8 +72,7 @@ export type PriorAttemptKeyspace = "entry" | "phase";
 
 /**
  * A prior attempt that committed and was then REVERTED by a gate
- * (`afterCommit` or `afterMerge`). The only variant shipped at §5; §6 widens
- * the union around it without reshaping it.
+ * (`afterCommit` or `afterMerge`).
  */
 export interface GateRevertAttempt {
   mode: "gate-revert";
@@ -160,11 +157,10 @@ export interface PlatformPreemptAttempt {
 
 /**
  * The render aborted before the agent was invoked — one or more inline-exec
- * spans in the prompt did not resolve (RELEASE-v0.10 §3). Distinct from
- * `clean-exit` (the agent ran and committed nothing) and from
- * `platform-preempt` (the agent process itself failed): here the agent never
- * ran at all, so a chain's `handoff` can tell "could not see" from "chose
- * not to act".
+ * spans in the prompt did not resolve. Distinct from `clean-exit` (the agent
+ * ran and committed nothing) and from `platform-preempt` (the agent process
+ * itself failed): here the agent never ran at all, so a chain's `handoff` can
+ * tell "could not see" from "chose not to act".
  */
 export interface RenderRefusedAttempt {
   mode: "render-refused";
@@ -182,13 +178,12 @@ export interface RenderRefusedAttempt {
 }
 
 /**
- * The tick's commit was discarded because the ref moved between tick start
- * and the point a commit would land onto it (RELEASE-v0.11 §5) — the
- * dispatcher's own tip-verify backstop, not a {@link NoCommitMode}: the
- * agent's (or harness's) work was not at fault, and no gate ran. A sibling
- * fact beside the four `NoCommitMode` variants, not a fifth member of that
- * type — `mode` here is its own literal, `"tip-moved"`, never assigned to a
- * `NoCommitMode`-typed field.
+ * The tick's commit was discarded because the ref moved between tick start and
+ * the point a commit would land onto it — the dispatcher's own tip-verify
+ * backstop, not a {@link NoCommitMode}: the agent's (or harness's) work was
+ * not at fault, and no gate ran. A sibling fact beside the four `NoCommitMode`
+ * variants, not a fifth member of that type — `mode` here is its own literal,
+ * `"tip-moved"`, never assigned to a `NoCommitMode`-typed field.
  */
 export interface TipMovedAttempt {
   mode: "tip-moved";
@@ -278,29 +273,28 @@ export interface RenderOptions {
    * substitution key, so any prompt can reference state-relative paths
    * (`{{FLUME_DIR}}/plan/pending.json`) with no `promptArgs` boilerplate. A
    * chain-supplied `FLUME_DIR` in `args` does not override it — the resolved
-   * root is authoritative (RELEASE-v0.3 §16).
+   * root is authoritative.
    */
   flumeDir: string;
   /** Substitution map. */
   args: Record<string, string>;
   /**
-   * A prior no-commit attempt for this entry/phase (any of the three §6
-   * modes), read from disk by the dispatcher. Injected as the
-   * dispatcher-owned `<prior-attempt>` block. Omitted on a first attempt —
-   * the block is then absent entirely.
+   * A prior no-commit attempt for this entry/phase (any {@link NoCommitMode},
+   * or a `tip-moved`/`not-shipped` sibling), read from disk by the dispatcher.
+   * Injected as the dispatcher-owned `<prior-attempt>` block. Omitted on a
+   * first attempt — the block is then absent entirely.
    */
   priorAttempt?: PriorAttempt;
   /**
    * Pending entry assigned to this tick (fanout phases only), read from the
    * same `TickContext` the dispatcher already threads through. When present,
    * the `<harness>` block states the *effective* fence — `entry.files ∪
-   * phase.entryChannelPaths` — as what the write guard
-   * (`src/Dispatcher.ts` `runAfterCommitGates`) actually enforces on this
-   * tick, naming `phase.writablePaths` separately as the outer ceiling
-   * (RELEASE-v0.7 §2). Absent (singleton ticks, or a fanout tick with no
-   * assignment) renders the unscoped block — exact byte shape pinned by
-   * tests/Prompt.test.ts's "byte-identical to the pre-§2 collapsed
-   * rendering" case.
+   * phase.entryChannelPaths` — as what the write guard (`src/Dispatcher.ts`
+   * `runAfterCommitGates`) actually enforces on this tick, naming
+   * `phase.writablePaths` separately as the outer ceiling. Absent (singleton
+   * ticks, or a fanout tick with no assignment) renders the unscoped block —
+   * exact byte shape pinned by tests/Prompt.test.ts's "byte-identical to the
+   * pre-§2 collapsed rendering" case.
    */
   assignedEntry?: PendingEntry;
 }
@@ -354,10 +348,10 @@ export interface InlineExecFailure {
 /**
  * Thrown by {@link evaluateInlineExec} when at least one inline-exec span
  * cannot be resolved (non-zero exit, spawn failure, `sh` not found, cap
- * overrun) — RELEASE-v0.10 §3: the render aborts and the agent is never
- * invoked. `message` names every failing span's command text and stderr, so
- * a caller that just logs `.message` (rather than reading `.failures`) still
- * surfaces the full picture.
+ * overrun): the render aborts and the agent is never invoked. `message` names
+ * every failing span's command text and stderr, so a caller that just logs
+ * `.message` (rather than reading `.failures`) still surfaces the full
+ * picture.
  */
 export class InlineExecRenderError extends Error {
   readonly failures: InlineExecFailure[];
@@ -396,9 +390,9 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
     }),
   );
 
-  // Loud or nothing (RELEASE-v0.10 §3): any unresolved span aborts the whole
-  // render before the agent is invoked — no substituted marker standing in
-  // for output that never came.
+  // Loud or nothing: any unresolved span aborts the whole render before the
+  // agent is invoked — no substituted marker standing in for output that never
+  // came.
   const failures = results.filter((r): r is Extract<InlineExecOutcome, { ok: false }> => !r.ok);
   if (failures.length > 0) {
     throw new InlineExecRenderError(
@@ -421,12 +415,13 @@ async function evaluateInlineExec(raw: string, cwd: string): Promise<string> {
 }
 
 /**
- * Evaluate one inline-exec command: spawn `sh` with no command argv and
- * write `cmd` to its stdin as UTF-8, then close it (RELEASE-v0.10 §2).
- * Measured (spec §1): `["-c", cmd]` corrupts any non-ASCII byte on win32
- * under MSYS2's re-parsing of the Windows command line — stdin transport
- * does not. `sh` consumes stdin, so a span whose command itself reads
- * stdin sees EOF; no span in this repo's prompts does.
+ * Evaluate one inline-exec command: spawn `sh` with no command argv and write
+ * `cmd` to its stdin as UTF-8, then close it. Measured
+ * (`.claude/rules/platform-facts.md`, "MSYS2 corrupts non-ASCII in argv; use
+ * stdin"): `["-c", cmd]` corrupts any non-ASCII byte on win32 under MSYS2's
+ * re-parsing of the Windows command line — stdin transport does not. `sh`
+ * consumes stdin, so a span whose command itself reads stdin sees EOF; no span
+ * in this repo's prompts does.
  */
 function runInlineExec(
   cmd: string,
@@ -525,13 +520,12 @@ function unscopedFenceLines(phase: Phase): string[] {
 }
 
 /**
- * Scoped rendering (RELEASE-v0.7 §2): states the fence the write guard
- * actually enforces on this tick — `entry.files ∪ phase.entryChannelPaths` —
- * separately from `phase.writablePaths`, the outer ceiling both this fence
- * and the guard's ceiling check must clear. Sources the union from
- * `entryWriteScopeUnion` (`src/paths.ts`), the same helper the
- * `writablePathsGate` entry-scope check consumes, so the two can never
- * state a different fence.
+ * Scoped rendering: states the fence the write guard actually enforces on this
+ * tick — `entry.files ∪ phase.entryChannelPaths` — separately from
+ * `phase.writablePaths`, the outer ceiling both this fence and the guard's
+ * ceiling check must clear. Sources the union from `entryWriteScopeUnion`
+ * (`src/paths.ts`), the same helper the `writablePathsGate` entry-scope check
+ * consumes, so the two can never state a different fence.
  */
 function effectiveFenceLines(phase: Phase, entry: PendingEntry): string[] {
   const entryPaths = declaredPaths(entry);

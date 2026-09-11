@@ -1,5 +1,5 @@
 /**
- * The engine surface handed to a chain factory (RELEASE-v0.11 §6).
+ * The engine surface handed to a chain factory.
  *
  * A chain is a plugin loaded into a host, not a library consumer resolving
  * its own copy: `chain.ts` default-exports `(api: FlumeApi) => ChainModule`
@@ -8,9 +8,9 @@
  * second physical engine, and a stale types-only devDependency cannot reach
  * a tick.
  *
- * What §6 removes by construction: a globally-invoked engine dying with a
- * raw `ERR_MODULE_NOT_FOUND` for the package that is running, and the
- * dual-engine process — one copy driving the Dispatcher while the chain
+ * What the plugin shape removes by construction: a globally-invoked engine
+ * dying with a raw `ERR_MODULE_NOT_FOUND` for the package that is running, and
+ * the dual-engine process — one copy driving the Dispatcher while the chain
  * builds Phase/Gate/Agent objects from another, splitting `instanceof` and
  * module state at equal versions with nothing reporting it.
  */

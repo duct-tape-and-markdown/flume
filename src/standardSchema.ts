@@ -1,10 +1,10 @@
 /**
  * Vendored from the Standard Schema spec (https://standardschema.dev),
- * type-only — no runtime code ships from this file. The spec is published
- * to be copied: any library implementing `~standard` (zod ≥3.24, valibot,
+ * type-only — no runtime code ships from this file. The spec is published to
+ * be copied: any library implementing `~standard` (zod ≥3.24, valibot,
  * arktype, ...) unifies with this structurally, so a chain may declare an
  * `entryExtension` field with a schema from any of them, or a hand-written
- * object, without this package depending on any of them (RELEASE-v0.11 §11).
+ * object, without this package depending on any of them.
  */
 
 export interface StandardSchemaV1<Input = unknown, Output = Input> {

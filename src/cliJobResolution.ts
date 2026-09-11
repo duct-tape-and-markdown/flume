@@ -1,18 +1,18 @@
 /**
- * State-root and config-dir resolution (v0.6 §3, §12/§14) — the `--job` /
- * `FLUME_JOB` / `FLUME_DIR` / `FLUME_CONFIG_DIR` arithmetic and its two
- * refusal shapes, split out of `src/cli.ts` (`.claude/rules/posture-sweep.md`,
- * "A violation counts only when verified on disk this tick").
+ * State-root and config-dir resolution — the `--job` / `FLUME_JOB` /
+ * `FLUME_DIR` / `FLUME_CONFIG_DIR` arithmetic and its two refusal shapes,
+ * split out of `src/cli.ts` (`.claude/rules/posture-sweep.md`, "A violation
+ * counts only when verified on disk this tick").
  */
 
 import { resolve, join, dirname, basename } from "node:path";
 import { existsSync } from "node:fs";
 
 /**
- * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two
- * resolution authorities for one state root (v0.6 §3). The CLI maps this to
- * a usage error (exit 2). An explicit `FLUME_CONFIG_DIR` composes instead —
- * the authority was always over state, and config never belonged to the job.
+ * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two resolution
+ * authorities for one state root. The CLI maps this to a usage error (exit 2).
+ * An explicit `FLUME_CONFIG_DIR` composes instead — the authority was always
+ * over state, and config never belonged to the job.
  */
 export class JobResolutionConflictError extends Error {}
 
@@ -39,11 +39,11 @@ export class CrossRepoFlumeDirError extends Error {}
 
 /**
  * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
- * git applies to `.git/` (RELEASE-v0.7 §9). `cwd` itself counts as inside
- * the bay: if its basename is `.flume`, the bay root is its parent, no walk
- * needed. If no ancestor has a `.flume`, fall back to `cwd` unchanged so a
- * first `flume job new` in a fresh, undocked repo still creates `.flume`
- * there rather than reaching for an unrelated ancestor.
+ * git applies to `.git/`. `cwd` itself counts as inside the bay: if its
+ * basename is `.flume`, the bay root is its parent, no walk needed. If no
+ * ancestor has a `.flume`, fall back to `cwd` unchanged so a first `flume job
+ * new` in a fresh, undocked repo still creates `.flume` there rather than
+ * reaching for an unrelated ancestor.
  */
 export function resolveRepoRoot(cwd: string): string {
   if (basename(cwd) === ".flume") return dirname(cwd);
@@ -73,19 +73,19 @@ export function resolveRepoRoot(cwd: string): string {
  * resolved against the cwd. Independent of one another: a dock sets both to its
  * ephemeral dir to co-locate config and state.
  *
- * Job resolution (v0.6 §3): `jobFlag` (the global `--job <name>`) or a
- * pre-set `FLUME_JOB` retargets only the `flumeDir` default (state root →
+ * Job resolution: `jobFlag` (the global `--job <name>`) or a pre-set
+ * `FLUME_JOB` retargets only the `flumeDir` default (state root →
  * `<repoRoot>/.flume/jobs/<name>`) and writes `FLUME_JOB` back alongside the
  * dirs, so loop-spawned tick children inherit the whole resolution via env.
- * `configDir` never retargets — the chain is repo-resident (§2), so it stays
+ * `configDir` never retargets — the chain is repo-resident, so it stays
  * `<repoRoot>/.flume` (or explicit `FLUME_CONFIG_DIR`, which composes: env
  * owns the chain+prompts dir, job owns state). The flag is a strict authority
  * over the state root — an explicitly-set `FLUME_DIR` beside it throws
  * {@link JobResolutionConflictError}. `FLUME_JOB` from env composes with an
- * explicit `FLUME_DIR` instead of conflicting: on the loop → tick boundary
- * the child sees all three written-back vars, and the dir vars *are* the
- * parent's canonical job resolution, so set dirs win and the job name rides
- * along for the branch guard and fanout namespacing.
+ * explicit `FLUME_DIR` instead of conflicting: on the loop → tick boundary the
+ * child sees all three written-back vars, and the dir vars *are* the parent's
+ * canonical job resolution, so set dirs win and the job name rides along for
+ * the branch guard and fanout namespacing.
  *
  * Cross-repo inheritance refusal: provenance is stamped, never inferred
  * (spec/cli.md, "State-root and config-dir resolution"). The write-back

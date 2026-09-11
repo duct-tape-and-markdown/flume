@@ -14,15 +14,13 @@ import {
 import type { CurrentRef } from "./git.js";
 
 /**
- * Map a tick outcome to the `flume tick` process exit code — the process
- * boundary classification at the intersection of §3, v0.7 §4, and v0.7 §5:
- * 78 (`EX_CONFIG`) terminal misconfiguration (a chain that resolved but
- * declares an inconsistent world), 2 (usage) the RELEASE-v0.7 §5
- * CJS-context refusal (a nameable fix, checked before `failed` since a
- * chain-load failure sets at most one of the two), 69 (`EX_UNAVAILABLE`,
- * {@link EX_MOUNT_DEAD}) the chain never resolved at all for any other
- * reason, 0 otherwise (work done or clean hibernation). Exported for the
- * exit-code seam tests.
+ * Map a tick outcome to the `flume tick` process exit code: 78 (`EX_CONFIG`)
+ * terminal misconfiguration (a chain that resolved but declares an
+ * inconsistent world), 2 (usage) the CJS-context refusal (a nameable fix,
+ * checked before `failed` since a chain-load failure sets at most one of the
+ * two), 69 (`EX_UNAVAILABLE`, {@link EX_MOUNT_DEAD}) the chain never resolved
+ * at all for any other reason, 0 otherwise (work done or clean hibernation).
+ * Exported for the exit-code seam tests.
  */
 export function tickExitCode(outcome: TickOutcome): number {
   if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
@@ -32,14 +30,13 @@ export function tickExitCode(outcome: TickOutcome): number {
 
 /**
  * Map a whole `flume loop` / `job run` supervised run to its process exit
- * code (v0.7 §4, amended): `terminal`/`mountDead` propagate the child's
- * abort code unchanged (§3, v0.7 §4's mount-dead class). `repeatedFailure`
- * (§16) is unconditionally non-zero — the consecutive-failure backstop
- * fired regardless of how much the run shipped before hitting the wall.
- * Otherwise non-zero iff at least one child tick errored AND the run shipped
- * nothing — "settled with nothing to do" (no errors) and partial success
- * (ships landed despite some tick errors) both stay 0. Exported for the
- * exit-code seam tests.
+ * code: `terminal`/`mountDead` propagate the child's abort code unchanged.
+ * `repeatedFailure` is unconditionally non-zero — the consecutive-failure
+ * backstop fired regardless of how much the run shipped before hitting the
+ * wall. Otherwise non-zero iff at least one child tick errored AND the run
+ * shipped nothing — "settled with nothing to do" (no errors) and partial
+ * success (ships landed despite some tick errors) both stay 0. Exported for
+ * the exit-code seam tests.
  */
 export function loopExitCode(result: SuperviseResult): number {
   if (result.terminal) return EX_TERMINAL_MISCONFIG;
@@ -51,11 +48,11 @@ export function loopExitCode(result: SuperviseResult): number {
 }
 
 /**
- * `tick` and `loop`'s pre-work refusal message for a `CurrentRef` that
- * failed to name a ref — one branch per {@link CurrentRef} failure kind, so
- * a caller outside a repository is told that, not "HEAD is detached"
- * (v0.11 §4 drift). Exhaustive over the non-`"ref"` kinds; a new kind is a
- * compile error here, not a silent fallthrough.
+ * `tick` and `loop`'s pre-work refusal message for a `CurrentRef` that failed
+ * to name a ref — one branch per {@link CurrentRef} failure kind, so a caller
+ * outside a repository is told that, not "HEAD is detached". Exhaustive over
+ * the non-`"ref"` kinds; a new kind is a compile error here, not a silent
+ * fallthrough.
  */
 export function describeRefFailure(
   ref: Exclude<CurrentRef, { kind: "ref" }>,
@@ -72,11 +69,10 @@ export function describeRefFailure(
 
 /**
  * `flume loop` / `job run`'s completion summary line naming surfaced tick
- * errors, (§16) an abort on the consecutive-failure backstop, and (spec/
- * loop.md "Graceful stop") a stop-flag-ended run — undefined when the run
- * had none of these. Printed even on a 0 exit (partial success, or a
- * graceful stop): none of these facts may vanish into a green exit silently
- * (v0.7 §4).
+ * errors, an abort on the consecutive-failure backstop, and (spec/loop.md
+ * "Graceful stop") a stop-flag-ended run — undefined when the run had none of
+ * these. Printed even on a 0 exit (partial success, or a graceful stop): none
+ * of these facts may vanish into a green exit silently.
  */
 export function loopCompletionSummary(
   result: SuperviseResult,

@@ -84,7 +84,7 @@ export interface TickContext {
    * `<repoRoot>/.flume`, relocatable via `FLUME_DIR`). Surfaced so a phase's
    * `promptArgs` can derive state-relative paths from it. The dispatcher also
    * auto-injects this as the reserved `{{FLUME_DIR}}` prompt arg, so most
-   * prompts need no `promptArgs` boilerplate (RELEASE-v0.3 §16).
+   * prompts need no `promptArgs` boilerplate.
    */
   flumeDir: string;
   /** Pending entry assigned to this tick (fanout phases only). */
@@ -143,7 +143,7 @@ export interface FanoutEntryOutcome {
   reverted: boolean;
   /** `phase.shouldRun` declined this entry before the agent was invoked. Absent when it ran. */
   declined?: boolean;
-  /** §6 mode when this entry produced no usable commit. Absent when it shipped or was declined. */
+  /** No-commit mode when this entry produced no usable commit. Absent when it shipped or was declined. */
   noCommit?: NoCommitMode;
   /**
    * This entry's merge-stage fact, the same {@link MergeOutcome} the tick
@@ -268,11 +268,11 @@ export interface TickResult {
    */
   revertedTags: readonly string[];
   /**
-   * RELEASE-v0.2 §6 no-commit classification, present iff the tick (or, for
-   * a fanout wave, the whole wave) produced no usable commit. Absent on a
-   * committed tick. A chain's `handoff` reads this to wake a sibling phase
-   * on a clean-exit that `shippedTags`/`gateResults` alone can't
-   * distinguish from a genuine nothing-pickable no-op.
+   * No-commit classification, present iff the tick (or, for a fanout wave, the
+   * whole wave) produced no usable commit. Absent on a committed tick. A
+   * chain's `handoff` reads this to wake a sibling phase on a clean-exit that
+   * `shippedTags`/`gateResults` alone can't distinguish from a genuine
+   * nothing-pickable no-op.
    */
   noCommit?: NoCommitMode;
   /**
@@ -383,13 +383,12 @@ export interface Phase {
   handoff: (result: TickResult) => string[];
 
   /**
-   * Optional predicate the dispatcher consults before rendering the prompt
-   * or invoking the agent (RELEASE-v0.11 §8) — a capability with an
-   * injection point: the dispatcher supplies the skip, the chain supplies
-   * the reason (`engine-boundary.md`, *Capability vs convention*).
-   * Returning `false` ends the tick as a declined no-op: no agent
-   * invocation, no commit, `handoff` still runs so the chain can pass the
-   * baton on. Undeclared is unchanged behavior — a phase without
+   * Optional predicate the dispatcher consults before rendering the prompt or
+   * invoking the agent — a capability with an injection point: the dispatcher
+   * supplies the skip, the chain supplies the reason (`engine-boundary.md`,
+   * *Capability vs convention*). Returning `false` ends the tick as a declined
+   * no-op: no agent invocation, no commit, `handoff` still runs so the chain
+   * can pass the baton on. Undeclared is unchanged behavior — a phase without
    * `shouldRun` always runs, byte-identically to a phase whose `shouldRun`
    * returns `true`.
    *
@@ -496,11 +495,11 @@ export interface WorktreeSetupResult {
 export interface Chain {
   phases: Phase[];
   /**
-   * Chain-declared pending-entry extension (v0.8 §2): fields beyond the
-   * engine core (tag/gate/dependsOnForks/files), each declared once with
-   * its zod schema and prompt hint. The dispatcher composes the merged
-   * validator from it; `renderSchemaForPrompt(extension)` composes the
-   * rendered schema from the same declaration. Absent means bare core.
+   * Chain-declared pending-entry extension: fields beyond the engine core
+   * (tag/gate/dependsOnForks/files), each declared once with its zod schema
+   * and prompt hint. The dispatcher composes the merged validator from it;
+   * `renderSchemaForPrompt(extension)` composes the rendered schema from the
+   * same declaration. Absent means bare core.
    */
   entryExtension?: EntryExtension;
   /**
@@ -539,24 +538,23 @@ export interface Chain {
    */
   pendingPath?: string;
   /**
-   * Environment facts this chain asserts (v0.8 §4) — the strings a pending
-   * entry's `gate: { kind: "requiresCapability", capability }` is matched
-   * against. `chain.ts` is TypeScript, so this may probe the environment at
-   * load time (e.g. a daemon health check succeeding asserts its name here).
-   * Undeclared or omitted means no capability is asserted: a
-   * `requiresCapability` entry stays non-pickable until the chain names it
-   * here.
+   * Environment facts this chain asserts — the strings a pending entry's
+   * `gate: { kind: "requiresCapability", capability }` is matched against.
+   * `chain.ts` is TypeScript, so this may probe the environment at load time
+   * (e.g. a daemon health check succeeding asserts its name here). Undeclared
+   * or omitted means no capability is asserted: a `requiresCapability` entry
+   * stays non-pickable until the chain names it here.
    */
   capabilities?: string[];
   /**
-   * Override for the `flume loop` supervisor's provisioning-failure policy
-   * (v0.7 §16, opened v0.8 §8) — the run-scoped quarantine and the
-   * consecutive-identical-failure abort threshold ship as engine defaults;
-   * this block lets a chain choose otherwise. Undeclared or omitted fields
-   * fall through to the defaults in `src/Dispatcher.ts`'s
+   * Override for the `flume loop` supervisor's provisioning-failure policy —
+   * the run-scoped quarantine and the consecutive-identical-failure abort
+   * threshold ship as engine defaults; this block lets a chain choose
+   * otherwise. Undeclared or omitted fields fall through to the defaults in
+   * `src/Dispatcher.ts`'s
    * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
-   * byte shape is pinned by tests/Dispatcher.test.ts's "a chain declaring
-   * neither knob gets the v0.7 §16 defaults, byte-identical" case.
+   * byte shape is pinned by the chain-declares-neither-knob case in
+   * tests/Dispatcher.test.ts.
    */
   supervisorPolicy?: {
     /**

@@ -1,14 +1,13 @@
 /**
  * PendingSchema — the contract between plan-phase output and build-phase input.
  *
- * Boundary rule (v0.8 §2): the engine owns only what its mechanics consume —
- * `tag` (identity), `files` (the fence), `gate`/`dependsOnForks` (pickability),
+ * Boundary rule: the engine owns only what its mechanics consume — `tag`
+ * (identity), `files` (the fence), `gate`/`dependsOnForks` (pickability),
  * `observedFiles` (dispatcher-maintained collision record). Everything else a
  * project wants on an entry is a **chain-declared extension**: each field is
  * declared once with both its Standard Schema validator and its prompt hint,
- * and the engine composes the adapted validator and the rendered prompt
- * schema from that single declaration — so the prompt and the parser cannot
- * drift.
+ * and the engine composes the adapted validator and the rendered prompt schema
+ * from that single declaration — so the prompt and the parser cannot drift.
  *
  * Single source of truth, four enforcement points:
  *   1. Validates plan-phase output at gate time (parse + adapted validators).
@@ -17,9 +16,9 @@
  *   4. Drives fanout partition via entry.files.edit[].path.
  *
  * The engine adapts each declared validator, never merges a chain-constructed
- * schema object into its own graph (RELEASE-v0.11 §11) — `zod` here is a
- * private engine dependency for the *core* fields only, not a channel a
- * chain's own schema objects pass through.
+ * schema object into its own graph — `zod` here is a private engine dependency
+ * for the *core* fields only, not a channel a chain's own schema objects pass
+ * through.
  */
 
 import { z } from "zod";
@@ -51,7 +50,7 @@ const FileChange = z.object({
  * - requiresCapability: pickable iff the named capability is asserted in the
  *                       chain's declared `capabilities` (Chain.capabilities,
  *                       src/Phase.ts) — generic environment-gated
- *                       pickability (v0.8 §4).
+ *                       pickability.
  */
 const Gate = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("open") }),
@@ -85,12 +84,11 @@ const Gate = z.discriminatedUnion("kind", [
 export const TAG_MAX_LENGTH = 255 - 39;
 
 /**
- * Tag grammar reduces to mechanical safety only (v0.8 §3): the engine
- * requires of a tag only what its mechanics need — non-empty, a charset
- * safe everywhere the engine writes it (a commit-message token, a
- * worktree/branch slug via `slugify`, a raw filename component), and a
- * length bound derived from the tightest real consumer above. No
- * whitespace, no path separators.
+ * Tag grammar reduces to mechanical safety only: the engine requires of a tag
+ * only what its mechanics need — non-empty, a charset safe everywhere the
+ * engine writes it (a commit-message token, a worktree/branch slug via
+ * `slugify`, a raw filename component), and a length bound derived from the
+ * tightest real consumer above. No whitespace, no path separators.
  *
  *   DAL-REWIRE(usp_Filter_Get)
  *   SURFACE-CTA-MIG
@@ -98,8 +96,7 @@ export const TAG_MAX_LENGTH = 255 - 39;
  *   MAINTAIN-tsc-a31893e
  *
  * A chain wanting stricter grammar (e.g. an ALL-CAPS convention) layers a
- * refinement on `tag` via its declared extension (§2) — see
- * `composePendingList`.
+ * refinement on `tag` via its declared extension — see `composePendingList`.
  */
 const TAG_PATTERN = new RegExp(`^[A-Za-z0-9._()-]{1,${TAG_MAX_LENGTH}}$`);
 
@@ -116,12 +113,12 @@ const PendingEntryCore = z.strictObject({
     /** Gate state controlling pickability. */
     gate: Gate,
     /**
-     * Foundations governor (v0.3). Open-question fork slugs this entry's
-     * foundation rests on. The dispatcher skips the entry while any slug is
-     * unresolved — a cross-cutting predicate that precedes every gate kind, so
-     * an `open` entry sitting on an undecided fork is not built. Empty (the
-     * default) means no foundational dependency. The slug is opaque to the
-     * runtime: it is keyed and resolved by the consuming project (§3).
+     * Foundations governor. Open-question fork slugs this entry's foundation
+     * rests on. The dispatcher skips the entry while any slug is unresolved —
+     * a cross-cutting predicate that precedes every gate kind, so an `open`
+     * entry sitting on an undecided fork is not built. Empty (the default)
+     * means no foundational dependency. The slug is opaque to the runtime: it
+     * is keyed and resolved by the consuming project.
      */
     dependsOnForks: z.array(z.string().min(1)).default([]),
     /**
@@ -165,9 +162,8 @@ export type PendingEntry = z.infer<typeof PendingEntryCore> &
  * record, so the two surfaces cannot drift.
  *
  * Any library publishing `~standard` (zod ≥3.24, valibot, arktype, ...)
- * satisfies this, as does a hand-written object — the engine never imports
- * or merges the chain's schema, only calls its `~standard.validate` (v0.11
- * §11).
+ * satisfies this, as does a hand-written object — the engine never imports or
+ * merges the chain's schema, only calls its `~standard.validate`.
  */
 export interface EntryExtensionField {
   /** Validates the field's value at parse time. */
@@ -190,12 +186,11 @@ export type EntryExtension = Record<string, EntryExtensionField>;
 const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
 
 /**
- * Reject a duplicate `tag` value within the queue (v0.8 §3: tag identity
- * must be unique — cli's find-by-tag and Dispatcher's blockedBy/shippedTags
- * lookups key on it, so a duplicate silently resolves to the wrong entry).
- * Every index sharing a tag gets its own issue naming the others, so a
- * three-way collision is fully attributed rather than only the second
- * occurrence being flagged.
+ * Reject a duplicate `tag` value within the queue — tag identity must be
+ * unique: cli's find-by-tag and Dispatcher's blockedBy/shippedTags lookups key
+ * on it, so a duplicate silently resolves to the wrong entry. Every index
+ * sharing a tag gets its own issue naming the others, so a three-way collision
+ * is fully attributed rather than only the second occurrence being flagged.
  */
 function withUniqueTagCheck<T extends z.ZodTypeAny>(
   arraySchema: T,
@@ -229,12 +224,11 @@ function withUniqueTagCheck<T extends z.ZodTypeAny>(
 /**
  * Thrown when a chain-declared `~standard.validate` returns a `Promise`.
  * `parsePending` is synchronous and feeds decision and rewrite paths — a
- * `Promise` read as a result object has no `issues`, so it would be treated
- * as passing and accept the entry vacuously. This is a chain-config defect
- * (the same class as an extension shadowing a core field), so the adapter
- * throws it rather than folding it into `ParseResult.errors`: it surfaces at
- * first parse, since asynchrony is only observable by calling `validate`
- * (RELEASE-v0.11 §11).
+ * `Promise` read as a result object has no `issues`, so it would be treated as
+ * passing and accept the entry vacuously. This is a chain-config defect (the
+ * same class as an extension shadowing a core field), so the adapter throws it
+ * rather than folding it into `ParseResult.errors`: it surfaces at first
+ * parse, since asynchrony is only observable by calling `validate`.
  */
 export class AsyncEntryExtensionValidatorError extends Error {
   constructor(fieldName: string) {
@@ -256,11 +250,11 @@ function standardIssuePath(
 }
 
 /**
- * Adapt a chain-declared Standard Schema validator into an engine-instance
- * zod schema: a value-preserving position, never a bare check. Every
- * downstream mechanic — strictness, entry-indexed error paths, the `tag`
- * intersection floor — stays on the zod side; this is the one seam that
- * calls into the chain's declared validator (RELEASE-v0.11 §11).
+ * Adapt a chain-declared Standard Schema validator into an engine-instance zod
+ * schema: a value-preserving position, never a bare check. Every downstream
+ * mechanic — strictness, entry-indexed error paths, the `tag` intersection
+ * floor — stays on the zod side; this is the one seam that calls into the
+ * chain's declared validator.
  *
  * `z.any().optional()` (rather than bare `z.any()`) is load-bearing: it
  * marks the wrapping schema optional-in, so the enclosing `z.object` defers
@@ -302,16 +296,16 @@ function adaptStandardSchemaField(
  * Throws on an extension that shadows a core field — that is a chain-config
  * defect, not a pending.json defect.
  *
- * `tag` is the one core field an extension MAY declare (v0.8 §3): a chain
- * wanting stricter grammar (e.g. an ALL-CAPS convention) than the engine's
+ * `tag` is the one core field an extension MAY declare: a chain wanting
+ * stricter grammar (e.g. an ALL-CAPS convention) than the engine's
  * mechanical-safety charset layers a refinement there. It composes as an
- * intersection — both the core pattern and the *adapted* chain validator
- * must pass — so a chain declaring `tag` narrows the grammar, it can never
- * widen past (or replace) the engine's mechanical floor.
+ * intersection — both the core pattern and the *adapted* chain validator must
+ * pass — so a chain declaring `tag` narrows the grammar, it can never widen
+ * past (or replace) the engine's mechanical floor.
  *
  * The composed list schema also enforces tag uniqueness across the queue —
- * mechanical safety (§3), not convention: the engine's own tag-keyed lookups
- * (cli find-by-tag, Dispatcher blockedBy/shippedTags) require it.
+ * mechanical safety, not convention: the engine's own tag-keyed lookups (cli
+ * find-by-tag, Dispatcher blockedBy/shippedTags) require it.
  */
 export function composePendingList(
   extension?: EntryExtension,
@@ -540,16 +534,16 @@ Empty array is valid (means nothing pending).`;
  * hasn't asserted. The dispatcher filters this further by checking
  * `blockedBy` tags against shipped entries.
  *
- * `isForkResolved` is the foundations governor's injected predicate (§3): it
- * answers "is this open-question fork resolved?" for the consuming project.
- * It defaults to always-resolved, so a caller that supplies none — or an entry
+ * `isForkResolved` is the foundations governor's injected predicate: it
+ * answers "is this open-question fork resolved?" for the consuming project. It
+ * defaults to always-resolved, so a caller that supplies none — or an entry
  * that declares no `dependsOnForks` — behaves exactly as before.
  *
  * `blockedBy` is pickable iff every named blocker tag has shipped — a DAG
  * with several parents resolves only once all of them land, never on the
  * first.
  *
- * `capabilities` is the chain's declared `Chain.capabilities` (v0.8 §4) — the
+ * `capabilities` is the chain's declared `Chain.capabilities` — the
  * environment facts it asserts. Defaults to empty, so a `requiresCapability`
  * gate is opt-in: unasserted by default, exactly as the env-gate variant it
  * generalized defaulted to non-pickable.

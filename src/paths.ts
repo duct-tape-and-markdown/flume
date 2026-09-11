@@ -41,13 +41,13 @@ function globToRegex(glob: string): RegExp {
 }
 
 /**
- * A fanout tick's entry-scoped write allowance: the assigned entry's
- * declared files ∪ the phase's channel globs, deduped (RELEASE-v0.7 §2, §5).
- * Shared home for the two independent consumers that must never state a
- * different fence — `effectiveFenceLines` (`src/Prompt.ts`) renders it for
- * the agent, `writablePathsGate` (`src/builtinGates.ts`) enforces it against
- * the commit (engineering.md "Derived state is computed, never restated
- * beside its source").
+ * A fanout tick's entry-scoped write allowance: the assigned entry's declared
+ * files ∪ the phase's channel globs, deduped. Shared home for the two
+ * independent consumers that must never state a different fence —
+ * `effectiveFenceLines` (`src/Prompt.ts`) renders it for the agent,
+ * `writablePathsGate` (`src/builtinGates.ts`) enforces it against the commit
+ * (engineering.md "Derived state is computed, never restated beside its
+ * source").
  */
 export function entryWriteScopeUnion(
   entryPaths: string[],

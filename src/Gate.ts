@@ -42,10 +42,10 @@ export interface GateContext {
    * pending, worktrees, and prior-attempts live (default `<repoRoot>/.flume`,
    * relocatable via `FLUME_DIR`). A gate reads state-relative paths from here
    * (`join(ctx.flumeDir, "prior-attempts")`) instead of hardcoding `.flume/`
-   * or reaching into `process.env` (RELEASE-v0.3 §16). The queue is not one
-   * of them — it has its own resolved field, `pendingPath` below, and a gate
-   * that rebuilds the path from this root instead reads the wrong file the
-   * moment a chain relocates the queue.
+   * or reaching into `process.env`. The queue is not one of them — it has its
+   * own resolved field, `pendingPath` below, and a gate that rebuilds the path
+   * from this root instead reads the wrong file the moment a chain relocates
+   * the queue.
    *
    * This is the **primary checkout's** state root at both gate points, never
    * rebased onto a worktree: runtime state (`awake/`, `prior-attempts/`,
@@ -99,7 +99,7 @@ export interface GateContext {
    * Absolute path of the working-tree root the gate is running in — for an
    * `afterCommit` gate, the worktree root (a fanout entry's, or a singleton
    * phase's own; spec/worktrees.md "Singleton runs in a worktree"); for an
-   * `afterMerge` gate, the trunk (RELEASE-v0.7 §6).
+   * `afterMerge` gate, the trunk.
    */
   repoRoot: string;
   /** Phase the gate is running for. */

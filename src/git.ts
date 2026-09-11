@@ -13,10 +13,10 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 /**
- * §7 (RELEASE-v0.6.2): bounded retries for the recursive-removal fallback
- * below — the EBUSY/ENOTEMPTY class a just-installed, still-settling
- * node_modules produces on win32 (the v0.6.1 dogfood symptom: three build
- * waves, three `Directory not empty` failures, hand sweep).
+ * Bounded retries for the recursive-removal fallback below — the
+ * EBUSY/ENOTEMPTY class a just-installed, still-settling node_modules produces
+ * on win32 (the v0.6.1 dogfood symptom: three build waves, three `Directory
+ * not empty` failures, hand sweep).
  */
 const FALLBACK_REMOVE_MAX_RETRIES = 5;
 const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
@@ -181,11 +181,10 @@ export async function cherryPickRange(
 /**
  * Drop the most recent commit and its working-tree changes.
  *
- * `expectedSha` names the commit this call itself created — the caller's
- * own `postHead`, still in scope from the commit it just made. Refuses
- * (§17, RELEASE-v0.7) rather than reset when the current tip has moved
- * on: two supervisors on one tree means a stale caller could otherwise
- * drop a commit it never created.
+ * `expectedSha` names the commit this call itself created — the caller's own
+ * `postHead`, still in scope from the commit it just made. Refuses rather than
+ * reset when the current tip has moved on: two supervisors on one tree means a
+ * stale caller could otherwise drop a commit it never created.
  */
 export async function dropLastCommit(
   cwd: string,
@@ -203,13 +202,13 @@ export async function dropLastCommit(
 }
 
 /**
- * win32 MAX_PATH guard (v0.4 §6): repo-locally pin `core.longpaths` before
- * any operation that nests paths deep enough to exceed it — a job dir
- * (`.flume/jobs/<name>/...`) or a fanout worktree (nested at least as deep
- * as the job dir it was cloned for). No-op off win32. Checks the local
- * config first and skips the write when already `true` — a blind repeat
- * write races an external holder of `.git/config` (downstream incident,
- * @dtmd/flume 0.11.0 win32: EACCES on wave >= 2).
+ * win32 MAX_PATH guard: repo-locally pin `core.longpaths` before any operation
+ * that nests paths deep enough to exceed it — a job dir
+ * (`.flume/jobs/<name>/...`) or a fanout worktree (nested at least as deep as
+ * the job dir it was cloned for). No-op off win32. Checks the local config
+ * first and skips the write when already `true` — a blind repeat write races
+ * an external holder of `.git/config` (downstream incident, @dtmd/flume 0.11.0
+ * win32: EACCES on wave >= 2).
  */
 export async function pinLongPaths(repoRoot: string): Promise<void> {
   if (process.platform !== "win32") return;
@@ -259,9 +258,9 @@ export async function addWorktree(opts: {
 
 /**
  * Remove a worktree, falling back past a bare `git worktree remove --force`
- * failure (§7, RELEASE-v0.6.2). On win32, a just-installed pnpm
- * `node_modules` commonly still has handles open when teardown runs,
- * turning `--force` into `Directory not empty` instead of a clean removal.
+ * failure. On win32, a just-installed pnpm `node_modules` commonly still has
+ * handles open when teardown runs, turning `--force` into `Directory not
+ * empty` instead of a clean removal.
  *
  * Fallback: `worktree prune` (drops git's metadata once the directory is
  * gone — a no-op here, since the directory still exists at this point, but
@@ -498,8 +497,8 @@ export async function commitPaths(opts: {
  * Resolve the shared git-common-dir for `cwd` (`git rev-parse
  * --git-common-dir`) — the same absolute path from every linked worktree, so
  * state written under it is visible across every worktree of one repository
- * (RELEASE-v0.11 §4, following the `git-lfs`/`sequencer` precedent for
- * shared, untracked tool state under `.git/`).
+ * (following the `git-lfs`/`sequencer` precedent for shared, untracked tool
+ * state under `.git/`).
  */
 export async function gitCommonDir(cwd: string): Promise<string> {
   const { stdout } = await run(cwd, ["rev-parse", "--git-common-dir"]);
@@ -545,8 +544,8 @@ export async function currentRefPath(cwd: string): Promise<CurrentRef> {
 }
 
 /**
- * Where the tip claim for `refPath` lives under a git-common-dir
- * (RELEASE-v0.11 §4): the ref path mirrored as directories, e.g.
+ * Where the tip claim for `refPath` lives under a git-common-dir: the ref path
+ * mirrored as directories, e.g.
  * `<commonDir>/flume/tip-claims/refs/heads/main`.
  */
 export function tipClaimPath(commonDir: string, refPath: string): string {
@@ -596,8 +595,8 @@ export interface TipClaim {
 }
 
 /**
- * Acquire the advisory per-ref tip claim (RELEASE-v0.11 §4): one flume
- * writer per tip. Exclusive-create (`wx`) the claim file at
+ * Acquire the advisory per-ref tip claim: one flume writer per tip.
+ * Exclusive-create (`wx`) the claim file at
  * `<git-common-dir>/flume/tip-claims/<refPath>`. On `EEXIST`, probe the
  * recorded pid with the same liveness check as the loop lock: live → refuse
  * ({@link TipClaimHeldError}, naming the holder); dead → reclaim (unlink,

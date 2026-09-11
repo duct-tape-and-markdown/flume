@@ -288,14 +288,14 @@ export const chainLoadGate: Gate = {
 };
 
 /**
- * Inputs for `pendingGate` (v0.8 §6).
+ * Inputs for `pendingGate`.
  */
 export interface PendingGateOptions {
   /**
-   * Chain-declared entry extension (§2) — the same declaration passed to
-   * `renderSchemaForPrompt` for the plan prompt, so this gate's validation
-   * and the prompt's schema block cannot drift. Omitted validates the bare
-   * engine core.
+   * Chain-declared entry extension — the same declaration passed to
+   * `renderSchemaForPrompt` for the plan prompt, so this gate's validation and
+   * the prompt's schema block cannot drift. Omitted validates the bare engine
+   * core.
    */
   extension?: EntryExtension;
   /**
@@ -326,15 +326,15 @@ export interface PendingGateOptions {
 }
 
 /**
- * Builtin opt-in gate (v0.8 §6): validates the pending list against the
- * composed core+extension schema (§2) at commit time of whichever phase the
- * chain attaches it to, then pre-checks every entry's declared `files`
- * against `targetFence.writablePaths ∪ targetFence.entryChannelPaths`. An
- * entry whose declaration cannot survive that fence fails here, naming the
- * offending paths, instead of shipping through plan and burning a build
- * tick on a guaranteed revert: an entry declaring a file outside the
- * downstream phase's fence is caught at plan's own commit, never handed to
- * build as unshippable work.
+ * Builtin opt-in gate: validates the pending list against the composed
+ * core+extension schema at commit time of whichever phase the chain attaches
+ * it to, then pre-checks every entry's declared `files` against
+ * `targetFence.writablePaths ∪ targetFence.entryChannelPaths`. An entry whose
+ * declaration cannot survive that fence fails here, naming the offending
+ * paths, instead of shipping through plan and burning a build tick on a
+ * guaranteed revert: an entry declaring a file outside the downstream phase's
+ * fence is caught at plan's own commit, never handed to build as unshippable
+ * work.
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
   const fenceWhen = opts.fenceWhen ?? (() => true);
@@ -451,9 +451,9 @@ export function pendingGate(opts: PendingGateOptions): Gate {
 }
 
 /**
- * Entry scope for a fanout tick carrying an assignedEntry (RELEASE-v0.4 §5).
- * When present, the write allowance narrows to `entryPaths ∪ channelPaths`;
- * the phase globs remain the outer ceiling — both checks apply.
+ * Entry scope for a fanout tick carrying an assignedEntry. When present, the
+ * write allowance narrows to `entryPaths ∪ channelPaths`; the phase globs
+ * remain the outer ceiling — both checks apply.
  */
 interface EntryWriteScope {
   /** Literal paths the assigned entry declares (`files.{new,edit,retire}`). */

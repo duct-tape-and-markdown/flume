@@ -1,5 +1,5 @@
 /**
- * `flume job <verb> …` (v0.5 §5), minus `run` — split out of `src/cli.ts`
+ * `flume job <verb> …`, minus `run` — split out of `src/cli.ts`
  * (`.claude/rules/posture-sweep.md`, "A violation counts only when verified
  * on disk this tick").
  */
@@ -10,15 +10,15 @@ import { loadChainForObservation } from "./cliChainLoad.js";
 import type { FlumePaths } from "./flumeApi.js";
 
 /**
- * `flume job <verb> …` (v0.5 §5), minus `run` — that verb is the standard
- * loop under a job resolution and is rewritten in `main()` before dispatch
- * reaches here. Usage-shaped failures exit 2, operational failures 1 —
- * mirroring the JobUsageError split in the job verbs.
+ * `flume job <verb> …`, minus `run` — that verb is the standard loop under a
+ * job resolution and is rewritten in `main()` before dispatch reaches here.
+ * Usage-shaped failures exit 2, operational failures 1 — mirroring the
+ * JobUsageError split in the job verbs.
  *
- * `paths` is the caller's single `resolveStateDirs()` result (§12/§14) —
- * this function never re-derives a root from `process.env`, so a chain
- * factory `status`/`new` loads sees the same canonicalized values every
- * other subcommand does, `flumeDir` included.
+ * `paths` is the caller's single `resolveStateDirs()` result — this function
+ * never re-derives a root from `process.env`, so a chain factory
+ * `status`/`new` loads sees the same canonicalized values every other
+ * subcommand does, `flumeDir` included.
  */
 export async function runJobVerb(
   args: readonly string[],
@@ -33,9 +33,9 @@ export async function runJobVerb(
       return 2;
     }
     try {
-      // §6 (v0.6.2): the friction dir is job-dir-relative but declared once
-      // on the repo-resident chain — and `Chain.pendingPath` (spec/pending.md
-      // "The pending queue") rides the same load. Best-effort so a missing or
+      // The friction dir is job-dir-relative but declared once on the
+      // repo-resident chain — and `Chain.pendingPath` (spec/pending.md "The
+      // pending queue") rides the same load. Best-effort so a missing or
       // broken chain never fails `job status`, and loud so it never quietly
       // rebases every job's pending count on the default queue path: the
       // shared load (`loadChainForObservation`, src/cliChainLoad.ts) reports
