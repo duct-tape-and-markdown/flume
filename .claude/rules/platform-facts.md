@@ -1,3 +1,12 @@
+---
+paths:
+  - "src/**"
+  - "bin/**"
+  - "scripts/**"
+  - "examples/**"
+  - ".flume/chain.ts"
+---
+
 # Platform facts
 
 Facts about the toolchain and the host OS that this repo has already paid to
@@ -5,8 +14,8 @@ learn. Each one is external — it lives in git, node, pnpm, or Windows, not in
 this code — so no test can pin it and no type can hold it. Rediscovering one
 costs a broken run and a debugging session.
 
-**Scope: `src/`, `bin/`, `scripts/`, `examples/`, `.flume/chain.ts`** — anything
-that spawns a process, builds a path, or provisions a worktree.
+Scoped by frontmatter to anything that spawns a process, builds a path, or
+provisions a worktree.
 
 A fact leaves this page only when it stops being true upstream. Add to it when
 a run teaches something the same way: cite the source, state the consequence,
