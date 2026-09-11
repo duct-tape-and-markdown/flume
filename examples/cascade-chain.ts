@@ -216,10 +216,18 @@ const inWords = (s: SpanShape): string =>
  * "it was already there", and the reason this gate never shells its own
  * `git merge-base` or guesses the base from a worktree path.
  *
- * Only declared paths the span actually touched are judged. A tick that did
- * less than it declared is plan's problem on the next re-derive, not a
- * revert; a commit touching only a channel path — a parked entry's note —
- * contradicts no declaration and is skipped rather than failed.
+ * Only declared paths the span actually touched are judged — a deliberate
+ * narrowing, declared here with the refusal that bounds it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*): a tick that shipped
+ * part of its declaration is plan's problem on the next re-derive, but a span
+ * touching *none* of a non-empty declaration is refused rather than skipped.
+ * This chain's build declares no `entryChannelPaths` and no `shipped`
+ * predicate, so every commit it makes retires the entry; a green over the
+ * zero-judged span would retire an entry whose whole file prediction — the
+ * same prediction the fanout partition was cut from — went unmet, with the
+ * one gate that could have said so reporting success. The empty case that is
+ * legitimate is the entry declaring no files at all, and it is spelled
+ * separately rather than inherited.
  *
  * Existence at a ref comes from the engine's own at-sha reader rather than a
  * hand-rolled `git cat-file`: it answers "absent from that commit" with
@@ -258,11 +266,21 @@ export function declaredFilesGate(
       ]);
       const judged = touchedPaths.filter((p) => declared.has(p));
       if (judged.length === 0) {
+        if (declared.size === 0) {
+          return {
+            ok: true,
+            message: `${entry.tag}: declares no files, so the span ${span} has no class to judge`,
+            skipped:
+              "an entry with an empty files declaration contradicts nothing",
+          };
+        }
         return {
-          ok: true,
-          message: `${entry.tag}: the span ${span} touched none of its declared files`,
-          skipped:
-            "no declared path in the commit — a channel-only commit contradicts no declaration",
+          ok: false,
+          message: `${entry.tag}: the span ${span} touched none of the ${declared.size} path(s) the entry declared`,
+          details: [
+            "The commit ships the entry, so a declaration met by nothing retires unmet work. Produce the declared paths, or leave the entry for plan to re-file:",
+            ...[...declared].map(([path, kind]) => `- ${path}: declared ${kind}, untouched`),
+          ].join("\n"),
         };
       }
 

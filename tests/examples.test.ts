@@ -526,13 +526,48 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     expect(noEntry.ok).toBe(true);
     expect(noEntry.skipped).toBeTruthy();
 
-    // A commit touching no declared path — a parked entry's note — has no
-    // declaration to contradict, and says so the same way.
-    const channelOnly = await gate.run(
+    // An entry that declared no files has no class to judge at all — the one
+    // legitimately empty selection, spelled in its own case rather than
+    // inherited from the zero-touched refusal below.
+    const nothingDeclared = await gate.run(
+      ctxFor(entryDeclaring({}), ["src/kept.ts"]),
+    );
+    expect(nothingDeclared.ok).toBe(true);
+    expect(nothingDeclared.skipped).toBeTruthy();
+
+    // Every branch above refused or skipped before reading a ref.
+    expect(reader.asked).toEqual([]);
+  });
+
+  it("the cascade example's gate refuses a commit that touched none of the entry's declared files", async () => {
+    const reader = readerOver({ [BASE]: ["src/kept.ts"], [TIP]: ["src/kept.ts"] });
+    const gate = declaredFilesGate(reader.read);
+    const entry = entryDeclaring({
+      edit: [{ path: "src/kept.ts", description: "the tick rewrites it" }],
+      retire: ["src/gone.ts"],
+    });
+
+    // Cascade's build declares neither `entryChannelPaths` nor a `shipped`
+    // predicate, so this commit retires the entry whatever it touched. A green
+    // here would ship a file prediction — the one the fanout partition was cut
+    // from — that nothing in the span met.
+    const nothingMet = await gate.run(
       ctxFor(entry, [".flume/plan/notes/DECLARED-FILES-FIXTURE.md"]),
     );
-    expect(channelOnly.ok).toBe(true);
-    expect(channelOnly.skipped).toBeTruthy();
+    expect(nothingMet.ok).toBe(false);
+    expect(nothingMet.message).toContain(TAG);
+    expect(nothingMet.message).toContain("2 path(s)");
+    expect(nothingMet.details).toContain("src/kept.ts: declared edit");
+    expect(nothingMet.details).toContain("src/gone.ts: declared retire");
+    // Refused on the declaration alone: unjudgeable, not judged-and-wrong.
     expect(reader.asked).toEqual([]);
+
+    // The bounded exception the refusal floors: a span that met part of its
+    // declaration is still judged on the part it met, and passes.
+    const partial = await gate.run(ctxFor(entry, ["src/kept.ts"]));
+    expect(partial.ok, partial.message).toBe(true);
+    expect(partial.message).toContain("1 declared path(s)");
+    expect(partial.skipped).toBeUndefined();
+    expect(reader.asked.map((a) => a.path)).toEqual(["src/kept.ts", "src/kept.ts"]);
   });
 });
