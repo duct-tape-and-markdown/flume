@@ -260,43 +260,39 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
+## `spec/chain.md` and `spec/cli.md` cite the supervisor at a module that no longer holds it (NEEDS AMENDMENT)
 
-## A park cannot survive the `vitest` judge, so no entry naming a behavior can park (PARKED — lane only)
+Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s note; verified on disk, and
+one cite wider than the note reported. The supervisor got its own module at
+`39c8207`; three spec cites still name its old home:
 
-Field-traced this wave and verified on disk. Both parks of the 2026-09-11 build
-wave — `d67e96d` (CASCADE-PLAN-SLICES-ORDERED-HANDOFF) and `1b58487`
-(DISPATCHER-EXTRACT-LOOP-SUPERVISOR) — were reverted at `afterMerge` with
-"1 of 1 named behavior(s) have no passing test — wave reverted". Both were
-correct refusals: each build tick measured a real fence gap and committed the
-note alone, exactly as `.flume/prompts/build.md` instructs.
+- `spec/chain.md:348` and `:358` — `src/Dispatcher.ts:superviseLoop`. The symbol
+  is `src/loopSupervisor.ts:170`; `src/Dispatcher.ts` now only mentions it in
+  doc comments.
+- `spec/cli.md:182` — ``` `defaultTickRunner` (`src/Dispatcher.ts`) ```. It is
+  `src/loopSupervisor.ts:491`. The note missed this one.
 
-**The park shape is declared once and read by two of three sites.** `isPark`
-(`.flume/chain.ts:335`) is the note-alone predicate; `build.shipped` (:864)
-reads it, and the `declared span` gate (:358) returns early on it. `vitestOnCode`
-(:820-831) does not. Its skip fires only when `named.length + pinned.length === 0`,
-so a park of an entry carrying a `tests[]` line runs the suite, the judge finds no
-passing test for a behavior no commit introduced, and the wave reverts. Every entry
-in the queue carries a `tests[]` line, so the park protocol is currently unreachable
-for all of them.
+Every other cite is path-free (`spec/loop.md:6,31,43,168,624`,
+`spec/chain.md:364`) and stays correct.
 
-**The revert destroys the channel.** The note is the park's only message to plan,
-and it goes back with the commit. What survives is the prior-attempt record, which
-carries the `diffStat` and not the text — this tick recovered both notes from the
-reverted objects and folded them into their entries, but that is a plan tick doing
-archaeology, not a channel.
+**Recommend** repointing all three at `src/loopSupervisor.ts`. No fork — the
+extraction was a pure move, and the surrounding claims (`quarantineScope ??
+"run"`, `abortThreshold ?? 3`, "binds both before entering the tick loop", the
+child-env copy) all hold at the new home. Parked only because `spec/` is
+human-only (`.claude/rules/spec-plan-build.md`).
 
-**Recommend** the one line, the same early return the `declared span` gate takes,
-before the suite runs:
+**One in-fence rider.** `src/cli.ts:686` carries the same stale pair — "set by
+`defaultTickRunner`, `src/Dispatcher.ts`" — while `:746`, three comments down,
+was repointed in the same commit. Inside build's fence, so it rides whatever
+entry the amendment files rather than earning one.
 
-```ts
-if (isPark(ctx.entry, touched)) return { ok: true, message: "park: the note alone, not judged" };
-```
-
-No fork — the park shape is already declared once and two other sites key on it,
-and the gate's own doc comment (:755-758) already claims a park "has nothing to
-judge". Pinnable in `tests/chain.test.ts` beside the declared-span cases, which
-already import the real chain.
-
-Parked only because of the lane: `.flume/chain.ts` is outside every phase lane
-(`.claude/rules/spec-plan-build.md`), so this is a `chore(flume):` from an
-interactive session.
+**And the fork this raises: pin the module path, or keep re-noticing it?**
+Nothing checks a spec cite's module path, which is why a green wave shipped
+three stale ones. A scan is buildable and cheap — resolve every
+`src/<file>.ts:<symbol>` in `spec/` against the tree (~30 cites today), in
+`tests/retired-narration.test.ts`, which already reads `spec/` paths for its
+doc-to-source scans. It is **red until the amendment lands**, so it ships after,
+never with. Against it: a symbol-resolving scan over prose is a second parser to
+maintain, and the same commit that moves a symbol is the cheapest place to fix
+its cites — if the extraction entries are the last of their kind, the pin buys
+little. Say the word and it files as an entry.

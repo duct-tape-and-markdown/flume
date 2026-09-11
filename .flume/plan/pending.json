@@ -41,6 +41,34 @@
     "notes": "From RELEASE-CITES-PINNED's note. 16 needle hits in docs/; three pages are dated records legitimately naming the world they left — CASCADE-DRY-RUN.md, MIGRATING-0.10.md:20, PRD-dock-collapse.md. Partition, never exclude: scanned ∪ dated = readdir(docs), so a new page forces a classification. src/Agent.ts:501 rides here — same dead corpus, invisible to the grammar; its cut is unpinnable, name that in the body."
   },
   {
+    "tag": "CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the ladder's agreement claim drives a real tick"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade's ladder tests decode a TickResult the tester hand-built, so an engine-side rename of the handoff vocabulary ships green",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "cascade's plan ladder routes the baton from a TickResult the dispatcher produced"
+    ],
+    "pins": [],
+    "acceptance": "At least one ladder rung transition is read off a real `Dispatcher.tick()` outcome instead of the `after()` fixture; the hand-authored cases that remain are the refusal shapes the section's carve-out allows.",
+    "notes": "From CASCADE-PLAN-SLICES-ORDERED-HANDOFF's note. tests/examples.test.ts:322 `after()` hand-authors pickableAfter/shippedTags/noCommit/mergeOutcome. Cascade declares no phase agent, so `DispatcherOptions.agent` reaches it (src/Dispatcher.ts:1844) and the backlog-groomer drive's fixture shape applies. Fast lane: no Node startup, no real agent (spec/worktrees.md, the lane split). Build-wave refusal legs spawn children — out of scope."
+  },
+  {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
     "gate": {
       "kind": "open"
