@@ -16,7 +16,7 @@ This split is load-bearing. Anything a prompt can drift on, the harness owns:
 - **Capability scoping.** Each phase declares `writablePaths`. Post-commit, the harness diffs the commit against the declaration and reverts on violation.
 - **Validation gates.** `tsc`, tests, lint, custom — composable gate functions, declared per phase, run by the harness.
 - **Baton.** Filesystem flags at `.flume/awake/<phase>` signal what wakes next. Presence wakes; absence hibernates.
-- **Provenance.** Inter-layer references (workshop → spec → plan → code) are typed citations the harness can verify.
+- **Provenance.** The extension point, not the citation. A chain declares its own pending-entry fields (`Chain.entryExtension`, one declaration driving both the validator and the prompt hint); the engine runs the validator it was handed and never reads what the field means. This repo's chain spends that point on `per` — a `{ path, section }` cite into `spec/` or `.claude/rules/` — and enforces it with its own `per cites resolve` gate (`.flume/chain.ts`), which checks the path is in the gated commit and the section is a heading in it. Inter-layer citation discipline is a chain's to define and gate; the harness ships the seam that lets it.
 
 ### Committed state is the loop's memory
 
@@ -41,33 +41,11 @@ Anything the dispatcher mechanically consumes — Pending entries, gate results,
 - **Hardcoded chain.** Workshop → specs → plan → code is the default, not the framework.
 - **Multi-provider agent abstraction (v0).** Claude-only via `claude -p`, single named seam for later swap.
 
-## v0 success criterion
-
-From a fresh clone of a Flume-driven repo, replacing `bin/flume-bash` with `npx flume` produces the same sequence of commits the prior harness would have produced — *and* prompts have shrunk because validation has moved into harness-enforced gates.
-
 ## Parallelism
 
 Built-in from v0 via git worktree fanout for phases declared `concurrency: "fanout"`. Disjoint-by-`Files:` Pending entries fan out into per-entry worktrees, each runs its agent invocation + gates in isolation, then merges into the trunk in commit order with a post-merge gate. No Docker required; worktrees are the isolation primitive.
 
 Docker is a v1 layer for AFK / env reproducibility / capability isolation, behind the same `SandboxProvider` seam.
-
-## Decided, not yet executed — spec corpus reform
-
-The per-release spec segmentation (`spec/RELEASE-*.md`, frozen once
-shipped) is to be replaced with a **living, domain-partitioned spec**
-(e.g. `spec/tick.md`, `spec/cli.md`, `spec/jobs.md`) that always states
-current truth, edited in place under operator direction (ruling,
-2026-07-31). The release files conflate three roles — current truth,
-ship-target delta, record of rulings — and only the first is unowned
-elsewhere: plan's delta detection is already a git diff over `spec/`
-(layout-agnostic), and the record already lives in git history +
-CHANGELOG. The supersedes-chain tax compounds per release and is the
-complexity signal. Ruling-of-record moves to the spec commit; release
-boundaries move to CHANGELOG + tags (or a minimal target note). Touches
-only convention surface: plan prompt hints, chain.ts comments,
-CLAUDE.md pointer — zero engine. Sequencing: execute after the current
-release lines (0.10 sighted-render, 0.11 boundary line) are underway or
-shipped; the consolidation is human-surface work done in-session.
 
 ## Decided, not yet executed — quality lenses in the loop
 
