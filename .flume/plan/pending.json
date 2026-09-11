@@ -10,7 +10,7 @@
       "edit": [
         {
           "path": "docs/CHAIN-AUTHORING.md",
-          "description": "§1's field table (:137-:152) and the `fields that matter` framing above it"
+          "description": "\u00a71's field table (:137-:152) and the `fields that matter` framing above it"
         },
         {
           "path": "tests/retired-narration.test.ts",
@@ -19,7 +19,7 @@
       ],
       "retire": []
     },
-    "summary": "docs/CHAIN-AUTHORING.md §1's Phase field table is unpinned and three rows short, so `scopeWritesToEntry` and `shipped` are unlearnable from the doc",
+    "summary": "docs/CHAIN-AUTHORING.md \u00a71's Phase field table is unpinned and three rows short, so `scopeWritesToEntry` and `shipped` are unlearnable from the doc",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A seam gate reads what the real writer wrote"
@@ -27,7 +27,39 @@
     "tests": [
       "the chain-authoring doc's Phase field table names every field src/Phase.ts declares"
     ],
-    "acceptance": "§1's table names every field `Phase` declares and no others, the subset framing is gone, and the equality pin fails on the pre-fix tree.",
-    "notes": "Last unpinned restatement beside the shipped GateResult/Gate pins (tests/retired-narration.test.ts:376-478). `Phase` declares 15 fields; the table carries 12. `scopeWritesToEntry` and `shipped` appear nowhere in the doc; `entryChannelPaths` is taught (:329, :1013) with no row — and declaring it without the flag is a load refusal (spec/chain.md, *A dead declaration is refused at load*). Reader is a markdown column, not `interfaceFields`; vacuity rides inline as the siblings do."
+    "acceptance": "\u00a71's table names every field `Phase` declares and no others, the subset framing is gone, and the equality pin fails on the pre-fix tree.",
+    "notes": "Last unpinned restatement beside the shipped GateResult/Gate pins (tests/retired-narration.test.ts:376-478). `Phase` declares 15 fields; the table carries 12. `scopeWritesToEntry` and `shipped` appear nowhere in the doc; `entryChannelPaths` is taught (:329, :1013) with no row \u2014 and declaring it without the flag is a load refusal (spec/chain.md, *A dead declaration is refused at load*). Reader is a markdown column, not `interfaceFields`; vacuity rides inline as the siblings do."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the job-seed `.gitignore` list (:111-:112) and the harness-managed run-in (:69-:70)"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "a `RUNTIME_IGNORES` agreement pin, and the state-list check flipped to equality, in the shipped harness-managed scan"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md hand-lists RUNTIME_IGNORES and names 5 of the 9 state-root names src/ spells, neither held in the src-to-doc direction",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES carries and no others",
+      "the docs' harness-managed state list names every path src/ spells"
+    ],
+    "acceptance": "Both doc lists equal their writers. The state-list equality fails on the pre-fix tree; the RUNTIME_IGNORES pin is green on arrival and rides a sensitivity control.",
+    "notes": "Seed list (:111) equals RUNTIME_IGNORES (src/job.ts:52) today, so its pin needs the sensitivity control the shipped scan rides (tests/retired-narration.test.ts:918). The run-in (:69) omits `stop`, the tick-verdict pair, and `plan/pending.json` of the 9 `namesSrcSpells()` resolves; README already carries all 9. 6abd604's body claims both lists carry them \u2014 oversight, not a declared cut."
   }
 ]
