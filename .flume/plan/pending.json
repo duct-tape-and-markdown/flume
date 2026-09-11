@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "SRC-TEST-TITLE-CITES-RESOLVE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "add the quoted-test-title cite shape to the module-cite scan, with its vacuity pin and sensitivity control"
+        },
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "repoint both supervisor-policy default cites at tests/loopSupervisor.test.ts"
+        }
+      ]
+    },
+    "summary": "Widen the module-cite scan to the quoted-test-title shape it selects zero of, and repoint loopSupervisor.ts's two extraction-stranded Dispatcher.test.ts cites",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [
+      "every quoted test-title cite in a `src/` or `examples/` comment names a file that carries the title"
+    ],
+    "pins": [
+      "the quoted-title cite scan reads a populated set of cites across both orders the corpus writes",
+      "the quoted-title needle flags a cite whose named file does not carry the title and leaves the resolving ones unflagged"
+    ],
+    "acceptance": "The cite scan reads the quoted-title shape too; it is red on the pre-fix tree at src/loopSupervisor.ts and green once that module points at tests/loopSupervisor.test.ts.",
+    "notes": "Extraction-stranded by 39c8207 — the suite moved to tests/loopSupervisor.test.ts, the pointers stayed. CITE_SHAPES requires a backticked symbol, so every quoted-title cite is selected at zero. Resolution rule: the quoted text is a substring of the named file. Resolving today: paths.ts, PendingSchema.ts, builtinGates.ts, Prompt.ts, Dispatcher.ts. Stale: loopSupervisor.ts:60. Its sibling at :71 cites the same case unquoted, so the needle cannot hold it — repoint it in the same commit."
+  }
+]
