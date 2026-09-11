@@ -7,6 +7,7 @@
 import { jobNew, jobRm, jobStatus, JobUsageError } from "./job.js";
 import { CjsContextLoadError } from "./Dispatcher.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
+import { renderFrictionCount } from "./friction.js";
 import type { FlumePaths } from "./flumeApi.js";
 
 /**
@@ -54,12 +55,14 @@ export async function runJobVerb(
           : "hibernating";
         const pending =
           j.pending === null ? "pending: unparsable" : `pending: ${j.pending}`;
-        const friction =
-          j.frictionCount === null
-            ? "  friction: unreadable"
-            : j.frictionCount !== undefined && j.frictionCount > 0
-              ? `  friction: ${j.frictionCount} note(s) await routing`
-              : "";
+        // The wording is `renderFrictionCount`'s (`src/friction.ts`), the
+        // same function `flume status` and the loop-end summary print
+        // through — this surface owns only the two-space separator that
+        // joins the segment to the row
+        // (`.claude/rules/engineering.md`, "The fix lands at the
+        // mechanism").
+        const frictionLine = renderFrictionCount(j.frictionCount);
+        const friction = frictionLine === undefined ? "" : `  ${frictionLine}`;
         console.log(`${j.name.padEnd(width)}  ${state}  ${pending}${friction}`);
       }
       return 0;

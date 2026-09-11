@@ -50,21 +50,40 @@ export function validateFrictionDeclaration(chain: Chain): void {
 }
 
 /**
- * The friction count line shared by `flume status`, `flume job status`, and
- * the loop-end summary: count of files directly under the
- * declared friction dir, resolved against `stateRoot` — whichever state
- * root is in play for the caller (the repo's `flumeDir`, or a job's dir).
- * `undefined` when `Chain.friction` is undeclared, the dir is absent
- * (`ENOENT`), or it holds no files — callers print a line only when this
- * resolves to a string — declared and non-empty. When the dir
- * exists but `readdir` fails for any other reason (permission denied, a
- * path too long for the platform, …), that is a real unresolved input, not
- * a legitimate zero: it reads `"friction: unreadable"` rather than folding
- * into the same silence as "nothing declared" or "nothing filed"
- * (`.claude/rules/engineering.md`, "Loud or nothing") — the same split
- * `countFrictionFiles` (`src/job.ts`) gives `flume job status`, reused here
- * rather than re-derived (`.claude/rules/engineering.md`, "the fix lands at
- * the mechanism").
+ * The one rendering of a friction count into the line every status surface
+ * prints — `flume status`, `flume job status`, and the loop-end summary all
+ * pass their own count through here rather than composing wording of their
+ * own (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ *
+ * The count is {@link countFrictionFiles}'s three-way reading, and each arm
+ * has exactly one wording: `null` — the dir exists but could not be read
+ * (permission denied, a path too long for the platform, …) — is a real
+ * unresolved input, so it reads `"friction: unreadable"` rather than folding
+ * into silence (`.claude/rules/engineering.md`, "Loud or nothing").
+ * `undefined` — no friction dir declared — and `0` — declared, nothing filed
+ * — both render nothing at all: `undefined`, on which callers print no line.
+ * Separators around the line belong to the caller's layout, never to this
+ * wording.
+ */
+export function renderFrictionCount(
+  count: number | null | undefined,
+): string | undefined {
+  if (count === null) return "friction: unreadable";
+  if (count === undefined) return undefined;
+  return count > 0 ? `friction: ${count} note(s) await routing` : undefined;
+}
+
+/**
+ * The friction count line for a state root: count of files directly under
+ * the declared friction dir, resolved against `stateRoot` — whichever state
+ * root is in play for the caller (the repo's `flumeDir`, or a job's dir) —
+ * rendered by {@link renderFrictionCount}. Undeclared `Chain.friction` is
+ * the undefined count: no dir to read, so no line.
+ *
+ * Counting is `countFrictionFiles` (`src/job.ts`), the same probe
+ * `flume job status` holds its per-job count from; rendering is the shared
+ * function above. Nothing here is this surface's own
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  */
 export async function frictionCountLine(
   stateRoot: string,
@@ -75,9 +94,9 @@ export async function frictionCountLine(
   // chain.friction) construction writeRevertNote (`src/Dispatcher.ts`) and
   // harvestFriction below guard — namespacedJoin (src/paths.ts) is the
   // shared idiom.
-  const count = countFrictionFiles(namespacedJoin(stateRoot, chain.friction));
-  if (count === null) return "friction: unreadable";
-  return count > 0 ? `friction: ${count} note(s) await routing` : undefined;
+  return renderFrictionCount(
+    countFrictionFiles(namespacedJoin(stateRoot, chain.friction)),
+  );
 }
 
 /**

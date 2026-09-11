@@ -5,7 +5,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,6 +199,75 @@ describe("flume job status — friction line (§6)", () => {
       await repo.cleanup();
     }
   }, 60_000);
+});
+
+/**
+ * FRICTION-LINE-ONE-RENDERER — the two status surfaces render one wording.
+ *
+ * An agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*): both real CLIs run over the same files, and the
+ * friction segment each prints is compared against the other's. Neither side
+ * is a fixture string, so a one-sided reword — a count phrasing changed on
+ * `flume status` alone, an "unreadable" spelled differently in the job row —
+ * fails here rather than shipping as two surfaces that disagree about the
+ * same dir.
+ *
+ * The counted arm and the unreadable arm are both exercised: `unreadable` is
+ * the arm with no visible count to give it away, so it is the one a
+ * hand-kept second copy drifts on silently.
+ */
+describe("flume status / flume job status — one friction renderer (FRICTION-LINE-ONE-RENDERER)", () => {
+  /** The `friction: …` segment of a status surface's output, or undefined. */
+  const segment = (out: string): string | undefined =>
+    out.match(/friction:.*/)?.[0];
+
+  it("`flume job status` and `flume status` render the same friction wording for the same count, unreadable included", async () => {
+    const repo = await makeJobRepo("main");
+    const repoFriction = join(repo.dir, ".flume", "friction");
+    const jobFriction = join(repo.dir, ".flume", "jobs", "j1", "friction");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+
+      // Same contents on both sides: the repo-level dir `flume status`
+      // counts against `flumeDir`, and the job-level dir `flume job status`
+      // counts job-dir-relative.
+      for (const dir of [repoFriction, jobFriction]) {
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, "a.md"), "blocked on owner input\n");
+        await writeFile(join(dir, "b.md"), "second note\n");
+      }
+
+      const counted = {
+        status: await runCli(repo.dir, ["status"]),
+        job: await runCli(repo.dir, ["job", "status"]),
+      };
+      expect(counted.status.code).toBe(0);
+      expect(counted.job.code).toBe(0);
+      // Non-vacuity (`.claude/rules/engineering.md`, *A green verdict is
+      // proven non-vacuous*): a comparison of two undefineds would pass over
+      // two surfaces that printed nothing at all.
+      expect(segment(counted.status.out)).toBe("friction: 2 note(s) await routing");
+      expect(segment(counted.job.out)).toBe(segment(counted.status.out));
+
+      // Unreadable: the dirs exist but cannot be read (EACCES, not ENOENT) —
+      // the arm that carries no count to give a drifted wording away.
+      await chmod(repoFriction, 0o000);
+      await chmod(jobFriction, 0o000);
+
+      const unreadable = {
+        status: await runCli(repo.dir, ["status"]),
+        job: await runCli(repo.dir, ["job", "status"]),
+      };
+      expect(unreadable.status.code).toBe(0);
+      expect(unreadable.job.code).toBe(0);
+      expect(segment(unreadable.status.out)).toBe("friction: unreadable");
+      expect(segment(unreadable.job.out)).toBe(segment(unreadable.status.out));
+    } finally {
+      await chmod(repoFriction, 0o755).catch(() => {});
+      await chmod(jobFriction, 0o755).catch(() => {});
+      await repo.cleanup();
+    }
+  }, 120_000);
 });
 
 /**
