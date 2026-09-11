@@ -218,7 +218,9 @@ defect rather than a workaround the operator owes the engine:
 - **A merge the crash interrupted is refused, never resumed.** Before the merge stage
   picks an entry's span onto trunk the dispatcher writes `<flumeDir>/merging/<slug>.json`
   — the branch, the base sha, the entry tag — and removes it only after the ship
-  bookkeeping (the `pending.json` rewrite, the records, the verdict) has landed. A file
+  bookkeeping the hazard covers has landed: the `pending.json` rewrite and the records.
+  (The verdict is the CLI's, written after `tick()` returns; a marker is not held for
+  it.) A file
   surviving at the next `loop` / `job run` start is a merge that died between the pick
   and the bookkeeping: the commit may sit on trunk ungated with its entry still `open`,
   and a second run would pick it again (field-traced once, 0.12.0, gh#19). The run

@@ -113,6 +113,7 @@ loop.pid
 last-tick.json
 tick-verdicts.jsonl
 stop
+merging/
 ```
 
 - `node_modules/` stays even though no link is planted: it is harmless and keeps stray

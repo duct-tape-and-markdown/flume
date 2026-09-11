@@ -565,7 +565,10 @@ missing field, and the field is added rather than the chain excused.
     land on trunk that this tick could not have seen" compares against the
     engine's number rather than the worktree's reflog.
   - **`entries`** (fanout only) — one record per entry the wave handed to its
-    agent, `{ tag, committed, shipped, reverted, declined?, noCommit? }`, the same
+    agent, `{ tag, committed, shipped, reverted, declined?, noCommit?, mergeOutcome? }` —
+    `mergeOutcome` being the entry's merge-stage fact as the verdict records it
+    (`merged`, `not-shipped`, `cherry-pick-conflict`, …), so a handoff can tell a park
+    from a conflict without reading the verdict log — the same
     facts the wave already folds into `shippedTags`, `revertedTags`,
     `noCommit`, and `declined`, reported before the fold. The fold stays: the
     top-level fields are the wave's summary and remain byte-identical. What
