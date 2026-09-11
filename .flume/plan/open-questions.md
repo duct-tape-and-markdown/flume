@@ -446,7 +446,31 @@ Options:
 expired-narration lens); `docs/` enters only through a retired-claim delta. The
 first data point above lives in `docs/`, so the lens as stated would not have
 caught it either — say whether this lens widens the domain to `docs/` or
-deliberately stops at the code surfaces.
+deliberately stops at the code surfaces. A third instance (2026-09-11 sweep of
+`bin/`) lives in `spec/` — the stale tarball enumeration questioned below — so
+the domain fork is three surfaces wide, not one, and `spec/` is the one the
+loop cannot fix itself.
 
 Parked because `.claude/rules/**` is human-only
 (`.claude/rules/spec-plan-build.md`).
+
+## `spec/cli.md`'s tarball bullet restates the `files` allowlist, and the copy is stale (NEEDS AMENDMENT)
+
+`spec/cli.md`, *Distribution*: "**Tarball contents** are the `package.json`
+`"files"` allowlist and nothing else: `dist`, `bin`, `README.md`, `LICENSE`,
+`CHANGELOG.md`." The allowlist on disk also carries `docs`, `!docs/PRD-*.md`,
+and `examples` — added by `1b57b67` (cut 0.10.1) and never mirrored here.
+
+The rule half is right and already mechanical: CI's *npm pack file-set guard*
+(`.github/workflows/ci.yml`) reads `package.json` `"files"` generically and
+fails in both directions. Only the enumeration after the colon is a second
+copy of a value the manifest owns (`.claude/rules/engineering.md`, *Derived
+state is computed, never restated beside its source* — "In artifacts, the same
+bar"), and it is the copy that reads as authoritative while being wrong: it
+says `examples/` and `docs/` do not ship, which is the opposite of what
+`engine-boundary.md`'s *Opinion ships by name, opted into* rests on.
+
+**Recommended:** delete the enumeration, keep the rule — "…are the
+`package.json` `"files"` allowlist and nothing else." Nothing else in the
+section reads the list. Needs a human edit; `spec/` is outside every phase
+lane (`.claude/rules/spec-plan-build.md`).
