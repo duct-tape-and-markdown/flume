@@ -36,6 +36,7 @@ import {
 } from "./git.js";
 import {
   ensureRuntimeIgnores,
+  frictionIgnoreEntry,
   jobRun,
   liveLoopPid,
   readPendingLoose,
@@ -867,16 +868,35 @@ async function main(): Promise<number> {
       dropLock();
       process.exit(143);
     });
+    // v0.8 §8: best-effort read of the chain, for the two consumers below —
+    // the `friction` dir the ignore merge folds in, and the
+    // `supervisorPolicy` override the supervisor reads. A chain that fails
+    // to load here surfaces nothing new: the merge still writes the base
+    // runtime set, the first child tick still reports mount-dead exactly as
+    // it does today, and `superviseLoop` falls through to the v0.7 §16
+    // defaults meanwhile.
+    let supervisorPolicy: Chain["supervisorPolicy"];
+    let friction: Chain["friction"];
+    try {
+      ({ chain: { supervisorPolicy, friction } } = await resolveChain());
+    } catch {
+      // unresolved chain — defaults apply; the child tick names the failure
+    }
     // spec/jobs.md "Runtime ignores": the default `<repoRoot>/.flume` takes
-    // the same runtime-owned merge a job dir takes at `job new`, so a fresh
-    // adopter never commits a tick artifact because a line was missing from
-    // the repo's own ignore file. Under the tip claim and ahead of the sweep
-    // below: the claim is what rules out a concurrent writer against this
-    // root, and the sweep is the first thing this run writes under it.
-    // Idempotent — a root already carrying the entries is left byte-identical.
-    // `job run` reaches this via its `cmd = "loop"` rewrite above, where the
-    // root is the job dir `job new` already merged; a bare tick never does.
-    await ensureRuntimeIgnores(flumeDir);
+    // the same runtime-owned merge a job dir takes at `job new` — declared
+    // `Chain.friction` included, through the one `frictionIgnoreEntry`
+    // spelling (`src/job.ts`) — so a fresh adopter never commits a tick
+    // artifact because a line was missing from the repo's own ignore file.
+    // Under the tip claim and ahead of the sweep below: the claim is what
+    // rules out a concurrent writer against this root, and the sweep is the
+    // first thing this run writes under it. Idempotent — a root already
+    // carrying the entries is left byte-identical. `job run` reaches this
+    // via its `cmd = "loop"` rewrite above, where the root is the job dir
+    // `job new` already merged; a bare tick never does.
+    await ensureRuntimeIgnores(
+      flumeDir,
+      friction !== undefined ? [frictionIgnoreEntry(friction)] : [],
+    );
     // Startup sweep (spec/worktrees.md "Startup sweep"): once, right after
     // the tip claim above and before the first tick, so a dead prior wave's
     // abandoned worktrees/branches never linger past this start. Safe here
@@ -893,16 +913,8 @@ async function main(): Promise<number> {
     // code out of `flume loop` too: exiting 0 here would re-mask either as
     // clean at the next process boundary up.
     //
-    // v0.8 §8: best-effort read of the chain's `supervisorPolicy` override —
-    // a chain that fails to load here surfaces nothing new; the first child
-    // tick still reports mount-dead exactly as it does today, and
-    // `superviseLoop` falls through to the v0.7 §16 defaults meanwhile.
-    let supervisorPolicy: Chain["supervisorPolicy"];
-    try {
-      ({ chain: { supervisorPolicy } } = await resolveChain());
-    } catch {
-      // unresolved chain — defaults apply; the child tick names the failure
-    }
+    // `supervisorPolicy` was read above, alongside the ignore merge's
+    // `friction`, from the one best-effort chain resolve this start makes.
     const supervised = await superviseLoop({
       repoRoot,
       flumeDir,

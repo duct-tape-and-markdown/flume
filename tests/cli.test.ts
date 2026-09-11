@@ -2512,6 +2512,36 @@ describe("flume loop — runtime ignores at the default state root", () => {
   );
 
   it(
+    "a loop start merges a declared Chain.friction dir into the default state root's .gitignore",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        // Declared with a backslash and a doubled trailing slash: the entry
+        // that lands must be the `frictionIgnoreEntry` (`src/job.ts`)
+        // normalization `job new` applies, not whatever the chain wrote.
+        await writeRepoConfig(repo.dir, minimalChainSrc("scratch\\friction//"));
+        const ignorePath = join(repo.dir, ".flume", ".gitignore");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+
+        const lines = (await readFile(ignorePath, "utf8")).split("\n");
+        expect(lines).toContain("scratch/friction/");
+        // Vacuity pin: the base set still merges alongside it, so a friction
+        // entry cannot pass by having replaced the runtime block.
+        expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+        for (const entry of RUNTIME_IGNORES) {
+          expect(lines).toContain(entry);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
     "leaves a state root that already carries the entries byte-identical, seed lines and order intact",
     async () => {
       const repo = await makeJobRepo("main");

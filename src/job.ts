@@ -131,8 +131,14 @@ export async function ensureRuntimeIgnores(
  * single-trailing-slashed regardless of how the chain wrote the declaration
  * (`Chain.friction` is validated relative at load time; this only shapes it
  * for the ignore line).
+ *
+ * Exported so every state root that merges the runtime set spells the
+ * friction entry the same way: `job new` here, and the `loop` / `job run`
+ * start against the default root (`src/cli.ts`). Re-spelling the
+ * normalization at the second caller would be re-derived detection
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
-function frictionIgnoreEntry(friction: string): string {
+export function frictionIgnoreEntry(friction: string): string {
   return `${friction.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
 }
 
