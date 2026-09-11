@@ -359,3 +359,35 @@ Options:
 
 Parked, not filed: `.flume/chain.ts` is outside every phase lane, so any of the
 three is a `chore(flume):` from an interactive session.
+
+## Flume's own build prompt hand-writes the `tests[]`/`pins[]` contract (PARKED — lane only)
+
+Drained from `CASCADE-BUILD-PROMPT-STATES-TESTS-CONTRACT`'s note; verified on disk.
+The entry shipped the fix in the example, and the defect it names survives one layer
+over, in this repo's own chain.
+
+`.flume/prompts/build.md:30` states the title discipline, the vitest gate's revert,
+the pre-fix-tree re-run, and that `pins[]` is judged green only — all in prose.
+`.flume/chain.ts:138` and `:149` already declare those same rules as the `tests` /
+`pins` hints, and `renderSchemaForPrompt` (`:691`) renders them verbatim into plan's
+prompt. Two copies of a rule the gate reverts commits over, and the prompt copy is
+the one nothing checks: change a hint and the prompt keeps instructing the old
+contract, which costs a build wave rather than failing loud
+(`engineering.md`, *Derived state is computed, never restated beside its source*).
+
+**No fork — the shape is already ruled.** Cascade's is the pattern:
+`examples/cascade-chain.ts:445` renders `entryExtension.tests.hint` into a
+`{{TESTS_HINT}}` placeholder (`examples/prompts/build.md:31`), and
+`tests/examples.test.ts:589` pins the two together off disk. Here the same move adds
+`TESTS_HINT` and `PINS_HINT` to build's `promptArgs` (`.flume/chain.ts:846-853`) and
+shrinks the paragraph to the framing around them. The framing does not all go: "do
+not restructure a test to fail on the base; ship the work as named and let the record
+reach plan" is build-behavior instruction the hint does not carry, and stays.
+
+The pin has a home — `tests/chain.test.ts` already imports the real `.flume/chain.ts`
+— but it cannot land alone, since a pin over the unrendered prompt is red.
+
+**Parked only because of the lane.** `.flume/chain.ts` and `.flume/prompts/**` are
+outside every phase lane (`.flume/chain.ts:248-251`), so this is a `chore(flume):`
+from an interactive session. Batches cleanly with the three other harness-path parks
+already open above.
