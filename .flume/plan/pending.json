@@ -1,78 +1,12 @@
 [
   {
-    "tag": "CHAIN-LOAD-FAILURE-REPORTED",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        {
-          "path": "src/cliChainLoad.ts",
-          "description": "the one best-effort chain load both observational surfaces take, reporting its own failure"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "status's hand-rolled best-effort load + its site declaration"
-        },
-        {
-          "path": "src/cliJobVerbs.ts",
-          "description": "job status's copy of the same load; its :35-39 declaration is false as written"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "status pins"
-        },
-        {
-          "path": "tests/cliJobVerbs.test.ts",
-          "description": "job status pins"
-        }
-      ]
-    },
-    "summary": "flume status / job status report a chain-load failure instead of proceeding in silence over the default queue path",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "tests": [
-      "flume status names the chain-load failure it proceeded past",
-      "flume job status names the chain-load failure it proceeded past",
-      "both observational surfaces still exit 0 when the chain fails to load"
-    ],
-    "acceptance": "A chain.ts that throws makes both surfaces say so; exit codes and the observational contract are unchanged.",
-    "notes": "Measured this tick: a chain declaring pendingPath queue/work.json reports pending: 1 healthy and pending: 0 broken — exit 0, no output, on both surfaces. The count silently rebases on resolvePendingPath's default (src/cli.ts:355-368, src/cliJobVerbs.ts:42-51). cliJobVerbs.ts:35-39 also mis-declares the degradation as withholding friction counts alone. Share the load rather than hand-rolling it twice (engineering.md, The fix lands at the mechanism)."
-  },
-  {
-    "tag": "CROSSREPO-REFUSAL-REMEDY",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        {
-          "path": "src/cliJobResolution.ts",
-          "description": "CrossRepoFlumeDirError's message and its class doc"
-        },
-        {
-          "path": "tests/cliJobResolution.test.ts",
-          "description": "remedy-agreement pins"
-        }
-      ]
-    },
-    "summary": "The cross-repo FLUME_DIR refusal names two remedies that both re-refuse, and omits the only one that clears it",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "State-root and config-dir resolution"
-    },
-    "tests": [
-      "the cross-repo refusal names FLUME_DIR_RESOLVED_FOR as the stamp to unset",
-      "the cross-repo refusal message omits an unset FLUME_DIR rather than printing undefined",
-      "unsetting FLUME_DIR and FLUME_DIR_RESOLVED_FOR together resolves the state root under this repo"
-    ],
-    "acceptance": "Applying the refusal's stated remedy clears it, and the message never prints `FLUME_DIR undefined`.",
-    "notes": "Measured at the CLI this tick (src/cliJobResolution.ts:97-113). Unsetting FLUME_DIR alone re-throws the same error reading `FLUME_DIR undefined`; `--job <name>` beside a set FLUME_DIR throws JobResolutionConflictError instead. Unsetting the stamp alone does clear it — and then resolves flumeDir to the other repo's root, the hazard the guard exists to stop. The guard's condition is spec-ratified; only what it tells the operator changes."
-  },
-  {
     "tag": "LOG-TAGLESS-SPAN-ROW",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "src/cliVerdict.ts",
@@ -82,7 +16,8 @@
           "path": "tests/cliVerdict.test.ts",
           "description": "both tag legs"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "flume log's human line renders a singleton's tagless span as `undefined:<outcome>`",
     "per": {
@@ -94,6 +29,11 @@
       "flume log renders a tagged merge outcome as tag:outcome"
     ],
     "acceptance": "A singleton tick's `flume log` line carries `merge=[<outcome>]`, with no `undefined` in the human form.",
-    "notes": "TickVerdictMergeOutcome.tag is optional (src/Dispatcher.ts:300); formatTickVerdictLine interpolates it unconditionally (src/cliVerdict.ts:123). Emit the outcome alone when absent — never the phase name, which the line already prints as its first field (engineering.md, Derived state is computed, never restated beside its source). Closes the observation filed from VERDICT-SPAN-ROW-BASE-SHA."
+    "notes": "TickVerdictMergeOutcome.tag is optional (src/Dispatcher.ts:300); formatTickVerdictLine interpolates it unconditionally (src/cliVerdict.ts:123). Emit the outcome alone when absent — never the phase name, which the line already prints as its first field (engineering.md, Derived state is computed, never restated beside its source). Closes the observation filed from VERDICT-SPAN-ROW-BASE-SHA.",
+    "observedFiles": [
+      ".flume/plan/open-questions.md",
+      "src/cliVerdict.ts",
+      "tests/cliVerdict.test.ts"
+    ]
   }
 ]
