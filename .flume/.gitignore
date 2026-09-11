@@ -1,0 +1,9 @@
+awake/
+prior-attempts/
+rendered-prompts/
+worktrees/
+node_modules/
+loop.pid
+tick-verdict.json
+tick-verdicts.jsonl
+stop
