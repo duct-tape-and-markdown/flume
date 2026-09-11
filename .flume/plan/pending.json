@@ -1,5 +1,37 @@
 [
   {
+    "tag": "CASCADE-GATE-REFUSES-UNDECLARED-SPAN",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "the zero-judged skip becomes the refusal cascade's shape actually earns"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the refusal, replacing the pin asserting the old green — fast lane"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade's declared-files gate greens a commit touching none of its declared files, citing a park surface the example never declares — so the entry ships with its prediction contradicted",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "the cascade example's gate refuses a commit that touched none of the entry's declared files"
+    ],
+    "pins": [],
+    "acceptance": "No green is earned over a contradicted declaration: the zero-judged span refuses, and the skip prose stops naming a mechanism the example has no injection point for.",
+    "notes": "Drained from CASCADE-GATE-READS-ENTRY-AND-BASE's note. Verified: cascade's build is unscoped, declares no entryChannelPaths (the engine refuses those without scopeWritesToEntry, src/Dispatcher.ts:1164) and no `shipped` — undeclared means shipped (src/Phase.ts:413) — so the skip at examples/cascade-chain.ts:260-266 ships the entry and the fanout partition rested on a false files prediction. The pin asserting the old green is tests/examples.test.ts:529-536."
+  },
+  {
     "tag": "CASCADE-BUILD-PROMPT-STATES-TESTS-CONTRACT",
     "gate": {
       "kind": "open"
