@@ -40,6 +40,47 @@
     "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
   },
   {
+    "tag": "RELEASE-CITES-REACH-DOCS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CLI.md",
+          "description": "the eight dead cites go"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the four dead cites go"
+        },
+        {
+          "path": "src/Agent.ts",
+          "description": "the bare `§6` at :501 the grammar cannot see"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the scan domain partitions docs/"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CLI.md and docs/CHAIN-AUTHORING.md ship twelve cites into the deleted RELEASE corpus, and the scan that would refuse them stops at src/ and examples/",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      "no current-reference docs page carries a release-numbered spec cite",
+      "every docs page is either scanned for release cites or declared a dated record"
+    ],
+    "pins": [],
+    "acceptance": "The two current-reference pages carry no cite into the deleted corpus, the scan reaches docs/, and an unclassified new docs page fails loud.",
+    "notes": "From RELEASE-CITES-PINNED's note. 16 needle hits in docs/; three pages are dated records legitimately naming the world they left — CASCADE-DRY-RUN.md, MIGRATING-0.10.md:20, PRD-dock-collapse.md. Partition, never exclude: scanned ∪ dated = readdir(docs), so a new page forces a classification. src/Agent.ts:501 rides here — same dead corpus, invisible to the grammar; its cut is unpinnable, name that in the body."
+  },
+  {
     "tag": "DISPATCHER-EXTRACT-LOOP-SUPERVISOR",
     "gate": {
       "kind": "open"
