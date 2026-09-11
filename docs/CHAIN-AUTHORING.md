@@ -1108,9 +1108,17 @@ It is symmetric across `afterCommit` and `afterMerge`. The carry is
 cross-process by construction — the record is persisted under
 `.flume/prior-attempts/` (gitignored, beside the baton) and read back by
 the next `flume tick`'s fresh process. The block is **absent on a first
-attempt** (no false signal) and **cleared once an attempt ships clean**.
-Both the gate `message` and `details` feed it — write `details` for the
-retrying agent to read (concrete paths and line numbers beat narration).
+attempt** (no false signal), and a record clears two ways: an attempt that
+**ships clean** retires its own, and a **fanout wave's queue read** retires
+every entry-keyed record whose tag the queue no longer carries. That second
+clear runs before selection, so an entry you dropped or renamed in
+`pending.json` leaves nothing behind for a later tick to read — the retry
+those records were written for is never going to happen. The wave names the
+keys it cleared on the tick verdict (`clearedPriorAttempts`, absent when it
+cleared none); a singleton phase's own record is outside that sweep, since no
+queue entry governs it. Both the gate `message` and `details` feed the block
+— write `details` for the retrying agent to read (concrete paths and line
+numbers beat narration).
 
 ## 6. The foundations governor (`forkResolver`)
 
