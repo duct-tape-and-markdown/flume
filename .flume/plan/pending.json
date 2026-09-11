@@ -1,50 +1,5 @@
 [
   {
-    "tag": "GATE-RESULT-SKIPPED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "`GateResult.skipped?: string` — the fact that `ok` was not earned by running a judge. `ok` stays required and stays the verdict."
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "Copy onto `TickVerdictGateResult` (:199) verbatim, beside `details`; interpret no further."
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "`chainLoadGate`'s untouched-chain green (:257) is the standing instance — declare the reason instead of spelling it into `message`."
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "Pins."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Pins."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`GateResult.skipped?: string` — a gate spells a verdict no judge earned, and the engine copies the reason onto the verdict's gate result verbatim",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate returns"
-    },
-    "tests": [
-      "a gate returning `skipped` lands its reason on the tick verdict's gate row unchanged",
-      "`chainLoadGate` over a commit that touched no chain file returns `ok: true` with a `skipped` reason",
-      "a gate that returned `ok: true` without `skipped` leaves no `skipped` on its verdict row"
-    ],
-    "acceptance": "A verdict reader tells a passed gate from a gate that never ran, without parsing `message`; the pins fail on the pre-fix tree.",
-    "notes": "`engineering.md`, *A green verdict is proven non-vacuous*: vacuous-by-design is spelled, never inherited. Today the only signal is prose inside `message` (\"chain.ts untouched — gate skipped\"), which is exactly the pattern-match the engine refuses elsewhere."
-  },
-  {
     "tag": "VERDICT-SPAN-ROW-BASE-SHA",
     "gate": {
       "kind": "open"
