@@ -19,5 +19,7 @@ remaining helper imports — `src/cliHelp.ts`, `src/cliJobResolution.ts`,
 `src/cliChainLoad.ts` with its two consumers; `bin/`'s two scripts with
 `tests/bin.test.ts`; `tests/helpers/`'s three modules with
 `tests/subprocessHelper.test.ts`; `tests/loopSupervisor.test.ts` with
-`src/loopSupervisor.ts`. Frontier remaining: `tests/`'s suite files, less
-`bin.test.ts`, `subprocessHelper.test.ts` and `loopSupervisor.test.ts`.
+`src/loopSupervisor.ts`; `tests/retired-narration.test.ts` with its four
+immediate imports. Frontier remaining: `tests/`'s suite files, less
+`bin.test.ts`, `subprocessHelper.test.ts`, `loopSupervisor.test.ts` and
+`retired-narration.test.ts`.

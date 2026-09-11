@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "RETIRED-NARRATION-NEEDLE-SENSITIVITY",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "sensitivity pins for the two RETIRED needles and for orphanedBlocks"
+        }
+      ]
+    },
+    "summary": "Drive the three retired-narration detectors whose inventory is empty by design: the FLUME_DIR-fallback needle, the --model needle, and orphanedBlocks",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [],
+    "pins": [
+      "the FLUME_DIR-fallback needle flags a `?? …` beside `process.env.FLUME_DIR` and not the mentions the inventory allows",
+      "the model needle flags `--model` assembled into `extraArgs` and not the engine's own argv assembly",
+      "the orphan scan flags an injected doc block followed by another and leaves an attached block unflagged"
+    ],
+    "acceptance": "Each of the three detectors is driven against an injected violation and a real negative control; the three refusals still report their empty inventories.",
+    "notes": "Siblings already carry this treatment — the queue-path and inbox needles, the pre-0.10 shape, the job-seed ignore list. These three do not: their refusals compare [] to [] and nothing proves the detector still fires. Negative controls exist on disk (src/Agent.ts assembles --model legitimately; src/flumeApi.ts and docs/CHAIN-AUTHORING.md name the env var without the fallback)."
+  }
+]
