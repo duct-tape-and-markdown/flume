@@ -309,10 +309,45 @@ stale against the `"files"` allowlist it copied; amended and closed at
 the one the loop cannot fix itself.
 
 A fourth instance, same shape, now has a mechanical answer that this lens does
-not: a `spec/` cite naming a symbol its module no longer holds is checkable,
-and `SPEC-CITE-MODULE-PATH-PINNED` pins the two path-carrying shapes. It
-bounds the lens rather than replacing it — `Class.method` and bare-symbol
-cites, and every assertion that is prose rather than a cite, stay judgment.
+not: a cite naming a symbol its module no longer holds is checkable.
+`SRC-CITE-MODULE-PATH-PINNED` pins the two path-carrying shapes over `src/`
+and `examples/`; the same scan over `spec/` waits on the amendment below. It
+bounds the lens rather than replacing it — bare-symbol cites and every
+assertion that is prose rather than a cite stay judgment.
 
 Parked because `.claude/rules/**` is human-only
 (`.claude/rules/spec-plan-build.md`).
+
+## Four `spec/` cites name a module that no longer declares the symbol (NEEDS AMENDMENT)
+
+Drained from `SPEC-CITE-MODULE-PATH-PINNED`'s park; re-verified on disk this
+tick. `spec/` carries **72** path-carrying cites in the two shapes
+(`` `src/x.ts:sym` `` and `` `sym` (`src/x.ts`) ``), not the 71 the entry's
+notes claimed, and four name a module that does not *declare* the symbol —
+four extraction waves' residue that `a18b40e` did not reach:
+
+- `spec/prompt.md:148` — `src/Dispatcher.ts:slugify` → `src/paths.ts`
+- `spec/chain.md:167` — `src/cli.ts:tickExitCode` → `src/cliVerdict.ts`
+- `spec/chain.md:195`, `:203` — `src/cli.ts:resolveStateDirs` →
+  `src/cliJobResolution.ts`, which `spec/chain.md:633` itself already names
+
+**The pin cannot go green from a build tick.** The repoint is a `spec/` edit,
+and `spec/` is human-only (`.claude/rules/spec-plan-build.md`) — outside every
+phase lane, so no entry can carry it. That is why the entry parked rather than
+shipped.
+
+**The looser reading is ceremony, and was measured as such.** Reading the cite
+as "the module *references* the symbol" goes green today, but on `a18b40e^`
+`src/Dispatcher.ts` still imported `superviseLoop`, `createWorktree` and
+`harvestFriction` — so it would have passed over the exact stranding `a18b40e`
+repointed. Only "declares" catches the class.
+
+**Recommend** the four repoints above, verbatim; there is no fork in them. Once
+they land, the `spec/`-side scan re-files as a pending entry — judged green,
+never red, so it belongs in `pins[]` — and `tests/retired-narration.test.ts`
+gains a second describe beside the `src/`-side one.
+
+**The `src/`-side half did not need the amendment and is filed now** as
+`SRC-CITE-MODULE-PATH-PINNED`: the same scan over `src/` and `examples/`
+comments, where three cites are red on the current tree and every path is
+inside build's fence.
