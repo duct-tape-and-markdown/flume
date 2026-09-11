@@ -3279,8 +3279,9 @@ export class Dispatcher {
     // park (`not-shipped`), a cherry-pick conflict, a dropped-work reset and
     // a foreign tip claim are indistinguishable in `committed`/`shipped`/
     // `reverted`, which is the fact a `handoff` would otherwise have to read
-    // the verdict log for. `find`, not a filter: the merge loop above pushes
-    // at most one record per tag, and the first is the entry's fate.
+    // the verdict log for. `find`, not a filter: at most one record per tag,
+    // pinned by "records exactly one mergeOutcomes entry for that tag"
+    // (tests/Dispatcher.test.ts).
     const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
       const merge = mergeOutcomes.find((m) => m.tag === r.entry.tag);
       return {

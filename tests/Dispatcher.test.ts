@@ -7774,7 +7774,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     ]);
   }, 20_000);
 
-  it("fanout: an entry's worktree commit is rewritten out from under the agent (base is no longer an ancestor of HEAD) — refuses, naming both shas, lands a dropped-work merge outcome (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
+  it("fanout: an entry's worktree commit is rewritten out from under the agent (base is no longer an ancestor of HEAD) — refuses, naming both shas, and a fanout wave whose entry fails the per-entry tip verify records exactly one mergeOutcomes entry for that tag (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -7824,6 +7824,20 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
         headSha: observedHead,
       },
     ]);
+
+    // One record for this tag, and the per-entry surface reads it. The
+    // `dropped-work` push does not `continue`, so it falls through into the
+    // `afterCommit-reverted` push guarded on `footprint` — single-valued
+    // only because the tip-moved return carries none. `mergeOutcome`
+    // resolves by `find`, so a second record would have it report the first
+    // of two while the verdict carried both.
+    const forTag = (outcome.verdict?.mergeOutcomes ?? []).filter(
+      (m) => m.tag === "TEST-A",
+    );
+    expect(forTag.length).toBe(1);
+    const entry = outcome.result?.entries?.find((e) => e.tag === "TEST-A");
+    expect(entry).toBeDefined();
+    expect(entry?.mergeOutcome).toBe("dropped-work");
 
     // Both shas named — the recorded base and the observed HEAD, never the
     // HEAD's parent alone (which would read the agent's own top commit as
