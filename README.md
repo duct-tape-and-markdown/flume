@@ -143,20 +143,39 @@ are deferred.
 
 ## Where state lives
 
-Everything is on disk under `.flume/`:
+Everything is on disk under `.flume/`, and the root has two owners — the
+runtime, and whichever chain ticks against it.
+
+Harness-managed state — every name here is one the runtime spells itself
+(`STATE_ROOT_NAMES` and the accessors in `src/paths.ts`):
 
 - `.flume/awake/<phase>` — baton flag files. Presence = phase is awake.
 - `.flume/plan/pending.json` — structured handoff between plan and build.
-- `.flume/plan/state.md`, `.flume/plan/open-questions.md` — prose scratch
-  that survives across ticks.
-- `.flume/inbox/` — transient findings queue, one file per finding, drained
-  by plan.
+  This is the default location; a chain moves it with `Chain.pendingPath`.
+- `.flume/prior-attempts/` — one record per reverted attempt, written beside
+  the baton so it outlives the worktree that produced it.
+- `.flume/rendered-prompts/` — each invocation's fully rendered prompt,
+  persisted before the agent runs.
 - `.flume/worktrees/<entry-slug>/` — per-entry worktrees during fanout. The
   base dir is overridable via `FLUME_WORKTREES_DIR` (below).
 - `.flume/loop.pid` — cross-process loop lock, present while a `flume loop`
   runs against this state root (below).
+- `.flume/stop` — graceful-stop flag: `flume stop` writes it, a live loop
+  ends on it and `flume loop` refuses to start over it.
+- `.flume/tick-verdict.json`, `.flume/tick-verdicts.jsonl` — the last tick's
+  verdict and the bounded history behind it (`readTickVerdicts`).
+
+Everything else under the state root is its chain's — placed by the chain
+rather than the runtime, and the chain's alone to move. This repo's own chain
+writes:
+
+- `.flume/plan/state.md`, `.flume/plan/open-questions.md` — prose scratch
+  that survives across ticks.
+- `.flume/inbox/` — transient findings queue, one file per finding, drained
+  by plan.
 - `.flume/sessions/<timestamp>.jsonl` — captured agent NDJSON (opt-in via
-  `withSessionCapture`).
+  `withSessionCapture`), rooted at `api.paths.flumeDir` so it tears down with
+  the rest of the dock.
 
 Ticks read these on entry and write them on commit. Across ticks, the disk is
 the only carrier of state.
@@ -167,8 +186,10 @@ The two halves of `.flume/` relocate independently via env vars:
 
 - **`FLUME_DIR`** moves the **mutable state** — the baton (`awake/`), pending
   (`plan/`), worktrees (`worktrees/`), prior-attempt records
-  (`prior-attempts/`), each invocation's rendered prompt
-  (`rendered-prompts/`), and session logs (`sessions/`).
+  (`prior-attempts/`), and each invocation's rendered prompt
+  (`rendered-prompts/`). A chain's own per-run artifacts ride along only
+  because the chain roots them at `api.paths.flumeDir` — this repo's session
+  logs (`sessions/`) are chain-placed, not runtime-owned.
 - **`FLUME_CONFIG_DIR`** moves the **chain + prompts** — `chain.ts` and the
   prompt files it references.
 
@@ -183,7 +204,7 @@ single `rm` — no state bleeds into `<repoRoot>/.flume`.
 
 ```bash
 export FLUME_DIR="$(mktemp -d)/flume-dock"
-flume loop                  # baton, pending, worktrees, sessions all under FLUME_DIR
+flume loop                  # baton, pending, worktrees, chain artifacts under FLUME_DIR
 rm -rf "$(dirname "$FLUME_DIR")"   # one rm removes the whole dock
 ```
 

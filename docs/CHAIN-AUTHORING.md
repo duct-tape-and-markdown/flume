@@ -66,8 +66,13 @@ resolve relative to `.flume/`.
     open-questions.md
 ```
 
-`awake/`, `worktrees/`, and `sessions/` are harness-managed state — you
-don't author them.
+**Harness-managed state:** `awake/`, `worktrees/`, `prior-attempts/`,
+`rendered-prompts/`, `loop.pid` — the runtime spells each of those names
+itself, so you neither author nor move them. `sessions/` is *not* among them:
+session capture is a chain's own artifact (`withSessionCapture`), placed by
+the chain that captures it — the runtime never puts a directory there. Per-run
+artifacts your chain writes are yours to place: root them at
+`api.paths.flumeDir` and the one-`rm` teardown covers them too.
 
 **One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
 retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —

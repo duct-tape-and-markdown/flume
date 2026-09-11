@@ -686,3 +686,267 @@ describe("no doc block is orphaned", () => {
     ).toEqual(Object.keys(ALLOWED_ORPHANS).sort());
   });
 });
+
+// Agreement pin (DOC-HARNESS-STATE-OWNERSHIP, per .claude/rules/engineering.md
+// "A seam gate reads what the real writer wrote"): the docs tell a chain
+// author which paths under a state root are the harness's, and they told it
+// from memory — `sessions/` was taught as harness-managed state when only a
+// chain spells that name, and README's state list ran engine paths and this
+// chain's plan artifacts together in one undifferentiated list. Either error
+// reads as the engine's contract: an author trusts the runtime to place a
+// directory nothing in `src/` places, or treats a chain artifact as a path
+// the engine will keep putting there. The writer of that contract is `src/`
+// itself — `STATE_ROOT_NAMES`, the accessors that join its values onto
+// `flumeDir`, `DEFAULT_PENDING_REL`, and the literals the dispatcher joins on
+// directly. This pin reads that writer and holds the docs' claim to it.
+describe("the docs' harness-managed state list agrees with what src/ spells", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+
+  /** The docs that teach a state root's layout, and must agree about it. */
+  const SCANNED_DOCS = ["README.md", join("docs", "CHAIN-AUTHORING.md")];
+
+  /**
+   * The line that opens a harness-managed-state claim, in either doc's
+   * register: README's list header, the chain doc's inline bold run-in.
+   */
+  const MARKER = /^\s*(?:\*\*)?Harness-managed state\b/;
+
+  /**
+   * The claim region: the marker's own paragraph, plus a bullet list beneath
+   * it when one follows. It ends at the first line that opens a new block at
+   * column 0 — which is what keeps README's *chain*-placed list, three lines
+   * further down, out of a scan about what the harness places.
+   */
+  function regionLines(text: string): string[] | null {
+    const lines = text.split("\n");
+    const start = lines.findIndex((l) => MARKER.test(l));
+    if (start === -1) return null;
+    const region: string[] = [];
+    let i = start;
+    while (i < lines.length && lines[i]!.trim() !== "") region.push(lines[i++]!);
+    let j = i;
+    while (j < lines.length && lines[j]!.trim() === "") j++;
+    if (j < lines.length && /^-\s/.test(lines[j]!)) {
+      region.push("");
+      for (; j < lines.length; j++) {
+        const l = lines[j]!;
+        if (/^-\s/.test(l) || /^\s+\S/.test(l) || l.trim() === "") {
+          region.push(l);
+          continue;
+        }
+        break;
+      }
+    }
+    return region;
+  }
+
+  /**
+   * The region as claim chunks — the marker paragraph, then one chunk per
+   * bullet with its continuation lines. Prose wraps, so a chunk is the unit a
+   * claim is actually written in.
+   */
+  function claimChunks(lines: string[]): string[] {
+    const out: string[][] = [];
+    let cur: string[] | null = null;
+    for (const line of lines) {
+      if (/^-\s/.test(line)) {
+        if (cur) out.push(cur);
+        cur = [line];
+      } else if (line.trim() === "") {
+        if (cur) out.push(cur);
+        cur = null;
+      } else if (cur) cur.push(line);
+      else cur = [line];
+    }
+    if (cur) out.push(cur);
+    return out.map((chunk) => chunk.join(" "));
+  }
+
+  /**
+   * The paths a chunk claims: every backticked token ahead of the chunk's
+   * first em dash. The dash is where a bullet stops naming and starts
+   * explaining, and the explanation legitimately names things that are not
+   * state-root paths — a CLI invocation, a `Chain` field, the chain-placed
+   * directory this list exists to disown.
+   */
+  function claimedPaths(chunk: string): string[] {
+    const named = chunk.split("—")[0]!;
+    return [...named.matchAll(/`([^`]+)`/g)].map((m) => m[1]!);
+  }
+
+  /**
+   * A doc's path token as a state-root-relative name: the `.flume/` prefix
+   * and any trailing separator dropped, and a trailing `<placeholder>`
+   * segment — `<phase>`, `<entry-slug>`, `<timestamp>.jsonl` — dropped with
+   * it, since what the runtime owns is the directory, not the names it generates
+   * inside it.
+   */
+  function stateRootName(claim: string): string {
+    const parts = claim
+      .replace(/^\.flume\//, "")
+      .split("/")
+      .filter((s) => s !== "");
+    while (parts.length > 0 && /^<.+>/.test(parts[parts.length - 1]!)) {
+      parts.pop();
+    }
+    return parts.join("/");
+  }
+
+  /** `const NAME = "literal";` declarations in one module. */
+  function stringConsts(text: string): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const m of text.matchAll(/\bconst\s+(\w+)\s*=\s*"([^"]+)"\s*;/g)) {
+      out.set(m[1]!, m[2]!);
+    }
+    return out;
+  }
+
+  /** `STATE_ROOT_NAMES`'s key → name map, read off its declaration. */
+  function stateRootNamesMap(): Map<string, string> {
+    const block =
+      /export const STATE_ROOT_NAMES = \{([\s\S]*?)\n\} as const;/.exec(
+        read("src", "paths.ts"),
+      );
+    const out = new Map<string, string>();
+    if (!block) return out;
+    for (const m of block[1]!.matchAll(/(\w+)\s*:\s*"([^"]+)"/g)) {
+      out.set(m[1]!, m[2]!);
+    }
+    return out;
+  }
+
+  /**
+   * The writer side: every name `src/` itself places directly under a state
+   * root. Read off the real writers rather than a list kept here — each
+   * `join(flumeDir, …)` with an argument this reader can resolve (a literal,
+   * a `STATE_ROOT_NAMES` member, a module-local string const), plus the
+   * default queue path, which is joined onto a state root by
+   * `resolvePendingPath` rather than spelled at a `flumeDir` call site.
+   *
+   * An argument that does not resolve is skipped on purpose: `chain.friction`
+   * is a chain-supplied name, which is exactly the category this pin exists
+   * to keep out of a harness-managed list.
+   */
+  function namesSrcSpells(): string[] {
+    const roots = stateRootNamesMap();
+    const names = new Set<string>();
+    for (const file of readdirSync(join(REPO_ROOT, "src")).filter((n) =>
+      n.endsWith(".ts"),
+    )) {
+      const text = read("src", file);
+      const consts = stringConsts(text);
+      for (const m of text.matchAll(
+        /join\(\s*(?:this\.)?flumeDir\s*,\s*([^),]+?)\s*\)/g,
+      )) {
+        const arg = m[1]!;
+        const literal = /^"([^"]+)"$/.exec(arg);
+        const member = /^STATE_ROOT_NAMES\.(\w+)$/.exec(arg);
+        const resolved = literal
+          ? literal[1]!
+          : member
+            ? roots.get(member[1]!)
+            : consts.get(arg);
+        if (resolved) names.add(resolved);
+      }
+    }
+    const pending = /export const DEFAULT_PENDING_REL = join\(([^)]*)\);/.exec(
+      read("src", "paths.ts"),
+    );
+    if (pending) {
+      names.add(
+        [...pending[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).join("/"),
+      );
+    }
+    return [...names];
+  }
+
+  const spelled = namesSrcSpells();
+
+  it("the harness-managed state scan covers both README.md and docs/CHAIN-AUTHORING.md", () => {
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // marker that stopped matching, or a region that collapsed to the header
+    // line, would leave the refusal below judging an empty claim set in a doc
+    // that still teaches the layout.
+    for (const doc of SCANNED_DOCS) {
+      const region = regionLines(read(doc));
+      expect(
+        region,
+        `${doc} states no harness-managed state claim the scan can find — ` +
+          "restore the `Harness-managed state` marker, or this pin is blind",
+      ).not.toBeNull();
+      const claims = claimChunks(region!).flatMap(claimedPaths);
+      expect(
+        claims,
+        `${doc}: the claim region names no path`,
+      ).not.toEqual([]);
+    }
+  });
+
+  it("the docs' harness-managed state list names only paths `src/` spells", () => {
+    // Vacuity: a writer-side reader that resolved nothing would accept every
+    // claim. Name the shapes it must have resolved — a literal the dispatcher
+    // joins, a `STATE_ROOT_NAMES` member behind an accessor, and the queue
+    // default that no `flumeDir` call site spells.
+    expect(spelled, "src/: no `worktrees` literal resolved").toContain(
+      "worktrees",
+    );
+    expect(spelled, "src/: STATE_ROOT_NAMES did not resolve").toEqual(
+      expect.arrayContaining(["awake", "prior-attempts", "loop.pid"]),
+    );
+    expect(spelled, "src/: DEFAULT_PENDING_REL did not resolve").toContain(
+      "plan/pending.json",
+    );
+
+    for (const doc of SCANNED_DOCS) {
+      const claimed = claimChunks(regionLines(read(doc))!)
+        .flatMap(claimedPaths)
+        .map(stateRootName);
+      expect(
+        claimed.filter((name) => !spelled.includes(name)),
+        `${doc} teaches a path as harness-managed that nothing in src/ ` +
+          `places under a state root — src/ spells: ${spelled.sort().join(", ")}`,
+      ).toEqual([]);
+    }
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the refusal above reports "no violations" whether it is
+  // watching or dead. Drive it with the claim the docs actually carried —
+  // `sessions/`, a directory only `.flume/chain.ts` spells — injected into
+  // each doc's real region in that doc's own register.
+  it("flags a chain-placed directory taught as harness-managed", () => {
+    expect(
+      spelled,
+      "`sessions` resolved as a name src/ spells — the injection below is " +
+        "no longer a violation, so this control proves nothing",
+    ).not.toContain("sessions");
+
+    const injections: Record<string, (region: string[]) => string[]> = {
+      "README.md": (region) => [
+        ...region,
+        "- `.flume/sessions/<timestamp>.jsonl` — captured agent NDJSON.",
+      ],
+      [join("docs", "CHAIN-AUTHORING.md")]: (region) => [
+        region[0]!.replace("`awake/`", "`awake/`, `sessions/`"),
+        ...region.slice(1),
+      ],
+    };
+
+    for (const [doc, inject] of Object.entries(injections)) {
+      const region = regionLines(read(doc))!;
+      const clean = claimChunks(region)
+        .flatMap(claimedPaths)
+        .map(stateRootName);
+      const dirty = claimChunks(inject(region))
+        .flatMap(claimedPaths)
+        .map(stateRootName);
+      expect(dirty, `${doc}: the injection was a no-op`).not.toEqual(clean);
+      expect(
+        dirty.filter((name) => !spelled.includes(name)),
+        `${doc}: a \`sessions/\` claim in the harness-managed region went ` +
+          "unflagged — the region parser or the em-dash cut has gone blind",
+      ).toEqual(["sessions"]);
+    }
+  });
+});
