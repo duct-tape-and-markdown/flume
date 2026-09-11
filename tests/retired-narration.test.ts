@@ -1913,6 +1913,134 @@ describe("the docs' worktree-base claims agree with worktreesBase", () => {
   });
 });
 
+// Ownership pin (FLUMEDIR-DOC-NAMES-WORKTREES, per .claude/rules/engineering.md
+// "Derived state is computed, never restated beside its source"): the
+// `flumeDir` doc comment listed the state root's children, and `worktrees`
+// was on that list. It is not a child the root owns — `worktreesBase`
+// (src/paths.ts) resolves `FLUME_WORKTREES_DIR` ahead of the root, so the
+// list was a second, stale copy of a fact one resolver already holds, sitting
+// on the interface a chain author reads to learn where to put things. This is
+// the refusal that keeps it off: the list names only children the root
+// actually roots, and the comment points at the resolver for the one it does
+// not.
+describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () => {
+  const API_PATH = join("src", "flumeApi.ts");
+
+  /**
+   * The doc comment immediately above a field declaration — the block that
+   * closes on the line before it. Returned as raw source lines so the
+   * paragraph reader below is the only place markers are stripped.
+   */
+  function fieldDocBlock(text: string, field: string): string[] | null {
+    const lines = text.split("\n");
+    const decl = lines.findIndex((l) =>
+      new RegExp(`^\\s*${field}:\\s`).test(l),
+    );
+    if (decl === -1) return null;
+    const end = decl - 1;
+    if (end < 0 || !/\*\/\s*$/.test(lines[end]!)) return null;
+    let start = end;
+    while (start >= 0 && !/\/\*\*/.test(lines[start]!)) start--;
+    return start < 0 ? null : lines.slice(start, end + 1);
+  }
+
+  /**
+   * A doc block as reader-visible paragraphs: markers stripped, wrapped
+   * lines rejoined, blank comment lines taken as the breaks they render as.
+   * The paragraph is the unit here because the claim about children and the
+   * pointer away from them are deliberately different paragraphs.
+   */
+  function docParagraphs(block: string[]): string[] {
+    const prose = block
+      .join("\n")
+      .replace(/\/\*\*/, "")
+      .replace(/\*\/\s*$/, "")
+      .split("\n")
+      .map((l) => l.replace(/^\s*\*\s?/, "").trim());
+    const out: string[][] = [];
+    let cur: string[] = [];
+    for (const line of prose) {
+      if (line === "") {
+        if (cur.length) out.push(cur);
+        cur = [];
+      } else cur.push(line);
+    }
+    if (cur.length) out.push(cur);
+    return out.map((p) => p.join(" "));
+  }
+
+  const flumeDirBlock = (text: string): string[] =>
+    fieldDocBlock(text, "flumeDir") ??
+    (() => {
+      throw new Error(
+        `${API_PATH}: no doc comment found above \`flumeDir\` — the reader ` +
+          "lost its subject, and every claim below would pass blind",
+      );
+    })();
+
+  /** The comment's opening paragraph: the list of what the root holds. */
+  const childrenClaim = (text: string): string =>
+    docParagraphs(flumeDirBlock(text))[0] ?? "";
+
+  /** Everything the comment says, as one run — where a pointer may live. */
+  const whole = (text: string): string =>
+    docParagraphs(flumeDirBlock(text)).join(" ");
+
+  const source = (): string => readDoc(API_PATH);
+
+  // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): the
+  // claim below is an absence over a paragraph a reader regex produced. A
+  // reworded comment that the block finder misses, or an opening paragraph
+  // that names nothing, reports the same clean absence as a correct one.
+  it("scans a children claim that names at least one state-root child", () => {
+    const claim = childrenClaim(source());
+    expect(
+      claim,
+      `${API_PATH}: \`flumeDir\`'s opening paragraph read empty — restore ` +
+        "the list, or this pin is blind",
+    ).not.toBe("");
+    expect(
+      [...claim.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!),
+      `${API_PATH}: \`flumeDir\`'s opening paragraph names no child in ` +
+        "backticks — the scan has nothing to hold",
+    ).not.toHaveLength(0);
+  });
+
+  it("the FlumePaths.flumeDir doc comment does not name worktrees as a state-root child", () => {
+    expect(
+      childrenClaim(source()),
+      `${API_PATH}: \`flumeDir\` is taught as rooting worktrees, which ` +
+        "`FLUME_WORKTREES_DIR` makes false — worktreesBase (src/paths.ts) " +
+        "resolves the override ahead of the state root",
+    ).not.toMatch(/worktree/i);
+  });
+
+  it("the comment points at worktreesBase for the child it does not root", () => {
+    expect(
+      whole(source()),
+      `${API_PATH}: \`flumeDir\` drops worktrees from its list without ` +
+        "sending the reader to the resolver that owns the base",
+    ).toMatch(/worktreesBase/);
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the claim reports compliance by finding nothing, which is
+  // also what a reader that read the wrong paragraph reports. Drive it
+  // against a comment with the child put back.
+  it("a reintroduced worktrees child in the list is flagged", () => {
+    const text = source();
+    const restated = text.replace(
+      "baton (`awake/`), pending, rendered prompts, prior",
+      "baton (`awake/`), pending, worktrees, rendered prompts, prior",
+    );
+    expect(restated, "the reintroduction edit was a no-op").not.toEqual(text);
+    expect(
+      childrenClaim(restated),
+      "a restated worktrees child went unflagged",
+    ).toMatch(/worktree/i);
+  });
+});
+
 // ---------- dead release cites ----------
 
 /**

@@ -70,8 +70,14 @@ export interface FlumePaths {
   /** Where `chain.ts` and its prompt files live. Never retargeted by a job. */
   configDir: string;
   /**
-   * Mutable-state root: baton (`awake/`), pending, worktrees, prior
+   * Mutable-state root: baton (`awake/`), pending, rendered prompts, prior
    * attempts. `--job`/`FLUME_JOB` moves this one and only this one.
+   *
+   * The fanout worktree base is **not** on that list: it only defaults to a
+   * child of this root, and `FLUME_WORKTREES_DIR` moves it out from under
+   * the root entirely. `worktreesBase` (`src/paths.ts`) is the one
+   * resolution that says where a worktree lands — resolve against it, never
+   * against this root.
    */
   flumeDir: string;
 }
