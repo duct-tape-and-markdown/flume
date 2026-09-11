@@ -1,7 +1,7 @@
 # Prompt rendering
 
 Every tick invokes its agent on exactly one rendered prompt. This file governs how
-that prompt is produced: the transformation pipeline in `src/Prompt.ts:renderPrompt`,
+that prompt is produced: the transformation pipeline in `renderPrompt`,
 the reserved `{{FLUME_DIR}}` substitution, the two dispatcher-owned structural blocks
 (`<harness>`, `<prior-attempt>`) the engine prepends, and the inline-exec transport —
 including the standing rule that a prompt which cannot be fully rendered never reaches
@@ -10,7 +10,7 @@ engine's.
 
 ## The render pipeline
 
-`renderPrompt` (`src/Prompt.ts`) reads the prompt file its caller resolved — `configDir`
+`renderPrompt` reads the prompt file its caller resolved — `configDir`
 joined with `phase.promptPath`, passed as `RenderOptions.promptFile` — and applies four
 transformations in fixed order:
 
@@ -44,7 +44,7 @@ an unsubstituted *placeholder*.
 > **Gap:** the placeholder failure and the inline-exec failure are not classified alike.
 > An unresolved span becomes a `render-refused` no-commit outcome with a persisted
 > prior-attempt record; a missing arg throws a plain `Error` that the dispatcher
-> rethrows (`src/Dispatcher.ts` catches only `InlineExecRenderError`), so it escapes the
+> rethrows (`Dispatcher` catches only `InlineExecRenderError`), so it escapes the
 > tick uncaught and leaves no record for the retry. The corpus never states the intended
 > placeholder-failure semantics.
 >
@@ -75,7 +75,7 @@ hardcodes `.flume/` while the dispatcher reads a relocated root.
 
 ## The harness block
 
-`prependHarnessBlock` (`src/Prompt.ts`) states, in the engine's own voice, what the
+`prependHarnessBlock` states, in the engine's own voice, what the
 engine will enforce on this tick. It renders the phase name, the phase's `concurrency`,
 the write fence, and the gates that run automatically after the commit — each as
 `name (when)`, followed by `: <command>` when the gate declares one (`spec/chain.md`,
@@ -105,9 +105,9 @@ authoritative prompt surface never misstates its own enforcement — so a phase 
 narrows shows the narrowed fence, and a phase that does not shows the phase fence alone.
 Both come from the same computation the guard consumes, so neither can drift from it.
 
-The union is computed once, in `entryWriteScopeUnion` (`src/paths.ts`), and consumed by
-both `effectiveFenceLines` (`src/Prompt.ts`, which renders it) and `writablePathsGate`
-(`src/builtinGates.ts`, which enforces it). The two can never state a different fence
+The union is computed once, in `entryWriteScopeUnion`, and consumed by
+both `effectiveFenceLines` (which renders it) and `writablePathsGate`
+(which enforces it). The two can never state a different fence
 because there is only one derivation. `tests/Prompt.test.ts` carries the agreement case
 — a path the rendered fence names is accepted by the real gate, and a ceiling-only path
 the fence omits is rejected by it — driving the real writer's output through the real
@@ -145,7 +145,7 @@ The dispatcher writes the fully rendered prompt — the exact bytes it hands to
 `agent.invoke` — to `<flumeDir>/rendered-prompts/<timestamp>-<key>.md` before the
 invocation begins. `key` is the slug of the phase name for a singleton tick and of the
 entry tag for a fanout entry, the same slug rule prior-attempt records are keyed by
-(`src/paths.ts:slugify`); the timestamp is the invocation's, so two ticks never
+(`slugify`); the timestamp is the invocation's, so two ticks never
 share a name and two entries in one wave differ by key. The tick verdict's invocation row
 names the file as `promptPath`, relative to the state root (`spec/loop.md`, *The tick
 verdict*), so a reader holding the verdict holds the input.
@@ -175,7 +175,7 @@ a gate receives*).
 
 ## Inline-exec spans reach `sh` through stdin, never argv
 
-`runInlineExec` (`src/Prompt.ts`) spawns `sh` with **no command arguments** and writes
+`runInlineExec` spawns `sh` with **no command arguments** and writes
 the span's command text to the child's stdin as UTF-8, then closes it. There is no argv
 (`["-c", cmd]`) path.
 
@@ -214,11 +214,11 @@ with no changes) renders as the empty string and is not a failure.
 
 ## No cmd.exe on the inline-exec path
 
-`execGate` (`src/builtinGates.ts`, module-private) retries through `shell: true` on a
+`execGate` (module-private) retries through `shell: true` on a
 win32 ENOENT. That is correct for gate binaries, where package-manager `.cmd` shims
 cannot be spawned directly and the arguments are chain-authored flags.
 
-It is wrong for shell script. `src/Prompt.ts` therefore does not share it — it spawns
+It is wrong for shell script. `runInlineExec` therefore does not share it — it spawns
 `sh` directly and a missing `sh` is a render failure, not a fallback. Sharing one helper
 across two use cases with opposite interpreter needs is the defect; the helper stays for
 gates, unchanged.

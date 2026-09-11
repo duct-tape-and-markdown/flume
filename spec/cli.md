@@ -16,7 +16,7 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `status` — observational; prints baton and liveness state, exits 0 always.
   It mutates no baton flag and loads no agent; the one filesystem effect is
   that constructing the baton creates `<flumeDir>/awake/` when absent
-  (`Baton`, `src/Baton.ts`).
+  (`Baton`).
 - `tick` — one phase × one tick of whichever phase is awake.
 - `loop [--max N]` — ticks until hibernation or the cap (default 50), under a
   supervisor that spawns one fresh `flume tick` process per iteration.
@@ -110,8 +110,8 @@ In printed order:
    detached HEAD or an absent claim both read as silence.
 5. **Pending entry count** from `<flumeDir>/plan/pending.json`: `pending: N`,
    `pending: 0` when absent, `pending: unparsable` when present but malformed —
-   the same loose read `flume job status` performs (`readPendingLoose`,
-   `src/job.ts`), so a corrupt queue reads identically on both surfaces.
+   the same loose read `flume job status` performs, so a corrupt queue reads
+   identically on both surfaces.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
    fail status — a missing or broken chain withholds them and says so on
    stderr, never silently; nothing above this line is withheld: the
@@ -133,12 +133,12 @@ probe is the same shape the job path uses (`liveLoopPid`) — one detection,
 shared, not re-derived per surface.
 
 The friction count line belongs in one home. `frictionCountLine`
-(`src/friction.ts`) is the count-and-format helper behind `flume status` and
+is the count-and-format helper behind `flume status` and
 the loop-end completion summary. The engine announces that mail exists and
 never reads it; the declaration and its validation are in `spec/chain.md`.
 
 > **Drift:** `flume job status` does not reach that helper. It re-derives the
-> count per job dir (`countFrictionFiles`, `src/job.ts`, reached through
+> count per job dir (`countFrictionFiles`, reached through
 > `jobStatus`) and formats its own column inline — one wording in two homes,
 > against `engineering.md`'s *the fix lands at the mechanism* ("detection a
 > sibling surface already performs is shared, never re-derived").
@@ -173,18 +173,17 @@ job name rides along for fanout namespacing.
 
 **Canonicalization write-back.** After resolving, the CLI writes the resolved
 **absolute** paths back into `process.env.FLUME_DIR` and `FLUME_CONFIG_DIR`,
-and — when a job is in play — the bare job *name* into `FLUME_JOB`
-(`resolveStateDirs`, `src/cli.ts`). Writing back is the point: a chain loaded later in the same
+and — when a job is in play — the bare job *name* into `FLUME_JOB`.
+Writing back is the point: a chain loaded later in the same
 process (via tsx) and every spawned tick child then read one resolved value
 instead of re-deriving the default or falling back to a coincidentally-equal
 `configDir`. `FLUME_DIR` is a reliable, always-present source of truth for the
 state root, not a maybe-absent caller convenience. The values reach the tick
 child through the supervisor's own `process.env`, which `defaultTickRunner`
-(`src/loopSupervisor.ts`) copies into the child's `env` — plus
+copies into the child's `env` — plus
 `FLUME_QUARANTINED_SLUGS` when the run has quarantined slugs, the one channel
-the supervisor's quarantine crosses the process boundary on (read back at
-`quarantinedSlugs`, `src/cli.ts`). No var is dropped or rewritten on the way
-down.
+the supervisor's quarantine crosses the process boundary on. No var is
+dropped or rewritten on the way down.
 
 The guarantee reaches every subcommand, including the job verbs: `resolveStateDirs`
 runs ahead of verb dispatch rather than inside the branches that happen to need it,
@@ -371,7 +370,7 @@ Standing consequences:
 - **Spawn discipline.** Package-manager binaries are `.cmd` shims on Windows,
   which Node refuses to spawn without a shell (CVE-2024-27980 hardening). Any
   runtime spawn of a non-exe binary goes direct-spawn → win32 `ENOENT` → shell
-  retry (`execGate`, `src/builtinGates.ts`) or an equivalent
+  retry or an equivalent
   platform-conditional; a bare `execFile("pnpm", …)` is a defect. Direct spawn
   is tried first so args keep exact quoting semantics. **The declared
   exception:** the inline-exec path does not share this fallback, because the
@@ -390,14 +389,14 @@ Standing consequences:
   built path's **depth**, not every fs call: a path whose depth is bounded by
   the runtime's own layout (`<flumeDir>/awake/<phase>`, `<flumeDir>/loop.pid`,
   `.flume/jobs/<name>`) does not need it; a path extending a chain-declared or
-  entry-derived segment does. `namespacedJoin` (`src/paths.ts`) is the shared
+  entry-derived segment does. `namespacedJoin` is the shared
   helper: it joins and namespaces in one call, and passing it a single path is
   a legitimate use — the join is a no-op and the namespacing is the point.
 
   > **Drift:** which of the two forms a site uses is not a rule the code
   > follows. Several sites call `namespacedJoin` on a path they already hold
   > (`Dispatcher`'s mirror-drain `readdir`/`mkdir`, `writeRevertNote`'s `mkdir`,
-  > `job.ts:countFrictionFiles`), while `src/git.ts` and much of `Dispatcher`
+  > `job.ts:countFrictionFiles`), while `git.ts` and much of `Dispatcher`
   > call `toNamespacedPath` directly on held paths. The two are interchangeable
   > in effect; nothing enforces a split, and any stated one would be authored
   > rather than observed.

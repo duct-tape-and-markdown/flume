@@ -16,24 +16,23 @@ the engine calls with its own surface; the chain imports no engine *value* at
 runtime.
 
 - The default export is `ChainFactory = (api: FlumeApi) => ChainModule`, where
-  `ChainModule` is `{ chain: Chain; agent?: Agent; forkResolver?: ForkResolver }`
-  (`src/Dispatcher.ts:ChainFactory`, `:ChainModule`). Everything a chain
-  previously supplied as a named module export rides the factory's return,
-  because a named export cannot receive the API.
-- `FlumeApi` (`src/flumeApi.ts:FlumeApi`) carries the runtime surface a chain
+  `ChainModule` is `{ chain: Chain; agent?: Agent; forkResolver?: ForkResolver }`.
+  Everything a chain previously supplied as a named module export rides the
+  factory's return, because a named export cannot receive the API.
+- `FlumeApi` carries the runtime surface a chain
   composes with — builtin gates, `setupWorktree`, the pending-schema helpers,
   the agent constructors and decorators, the path-glob matcher `matchesAny`
-  (`src/paths.ts` — the same matcher the write fence enforces with, so chain
+  (the same matcher the write fence enforces with, so chain
   path policy such as a shipped predicate never hand-rolls a second grammar
   beside the engine's), read-only git helpers, and the error
   classes chains branch on with `instanceof`. Each member is declared with
   `typeof` against the real implementation, so the handed surface cannot drift
   from what the engine exports: a signature change breaks at compile time
   rather than at a consumer's tick. The object is built by
-  `src/flumeApi.ts:buildFlumeApi` and passed **by reference** — the identity-same
+  `buildFlumeApi` and passed **by reference** — the identity-same
   objects the dispatcher holds, never resolved a second time.
 - `buildFlumeApi` is a function, not a module-level constant, and that is
-  load-bearing: `src/index.ts` initializes `builtinGates` before `Dispatcher`
+  load-bearing: `builtinGates` initializes before `Dispatcher`
   and `builtinGates` imports `Dispatcher` (a documented intentional cycle), so
   a top-level object literal would read exports still in their temporal dead
   zone. Property access is deferred into the call.
@@ -44,8 +43,7 @@ runtime.
   usage-shaped error naming the migration — never accepted as a bare `Chain`
   object. A factory that returns a thenable is refused too: the contract is
   synchronous, and awaiting would silently accept a shape it does not carry.
-  Async work belongs in a phase hook, not at chain build time
-  (`src/Dispatcher.ts:loadChainModule`).
+  Async work belongs in a phase hook, not at chain build time.
 - The engine's own dogfood chain runs under the same shape. No exemption for
   the host repo.
 
@@ -76,7 +74,7 @@ contract, not a version one (see `spec/cli.md` for the exec-local doctrine).
 A chain field whose only consumer is statically unreachable from the rest of
 the same declaration is a defect in the chain, and the loader refuses it with
 a usage-shaped error naming the field and the declaration that disarms it
-(`src/Dispatcher.ts:loadChainModule`) — never loaded silently. Config the
+— never loaded silently. Config the
 engine will never consult is stale narration wearing declaration syntax: it
 reads as live policy while governing nothing, and nobody is told.
 
@@ -120,7 +118,7 @@ including a `chain.ts` change that rides a same-commit `src/` change.
   not pick up a `chain.ts` whose behavior moved into a same-commit `src/`
   change, since those dependency modules are already evaluated. The process
   boundary is therefore *the* mechanism, not an optimization.
-- **No memoization, no cache-bust.** `src/Dispatcher.ts:diskChainLoader` loads
+- **No memoization, no cache-bust.** `diskChainLoader` loads
   once per call: there is exactly one resolution per process and nothing to
   memoize across. Cost is one small `tsImport` of `chain.ts` per tick,
   dominated by orders of magnitude by the agent invocation.
@@ -143,7 +141,7 @@ including a `chain.ts` change that rides a same-commit `src/` change.
 A rewritten `chain.ts` can be broken — syntax error, no default export, a
 default export that is not a factory, no `phases[]`. Two layers, both required.
 
-- **`chainLoadGate`** (`src/builtinGates.ts:chainLoadGate`), a builtin declared
+- **`chainLoadGate`**, a builtin declared
   by any phase that can write `chain.ts`. It runs `afterCommit`, skips as a
   pass when the commit did not touch the chain, and otherwise validates by
   calling the **real** `loadChainModule` on the committed file — the same
@@ -153,21 +151,20 @@ default export that is not a factory, no `phases[]`. Two layers, both required.
   last-good version. It is a builtin because `chain.ts` is universal to every
   flume project and the load path it validates is the engine's own — the gate
   calls the exact function resolution calls, so a chain-local reimplementation
-  could only diverge from it. `pendingGate` is likewise a builtin
-  (`src/builtinGates.ts:pendingGate`), parameterized by chain-supplied options;
-  the parameterization, not chain-locality, is what carries the convention.
+  could only diverge from it. `pendingGate` is likewise a builtin,
+  parameterized by chain-supplied options; the parameterization, not
+  chain-locality, is what carries the convention.
 - **A CJS-context host is refused, not relayed.** When the load failure carries
   the module-context signature — `Cannot use import statement outside a
   module`, or an `ERR_MODULE_NOT_FOUND` whose path carries tsx's
-  percent-encoded `?namespace=` query
-  (`src/Dispatcher.ts:isCjsContextLoadFailure`, an empirical two-shape family)
+  percent-encoded `?namespace=` query (an empirical two-shape family)
   — the engine refuses with a usage-shaped message naming the fix (`"type":
   "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
-  exits **2**, not the mount-dead constant
-  (`src/Dispatcher.ts:CjsContextLoadError`, `src/cliVerdict.ts:tickExitCode`, which
-  checks it first). Matching is deliberately narrow: a genuinely missing
-  dependency must keep surfacing as itself, unshadowed. Supporting a
-  CJS-context host is declined; relaying a raw loader stack is the defect.
+  exits **2**, not the mount-dead constant (`CjsContextLoadError`;
+  `tickExitCode` checks it first). Matching is deliberately narrow: a
+  genuinely missing dependency must keep surfacing as itself, unshadowed.
+  Supporting a CJS-context host is declined; relaying a raw loader stack is
+  the defect.
 - **Engine resolution failure.** If per-tick resolution throws for any other
   reason and no gate caught it, the `flume tick` child exits with the
   mount-dead exit constant and
@@ -191,36 +188,34 @@ writes it the same way, and the loop reverts forever while looking alive.
 The chain lives at `<configDir>/chain.ts`, and **job resolution never retargets
 `configDir`**. `--job`/`FLUME_JOB` moves only the state root (`flumeDir` →
 `<repoRoot>/.flume/jobs/<name>`); `configDir` stays `<repoRoot>/.flume`, or an
-explicit `FLUME_CONFIG_DIR`, which composes with a job
-(`src/cliJobResolution.ts:resolveStateDirs`). There is no job-local chain.
+explicit `FLUME_CONFIG_DIR`, which composes with a job. There is no
+job-local chain.
 
 - **A `chain.ts` inside a job dir is inert, and stays unpoliced.** The runtime
   never looks there; machinery does not police caller-owned content. No probe,
   no warning, no refusal — the invariant is what resolution *is*, not a rule
   to enforce.
 - **Per-job variation is already served**: a chain is code, and `FLUME_JOB` is
-  written back into the environment when the state roots resolve
-  (`src/cliJobResolution.ts:resolveStateDirs`), before the tick's chain load, so one repo
-  chain can dispatch on it. Operator-run worktrees give concurrent divergence,
-  each checkout resolving its own chain.
-- `promptPath` mechanics follow for free: it joins `configDir`
-  (`src/Dispatcher.ts`, `src/cli.ts`), and `configDir` is always the directory
-  the chain actually lives in — a shared chain finds its sibling `prompts/`
-  from any job, with no chain-dir token and no dynamic path computation.
+  written back into the environment when the state roots resolve, before the
+  tick's chain load, so one repo chain can dispatch on it. Operator-run
+  worktrees give concurrent divergence, each checkout resolving its own chain.
+- `promptPath` mechanics follow for free: it joins `configDir`, and
+  `configDir` is always the directory the chain actually lives in — a shared
+  chain finds its sibling `prompts/` from any job, with no chain-dir token
+  and no dynamic path computation.
 
 ## Per-phase agent assignment
 
-`Phase.agent?: Agent` (`src/Phase.ts:Phase`). Per-tick resolution is
+`Phase.agent?: Agent`. Per-tick resolution is
 `phase.agent ?? chainModule.agent ?? DispatcherOptions.agent`
-(`src/Dispatcher.ts`) — the chain-level override chain extended by one inner
-scope.
+— the chain-level override chain extended by one inner scope.
 
 Mechanism over sugar: the declared value is an `Agent`, not a model string, so
 it composes with decorators — a bare model string cannot express "same
 decorator stack, different model". There is no `Phase.model`.
 
 The model itself is a typed option on the adapter: `claudeCode({ model })`
-(`src/Agent.ts:ClaudeCodeOptions.model`), rendered to `--model <value>` on the
+(`ClaudeCodeOptions.model`), rendered to `--model <value>` on the
 argv. It has **no default** — undeclared, the binary's own default applies and
 the engine passes nothing. `extraArgs` remains the passthrough for every other
 flag; the engine types the one knob every consumer varies per phase and
@@ -233,13 +228,13 @@ longer does is assemble argv.
 
 ## The agent seam
 
-An `Agent` is `{ name, invoke }` (`src/Agent.ts:Agent`) — an opaque value the
+An `Agent` is `{ name, invoke }` — an opaque value the
 chain supplies and the engine only calls. The engine never inspects it, so
 provider options and decorator composition are entirely the chain's.
 
 **The seam is opaque, and the adapter is where provider shape lives.** One
 provider's NDJSON event vocabulary — `assistant`, `result`, `is_error`,
-`subtype` — is known to exactly one module, `src/Agent.ts`, which holds the
+`subtype` — is known to exactly one module, which holds the
 `claudeCode` adapter and its decorators. The adapter lifts what the engine
 consumes onto `AgentResult` as plain fields: `usage` (already) and
 `finalMessage` — the agent's closing prose, the `result` event's text under
@@ -250,9 +245,9 @@ changes. The renderer keeps its own parse because rendering *is* provider
 presentation, and it lives in the same module.
 
 - **`claudeCode()` skips permissions by default.** `dangerouslySkipPermissions`
-  defaults to `true`, and the flag is appended to the argv whenever it is
-  (`src/Agent.ts:claudeCode`). The CLI's fallback agent is a bare
-  `claudeCode()` (`src/cli.ts`), so a chain that declares neither `Phase.agent`
+  defaults to `true`, and the flag is appended to the argv whenever it is.
+  The CLI's fallback agent is a bare
+  `claudeCode()`, so a chain that declares neither `Phase.agent`
   nor `ChainModule.agent` runs every tick with permissions skipped. The other
   defaults: `claude` off `PATH`, `outputFormat: "text"`, `model` unset (no
   `--model` flag emitted), `extraArgs` appended after the format flags.
@@ -268,7 +263,7 @@ presentation, and it lives in the same module.
   re-emitted verbatim with the tag prefix. An agent not producing stream-json
   therefore has *all* of its output take the parse-error leg — output still
   appears, so the misconfiguration reads as working. The site declares this
-  (`src/Agent.ts:withTerminalRenderer`); a refusal on repeated parse failure is
+  (`withTerminalRenderer`); a refusal on repeated parse failure is
   the standing alternative, not shipped.
 - **`withSessionCapture` tees stdout only.** It creates `opts.dir` on demand,
   closes the stream on failure as well as success, and never captures stderr.
@@ -281,7 +276,7 @@ makes a misassembled stack more than cosmetic: it blinds the operator without
 failing anything.
 
 The skip-permissions default's stated rationale — every Flume tick runs in a
-worktree the harness controls (`src/Agent.ts:ClaudeCodeOptions`) — holds for
+worktree the harness controls — holds for
 both concurrencies now that singleton ticks provision one too
 (`spec/worktrees.md`, *Singleton runs in a worktree*); the singleton-in-checkout
 gap it used to carry as drift is closed.
@@ -291,14 +286,14 @@ gap it used to carry as drift is closed.
 The chain declares what a newborn job contains; machinery materializes the
 declaration and holds no content opinion.
 
-- **`Chain.seedDir?: string`** (`src/Phase.ts:Chain`): a **configDir-relative**
+- **`Chain.seedDir?: string`**: a **configDir-relative**
   directory — the `promptPath` idiom, so stubs are real files beside the chain
   (e.g. `.flume/job-seed/`).
 - `flume job new` loads the repo chain first: no `<configDir>/chain.ts` is a
   usage error (exit 2) — a job that could never `run` must not be creatable —
   and a declared `seedDir` that is absent on disk is the same class of error,
   checked **before** the state root is touched so a bad declaration leaves no
-  stray job dir (`src/job.ts:jobNew`).
+  stray job dir.
 - The copy is **verbatim, skip-existing** (`cp` with `force: false`): a re-run
   fills gaps — a stub added to the seed dir reaches existing jobs — and never
   clobbers a worked file. No interpolation. This is what makes "idempotent on
@@ -312,12 +307,11 @@ commit on current HEAD — is `spec/jobs.md`.
 
 ## `Chain.friction` — the declared friction channel
 
-**`Chain.friction?: string`** (`src/Phase.ts:Chain`): a **state-root-relative**
+**`Chain.friction?: string`**: a **state-root-relative**
 directory naming the friction channel (e.g. `"friction"`), resolved against the
 resolved `flumeDir`, same idiom as `seedDir`.
 
-- Validated at chain load (`src/Dispatcher.ts:loadChainModule` →
-  `src/friction.ts:validateFrictionDeclaration`): must be relative and must resolve inside the
+- Validated at chain load: must be relative and must resolve inside the
   state root, else a usage-shaped error. The check is base-independent — it
   resolves the declared path against a sentinel root and asks whether the
   result still sits under it — because the real state root legitimately varies
@@ -340,12 +334,12 @@ resolved `flumeDir`, same idiom as `seedDir`.
 ## Supervisor policy is a chain-overridable default
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
-number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[] }`
-(`src/Phase.ts:Chain`). The engine's loop policy — run-scoped quarantine of an
+number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[] }`.
+The engine's loop policy — run-scoped quarantine of an
 entry slug whose worktree provisioning failed, abort after three consecutive
 identical failure signatures, fanout batch width, the per-invocation wall-clock
 cap, and the paths the fanout partition ignores — ships as **defaults, not
-behavior** (`src/loopSupervisor.ts:superviseLoop`, `quarantineScope ?? "run"`,
+behavior** (`superviseLoop`, `quarantineScope ?? "run"`,
 `abortThreshold ?? 3`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default
 unset — no cap; `partitionIgnore` default `[]`). A chain declaring nothing gets
 the defaults byte-identically.
@@ -354,10 +348,10 @@ the defaults byte-identically.
 
 - **`quarantineScope`/`abortThreshold` are read once per run** — the one
   declaration outside the per-tick guarantee above. The supervisor resolves
-  the chain in its own process before the first child (`src/cli.ts` loop
-  branch) and `src/loopSupervisor.ts:superviseLoop` binds both before entering the
-  tick loop; nothing re-reads them between children. A tick that commits a
-  changed value is governed by the old one until the operator restarts
+  the chain in its own process before the first child and `superviseLoop`
+  binds both before entering the tick loop; nothing re-reads them between
+  children. A tick that commits a changed value is governed by the old one
+  until the operator restarts
   `flume loop`, with no indication the new declaration was ignored. Run scope
   is the reason, not an oversight: the quarantine set and the
   consecutive-failure streak are run-scoped accounting that resets per
@@ -373,7 +367,7 @@ the defaults byte-identically.
 
 `tickTimeoutMs` is the wall-clock cap `DispatcherOptions.tickTimeoutMs`
 already enforces per agent invocation (exceeded → the invocation is aborted
-and the tick records the abort; `src/Dispatcher.ts`). Before it rode
+and the tick records the abort). Before it rode
 `supervisorPolicy`, the dispatcher supported the cap but a CLI-driven chain
 had no way to set it — the only runaway brake on an autonomous loop was an
 operator watching verdict lines.
@@ -384,7 +378,7 @@ chain-overridable defaults. The mechanism they tune is `spec/loop.md`.
 
 ## Gate placement is the chain's decision
 
-Gates declare `when: "afterCommit" | "afterMerge"` (`src/Gate.ts:GatePhase`).
+Gates declare `when: "afterCommit" | "afterMerge"` (`GatePhase`).
 The engine runs them where they say; **where to put them is chain-authoring
 doctrine**, and the default guidance is:
 
@@ -449,7 +443,7 @@ longer holds: that gate runs on the warm trunk.
 
 ## What a gate receives
 
-`GateContext` (`src/Gate.ts:GateContext`) is the whole input surface. The
+`GateContext` is the whole input surface. The
 dispatcher builds one per gate invocation; a gate treats it as read-only and
 confines side effects to disk inside `cwd`.
 
@@ -502,7 +496,7 @@ confines side effects to disk inside `cwd`.
 
 ## What a gate returns
 
-`GateResult` (`src/Gate.ts:GateResult`) is `{ ok, message, details?, failingFiles?,
+`GateResult` is `{ ok, message, details?, failingFiles?,
 skipped? }`.
 
 - **`skipped?: string`** — the gate did not run its judge, and says why: no
@@ -533,13 +527,13 @@ adding a field: a chain that reads `process.env`, scans a directory under
 `flumeDir`, or recomputes a verdict the dispatcher already reached is naming a
 missing field, and the field is added rather than the chain excused.
 
-- **`TickContext`** (`shouldRun`, `promptArgs`; `src/Phase.ts:TickContext`) —
+- **`TickContext`** (`shouldRun`, `promptArgs`) —
   `cwd`, `flumeDir`, `assignedEntry` (fanout), `pending` (singleton), plus:
   - **`pickable`** — the entries the dispatcher would select right now: the
     strict-read queue with `blockedBy` resolved, every declared fork checked
     through the chain's `forkResolver`, `requiresCapability` checked against
     `Chain.capabilities`, and this run's quarantine drop applied. The same
-    computation fanout selection uses (`src/Dispatcher.ts:isPickable`), so a
+    computation fanout selection uses, so a
     singleton `shouldRun` and the next fanout tick cannot disagree.
   - **`priorAttempts`** — every persisted `PriorAttempt` record under
     `<flumeDir>/prior-attempts/`, keyed as the files are (tag slug for fanout
@@ -549,7 +543,7 @@ missing field, and the field is added rather than the chain excused.
     map; it does not `readdirSync` the engine's directory. A park is in the
     same map (`not-shipped`), so "build parked, plan reconciles" is a read of
     this field too — never of the verdict log.
-- **`TickResult`** (`handoff`; `src/Phase.ts:TickResult`) — the existing
+- **`TickResult`** (`handoff`) — the existing
   facts (`committed`, `commitSha`, `gateResults`, `pendingAfter`,
   `shippedTags`, `revertedTags`, `noCommit`, `quarantinedTags`,
   `nothingPickable`) plus:
@@ -613,7 +607,7 @@ does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
   commit, with a buffer-overrun string as the details. A gate whose output can
   be large raises the cap or quiets the command.
 - **`tscGate`, `vitestGate`, `eslintGate` are dual-identity**
-  (`src/builtinGates.ts:PkgManagerGate`): used bare (`gates: [tscGate]`) each
+  (`PkgManagerGate`): used bare (`gates: [tscGate]`) each
   *is* a pnpm-flavored `Gate`; called with `{ cmd?, args? }` each returns the
   same check through another package manager. `cmd` alone only suffices for a
   binary that accepts pnpm's arg shape — npm has no bare `npm tsc --noEmit` and
@@ -630,8 +624,8 @@ that root and hands it to the chain; it does not decide what a chain writes
 into it.
 
 - **The runtime canonicalizes, then loads.** `flumeDir` and `configDir` are
-  resolved to **absolute** paths (`src/cliJobResolution.ts:resolveStateDirs`)
-  before any code path constructs the chain. This holds for every verb that
+  resolved to **absolute** paths before any code path constructs the chain.
+  This holds for every verb that
   loads a chain — `tick`, `loop`, `status`, `wake`, `sleep`, `check`, and the
   `job` verbs alike. The resolved values are also written back to
   `process.env.FLUME_DIR` and `process.env.FLUME_CONFIG_DIR` so spawned
@@ -639,7 +633,7 @@ into it.
   child-process channel, not the chain's read path.
 - **The engine hands the chain its roots.** `FlumeApi.paths` carries
   `{ repoRoot, configDir, flumeDir }`, absolute, the identity-same values the
-  dispatcher was constructed with (`src/flumeApi.ts:buildFlumeApi` takes them
+  dispatcher was constructed with (`buildFlumeApi` takes them
   as its argument). A chain that places a per-run artifact resolves against
   `api.paths.flumeDir`. It never reads `process.env.FLUME_DIR`, and it never
   falls back to its own directory: a chain with a `?? CHAIN_DIR` leg is

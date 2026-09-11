@@ -12,7 +12,7 @@ help text are `spec/cli.md`.
 ## Baton — presence wakes, absence hibernates
 
 The baton is the only mutable harness state outside committed files, and it is a
-directory of empty files: `<flumeDir>/awake/<phase>` (`src/Baton.ts`). Presence of a
+directory of empty files: `<flumeDir>/awake/<phase>` (`Baton`). Presence of a
 flag wakes the named phase on the next tick; absence sleeps it. No daemon, no
 database, no in-memory carry. Disk is truth, including the baton. A relocated
 `flumeDir` carries the baton with it.
@@ -89,7 +89,7 @@ output:
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
   tip the tick started on, in order, with `cherry-pick --abort` on conflict
   (`git.cherryPick`, `Dispatcher.runFanout`).
-- **Ephemeral `flume/**` branch names.** `createWorktree` (`src/worktrees.ts`) constructs
+- **Ephemeral `flume/**` branch names.** `createWorktree` constructs
   `flume/<namespace>/<slug>` (or repo-global `flume/<slug>` with no namespace) —
   the slug is a fanout entry's tag under fanout and the phase name under singleton
   (`spec/worktrees.md`, *Singleton runs in a worktree*); provisioning is
@@ -112,9 +112,9 @@ other.
 
 - **Loop lock — one supervisor per state root.** `flume loop` writes its pid to
   `<flumeDir>/loop.pid`. A second loop against the same state root is refused while
-  the recorded pid is alive (`liveLoopPid`, `src/job.ts`); a stale pidfile (dead pid)
-  is reclaimed silently. The lock lives under `flumeDir`, not the repo — the state
-  root is what races, and a relocated dock carries its lock with it.
+  the recorded pid is alive; a stale pidfile (dead pid) is reclaimed silently. The
+  lock lives under `flumeDir`, not the repo — the state root is what races, and a
+  relocated dock carries its lock with it.
 - **Tip claim — one flume writer per tip, advisory.** `flume loop` claims the tip at
   start and releases it at exit (`git.acquireTipClaim`, `git.TipClaimHeldError`).
   - *Keying:* `<git-common-dir>/flume/tip-claims/<ref path>` — e.g.
@@ -437,7 +437,7 @@ gates run after the commit; nothing was consulted before the invocation.
 ## The no-commit taxonomy
 
 A tick that produces no usable commit is classified as exactly one **`NoCommitMode`**
-(`src/Prompt.ts`) — four causally-distinct modes, so retries can tell what happened and
+— four causally-distinct modes, so retries can tell what happened and
 platform failures stop masquerading as agent failures:
 
 | mode | meaning |
@@ -468,7 +468,7 @@ attempted.
   `flume loop` a hung agent blocks the tick — and the supervisor awaiting the child —
   until the operator kills it. The `platform-preempt` timeout case is reachable only by
   a programmatic embedder.
-- **The classification reaches the chain.** `TickResult.noCommit` (`src/Phase.ts`) is
+- **The classification reaches the chain.** `TickResult.noCommit` is
   folded in before `phase.handoff(result)` runs, so a `handoff` can wake a sibling on a
   bail that `shippedTags`/`gateResults` alone cannot distinguish from a genuine no-op.
   Absent on committed ticks; a handoff that ignores the field behaves identically.
@@ -636,8 +636,7 @@ store until gc, and the verdict is the only place their sha outlives the branch.
 
 ## Exit codes — the run never lies to CI
 
-Classification happens at the process boundary so a caller never has to read logs
-(`tickExitCode`, `loopExitCode` in `src/cli.ts`).
+Classification happens at the process boundary so a caller never has to read logs.
 
 `flume tick`:
 

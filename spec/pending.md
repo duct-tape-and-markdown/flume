@@ -9,7 +9,7 @@ of the queue — fanout selection, the post-tick re-read, `flume status`, `flume
 `pendingGate` — resolves the one declared value; no site carries its own copy of the default.
 
 This file governs what the
-engine owns in that shape (`src/PendingSchema.ts`), what a chain declares on top of it, how an
+engine owns in that shape, what a chain declares on top of it, how an
 entry becomes pickable, how a picked entry's writes are fenced, how entries are partitioned
 into a parallel wave, and what counts as shipping one. The engine validates and interprets only
 what its own mechanics consume; everything else on an entry is chain-declared payload it passes
@@ -17,7 +17,7 @@ through untouched.
 
 ## The entry core
 
-`PendingEntryCore` (`src/PendingSchema.ts`) is a **strict** object — a field that is neither core
+`PendingEntryCore` is a **strict** object — a field that is neither core
 nor chain-declared fails validation loudly. Silent stripping is not an option: the dispatcher
 rewrites `pending.json` on ship, so a stripped field would be destroyed on disk.
 
@@ -98,7 +98,7 @@ gets the bare core, and validates and renders as such.
   `parsePending` is synchronous and feeds decision and rewrite paths; a `Promise` read as a result
   object has no `issues` and would accept everything. It surfaces at first parse, not at compose,
   because asynchrony is only observable by calling `validate`.
-- **`StandardSchemaV1` is vendored type-only** (`src/standardSchema.ts`), not depended on. The
+- **`StandardSchemaV1` is vendored type-only**, not depended on. The
   spec is published to be copied; zod ≥3.24, valibot, and arktype all publish `~standard` and
   unify structurally. `zod` stays a private engine dependency for the core fields — not a peer,
   not re-exported on `FlumeApi`. Putting a third-party library on flume's public surface would
@@ -143,7 +143,7 @@ Two implementations, one rule set:
   verdict with the chain's resolver and capabilities already applied (`spec/chain.md`, *What a
   hook receives*). Calling it with the default resolver and an empty capability set yields a
   different answer for any fork- or capability-gated entry.
-- **`isPickable(entry, pending, isForkResolved?, capabilities?)`** — `src/Dispatcher.ts`, internal
+- **`isPickable(entry, pending, isForkResolved?, capabilities?)`** — internal
   to fanout selection. Resolves `blockedBy` against the **pending list**: a dep is satisfied iff
   it is no longer pending, since entries are removed on ship.
 
@@ -317,11 +317,11 @@ refusal of the work — plan cannot know which files a move breaks without doing
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick
   artifacts an entry never declares: a build phase reporting a finding into the producer's
   open-questions file, prior-attempt context, and the like.
-- **The union has one home.** `entryWriteScopeUnion` (`src/paths.ts`) is consumed both by
+- **The union has one home.** `entryWriteScopeUnion` is consumed both by
   `writablePathsGate`'s entry-scope check, which enforces the fence, and by
-  `effectiveFenceLines` (`src/Prompt.ts`), which renders it into the tick's `<harness>` block.
+  `effectiveFenceLines`, which renders it into the tick's `<harness>` block.
   The stated fence and the enforced fence cannot differ, because they are the same computation.
-  Path matching is `matchesAny` (`src/paths.ts`) — regex specials escaped, `*` and `**` the only
+  Path matching is `matchesAny` — regex specials escaped, `*` and `**` the only
   wildcards, so a declared literal path matches only itself. `matchesAny` rides `FlumeApi`
   (`spec/chain.md`), so a chain predicate over the same globs shares the enforcing matcher
   instead of hand-rolling one.
@@ -397,7 +397,7 @@ commit.
 
 ## `pendingGate` — validation and fence pre-check as an opt-in builtin
 
-`pendingGate(opts)` (`src/builtinGates.ts`) is an `afterCommit` gate a chain attaches to whichever
+`pendingGate(opts)` is an `afterCommit` gate a chain attaches to whichever
 phase produces the queue. It is a convenience builtin, not engine behavior — a chain that wants
 neither check attaches neither.
 
@@ -426,7 +426,7 @@ engine ships the injection point and the chain owns which `gate.kind` values cou
 `opts.hint` appends chain-authored operator guidance verbatim to both violation messages.
 
 > **Drift:** the dispatcher, `flume status`, and `flume check` each hardcode
-> `plan/pending.json` (`src/Dispatcher.ts`, `src/cli.ts`) while `pendingGate` alone accepts an
+> `plan/pending.json` while `pendingGate` alone accepts an
 > `opts.pendingPath`. A chain that sets the option today gets a gate that validates one file and a
 > dispatcher that dispatches from another. The option goes; `Chain.pendingPath` replaces it.
 

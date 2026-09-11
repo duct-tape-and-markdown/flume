@@ -2,7 +2,7 @@
 
 A job is a state root: one directory of tracked files under `.flume/jobs/<name>/`, on
 whatever branch the operator is on. This file governs what a job is, the four verbs that
-create, run, discard, and observe one (`src/job.ts`, routed from `src/cli.ts`), the seeding
+create, run, discard, and observe one, the seeding
 and runtime-ignore machinery `job new` performs, the HEAD-is-truth trunk contract every job
 commits under, and the cross-job boundaries the engine deliberately does not police. State
 selection (`--job` / `FLUME_JOB`) is the CLI's — see `spec/cli.md`; the tip claim, tip
@@ -15,7 +15,7 @@ verify, loop lock, and exit codes a job's loop runs under are the loop's — see
 mount, no registration.
 
 - Multiple jobs coexist under one checkout by construction. `--job <name>` / `FLUME_JOB`
-  select which state root a tick reads (`resolveStateDirs`, `src/cli.ts`); config and
+  select which state root a tick reads; config and
   prompts stay repo-resident, state is job-resident.
 - No engine surface creates, asserts, or checks out a `job/<name>` branch. There is no
   HEAD-equals-branch guard on `tick` or `loop` — the engine has no opinion on which branch a
@@ -27,7 +27,7 @@ mount, no registration.
   `spec/loop.md` for the claim, `spec/worktrees.md` for what the engine does with worktrees
   of its own.
 
-> **Drift:** `validateJobName` (`src/job.ts`) still justifies its rejection rule, in the doc
+> **Drift:** `validateJobName` still justifies its rejection rule, in the doc
 > comment and in the error message, as protecting "one branch segment (`job/<name>`)" — a
 > branch grammar no code constructs. The rule itself is live and correct as a path-segment
 > check; only the rationale is residue.
@@ -43,16 +43,16 @@ through the check: shape is the creating verb's business.
 
 Commits land on the checked-out branch of the working tree the run happens in. The runtime
 never switches branches — there is no `git checkout` anywhere in `src/`, and no job-branch
-grammar in `src/job.ts` (the engine-records-never-navigates doctrine; see `spec/loop.md`).
+grammar (the engine-records-never-navigates doctrine; see `spec/loop.md`).
 The only branch grammar the engine holds is the ephemeral fanout branches declared below
-(`src/git.ts:addWorktree`'s `-B`, `src/git.ts:deleteBranch`'s `git branch -D`).
+(`addWorktree`'s `-B`, `deleteBranch`'s `git branch -D`).
 
 - `DispatcherOptions.trunkBranch` does not exist; the absence is pinned type-level
   (`tests/Dispatcher.test.ts`, "Trunk contract — HEAD-is-truth").
 - **Declared fanout carve-out.** The engine does construct ephemeral worktree branch names —
-  `flume/<slug>`, or `flume/<namespace>/<slug>` when a namespace is set
-  (`src/worktrees.ts:createWorktree`) — does create them (`src/git.ts:addWorktree`, `-B`), does
-  delete them at teardown (`src/git.ts:deleteBranch`, `git branch -D`), and does cherry-pick a
+  `flume/<slug>`, or `flume/<namespace>/<slug>` when a namespace is set —
+  does create them (`addWorktree`, `-B`), does delete them at teardown
+  (`deleteBranch`, `git branch -D`), and does cherry-pick a
   wave's per-entry worktree commits onto the tip the tick started on. All of it touches only
   the tick's own record, never a ref the operator chose; it is named here as a boundary the
   engine declares rather than an unnoticed violation. The namespace is the job name, resolved
@@ -62,7 +62,7 @@ The only branch grammar the engine holds is the ephemeral fanout branches declar
 ## `flume job new <name>` — seed a state root
 
 Non-mutating with respect to git topology: no branch created, no checkout, HEAD stays where
-the operator left it. Idempotent on re-run. In order (`jobNew`, `src/job.ts`):
+the operator left it. Idempotent on re-run. In order (`jobNew`):
 
 1. Validate the name (usage error).
 2. Require `<configDir>/chain.ts`. A job that could never `run` must not be creatable, so a
@@ -76,8 +76,8 @@ the operator left it. Idempotent on re-run. In order (`jobNew`, `src/job.ts`):
    from ticks.
 5. Ensure the runtime ignore entries (below) — written before the baseline `add`, so runtime
    state never enters the commit.
-6. `git config core.longpaths true`, win32 only, repo-local, idempotent (`pinLongPaths`,
-   `src/git.ts`). Job dirs nest deep; this spares the operator MAX_PATH failures up front.
+6. `git config core.longpaths true`, win32 only, repo-local, idempotent. Job dirs
+   nest deep; this spares the operator MAX_PATH failures up front.
 7. Pathspec-scoped baseline commit of the seeded harness **on the current HEAD**, so plan and
    build produce clean deltas. Scoping to the job dir leaves anything the operator pre-staged
    elsewhere in the index instead of sweeping it into the seed. Nothing staged → no commit,
@@ -93,12 +93,12 @@ Node's ordinary walk-up to the bay's own install — the same copy that is execu
 points at an engine that once ran there, nothing reads or repairs it, and `job rm` removes the
 dir wholesale. It is also unreachable, not merely unread — chain and prompts are
 repo-resident (`loadChainModule(resolve(configDir, "chain.ts"))` and
-`join(configDir, phase.promptPath)`, `src/Dispatcher.ts`), so nothing is ever resolved from
+`join(configDir, phase.promptPath)`), so nothing is ever resolved from
 inside a job dir and the walk-up never passes through one.
 
 ## Runtime ignores
 
-`RUNTIME_IGNORES` (`src/job.ts`) is the runtime-owned set merged into every state root's
+`RUNTIME_IGNORES` is the runtime-owned set merged into every state root's
 `.gitignore` — a job dir at `job new`, and the default `<repoRoot>/.flume` at every
 `loop` / `job run` start, under the tip claim, so a fresh adopter never commits a tick
 artifact because a line was missing from the repo's own ignore file:

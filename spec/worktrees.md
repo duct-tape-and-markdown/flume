@@ -16,13 +16,12 @@ The engine records, never navigates (`spec/loop.md`): it never changes which ref
 and never creates or deletes a ref outside `flume/**`. Fanout is where both halves of that
 condition are exercised — these are the details:
 
-- `git worktree add -B <branch> <path> <fromRef>` (`src/git.ts:addWorktree`), where `branch`
+- `git worktree add -B <branch> <path> <fromRef>`, where `branch`
   is `flume/<namespace>/<slug>` when a namespace is set and `flume/<slug>` otherwise
-  (`src/worktrees.ts:createWorktree`), and `fromRef` is the tip the tick started on.
-- `git branch -D <branch>` at teardown (`src/git.ts:deleteBranch`).
-- The per-entry commits are `cherry-pick`ed onto that same tip, in batch order
-  (`src/Dispatcher.ts:runFanout`) — the other half of the same carve-out, declared in
-  `spec/loop.md`.
+  (`createWorktree`), and `fromRef` is the tip the tick started on.
+- `git branch -D <branch>` at teardown.
+- The per-entry commits are `cherry-pick`ed onto that same tip, in batch order —
+  the other half of the same carve-out, declared in `spec/loop.md`.
 
 The refs involved are engine-created, engine-consumed, and engine-deleted within one wave. No
 ref the operator chose is created, moved, or checked out. `flume/**` is the only grammar the
@@ -58,7 +57,7 @@ install expresses that in its own hook, not in engine policy.
 ## Placement — the worktree base and the job namespace
 
 The base directory is `FLUME_WORKTREES_DIR` when set (resolved absolute), else
-`<flumeDir>/worktrees` (`src/worktrees.ts:createWorktree`). The default tracks the state root,
+`<flumeDir>/worktrees` (`createWorktree`). The default tracks the state root,
 which is itself relocatable via `FLUME_DIR`, so the one-`rm` teardown promise holds.
 
 The override exists for one measured vector: an agent whose `pwd` contains the root checkout's
@@ -75,7 +74,7 @@ and a committed chain file is the wrong home for it.
 
 **The base must be flume-exclusive.** Before `worktree add`, `createWorktree` removes whatever
 sits at the computed `<base>/[<namespace>/]<dirName>` path if anything does — `git worktree
-remove --force` first (`src/git.ts:removeWorktree`), a recursive filesystem delete as the
+remove --force` first (`removeWorktree`), a recursive filesystem delete as the
 fallback. The test is existence of the path alone: nothing checks that the directory is a git
 worktree, that it belongs to this repo, or that it carries a flume marker. An operator who
 points `FLUME_WORKTREES_DIR` at a directory holding anything else loses that content the first
@@ -87,12 +86,12 @@ slugs would otherwise collide on `<base>/<dirName>`, and the stale-directory cle
 before `worktree add` would remove the other job's live worktree.
 
 The namespace is a `DispatcherOptions.namespace` value the CLI resolves from `--job` /
-`FLUME_JOB` and passes in (`src/cli.ts`). The dispatcher never sniffs it back out of
+`FLUME_JOB` and passes in. The dispatcher never sniffs it back out of
 `flumeDir` — job resolution has one authority (`spec/jobs.md`).
 
 ## Worktree directory names are length-bounded
 
-The filesystem component is `worktreeDirName(tag)` (`src/worktrees.ts`): `slugify(tag)`
+The filesystem component is `worktreeDirName(tag)`: `slugify(tag)`
 when it fits `WORKTREE_DIRNAME_MAX` (48), else the slug cut to leave room for a separator plus
 a 10-hex-character SHA-1 of the **full** tag — so the finished component is exactly 48
 characters, and two tags sharing a long common prefix still land on distinct directories. The
@@ -101,7 +100,7 @@ bound is on the finished name, not on the slug before the suffix.
 Why: `git worktree add` refuses a worktree path at around 200 characters on win32 with
 `fatal: '$GIT_DIR' too big`. That ceiling is below `MAX_PATH`, unaffected by `core.longpaths`,
 and unreachable by `toNamespacedPath`/`namespacedJoin` because git builds the offending path
-itself before any Node fs call sees it. `TAG_MAX_LENGTH` (`src/PendingSchema.ts`) is
+itself before any Node fs call sees it. `TAG_MAX_LENGTH` is
 `255 - 39` — Linux `NAME_MAX` less the fixed scaffolding of the revert-note filename
 `<ISO-timestamp>--<tag>--reverted.md` (below), the tightest raw-tag consumer the schema has to
 clear. That is the wider of the two ceilings, so the schema accepts tags whose worktree cannot
@@ -145,7 +144,7 @@ than serialized — see `spec/jobs.md`.
 
 A fresh worktree holds only tracked files, so something has to materialize whatever the gates
 need before they run. Both hooks are optional and receive the same
-`WorktreeSetupContext` — `{ worktreePath, repoRoot, entryTag }` (`src/Phase.ts`).
+`WorktreeSetupContext` — `{ worktreePath, repoRoot, entryTag }`.
 
 - **`Phase.setupWorktree?(ctx): Promise<void | WorktreeSetupResult>`** runs after the worktree
   is created and before the agent. Returning `{ extraEnv }` (the exported type
@@ -167,7 +166,7 @@ need before they run. Both hooks are optional and receive the same
 
 ## The lockfile-aware install helper
 
-`setupWorktree(dir)` (`src/setupWorktree.ts`, exported from `src/index.ts` and handed to chains
+`setupWorktree(dir)` (handed to chains
 on `FlumeApi`) is the shared default for the hook above, and a sibling of the `builtinGates`
 precedent — a standalone export, not a `Gate`, since provisioning runs before the agent rather
 than as a pass/fail check after it. It inspects the target directory and runs the install its
@@ -203,8 +202,8 @@ agent runs rather than as post-agent module-resolution noise).
 
 ## Per-entry `afterMerge` revert isolation
 
-Each entry's worktree commit is cherry-picked onto the tip individually and gated individually
-(`src/Dispatcher.ts:runFanout`). The first failing `afterMerge` gate attributes the failure to
+Each entry's worktree commit is cherry-picked onto the tip individually and gated individually.
+The first failing `afterMerge` gate attributes the failure to
 *that* entry — it is the only delta between the pre-cherry-pick tip and the merged sha — and
 the engine resets to the pre-cherry-pick tip, dropping **only that entry's commit**.
 
@@ -229,7 +228,7 @@ loop re-derives into the same fence at full tick cost with zero learning per att
 
 So the reverted entry's actual touched paths are recorded as an `afterCommit-reverted` merge
 outcome and land on the tip through the **same** footprint-commit mechanism the `afterMerge`
-path uses (`src/Dispatcher.ts:commitPendingUpdate`). One bookkeeping surface, not two.
+path uses. One bookkeeping surface, not two.
 
 The footprint is `verdict.touchedPaths`, which the gate loop already computed for this commit —
 reused rather than re-derived with a second `git show --name-only`, and captured before
@@ -250,7 +249,7 @@ reading session logs.**
 
 Before the drop, every non-deleted file the reverted commit touched is snapshotted verbatim —
 post-image content, under a mirror of its repo path — into
-`<flumeDir>/prior-attempts/<key>.reverted/` (`src/priorAttempts.ts:PriorAttemptStore.snapshotReverted`).
+`<flumeDir>/prior-attempts/<key>.reverted/`.
 
 - It is a sibling of the prior-attempt JSON, under the state root and gitignored, **not** in
   the worktree — so it outlives both the reset and worktree teardown.
@@ -273,14 +272,14 @@ working tree, so nothing else preserves reverted prose.
 
 When `Chain.friction` is declared and an `afterCommit` gate reverts a fanout entry's commit,
 the engine writes `<flumeDir>/<friction>/<ISO-timestamp>--<tag>--reverted.md`
-(`src/Dispatcher.ts:writeRevertNote`) containing, verbatim from data it already holds: the gate
+(`writeRevertNote`) containing, verbatim from data it already holds: the gate
 name, its message, its details (for the write fence, the offending path list), and the reverted
 commit's subject and body. Otherwise that evidence dies with the worktree and lives only in
 supervisor stdout.
 
 The write is best-effort — a failure is logged and the tick proceeds. Timestamp colons and dots
 are replaced for filename safety, and the path is joined through the win32 extended-length
-idiom (`src/paths.ts:namespacedJoin`) because the friction dir's full depth is not bounded by
+idiom (`namespacedJoin`) because the friction dir's full depth is not bounded by
 the tag's own length bound.
 
 The note is written for every reverted commit — a singleton phase's tick and each fanout
@@ -293,7 +292,7 @@ it, and the note plus the snapshot are what remain.
 
 Only the engine is present when a fanout worktree dies, so only the engine can guarantee a
 worktree-local friction note survives it. At wave end, for each worktree, **before removal**
-(`src/friction.ts:harvestFriction`):
+(`harvestFriction`):
 
 - Resolve the worktree-local mirror of the declared channel — the state root's repo-relative
   path, joined inside the worktree, joined with `chain.friction` — and **move** every file in
@@ -331,7 +330,7 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
 
 Independent of any friction declaration. `git worktree remove --force` fails on win32 when a
 just-installed `node_modules` still has handles open, reporting `Directory not empty` instead
-of removing. `src/git.ts:removeWorktree` therefore falls through rather than surfacing that as
+of removing. `removeWorktree` therefore falls through rather than surfacing that as
 a wave failure:
 
 1. `git worktree prune`, then a recursive filesystem removal with bounded retry (5 attempts,
@@ -379,7 +378,7 @@ stop*) at the only moment it is safe to.
 ## The default test lane must stay fast
 
 The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the **trunk**,
-not inside a worktree: `src/Dispatcher.ts:runFanout` builds the gate context with
+not inside a worktree: `runFanout` builds the gate context with
 `cwd: repoRoot` once the entry's cherry-pick has landed. It runs once per cherry-picked entry,
 serially, so a wave of N entries pays the default lane N times before the tick ends.
 
