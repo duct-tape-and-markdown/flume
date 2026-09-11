@@ -1,14 +1,19 @@
 [
   {
     "tag": "SPEC-TEST-CITE-NEEDLE-ROOTLESS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/retired-narration.test.ts",
           "description": "widen the tests/ half of the spec locator scan to rootless filenames; retire the doc comment's park"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "Widen the spec test-cite needle past its tests/ root to a bare *.test.ts filename, leaving the lane's glob",
     "per": {
@@ -23,18 +28,27 @@
       "no spec page cites a bare test filename"
     ],
     "acceptance": "the widened needle is green over the corpus, and the needle's doc comment no longer parks the rootless half as a human question",
-    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker — the string a consumer types, the claim's own subject — so the needle matches a concrete filename and leaves the glob. The last rootless site (`spec/worktrees.md`) was rewritten to name the dispatcher's default-lane suite, so this is green today; the doc comment deferring it to a human is expired narration and goes in the same commit."
+    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker — the string a consumer types, the claim's own subject — so the needle matches a concrete filename and leaves the glob. The last rootless site (`spec/worktrees.md`) was rewritten to name the dispatcher's default-lane suite, so this is green today; the doc comment deferring it to a human is expired narration and goes in the same commit.",
+    "observedFiles": [
+      ".flume/plan/notes/SPEC-TEST-CITE-NEEDLE-ROOTLESS.md",
+      "tests/retired-narration.test.ts"
+    ]
   },
   {
     "tag": "ORPHAN-ID-SINGLE-LINE-BLOCK",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/retired-narration.test.ts",
           "description": "read a single-line doc block's orphan id off its own opener"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "orphanedBlocks degrades a single-line doc block's id to the empty string; read the id off the opener instead",
     "per": {
@@ -44,6 +58,7 @@
     "tests": [
       "the orphan scan identifies a single-line doc block by its own text"
     ],
+    "pins": [],
     "acceptance": "an injected single-line orphan comes back keyed by its text, and two such orphans in one file are two distinct ALLOWED_ORPHANS keys",
     "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. The existing sensitivity pin's injection is multi-line to steer around this."
   }
