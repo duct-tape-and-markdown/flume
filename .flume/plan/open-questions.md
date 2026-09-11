@@ -35,61 +35,6 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `.flume/chain.ts` still carries three engine restatements (two adoptions and a fork)
-
-Two legs of the 2026-09-10 finding are adopted (`dd258df`): `parkStanding` reads
-`TickContext.priorAttempts` alone, and the prior-attempts `readdirSync` and the
-verdict-log read are both gone. Three remain, and none is a pending entry —
-`.flume/chain.ts` is outside every phase lane, so each is a `chore(flume):` from an
-interactive session. The third carries a fork the other two do not.
-
-**The park predicate, third copy.** `build.handoff`'s `refused` (`.flume/chain.ts:851-855`)
-still reads a park as `committed && !shipped && !reverted` over `result.entries`. A
-cherry-pick conflict satisfies that, so a conflicting wave wakes `plan-inbox`, whose
-`parkStanding` counts only the records — no record is written for a conflict — and the
-slice declines: one wasted tick, then the ladder retries from the new base. The site
-names the bound in a comment meanwhile. `HANDOFF-ENTRY-MERGE-OUTCOME` is the engine
-half: once `TickResult.entries` carries the per-entry merge outcome, the predicate and
-its comment go in the adopting commit.
-
-**The clean-exit arms are dead now — the deletion is owed.**
-`CLEAN-EXIT-TAXONOMY` shipped (`59ff134`, `6a6e446`): `NoCommitMode` carries no
-`voluntary-bail` member and the engine emits `clean-exit` alone. Both chain sites read
-`string`, so nothing breaks and two arms are simply unreachable — `REFUSAL_MODES`
-(`.flume/chain.ts:584`) still lists `"voluntary-bail"`, and `bailed` (:879) still tests
-for it. The doc comment at :579-582 and the aside at :877-878 each name that ship as
-their own trigger, so both expire with the arms (`engineering.md`, *Narration is the
-ladder's bottom rung*). Same edit as the predicate above.
-
-**The worktree base, hand-built — and the fork.** Drained from
-`WORKTREE-BASE-DOCS-PINNED`'s note; verified on disk. `redOnBase`
-(`.flume/chain.ts:726`) builds its scratch worktree at `join(api.paths.flumeDir,
-"worktrees", …)`. Under `FLUME_WORKTREES_DIR` that is a base nothing else uses:
-`sweepStaleWorktrees` looks under `worktreesBase` (`src/paths.ts:150`), so a gate that
-crashes mid-run strands a worktree nothing reclaims. Latent here — the override is
-unset — and correctness-adjacent the day it is not.
-
-Two ways to close it, and the choice is the fork:
-
-- **Chain-side, today.** The chain imports `worktreesBase` from `../src/paths.ts`. Free
-  for this repo, which dogfoods the in-repo runtime, and unavailable to any downstream
-  chain: `worktreesBase` is not in `src/index.ts`, so the package's export map hides it.
-- **Engine surface.** `FlumeApi.paths` reports the resolved base. But `spec/chain.md`,
-  *Per-run artifacts belong under `FLUME_DIR`*, states that surface as the closed list
-  `{ repoRoot, configDir, flumeDir }`, so the spec line moves before the field can —
-  human-only, and the reason this is a question rather than an entry.
-
-**Recommend** the chain-side import now, and file the engine surface the day a second
-chain needs it — the same disposition the `redOnBase` gate itself took. Either way
-`FlumePaths.flumeDir`'s doc comment (`src/flumeApi.ts:73`) rides the adopting commit: it
-names worktrees as living under the state root, which the override makes false.
-
-Riding whichever commit lands first, by the 2026-09-11 ruling on `stateRootRel`: the
-`perResolvesGate` read of `pending.json` at `ctx.commitSha` (`.flume/chain.ts:340-345`)
-**stays**, and gains a one-line cite naming it the sanctioned queue-read idiom
-(`spec/chain.md`, *What a gate receives*) so a later sweep does not re-file it as
-restatement.
-
 ## The `spec/jobs.md` ignore block names a retired file, `last-tick.json` (NEEDS AMENDMENT)
 
 **`last-tick.json` no longer exists.** Drained from
@@ -315,79 +260,43 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## Flume's own build has no declared-files gate, and the copy has no clean home (PARKED)
 
-Drained from `CASCADE-GATE-REFUSES-UNDECLARED-SPAN`'s note, leg 2; verified on
-disk. The finding was filed against the example, and the example is now the only
-place it holds: `examples/cascade-chain.ts:238` exports `declaredFilesGate`,
-while this repo's own build runs `[tscGate, recordsGate, vitestOnCode]`
-(`.flume/chain.ts:824`) and judges an entry's `files` declaration against the
-span it produced not at all.
+## A park cannot survive the `vitest` judge, so no entry naming a behavior can park (PARKED — lane only)
 
-**Narrower here than in cascade, but not closed.** This chain declares a
-`shipped` predicate (`.flume/chain.ts:815-823`), so a note-only commit is a park
-and retires nothing — the case cascade had no defence for. What remains: `tests/**`
-is a channel path, so a commit touching only tests counts as shipped and retires
-the entry with **none** of its declared paths met, and nothing says so.
+Field-traced this wave and verified on disk. Both parks of the 2026-09-11 build
+wave — `d67e96d` (CASCADE-PLAN-SLICES-ORDERED-HANDOFF) and `1b58487`
+(DISPATCHER-EXTRACT-LOOP-SUPERVISOR) — were reverted at `afterMerge` with
+"1 of 1 named behavior(s) have no passing test — wave reverted". Both were
+correct refusals: each build tick measured a real fence gap and committed the
+note alone, exactly as `.flume/prompts/build.md` instructs.
 
-**The judgement cannot move into the engine.** The engine reads `files` as a path
-union alone (`declaredPaths`, `src/PendingSchema.ts:574-583`) plus
-`files.edit[].path` for the partition; what `new` / `edit` / `retire` *claim about
-the tree* is payload it never interprets, so an engine-side gate would be
-enforcing shape on payload it does not consume (`engine-boundary.md`, *Capability
-vs convention*). The rule is the chain's either way — which is what leaves the
-copy homeless.
+**The park shape is declared once and read by two of three sites.** `isPark`
+(`.flume/chain.ts:335`) is the note-alone predicate; `build.shipped` (:864)
+reads it, and the `declared span` gate (:358) returns early on it. `vitestOnCode`
+(:820-831) does not. Its skip fires only when `named.length + pinned.length === 0`,
+so a park of an entry carrying a `tests[]` line runs the suite, the judge finds no
+passing test for a behavior no commit introduced, and the wave reverts. Every entry
+in the queue carries a `tests[]` line, so the park protocol is currently unreachable
+for all of them.
 
-Options:
+**The revert destroys the channel.** The note is the park's only message to plan,
+and it goes back with the commit. What survives is the prior-attempt record, which
+carries the `diffStat` and not the text — this tick recovered both notes from the
+reverted objects and folded them into their entries, but that is a plan tick doing
+archaeology, not a channel.
 
-- **Copy the gate into `.flume/chain.ts`.** ~80 lines duplicated from `examples/`.
-  `engine-boundary.md` *Surface, not prescription* names verbatim copying as the
-  detector of a missing surface — but the surface it points at is unavailable
-  above, so the copy is the honest price of a chain-owned rule rather than
-  evidence against the engine.
-- **Import `declaredFilesGate` from `../examples/cascade-chain.ts`.** Zero
-  duplication, and the export is already parameterised over `readFileAtRef` so it
-  drops in. **Recommend against:** `examples/**` is inside build's fence while
-  `.flume/chain.ts` is outside it, so a build tick editing the example would be
-  editing this repo's own build gate — the lane separation `spec-plan-build.md`
-  rests on, inverted.
-- **Take the floor only** (recommended). Not the class judgement — just the zero
-  refusal: a commit that touched none of a non-empty `files` declaration fails.
-  Ten lines against eighty, no `readFileAtRef`, and it is the whole of what this
-  chain is missing, since the partial span is accepted below. The full
-  new/edit/retire judgement stays cascade's to teach.
+**Recommend** the one line, the same early return the `declared span` gate takes,
+before the suite runs:
 
-Parked, not filed: `.flume/chain.ts` is outside every phase lane, so any of the
-three is a `chore(flume):` from an interactive session.
+```ts
+if (isPark(ctx.entry, touched)) return { ok: true, message: "park: the note alone, not judged" };
+```
 
-## Flume's own build prompt hand-writes the `tests[]`/`pins[]` contract (PARKED — lane only)
+No fork — the park shape is already declared once and two other sites key on it,
+and the gate's own doc comment (:755-758) already claims a park "has nothing to
+judge". Pinnable in `tests/chain.test.ts` beside the declared-span cases, which
+already import the real chain.
 
-Drained from `CASCADE-BUILD-PROMPT-STATES-TESTS-CONTRACT`'s note; verified on disk.
-The entry shipped the fix in the example, and the defect it names survives one layer
-over, in this repo's own chain.
-
-`.flume/prompts/build.md:30` states the title discipline, the vitest gate's revert,
-the pre-fix-tree re-run, and that `pins[]` is judged green only — all in prose.
-`.flume/chain.ts:138` and `:149` already declare those same rules as the `tests` /
-`pins` hints, and `renderSchemaForPrompt` (`:691`) renders them verbatim into plan's
-prompt. Two copies of a rule the gate reverts commits over, and the prompt copy is
-the one nothing checks: change a hint and the prompt keeps instructing the old
-contract, which costs a build wave rather than failing loud
-(`engineering.md`, *Derived state is computed, never restated beside its source*).
-
-**No fork — the shape is already ruled.** Cascade's is the pattern:
-`examples/cascade-chain.ts:445` renders `entryExtension.tests.hint` into a
-`{{TESTS_HINT}}` placeholder (`examples/prompts/build.md:31`), and
-`tests/examples.test.ts:589` pins the two together off disk. Here the same move adds
-`TESTS_HINT` and `PINS_HINT` to build's `promptArgs` (`.flume/chain.ts:846-853`) and
-shrinks the paragraph to the framing around them. The framing does not all go: "do
-not restructure a test to fail on the base; ship the work as named and let the record
-reach plan" is build-behavior instruction the hint does not carry, and stays.
-
-The pin has a home — `tests/chain.test.ts` already imports the real `.flume/chain.ts`
-— but it cannot land alone, since a pin over the unrendered prompt is red.
-
-**Parked only because of the lane.** `.flume/chain.ts` and `.flume/prompts/**` are
-outside every phase lane (`.flume/chain.ts:248-251`), so this is a `chore(flume):`
-from an interactive session. Batches cleanly with the three other harness-path parks
-already open above.
+Parked only because of the lane: `.flume/chain.ts` is outside every phase lane
+(`.claude/rules/spec-plan-build.md`), so this is a `chore(flume):` from an
+interactive session.
