@@ -285,6 +285,116 @@
     "notes": "Drained from CASCADE-VITEST-AFTERMERGE's note; both sides verified on disk. No pin: the fix deletes the sentence a pin would read, and a whole-doc scan of gate-placement prose is the same shape as WORKTREE-BASE-DOCS-PINNED's — file that if the drift recurs."
   },
   {
+    "tag": "README-CASCADE-PIPELINE-CURRENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "the two cascade descriptions, :77-80 and :387-389"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the pin, beside the doc-quotes-the-example-chain pins at :732"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "README calls cascade a workshop → spec → plan → build pipeline at both mention sites; the example ships plan + build alone",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "README's cascade description names the phases cascade-chain.ts declares"
+    ],
+    "acceptance": "Both README mentions describe the phases `examples/cascade-chain.ts` actually declares, and the claim is driven against the chain module itself, so a later phase change turns the pin red.",
+    "notes": "Drained from EXAMPLES-SPEC-PHASE-CUT's and INTENT-WORKSHOP-LAYER-RETIRED's notes; both sites verified on disk after the cut at 58092d0. The front door is the last place the retired layer is still taught as current."
+  },
+  {
+    "tag": "PHASE-HUMANONLY-DOC-DECHAINED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "the Chain and humanOnly doc comments, :459-460 and :473-476"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "src/Phase.ts teaches `humanOnly` through `spec` and a workshop layer — one chain's convention in engine prose, and no shipped example carries either",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Capability vs convention"
+    },
+    "tests": [],
+    "acceptance": "`humanOnly`'s doc comment explains the mechanism — a phase whose input a human authors between runs — without naming a phase no example declares; docs/CHAIN-AUTHORING.md:1443-1448 already reads this way.",
+    "notes": "Drained from INTENT-WORKSHOP-LAYER-RETIRED's note; the doc half it also flagged (CHAIN-AUTHORING.md:1447) shipped with the cut. tests[] empty by construction: a doc-comment rewording changes no behavior, and a source-text pin over engine prose would be a new lens, not this fix."
+  },
+  {
+    "tag": "PRIOR-ATTEMPT-KEYSPACE-EXPORTED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/index.ts",
+          "description": "re-export beside NoCommitMode / PriorAttempt (:67)"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the barrel pin, beside NoCommitMode's at :14440"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`PriorAttemptKeyspace` types `PriorAttempt.key` but is off the barrel, so a chain reading `rec.key` cannot name the type it already consumes",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "The package a chain loads through"
+    },
+    "tests": [],
+    "acceptance": "`PriorAttemptKeyspace` resolves from the package entry point, pinned the way `NoCommitMode` and `ProvisionFailure` are — the pin fails tsc if the re-export drops.",
+    "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED's note; verified on disk (src/Prompt.ts:73, absent from src/index.ts:67). tests[] empty by construction: the pin is type-level, so tsc is its gate and vitest is green over the base either way (`.flume/vitestJudge.ts`, judgeRedOnBase)."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the `<prior-attempt>` block's clearing sentence, :1109"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The doc's `<prior-attempt>` block says a record clears on a clean ship alone; a wave's queue read now also retires one whose tag left the queue",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "tests": [],
+    "acceptance": "The block names both clears — a clean ship, and the wave queue read that retires a record whose tag the queue no longer carries, reported as `clearedPriorAttempts` on the verdict.",
+    "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED's note; the second clear shipped at d9a2bdb. tests[] empty: the doc omits rather than denies, and no agreement pin drives this block — authoring one is WORKTREE-BASE-DOCS-PINNED's shape, file that if it drifts again."
+  },
+  {
     "tag": "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE",
     "gate": {
       "kind": "open"
