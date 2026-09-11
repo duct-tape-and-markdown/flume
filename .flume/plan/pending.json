@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "SPEC-PATH-LOCATORS-PINNED",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "spec/ locator scan, beside the src/+examples/ cite scan"
+        }
+      ]
+    },
+    "summary": "Pin `spec/` against path locators: no `path:NN` line cite, no `src/` file path outside a declared claim-subject allowlist",
+    "per": {
+      "path": ".claude/rules/spec-writing.md",
+      "section": "What holds this page above prose"
+    },
+    "tests": [],
+    "pins": [
+      "every `src/` file path in a spec page is one the locator allowlist declares",
+      "no spec page carries a `path:NN` line locator",
+      "the spec locator scan reads every page of spec/",
+      "the locator grammar flags an injected `src/` path and an injected line locator"
+    ],
+    "acceptance": "`pnpm test` green with the scan present; each allowlist entry carries its claim-subject reason at the site.",
+    "notes": "Measured at 7367b79: zero `:NN` locators; the only `src/` file paths are `src/index.ts` (export inventory, 3 sites), `src/flumeApi.ts` (pending.md export-map sentence) and `src/Dispatcher.ts` (chain.md deep-import example). Bare `src/` and `examples/` directory mentions are not paths. The rule sentence's symbol half is red on the base — see open-questions, spec residue."
+  }
+]

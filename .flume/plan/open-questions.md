@@ -117,8 +117,10 @@ the wrong file is a confident wrong answer where `pending: unknown` would not
 be. If that is the ruling, say so and this becomes an entry instead.
 
 **The sweep-lens half of this finding** — `docs/CLI.md`'s `flume job status`
-paragraph asserting "no chain load" while the code takes one — moved to its
-own question below, where a second data point joined it.
+paragraph asserting "no chain load" while the code takes one — closed with the
+spec-writing ruling (`7367b79`): the sweep now reads `spec/` against
+`.claude/rules/spec-writing.md` for restatement, and the generator the doc copy
+was downstream of is gone. The amendment above is what remains.
 
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
@@ -256,100 +258,60 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
+## The strip left `spec/` residue the symbol-half lint would refuse (NEEDS AMENDMENT)
 
-## No sweep lens catches prose that contradicts the code it describes (PARKED)
+Drained from the inbox (2026-09-11, operator's ruling). Succeeds *Two `spec/`
+cites name a module that no longer declares the symbol*, which the strip
+(`7367b79`) closed by deleting the copies rather than repointing them.
 
-`.claude/rules/posture-sweep.md`'s lens list (*A violation counts only when
-verified on disk this tick*) names expired narration — prose whose *stated
-scope has closed* or whose *revisit condition has fired*. Neither reaches a
-bare factual assertion about code that the code contradicts: there is no scope
-to close and no condition to fire, only a sentence that is false on disk. Two
-independent data points, both caught by accident:
+`.claude/rules/spec-writing.md` *What holds this page above prose* names a
+two-clause lint. The path clause ships as `SPEC-PATH-LOCATORS-PINNED` — green
+on the tree as it stands. The symbol clause — every backticked symbol resolves
+to a declaration in `src/` — is **red on the base**, and `spec/` is human-only,
+so it cannot be filed until these land. Measured on `7367b79`:
 
-- **A doc denying a call the module makes.** `docs/CLI.md`'s `flume job
-  status` paragraph asserted "no chain load" while `jobStatus` takes one
-  (`src/cliJobVerbs.ts:44`). Surfaced only because
-  `DOCS-CLI-CHAIN-LOAD-REPORTED` went looking for something else.
-- **A consumer comment citing an engine gap that has since closed.**
-  `examples/cascade-chain.ts:353` justified hand-rolling `shellGate` for
-  `vitestOnTrunk` with "that builtin fixes `when: afterCommit` and takes no
-  placement override". `BUILTINGATES-WHEN-OVERRIDE` (`3850420`) closed that
-  gap, and nothing but that entry's own diff surfaced the now-false half. The
-  real reason survives (the `--reporter=json` args the entry-tests judge
-  consumes), so the example still uses `shellGate`; only the reason was
-  rewritten, in-commit.
+- **Two stale internal-helper names.** `Dispatcher.checkTipMoved`
+  (`spec/loop.md`, three sites) resolves to nothing: the method is
+  `checkTipMovedPerEntry`, and it is private. `git.cherryPick` (`spec/loop.md`)
+  likewise: the `git` namespace on `FlumeApi` carries `showNameOnly` and
+  `readFileAtRef` only, and the engine's own helpers are `cherryPickRange` /
+  `cherryPickAbort`. Both are internal helpers the page forbids naming at all,
+  so a repoint would ratify the shape the strip exists to remove.
+- **Three test cites.** `spec/prompt.md` names `tests/Prompt.test.ts` twice
+  (the fence agreement case, the U+2014 transport repro); `spec/jobs.md` names
+  `tests/Dispatcher.test.ts` and a test title for the `trunkBranch` absence.
+  "Tests pin the spec; the spec does not cite them."
+- **One surviving locator.** `spec/pending.md`'s export-map sentence reads
+  ``  `src/index.ts` and `FlumeApi` (`src/flumeApi.ts`) ``. The claim subject
+  is the export map; `FlumeApi` is public surface and needs no locator behind
+  it.
 
-One shape: **prose asserting a fact about code that the code contradicts.** The
-second data point is the sharper one, because it is a standing generator — every
-engine gap this loop closes falsifies whatever consumer comment cited it, and
-the consumer is a surface no other lens reads for this.
+**Recommend:** all six are removals, and there is no fork in them — restate the
+two helper sentences as the behavior they produce (the dispatcher verifies the
+observed HEAD against the tip it recorded; the wave carries commits with
+`cherry-pick --abort` on conflict), drop the three test cites, drop the one
+locator. The path allowlist then shrinks by one and the symbol clause files.
 
-Options:
+**A fork does ride the symbol clause: what counts as a symbol.** A naive
+identifier grammar leaves 104 of 428 distinct backticked tokens in `spec/`
+unresolved, and almost none are symbols — env vars (`FLUME_DIR`), error codes
+(`ENOENT`, `EX_CONFIG`), literal field values (`open`, `parked`,
+`afterCommit`), external tool names (`tsx`, `vitest`), filenames
+(`pending.json`). The scan needs a stated subject, and two readings are on the
+table:
 
-- **One lens clause** (recommended): add to the standing lens list — prose
-  asserting a fact about a named code surface that the surface contradicts on
-  disk, with an engine gap cited in a consumer's comment named as the case that
-  fires on every closing entry. Costs nothing but sweep attention; the lens is
-  only as good as the tick that reads it.
-- **Fold it into expired narration.** Cheaper prose, but it stretches "scope
-  closed / condition fired" past what those words mean, and the second data
-  point has neither.
-- **Nothing.** Against it: both instances were found by luck, and the
-  generating rate is one per engine gap closed.
+- **Dotted cites into public types only** (recommended) — a backticked token
+  whose prefix is one of the types the page's *Public surface* bullet
+  enumerates, resolved on its last segment. Decidable, no vocabulary to
+  maintain, and it is exactly what the bullet sanctions. It catches the
+  `Dispatcher.checkTipMoved` class and nothing else.
+- **Every identifier-shaped token, minus a declared non-symbol vocabulary.**
+  Wider reach, but the vocabulary is a second artifact to keep in sync with
+  prose that legitimately grows new error codes and literal values — the copy
+  problem this ruling just removed, re-created one rung down.
 
-**A domain question rides either answer.** The sweep domain is `src/`, `tests/`,
-`bin/`, `examples/` (plus `.flume/chain.ts` and `.flume/PROTOCOL.md` for the
-expired-narration lens); `docs/` enters only through a retired-claim delta. The
-first data point above lives in `docs/`, so the lens as stated would not have
-caught it either — say whether this lens widens the domain to `docs/` or
-deliberately stops at the code surfaces. A third instance (2026-09-11 sweep of
-`bin/`) lived in `spec/` — `spec/cli.md` *Distribution*'s tarball enumeration,
-stale against the `"files"` allowlist it copied; amended and closed at
-`a18b40e` — so the domain fork is three surfaces wide, not one, and `spec/` is
-the one the loop cannot fix itself.
-
-A fourth instance, same shape, now has a mechanical answer that this lens does
-not: a cite naming a symbol its module no longer holds is checkable.
-`SRC-CITE-MODULE-PATH-PINNED` pins the two path-carrying shapes over `src/`
-and `examples/`; the same scan over `spec/` waits on the amendment below. It
-bounds the lens rather than replacing it — bare-symbol cites and every
-assertion that is prose rather than a cite stay judgment.
-
-Parked because `.claude/rules/**` is human-only
-(`.claude/rules/spec-plan-build.md`).
-
-## Two `spec/` cites name a module that no longer declares the symbol (NEEDS AMENDMENT)
-
-The four this question originally carried are repointed (`5bfbe71`, operator's
-direction). The pin that found them then shipped (`a06abcb`), and its grammar
-reads **three** shapes, not the two that first count assumed — the comma
-variant (`` `sym`, `src/x.ts` ``) and the module-first order
-(`` (`src/x.ts`, `git.readFileAtRef`) ``) carry real cites. Re-run over the
-current tree with the shipped grammar: **74** path-carrying cites in `spec/`,
-and **two** red, both the comma shape the first count did not read, both the
-same symbol:
-
-- `spec/cli.md:177` — `` (`resolveStateDirs`, `src/cli.ts`) `` →
-  `src/cliJobResolution.ts`
-- `spec/jobs.md:18` — `` (`resolveStateDirs`, `src/cli.ts`) `` →
-  `src/cliJobResolution.ts`
-
-`src/cli.ts` only imports it; `src/cliJobResolution.ts:101` declares it, as
-`spec/chain.md:195`, `:203` and `:633` already say.
-
-**Still not fixable from a phase.** `spec/` is human-only
-(`.claude/rules/spec-plan-build.md`) — outside every phase lane — so the
-`spec/`-side scan stays red on the base and cannot be filed as a `pins[]`
-entry. A re-filed `SPEC-CITE-MODULE-PATH-PINNED` parks again. This is the
-second round of the same loop: the amendment is the only thing that closes it.
-
-**Recommend** the two repoints above, verbatim; there is no fork in them. Once
-they land, the `spec/`-side scan files as a pending entry — judged green,
-never red, so `pins[]` — adding `spec/` as a scanned root beside
-`CITE_SCANNED_ROOTS` in `tests/retired-narration.test.ts`, with the three-shape
-grammar and the "declares" reading unchanged.
-
-**Scope stops at `spec/`.** Measured on the current tree under the same
-grammar: `docs/` carries 0 cites, `.claude/rules/` 1 (green), `.flume/chain.ts`
-0. Widening past `src/` + `examples/` + `spec/` would pin an empty set, so the
-filed entry names `spec/` alone and that is a cut, not an omission.
+Either reading needs one more exemption spelled: three sentences name a symbol
+in order to say it does **not** exist (`DispatcherOptions.trunkBranch`,
+`Chain.harvest`, `Chain.worktreesDir`). Recommend a declared allowlist at the
+scan, the same shape as the path one — never a negation read off the
+surrounding prose.

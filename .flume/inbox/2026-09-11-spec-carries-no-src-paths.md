@@ -1,5 +1,0 @@
-# `spec/` carries no `src/` paths; new rule page; file the spec-lint pin
-
-Ruling from the operator, applied in the interactive session: the spec names behavior and public surface, never `src/` paths, line numbers, or internal helpers — `.claude/rules/spec-writing.md`, new and citable. Every path locator under `spec/` is gone (public symbols keep their bare name; internal parentheticals dropped; claim-subject paths such as the export-map sentence stay). Derive reads this commit as descriptive: no engine behavior changed.
-
-Routing: delete *Four `spec/` cites name a module that no longer declares the symbol* — no copy is left to police. Close *No sweep lens catches prose that contradicts the code it describes*: `posture-sweep.md` now names the page and the lens for `spec/`. File the spec-lint pin against *What holds this page above prose*: no `src/` path or `:line` in `spec/` outside a declared allowlist, every backticked symbol resolves to a declaration in `src/`; `pins[]`. `SRC-CITE-MODULE-PATH-PINNED` stays.
