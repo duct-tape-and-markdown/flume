@@ -318,36 +318,38 @@ assertion that is prose rather than a cite stay judgment.
 Parked because `.claude/rules/**` is human-only
 (`.claude/rules/spec-plan-build.md`).
 
-## Four `spec/` cites name a module that no longer declares the symbol (NEEDS AMENDMENT)
+## Two `spec/` cites name a module that no longer declares the symbol (NEEDS AMENDMENT)
 
-Drained from `SPEC-CITE-MODULE-PATH-PINNED`'s park; re-verified on disk this
-tick. `spec/` carries **72** path-carrying cites in the two shapes
-(`` `src/x.ts:sym` `` and `` `sym` (`src/x.ts`) ``), not the 71 the entry's
-notes claimed, and four name a module that does not *declare* the symbol —
-four extraction waves' residue that `a18b40e` did not reach:
+The four this question originally carried are repointed (`5bfbe71`, operator's
+direction). The pin that found them then shipped (`a06abcb`), and its grammar
+reads **three** shapes, not the two that first count assumed — the comma
+variant (`` `sym`, `src/x.ts` ``) and the module-first order
+(`` (`src/x.ts`, `git.readFileAtRef`) ``) carry real cites. Re-run over the
+current tree with the shipped grammar: **74** path-carrying cites in `spec/`,
+and **two** red, both the comma shape the first count did not read, both the
+same symbol:
 
-- `spec/prompt.md:148` — `src/Dispatcher.ts:slugify` → `src/paths.ts`
-- `spec/chain.md:167` — `src/cli.ts:tickExitCode` → `src/cliVerdict.ts`
-- `spec/chain.md:195`, `:203` — `src/cli.ts:resolveStateDirs` →
-  `src/cliJobResolution.ts`, which `spec/chain.md:633` itself already names
+- `spec/cli.md:177` — `` (`resolveStateDirs`, `src/cli.ts`) `` →
+  `src/cliJobResolution.ts`
+- `spec/jobs.md:18` — `` (`resolveStateDirs`, `src/cli.ts`) `` →
+  `src/cliJobResolution.ts`
 
-**The pin cannot go green from a build tick.** The repoint is a `spec/` edit,
-and `spec/` is human-only (`.claude/rules/spec-plan-build.md`) — outside every
-phase lane, so no entry can carry it. That is why the entry parked rather than
-shipped.
+`src/cli.ts` only imports it; `src/cliJobResolution.ts:101` declares it, as
+`spec/chain.md:195`, `:203` and `:633` already say.
 
-**The looser reading is ceremony, and was measured as such.** Reading the cite
-as "the module *references* the symbol" goes green today, but on `a18b40e^`
-`src/Dispatcher.ts` still imported `superviseLoop`, `createWorktree` and
-`harvestFriction` — so it would have passed over the exact stranding `a18b40e`
-repointed. Only "declares" catches the class.
+**Still not fixable from a phase.** `spec/` is human-only
+(`.claude/rules/spec-plan-build.md`) — outside every phase lane — so the
+`spec/`-side scan stays red on the base and cannot be filed as a `pins[]`
+entry. A re-filed `SPEC-CITE-MODULE-PATH-PINNED` parks again. This is the
+second round of the same loop: the amendment is the only thing that closes it.
 
-**Recommend** the four repoints above, verbatim; there is no fork in them. Once
-they land, the `spec/`-side scan re-files as a pending entry — judged green,
-never red, so it belongs in `pins[]` — and `tests/retired-narration.test.ts`
-gains a second describe beside the `src/`-side one.
+**Recommend** the two repoints above, verbatim; there is no fork in them. Once
+they land, the `spec/`-side scan files as a pending entry — judged green,
+never red, so `pins[]` — adding `spec/` as a scanned root beside
+`CITE_SCANNED_ROOTS` in `tests/retired-narration.test.ts`, with the three-shape
+grammar and the "declares" reading unchanged.
 
-**The `src/`-side half did not need the amendment and is filed now** as
-`SRC-CITE-MODULE-PATH-PINNED`: the same scan over `src/` and `examples/`
-comments, where three cites are red on the current tree and every path is
-inside build's fence.
+**Scope stops at `spec/`.** Measured on the current tree under the same
+grammar: `docs/` carries 0 cites, `.claude/rules/` 1 (green), `.flume/chain.ts`
+0. Widening past `src/` + `examples/` + `spec/` would pin an empty set, so the
+filed entry names `spec/` alone and that is a cut, not an omission.
