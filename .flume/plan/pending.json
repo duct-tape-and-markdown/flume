@@ -1,1 +1,39 @@
-[]
+[
+  {
+    "tag": "TESTS-EXIT-STATUS-VIA-HELPER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "runTick/runLoop through exitStatusOf"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "runDistCli through exitStatusOf"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "runChangelog through exitStatusOf"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the scan + its vacuity pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Route tests/'s four hand-rolled `code ?? 1` extractions through exitStatusOf, and scan for a fifth",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      "no suite outside the subprocess helper defaults a missing exit status to 1"
+    ],
+    "pins": [],
+    "acceptance": "The scan reds on the pre-fix tree naming all four sites; pnpm test green after.",
+    "notes": "Sites: loop-process-boundary.integration.test.ts:206,230; cliJobVerbs.test.ts:55; build-changelog.test.ts:45. Each types e.code as `number` when a spawn failure gives an errno string and a kill gives undefined, then launders both to 1 — into suites asserting 0/2/69/78. exitStatusOf (tests/helpers/subprocess.ts:280) already refuses both, consumed only by runCliStreams. Scan needs a vacuity pin: assert the scanned file set is populated."
+  }
+]

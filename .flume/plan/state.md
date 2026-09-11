@@ -17,4 +17,6 @@ imports; `examples/`'s three chain modules with `src/index.ts`; `src/cli.ts`'s
 remaining helper imports — `src/cliHelp.ts`, `src/cliJobResolution.ts`,
 `src/cliJobVerbs.ts`, `src/cliVerdict.ts` — with `src/standardSchema.ts`;
 `src/cliChainLoad.ts` with its two consumers; `bin/`'s two scripts with
-`tests/bin.test.ts`. Frontier remaining: `tests/`.
+`tests/bin.test.ts`; `tests/helpers/`'s three modules with
+`tests/subprocessHelper.test.ts`. Frontier remaining: `tests/`'s suite
+files, less `bin.test.ts` and `subprocessHelper.test.ts`.
