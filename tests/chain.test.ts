@@ -21,15 +21,17 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
+import type { Gate } from "../src/Gate.ts";
+import type { PkgManagerGate } from "../src/builtinGates.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
@@ -232,9 +234,9 @@ describe("plan slices via the real .flume/chain.ts", () => {
 
   /**
    * What is left here is what a real tick cannot produce on demand: a
-   * build wave's merge outcomes, a marker that must be ignored, a prior
-   * attempt's refusal record. Every rung transition between plan slices —
-   * self-rewake, hand-on, hand to build, hibernate — is driven through
+   * marker that must be ignored, a prior attempt's refusal record. Every
+   * rung a real tick *can* reach — the transitions between plan slices, and
+   * the build wave's own merge outcomes — is driven through
    * `Dispatcher.tick()` at the bottom of this file instead, because a
    * `TickResult` this file folds by hand cannot prove the engine and the
    * chain agree on it (`engineering.md`, *A seam gate reads what the real
@@ -259,39 +261,6 @@ describe("plan slices via the real .flume/chain.ts", () => {
       await writeState({}, "Rotation open (phrase delta). Covered: `src/a.ts`.\n");
       expect(phases[SWEEP]!.shouldRun!(ctx())).toBe(true);
       expect(phases[SWEEP]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
-    });
-
-    it("a refusal in the build wave wakes the inbox slice ahead of a still-pickable queue; a clean wave follows the ladder", async () => {
-      const build = phases["build"]!;
-      const entry = open("OPEN-1");
-      const pickable = { pendingAfter: [entry], pickableAfter: [entry] };
-      expect(build.handoff(result({ phaseName: "build", shippedTags: ["DONE"], ...pickable }))).toEqual(["build"]);
-      expect(build.handoff(result({ phaseName: "build", noCommit: "clean-exit", ...pickable }))).toEqual([INBOX]);
-      // A park — merged, and this chain's `shipped` said no — is plan's to
-      // reconcile; a cherry-pick conflict is the next wave's to retry. The
-      // engine reports which on `entries[].mergeOutcome`.
-      const wave = (mergeOutcome: "not-shipped" | "cherry-pick-conflict") =>
-        build.handoff(
-          result({
-            phaseName: "build",
-            committed: true,
-            entries: [{ tag: "OPEN-1", committed: true, shipped: false, reverted: false, mergeOutcome }],
-            ...pickable,
-          }),
-        );
-      expect(wave("not-shipped")).toEqual([INBOX]);
-      expect(wave("cherry-pick-conflict")).toEqual(["build"]);
-      // Nothing pickable: a shipped wave has no reviewer to wake — the gates
-      // were its review — so the ladder falls through to the sweep, whose
-      // domain the shipped code touched …
-      await commit("src/a.ts", "export const a = 2;\n", "build: change a");
-      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([SWEEP]);
-      // … and to derive ahead of it when intent moved.
-      await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
-      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([DERIVE]);
-      // A docs-only wave with nothing else live hibernates outright.
-      await writeState({ sweep: git(repo, ["rev-parse", "HEAD"]), derive: git(repo, ["rev-parse", "HEAD"]) });
-      expect(build.handoff(result({ phaseName: "build", committed: true, shippedTags: ["DONE"] }))).toEqual([]);
     });
   });
 });
@@ -1135,6 +1104,302 @@ describe("the plan ladder over a real tick", () => {
       expect(refilled.awakeAfter).toEqual([BUILD]);
     } finally {
       await fx.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
+ * `.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote* — the build half of the same claim the plan ladder above makes.
+ * `build.handoff` reads `TickResult.entries[].mergeOutcome`, `noCommit`, and
+ * `pickableAfter`; a suite that hands it those fields by the tester's hand
+ * pins nothing about the dispatcher that fills them, so a wave's merge
+ * vocabulary is produced here by `Dispatcher.tick()` itself — real
+ * worktrees, a real cherry-pick, this chain's own `shipped` predicate — and
+ * `awakeAfter` is the baton the engine wrote from the answer.
+ *
+ * What stays the test's is the agent and two costs a fast lane cannot pay:
+ * `api.setupWorktree` (the install, already the override seam
+ * `setupBuildWorktree`'s suite above uses) and `api.tscGate` (the
+ * package-manager typecheck, which needs that install). Neither is this
+ * seam. The `vitest` gate is not overridden — it is the real one, taking
+ * its own declared skip, because every entry here names no behavior and
+ * ships outside the code paths it keys on.
+ */
+describe("the build wave over a real tick", () => {
+  const INBOX = "plan-inbox";
+  const DERIVE = "plan-derive";
+  const SWEEP = "plan-sweep";
+  const BUILD = "build";
+
+  /** A gate that reports green without spawning anything, in the shape `FlumeApi.tscGate` declares. */
+  function stubbedGreen(name: string): PkgManagerGate {
+    const gate: Gate = {
+      name,
+      when: "afterCommit",
+      run: async () => ({ ok: true, message: `${name} stubbed green` }),
+    };
+    const fn = (() => gate) as unknown as PkgManagerGate;
+    Object.defineProperty(fn, "name", { value: name, configurable: true });
+    fn.when = gate.when;
+    fn.run = gate.run;
+    return fn;
+  }
+
+  interface WaveEntry {
+    tag: string;
+    /** The one file the entry declares — what the dispatcher partitions the wave on. */
+    declares: string;
+    /** What the agent does in this entry's worktree. A no-op is a clean exit. */
+    act: (cwd: string) => void;
+  }
+
+  /** An agent that writes one file and commits it. */
+  const writes =
+    (rel: string, content: string) =>
+    (cwd: string): void => {
+      mkdirSync(join(cwd, dirname(rel)), { recursive: true });
+      writeFileSync(join(cwd, rel), content);
+      git(cwd, ["add", "-A"]);
+      git(cwd, ["commit", "-q", "-m", `build: write ${rel}`]);
+    };
+  /** The park shape this chain's `shipped` reads: the entry's own note, alone. */
+  const parks = (tag: string) =>
+    writes(`.flume/plan/notes/${tag}.md`, `# ${tag} parked\n\nthe premise does not hold on this tree.\n`);
+  /** An agent that exits clean having produced nothing. */
+  const commitsNothing = (): void => {};
+
+  /** Pickable, inside build's fence, `per` resolvable from the worktree's own tree. */
+  const queueEntry = (e: WaveEntry) => ({
+    tag: e.tag,
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: { new: [], edit: [{ path: e.declares, description: "the file this entry declares" }], retire: [] },
+    summary: `${e.tag} ships one file`,
+    per: { path: "docs/rationale.md", section: "The reason" },
+    tests: [],
+    pins: [],
+    acceptance: "the wave hands the baton on",
+  });
+
+  interface Harness {
+    repo: string;
+    flumeDir: string;
+    /** The real `build` phase off the real factory — the consumer under test. */
+    build: Phase;
+    /** Queue `entries` on the trunk, wake build, run one real wave. */
+    wave: (entries: WaveEntry[]) => Promise<TickOutcome>;
+    /** A commit on the trunk that no wave made — what arms a plan slice. */
+    commitOnTrunk: (rel: string, content: string, msg: string) => void;
+    cleanup: () => Promise<void>;
+  }
+
+  async function harness(): Promise<Harness> {
+    const fx = await makeFixture();
+    const repo = fx.repo;
+    const flumeDir = join(repo, ".flume");
+    const acts = new Map<string, (cwd: string) => void>();
+
+    // `sessions/` is this chain's own artifact dir, gitignored the way an
+    // adopting repo's .gitignore carries it.
+    await writeFile(join(repo, ".gitignore"), ".flume/sessions/\n", { flag: "a" });
+    await mkdir(join(flumeDir, "plan"), { recursive: true });
+    await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+    // `setupBuildWorktree` derives its sentinel from the worktree's own
+    // manifest; with no dependencies declared there is nothing to assert.
+    await writeFile(
+      join(repo, "package.json"),
+      `${JSON.stringify({ name: "wave-fixture", version: "0.0.0" }, null, 2)}\n`,
+    );
+    await mkdir(join(repo, "docs"), { recursive: true });
+    await writeFile(join(repo, "docs", "rationale.md"), "# Rationale\n\n## The reason\n\nbody\n");
+    await mkdir(join(fx.configDir, "prompts"), { recursive: true });
+    await writeFile(join(fx.configDir, "prompts", "build.md"), "Ship {{TAG}}.\n");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "seed the build fixture"]);
+    // Both cursors at the tip: every slice below is live for the reason
+    // this test arms and not a bootstrap default. The stamping commit
+    // touches only state.md, which is in neither slice's window.
+    const seeded = git(repo, ["rev-parse", "HEAD"]);
+    await writeFile(
+      join(flumeDir, "plan", "state.md"),
+      `# State\n\nSpec derived through: \`${seeded}\`\n\nPosture swept through: \`${seeded}\`\n`,
+    );
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "plan: stamp the cursors"]);
+
+    const { chain } = chainFactory({
+      ...buildFlumeApi({ repoRoot: repo, configDir: fx.configDir, flumeDir }),
+      setupWorktree: async () => {},
+      tscGate: stubbedGreen("tsc"),
+      claudeCode: () => ({
+        name: "wave-stub",
+        invoke: async ({ cwd }) => {
+          const act = acts.get(basename(cwd));
+          if (!act) throw new Error(`wave-stub: no action for worktree '${basename(cwd)}'`);
+          act(cwd);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      }),
+    });
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a chain that lost a plan slice would satisfy the ladder legs below
+    // over a rung list with nothing to order.
+    expect(chain.phases.map((p) => p.name)).toEqual([INBOX, DERIVE, SWEEP, BUILD]);
+
+    const wave = async (entries: WaveEntry[]): Promise<TickOutcome> => {
+      acts.clear();
+      for (const e of entries) acts.set(slugify(e.tag), e.act);
+      await writeFile(
+        join(flumeDir, "plan", "pending.json"),
+        `${JSON.stringify(entries.map(queueEntry), null, 2)}\n`,
+      );
+      git(repo, ["add", "-A"]);
+      git(repo, ["commit", "-q", "-m", "plan: queue the wave"]);
+      const baton = new Baton(flumeDir);
+      for (const p of chain.phases) baton.sleep(p.name);
+      baton.wake(BUILD);
+      const outcome = await new Dispatcher({
+        repoRoot: repo,
+        configDir: fx.configDir,
+        flumeDir,
+        agent: {
+          name: "never-resolved",
+          invoke: async () => {
+            throw new Error("the build phase declares its own agent");
+          },
+        },
+        chainLoader: async () => ({ chain }),
+        log: silent,
+        maxParallel: 4,
+      }).tick();
+      // Vacuity pin: a declined, hibernated or failed tick answers with a
+      // baton this chain's `handoff` never saw, and every leg below would
+      // be asserting over the flags this test set itself. The entry records
+      // are the handoff's own input — an entry dropped in provisioning
+      // reports nowhere on them.
+      expect(outcome.hibernated, outcome.summary).toBe(false);
+      expect(outcome.failed, outcome.summary).toBeUndefined();
+      expect(outcome.declined, outcome.summary).toBeUndefined();
+      expect(outcome.result?.phaseName, outcome.summary).toBe(BUILD);
+      expect(outcome.result?.provisionFailures, outcome.summary).toBeUndefined();
+      expect([...(outcome.result?.entries ?? [])].map((e) => e.tag).sort(), outcome.summary).toEqual(
+        entries.map((e) => e.tag).sort(),
+      );
+      return outcome;
+    };
+
+    return {
+      repo,
+      flumeDir,
+      build: chain.phases.find((p) => p.name === BUILD)!,
+      wave,
+      commitOnTrunk: (rel, content, msg) => {
+        mkdirSync(join(repo, dirname(rel)), { recursive: true });
+        writeFileSync(join(repo, rel), content);
+        git(repo, ["add", "-A"]);
+        git(repo, ["commit", "-q", "-m", msg]);
+      },
+      cleanup: fx.cleanup,
+    };
+  }
+
+  /** The merge outcome the engine recorded for `tag` on this wave. */
+  const outcomeOf = (tick: TickOutcome, tag: string): string | undefined =>
+    tick.result?.entries?.find((e) => e.tag === tag)?.mergeOutcome;
+
+  it("a build wave the engine marked cherry-pick-conflict re-wakes build and one it marked not-shipped wakes the inbox slice, off a TickResult the dispatcher produced", async () => {
+    const h = await harness();
+    try {
+      // Two entries the queue declares as disjoint, whose agents both create
+      // the same undeclared file: the first cherry-picks clean, the second
+      // is an add/add conflict on the trunk the first just moved.
+      const conflicted = await h.wave([
+        { tag: "COLLIDE-A", declares: "docs/a.md", act: writes("docs/collide.md", "from A\n") },
+        { tag: "COLLIDE-B", declares: "docs/b.md", act: writes("docs/collide.md", "from B\n") },
+      ]);
+      expect(outcomeOf(conflicted, "COLLIDE-A")).toBe("merged");
+      expect(outcomeOf(conflicted, "COLLIDE-B")).toBe("cherry-pick-conflict");
+      // The conflicted entry is still queued and still pickable, and a
+      // conflict is nobody's to reconcile but the next wave's — so the
+      // ladder answers with build, not the inbox.
+      expect(conflicted.result?.pickableAfter.map((e) => e.tag)).toEqual(["COLLIDE-B"]);
+      expect(conflicted.awakeAfter).toEqual([BUILD]);
+
+      // An agent that committed nothing: the wave shipped nothing usable,
+      // and the entry stays pickable. Nothing is on disk for the inbox
+      // slice to be live on, so this answer is the refusal leg's alone.
+      const refused = await h.wave([
+        { tag: "GIVES-UP", declares: "docs/c.md", act: commitsNothing },
+        { tag: "SHIPS-ANYWAY", declares: "docs/d.md", act: writes("docs/d.md", "shipped\n") },
+      ]);
+      expect(refused.result?.entries?.find((e) => e.tag === "GIVES-UP")?.noCommit).toBe("clean-exit");
+      expect(refused.result?.shippedTags).toEqual(["SHIPS-ANYWAY"]);
+      expect(refused.result?.pickableAfter.map((e) => e.tag)).toEqual(["GIVES-UP"]);
+      expect(refused.awakeAfter).toEqual([INBOX]);
+
+      // A park: the commit landed, and this chain's own `shipped` read its
+      // sole path as the entry's note and declined. The engine reports that
+      // as `not-shipped` — indistinguishable from a conflict in
+      // committed/shipped/reverted, which is the whole reason handoff reads
+      // the merge outcome.
+      const parked = await h.wave([
+        { tag: "PARK-ME", declares: "docs/e.md", act: parks("PARK-ME") },
+        { tag: "SHIPS-BESIDE", declares: "docs/f.md", act: writes("docs/f.md", "shipped\n") },
+      ]);
+      expect(outcomeOf(parked, "PARK-ME")).toBe("not-shipped");
+      expect(outcomeOf(parked, "SHIPS-BESIDE")).toBe("merged");
+      expect(parked.result?.committed).toBe(true);
+      expect(parked.result?.noCommit).toBeUndefined();
+      expect(parked.result?.pickableAfter.map((e) => e.tag)).toEqual(["PARK-ME"]);
+      expect(parked.awakeAfter).toEqual([INBOX]);
+
+      // The park's note rode the cherry-pick onto the trunk, so the inbox
+      // slice is now live on its own account too. Drain it and ask the same
+      // real `TickResult` again: the answer is still the inbox, which only
+      // `mergeOutcome: "not-shipped"` can be giving.
+      rmSync(join(h.flumeDir, "plan", "notes", "PARK-ME.md"));
+      expect(h.build.handoff(parked.result!)).toEqual([INBOX]);
+    } finally {
+      await h.cleanup();
+    }
+  }, 60_000);
+
+  it("a clean build wave with nothing pickable falls through this chain's ladder to the sweep, off a TickResult the dispatcher produced", async () => {
+    const h = await harness();
+    try {
+      // Nothing refused, nothing left pickable, and no slice's window is
+      // open: the wave hibernates the loop outright.
+      const quiet = await h.wave([
+        { tag: "SHIP-ONE", declares: "docs/one.md", act: writes("docs/one.md", "one\n") },
+      ]);
+      expect(quiet.result?.shippedTags).toEqual(["SHIP-ONE"]);
+      expect(quiet.result?.pickableAfter).toEqual([]);
+      expect(quiet.awakeAfter).toEqual([]);
+
+      // A commit in the sweep's domain the sweep cursor never caught up to.
+      // It is the test's, not the wave's: a build commit that armed the
+      // sweep would be a code path, and the real `vitest` gate this suite
+      // keeps would then run the whole suite inside the fixture.
+      h.commitOnTrunk("src/seed.ts", "// swept\n", "build: an earlier wave's code");
+      const swept = await h.wave([
+        { tag: "SHIP-TWO", declares: "docs/two.md", act: writes("docs/two.md", "two\n") },
+      ]);
+      expect(swept.result?.shippedTags).toEqual(["SHIP-TWO"]);
+      expect(swept.result?.pickableAfter).toEqual([]);
+      expect(swept.awakeAfter).toEqual([SWEEP]);
+
+      // Intent moved: derive sits above the sweep on the ladder, so a spec
+      // commit past its cursor takes the baton first.
+      h.commitOnTrunk("spec/loop.md", "# Loop\n\n## The baton\n\nbody\n", "spec: widen The baton");
+      const derived = await h.wave([
+        { tag: "SHIP-THREE", declares: "docs/three.md", act: writes("docs/three.md", "three\n") },
+      ]);
+      expect(derived.result?.shippedTags).toEqual(["SHIP-THREE"]);
+      expect(derived.result?.pickableAfter).toEqual([]);
+      expect(derived.awakeAfter).toEqual([DERIVE]);
+    } finally {
+      await h.cleanup();
     }
   }, 60_000);
 });
