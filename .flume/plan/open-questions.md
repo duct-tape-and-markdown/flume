@@ -256,12 +256,13 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## Nine spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
+## Fourteen spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
 
 Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s,
-`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s and `DISPATCHER-EXTRACT-FRICTION`'s
-notes; every cite re-verified on disk this tick. Three pure moves have now
-left nine spec cites pointing at symbols their old modules no longer hold.
+`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s, `DISPATCHER-EXTRACT-FRICTION`'s and
+`DISPATCHER-EXTRACT-WORKTREES`'s notes; every cite re-verified on disk at the
+tick that drained it. Four pure moves have now left fourteen spec cites
+pointing at symbols their old modules no longer hold.
 
 The supervisor got its own module at `39c8207` — three cites, one wider than
 that note reported:
@@ -291,6 +292,23 @@ The friction channel got `src/friction.ts` at `ee1ea40` — three more:
 - `spec/worktrees.md:296` — `src/Dispatcher.ts:harvestFriction`. It is
   `src/friction.ts:128`.
 
+The worktree lifecycle got `src/worktrees.ts` at `fc246f4` — five more, and
+the last two carry no path at all, so they name the wrong *owner* rather than
+the wrong file:
+
+- `spec/worktrees.md:21` and `:61` — `src/Dispatcher.ts:createWorktree`. It is
+  `src/worktrees.ts:100`.
+- `spec/worktrees.md:95` — ``` `worktreeDirName(tag)` (`src/Dispatcher.ts`) ```.
+  It is `src/worktrees.ts:84`.
+- `spec/loop.md:92` and `spec/jobs.md:54` — `Dispatcher.createWorktree`. A free
+  function now, on no class.
+
+`spec/worktrees.md`'s startup-sweep section needs no change:
+`Dispatcher.sweepStaleWorktrees` is still a method (`src/Dispatcher.ts:3760`,
+`src/cli.ts` calls it), delegating to `src/worktrees.ts:250`. The remaining
+bare `createWorktree` cites (`spec/worktrees.md:69,76,125`,
+`spec/loop.md:421,758`, `spec/pending.md:55`) are path-free and stay correct.
+
 `spec/worktrees.md:276` (`writeRevertNote`) stays correct — that writer stayed
 in `src/Dispatcher.ts`, built from a commit message only the dispatcher holds,
 and the divergence is declared at `src/friction.ts:17`.
@@ -311,19 +329,23 @@ all hold at the new homes. Parked only because `spec/` is human-only
 comments down, was repointed in the same commit. Inside build's fence, so it
 rides whatever entry the amendment files rather than earning one.
 
-**And the fork this raises, now with a third data point: pin the module path,
-or keep re-noticing it?** Nothing checks a spec cite's module path, which is
-why three green waves have now shipped nine stale ones — and the rate is the
-argument, since `DISPATCHER-EXTRACT-WORKTREES` is still queued and will strand
-three more (`spec/worktrees.md:21,61` — `createWorktree`; `:95` —
-`worktreeDirName`; the `runFanout` cites stay). A scan is
-buildable and cheap — resolve every `src/<file>.ts:<symbol>` in `spec/`
-against the tree (~30 cites today), in `tests/retired-narration.test.ts`,
-which already reads `spec/` paths for its doc-to-source scans. It is **red
-until the amendment lands**, so it ships after, never with. Against it: a
-symbol-resolving scan over prose is a second parser to maintain, and the same
-commit that moves a symbol is the cheapest place to fix its cites — but that
-is exactly what both waves could not do, since build cannot edit `spec/`.
+**And the fork this raises, now with a fourth data point and the forecast
+landed: pin the module path, or keep re-noticing it?** Nothing checks a spec
+cite's module path, which is why four green waves have now shipped fourteen
+stale ones. The prior tick predicted three from `DISPATCHER-EXTRACT-WORKTREES`
+and got five — the two it missed being the `Dispatcher.createWorktree` pair,
+which is the point: **the cites come in three shapes**, not one.
+`src/f.ts:symbol`, `` `symbol` (`src/f.ts`) ``, and `Class.method` — and the
+bare-symbol cites (`spec/loop.md:285,357`) are a fourth that resolves nowhere.
+A scan is still buildable and cheap — in `tests/retired-narration.test.ts`,
+which already reads `spec/` paths for its doc-to-source scans — but scope is
+now a sub-fork: the first two shapes alone (~30 cites, mechanical) catch 10 of
+the 14; adding `Class.method` catches 12 and needs the class's member list;
+bare symbols are out of reach either way. It is **red until the amendment
+lands**, so it ships after, never with. Against it: a symbol-resolving scan
+over prose is a second parser to maintain, and the same commit that moves a
+symbol is the cheapest place to fix its cites — but that is exactly what all
+four waves could not do, since build cannot edit `spec/`.
 Say the word and it files as an entry.
 
 ## Nothing type-checks the merged tree, and a vitest fixture is the accidental oracle (PARKED)
