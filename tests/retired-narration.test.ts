@@ -2514,6 +2514,21 @@ describe("module-path cites in src/ and examples/ resolve against the tree", () 
  * "A green verdict is proven non-vacuous"), with the grammar driven both ways
  * beside it.
  *
+ * The `tests/` half is the same flat refusal, and for a stronger reason: the
+ * rule's third bullet refuses a test title or a fixture outright, because
+ * tests pin the spec and the spec does not cite them. There is no
+ * allowlist-shaped escape the way `src/` has one — no spec claim takes a test
+ * file as its subject — so the refusal is unconditional, currently green over
+ * zero sites, and the emptiness is spelled here rather than inherited from a
+ * silent `[]`.
+ *
+ * Its sibling roots are deliberately *not* swept. `bin/flume.js`, `bin/env`,
+ * `scripts/smoke-install.mjs` and `examples/backlog-groomer-chain.ts` are each
+ * a claim's subject — a shim the package ships, a fixture set CI installs
+ * against, a reference chain a consumer copies — not a route to a symbol, and
+ * `spec-writing.md` refuses neither. Widening the needle to them would be a
+ * ban the page never states.
+ *
  * Scope is `spec/` alone. The same shape in `src/` and `examples/` is swept
  * by the cite scan above, which can resolve a cite against the tree; `spec/`
  * is human-only (chain.ts writable-paths), so a finding here leaves as a
@@ -2556,6 +2571,26 @@ const SPEC_LINE_LOCATOR =
   /(?<![A-Za-z0-9_.:/-])[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z]{1,5}:\d+/g;
 
 /**
+ * A path under a `tests/` root, anchored on the root itself: `tests/x.ts`,
+ * `tests/fixtures/chain.ts`, and the same path inside a longer prefix
+ * (`flume/tests/x.ts`). The lookbehind bars a word character before `tests`,
+ * so `integration-tests/…` is a different root and not this one.
+ *
+ * Unlike the `src/` needle, segments may carry dots — `.test.ts` is the
+ * convention every file under that root follows, and a truncated hit would
+ * report the violation by the wrong name.
+ *
+ * An extension is required, which is what keeps a bare directory mention out:
+ * a sentence naming `tests/` as a lane names the tree, not a file. Anchoring
+ * on the root is also why a bare `Dispatcher.test.ts` or the
+ * `*.integration.test.ts` filename convention the corpus writes does not fire
+ * — a filename with no root is not a path, and whether the corpus may write
+ * one is an open question for the human, not a claim this needle settles.
+ */
+const SPEC_TEST_PATH =
+  /(?<![A-Za-z0-9_.-])tests\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z]{1,5}/g;
+
+/**
  * The `src/` paths a spec page may name, each with the claim that takes the
  * module as its subject. An entry leaves in the commit that removes its last
  * site; the equality below refuses a stale one as loudly as a new locator.
@@ -2574,6 +2609,11 @@ const SPEC_SRC_PATH_ALLOWLIST: Record<string, string> = {
 /** Distinct `src/` paths a page names, in source order. */
 function srcPathsIn(text: string): string[] {
   return [...new Set(text.match(SPEC_SRC_PATH) ?? [])];
+}
+
+/** Every `tests/` path a page names, as written. */
+function testPathsIn(text: string): string[] {
+  return text.match(SPEC_TEST_PATH) ?? [];
 }
 
 /** Every `path:NN` locator a page carries, as written. */
@@ -2632,6 +2672,25 @@ describe("spec/ names public surface, never a path locator", () => {
     ).toEqual([]);
   });
 
+  // Empty by design (engineering.md, "A green verdict is proven
+  // non-vacuous"): this selection is legitimately zero — the corpus cites no
+  // test file today — so the zero is asserted here and proved real by the
+  // sensitivity pin below, never inherited from a needle nobody drove.
+  it("no spec page cites a path under tests/", () => {
+    const sites = pages.flatMap((p) =>
+      testPathsIn(p.text).map((hit) => `${p.path} → ${hit}`),
+    );
+    expect(
+      sites,
+      "tests pin the spec; the spec does not cite them — state the behavior " +
+        "the test pins, or the public name it drives",
+    ).toEqual([]);
+    expect(
+      pages.flatMap((p) => testPathsIn(p.text)).length,
+      "the tests/ refusal is empty by design, not by a dead needle",
+    ).toBe(0);
+  });
+
   // Sensitivity pin (engineering.md, "A green verdict is proven
   // non-vacuous"): the line-locator refusal passes over an empty set by
   // design, and the allowlist refusal reports its inventory whether the
@@ -2664,6 +2723,43 @@ describe("spec/ names public surface, never a path locator", () => {
       "the exec-local doctrine lives in `spec/cli.md`; this page does not restate it",
     ]) {
       expect(lineLocatorsIn(denied), `line needle over-fires on: ${denied}`).toEqual([]);
+    }
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the refusal above passes over zero sites, so nothing in it
+  // distinguishes a clean corpus from a needle that stopped matching. Drive
+  // the injection through a real page, and drive the sibling-root cites the
+  // corpus actually writes through the same needle — the refusal is `tests/`
+  // alone, and a needle that swallowed `bin/` or `examples/` would be
+  // enforcing a ban the page never states.
+  it("the test-cite needle flags an injected tests/ path and leaves the bin/, scripts/ and examples/ cites the corpus writes", () => {
+    const clean = pages.find((p) => testPathsIn(p.text).length === 0);
+    expect(clean, "every spec page cites a test path — nothing to inject into").toBeDefined();
+    for (const injected of [
+      "tests/Dispatcher.test.ts",
+      "tests/fixtures/chain.ts",
+      "@dtmd/flume/tests/Dispatcher.test.ts",
+    ]) {
+      expect(
+        testPathsIn(`${clean!.text}\nPinned by \`${injected}\`.\n`),
+        `test needle went blind on: ${injected}`,
+      ).toContain(injected.replace("@dtmd/flume/", ""));
+    }
+
+    // The spellings the corpus writes today, each left unflagged on purpose:
+    // three sibling-root cites whose module is the claim's subject, a bare
+    // filename with no root, and the lane's filename convention.
+    for (const denied of [
+      "`bin.flume` points at `bin/flume.js`, a Node script with a `#!/usr/bin/env node` shebang",
+      "The POSIX `bin/flume` shell script stays in the package for direct callers",
+      "`CHAIN_FIXTURE` in `scripts/smoke-install.mjs` (Windows lane)",
+      "exported for tooling that holds its own shipped-tags set (`examples/backlog-groomer-chain.ts`)",
+      "naming it here would move most of `Dispatcher.test.ts` for a cost it does not pay",
+      "Marked by the `*.integration.test.ts` filename convention",
+      "a chain declares `tests/**` writable and the fence holds it",
+    ]) {
+      expect(testPathsIn(denied), `test needle over-fires on: ${denied}`).toEqual([]);
     }
   });
 });
