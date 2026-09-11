@@ -34,7 +34,13 @@ import {
   tipClaimPath,
   TipClaimHeldError,
 } from "./git.js";
-import { jobRun, liveLoopPid, readPendingLoose, JobUsageError } from "./job.js";
+import {
+  ensureRuntimeIgnores,
+  jobRun,
+  liveLoopPid,
+  readPendingLoose,
+  JobUsageError,
+} from "./job.js";
 import {
   Dispatcher,
   diskChainLoader,
@@ -861,6 +867,16 @@ async function main(): Promise<number> {
       dropLock();
       process.exit(143);
     });
+    // spec/jobs.md "Runtime ignores": the default `<repoRoot>/.flume` takes
+    // the same runtime-owned merge a job dir takes at `job new`, so a fresh
+    // adopter never commits a tick artifact because a line was missing from
+    // the repo's own ignore file. Under the tip claim and ahead of the sweep
+    // below: the claim is what rules out a concurrent writer against this
+    // root, and the sweep is the first thing this run writes under it.
+    // Idempotent — a root already carrying the entries is left byte-identical.
+    // `job run` reaches this via its `cmd = "loop"` rewrite above, where the
+    // root is the job dir `job new` already merged; a bare tick never does.
+    await ensureRuntimeIgnores(flumeDir);
     // Startup sweep (spec/worktrees.md "Startup sweep"): once, right after
     // the tip claim above and before the first tick, so a dead prior wave's
     // abandoned worktrees/branches never linger past this start. Safe here

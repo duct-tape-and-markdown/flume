@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD } from "../src/Dispatcher.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
 import { resolvePendingPath } from "../src/paths.ts";
 import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
 
@@ -2466,4 +2467,74 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
       await rm(attic, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+/**
+ * spec/jobs.md "Runtime ignores" — the default `<repoRoot>/.flume` takes the
+ * same runtime-owned `.gitignore` merge a job dir takes at `job new`, at
+ * every `loop` / `job run` start. Without it a fresh adopter (whose repo
+ * `.gitignore` was never hand-taught the runtime's layout) commits tick
+ * artifacts.
+ *
+ * Driven through the real CLI with `--max 0`: the merge sits under the tip
+ * claim and ahead of the startup sweep, both of which `--max 0` reaches
+ * before stopping without spawning a child tick. The expectation reads
+ * `RUNTIME_IGNORES` (`src/job.ts`) rather than respelling the block, so a
+ * line added there is asserted here by construction.
+ */
+describe("flume loop — runtime ignores at the default state root", () => {
+  it(
+    "a loop start merges the runtime ignores into the default state root's .gitignore",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const ignorePath = join(repo.dir, ".flume", ".gitignore");
+        // No `job new` ran, so nothing has seeded this root: the file the
+        // merge must create genuinely does not exist yet.
+        expect(existsSync(ignorePath)).toBe(false);
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+
+        // Vacuity pin: an empty RUNTIME_IGNORES would let any content pass.
+        expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+        const content = await readFile(ignorePath, "utf8");
+        const lines = content.split("\n");
+        for (const entry of RUNTIME_IGNORES) {
+          expect(lines).toContain(entry);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "leaves a state root that already carries the entries byte-identical, seed lines and order intact",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        await mkdir(flumeDir, { recursive: true });
+        const ignorePath = join(flumeDir, ".gitignore");
+        // Seed-authored line first, then the runtime block in an order the
+        // merge did not choose — a re-merge that rewrote the file would
+        // reorder or duplicate.
+        expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+        const seeded =
+          "sessions/\n" + [...RUNTIME_IGNORES].reverse().join("\n") + "\n";
+        await writeFile(ignorePath, seeded, "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+        expect(r.code).toBe(0);
+
+        expect(await readFile(ignorePath, "utf8")).toBe(seeded);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
 });
