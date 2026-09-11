@@ -35,5 +35,109 @@
     ],
     "acceptance": "A singleton tick's `flume log` line carries `merge=[<outcome>]`, with no `undefined` in the human form.",
     "notes": "TickVerdictMergeOutcome.tag is optional (src/Dispatcher.ts:300); formatTickVerdictLine interpolates it unconditionally (src/cliVerdict.ts:123). Emit the outcome alone when absent — never the phase name, which the line already prints as its first field (engineering.md, Derived state is computed, never restated beside its source). Closes the observation filed from VERDICT-SPAN-ROW-BASE-SHA."
+  },
+  {
+    "tag": "SINGLETON-PRUNE-PROVISION-FAILURE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "runSingleton's provisioning stage"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "singleton provision-failure coverage"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "runSingleton's worktree-prune throw is only logged — it reaches neither TickResult.provisionFailures nor the failure accounting",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Repeated identical failures — quarantine, then abort"
+    },
+    "tests": [
+      "a singleton whose worktree prune throws and whose creation then succeeds still reports the prune failure",
+      "a singleton's worktree-prune failure reaches both the tick result and the outcome envelope"
+    ],
+    "acceptance": "A singleton tick whose `pruneWorktrees` throws carries a ProvisionFailure on `TickResult.provisionFailures` and on the outcome envelope, whether or not worktree creation then succeeds.",
+    "notes": "src/Dispatcher.ts:1846-1852 warns and continues; create (:1857) and setupWorktree (:1874) each build a record and return it on both surfaces. runFanout (:2387-2401) accumulates its prune throw into a wave-level array — same shape here, since a prune wall whose create succeeds must still ride the eventual result. Today a deterministic prune wall on a singleton-only chain repeats with the backstop blind."
+  },
+  {
+    "tag": "RETIRED-NARRATION-INBOX-AND-QUEUE-PATH",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "the `.flume/inbox.md` state-layout bullet"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the harness-managed-state list naming inbox.md"
+        },
+        {
+          "path": "src/Gate.ts",
+          "description": "flumeDir's worked example"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "a needle for the retired queue file; empty the queue-path unfixed inventory"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two retired shapes still taught in the scanned corpus: the single-file `.flume/inbox.md`, and the queue path re-composed from flumeDir",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [
+      "no scanned surface names the retired single-file .flume/inbox.md queue",
+      "the retired queue-path shape has no surviving unfixed site"
+    ],
+    "acceptance": "`tests/retired-narration.test.ts` carries a needle for the retired queue file with an empty inventory, and the queue-path shape's `unfixed` map is empty — both failing on the pre-fix tree.",
+    "notes": "Records are one file each (.flume/PROTOCOL.md): README.md:152 and docs/CHAIN-AUTHORING.md:69 still name `.flume/inbox.md`; both are already in scannedPaths(). src/Gate.ts:43-45 is the lone standing `unfixed` denial of the queue-path shape — flumeDir's doc uses `join(ctx.flumeDir, \"plan\", \"pending.json\")` as its example, the shape ctx.pendingPath (:86-93) retired. Pick a non-queue state-relative read."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-DOC-AGREEMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the `interface Gate` block and the quoted plan phase"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "extend the field-set helper to Gate; pin the quoted phase against the example"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two more hand-copied blocks in docs/CHAIN-AUTHORING.md with nothing comparing them to their source: `interface Gate`, and the quoted cascade plan phase",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the chain-authoring doc's Gate block names every field src/Gate.ts declares",
+      "the chain-authoring doc's quoted plan phase agrees with examples/cascade-chain.ts"
+    ],
+    "acceptance": "Both blocks are compared against the real source by a pin that fails on the pre-fix tree; the doc's `interface Gate` names `command?` and its quoted phase's `gates`/`promptArgs` match the example's.",
+    "notes": "docs/CHAIN-AUTHORING.md:259-263 omits `command?` (src/Gate.ts:199) — the field a chain reads so its prompt need not restate a gate's command line; the existing interfaceFields helper (tests/retired-narration.test.ts:341) generalizes by one name. :157 claims to quote examples/cascade-chain.ts's plan phase; :169 shows `gates: [pendingParseGate]` where the file declares `pendingGate({...})` (:232), and promptArgs drops the extension."
   }
 ]

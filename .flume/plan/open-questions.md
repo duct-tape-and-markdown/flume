@@ -265,3 +265,163 @@ and the verdict-log read together. `.flume/chain.ts` is outside every phase
 lane, so it is a `chore(flume):` commit from an interactive session, never a
 pending entry.
 
+**Third copy, and it disagrees.** `build.handoff`'s `refused`
+(`.flume/chain.ts:825-828`) reads a park as `committed && !shipped &&
+!reverted` over `result.entries`. A cherry-pick conflict satisfies that, so
+the 2026-09-11 wave (LOG-TAGLESS-SPAN-ROW, `mergeOutcomes[].outcome:
+"cherry-pick-conflict"`) woke `plan-inbox`, whose `reconcileDue` counts only
+`"not-shipped"` and a bail record — the slice declined and the tick did
+nothing. The comment's "a refusal only plan can resolve" is false for a
+conflict, which the next wave retries from the new base. One predicate over
+the records, used by both legs, with conflict excluded
+(`engineering.md`, *Derived state is computed, never restated beside its
+source*) — same edit as the collapse above.
+
+## The shipped `examples/` trail the reference chain's shape (PARKED — decision needed)
+
+Drained from the inbox (2026-09-10, human). `examples/*-chain.ts` and
+`examples/prompts/*` are what npm ships (`package.json` `files`), and one tick
+of each loads and runs under `tests/examples.integration.test.ts` — so they
+work. Verified this tick: no example declares `shouldRun`, reads
+`GateContext.entry` or `baseSha`, splits a phase into disk-computed slices,
+orders a dependency ladder, or judges `tests[]` through a reporter-fed gate.
+The chain that does all six is `.flume/chain.ts`, which does not ship, and
+`docs/CHAIN-AUTHORING.md` never names it (grep: the file is cited only as the
+path a consumer writes).
+
+Options:
+
+- **A — `examples/` gains a chain carrying the current shape**, held by the
+  same integration test. Truest; also the largest surface to keep green, and
+  a fourth example to maintain.
+- **B — `docs/CHAIN-AUTHORING.md` names `.flume/chain.ts` as the reference**
+  and the examples as deliberately minimal. Cheap and honest, but the
+  reference is a file an installed consumer never receives.
+- **C — both**: name the reference, and promote only the two shapes a new
+  adopter most needs (`shouldRun`, a `tests[]`-judging gate) into
+  `cascade-chain.ts`.
+
+Product call on what `examples/` is *for* — a runnable floor, or the
+recommended shape (`engine-boundary.md`, *Opinion ships by name*).
+
+## A named behavior is proven by a test that also passes at the base (PARKED — routing)
+
+Drained from the inbox (2026-09-10, human). The vitest gate
+(`.flume/chain.ts` → `.flume/vitestJudge.ts`) judges a `tests[]` line by
+finding a passing test whose full name carries it. It never asks whether that
+test fails at `ctx.baseSha`. A build that titles an already-green test with
+the line passes having proven nothing — the exact false green
+`engineering.md` *A fix ships the test that would have caught it* exists to
+close, and the acceptance gate is this loop's only review.
+
+The gate already receives `baseSha` and `entry`. What it lacks is a way to
+run the named tests at the base: that needs a throwaway checkout with
+dependencies resolved, which is worktree provisioning — engine machinery, not
+something a gate can honestly do from `ctx`.
+
+Options:
+
+- **A — chain-side.** The gate provisions its own temp worktree and installs.
+  Every chain wanting the check rebuilds it (`engine-boundary.md`, *Verbatim
+  copying is the detector*), and it pays an install per gate run.
+- **B — engine surface.** A gate-reachable "run this command at `baseSha`"
+  capability, reusing the provisioning the dispatcher already owns. Passes the
+  second-implementation test — any chain judging a regression wants it — but
+  it is a new engine capability with a real cost model.
+- **C — accept the hole**, and say so at the gate site as a declared
+  divergence (`engineering.md`, *Loud or nothing*).
+
+Which layer owns it is the ruling; **B** is the shape that stops the copy, if
+the cost is acceptable.
+
+## `stateRootRel` is spec'd as the queue-read idiom, and two readers now use it (PARKED — spec amendment first)
+
+Drained from the inbox (2026-09-10, human). `.flume/chain.ts`'s
+`perResolvesGate` (:374-381) reads `pending.json` at `ctx.commitSha`;
+`src/builtinGates.ts` `pendingGate` (:397) makes the same read for the same
+commit. Consumer restatement on its face (`engineering.md`, *A fact the engine
+holds is reported*) — the obvious fix is the queue-as-of-the-gated-commit on
+`GateContext`.
+
+**Not derivable as filed.** `spec/chain.md` *What a gate receives* calls
+`GateContext` "the whole input surface" and ratifies `stateRootRel` as
+precisely this mechanism: "the one value a gate needs to read a **tracked**
+state-root file as the gated commit holds it — `git show
+<commitSha>:<stateRootRel>/plan/pending.json`". A new field contradicts that
+sentence, and build cannot move it.
+
+The fork is scope, not shape: is the queue special enough to get its own
+reported field (three `GateContext` construction sites,
+`src/Dispatcher.ts:2108,2713,3605`, each paying a read), or is the generic
+`stateRootRel` idiom the answer and the duplication the price of genericity?
+The engine already parses the queue at that sha whenever `pendingGate` is
+declared; it does not when it is not.
+
+## Runtime ignores reach the default state root only through the repo's own `.gitignore` (PARKED — layer ownership)
+
+Drained from the inbox (2026-09-10, human). `RUNTIME_IGNORES` (`src/job.ts:52`)
+is merged into a **job** dir's `.gitignore` (`ensureRuntimeIgnores`, called
+once at `src/job.ts:231`). The default `<repoRoot>/.flume` root gets nothing:
+this repo's committed `.gitignore` carries each runtime directory by hand, and
+`rendered-prompts/` was added that way on 2026-09-10. There is no `flume init`
+verb. A downstream repo that misses a line commits tick artifacts.
+
+`spec/chain.md:654-656` says the default root "stays ignored as it already
+is" — which assumes it already is, and nothing establishes that for a new
+adopter. `spec/jobs.md` *Runtime ignores* is scoped to job dirs.
+
+Options:
+
+- **A — engine writes `.git/info/exclude`** for its runtime dirs at the
+  default root. Untracked, so no repo commit; but the engine writing into
+  `.git/` for a convenience is a large hammer.
+- **B — a `flume init` verb** writes them once, opted into.
+- **C — the repo's job, enforced**: the spec says so and a gate refuses a
+  commit adding a path under the state root that `RUNTIME_IGNORES` names.
+
+Whichever wins, the spec line moves first.
+
+## The loop spec and the dispatcher disagree on a singleton decline's cost (PARKED — one side is the defect)
+
+Drained from the inbox (2026-09-10, human). `spec/loop.md` *Declining a tick
+before the invocation* (:399-400): "A singleton decline
+(`Dispatcher.runSingleton`) costs a `rev-parse` and the pending read, nothing
+else." Verified on disk: `runSingleton` prunes (`src/Dispatcher.ts:1846`),
+creates the worktree (:1857) and runs `setupWorktree` (:1874) before
+consulting `shouldRun` (:1941). Every declined plan slice pays a worktree and
+an install — three slices, most ticks.
+
+Options:
+
+- **A — engine moves `shouldRun` ahead of provisioning.** Makes the spec
+  sentence true and is the real saving. It changes the ratified contract:
+  `ctx.cwd` becomes the repo root on the declining call, which the same spec
+  section must then say — and the section currently contrasts this case
+  against fanout's deliberately post-provision placement.
+- **B — correct the spec sentence** to what the code does, mirroring the
+  fanout bullet directly below it. Human edit, no behavior change, and the
+  per-slice worktree cost stands.
+
+Route is the operator's; **A** is the one that pays for itself, at the cost of
+a contract edit.
+
+## `status`'s chain-load failure is reported, and three prose sites still say "silently" (PARKED — spec housekeeping)
+
+From `.flume/plan/notes/CHAIN-LOAD-FAILURE-REPORTED.md`. `status` / `job
+status` now report a chain-load failure on stderr before printing counts
+rebased on the default queue path (`src/cliChainLoad.ts`,
+`loadChainForObservation`). Three sites state the retired behavior, verified
+on disk this tick:
+
+- `spec/cli.md:111-112` — "a missing or broken chain **silently withholds**
+  them" (the §6 chain-declared extras).
+- `spec/jobs.md:177-178` — "**silently** withholds the friction counts and
+  never fails the verb."
+- `docs/CLI.md:23` — "a broken or missing chain withholds only these, never
+  the lines above it": true of stdout, silent about the report.
+
+The two spec lines are the human's (`spec-plan-build.md`) and both want the
+same one clause: the load never fails the verb and never withholds a line
+above it, *and* names its own failure. `docs/CLI.md` is build-writable but
+would then cite a spec sentence that is still wrong — so it rides the same
+pass rather than shipping first.
