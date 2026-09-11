@@ -66,7 +66,7 @@ Riding whichever commit lands first, by the 2026-09-11 ruling on `stateRootRel`:
 (`spec/chain.md`, *What a gate receives*) so a later sweep does not re-file it as
 restatement.
 
-## `merging/` is new runtime state at the state root and the ignore block does not name it (NEEDS AMENDMENT)
+## The `spec/jobs.md` ignore block is missing a line and names a retired file (NEEDS AMENDMENT)
 
 The 2026-09-11 rulings landed two lines that pull against each other. `spec/loop.md`
 *Crash equals stop* introduces `<flumeDir>/merging/<slug>.json`, written and removed by
@@ -86,6 +86,20 @@ is missing.
 one accessor, no second spelling. The alternative — the marker lives somewhere already
 ignored — would put crash-recovery state under `prior-attempts/`, whose lifecycle
 (cleared on a clean ship) is the wrong one for a file only the operator may remove.
+
+**Second defect in the same block — `last-tick.json` no longer exists.** Drained from
+`RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`'s note. The block lists `last-tick.json`;
+nothing in `src/` writes that name. The per-tick verdict file is `tick-verdict.json`
+(`STATE_ROOT_NAMES.tickVerdict`), and `CHANGELOG.md:1357` records the rename.
+`README.md` and `docs/CHAIN-AUTHORING.md` both already teach the new name. Build
+shipped the accessor's name rather than the spec's — an ignore line for
+`last-tick.json` would ignore a file no tick creates while leaving the real one
+trackable, which is the defect that entry existed to close — so `RUNTIME_IGNORES` now
+reads one line off the spec block verbatim. No agreement pin is driven off the block
+today; the first one authored would fail against the runtime.
+
+**Recommend:** `last-tick.json` → `tick-verdict.json`, in the same edit as the
+`merging/` line above. Both are `spec/` and so human-only; neither is a code change.
 
 ## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
 
@@ -129,3 +143,37 @@ the code takes one — prose *denying* a load rather than merely omitting it.
 verified on disk this tick*) has no lens that would have caught it. Worth one:
 doc prose that denies a call the module makes. Human's file, so parked here
 beside the spec amendment it arrived with.
+
+## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
+
+Drained from `INTENT-DOC-RECONCILED`'s note; verified on disk. The
+"Decided, not yet executed — quality lenses in the loop" section closes with
+"Sequencing: arm after the v0.11 boundary line ships" (`docs/INTENT.md:67`).
+`package.json` is `0.14.0`, so the stated gate fired two lines back while the
+decision stayed unexecuted. The prose therefore reads "not yet due" when it is due —
+`engineering.md` *Narration is the ladder's bottom rung*, **Prefer the condition to
+the era**, firing on a live section rather than a dead one.
+
+The release line was never the real gate. The section names its own blocker one
+paragraph up: the correctness-adjacency filing bar "demotes exactly the findings
+these lenses produce", and the fork it poses — a quality lane that batches pure-shape
+debt into a dedicated wave, or a bar carve-out for reuse findings — is unresolved.
+That is the condition; `v0.11` was the era standing in for it.
+
+Options:
+
+- **Arm it.** Resolve the filing-bar fork, then add `reuse` and `efficiency` sections
+  to `.claude/rules/engineering.md`. A phrase delta then arms a full-domain posture
+  rotation and the loop gains the lenses with no engine or chain change — the
+  section's own claimed mechanism. Costs one full rotation of sweep ticks.
+- **Restate the condition** (recommended minimum). Replace the release-line sequencing
+  with the filing-bar fork it was standing in for, so a later reader evaluates
+  something observable. Ships as a pending entry the moment the replacement wording is
+  ruled — `docs/` is inside build's fence.
+- **Retire the decision.** The ruling is from 2026-07-31 and three release lines have
+  passed without it; if the lenses are no longer wanted, the section goes and git keeps
+  the record.
+
+Parked rather than filed because arming, restating and retiring are three different
+answers about whether the lenses are still wanted, and the section is a design-intent
+ruling — plan choosing among them would be filling a gap silently.

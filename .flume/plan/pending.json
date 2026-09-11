@@ -45,6 +45,41 @@
     "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator."
   },
   {
+    "tag": "RUNTIME-IGNORES-FRICTION-AT-DEFAULT-ROOT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "`frictionIgnoreEntry` stops being module-private"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the best-effort chain resolve hoists above the merge and feeds it the friction entry"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the friction entry at the default root"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The loop / job run ignore merge passes no `extra`, so a chain declaring `Chain.friction` still leaves its channel dir trackable at the default state root",
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "Runtime ignores"
+    },
+    "tests": [
+      "a loop start merges a declared Chain.friction dir into the default state root's .gitignore"
+    ],
+    "acceptance": "`loop` / `job run` merge `RUNTIME_IGNORES` plus the declared friction entry through the same `frictionIgnoreEntry` spelling `job new` uses; a chain that fails to resolve still merges the base set.",
+    "notes": "Drained from RUNTIME-IGNORES-AT-DEFAULT-STATE-ROOT's note. src/cli.ts:879 passes no `extra`; `job new` (src/job.ts:238) passes `frictionIgnoreEntry(chain.friction)`, module-private. Hoist the existing best-effort `resolveChain()` (src/cli.ts:902) above the merge, catch intact. Re-spelling the normalization in cli.ts would be re-derived detection (`engineering.md`, *The fix lands at the mechanism*)."
+  },
+  {
     "tag": "PRIOR-ATTEMPT-STALE-RECORDS-CLEARED",
     "gate": {
       "kind": "open"
@@ -225,6 +260,37 @@
     "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
   },
   {
+    "tag": "CASCADE-VITEST-AFTERMERGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "vitest moves to afterMerge; the gate-lifecycle comment at :152-:160"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the placement"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "cascade places every gate at afterCommit, so the shipped example teaches the staleness window spec/chain.md's own placement guidance argues against",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Gate placement is the chain's decision"
+    },
+    "tests": [
+      "the cascade example places its vitest gate at afterMerge and its type gate at afterCommit"
+    ],
+    "acceptance": "cascade's build phase runs its expensive correctness gate at `afterMerge` and its cheap structural gates at `afterCommit`, and the lifecycle comment stops reading \"an afterMerge failure (none here)\" and stops calling the revert wave-wide.",
+    "notes": "Drained from MIGRATING-012-AFTERMERGE-RESTORATION's note; verified on disk. `vitestGate` is afterCommit-fixed and `PkgManagerOverride` carries no `when` (src/builtinGates.ts:128) — compose `shellGate` as `.flume/chain.ts:701` does, never spread the builtin (its `name` is non-enumerable). Collides on file with EXAMPLES-SPEC-PHASE-CUT; the partitioner serializes them."
+  },
+  {
     "tag": "EXAMPLES-SPEC-PHASE-CUT",
     "gate": {
       "kind": "open"
@@ -332,6 +398,31 @@
     ],
     "acceptance": "Both doc claims are driven against `worktreesBase` (src/paths.ts) itself — default and override — and a doc edited away from the resolver turns the pin red.",
     "notes": "Drained from WORKTREE-BASE-RESOLVED-ONCE's note; both copies are correct today. Same seam as DOC-HARNESS-STATE-OWNERSHIP and CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, whose pins in tests/retired-narration.test.ts already read src/ for their claims."
+  },
+  {
+    "tag": "INTENT-WORKSHOP-LAYER-RETIRED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/INTENT.md",
+          "description": "the prose-surfaces list (:31) and the Hardcoded-chain non-goal (:41)"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/INTENT.md names a retired `workshop` layer twice, and the worse of the two states a default chain neither the rules nor .flume/chain.ts builds",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "Neither site names a `workshop` layer; the non-goal bullet names the living layers as one default while its claim — the chain is not hardcoded — survives intact.",
+    "notes": "Drained from INTENT-DOC-RECONCILED's note; both sites verified on disk. `spec-plan-build.md` names spec / plan / inbox / notes / code, and `.flume/chain.ts` builds three plan slices plus build. No pin: a word-ban on \"workshop\" across a design-intent doc is tighter than the finding."
   },
   {
     "tag": "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE",
