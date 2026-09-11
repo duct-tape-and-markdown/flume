@@ -1,41 +1,5 @@
 [
   {
-    "tag": "CASCADE-BUILD-PROMPT-STATES-TESTS-CONTRACT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/prompts/build.md",
-          "description": "the placeholder carrying the contract"
-        },
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "build's promptArgs renders the declared hint"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the agreement pin — fast lane, where the vitest gate looks"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade's build prompt never states the tests[] title contract its own trunk gate enforces, so a build agent learns it from a revert",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "The chain-declared extension"
-    },
-    "tests": [
-      "cascade's build prompt states the tests[] title contract from the entry extension's own hint"
-    ],
-    "pins": [],
-    "acceptance": "One declaration drives every surface that reads it: build's prompt renders `entryExtension.tests.hint` rather than a second hand-written sentence, and the pin fails if the two diverge.",
-    "notes": "Drained from CASCADE-TESTS-JUDGED-BY-GATE's note, gap 2. Build's promptArgs passes ENTRY_JSON/TAG/PER_PATH/PER_SECTION alone (examples/cascade-chain.ts:274); the hint renders into plan's prompt only. docs/CHAIN-AUTHORING.md's illustrative promptArgs block claims no quote of cascade and stays out of scope."
-  },
-  {
     "tag": "CASCADE-SHIPPED-GATE-DRIVES-REFUSAL",
     "gate": {
       "kind": "open"
