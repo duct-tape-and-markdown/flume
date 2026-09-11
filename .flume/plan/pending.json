@@ -1,33 +1,5 @@
 [
   {
-    "tag": "CASCADE-SHIPPED-GATE-DRIVES-REFUSAL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the refusal drives the factory's own gate object — fast lane"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade's tests[] refusal is driven over a wrapper the test re-composes; nothing drives the gate object the chain actually ships to build",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [],
-    "pins": [
-      "the vitest gate cascade ships to build refuses an entry whose named behavior has no passing test"
-    ],
-    "acceptance": "Unwrapping `vitestOnTrunk` fails the pin: the stub suite enters through the factory's own `api.shellGate`, so the composition under test is the one the chain returns.",
-    "notes": "Drained from CASCADE-TESTS-JUDGED-BY-GATE's note, gap 1. No engine surface needed — the factory destructures `shellGate` off `api` (examples/cascade-chain.ts:190-196), so a doctored api drives the shipped composition. The report stays hand-authored, per the cited section's refusal carve-out."
-  },
-  {
     "tag": "CASCADE-PLAN-SLICES-ORDERED-HANDOFF",
     "gate": {
       "kind": "open"
@@ -68,52 +40,9 @@
     "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
   },
   {
-    "tag": "RELEASE-CITES-PINNED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "2 cites"
-        },
-        {
-          "path": "examples/backlog-groomer-chain.ts",
-          "description": "4"
-        },
-        {
-          "path": "examples/minimal-chain.ts",
-          "description": "1"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "the refusal, beside the retired-narration pins"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Finish the release-cite cut in examples/ and promote it a rung: a source-shape pin refusing any new cite matching that grammar under src/ or examples/",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      "no file under src/ or examples/ carries a release-numbered spec cite"
-    ],
-    "pins": [],
-    "acceptance": "The grammar is refused mechanically over src/ and examples/, so the cut cannot regress; git carries the provenance the cites stood in for.",
-    "notes": "Ruling of 2026-09-11: the promotion rides the same pass; docs/ and README stay out of scope. The needle, `unwrapProse` and the vacuity/sensitivity pins already ship (tests/retired-narration.test.ts, 'dead release cites are gone from the engine's prose'): this entry widens the scan to examples/, deletes the `CITE_EXCLUDED` exclusion it is the named actor for, and cuts the 7 cites those three files carry (1/4/2 as declared)."
-  },
-  {
     "tag": "DISPATCHER-EXTRACT-LOOP-SUPERVISOR",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RELEASE-CITES-PINNED"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -150,10 +79,7 @@
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RELEASE-CITES-PINNED"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -190,10 +116,7 @@
   {
     "tag": "DISPATCHER-EXTRACT-FRICTION",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RELEASE-CITES-PINNED"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -230,10 +153,7 @@
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RELEASE-CITES-PINNED"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
