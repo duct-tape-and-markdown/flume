@@ -24,6 +24,10 @@ const EXAMPLE_PATHS: FlumePaths = {
 };
 
 const { chain: cascadeChain } = cascadeFactory(buildFlumeApi(EXAMPLE_PATHS));
+const { chain: backlogGroomerChain } = backlogGroomerFactory(
+  buildFlumeApi(EXAMPLE_PATHS),
+);
+const { chain: minimalChain } = minimalFactory(buildFlumeApi(EXAMPLE_PATHS));
 
 /**
  * spec/chain.md, *Gate placement is the chain's decision* — expensive
@@ -92,11 +96,7 @@ describe("cascade-chain.ts — the shipped phase list", () => {
  * which its trailing block tells the copying consumer to author.
  */
 describe("examples/prompts — every shipped prompt has a phase that names it", () => {
-  const chains: Chain[] = [
-    cascadeChain,
-    backlogGroomerFactory(buildFlumeApi(EXAMPLE_PATHS)).chain,
-    minimalFactory(buildFlumeApi(EXAMPLE_PATHS)).chain,
-  ];
+  const chains: Chain[] = [cascadeChain, backlogGroomerChain, minimalChain];
 
   it("no prompt file under examples/prompts/ is unreferenced by an example phase", () => {
     const shipped = readdirSync(
@@ -115,5 +115,47 @@ describe("examples/prompts — every shipped prompt has a phase that names it", 
     expect(
       shipped.filter((name) => !declared.has(`prompts/${name}`)),
     ).toEqual([]);
+  });
+});
+
+/**
+ * `flume job run` wakes `phases[0]` unconditionally on a cold job (v0.5
+ * decision 6, `src/job.ts` `jobRun`) — it has no notion of `humanOnly` at
+ * that call site. A chain whose entry phase is also in its own `humanOnly`
+ * list declares a job that can never cold-start on its own machinery; a
+ * human has to intervene on tick one, every time. Every chain under
+ * `examples/` is a "read this to learn the shape" artifact (v0.1 §7 /
+ * v0.8 §7), so this pins the entry-phase/humanOnly relationship across all
+ * of them, not just cascade.
+ */
+describe("example chains — entry phase is machine-wakeable", () => {
+  const chains: Array<{ name: string; chain: Chain }> = [
+    { name: "cascade-chain.ts", chain: cascadeChain },
+    { name: "backlog-groomer-chain.ts", chain: backlogGroomerChain },
+    { name: "minimal-chain.ts", chain: minimalChain },
+  ];
+
+  it.each(chains)(
+    "$name: phases[0] is absent from its own humanOnly list",
+    ({ chain }) => {
+      const entryPhase = chain.phases[0];
+      expect(entryPhase).toBeDefined();
+      expect(chain.humanOnly).not.toContain(entryPhase!.name);
+    },
+  );
+});
+
+/**
+ * v0.8 §6 / engineering.md "The fix lands at the mechanism" — the flagship
+ * example hand-rolled a "does pending.json parse" gate that
+ * `docs/CHAIN-AUTHORING.md` itself documents as predating the `pendingGate`
+ * builtin. Pins the swap: plan's gate list carries `pendingGate`'s identity
+ * (`"pending-gate"`), not the hand-rolled gate's name.
+ */
+describe("cascade-chain.ts — plan phase gates through the pendingGate builtin", () => {
+  it("plan.gates contains a gate named 'pending-gate'", () => {
+    const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+    expect(planPhase).toBeDefined();
+    expect(planPhase!.gates.map((g) => g.name)).toContain("pending-gate");
   });
 });
