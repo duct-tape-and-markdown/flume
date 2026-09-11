@@ -35,50 +35,6 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## 180 doc cites in `src/` point at a spec corpus that no longer exists (PARKED)
-
-Posture sweep over the `src/Dispatcher.ts` neighborhood. Every `src/` module
-carries `RELEASE-v0.N §M` / `v0.8 §5`-style cites into `spec/RELEASE-v*.md`
-— files the corpus reform deleted from the tree. 180 sites across 16 modules,
-verified this tick: `src/Dispatcher.ts` 81, `src/cli.ts` 18, `src/job.ts` 18,
-`src/Prompt.ts` 12, then a long tail. Nothing in-file defines the section
-numbers, so none resolves for a reader today. Scope is wider than `src/`:
-`examples/cascade-chain.ts` carries `RELEASE-v0.11 §6` and `v0.8 §2` too,
-so whichever option wins covers `examples/` as well.
-
-Correctness-adjacent by one hop rather than directly: it is the audit
-dimension's own machinery. A tick cross-checking a diff against the section
-that governs it cannot follow the cite, so drift in that code is invisible to
-the check meant to catch it.
-
-Not filed — it needs a ruling on what these comments are *for*, and per-cite
-retargeting is not mechanical:
-
-- **A — retarget** each cite to the `spec/*.md` section that governs it now.
-  Truest, and the only option that restores the audit path; also the most
-  work, and some cites have no live successor section.
-- **B — delete** the release cites, keeping only `spec/*.md` ones. Cheap and
-  uniformly mechanical; loses the provenance trail (git still has it).
-- **C — keep as historical provenance**, and say so once at the top of each
-  file so a reader stops trying to follow them.
-
-Whichever wins, the promotion is a source-shape pin: no cite matching
-`RELEASE-v` / `v0.N §` outside a declared-historical marker — the rung
-`tests/retired-narration.test.ts` already occupies.
-
-## `src/Dispatcher.ts` (4873 lines) bundles several jobs that read as separate homes (PARKED — trigger fired)
-
-Posture sweep (`.claude/rules/posture-sweep.md` standing lens: "a module carrying jobs that want separate homes") over the `src/Dispatcher.ts` neighborhood found the file's own `// ---------- X ----------` markers delineating distinct concerns: chain load+validate, tick-verdict I/O, singleton tick, fanout tick + per-entry fanout, worktree/friction/prior-attempt helpers, loop supervisor. Sibling engine files stay well under 1000 lines.
-
-Not filed as a mechanical fix: `Dispatcher.ts:42-44` documents a constraint that shaped the current structure — `buildFlumeApi` is a function rather than a constant "precisely so" a chain can't resolve a second physical engine, which implies at least the chain-load/`FlumeApi` surface is deliberately colocated with the dispatcher. Whether tick-execution, worktree/friction/prior-attempt, and loop-supervisor concerns share that constraint, or could split cleanly, needs a design call.
-
-Options:
-- **A — split along the marked seams**, keeping only what the `buildFlumeApi` cycle constraint actually requires colocated.
-- **B — leave it whole**, citing the cycle-avoidance constraint as the deliberate divergence (`engineering.md` "The fix lands at the mechanism" allows a declared exception).
-- **C — narrower split**: extract the clearly acyclic concerns (worktree/friction/prior-attempt helpers, loop supervisor) and leave chain-load + tick execution together.
-
-**2026-09-03 sign-off:** sequenced to the line after 0.13.0, option left open until the operator opens that line. **The trigger fired**: 0.13.0 cut 2026-09-03 (`946723e`). The file has since grown by two more spec-derived surfaces this tick (`Chain.pendingPath`, the hook-receives fields) and gained ~40 lines. Ripe for A/B/C now — needs the operator's pick, not another derive tick's guess.
-
 ## `flume check`'s fence collapses to universal rejection when a chain declares zero fanout phases (PARKED)
 
 `src/cli.ts` derives `check`'s fence from `chain.phases.filter(p => p.concurrency === "fanout")`. Nothing in `src/Phase.ts`'s `Concurrency` type or chain-load validation requires at least one fanout phase — per `spec/pending.md` ("Selection is the sole site; a singleton phase does not pick from pending"), a chain with only singleton phases is structurally legal, it just never consumes `pending.json`. For such a chain, `consumerPhases` is `[]`, the fence is empty, and every declared path in `pending.json` reads as a violation — misdiagnosed as "declares files outside the consumer phase's fence" when the real story is "no consumer phase exists." `spec/cli.md`'s `check` description doesn't address this case.
@@ -98,42 +54,11 @@ Fix shape both findings agree on: `Chain.worktreesDir`, read by the supervisor a
 
 Supersedes the `DispatcherOptions.worktreesDir`-resolved-in-cli.ts framing from the earlier loss-audit finding (that shape still misses a chain-set value; `Chain.worktreesDir` is the corrected fix shape).
 
-## `docs/INTENT.md` contradicts the code in two places and carries executed decisions (PARKED)
-
-Three items, one file, human edits (docs/ is build-writable but these are narrative/product judgment calls, not mechanical):
-
-- (a) The Provenance spine bullet says the harness verifies typed inter-layer citations; `per` left the engine core in 0.8.0 and is opaque to it today (confirmed: `per` is a chain-declared extension field, engine never parses it). **Recommend:** restate to match 0.8+.
-- (b) "v0 success criterion" was never re-proven and cannot be — the comparison target (`bin/flume-bash`, gen2 specs) no longer exists in any live tree. **Needs a human call:** retire it, or restate against a measurable target (e.g. the dogfood ship ledger).
-- (c) "Decided, not yet executed — spec corpus reform" has executed. **Recommend:** delete.
-
-Raised independently by cascade's session for (b).
-
-## `examples/prompts/spec.md` models a retired consumer shape — cut it? (PARKED)
-
-Models a workshop/ → specs/active → specs/_aligned partition that cascade dropped in June; no current consumer has a spec phase. A new adopter would build the shape flume's own consumer abandoned. No clean `per` cite into spec (this is repo hygiene, not spec-derived), which is why it's parked rather than filed — `spec-plan-build.md`: "If a candidate plan entry can't carry a clean per cite into the spec, it's a question for a human."
-
-**Recommend:** cut it, keep plan/build examples only — corroborated independently by cascade's session, low risk (build can execute the deletion once approved).
-
-The prompt is half of it: `examples/cascade-chain.ts`'s `spec` phase declares
-the same `specs/active/**` / `specs/_aligned/**` / `workshop/_archive/**`
-partition, and that file is the load-bearing example. Decide both together.
-(Unrelated to PRE-0.10-CHAIN-SHAPE-TAUGHT, which touches only that file's
-trailing host-repo instruction block.)
-
 ## Voluntary-bail is inferred intent — taxonomy ruling needed (PARKED — do not derive)
 
 A clean exit with no commit is recorded as "the agent refused a constraint" (`classifyNoCommit`), and that label is persisted into the prior-attempt record the next tick renders. An agent that ran out of turns, or found nothing to do, gets a block saying it refused to cross a constraint. Predates v0.3.
 
 Fix shape is a chain-declared bail signal with the engine recording only `clean-exit` — a taxonomy change, not a mechanical fix. Filed here per the original inbox instruction: parked for the human, do not derive.
-
-## Docs backlog: multi-minor jump index, and a restoration note on MIGRATING-0.12 (PARKED)
-
-Two small, independent, low-priority docs asks bundled for one sign-off:
-
-- **Cumulative migration index.** Fourteen releases in four months, four migration guides, one superseding two — a consumer pinned several minors back faces a routing table. Ask: one cumulative index in `docs/` mapping each consumer-visible symbol to the release that changed it. Docs lane, build can derive once approved. Raised independently by cascade's session.
-- **`docs/MIGRATING-0.12.md` §1 restores v0's gate placement without saying so.** "Put correctness gates at afterMerge" is where v0 put them before `afterCommit` became the documented placement. A v0-shaped chain that never moved is already compliant and cannot tell from the guide. Ask: one line naming it a restoration. Raised independently by cascade's session.
-
-Neither has a spec cite to derive against; both are product-priority calls (worth the docs investment?), not mechanical fixes.
 
 ## Quarantine keying survives a re-scope — spec amendment needed first (PARKED)
 
@@ -167,24 +92,6 @@ Both halves verified false on disk this tick:
 **Recommend:** delete the note. Same reasoning as `62aa506`'s own body — a
 gap note plan's derive reads as live work is worse than none, and this one
 would file an entry for coverage that already ships.
-
-## A leaked `/tmp/.flume/stop` red-lines the default lane (observed, cause unattributed)
-
-Seen twice this tick (2026-09-06) while running `pnpm test --run` in a fanout
-worktree: a run left `/tmp/.flume/` behind holding `awake/` and an empty
-`stop`. Every subsequent run then failed 8 tests across `tests/cli.test.ts`
-(5) and `tests/cliJobResolution.test.ts` (3) — CLI fixtures under `tmpdir()`
-walk up, find that state root, and see `stop present` / `awake: anything`
-instead of `hibernating`. `rm -rf /tmp/.flume` makes all 8 pass unchanged; a
-later full run did not recreate it, so the write is intermittent and I could
-not attribute it to a specific test.
-
-Correctness-adjacent: the same suite is the build phase's `afterMerge` gate,
-so a leak reverts innocent entries for host state no entry touched. Two forks
-— pin the CLI fixtures against ancestor discovery (an env override or a
-sentinel-rooted temp base, so `tmpdir()`'s parents are unreachable), or find
-and fix the writer. The first bounds the blast radius whatever the second
-turns up.
 
 ## A prior-attempt record whose entry left the queue without shipping is never cleared (PARKED — spec silent, and the fix forks)
 
@@ -277,85 +184,19 @@ the records, used by both legs, with conflict excluded
 (`engineering.md`, *Derived state is computed, never restated beside its
 source*) — same edit as the collapse above.
 
-## The shipped `examples/` trail the reference chain's shape (PARKED — decision needed)
+`HANDOFF-ENTRY-MERGE-OUTCOME` is the engine half: once `TickResult.entries`
+carries the per-entry merge outcome, the third copy reads it directly and the
+`committed && !shipped && !reverted` predicate and its comment go in the
+adopting commit.
 
-Drained from the inbox (2026-09-10, human). `examples/*-chain.ts` and
-`examples/prompts/*` are what npm ships (`package.json` `files`), and one tick
-of each loads and runs under `tests/examples.integration.test.ts` — so they
-work. Verified this tick: no example declares `shouldRun`, reads
-`GateContext.entry` or `baseSha`, splits a phase into disk-computed slices,
-orders a dependency ladder, or judges `tests[]` through a reporter-fed gate.
-The chain that does all six is `.flume/chain.ts`, which does not ship, and
-`docs/CHAIN-AUTHORING.md` never names it (grep: the file is cited only as the
-path a consumer writes).
-
-Options:
-
-- **A — `examples/` gains a chain carrying the current shape**, held by the
-  same integration test. Truest; also the largest surface to keep green, and
-  a fourth example to maintain.
-- **B — `docs/CHAIN-AUTHORING.md` names `.flume/chain.ts` as the reference**
-  and the examples as deliberately minimal. Cheap and honest, but the
-  reference is a file an installed consumer never receives.
-- **C — both**: name the reference, and promote only the two shapes a new
-  adopter most needs (`shouldRun`, a `tests[]`-judging gate) into
-  `cascade-chain.ts`.
-
-Product call on what `examples/` is *for* — a runnable floor, or the
-recommended shape (`engine-boundary.md`, *Opinion ships by name*).
-
-## A named behavior is proven by a test that also passes at the base (PARKED — routing)
-
-Drained from the inbox (2026-09-10, human). The vitest gate
-(`.flume/chain.ts` → `.flume/vitestJudge.ts`) judges a `tests[]` line by
-finding a passing test whose full name carries it. It never asks whether that
-test fails at `ctx.baseSha`. A build that titles an already-green test with
-the line passes having proven nothing — the exact false green
-`engineering.md` *A fix ships the test that would have caught it* exists to
-close, and the acceptance gate is this loop's only review.
-
-The gate already receives `baseSha` and `entry`. What it lacks is a way to
-run the named tests at the base: that needs a throwaway checkout with
-dependencies resolved, which is worktree provisioning — engine machinery, not
-something a gate can honestly do from `ctx`.
-
-Options:
-
-- **A — chain-side.** The gate provisions its own temp worktree and installs.
-  Every chain wanting the check rebuilds it (`engine-boundary.md`, *Verbatim
-  copying is the detector*), and it pays an install per gate run.
-- **B — engine surface.** A gate-reachable "run this command at `baseSha`"
-  capability, reusing the provisioning the dispatcher already owns. Passes the
-  second-implementation test — any chain judging a regression wants it — but
-  it is a new engine capability with a real cost model.
-- **C — accept the hole**, and say so at the gate site as a declared
-  divergence (`engineering.md`, *Loud or nothing*).
-
-Which layer owns it is the ruling; **B** is the shape that stops the copy, if
-the cost is acceptable.
-
-## `stateRootRel` is spec'd as the queue-read idiom, and two readers now use it (PARKED — spec amendment first)
-
-Drained from the inbox (2026-09-10, human). `.flume/chain.ts`'s
-`perResolvesGate` (:374-381) reads `pending.json` at `ctx.commitSha`;
-`src/builtinGates.ts` `pendingGate` (:397) makes the same read for the same
-commit. Consumer restatement on its face (`engineering.md`, *A fact the engine
-holds is reported*) — the obvious fix is the queue-as-of-the-gated-commit on
-`GateContext`.
-
-**Not derivable as filed.** `spec/chain.md` *What a gate receives* calls
-`GateContext` "the whole input surface" and ratifies `stateRootRel` as
-precisely this mechanism: "the one value a gate needs to read a **tracked**
-state-root file as the gated commit holds it — `git show
-<commitSha>:<stateRootRel>/plan/pending.json`". A new field contradicts that
-sentence, and build cannot move it.
-
-The fork is scope, not shape: is the queue special enough to get its own
-reported field (three `GateContext` construction sites,
-`src/Dispatcher.ts:2108,2713,3605`, each paying a read), or is the generic
-`stateRootRel` idiom the answer and the duplication the price of genericity?
-The engine already parses the queue at that sha whenever `pendingGate` is
-declared; it does not when it is not.
+Riding the same commit, by the 2026-09-11 ruling on `stateRootRel`: the
+`perResolvesGate` read of `pending.json` at `ctx.commitSha`
+(`.flume/chain.ts:374-381`) **stays**. `spec/chain.md` *What a gate receives*
+ratifies `stateRootRel` as the queue-read idiom and the second read is the
+price of genericity; a queue-specific `GateContext` field would be one
+artifact's convention on the engine's surface. The site gains a one-line cite
+naming it the sanctioned idiom, so a later sweep does not re-file it as
+restatement.
 
 ## Runtime ignores reach the default state root only through the repo's own `.gitignore` (PARKED — layer ownership)
 
