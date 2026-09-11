@@ -116,13 +116,9 @@ nothing*) — is a behavior change, and a plausible one: a `pending: N` read off
 the wrong file is a confident wrong answer where `pending: unknown` would not
 be. If that is the ruling, say so and this becomes an entry instead.
 
-**Also, a proposed sweep lens.** The stronger half of the same finding was
-`docs/CLI.md`'s `flume job status` paragraph asserting "no chain load" while
-the code takes one — prose *denying* a load rather than merely omitting it.
-`.claude/rules/posture-sweep.md`'s lens list (*A violation counts only when
-verified on disk this tick*) has no lens that would have caught it. Worth one:
-doc prose that denies a call the module makes. Human's file, so parked here
-beside the spec amendment it arrived with.
+**The sweep-lens half of this finding** — `docs/CLI.md`'s `flume job status`
+paragraph asserting "no chain load" while the code takes one — moved to its
+own question below, where a second data point joined it.
 
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
@@ -260,12 +256,12 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## Six spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
+## Nine spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
 
-Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s and
-`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s notes; every cite re-verified on disk
-this tick. Two pure moves have now left six spec cites pointing at symbols
-their old modules no longer hold.
+Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s,
+`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s and `DISPATCHER-EXTRACT-FRICTION`'s
+notes; every cite re-verified on disk this tick. Three pure moves have now
+left nine spec cites pointing at symbols their old modules no longer hold.
 
 The supervisor got its own module at `39c8207` — three cites, one wider than
 that note reported:
@@ -285,25 +281,42 @@ and these moved *name* as well as home, so a reader's grep finds nothing:
 - `spec/loop.md:357` — bare `clearPriorAttempt`. It is `PriorAttemptStore.clear`
   (`src/priorAttempts.ts`, called at `src/Dispatcher.ts:2257,2968`).
 
+The friction channel got `src/friction.ts` at `ee1ea40` — three more:
+
+- `spec/cli.md:136` — ``` `frictionCountLine` (`src/Dispatcher.ts`) ```. It is
+  `src/friction.ts:69`.
+- `spec/chain.md:319` — "`src/Dispatcher.ts:loadChainModule` →
+  `validateFrictionDeclaration`". The loader stays
+  (`src/Dispatcher.ts:1035`); the validator is `src/friction.ts:43`.
+- `spec/worktrees.md:296` — `src/Dispatcher.ts:harvestFriction`. It is
+  `src/friction.ts:128`.
+
+`spec/worktrees.md:276` (`writeRevertNote`) stays correct — that writer stayed
+in `src/Dispatcher.ts`, built from a commit message only the dispatcher holds,
+and the divergence is declared at `src/friction.ts:17`.
+
 Every other cite is path-free (`spec/loop.md:6,31,43,168,624`,
 `spec/chain.md:364`) and stays correct.
 
-**Recommend** repointing all six. No fork — both extractions were pure moves,
-and the surrounding claims (`quarantineScope ?? "run"`, `abortThreshold ?? 3`,
-"binds both before entering the tick loop", the child-env copy; the snapshot's
-gate-revert-leg-only rule, the `.reverted/` layout) all hold at the new homes.
-Parked only because `spec/` is human-only (`.claude/rules/spec-plan-build.md`).
+**Recommend** repointing all nine. No fork — all three extractions were pure
+moves, and the surrounding claims (`quarantineScope ?? "run"`,
+`abortThreshold ?? 3`, "binds both before entering the tick loop", the
+child-env copy; the snapshot's gate-revert-leg-only rule, the `.reverted/`
+layout; the friction channel's relative-path rule and the teardown harvest)
+all hold at the new homes. Parked only because `spec/` is human-only
+(`.claude/rules/spec-plan-build.md`).
 
 **One in-fence rider.** `src/cli.ts:686` carries the same stale supervisor pair
 — "set by `defaultTickRunner`, `src/Dispatcher.ts`" — while `:746`, three
 comments down, was repointed in the same commit. Inside build's fence, so it
 rides whatever entry the amendment files rather than earning one.
 
-**And the fork this raises, now with a second data point: pin the module path,
+**And the fork this raises, now with a third data point: pin the module path,
 or keep re-noticing it?** Nothing checks a spec cite's module path, which is
-why two green waves have now shipped six stale ones — and the rate is the
-argument, since two extraction entries (`DISPATCHER-EXTRACT-FRICTION`,
-`DISPATCHER-EXTRACT-WORKTREES`) are still queued behind these. A scan is
+why three green waves have now shipped nine stale ones — and the rate is the
+argument, since `DISPATCHER-EXTRACT-WORKTREES` is still queued and will strand
+three more (`spec/worktrees.md:21,61` — `createWorktree`; `:95` —
+`worktreeDirName`; the `runFanout` cites stay). A scan is
 buildable and cheap — resolve every `src/<file>.ts:<symbol>` in `spec/`
 against the tree (~30 cites today), in `tests/retired-narration.test.ts`,
 which already reads `spec/` paths for its doc-to-source scans. It is **red
@@ -354,9 +367,64 @@ Options:
   fixture, one `npm exec` from deletion, and its verdict misattributes to a
   gate-override claim that was never implicated.
 
-**Recommend the first.** It is a one-gate chain edit, and `BUILTINGATES-WHEN-OVERRIDE`
-(queued this tick) makes it `tscGate({ when: "afterMerge" })` rather than a
-hand-rolled `shellGate` copying the builtin's own `cmd`/`args`. Parked only
-because `.flume/chain.ts` is outside every phase lane
+**Recommend the first.** It is a one-gate chain edit, and the surface it needed
+has landed: `BUILTINGATES-WHEN-OVERRIDE` shipped at `3850420`, so
+`PkgManagerOverride` carries `when` and the edit is literally
+`tscGate({ when: "afterMerge" })` beside the existing `tscGate` — no
+hand-rolled `shellGate` copying the builtin's own `cmd`/`args`. **Only the
+decision is left.** `.flume/chain.ts:826` still reads
+`[tscGate, recordsGate, vitestOnCode]`, and the stale-coverage comment above it
+(`:825`) still reads as though the `afterCommit` placement covered the merged
+tree. Parked only because `.flume/chain.ts` is outside every phase lane
 (`.claude/rules/spec-plan-build.md`); the spec needs no amendment — it already
 rules both bullets, and the chain chose against them.
+
+## No sweep lens catches prose that contradicts the code it describes (PARKED)
+
+`.claude/rules/posture-sweep.md`'s lens list (*A violation counts only when
+verified on disk this tick*) names expired narration — prose whose *stated
+scope has closed* or whose *revisit condition has fired*. Neither reaches a
+bare factual assertion about code that the code contradicts: there is no scope
+to close and no condition to fire, only a sentence that is false on disk. Two
+independent data points, both caught by accident:
+
+- **A doc denying a call the module makes.** `docs/CLI.md`'s `flume job
+  status` paragraph asserted "no chain load" while `jobStatus` takes one
+  (`src/cliJobVerbs.ts:44`). Surfaced only because
+  `DOCS-CLI-CHAIN-LOAD-REPORTED` went looking for something else.
+- **A consumer comment citing an engine gap that has since closed.**
+  `examples/cascade-chain.ts:353` justified hand-rolling `shellGate` for
+  `vitestOnTrunk` with "that builtin fixes `when: afterCommit` and takes no
+  placement override". `BUILTINGATES-WHEN-OVERRIDE` (`3850420`) closed that
+  gap, and nothing but that entry's own diff surfaced the now-false half. The
+  real reason survives (the `--reporter=json` args the entry-tests judge
+  consumes), so the example still uses `shellGate`; only the reason was
+  rewritten, in-commit.
+
+One shape: **prose asserting a fact about code that the code contradicts.** The
+second data point is the sharper one, because it is a standing generator — every
+engine gap this loop closes falsifies whatever consumer comment cited it, and
+the consumer is a surface no other lens reads for this.
+
+Options:
+
+- **One lens clause** (recommended): add to the standing lens list — prose
+  asserting a fact about a named code surface that the surface contradicts on
+  disk, with an engine gap cited in a consumer's comment named as the case that
+  fires on every closing entry. Costs nothing but sweep attention; the lens is
+  only as good as the tick that reads it.
+- **Fold it into expired narration.** Cheaper prose, but it stretches "scope
+  closed / condition fired" past what those words mean, and the second data
+  point has neither.
+- **Nothing.** Against it: both instances were found by luck, and the
+  generating rate is one per engine gap closed.
+
+**A domain question rides either answer.** The sweep domain is `src/`, `tests/`,
+`bin/`, `examples/` (plus `.flume/chain.ts` and `.flume/PROTOCOL.md` for the
+expired-narration lens); `docs/` enters only through a retired-claim delta. The
+first data point above lives in `docs/`, so the lens as stated would not have
+caught it either — say whether this lens widens the domain to `docs/` or
+deliberately stops at the code surfaces.
+
+Parked because `.claude/rules/**` is human-only
+(`.claude/rules/spec-plan-build.md`).
