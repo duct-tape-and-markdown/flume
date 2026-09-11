@@ -16,7 +16,10 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
-import cascadeFactory, { judgedByEntryTests } from "../examples/cascade-chain.ts";
+import cascadeFactory, {
+  declaredFilesGate,
+  judgedByEntryTests,
+} from "../examples/cascade-chain.ts";
 import minimalFactory from "../examples/minimal-chain.ts";
 
 /** The roots a real tick would resolve for an `examples/`-hosted chain. */
@@ -50,11 +53,17 @@ describe("cascade-chain.ts — build gates split by cost", () => {
     const placement = new Map(gates.map((g) => [g.name, g.when]));
     expect(gates.length).toBeGreaterThan(0);
     expect(placement.size).toBe(gates.length);
-    expect([...placement.keys()].sort()).toEqual(["eslint", "tsc", "vitest"]);
+    expect([...placement.keys()].sort()).toEqual([
+      "declared-files",
+      "eslint",
+      "tsc",
+      "vitest",
+    ]);
 
     expect(placement.get("vitest")).toBe("afterMerge");
     expect(placement.get("tsc")).toBe("afterCommit");
     expect(placement.get("eslint")).toBe("afterCommit");
+    expect(placement.get("declared-files")).toBe("afterCommit");
   });
 });
 
@@ -365,5 +374,165 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
     ).run(ctxNaming(undefined));
     expect(nothingNamed.ok).toBe(true);
     expect(nothingNamed.message).toBe("vitest green");
+  });
+});
+/**
+ * spec/chain.md, *What a gate receives* — `entry` and `baseSha` are the two
+ * facts a per-entry gate most needs, and no shipped example read `baseSha` at
+ * all, so the value an adopter needs to tell "the tick created this path"
+ * from "it was already there" looked unavailable. Cascade now judges the
+ * entry's `files` classes against the span they claim to describe
+ * (`declaredFilesGate`), reading the pick, the span's base, its tip and its
+ * touched paths off the context rather than re-deriving any of them.
+ *
+ * Driven over a stub at-sha reader: every refusal here is a tree state a real
+ * repo cannot be made to produce on demand, and refusal tests keep their
+ * hand-authored input (`engineering.md`, *A seam gate reads what the real
+ * writer wrote*). The stub records the refs it was asked for, which is how
+ * the "reads the span's base sha off the context" half is pinned rather than
+ * assumed — the fixture's `repoRoot` names a directory that does not exist,
+ * so a gate that shelled git itself would throw instead.
+ */
+describe("cascade-chain.ts — the entry's file classes are judged against the span", () => {
+  const BASE = "b".repeat(40);
+  const TIP = "c".repeat(40);
+  const TAG = "DECLARED-FILES-FIXTURE";
+
+  /** A stub of `api.git.readFileAtRef` over a ref → paths world. */
+  const readerOver = (world: Record<string, string[]>) => {
+    const asked: Array<{ ref: string; path: string }> = [];
+    return {
+      asked,
+      read: async (_repoRoot: string, ref: string, path: string) => {
+        asked.push({ ref, path });
+        return world[ref]?.includes(path) ? `contents of ${path}` : null;
+      },
+    };
+  };
+
+  const entryDeclaring = (
+    files: Partial<PendingEntry["files"]>,
+  ): PendingEntry => ({
+    tag: TAG,
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: { new: [], edit: [], retire: [], ...files },
+  });
+
+  const ctxFor = (
+    entry: PendingEntry | undefined,
+    touchedPaths: string[],
+  ): GateContext => ({
+    cwd: "/nonexistent/declared-files-fixture",
+    repoRoot: "/nonexistent/declared-files-fixture",
+    flumeDir: "/nonexistent/declared-files-fixture/.flume",
+    configDir: "/nonexistent/declared-files-fixture/.flume",
+    pendingPath: "/nonexistent/declared-files-fixture/.flume/plan/pending.json",
+    phaseName: "build",
+    baseSha: BASE,
+    commitSha: TIP,
+    log: () => {},
+    touchedPaths,
+    ...(entry ? { entry } : {}),
+  });
+
+  it("the cascade example's gate reads the entry tag and the span's base sha from its gate context", async () => {
+    const world = {
+      [BASE]: ["src/kept.ts", "src/gone.ts"],
+      [TIP]: ["src/kept.ts", "src/born.ts"],
+    };
+    const reader = readerOver(world);
+    const gate = declaredFilesGate(reader.read);
+
+    const honest = entryDeclaring({
+      new: [{ path: "src/born.ts", description: "the tick creates it" }],
+      edit: [{ path: "src/kept.ts", description: "the tick rewrites it" }],
+      retire: ["src/gone.ts"],
+    });
+    const touched = ["src/born.ts", "src/kept.ts", "src/gone.ts"];
+    const green = await gate.run(ctxFor(honest, touched));
+
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a gate handed no entry, or one whose declared paths never reached the
+    // judge, would return the same `ok: true` over nothing. The verdict names
+    // the entry it gated and the count it judged, and the reader was asked
+    // about every declared path at both ends of the span.
+    expect(green.ok, green.message).toBe(true);
+    expect(green.message).toContain(TAG);
+    expect(green.message).toContain("3 declared path(s)");
+    expect(green.skipped).toBeUndefined();
+    expect(reader.asked.filter((a) => a.ref === BASE).map((a) => a.path).sort())
+      .toEqual([...touched].sort());
+    expect(reader.asked.filter((a) => a.ref === TIP).map((a) => a.path).sort())
+      .toEqual([...touched].sort());
+    // `baseSha` is what separates the three classes, and the message quotes
+    // the span it read rather than a base re-derived from a path convention.
+    expect(green.message).toContain(`${BASE.slice(0, 7)}..${TIP.slice(0, 7)}`);
+
+    // A path the entry filed under `new` that the base already held: the
+    // tick edited an existing file under a class that claims it created one.
+    const misfiledNew = await gate.run(
+      ctxFor(
+        entryDeclaring({
+          new: [{ path: "src/kept.ts", description: "claims to create it" }],
+        }),
+        ["src/kept.ts"],
+      ),
+    );
+    expect(misfiledNew.ok).toBe(false);
+    expect(misfiledNew.message).toContain(TAG);
+    expect(misfiledNew.details).toContain("src/kept.ts: declared new");
+
+    // A path filed under `retire` that the commit still carries.
+    const notRetired = await gate.run(
+      ctxFor(entryDeclaring({ retire: ["src/kept.ts"] }), ["src/kept.ts"]),
+    );
+    expect(notRetired.ok).toBe(false);
+    expect(notRetired.details).toContain("src/kept.ts: declared retire");
+
+    // A path filed under `edit` that the base never held.
+    const editedNothing = await gate.run(
+      ctxFor(
+        entryDeclaring({
+          edit: [{ path: "src/born.ts", description: "claims to edit it" }],
+        }),
+        ["src/born.ts"],
+      ),
+    );
+    expect(editedNothing.ok).toBe(false);
+    expect(editedNothing.details).toContain("src/born.ts: declared edit");
+  });
+
+  it("the cascade example's gate refuses a context missing the span it is asked to judge, and spells its vacuous cases", async () => {
+    const reader = readerOver({ [BASE]: ["src/kept.ts"], [TIP]: ["src/kept.ts"] });
+    const gate = declaredFilesGate(reader.read);
+    const entry = entryDeclaring({
+      edit: [{ path: "src/kept.ts", description: "the tick rewrites it" }],
+    });
+
+    // Loud or nothing (engineering.md): a context without the span cannot be
+    // judged, and passing it would be a green earned by nothing.
+    for (const missing of ["baseSha", "commitSha", "touchedPaths"] as const) {
+      const partial = ctxFor(entry, ["src/kept.ts"]);
+      delete partial[missing];
+      const blind = await gate.run(partial);
+      expect(blind.ok, `missing ${missing}`).toBe(false);
+      expect(blind.message).toContain(TAG);
+    }
+
+    // A singleton tick carries no entry: nothing entry-scoped to judge, said
+    // out loud rather than inherited as a pass.
+    const noEntry = await gate.run(ctxFor(undefined, ["src/kept.ts"]));
+    expect(noEntry.ok).toBe(true);
+    expect(noEntry.skipped).toBeTruthy();
+
+    // A commit touching no declared path — a parked entry's note — has no
+    // declaration to contradict, and says so the same way.
+    const channelOnly = await gate.run(
+      ctxFor(entry, [".flume/plan/notes/DECLARED-FILES-FIXTURE.md"]),
+    );
+    expect(channelOnly.ok).toBe(true);
+    expect(channelOnly.skipped).toBeTruthy();
+    expect(reader.asked).toEqual([]);
   });
 });

@@ -23,6 +23,7 @@ import type {
   Chain,
   ChainFactory,
   EntryExtension,
+  FlumeApi,
   Gate,
   GateResult,
   Phase,
@@ -178,6 +179,127 @@ export function judgedByEntryTests(suite: Gate): Gate {
 }
 
 
+// ---------- the entry's files[] as a gate ----------
+
+/** How an entry classified a path. */
+type DeclaredKind = "new" | "edit" | "retire";
+
+/** Whether the path exists at each end of the span the gate is judging. */
+interface SpanShape {
+  atBase: boolean;
+  atTip: boolean;
+}
+
+/** What each class claims about the path across the span. */
+const SPAN_SHAPE: Record<DeclaredKind, SpanShape> = {
+  new: { atBase: false, atTip: true },
+  edit: { atBase: true, atTip: true },
+  retire: { atBase: true, atTip: false },
+};
+
+const inWords = (s: SpanShape): string =>
+  `${s.atBase ? "present" : "absent"} at the base, ` +
+  `${s.atTip ? "present" : "absent"} at the commit`;
+
+/**
+ * Hold the span to the entry's own file declaration: a path plan filed under
+ * `new` was not in the tree the tick branched from, one filed under `edit`
+ * was, and one filed under `retire` is gone by the end of the span.
+ *
+ * The engine reads `files` for the fence union and the fanout partition; what
+ * the three classes *mean* about the tree is nobody's rule but this chain's,
+ * so the judgement lives here. Every fact it needs is one the engine already
+ * reported on `GateContext` (spec/chain.md, *What a gate receives*) and none
+ * is re-derived: `entry` is the pick the span was provisioned for,
+ * `touchedPaths` is what the commit changed, `baseSha` is the tip the tick
+ * branched from — the one value that separates "the tick created this" from
+ * "it was already there", and the reason this gate never shells its own
+ * `git merge-base` or guesses the base from a worktree path.
+ *
+ * Only declared paths the span actually touched are judged. A tick that did
+ * less than it declared is plan's problem on the next re-derive, not a
+ * revert; a commit touching only a channel path — a parked entry's note —
+ * contradicts no declaration and is skipped rather than failed.
+ *
+ * Existence at a ref comes from the engine's own at-sha reader rather than a
+ * hand-rolled `git cat-file`: it answers "absent from that commit" with
+ * `null` and lets a bad ref throw, where a reimplementation reads the second
+ * as the first (`src/flumeApi.ts`, `git.readFileAtRef`). Taken as a
+ * parameter so the gate is drivable over a stub reader.
+ */
+export function declaredFilesGate(
+  readFileAtRef: FlumeApi["git"]["readFileAtRef"],
+): Gate {
+  return {
+    name: "declared-files",
+    when: "afterCommit",
+    async run(ctx): Promise<GateResult> {
+      const entry = ctx.entry;
+      if (!entry) {
+        return {
+          ok: true,
+          message: "no entry on this tick",
+          skipped:
+            "a singleton tick carries no entry, so there is no declaration to judge",
+        };
+      }
+      const { baseSha, commitSha, touchedPaths } = ctx;
+      if (!baseSha || !commitSha || !touchedPaths) {
+        return {
+          ok: false,
+          message: `${entry.tag}: declared-files needs baseSha, commitSha and touchedPaths on the gate context`,
+        };
+      }
+      const span = `${baseSha.slice(0, 7)}..${commitSha.slice(0, 7)}`;
+      const declared = new Map<string, DeclaredKind>([
+        ...entry.files.new.map((f) => [f.path, "new"] as const),
+        ...entry.files.edit.map((f) => [f.path, "edit"] as const),
+        ...entry.files.retire.map((p) => [p, "retire"] as const),
+      ]);
+      const judged = touchedPaths.filter((p) => declared.has(p));
+      if (judged.length === 0) {
+        return {
+          ok: true,
+          message: `${entry.tag}: the span ${span} touched none of its declared files`,
+          skipped:
+            "no declared path in the commit — a channel-only commit contradicts no declaration",
+        };
+      }
+
+      const wrong: string[] = [];
+      for (const path of judged) {
+        const kind = declared.get(path)!;
+        const [atBase, atTip] = await Promise.all([
+          readFileAtRef(ctx.repoRoot, baseSha, path),
+          readFileAtRef(ctx.repoRoot, commitSha, path),
+        ]);
+        const saw: SpanShape = { atBase: atBase !== null, atTip: atTip !== null };
+        const want = SPAN_SHAPE[kind];
+        if (saw.atBase !== want.atBase || saw.atTip !== want.atTip) {
+          wrong.push(
+            `- ${path}: declared ${kind} (${inWords(want)}), span has it ${inWords(saw)}`,
+          );
+        }
+      }
+      if (wrong.length > 0) {
+        return {
+          ok: false,
+          message: `${entry.tag}: ${wrong.length} of ${judged.length} declared path(s) contradict the span ${span}`,
+          details: [
+            "Re-file the path under the class the span actually produced, or produce the class the entry declared:",
+            ...wrong,
+          ].join("\n"),
+        };
+      }
+      return {
+        ok: true,
+        message: `${entry.tag}: ${judged.length} declared path(s) match the span ${span}`,
+      };
+    },
+  };
+}
+
+
 // ---------- chain factory (RELEASE-v0.11 §6) ----------
 
 /**
@@ -220,6 +342,16 @@ const factory: ChainFactory = (api) => {
     }),
   );
 
+  /**
+   * The entry's own `files` declaration, judged against the span it produced
+   * (`declaredFilesGate` above). Cheap — three existence reads per declared
+   * path the commit touched — so it sits `afterCommit`, where a mis-filed
+   * declaration never reaches the trunk. Handed the engine's at-sha reader
+   * off the factory's `api`, the same way every other engine value this
+   * chain composes with arrives.
+   */
+  const declaredFilesMatchSpan: Gate = declaredFilesGate(api.git.readFileAtRef);
+
   // ---------- phases ----------
 
   /**
@@ -234,8 +366,10 @@ const factory: ChainFactory = (api) => {
    *
    * Gates split by cost. Cheap structural checks stay `afterCommit`, inside
    * the worktree, so a type or lint error never reaches the trunk at all:
-   * `tscGate` first, then `eslintGate`; failure reverts the worktree commit
-   * and the entry stays pickable for the next tick. The suite runs
+   * `tscGate` first, then `eslintGate`, then the entry's own file
+   * declaration against the span it produced (`declaredFilesMatchSpan`);
+   * failure reverts the worktree commit and the entry stays pickable for the
+   * next tick. The suite runs
    * `afterMerge` (`vitestOnTrunk` above), because the merged tree is the one
    * no afterCommit gate ever saw — the trunk may have moved under the wave,
    * and two siblings that each passed in isolation can compose into a tree
@@ -270,7 +404,7 @@ const factory: ChainFactory = (api) => {
       // a separate commit post-merge that removes shipped entries. This avoids
       // cherry-pick conflicts when N fanout worktrees each touch the same file.
     ],
-    gates: [tscGate, eslintGate, vitestOnTrunk],
+    gates: [tscGate, eslintGate, declaredFilesMatchSpan, vitestOnTrunk],
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {
         throw new Error("build phase requires an assignedEntry in TickContext");
