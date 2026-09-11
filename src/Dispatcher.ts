@@ -279,8 +279,9 @@ export type MergeOutcome =
   | "dropped-work";
 
 /**
- * One fanout entry's {@link MergeOutcome}, as recorded in a {@link
- * TickVerdict}. `footprint` is the entry's actual touched paths — present
+ * One provisioned span's {@link MergeOutcome}, as recorded in a {@link
+ * TickVerdict} — per entry under fanout, the phase's own single span under
+ * singleton. `footprint` is the span's actual touched paths — present
  * on the outcomes that never landed cleanly on trunk (`cherry-pick-conflict`,
  * `afterMerge-reverted`, `afterCommit-reverted`) where a captured diff
  * exists; absent when the outcome carries no footprint of its own (`merged`,
@@ -290,9 +291,27 @@ export type MergeOutcome =
  * no independently-maintained observed-files map.
  */
 export interface TickVerdictMergeOutcome {
-  tag: string;
+  /**
+   * The fanout entry this span belongs to. Absent on a singleton phase's own
+   * span, which has no entry to tag — the verdict's `phaseName` already names
+   * it, and restating it here would invent a tag naming no queue entry (same
+   * shape as {@link TickVerdictInvocation.tag}).
+   */
+  tag?: string;
   outcome: MergeOutcome;
   footprint?: string[];
+  /**
+   * The base `headSha` is reachable from, so `baseSha..headSha` is exactly
+   * this span and nothing adjacent. Pairs with whichever sha `headSha` holds:
+   * the pre-cherry-pick trunk tip for a span that reached trunk (`merged`,
+   * `afterMerge-reverted`, `afterMerge-revert-refused`, `not-shipped`), else
+   * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
+   * `afterCommit-reverted`, `cherry-pick-conflict`). Recovery needs both: a
+   * span may hold several commits (spec/loop.md "N commits are completion"),
+   * and `headSha` alone re-picks only the last of them. Absent only when the
+   * span never reached a commit at all.
+   */
+  baseSha?: string;
   /**
    * The span's own head — the entry's cherry-picked commit sha once one
    * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
@@ -1906,6 +1925,13 @@ export class Dispatcher {
     // branched from — the gates' base, reported on the result as `baseSha`.
     // Unset on a declined or render-refused tick: no span was ever started.
     let preWtHead: string | undefined;
+    // spec/loop.md "The tick verdict": "the phase's own single span under
+    // singleton". A singleton has no entry to tag, so these rows carry
+    // `outcome`/`baseSha`/`headSha` and no `tag` — one row at most, pushed at
+    // whichever fate the span reaches. Without it a gate-reverted singleton
+    // commit's sha survives nowhere: `commitSha` on the result is set only on
+    // a clean ship, and the worktree branch is gone after teardown.
+    const mergeOutcomes: TickVerdictMergeOutcome[] = [];
 
     // RELEASE-v0.11 §8: consulted before rendering the prompt or invoking
     // the agent — a chain can decline a tick without spending one. Sees the
@@ -1970,7 +1996,14 @@ export class Dispatcher {
             preWtHead,
             postWtHead,
           );
-          if (tipMoved) wtCommitted = false;
+          if (tipMoved) {
+            wtCommitted = false;
+            mergeOutcomes.push({
+              outcome: "dropped-work",
+              baseSha: preWtHead,
+              headSha: postWtHead,
+            });
+          }
         }
 
         if (wtCommitted) {
@@ -1983,19 +2016,31 @@ export class Dispatcher {
           );
           gateResults.push(...verdict.results);
           if (!verdict.ok) {
-            const { gateFailure: gf } = await this.revertAfterCommitFailure(
-              chain,
-              wt.path,
-              postWtHead,
-              key,
-              phase.name,
-              undefined,
-              verdict.failure!,
-              verdict.touchedPaths,
-            );
+            const { footprint, gateFailure: gf } =
+              await this.revertAfterCommitFailure(
+                chain,
+                wt.path,
+                postWtHead,
+                key,
+                phase.name,
+                undefined,
+                verdict.failure!,
+                verdict.touchedPaths,
+              );
             noCommit = "gate-revert";
             gateFailures.push(gf);
             wtCommitted = false;
+            // The span the revert just dropped — recorded here because
+            // `dropLastCommit` has already moved the branch off it and
+            // teardown deletes the branch entirely. The objects survive in
+            // the shared store until gc, so these two shas are what makes
+            // the work re-cherry-pickable without paying the agent again.
+            mergeOutcomes.push({
+              outcome: "afterCommit-reverted",
+              ...(footprint && footprint.length > 0 ? { footprint } : {}),
+              baseSha: preWtHead,
+              headSha: postWtHead,
+            });
           }
         }
 
@@ -2029,6 +2074,11 @@ export class Dispatcher {
               signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
               message,
             };
+            mergeOutcomes.push({
+              outcome: "cherry-pick-conflict",
+              baseSha: preWtHead,
+              headSha: postWtHead,
+            });
           }
 
           if (!mergeFailure) {
@@ -2113,10 +2163,17 @@ export class Dispatcher {
                 preCherry,
                 mergedSha,
               );
+              // The span that reached trunk: `preCherry..mergedSha`, whether
+              // the revert below lands or is refused. Its base is the
+              // pre-cherry-pick tip, not `preWtHead` — `headSha` names the
+              // trunk-side commit, and a span row's two shas always bound the
+              // same range.
+              let mergeFate: MergeOutcome = "afterMerge-reverted";
               if (foreignTip) {
                 this.log.warn(
                   `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator`,
                 );
+                mergeFate = "afterMerge-revert-refused";
                 gateFailures.push({
                   signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
                   message: foreignTip,
@@ -2130,18 +2187,30 @@ export class Dispatcher {
                   this.log.warn(
                     `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
                   );
+                  mergeFate = "afterMerge-revert-refused";
                   gateFailures.push({
                     signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
                     message,
                   });
                 }
               }
+              mergeOutcomes.push({
+                outcome: mergeFate,
+                footprint: commitTouchedPaths,
+                baseSha: preCherry,
+                headSha: mergedSha,
+              });
             } else {
               this.log.info(
                 `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
               );
               committed = true;
               commitSha = mergedSha;
+              mergeOutcomes.push({
+                outcome: "merged",
+                baseSha: preCherry,
+                headSha: mergedSha,
+              });
               // A clean ship clears the slot so the next tick starts with no
               // stale prior-attempt signal.
               await this.clearPriorAttempt(key);
@@ -2188,6 +2257,7 @@ export class Dispatcher {
       ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
       ...(gateFailures.length > 0 ? { gateFailures } : {}),
       ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
+      mergeOutcomes,
       ...(invocation ? { invocations: [invocation] } : {}),
     };
   }
@@ -2504,6 +2574,7 @@ export class Dispatcher {
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "dropped-work",
+          ...(r.spanBase ? { baseSha: r.spanBase } : {}),
           ...(r.headSha ? { headSha: r.headSha } : {}),
         });
       }
@@ -2519,6 +2590,7 @@ export class Dispatcher {
             tag: r.entry.tag,
             outcome: "afterCommit-reverted",
             footprint: r.footprint,
+            ...(r.spanBase ? { baseSha: r.spanBase } : {}),
             ...(r.headSha ? { headSha: r.headSha } : {}),
           });
         }
@@ -2542,6 +2614,7 @@ export class Dispatcher {
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "tip-moved",
+          baseSha: r.spanBase,
           headSha: r.commitSha,
         });
         continue;
@@ -2585,6 +2658,7 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "cherry-pick-conflict",
           ...(footprint ? { footprint } : {}),
+          baseSha: r.spanBase,
           headSha: r.commitSha,
         });
         // §16 (generalized): a merge-stage failure — always entry-scoped, so
@@ -2715,6 +2789,7 @@ export class Dispatcher {
             tag: r.entry.tag,
             outcome: "afterMerge-revert-refused",
             footprint: commitTouchedPaths,
+            baseSha: preCherry,
             headSha: mergedSha,
           });
           gateFailures.push({
@@ -2737,6 +2812,7 @@ export class Dispatcher {
             tag: r.entry.tag,
             outcome: "afterMerge-revert-refused",
             footprint: commitTouchedPaths,
+            baseSha: preCherry,
             headSha: mergedSha,
           });
           gateFailures.push({
@@ -2751,6 +2827,7 @@ export class Dispatcher {
           tag: r.entry.tag,
           outcome: "afterMerge-reverted",
           footprint: commitTouchedPaths,
+          baseSha: preCherry,
           headSha: mergedSha,
         });
         continue;
@@ -2796,6 +2873,7 @@ export class Dispatcher {
         mergeOutcomes.push({
           tag: r.entry.tag,
           outcome: "not-shipped",
+          baseSha: preCherry,
           headSha: mergedSha,
         });
         continue;
@@ -2805,6 +2883,7 @@ export class Dispatcher {
       mergeOutcomes.push({
         tag: r.entry.tag,
         outcome: "merged",
+        baseSha: preCherry,
         headSha: mergedSha,
       });
     }
@@ -2823,9 +2902,9 @@ export class Dispatcher {
     // footprints — as one harness commit. `commitPendingUpdate` derives the
     // footprints straight off `mergeOutcomes`, the same records this wave's
     // TickVerdict carries — no separate observed-files bookkeeping here.
-    const footprintTags = mergeOutcomes
-      .filter((m) => m.footprint && m.footprint.length > 0)
-      .map((m) => m.tag);
+    const footprintTags = mergeOutcomes.flatMap((m) =>
+      m.tag && m.footprint && m.footprint.length > 0 ? [m.tag] : [],
+    );
     let chorSha: string | undefined;
     if (shipped.length > 0 || footprintTags.length > 0) {
       // Each shipped entry committed clean *and* passed its afterMerge gate
@@ -3044,8 +3123,11 @@ export class Dispatcher {
      * RELEASE-v0.11 §5 (per-entry leg): the tip this entry's worktree was
      * provisioned from — the ancestry check's recorded base, and the range
      * start the wave loop cherry-picks and diffs from (`base..commitSha`,
-     * spec/loop.md "N commits are completion"). Set alongside `commitSha`
-     * on every path that reaches a commit; absent otherwise.
+     * spec/loop.md "N commits are completion"). Set on every path that
+     * reached a commit — alongside `commitSha` when the span survived, and
+     * alongside `headSha` when it was lost to a moved tip or an afterCommit
+     * revert, so the verdict's span row can name the range both ends of
+     * (`TickVerdictMergeOutcome.baseSha`). Absent only when no commit landed.
      */
     spanBase?: string;
     gateResults: GateResultEntry[];
@@ -3174,6 +3256,7 @@ export class Dispatcher {
           gateResults: [],
           tipMoved: true,
           worktreePath: wt.path,
+          spanBase: preHead,
           headSha: postHead,
           termination,
         };
@@ -3228,6 +3311,7 @@ export class Dispatcher {
         worktreePath: wt.path,
         footprint,
         gateFailure,
+        spanBase: preHead,
         headSha: postHead,
         termination,
       };
@@ -4516,13 +4600,20 @@ export class Dispatcher {
     // footprint recorder filters through the same partitionIgnore list the
     // partition itself reads `touchedPaths` through, so observedFiles never
     // grows with a path the partition would drop anyway.
+    // A tagless row is a singleton phase's own span, which keys no ledger
+    // entry and never reaches this rewrite — skipped by the same predicate
+    // that skips a footprintless row.
     const observed = new Map(
-      mergeOutcomes
-        .filter((m) => m.footprint && m.footprint.length > 0)
-        .map((m) => [
-          m.tag,
-          m.footprint!.filter((p) => !matchesAny(p, partitionIgnore)),
-        ] as const),
+      mergeOutcomes.flatMap((m) =>
+        m.tag && m.footprint && m.footprint.length > 0
+          ? [
+              [
+                m.tag,
+                m.footprint.filter((p) => !matchesAny(p, partitionIgnore)),
+              ] as [string, string[]],
+            ]
+          : [],
+      ),
     );
     const shipped = new Set(shippedTags);
     // Re-read pending.json fresh, right before deriving the rewrite —

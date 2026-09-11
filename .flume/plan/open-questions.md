@@ -280,3 +280,16 @@ with the backstop blind to it.
 Out of this entry's declared files; not fixed here. Mechanical if filed: build
 the record at the catch and carry it to both surfaces the way this entry's two
 singleton returns now do.
+
+## `flume log` renders a tagless span row as `undefined:<outcome>` (observation, from VERDICT-SPAN-ROW-BASE-SHA)
+
+`TickVerdictMergeOutcome.tag` is now optional — a singleton phase's own span
+row carries no entry tag, the same shape `TickVerdictInvocation.tag` already
+had. `formatTickVerdictLine` (`src/cliVerdict.ts:123`) still interpolates it
+unconditionally (`${m.tag}:${m.outcome}`), so every singleton tick's `flume
+log` line now reads `merge=[undefined:merged]`.
+
+Out of this entry's declared files; not fixed here. Mechanical if filed: emit
+the outcome alone when `tag` is absent — not the phase name, which the line
+already prints as its first field (`engineering.md` *Derived state is computed,
+never restated beside its source*).

@@ -101,10 +101,12 @@ function buildVerdict(
 ): TickVerdict {
   return {
     phaseName,
-    tags: mergeOutcomes.map((o) => o.tag),
+    tags: mergeOutcomes.flatMap((o) => (o.tag ? [o.tag] : [])),
     committed: true,
     gateResults: [],
-    shippedTags: mergeOutcomes.filter((o) => o.outcome === "merged").map((o) => o.tag),
+    shippedTags: mergeOutcomes.flatMap((o) =>
+      o.tag && o.outcome === "merged" ? [o.tag] : [],
+    ),
     mergeOutcomes,
     invocations: [],
     summary: mergeOutcomes.map((o) => `${o.tag}=${o.outcome}`).join(", "),

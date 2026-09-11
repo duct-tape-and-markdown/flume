@@ -392,7 +392,15 @@ describe("Dispatcher singleton — commit detected", () => {
     expect(outcome.verdict?.committed).toBe(true);
     expect(outcome.verdict?.noCommit).toBeUndefined();
     expect(outcome.verdict?.shippedTags).toEqual([]);
-    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+    // The phase's own single span — tagless (no entry to name), both shas
+    // present so the commit is re-cherry-pickable from the verdict alone.
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      {
+        outcome: "merged",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
+    ]);
     expect(
       outcome.verdict?.gateResults.some((g) => g.gate === "writable-paths"),
     ).toBe(true);
@@ -3581,18 +3589,20 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     expect(outcome.verdict?.tags.sort()).toEqual(["CONFLICT-A", "CONFLICT-B"]);
     expect(
       [...(outcome.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
-        a.tag.localeCompare(b.tag),
+        (a.tag ?? "").localeCompare(b.tag ?? ""),
       ),
     ).toEqual([
       {
         tag: "CONFLICT-A",
         outcome: "merged",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
       {
         tag: "CONFLICT-B",
         outcome: "cherry-pick-conflict",
         footprint: ["src/decoy-b.ts", "src/shared.ts"],
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -3745,18 +3755,20 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     // (the fact behind the revert) rides along verbatim.
     expect(
       [...(first.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
-        a.tag.localeCompare(b.tag),
+        (a.tag ?? "").localeCompare(b.tag ?? ""),
       ),
     ).toEqual([
       {
         tag: "ISO-FAIL",
         outcome: "afterMerge-reverted",
         footprint: ["src/iso-fail.ts"],
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
       {
         tag: "ISO-PASS",
         outcome: "merged",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -4642,6 +4654,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
         tag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -4709,6 +4722,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
         tag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -7241,6 +7255,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
       {
         tag: "TEST-A",
         outcome: "merged",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -7310,7 +7325,12 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     // observed HEAD the ancestry check rejected — the dangling commit a
     // human could still recover before gc.
     expect(outcome.verdict?.mergeOutcomes).toEqual([
-      { tag: "TEST-A", outcome: "dropped-work", headSha: observedHead },
+      {
+        tag: "TEST-A",
+        outcome: "dropped-work",
+        baseSha: recordedBase,
+        headSha: observedHead,
+      },
     ]);
 
     // Both shas named — the recorded base and the observed HEAD, never the
@@ -7376,6 +7396,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
       {
         tag: "TEST-A",
         outcome: "merged",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
     ]);
@@ -7506,6 +7527,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
         {
           tag: "TEST-A",
           outcome: "tip-moved",
+          baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
           headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         },
       ]);
@@ -14144,7 +14166,12 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     // predicate declined it.
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.verdict?.mergeOutcomes).toEqual([
-      { tag: "DECLINED-ONCE", outcome: "not-shipped", headSha: trunkTip },
+      {
+        tag: "DECLINED-ONCE",
+        outcome: "not-shipped",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        headSha: trunkTip,
+      },
     ]);
     expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "DECLINED-ONCE",
@@ -14315,5 +14342,159 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(res.ticks).toBe(1);
     expect(res.erroredTicks).toEqual([]);
     expect(loopExitCode(res)).toBe(0);
+  }, 20_000);
+});
+
+/**
+ * spec/loop.md "The tick verdict — one facts artifact": a span row is
+ * recovery, not decoration — "re-cherry-pickable from the verdict alone,
+ * never re-run at full agent price". `headSha` alone cannot do that: a span
+ * may hold several commits (spec/loop.md "N commits are completion"), so
+ * picking its head re-applies the last commit and loses the rest. Both tests
+ * below therefore prove recovery by actually replaying `baseSha..headSha`
+ * onto trunk after the tick tore the worktree down, and both drive a
+ * two-commit span so the replay is load-bearing.
+ */
+describe("TickVerdict span rows — base beside head", () => {
+  /** `git rev-list --count base..head` in `repo`. */
+  async function spanLength(
+    repo: string,
+    base: string,
+    head: string,
+  ): Promise<number> {
+    const { stdout } = await exec(
+      "git",
+      ["rev-list", "--count", `${base}..${head}`],
+      { cwd: repo },
+    );
+    return Number(stdout.trim());
+  }
+
+  it("a fanout entry's span row carries the base it branched from beside its head sha", async () => {
+    await writePending(fx.repo, [makeEntry("SPAN-BASE", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const preHead = await head(fx.repo);
+
+    // Two commits: the entry's declared file, then one outside its scope —
+    // the whole span is gated, so the writable-paths gate reverts both.
+    const agent = fanoutAgent({
+      "span-base": async (cwd) => {
+        await writeAndCommit(cwd, "src/a.ts", "a\n", "build(SPAN-BASE): one");
+        await writeAndCommit(
+          cwd,
+          "src/stray.ts",
+          "stray\n",
+          "build(SPAN-BASE): two",
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the reverted-span leg really ran — nothing shipped, and
+    // neither file reached trunk on the entry's own commits.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
+    expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
+
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.tag).toBe("SPAN-BASE");
+    expect(row.outcome).toBe("afterCommit-reverted");
+    // The base is the tip the worktree branched from — trunk as it stood
+    // when the entry was provisioned, not the head's parent.
+    expect(row.baseSha).toBe(preHead);
+    expect(row.headSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(row.headSha).not.toBe(row.baseSha);
+    // Two commits, so `headSha` alone would recover only the second.
+    expect(await spanLength(fx.repo, row.baseSha!, row.headSha!)).toBe(2);
+
+    // Recovery: the worktree and its branch are gone, but the span replays
+    // from the verdict's two shas alone — no agent re-run.
+    expect(existsSync(join(fx.repo, ".flume", "worktrees", "span-base"))).toBe(
+      false,
+    );
+    await exec("git", ["cherry-pick", `${row.baseSha}..${row.headSha}`], {
+      cwd: fx.repo,
+    });
+    expect(await readFile(join(fx.repo, "src", "a.ts"), "utf8")).toBe("a\n");
+    expect(await readFile(join(fx.repo, "src", "stray.ts"), "utf8")).toBe(
+      "stray\n",
+    );
+  }, 20_000);
+
+  it("a singleton tick reverted by an afterCommit gate leaves a span row naming both shas", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const preHead = await head(fx.repo);
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-a.ts", "a\n", "plan: one");
+      await writeAndCommit(cwd, "outside/b.ts", "b\n", "plan: two");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the gate really reverted a real commit — the tick is a
+    // gate-revert, nothing landed on trunk, and `commitSha` (set only on a
+    // clean ship) is exactly the field that cannot carry the sha here.
+    expect(outcome.noCommit).toBe("gate-revert");
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.commitSha).toBeUndefined();
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(existsSync(join(fx.repo, "src", "plan-a.ts"))).toBe(false);
+
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    // No entry to name — the verdict's own `phaseName` already says which
+    // phase this span belongs to.
+    expect(row.tag).toBeUndefined();
+    expect(outcome.verdict?.phaseName).toBe("plan");
+    expect(row.outcome).toBe("afterCommit-reverted");
+    expect(row.footprint?.sort()).toEqual(["outside/b.ts", "src/plan-a.ts"]);
+    expect(row.baseSha).toBe(preHead);
+    expect(row.headSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(row.headSha).not.toBe(row.baseSha);
+    expect(await spanLength(fx.repo, row.baseSha!, row.headSha!)).toBe(2);
+
+    await exec("git", ["cherry-pick", `${row.baseSha}..${row.headSha}`], {
+      cwd: fx.repo,
+    });
+    expect(await readFile(join(fx.repo, "src/plan-a.ts"), "utf8")).toBe("a\n");
+    expect(await readFile(join(fx.repo, "outside/b.ts"), "utf8")).toBe("b\n");
   }, 20_000);
 });

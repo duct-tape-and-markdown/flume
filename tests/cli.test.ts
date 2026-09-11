@@ -553,7 +553,12 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
           committed: boolean;
           declined?: boolean;
           shippedTags: string[];
-          mergeOutcomes: { tag: string; outcome: string; headSha?: string }[];
+          mergeOutcomes: {
+            tag?: string;
+            outcome: string;
+            baseSha?: string;
+            headSha?: string;
+          }[];
         };
 
         expect(verdict.phaseName).toBe("build");
@@ -565,6 +570,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
           {
             tag: "SHIP-A",
             outcome: "merged",
+            baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
             headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
           },
         ]);
