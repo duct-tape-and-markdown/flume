@@ -260,39 +260,55 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## `spec/chain.md` and `spec/cli.md` cite the supervisor at a module that no longer holds it (NEEDS AMENDMENT)
+## Six spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
 
-Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s note; verified on disk, and
-one cite wider than the note reported. The supervisor got its own module at
-`39c8207`; three spec cites still name its old home:
+Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s and
+`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s notes; every cite re-verified on disk
+this tick. Two pure moves have now left six spec cites pointing at symbols
+their old modules no longer hold.
 
-- `spec/chain.md:348` and `:358` — `src/Dispatcher.ts:superviseLoop`. The symbol
-  is `src/loopSupervisor.ts:170`; `src/Dispatcher.ts` now only mentions it in
-  doc comments.
+The supervisor got its own module at `39c8207` — three cites, one wider than
+that note reported:
+
+- `spec/chain.md:348` and `:358` — `src/Dispatcher.ts:superviseLoop`. The
+  symbol is `src/loopSupervisor.ts:170`; `src/Dispatcher.ts` now only mentions
+  it in doc comments.
 - `spec/cli.md:182` — ``` `defaultTickRunner` (`src/Dispatcher.ts`) ```. It is
-  `src/loopSupervisor.ts:491`. The note missed this one.
+  `src/loopSupervisor.ts:491`.
+
+The prior-attempt store got `src/priorAttempts.ts` at `8139875` — three more,
+and these moved *name* as well as home, so a reader's grep finds nothing:
+
+- `spec/worktrees.md:253` — `src/Dispatcher.ts:snapshotRevertedFiles`. It is
+  `PriorAttemptStore.snapshotReverted` (`src/priorAttempts.ts:351`).
+- `spec/loop.md:285` — bare `snapshotRevertedFiles`, same symbol.
+- `spec/loop.md:357` — bare `clearPriorAttempt`. It is `PriorAttemptStore.clear`
+  (`src/priorAttempts.ts`, called at `src/Dispatcher.ts:2257,2968`).
 
 Every other cite is path-free (`spec/loop.md:6,31,43,168,624`,
 `spec/chain.md:364`) and stays correct.
 
-**Recommend** repointing all three at `src/loopSupervisor.ts`. No fork — the
-extraction was a pure move, and the surrounding claims (`quarantineScope ??
-"run"`, `abortThreshold ?? 3`, "binds both before entering the tick loop", the
-child-env copy) all hold at the new home. Parked only because `spec/` is
-human-only (`.claude/rules/spec-plan-build.md`).
+**Recommend** repointing all six. No fork — both extractions were pure moves,
+and the surrounding claims (`quarantineScope ?? "run"`, `abortThreshold ?? 3`,
+"binds both before entering the tick loop", the child-env copy; the snapshot's
+gate-revert-leg-only rule, the `.reverted/` layout) all hold at the new homes.
+Parked only because `spec/` is human-only (`.claude/rules/spec-plan-build.md`).
 
-**One in-fence rider.** `src/cli.ts:686` carries the same stale pair — "set by
-`defaultTickRunner`, `src/Dispatcher.ts`" — while `:746`, three comments down,
-was repointed in the same commit. Inside build's fence, so it rides whatever
-entry the amendment files rather than earning one.
+**One in-fence rider.** `src/cli.ts:686` carries the same stale supervisor pair
+— "set by `defaultTickRunner`, `src/Dispatcher.ts`" — while `:746`, three
+comments down, was repointed in the same commit. Inside build's fence, so it
+rides whatever entry the amendment files rather than earning one.
 
-**And the fork this raises: pin the module path, or keep re-noticing it?**
-Nothing checks a spec cite's module path, which is why a green wave shipped
-three stale ones. A scan is buildable and cheap — resolve every
-`src/<file>.ts:<symbol>` in `spec/` against the tree (~30 cites today), in
-`tests/retired-narration.test.ts`, which already reads `spec/` paths for its
-doc-to-source scans. It is **red until the amendment lands**, so it ships after,
-never with. Against it: a symbol-resolving scan over prose is a second parser to
-maintain, and the same commit that moves a symbol is the cheapest place to fix
-its cites — if the extraction entries are the last of their kind, the pin buys
-little. Say the word and it files as an entry.
+**And the fork this raises, now with a second data point: pin the module path,
+or keep re-noticing it?** Nothing checks a spec cite's module path, which is
+why two green waves have now shipped six stale ones — and the rate is the
+argument, since two extraction entries (`DISPATCHER-EXTRACT-FRICTION`,
+`DISPATCHER-EXTRACT-WORKTREES`) are still queued behind these. A scan is
+buildable and cheap — resolve every `src/<file>.ts:<symbol>` in `spec/`
+against the tree (~30 cites today), in `tests/retired-narration.test.ts`,
+which already reads `spec/` paths for its doc-to-source scans. It is **red
+until the amendment lands**, so it ships after, never with. Against it: a
+symbol-resolving scan over prose is a second parser to maintain, and the same
+commit that moves a symbol is the cheapest place to fix its cites — but that
+is exactly what both waves could not do, since build cannot edit `spec/`.
+Say the word and it files as an entry.

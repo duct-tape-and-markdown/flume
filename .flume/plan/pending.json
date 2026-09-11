@@ -1,5 +1,39 @@
 [
   {
+    "tag": "TSCONFIG-REFUSES-DEAD-IMPORTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tsconfig.json",
+          "description": "noUnusedLocals on"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "four dead imports leave"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "one dead import leaves"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "noUnusedLocals is off, so an extraction leaves dead imports no gate can see — five stand on disk today",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "`pnpm tsc --noEmit` is green with `noUnusedLocals: true` in tsconfig.json, and the five TS6133 sites are gone.",
+    "notes": "From DISPATCHER-EXTRACT-PRIOR-ATTEMPTS's note. The flag alone yields exactly five TS6133s, all dead imports the two extractions left: EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD, TickVerdict, RUNTIME_IGNORES (tests/Dispatcher.test.ts) and `resolve` (tests/loopSupervisor.test.ts). Promotes the sweep's dead-plumbing lens to the type rung. `noUnusedParameters` is clean today but left off — it forces the `_` params spec-plan-build.md bars. Take before the DISPATCHER-EXTRACT-* pair."
+  },
+  {
     "tag": "CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT",
     "gate": {
       "kind": "open"
@@ -20,12 +54,12 @@
       "path": ".claude/rules/engineering.md",
       "section": "A seam gate reads what the real writer wrote"
     },
-    "tests": [
+    "tests": [],
+    "pins": [
       "cascade's plan ladder routes the baton from a TickResult the dispatcher produced"
     ],
-    "pins": [],
     "acceptance": "At least one ladder rung transition is read off a real `Dispatcher.tick()` outcome instead of the `after()` fixture; the hand-authored cases that remain are the refusal shapes the section's carve-out allows.",
-    "notes": "From CASCADE-PLAN-SLICES-ORDERED-HANDOFF's note. tests/examples.test.ts:322 `after()` hand-authors pickableAfter/shippedTags/noCommit/mergeOutcome. Cascade declares no phase agent, so `DispatcherOptions.agent` reaches it (src/Dispatcher.ts:1844) and the backlog-groomer drive's fixture shape applies. Fast lane: no Node startup, no real agent (spec/worktrees.md, the lane split). Build-wave refusal legs spawn children — out of scope.",
+    "notes": "From CASCADE-PLAN-SLICES-ORDERED-HANDOFF's note. tests/examples.test.ts:322 `after()` hand-authors pickableAfter/shippedTags/noCommit/mergeOutcome. Cascade declares no phase agent, so `DispatcherOptions.agent` reaches it (src/Dispatcher.ts:1844) and the backlog-groomer drive's fixture shape applies. Fast lane: no Node startup, no real agent. Build-wave refusal legs spawn children — out of scope. Pinned, not tested: tests-only, so red-on-base cannot fire.",
     "observedFiles": [
       ".flume/plan/notes/CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT.md",
       "tests/examples.test.ts"
