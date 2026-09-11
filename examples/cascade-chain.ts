@@ -89,7 +89,6 @@ const factory: ChainFactory = (api) => {
     renderSchemaForPrompt,
     shellGate,
     tscGate,
-    vitestGate,
     eslintGate,
   } = api;
   // ---------- project-specific gates ----------
@@ -110,6 +109,24 @@ const factory: ChainFactory = (api) => {
     cmd: "pnpm",
     args: ["spec:audit"],
     failHint: "Spec corpus audit failed — commit reverted",
+  });
+
+  /**
+   * The test suite, at `afterMerge` — the merged trunk is the only tree
+   * anything validates as a whole, and this is the gate that says it is
+   * still correct.
+   *
+   * Why `shellGate` and not the `vitestGate` builtin: that builtin fixes
+   * `when: "afterCommit"` and takes no placement override, so composing the
+   * public escape hatch is how a chain moves a language check to the trunk.
+   * Same command, different gate point.
+   */
+  const vitestOnTrunk: Gate = shellGate({
+    name: "vitest",
+    when: "afterMerge",
+    cmd: "pnpm",
+    args: ["test", "--run"],
+    failHint: "Tests failed — entry reverted from the trunk",
   });
 
   // ---------- phases ----------
@@ -150,13 +167,20 @@ const factory: ChainFactory = (api) => {
    * Fanout: the dispatcher picks N entries that don't touch the same files and
    * runs N agent invocations in parallel worktrees. Each tick handles one
    * `assignedEntry`. Worktree branches merge serially after their afterCommit
-   * gates pass; an afterMerge failure (none here, but the lifecycle supports
-   * it) reverts the wave on the trunk.
+   * gates pass; the afterMerge gates then run per entry on the trunk, after
+   * that entry's cherry-pick, and a failure there reverts only that entry —
+   * the rest of the wave stays shipped.
    *
-   * Gates with the language-level built-ins: `tscGate` first (cheap, catches
-   * type errors before `vitestGate` even loads the module), then `vitestGate`,
-   * then `eslintGate`. All afterCommit; failure reverts the worktree commit
-   * and the entry stays pickable for the next tick.
+   * Gates split by cost. Cheap structural checks stay `afterCommit`, inside
+   * the worktree, so a type or lint error never reaches the trunk at all:
+   * `tscGate` first, then `eslintGate`; failure reverts the worktree commit
+   * and the entry stays pickable for the next tick. The suite runs
+   * `afterMerge` (`vitestOnTrunk` above), because the merged tree is the one
+   * no afterCommit gate ever saw — the trunk may have moved under the wave,
+   * and two siblings that each passed in isolation can compose into a tree
+   * neither worktree held. Running it N-wide in parallel worktrees would
+   * also buy nothing but host contention, where a timeout reverts a clean
+   * commit.
    *
    * Always hands off to plan so pending.json reconciles against the new trunk
    * state, regardless of success, bail, or validation-fail.
@@ -185,7 +209,7 @@ const factory: ChainFactory = (api) => {
       // a separate commit post-merge that removes shipped entries. This avoids
       // cherry-pick conflicts when N fanout worktrees each touch the same file.
     ],
-    gates: [tscGate, vitestGate, eslintGate],
+    gates: [tscGate, eslintGate, vitestOnTrunk],
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {
         throw new Error("build phase requires an assignedEntry in TickContext");
