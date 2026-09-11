@@ -18,6 +18,11 @@ export default defineConfig(({ mode }) => {
       exclude: integration
         ? [...configDefaults.exclude]
         : [...configDefaults.exclude, "**/*.integration.test.ts"],
+      // Both lanes, because the writer is unknown: a state root planted above
+      // the fixtures captures every unrooted fixture below it, and the suite
+      // that plants it is the one a per-suite guard would be missing
+      // (`installStateRootLeakGuard`, tests/helpers/subprocess.ts).
+      setupFiles: ["./tests/helpers/vitestSetup.ts"],
     },
   };
 });
