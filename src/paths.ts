@@ -13,11 +13,61 @@
  * baton, and the job verbs can all reach it without a cycle.
  */
 
-import { join, resolve, toNamespacedPath } from "node:path";
+import {
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+  toNamespacedPath,
+} from "node:path";
 
 /** `join(...paths)`, then `toNamespacedPath` — the win32 MAX_PATH fix idiom. */
 export function namespacedJoin(...paths: string[]): string {
   return toNamespacedPath(join(...paths));
+}
+
+/**
+ * Shared escape-check for a declared state-root-relative path
+ * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
+ * `Chain.pendingPath` — `validatePendingPathDeclaration`,
+ * `src/Dispatcher.ts`): must be relative, and must still resolve inside the
+ * root it is joined to.
+ *
+ * Base-independent: it resolves the declared path against an arbitrary
+ * sentinel root and asks whether the result still sits under that root, so
+ * it needs no actual `flumeDir` value. That value legitimately varies per
+ * call site (a job-scoped run's state root differs from `configDir`, where
+ * `chain.ts` itself lives), but "does this relative path escape whatever
+ * root it's joined to" is a property of the path string alone.
+ *
+ * Here rather than beside either caller because both reach it, and because
+ * the check is path shape and nothing else — one spelling, so two declared
+ * fields cannot disagree about what escaping the state root means
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+export function assertStateRootRelative(
+  fieldName: string,
+  value: string,
+  shapeHint: string,
+): void {
+  if (isAbsolute(value)) {
+    throw new Error(
+      `chain declares ${fieldName} '${value}' as an absolute path; ` +
+        `Chain.${fieldName} must be a state-root-relative ${shapeHint}`,
+    );
+  }
+  const sentinelRoot = resolve("__flume_state_root__");
+  const resolved = resolve(sentinelRoot, value);
+  const rel = relative(sentinelRoot, resolved);
+  const escapesRoot =
+    rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (escapesRoot) {
+    throw new Error(
+      `chain declares ${fieldName} '${value}' which resolves outside the state root; ` +
+        `Chain.${fieldName} must be a state-root-relative ${shapeHint}`,
+    );
+  }
 }
 
 /**
@@ -72,7 +122,8 @@ export function entryWriteScopeUnion(
  * tightest raw-tag consumer, `writeRevertNote`'s
  * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
  * component built from this slug (`createWorktree`'s worktree-dir and
- * branch-name, `harvestFriction`'s `` `${tag}--${stamp}--${file.name}` ``)
+ * branch-name, `src/friction.ts`'s `harvestFriction`
+ * `` `${tag}--${stamp}--${file.name}` ``)
  * is looser and stays within filesystem NAME_MAX (255) by construction as a
  * result.
  * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,

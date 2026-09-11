@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,6 @@ import {
   CjsContextLoadError,
   PendingParseFailure as realPendingParseFailure,
   Dispatcher,
-  frictionCountLine,
   loadChainModule,
   writeTickVerdict,
   clearTickVerdict,
@@ -37,6 +36,7 @@ import {
   type DispatcherOptions,
   type Logger,
 } from "../src/Dispatcher.ts";
+import { frictionCountLine } from "../src/friction.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
@@ -10704,41 +10704,6 @@ describe("Dispatcher — ungated chain resolution failure → loud no-work outco
     expect(outcome.phaseName).toBeUndefined();
     expect(errors.some((e) => /chain resolution failed/.test(e))).toBe(true);
     expect(errors.some((e) => /simulated broken chain\.ts/.test(e))).toBe(true);
-  });
-});
-
-describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountline-loud-or-nothing)", () => {
-  it("reads 'friction: unreadable' (not silence) when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-unreadable-"));
-    try {
-      const frictionDir = join(stateRoot, "friction");
-      await mkdir(frictionDir, { recursive: true });
-      await writeFile(join(frictionDir, "a.md"), "x\n");
-      // Strip traversal permission on the friction dir itself: readdir now
-      // fails with EACCES — the dir exists but can't be read — not ENOENT
-      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
-      // EACCES fixture `countFrictionFiles` (`tests/job.test.ts`) uses,
-      // now the shared detection this helper reuses.
-      await chmod(frictionDir, 0o000);
-
-      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
-      expect(await frictionCountLine(stateRoot, chain)).toBe(
-        "friction: unreadable",
-      );
-    } finally {
-      await chmod(join(stateRoot, "friction"), 0o755).catch(() => {});
-      await rm(stateRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("still reads undefined when the declared dir is absent (ENOENT) — baseline unchanged (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-absent-"));
-    try {
-      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
-      expect(await frictionCountLine(stateRoot, chain)).toBeUndefined();
-    } finally {
-      await rm(stateRoot, { recursive: true, force: true });
-    }
   });
 });
 

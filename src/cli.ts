@@ -45,7 +45,6 @@ import {
 import {
   Dispatcher,
   diskChainLoader,
-  frictionCountLine,
   clearTickVerdict,
   writeTickVerdict,
   readTickVerdicts,
@@ -54,6 +53,7 @@ import {
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
+import { frictionCountLine } from "./friction.js";
 import { superviseLoop } from "./loopSupervisor.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";

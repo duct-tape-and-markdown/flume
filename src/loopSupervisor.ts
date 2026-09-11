@@ -17,7 +17,6 @@ import { Baton } from "./Baton.js";
 import {
   consoleLogger,
   diskChainLoader,
-  frictionCountLine,
   readTickVerdict,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
@@ -26,6 +25,7 @@ import {
   type TerminalMisconfiguration,
   type TickVerdict,
 } from "./Dispatcher.js";
+import { frictionCountLine } from "./friction.js";
 import { namespacedJoin, stopFlagPath } from "./paths.js";
 
 /** Options for {@link superviseLoop}. */
