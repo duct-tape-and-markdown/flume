@@ -24,6 +24,7 @@ import type {
   ChainFactory,
   EntryExtension,
   Gate,
+  GateResult,
   Phase,
   TickContext,
 } from "../src/index.ts";
@@ -60,7 +61,7 @@ const entryExtension = {
         }),
       )
       .default([]),
-    hint: `[ { "path": "...", "asserts": "behavior" } ]`,
+    hint: `[ { "path": "tests/foo.test.ts", "asserts": "behavior this entry introduces" } ] — build titles a passing test in that file with the \`asserts\` line verbatim (its full name must contain it); the vitest gate reads the reporter's output and reverts the entry when a line has no such test`,
   },
   acceptance: {
     schema: z.string().min(1),
@@ -71,6 +72,110 @@ const entryExtension = {
     hint: `"≤500 chars; optional context not in the spec"`,
   },
 } satisfies EntryExtension;
+
+
+// ---------- the entry's tests[] as a gate ----------
+
+/**
+ * The slice of vitest's `--reporter=json` output this chain reads: the file
+ * each test came from, its full name, and whether it passed.
+ */
+interface TestReport {
+  testResults: Array<{
+    name: string;
+    assertionResults: Array<{ fullName: string; status: string }>;
+  }>;
+}
+
+/**
+ * The JSON report embedded in a gate's captured output, or `undefined` when
+ * none parses. The runner writes the report to stdout alongside whatever else
+ * it prints, so the object is found rather than assumed to be the whole text.
+ */
+function parseTestReport(details: string | undefined): TestReport | undefined {
+  if (!details) return undefined;
+  const start = details.indexOf('{"numTotalTestSuites"');
+  if (start === -1) return undefined;
+  try {
+    return JSON.parse(
+      details.slice(start, details.lastIndexOf("}") + 1),
+    ) as TestReport;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Does the reporter's absolute file path name the repo-relative path the entry declared? */
+function isDeclaredFile(reported: string, declared: string): boolean {
+  const norm = reported.split("\\").join("/");
+  return norm === declared || norm.endsWith(`/${declared}`);
+}
+
+/**
+ * Wrap a suite gate so the entry's `tests[]` is judged from the run the gate
+ * already paid for: every declared `{ path, asserts }` must have a **passing**
+ * test in that file whose full name carries the `asserts` line verbatim.
+ *
+ * This is what makes `tests[]` load-bearing rather than decorative. Plan names
+ * the behavior an entry introduces, build titles a test with the line, and the
+ * gate proves the name has a test — so "was it tested" is a gate's answer
+ * instead of a reviewer's reading of the commit body. The engine reads none of
+ * `tests[]`; a declared extension field is judged by the chain that declared
+ * it, and the engine supplies the injection points this needs
+ * (`GateContext.entry`, `GateResult.details`) rather than the policy.
+ *
+ * Takes the suite gate as a parameter — any gate whose `details` carry a
+ * vitest JSON report composes, and the wrapper is drivable over a report the
+ * caller supplies.
+ */
+export function judgedByEntryTests(suite: Gate): Gate {
+  return {
+    ...suite,
+    async run(ctx): Promise<GateResult> {
+      // `tests[]` is this chain's declared extension field — narrow it through
+      // the same schema the parse gate validated it with. Absent parses to the
+      // schema's `[]` default: an entry naming no behavior has none to judge.
+      const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
+      const result = await suite.run(ctx);
+      if (!result.ok || named.length === 0) return result;
+
+      const report = parseTestReport(result.details);
+      if (!report) {
+        // Green over an unreadable report would pass every named line
+        // vacuously — the one failure that hides longest.
+        return {
+          ok: false,
+          message: `${suite.name} exited green but wrote no JSON report — ${named.length} named behavior(s) unjudged`,
+          ...(result.details ? { details: result.details } : {}),
+        };
+      }
+      const unpinned = named.filter(
+        (t) =>
+          !report.testResults.some(
+            (f) =>
+              isDeclaredFile(f.name, t.path) &&
+              f.assertionResults.some(
+                (a) => a.status === "passed" && a.fullName.includes(t.asserts),
+              ),
+          ),
+      );
+      if (unpinned.length > 0) {
+        return {
+          ok: false,
+          message: `${unpinned.length} of ${named.length} named behavior(s) have no passing test — entry reverted from the trunk`,
+          details: [
+            "Title a passing test with each line verbatim, in the file the entry names:",
+            ...unpinned.map((t) => `- ${t.path}: ${t.asserts}`),
+          ].join("\n"),
+        };
+      }
+      return {
+        ...result,
+        message: `${result.message}; ${named.length} named behavior(s) each have a passing test`,
+      };
+    },
+  };
+}
 
 
 // ---------- chain factory (RELEASE-v0.11 §6) ----------
@@ -95,20 +200,25 @@ const factory: ChainFactory = (api) => {
   /**
    * The test suite, at `afterMerge` — the merged trunk is the only tree
    * anything validates as a whole, and this is the gate that says it is
-   * still correct.
+   * still correct — judged twice: the suite is green, and every behavior the
+   * entry's `tests[]` names has a passing test (`judgedByEntryTests` above).
    *
    * Why `shellGate` and not the `vitestGate` builtin: that builtin fixes
    * `when: "afterCommit"` and takes no placement override, so composing the
    * public escape hatch is how a chain moves a language check to the trunk.
-   * Same command, different gate point.
+   * Same command, different gate point — and the escape hatch is also what
+   * lets the command ask for `--reporter=json`, which is the second claim's
+   * whole input.
    */
-  const vitestOnTrunk: Gate = shellGate({
-    name: "vitest",
-    when: "afterMerge",
-    cmd: "pnpm",
-    args: ["test", "--run"],
-    failHint: "Tests failed — entry reverted from the trunk",
-  });
+  const vitestOnTrunk: Gate = judgedByEntryTests(
+    shellGate({
+      name: "vitest",
+      when: "afterMerge",
+      cmd: "pnpm",
+      args: ["vitest", "run", "--reporter=json"],
+      failHint: "Tests failed — entry reverted from the trunk",
+    }),
+  );
 
   // ---------- phases ----------
 

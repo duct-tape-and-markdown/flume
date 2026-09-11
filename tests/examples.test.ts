@@ -10,12 +10,13 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, TickContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
-import cascadeFactory from "../examples/cascade-chain.ts";
+import cascadeFactory, { judgedByEntryTests } from "../examples/cascade-chain.ts";
 import minimalFactory from "../examples/minimal-chain.ts";
 
 /** The roots a real tick would resolve for an `examples/`-hosted chain. */
@@ -242,5 +243,127 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
         ctx({ pending: pickable, pickable, priorAttempts }),
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * `.claude/rules/engine-boundary.md`, *Surface, not prescription* — the engine
+ * offers the injection points (`GateContext.entry`, `GateResult.details`) and
+ * reads none of `tests[]`; judging a declared extension field is the chain's.
+ * Cascade declared the field and judged nothing, so the flagship taught the
+ * shape of acceptance-driven backpressure without the gate that makes it
+ * load-bearing — a `tests[]` line a shipped entry never had to earn.
+ *
+ * The refusal drives the wrapper the example ships (`judgedByEntryTests`) over
+ * a hand-authored reporter payload: a real vitest run cannot be made to emit
+ * "a named behavior with no passing test" on demand, and refusal tests keep
+ * their hand-authored input (`engineering.md`, *A seam gate reads what the real
+ * writer wrote*). The second case pins the other half on the shipped object —
+ * the gate cascade actually hands `build` is the wrapper's product, and its
+ * command asks the runner for the JSON report the wrapper reads.
+ */
+describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () => {
+  /** vitest's `--reporter=json` shape, trimmed to the keys the judge reads. */
+  const report = (file: string, fullName: string, status: string) =>
+    JSON.stringify({
+      numTotalTestSuites: 1,
+      success: true,
+      numPassedTests: 1,
+      testResults: [
+        { name: `/repo/${file}`, status, assertionResults: [{ fullName, status }] },
+      ],
+    });
+
+  /** A suite gate that already ran, standing in for the `pnpm vitest` spawn. */
+  const suiteThatWrote = (details: string): Gate => ({
+    name: "vitest",
+    when: "afterMerge",
+    command: "pnpm vitest run --reporter=json",
+    run: async () => ({ ok: true, message: "vitest green", details }),
+  });
+
+  const ctxNaming = (tests: unknown): GateContext => ({
+    cwd: "/repo",
+    repoRoot: "/repo",
+    flumeDir: "/repo/.flume",
+    configDir: "/repo/.flume",
+    pendingPath: "/repo/.flume/plan/pending.json",
+    phaseName: "build",
+    entry: {
+      tag: "NAMED-BEHAVIOR",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: { new: [], edit: [], retire: [] },
+      tests,
+    } satisfies PendingEntry,
+    log: () => {},
+  });
+
+  const PINNED = "a behavior somebody pinned";
+  const FILE = "tests/thing.test.ts";
+
+  it("the cascade example's test gate refuses an entry whose named behavior has no passing test", async () => {
+    const gate = judgedByEntryTests(
+      suiteThatWrote(report(FILE, `thing > ${PINNED}`, "passed")),
+    );
+
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // the same gate over the same report passes the entry that names the
+    // behavior the report carries. Without this the refusals below would hold
+    // just as well for a gate that refuses everything, or one whose judged set
+    // is empty because `tests[]` never reached it.
+    const earned = await gate.run(
+      ctxNaming([{ path: FILE, asserts: PINNED }]),
+    );
+    expect(earned.ok, earned.message).toBe(true);
+    expect(earned.message).toContain("1 named behavior(s)");
+
+    // No test carries the line.
+    const unnamed = await gate.run(
+      ctxNaming([{ path: FILE, asserts: "a behavior nobody pinned" }]),
+    );
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.message).toContain("1 of 1 named behavior(s)");
+    expect(unnamed.details).toContain(`- ${FILE}: a behavior nobody pinned`);
+
+    // A test carries the line, but not in the file the entry declared — the
+    // `path` half of the declaration is judged too, not decoration beside it.
+    const elsewhere = await gate.run(
+      ctxNaming([{ path: "tests/other.test.ts", asserts: PINNED }]),
+    );
+    expect(elsewhere.ok).toBe(false);
+    expect(elsewhere.details).toContain(`- tests/other.test.ts: ${PINNED}`);
+
+    // The line's test exists and ran, but failed: a red test names nothing.
+    const red = judgedByEntryTests(
+      suiteThatWrote(report(FILE, `thing > ${PINNED}`, "failed")),
+    );
+    expect((await red.run(ctxNaming([{ path: FILE, asserts: PINNED }]))).ok).toBe(
+      false,
+    );
+
+    // Green suite, unreadable report: every line would pass vacuously.
+    const blind = judgedByEntryTests(suiteThatWrote("no json here"));
+    expect(
+      (await blind.run(ctxNaming([{ path: FILE, asserts: PINNED }]))).ok,
+    ).toBe(false);
+  });
+
+  it("the gate cascade ships to build asks its runner for the JSON report the judge reads", async () => {
+    const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
+    const shipped = buildPhase?.gates.find((g) => g.name === "vitest");
+    expect(shipped, "cascade's build phase declares a vitest gate").toBeDefined();
+    expect(shipped!.when).toBe("afterMerge");
+    expect(shipped!.command).toContain("--reporter=json");
+
+    // An entry naming nothing has nothing to judge, and the wrapper hands the
+    // suite's own verdict straight back — vacuous by design, spelled rather
+    // than inherited. Driven on the shipped gate's own wrapper over a stub
+    // suite, so this never spawns the runner `command` names.
+    const nothingNamed = await judgedByEntryTests(
+      suiteThatWrote(report(FILE, `thing > ${PINNED}`, "passed")),
+    ).run(ctxNaming(undefined));
+    expect(nothingNamed.ok).toBe(true);
+    expect(nothingNamed.message).toBe("vitest green");
   });
 });
