@@ -21,6 +21,22 @@
           "description": "the startup refusal, under the tip claim and ahead of the sweep"
         },
         {
+          "path": "src/cliHelp.ts",
+          "description": "exit 78's second cause on `loop` / `job run`"
+        },
+        {
+          "path": "README.md",
+          "description": "the harness-managed state list gains the marker dir"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the same list (:69)"
+        },
+        {
+          "path": ".gitignore",
+          "description": "this repo's own copy of the marker dir"
+        },
+        {
           "path": "tests/Dispatcher.test.ts",
           "description": "the marker's lifecycle"
         },
@@ -42,7 +58,7 @@
       "a surviving merging marker refuses the next loop start with EX_CONFIG"
     ],
     "acceptance": "`<flumeDir>/merging/<slug>.json` exists only between the pick and the bookkeeping; a survivor makes `loop` / `job run` exit 78 naming the file, the branch and the entry, touch nothing, and never reach the startup sweep.",
-    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator.",
+    "notes": "Ruling of 2026-09-11 (gh#19). Re-declared after the park at d828915: the docs' harness-state pin (tests/retired-narration.test.ts) is an equality check, so a new `join(flumeDir, …)` name reverts unless README and CHAIN-AUTHORING teach it — both now declared. `src/job.ts` RUNTIME_IGNORES stays out: `spec/jobs.md` *Runtime ignores* is a closed block missing the line (open question). Removal is the operator's acknowledgement; the check precedes `sweepStaleWorktrees` (src/cli.ts:857).",
     "observedFiles": [
       ".flume/plan/notes/MERGE-INTERRUPTED-MARKER.md"
     ]
@@ -309,14 +325,6 @@
       "new": [],
       "edit": [
         {
-          "path": "README.md",
-          "description": "the base formula at :225-:227"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the base formula at :770-:772"
-        },
-        {
           "path": "tests/retired-narration.test.ts",
           "description": "the agreement pin, beside the harness-state and job-seed pins"
         }
@@ -328,16 +336,67 @@
       "path": ".claude/rules/engineering.md",
       "section": "A seam gate reads what the real writer wrote"
     },
-    "tests": [
-      "the docs' worktree-base formula agrees with the base worktreesBase resolves",
-      "the worktree-base scan flags a doc formula that drifts from worktreesBase"
-    ],
+    "tests": [],
     "acceptance": "Both doc claims are driven against `worktreesBase` (src/paths.ts) itself — default and override — and a doc edited away from the resolver turns the pin red.",
-    "notes": "Drained from WORKTREE-BASE-RESOLVED-ONCE's note; both copies are correct today. Same seam as DOC-HARNESS-STATE-OWNERSHIP and CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, whose pins in tests/retired-narration.test.ts already read src/ for their claims.",
+    "notes": "Re-scoped after the revert at 95bd3a6: both doc copies are correct today, so any `tests[]` line naming the pin passes on the base by construction (`.flume/vitestJudge.ts`, judgeRedOnBase) — a promotion up the ladder is not a fix, and the suite's own green is the gate. Build's implementation was whole-doc, covering the restatement at CHAIN-AUTHORING.md:610; neither doc needed an edit, so neither is declared.",
     "observedFiles": [
       ".flume/plan/notes/WORKTREE-BASE-DOCS-PINNED.md",
       "tests/retired-narration.test.ts"
     ]
+  },
+  {
+    "tag": "EXAMPLES-UNIT-DESCRIBES-FAST-LANE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the two in-process describes leave"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "they land beside the gate-split pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two pure in-process describes sit in the integration lane, so the afterMerge gate that decides every build never runs them",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "tests": [],
+    "acceptance": "`example chains — entry phase is machine-wakeable` and `cascade-chain.ts — plan phase gates through the pendingGate builtin` run under the default `vitest run`; the integration lane keeps only tests whose method the cited section names.",
+    "notes": "Drained from CASCADE-VITEST-AFTERMERGE's note; verified on disk at tests/examples.integration.test.ts:335 and :359 — neither spawns. The describe at :98 drives dispatcher ticks over a git fixture and stays. `tests[]` is empty by construction: a relocation changes no behavior, and redOnBase lays the moved file over the base, where the titles pass (`.flume/vitestJudge.ts`)."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-CASCADE-GATE-PLACEMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the gate-placement paragraph at :503-:506"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The doc teaches that cascade keeps vitestGate at afterCommit and offers the afterMerge move as a later step; the example shipped that move",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "acceptance": "The paragraph's illustration of a suite small enough to stay at `afterCommit` no longer cites cascade, whose `vitestOnTrunk` (examples/cascade-chain.ts:124) declares `when: \"afterMerge\"`; the split-by-cost guidance around it survives.",
+    "notes": "Drained from CASCADE-VITEST-AFTERMERGE's note; both sides verified on disk. No pin: the fix deletes the sentence a pin would read, and a whole-doc scan of gate-placement prose is the same shape as WORKTREE-BASE-DOCS-PINNED's — file that if the drift recurs."
   },
   {
     "tag": "INTENT-WORKSHOP-LAYER-RETIRED",

@@ -35,13 +35,13 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `.flume/chain.ts` still carries two engine restatements (adoption, not a question)
+## `.flume/chain.ts` still carries three engine restatements (two adoptions and a fork)
 
 Two legs of the 2026-09-10 finding are adopted (`dd258df`): `parkStanding` reads
 `TickContext.priorAttempts` alone, and the prior-attempts `readdirSync` and the
-verdict-log read are both gone. Two remain, and neither is a pending entry —
+verdict-log read are both gone. Three remain, and none is a pending entry —
 `.flume/chain.ts` is outside every phase lane, so each is a `chore(flume):` from an
-interactive session.
+interactive session. The third carries a fork the other two do not.
 
 **The park predicate, third copy.** `build.handoff`'s `refused` (`.flume/chain.ts:851-855`)
 still reads a park as `committed && !shipped && !reverted` over `result.entries`. A
@@ -59,6 +59,29 @@ error the moment the member leaves the union — and chain.ts is in `tsconfig.js
 `include`, so the build tick would revert on its own tsc gate. `REFUSAL_MODES` (:573) is
 already forward-compatible; only the `===` arms are not. Deleting them unparks the entry,
 and it is the same edit as the predicate above.
+
+**The worktree base, hand-built — and the fork.** Drained from
+`WORKTREE-BASE-DOCS-PINNED`'s note; verified on disk. `redOnBase`
+(`.flume/chain.ts:726`) builds its scratch worktree at `join(api.paths.flumeDir,
+"worktrees", …)`. Under `FLUME_WORKTREES_DIR` that is a base nothing else uses:
+`sweepStaleWorktrees` looks under `worktreesBase` (`src/paths.ts:150`), so a gate that
+crashes mid-run strands a worktree nothing reclaims. Latent here — the override is
+unset — and correctness-adjacent the day it is not.
+
+Two ways to close it, and the choice is the fork:
+
+- **Chain-side, today.** The chain imports `worktreesBase` from `../src/paths.ts`. Free
+  for this repo, which dogfoods the in-repo runtime, and unavailable to any downstream
+  chain: `worktreesBase` is not in `src/index.ts`, so the package's export map hides it.
+- **Engine surface.** `FlumeApi.paths` reports the resolved base. But `spec/chain.md`,
+  *Per-run artifacts belong under `FLUME_DIR`*, states that surface as the closed list
+  `{ repoRoot, configDir, flumeDir }`, so the spec line moves before the field can —
+  human-only, and the reason this is a question rather than an entry.
+
+**Recommend** the chain-side import now, and file the engine surface the day a second
+chain needs it — the same disposition the `redOnBase` gate itself took. Either way
+`FlumePaths.flumeDir`'s doc comment (`src/flumeApi.ts:73`) rides the adopting commit: it
+names worktrees as living under the state root, which the override makes false.
 
 Riding whichever commit lands first, by the 2026-09-11 ruling on `stateRootRel`: the
 `perResolvesGate` read of `pending.json` at `ctx.commitSha` (`.flume/chain.ts:340-345`)
@@ -79,11 +102,14 @@ silently would be plan choosing for the human.
 
 Both entries are derived and independently shippable either way
 (`MERGE-INTERRUPTED-MARKER`, `RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`); only the line
-is missing.
+is missing. `MERGE-INTERRUPTED-MARKER` is now re-declared **without** `src/job.ts` —
+filling the block from the entry would be plan choosing for the human — so it carries
+`merging/` in this repo's `.gitignore` alone, and an adopting repo leaves the marker
+trackable until the amendment lands.
 
-**Recommend:** add `merging/` to the `spec/jobs.md` block, at which point it joins
-`STATE_ROOT_NAMES` and `RUNTIME_IGNORES` in the marker entry's own commit — one name,
-one accessor, no second spelling. The alternative — the marker lives somewhere already
+**Recommend:** add `merging/` to the `spec/jobs.md` block, at which point `RUNTIME_IGNORES`
+gains it off `STATE_ROOT_NAMES` — one name, one accessor, no second spelling — as a
+one-line entry the next derive files. The alternative — the marker lives somewhere already
 ignored — would put crash-recovery state under `prior-attempts/`, whose lifecycle
 (cleared on a clean ship) is the wrong one for a file only the operator may remove.
 
