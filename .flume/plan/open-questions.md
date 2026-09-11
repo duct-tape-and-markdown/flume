@@ -312,3 +312,51 @@ symbol-resolving scan over prose is a second parser to maintain, and the same
 commit that moves a symbol is the cheapest place to fix its cites — but that
 is exactly what both waves could not do, since build cannot edit `spec/`.
 Say the word and it files as an entry.
+
+## Nothing type-checks the merged tree, and a vitest fixture is the accidental oracle (PARKED)
+
+Drained from `DISPATCHER-EXTRACT-FRICTION`'s `afterMerge` gate-revert record
+(`bd322f5`, 2026-09-11 wave); root cause traced on disk this tick.
+
+**What happened.** The friction extraction moved the `chmod`-using case out of
+`tests/Dispatcher.test.ts` and left the import dead at `:3`. Its fanout worktree
+was cut from the pre-wave base, so `noUnusedLocals` was not yet on and the
+`afterCommit` `tscGate` was green. `TSCONFIG-REFUSES-DEAD-IMPORTS` landed the
+flag on the trunk in that same wave; the cherry-pick then produced a tree that
+does not compile — `spec/chain.md` *Gate placement is the chain's decision*,
+fifth bullet, the sibling-composition case exactly.
+
+**Nothing in the `afterMerge` lane type-checks.** `.flume/chain.ts:826` is
+`[tscGate, recordsGate, vitestOnCode]`, and `tscGate` is `afterCommit`-only. The
+one thing that caught it was `tests/builtinGates.test.ts:611` — a case that
+shells `npm exec -- tsc --noEmit` over the repo as the *fixture* for an
+unrelated claim about arg overrides. So the verdict read "tscGate / vitestGate /
+eslintGate — args override … expected false to be true", and the engine marked
+it `suspectFlake`. The real answer was "the merged tree does not compile."
+
+The comment that chose this at `.flume/chain.ts:825` — "tscGate stays
+afterCommit — cheap, structural, catches type errors before merge" — is the
+staleness window the spec's first bullet describes, stated as though it were
+coverage. Expired narration on a live decision (`posture-sweep.md`, *A violation
+counts only when verified on disk this tick*).
+
+Options:
+
+- **Add a type check at `afterMerge`, keep the `afterCommit` one.**
+  `tsc --noEmit` is seconds, per-entry revert isolation already makes an
+  `afterMerge` failure safe (`spec/worktrees.md`), and the pre-merge structural
+  catch that keeps a broken commit off the trunk survives. Cost: one tsc per
+  merged entry.
+- **Move `tscGate` to `afterMerge` only.** One gate instead of two, but it
+  surrenders the second bullet's cheap pre-merge catch and lets a
+  non-compiling commit reach the trunk before anything objects.
+- **Do nothing.** Rejected on the evidence: the oracle is another test's
+  fixture, one `npm exec` from deletion, and its verdict misattributes to a
+  gate-override claim that was never implicated.
+
+**Recommend the first.** It is a one-gate chain edit, and `BUILTINGATES-WHEN-OVERRIDE`
+(queued this tick) makes it `tscGate({ when: "afterMerge" })` rather than a
+hand-rolled `shellGate` copying the builtin's own `cmd`/`args`. Parked only
+because `.flume/chain.ts` is outside every phase lane
+(`.claude/rules/spec-plan-build.md`); the spec needs no amendment — it already
+rules both bullets, and the chain chose against them.

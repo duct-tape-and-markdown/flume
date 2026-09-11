@@ -20,6 +20,14 @@
         {
           "path": "src/cli.ts",
           "description": "import path for frictionCountLine"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the friction cases leave — and their imports with them"
+        },
+        {
+          "path": "tests/friction.test.ts",
+          "description": "the moved cases land"
         }
       ],
       "retire": []
@@ -34,7 +42,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction.",
+    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share. Re-pick: bd322f5's afterMerge revert was a dead `chmod` import left in tests/Dispatcher.test.ts when the friction case moved out — green on that wave's pre-`noUnusedLocals` base, TS6133 on the trunk. The flag is on the base now, so the afterCommit tsc gate catches the same residue.",
     "observedFiles": [
       ".flume/plan/notes/DISPATCHER-EXTRACT-FRICTION.md",
       "src/Dispatcher.ts",
@@ -46,6 +54,68 @@
       "tests/Dispatcher.test.ts",
       "tests/friction.test.ts"
     ]
+  },
+  {
+    "tag": "BUILTINGATES-WHEN-OVERRIDE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "PkgManagerOverride gains `when`; pkgManagerGate threads it"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "the phase override, and the default that survives it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "pkgManagerGate pins when: afterCommit, so a chain moving tsc to the merged tree must hand-roll shellGate — placement is spec'd as the chain's",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Gate placement is the chain's decision"
+    },
+    "tests": [
+      "tscGate({ when: 'afterMerge' }) returns a gate whose phase is afterMerge"
+    ],
+    "pins": [
+      "tscGate, vitestGate and eslintGate stay at afterCommit when called with no override"
+    ],
+    "acceptance": "`PkgManagerOverride` carries `when`, the three builtins thread it into `shellGate`, and an omitted `when` still yields `afterCommit`.",
+    "notes": "From DISPATCHER-EXTRACT-FRICTION's afterMerge revert. `pkgManagerGate` (src/builtinGates.ts:151) hardcodes when:'afterCommit', so a chain wanting the same check on the merged tree copies the builtin's own cmd/args into shellGate — engine-boundary.md *Surface, not prescription*, verbatim copying is the detector. Where this chain then puts it is the human's (open question, same tick)."
+  },
+  {
+    "tag": "CHAINTS-LADDER-DRIVEN-BY-A-REAL-TICKRESULT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/chain.test.ts",
+          "description": "the plan ladder's agreement claim drives a real tick"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/chain.test.ts folds this chain's ladder off a hand-built TickResult, so an engine-side rename of the handoff vocabulary ships green",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [],
+    "pins": [
+      "this chain's plan ladder routes the baton from a TickResult the dispatcher produced"
+    ],
+    "acceptance": "At least one plan-slice rung transition is read off a real `Dispatcher.tick()` outcome instead of the `tickResult()` fixture; the build-wave legs that remain are the declared debt below.",
+    "notes": "From CASCADE-LADDER-DRIVEN-BY-A-REAL-TICKRESULT's note; template is tests/examples.test.ts:475. tests/chain.test.ts:231-296 hand-folds pickableAfter/noCommit/entries[] through `tickResult()`. Unlike cascade, the slices declare `agent: planAgent`, so DispatcherOptions.agent never reaches them — swap the agent on the factory's phases, the one override, as setupWorktree already is there. Slice gates are cheap, so the fast lane holds. Build-wave legs out of scope."
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
