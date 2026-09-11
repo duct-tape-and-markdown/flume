@@ -42,7 +42,10 @@
       "a surviving merging marker refuses the next loop start with EX_CONFIG"
     ],
     "acceptance": "`<flumeDir>/merging/<slug>.json` exists only between the pick and the bookkeeping; a survivor makes `loop` / `job run` exit 78 naming the file, the branch and the entry, touch nothing, and never reach the startup sweep.",
-    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator."
+    "notes": "Ruling of 2026-09-11 (gh#19, field-traced 0.12.0). The fact is the marker the engine wrote, never commit shape or authorship. Removal is the operator's acknowledgement — no engine verb performs it, as with the stop flag. The check precedes `sweepStaleWorktrees` (src/cli.ts:857) so the branch survives for the operator.",
+    "observedFiles": [
+      ".flume/plan/notes/MERGE-INTERRUPTED-MARKER.md"
+    ]
   },
   {
     "tag": "RUNTIME-IGNORES-FRICTION-AT-DEFAULT-ROOT",
@@ -260,37 +263,6 @@
     "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
   },
   {
-    "tag": "CASCADE-VITEST-AFTERMERGE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "vitest moves to afterMerge; the gate-lifecycle comment at :152-:160"
-        },
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "the placement"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "cascade places every gate at afterCommit, so the shipped example teaches the staleness window spec/chain.md's own placement guidance argues against",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Gate placement is the chain's decision"
-    },
-    "tests": [
-      "the cascade example places its vitest gate at afterMerge and its type gate at afterCommit"
-    ],
-    "acceptance": "cascade's build phase runs its expensive correctness gate at `afterMerge` and its cheap structural gates at `afterCommit`, and the lifecycle comment stops reading \"an afterMerge failure (none here)\" and stops calling the revert wave-wide.",
-    "notes": "Drained from MIGRATING-012-AFTERMERGE-RESTORATION's note; verified on disk. `vitestGate` is afterCommit-fixed and `PkgManagerOverride` carries no `when` (src/builtinGates.ts:128) — compose `shellGate` as `.flume/chain.ts:701` does, never spread the builtin (its `name` is non-enumerable). Collides on file with EXAMPLES-SPEC-PHASE-CUT; the partitioner serializes them."
-  },
-  {
     "tag": "EXAMPLES-SPEC-PHASE-CUT",
     "gate": {
       "kind": "open"
@@ -328,42 +300,6 @@
     "notes": "Ruling of 2026-09-11: the partition is a shape cascade dropped in June and no current consumer runs. docs/CHAIN-AUTHORING.md quotes the example by agreement pin (tests/retired-narration.test.ts), so its excerpts move in the same commit or the pin reverts the tick."
   },
   {
-    "tag": "CHECK-NO-FANOUT-SKIP-IN-PROSE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cliHelp.ts",
-          "description": "`check`'s exit-code block, the 0 paragraph (:209)"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the `flume check` entry and its sample output (:176-:194)"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "both prose surfaces against the message cli.ts prints"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`check`'s help text and docs/CLI.md describe the fence as unconditional, so the no-fanout skip the spec ratifies is a third way to 0 nobody documents",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "tests": [
-      "flume check --help names the no-fanout skip among the ways check exits 0",
-      "docs/CLI.md's flume check section names the no-fanout skip"
-    ],
-    "acceptance": "Both prose surfaces name the no-consumer route to 0, and each pin reads the skip line `src/cli.ts:549` actually prints rather than a hand-copied phrase.",
-    "notes": "Drained from CHECK-NO-FANOUT-VACUOUS-PASS's note. The skip shipped at src/cli.ts:549; spec/cli.md already states it (`vacuous by design and spelled`). tests/cliHelp.test.ts:21 is the standing precedent for holding a help block against the code's real range."
-  },
-  {
     "tag": "WORKTREE-BASE-DOCS-PINNED",
     "gate": {
       "kind": "open"
@@ -397,7 +333,11 @@
       "the worktree-base scan flags a doc formula that drifts from worktreesBase"
     ],
     "acceptance": "Both doc claims are driven against `worktreesBase` (src/paths.ts) itself — default and override — and a doc edited away from the resolver turns the pin red.",
-    "notes": "Drained from WORKTREE-BASE-RESOLVED-ONCE's note; both copies are correct today. Same seam as DOC-HARNESS-STATE-OWNERSHIP and CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, whose pins in tests/retired-narration.test.ts already read src/ for their claims."
+    "notes": "Drained from WORKTREE-BASE-RESOLVED-ONCE's note; both copies are correct today. Same seam as DOC-HARNESS-STATE-OWNERSHIP and CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, whose pins in tests/retired-narration.test.ts already read src/ for their claims.",
+    "observedFiles": [
+      ".flume/plan/notes/WORKTREE-BASE-DOCS-PINNED.md",
+      "tests/retired-narration.test.ts"
+    ]
   },
   {
     "tag": "INTENT-WORKSHOP-LAYER-RETIRED",
