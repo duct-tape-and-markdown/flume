@@ -272,8 +272,8 @@ const plan: Phase = {
   much; that work belongs in the tick it is trying to avoid, not in the gate
   that decides whether to run it.
 - **A declined tick is a distinguishable fact**, not a silent no-op — it
-  reports its own outcome, separate from a voluntary bail (the agent ran and
-  refused) and from hibernation (nothing was awake).
+  reports its own outcome, separate from a `clean-exit` (the agent ran and
+  committed nothing) and from hibernation (nothing was awake).
 
 ## 2. Writing a custom Gate
 
@@ -1022,8 +1022,9 @@ Notes:
 - **A span that fails to resolve — non-zero exit, spawn failure, `sh` not
   found, or a cap overrun — aborts the whole render.** The agent is never
   invoked; the error names every failing span's command text and its
-  stderr, and the tick classifies as a no-commit outcome distinct from a
-  voluntary bail. There is no substituted placeholder and no partial send —
+  stderr, and the tick classifies as a no-commit outcome (`render-refused`)
+  distinct from the agent's own `clean-exit`, which it never reached. There
+  is no substituted placeholder and no partial send —
   every span in a prompt is load-bearing. An empty-but-successful command
   (`git diff` with no changes) is not a failure: exit status decides, never
   output length. Keep spans command lines you're confident will succeed;

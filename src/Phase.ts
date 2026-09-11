@@ -112,7 +112,7 @@ export interface TickContext {
    * one (`src/Dispatcher.ts:priorAttemptKey`) — read with the dispatcher's
    * own reader and its own tolerance: a corrupt or unrecognized-mode record
    * is absent from the map rather than surfaced malformed. A `shouldRun`
-   * deciding "does some other phase have a standing bail to reconcile"
+   * deciding "does some other phase have a standing record to reconcile"
    * reads this instead of scanning the directory itself. Optional in the
    * type for the same hand-built-fixture reason as `pickable` above.
    */
@@ -170,7 +170,7 @@ export interface QuarantinedTag {
 export interface TickResult {
   /** Phase that produced this result. */
   phaseName: string;
-  /** True if the tick produced a commit. False on bail or no-op. */
+  /** True if the tick produced a commit. False on a clean exit or no-op. */
   committed: boolean;
   /** SHA of the produced commit, when present. */
   commitSha?: string;
@@ -214,9 +214,10 @@ export interface TickResult {
    * wave folds those same facts into `shippedTags`/`revertedTags`/
    * `noCommit`/`declined` below. Absent on a singleton tick and on a wave
    * that handed nothing to an agent (nothing pickable, or every entry's
-   * provisioning failed). What this adds beyond the fold: a bailed sibling's
-   * `noCommit` mode, otherwise invisible to `handoff` whenever another entry
-   * in the same wave shipped and the wave-level `noCommit` reads absent.
+   * provisioning failed). What this adds beyond the fold: a no-commit
+   * sibling's `noCommit` mode, otherwise invisible to `handoff` whenever
+   * another entry in the same wave shipped and the wave-level `noCommit`
+   * reads absent.
    *
    * An entry whose provisioning failed — at `createWorktree`, or in the
    * chain's `setupWorktree` hook — never reaches an agent and so is on
@@ -253,7 +254,7 @@ export interface TickResult {
    * RELEASE-v0.2 §6 no-commit classification, present iff the tick (or, for
    * a fanout wave, the whole wave) produced no usable commit. Absent on a
    * committed tick. A chain's `handoff` reads this to wake a sibling phase
-   * on a voluntary-bail that `shippedTags`/`gateResults` alone can't
+   * on a clean-exit that `shippedTags`/`gateResults` alone can't
    * distinguish from a genuine nothing-pickable no-op.
    */
   noCommit?: NoCommitMode;

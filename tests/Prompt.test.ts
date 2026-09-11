@@ -21,7 +21,7 @@ import { declaredPaths, type PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type {
   GateRevertAttempt,
-  VoluntaryBailAttempt,
+  CleanExitAttempt,
   PlatformPreemptAttempt,
   RenderRefusedAttempt,
   TipMovedAttempt,
@@ -600,9 +600,10 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     headSha: HEAD_SHA,
     at: AT,
   };
-  const voluntaryBail: VoluntaryBailAttempt = {
-    mode: "voluntary-bail",
-    constraint: "off-writablePaths edit refused",
+  const cleanExit: CleanExitAttempt = {
+    mode: "clean-exit",
+    finalMessage:
+      "Stopping here: the entry's declared paths sit outside writablePaths.",
     key: "entry",
     headSha: HEAD_SHA,
     at: AT,
@@ -641,7 +642,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
 
   const variants: Array<[string, PriorAttempt]> = [
     ["gate-revert", gateRevert],
-    ["voluntary-bail", voluntaryBail],
+    ["clean-exit", cleanExit],
     ["platform-preempt", platformPreempt],
     ["render-refused", renderRefused],
     ["tip-moved", tipMoved],
@@ -666,6 +667,27 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       expect(bodyIdx).toBeGreaterThan(blockEnd);
     },
   );
+
+  it("the prior-attempt block quotes the prior attempt's final message without naming a refused constraint", async () => {
+    // Vacuity: the record under test actually carries a message to quote.
+    expect(cleanExit.finalMessage.length).toBeGreaterThan(0);
+
+    const out = await renderWithPrior(cleanExit);
+
+    // What the engine holds: a clean exit that committed nothing, plus the
+    // agent's own closing prose, verbatim under a neutral label.
+    expect(out).toContain("exited cleanly and committed");
+    expect(out).toContain("Prior attempt's final message");
+    expect(out).toContain(cleanExit.finalMessage);
+
+    // What it must not hold: a reading of why the agent stopped. The old
+    // rendering labelled the message a "Refused constraint" and told the
+    // retry the prior judgment still held — an intent the engine inferred
+    // (`engine-boundary.md`, *Told, not inferred*).
+    expect(out).not.toMatch(/refused constraint/i);
+    expect(out).not.toMatch(/refused to cross/i);
+    expect(out).not.toMatch(/judgment likely still holds/i);
+  });
 
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
     const whole = await renderWithPrior(notShipped);

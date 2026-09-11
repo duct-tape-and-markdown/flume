@@ -191,14 +191,14 @@ describe("plan slices via the real .flume/chain.ts", () => {
         priorAttempts: new Map(Object.entries(records).map(([key, mode]) => [key, { mode } as unknown as PriorAttempt])),
       });
       expect(phases[INBOX]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
-      for (const mode of ["not-shipped", "voluntary-bail", "clean-exit"]) {
+      for (const mode of ["not-shipped", "clean-exit"]) {
         expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("OPEN-1")]: mode })), mode).toBe(true);
       }
       expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("OPEN-1")]: "gate-revert" }))).toBe(false);
       // The record outlived its entry: stale, ignored.
       expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("GONE")]: "not-shipped" }))).toBe(false);
       // A singleton slice's own record is keyed by phase name, which no tag slugifies to.
-      expect(phases[INBOX]!.shouldRun!(withRecords({ "plan-inbox": "voluntary-bail" }))).toBe(false);
+      expect(phases[INBOX]!.shouldRun!(withRecords({ "plan-inbox": "clean-exit" }))).toBe(false);
     });
 
     it("derive: live on a spec commit past the cursor, not on a code commit, and ahead of pickable work — a queued entry citing a rewritten section is stale input", async () => {
@@ -266,7 +266,7 @@ describe("plan slices via the real .flume/chain.ts", () => {
       const entry = open("OPEN-1");
       const pickable = { pendingAfter: [entry], pickableAfter: [entry] };
       expect(build.handoff(result({ phaseName: "build", shippedTags: ["DONE"], ...pickable }))).toEqual(["build"]);
-      expect(build.handoff(result({ phaseName: "build", noCommit: "voluntary-bail", ...pickable }))).toEqual([INBOX]);
+      expect(build.handoff(result({ phaseName: "build", noCommit: "clean-exit", ...pickable }))).toEqual([INBOX]);
       expect(
         build.handoff(
           result({

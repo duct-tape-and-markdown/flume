@@ -109,10 +109,10 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
       ticks: 1,
       hibernated: true,
       shippedTags: [],
-      erroredTicks: ["plan: no commit (voluntary-bail) → hibernate"],
+      erroredTicks: ["plan: no commit (clean-exit) → hibernate"],
     };
     expect(loopExitCode(result)).toBe(1);
-    expect(loopCompletionSummary(result)).toContain("voluntary-bail");
+    expect(loopCompletionSummary(result)).toContain("clean-exit");
   });
 
   // LOOP-ERRORED-TICKS-SILENT-EXIT: every tick refused before ever writing a
@@ -394,7 +394,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
         makeVerdict({
           phaseName: "plan",
           committed: false,
-          noCommit: "voluntary-bail",
+          noCommit: "clean-exit",
         }),
       ];
       await writeTickVerdictsLog(repo.dir, verdicts);

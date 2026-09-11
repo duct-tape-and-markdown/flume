@@ -18,8 +18,8 @@
  * persisted {@link PriorAttempt} — the bounded record of a previous no-commit
  * attempt, tagged with exactly one of the four causally-distinct modes
  * (§6 no-commit taxonomy, widened by RELEASE-v0.10 §3): `gate-revert`
- * (committed then a gate reverted it), `voluntary-bail` (exited cleanly
- * refusing a constraint), `platform-preempt` (the process failed for
+ * (committed then a gate reverted it), `clean-exit` (the agent exited
+ * cleanly without committing), `platform-preempt` (the process failed for
  * non-work reasons — not a defect in the work), `render-refused` (the prompt
  * itself never resolved — the agent was never invoked); plus two sibling
  * facts rather than further {@link NoCommitMode} members — `tip-moved`
@@ -58,7 +58,7 @@ const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
  */
 export type NoCommitMode =
   | "gate-revert"
-  | "voluntary-bail"
+  | "clean-exit"
   | "platform-preempt"
   | "render-refused";
 
@@ -109,20 +109,23 @@ export interface GateRevertAttempt {
 }
 
 /**
- * The agent exited cleanly without committing — it refused to cross a
- * constraint rather than do the wrong thing. No commit, no gate; the prior
- * judgment likely still holds, so the retry must resolve or escalate the
- * constraint, not blindly re-run the same edit.
+ * The agent exited cleanly without committing. No commit, no gate — and no
+ * reason: a refused constraint, a deliberate park, or simply nothing to do
+ * are one chain's readings of one chain's prompt, never an engine label
+ * (`engine-boundary.md`, *Told, not inferred*). The engine records the two
+ * facts it holds — that the exit was clean and produced nothing, and the
+ * tail of what the agent last said — and leaves the reading to whoever
+ * reads {@link finalMessage}.
  */
-export interface VoluntaryBailAttempt {
-  mode: "voluntary-bail";
+export interface CleanExitAttempt {
+  mode: "clean-exit";
   /**
-   * The constraint the prior attempt refused to cross (off-`writablePaths`
-   * path, Rule-0 / spec conflict) — the agent's final message, bounded. The
-   * build/plan prompts instruct the agent to state the gap in that message
-   * on a bail, so its tail is where the constraint is named.
+   * The tail of the agent's own final message, bounded — lifted from the
+   * transcript by the adapter's `extractFinalMessage` (`src/Agent.ts`) and
+   * quoted verbatim. Whatever the exit meant, the agent said it here; the
+   * engine neither names nor paraphrases it.
    */
-  constraint: string;
+  finalMessage: string;
   /**
    * Which keyspace this record's key lives in (spec/loop.md "No false
    * signal") — stamped by the writer, never derived from the key's text.
@@ -158,7 +161,7 @@ export interface PlatformPreemptAttempt {
 /**
  * The render aborted before the agent was invoked — one or more inline-exec
  * spans in the prompt did not resolve (RELEASE-v0.10 §3). Distinct from
- * `voluntary-bail` (the agent ran and chose not to commit) and from
+ * `clean-exit` (the agent ran and committed nothing) and from
  * `platform-preempt` (the agent process itself failed): here the agent never
  * ran at all, so a chain's `handoff` can tell "could not see" from "chose
  * not to act".
@@ -253,7 +256,7 @@ export interface NotShippedAttempt {
  */
 export type PriorAttempt =
   | GateRevertAttempt
-  | VoluntaryBailAttempt
+  | CleanExitAttempt
   | PlatformPreemptAttempt
   | RenderRefusedAttempt
   | TipMovedAttempt
@@ -559,10 +562,10 @@ function indentBlock(s: string): string {
  * so the slot carries no false signal. When present it tells the retrying
  * tick exactly which {@link PriorAttempt} variant the prior attempt hit,
  * rendered distinctly per variant so the agent reads what actually happened
- * — a reverted commit, a refused constraint, a platform cut-off that is
- * explicitly NOT its predecessor's fault, or a commit that landed and the
- * chain declined — rather than blindly reconstructing a wall that may not
- * exist.
+ * — a reverted commit, a clean exit that produced nothing, a platform
+ * cut-off that is explicitly NOT its predecessor's fault, or a commit that
+ * landed and the chain declined — rather than blindly reconstructing a wall
+ * that may not exist.
  */
 function prependPriorAttemptBlock(
   prior: PriorAttempt | undefined,
@@ -608,14 +611,15 @@ function modeLines(prior: PriorAttempt): string[] {
         `Reverted change digest (git show --stat):`,
         indentBlock(prior.diffStat),
       ];
-    case "voluntary-bail":
+    case "clean-exit":
       return [
-        `A previous attempt exited deliberately WITHOUT committing — it`,
-        `refused to cross the constraint below rather than do the wrong`,
-        `thing. That judgment likely still holds: resolve the constraint or`,
-        `escalate it, do not just re-run the same edit. No commit, no gate.`,
-        `Refused constraint (prior attempt's final message):`,
-        indentBlock(prior.constraint),
+        `A previous attempt at this work exited cleanly and committed`,
+        `nothing. No commit, no gate. The harness records that it exited and`,
+        `what it last said, never what the exit meant — read the message`,
+        `below and this chain's own rules before redoing anything, rather`,
+        `than assuming a wall that may not exist.`,
+        `Prior attempt's final message (tail, verbatim):`,
+        indentBlock(prior.finalMessage),
       ];
     case "platform-preempt":
       return [
@@ -629,9 +633,9 @@ function modeLines(prior: PriorAttempt): string[] {
       return [
         `A previous attempt's prompt could not even be rendered — one or`,
         `more inline-exec spans failed to resolve, so the agent was NEVER`,
-        `invoked. This is not a voluntary bail and not a platform failure:`,
-        `something in the prompt itself is broken. Fix or remove the failing`,
-        `command(s) before retrying.`,
+        `invoked. This is not the agent's own clean exit and not a platform`,
+        `failure: something in the prompt itself is broken. Fix or remove`,
+        `the failing command(s) before retrying.`,
         `Failing span(s):`,
         indentBlock(prior.failures),
       ];

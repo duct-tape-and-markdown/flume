@@ -90,7 +90,7 @@ import type {
   PriorAttempt,
   PriorAttemptKeyspace,
   GateRevertAttempt,
-  VoluntaryBailAttempt,
+  CleanExitAttempt,
   PlatformPreemptAttempt,
   RenderRefusedAttempt,
   TipMovedAttempt,
@@ -110,7 +110,7 @@ const execFileP = promisify(execFile);
  */
 type PriorAttemptDraft =
   | Omit<GateRevertAttempt, "headSha" | "at" | "key">
-  | Omit<VoluntaryBailAttempt, "headSha" | "at" | "key">
+  | Omit<CleanExitAttempt, "headSha" | "at" | "key">
   | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key">
   | Omit<RenderRefusedAttempt, "headSha" | "at" | "key">
   | Omit<TipMovedAttempt, "headSha" | "at" | "key">
@@ -777,7 +777,7 @@ const MAX_PRIOR_DETAILS_TAIL = 1024;
 /** Bound on the persisted `git show --stat` digest. */
 const MAX_PRIOR_DIFFSTAT = 4 * 1024;
 /**
- * Bound on the persisted voluntary-bail constraint / platform-preempt
+ * Bound on the persisted clean-exit constraint / platform-preempt
  * failure class. Same telegraphic discipline as the gate digest: enough to
  * name the wall, not the transcript.
  */
@@ -791,7 +791,7 @@ const MAX_PRIOR_TOUCHED_PATHS = 200;
 
 /**
  * How an agent invocation ended. A clean exit with no commit is a
- * voluntary-bail (the agent refused a constraint and said so in its final
+ * clean-exit (the agent refused a constraint and said so in its final
  * message, captured here as `finalMessage` — lifted from the transcript by
  * the adapter's own `extractFinalMessage`, spec/chain.md "The agent seam");
  * any process failure is a platform-preempt (not a defect in the work) — §6
@@ -964,9 +964,8 @@ function bound(s: string, max: number): string {
 }
 
 /**
- * Keep the *last* `max` chars (the agent's final message — where a bail
- * names its refused constraint — lives at the tail of stdout), marking the
- * elision at the head so truncation is visible.
+ * Keep the *last* `max` chars (the agent's final message lives at the tail
+ * of stdout), marking the elision at the head so truncation is visible.
  */
 function tailBound(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -1616,8 +1615,9 @@ export interface TickOutcome {
    * For a no-commit tick (§6, widened by RELEASE-v0.10 §3): which of the
    * four causally-distinct modes produced no usable commit —
    *  - `gate-revert`      a commit was made then a gate reverted it,
-   *  - `voluntary-bail`   the agent exited cleanly without committing
-   *                       (a constraint it refused to cross),
+   *  - `clean-exit`       the agent exited cleanly without committing —
+   *                       what that meant is the chain's reading of the
+   *                       recorded final message, never an engine label,
    *  - `platform-preempt` the agent process failed for non-work reasons
    *                       (rate-limit, auth, timeout, dispatcher-killed) —
    *                       NOT a defect in the work,
@@ -1629,12 +1629,12 @@ export interface TickOutcome {
    * attempted and the render itself is what failed). For a fanout wave it
    * is the representative cause when the whole wave shipped nothing
    * (precedence gate-revert > render-refused > platform-preempt >
-   * voluntary-bail — §6's stated harm is platform failures masquerading as
-   * agent failures, so platform-preempt outranks voluntary-bail in the wave
+   * clean-exit — §6's stated harm is platform failures masquerading as
+   * agent failures, so platform-preempt outranks clean-exit in the wave
    * summary; render-refused is a real defect in the prompt/config, ranked
    * above the two non-defect classes); each entry's own mode is persisted
    * to its §5 prior-attempt record (the durable per-entry channel §6
-   * mandates for telling voluntary-bail loops from platform-preempt runs
+   * mandates for telling clean-exit loops from platform-preempt runs
    * without reading session logs).
    */
   noCommit?: NoCommitMode;
@@ -1652,9 +1652,10 @@ export interface TickOutcome {
    * `noCommit`/`tipMoved`, never a fifth `NoCommitMode`: the chain declined
    * the tick before rendering the prompt, so there is no agent termination
    * to classify and no ref race to blame. Distinguishable from
-   * `voluntary-bail` (the agent ran and refused) and from `hibernated`
+   * `clean-exit` (the agent ran and committed nothing) and from `hibernated`
    * (nothing was awake) — a supervisor must be able to tell "the chain
-   * declined" from "the agent bailed" without reading session logs.
+   * declined" from "the agent ran and committed nothing" without reading
+   * session logs.
    */
   declined?: boolean;
   /**
@@ -1886,7 +1887,7 @@ export class Dispatcher {
 
     // §15: fold the already-computed no-commit classification into the
     // TickResult before handoff — a chain's `handoff` is the only place a
-    // voluntary-bail wave can be distinguished from a genuine no-op.
+    // clean-exit wave can be distinguished from a genuine no-op.
     // `tipMoved` (RELEASE-v0.11 §5) does NOT fold in here: `TickResult`
     // (`src/Phase.ts`) carries no field for it — the fact lives on
     // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
@@ -2148,7 +2149,7 @@ export class Dispatcher {
     } catch (err) {
       if (!(err instanceof InlineExecRenderError)) throw err;
       // RELEASE-v0.10 §3: an unresolved inline-exec span aborts the render
-      // — the agent is never invoked. Distinct from voluntary-bail/
+      // — the agent is never invoked. Distinct from clean-exit/
       // platform-preempt: no agent ran at all.
       await this.persistRenderRefused(ref, phase.name, err);
       noCommit = "render-refused";
@@ -2414,7 +2415,7 @@ export class Dispatcher {
       if (!committed && !tipMoved && !noCommit && !mergeFailure) {
         // No commit landed and nothing else classified it: the agent's own
         // termination (§6). A clean exit that produced nothing is a
-        // voluntary-bail; any process failure is a platform-preempt (not a
+        // clean-exit; any process failure is a platform-preempt (not a
         // defect in the work).
         noCommit = await this.classifyNoCommit(ref, termination);
         this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
@@ -2461,11 +2462,12 @@ export class Dispatcher {
    * `WaveLedgerParseFailure`'s partial verdict (engineering.md "Derived
    * state is computed, never restated beside its source"), so a ledger
    * refusal reports the same cause a clean completion would have. Precedence
-   * gate-revert > render-refused > platform-preempt > voluntary-bail:
+   * gate-revert > render-refused > platform-preempt > clean-exit:
    * gate-revert means work was produced and lost (highest signal);
    * render-refused (§3) is a real defect in the prompt/config, ranked above
-   * the non-defect classes; platform-preempt outranks voluntary-bail so a
-   * rate-limited wave is not misread as the agents bailing — §6's explicit
+   * the non-defect classes; platform-preempt outranks clean-exit so a
+   * rate-limited wave is not misread as the agents exiting on their own —
+   * §6's explicit
    * "platform failures masquerade as agent failures" harm.
    */
   private waveNoCommitCause(
@@ -2486,8 +2488,8 @@ export class Dispatcher {
         ? "render-refused"
         : modes.has("platform-preempt")
           ? "platform-preempt"
-          : modes.has("voluntary-bail")
-            ? "voluntary-bail"
+          : modes.has("clean-exit")
+            ? "clean-exit"
             : undefined;
   }
 
@@ -3266,7 +3268,7 @@ export class Dispatcher {
 
     // spec/chain.md "What a hook receives": one record per entry this wave
     // handed to its agent, before the wave's own shippedTags/revertedTags/
-    // noCommit/declined fold below — the bail a shipped sibling would
+    // noCommit/declined fold below — the clean exit a shipped sibling would
     // otherwise hide from `handoff`. Mapped off `perEntry` itself, which is
     // exactly that set: an entry whose `createWorktree` or `setupWorktree`
     // failed never reached `runFanoutEntry`, and reports on
@@ -3496,9 +3498,9 @@ export class Dispatcher {
     const gateResults: GateResultEntry[] = [];
     if (!committed) {
       // No commit, no gate: classify per-entry and persist the matching §5
-      // record (the durable per-entry channel §6 names — corpus-config-example
-      // bailed at the same writablePaths wall five sessions running; that
-      // must be legible without reading session logs).
+      // record (the durable per-entry channel §6 names — an entry that keeps
+      // exiting clean at the same wall must be legible without reading
+      // session logs).
       const mode = await this.classifyNoCommit(ref, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
       return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, branch: wt.branch, termination };
@@ -3756,9 +3758,9 @@ export class Dispatcher {
         ...(extraEnv ? { extraEnv } : {}),
       });
       if (result.exitCode !== 0) {
-        // A non-zero exit is a process failure, not a deliberate bail: crash,
-        // OOM/SIGKILL, auth, or rate-limit surfaced as a non-zero code. §6
-        // platform-preempt — not a defect in the work.
+        // A non-zero exit is a process failure, not the agent's own clean
+        // exit: crash, OOM/SIGKILL, auth, or rate-limit surfaced as a
+        // non-zero code. §6 platform-preempt — not a defect in the work.
         const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
         this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
         return {
@@ -3769,8 +3771,8 @@ export class Dispatcher {
         };
       }
       // Clean exit. `result.finalMessage` is the agent's closing prose,
-      // already lifted from the full transcript by the adapter — where a
-      // writablePaths/Rule-0/spec bail names the constraint it refused.
+      // already lifted from the full transcript by the adapter — recorded
+      // verbatim, read for intent by the chain and never here.
       return {
         kind: "clean",
         promptPath,
@@ -4403,7 +4405,7 @@ export class Dispatcher {
       if (
         rec &&
         (rec.mode === "gate-revert" ||
-          rec.mode === "voluntary-bail" ||
+          rec.mode === "clean-exit" ||
           rec.mode === "platform-preempt" ||
           rec.mode === "render-refused" ||
           rec.mode === "tip-moved" ||
@@ -4752,11 +4754,11 @@ export class Dispatcher {
   /**
    * Classify a no-commit-no-gate tick (§6) and persist the matching §5
    * record so the retry's prompt carries it. A clean agent exit that
-   * produced nothing is a **voluntary-bail** — the constraint it refused is
-   * its final message (the build/plan prompts instruct the agent to name the
-   * writablePaths/Rule-0/spec gap there); a **platform-preempt** otherwise —
-   * the non-work failure class, explicitly not a defect in the work. Returns
-   * the mode for `TickOutcome` / the logger record.
+   * produced nothing is a **clean-exit** — the record carries the tail of
+   * the agent's final message and nothing about what the exit meant; a
+   * **platform-preempt** otherwise — the non-work failure class, explicitly
+   * not a defect in the work. Returns the mode for `TickOutcome` / the
+   * logger record.
    */
   private async classifyNoCommit(
     ref: PriorAttemptRef,
@@ -4765,9 +4767,9 @@ export class Dispatcher {
     if (termination.kind === "clean") {
       await this.writePriorAttempt(
         ref,
-        buildVoluntaryBail(termination.finalMessage),
+        buildCleanExit(termination.finalMessage),
       );
-      return "voluntary-bail";
+      return "clean-exit";
     }
     await this.writePriorAttempt(
       ref,
@@ -5239,8 +5241,8 @@ export async function superviseLoop(
     // that also shipped something, unlike the provisioning/merge legs below,
     // since it signals something else is writing to this ref), or a
     // provisioning or merge (cherry-pick) failure that left nothing shipped
-    // — never a `voluntary-bail` (the agent correctly declining and naming
-    // the constraint is not evidence anything went wrong), and never a
+    // — never a `clean-exit` (an agent exiting cleanly with nothing to
+    // commit is not evidence anything went wrong), and never a
     // `not-shipped` merge outcome, for the same reason one rung up: the
     // chain's `shipped` predicate declining a landed commit is that chain's
     // own verdict, not a failure of the tick that produced it (spec/loop.md
@@ -5281,9 +5283,9 @@ export async function superviseLoop(
     }
 
     // §16 (generalized past provisioning): every per-entry failure fact the
-    // verdict records, tagged with the stage it came from — a voluntary bail
-    // or park never joins this list, since neither writes a provision/merge/
-    // gate failure record at all.
+    // verdict records, tagged with the stage it came from — a clean exit
+    // never joins this list, since it writes no provision/merge/gate failure
+    // record at all.
     const failures: Array<
       StageFailureEntry & {
         stage: "provision" | "merge" | "gate";
@@ -5542,7 +5544,7 @@ function summarize(
     if (declined) parts.push("(declined for part of this tick)");
   } else {
     // The §6 mode in the one-liner is the logger record that lets a
-    // voluntary-bail loop be told from a platform-preempt run without
+    // clean-exit loop be told from a platform-preempt run without
     // reading session logs. `tip-moved` (RELEASE-v0.11 §5) and `declined`
     // (RELEASE-v0.11 §8) are reported the same way even though neither is
     // ever a `NoCommitMode` — the one-liner is a rendering, not the typed
@@ -5563,23 +5565,26 @@ function summarize(
 }
 
 /**
- * Build the §6 voluntary-bail record: the agent exited cleanly without
- * committing. The constraint it refused is its final message — extracted
- * from the full transcript by the adapter's own `extractFinalMessage`
- * (`src/Agent.ts`, spec/chain.md "The agent seam"), unbound at that layer;
- * `tailBound` here is record-size policy, not provider shape, so it stays on
- * this side of the seam.
+ * Build the §6 clean-exit record: the agent exited cleanly without
+ * committing. What rides the record is the tail of its final message —
+ * extracted from the full transcript by the adapter's own
+ * `extractFinalMessage` (`src/Agent.ts`, spec/chain.md "The agent seam"),
+ * unbound at that layer; `tailBound` here is record-size policy, not
+ * provider shape, so it stays on this side of the seam. The message is
+ * quoted, never classified: whether the exit was a refusal, a park, or
+ * nothing to do is the chain's reading (`engine-boundary.md`, *Told, not
+ * inferred*).
  */
-function buildVoluntaryBail(
+function buildCleanExit(
   finalMessage: string,
-): Omit<VoluntaryBailAttempt, "headSha" | "at" | "key"> {
+): Omit<CleanExitAttempt, "headSha" | "at" | "key"> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
-    mode: "voluntary-bail",
-    constraint:
+    mode: "clean-exit",
+    finalMessage:
       message.length > 0
         ? message
-        : "(agent exited cleanly without committing and produced no final message naming a constraint)",
+        : "(agent exited cleanly without committing and produced no final message)",
   };
 }
 

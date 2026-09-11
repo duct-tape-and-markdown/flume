@@ -225,7 +225,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
       const outcome = await dispatcher.tick();
 
       expect(outcome.result?.committed).toBe(false);
-      expect(outcome.noCommit).toBe("voluntary-bail");
+      expect(outcome.noCommit).toBe("clean-exit");
 
       // The title's claim ("leaves the backlog untouched") asserted
       // directly: byte-identical BACKLOG.json, no SHIPPED.md written.
@@ -275,7 +275,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
 
       expect(outcome.result?.committed).toBe(false);
       // Pre-fix: EISDIR swallowed, agent exits clean with nothing done —
-      // classified "voluntary-bail". Post-fix: the read error propagates out
+      // classified "clean-exit". Post-fix: the read error propagates out
       // of the agent, classified "platform-preempt" — a non-work failure,
       // not a deliberate no-op.
       expect(outcome.noCommit).toBe("platform-preempt");

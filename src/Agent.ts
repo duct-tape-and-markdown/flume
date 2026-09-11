@@ -430,7 +430,7 @@ export type NdjsonLineResult =
 /**
  * Parse one line of a `claude -p --output-format stream-json` NDJSON
  * transcript. Shared by {@link renderStreamJsonLine} (terminal rendering)
- * and the dispatcher's voluntary-bail message extraction — both walk the
+ * and the dispatcher's clean-exit final-message extraction — both walk the
  * same line-parse before diverging on which event/block types they keep.
  */
 export function parseNdjsonLine(line: string): NdjsonLineResult {
@@ -498,7 +498,7 @@ export function assistantTurnText(e: NdjsonEvent): string {
  * The agent's final message, lifted from the full captured stdout — the
  * spec/chain.md "agent seam" extraction every `Agent.invoke` implementation
  * owns for its own transcript shape. Unbound: a caller that persists this
- * (the dispatcher's §6 voluntary-bail record) applies its own size policy —
+ * (the dispatcher's §6 clean-exit record) applies its own size policy —
  * record-size bounding is not provider shape.
  *
  * `claudeCode({ outputFormat: "stream-json" })` produces NDJSON on stdout,
@@ -515,8 +515,8 @@ export function assistantTurnText(e: NdjsonEvent): string {
  *    to parse.
  *
  * When stream-json was detected but neither event carried text, falls back
- * to the raw transcript trimmed — never empty, which would silently drop a
- * bail's refused constraint (`.claude/rules/engineering.md`, "Loud or
+ * to the raw transcript trimmed — never empty, which would silently drop
+ * whatever the agent closed on (`.claude/rules/engineering.md`, "Loud or
  * nothing").
  */
 export function extractFinalMessage(stdout: string): string {

@@ -6857,7 +6857,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
 // <prior-attempt> — no false signal.
 
 const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
-const BAIL_INTRO = "exited deliberately WITHOUT committing";
+const CLEAN_EXIT_INTRO = "exited cleanly and committed";
 const PREEMPT_INTRO = "cut short by a PLATFORM failure";
 const RENDER_REFUSED_INTRO = "could not even be rendered";
 const TIP_MOVED_INTRO = "was DISCARDED because the ref moved";
@@ -6919,17 +6919,17 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).toContain("Reverted at: afterCommit");
     expect(prompts[1]).toContain("GATE-DETAIL-ZZZ");
     // …and ONLY that variant — not the other two modes' phrasing.
-    expect(prompts[1]).not.toContain(BAIL_INTRO);
+    expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 
-  it("voluntary-bail: TickOutcome.noCommit==='voluntary-bail'; retry prompt names the prior bail + its constraint; first attempt empty", async () => {
+  it("a clean exit with no commit is classified clean-exit; the retry prompt quotes its final message verbatim; first attempt empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
-    // No gates. The agent exits cleanly (exit 0) WITHOUT committing and
-    // names the constraint it refused in its final message — exactly what
-    // the build prompt instructs on a writablePaths/Rule-0 bail.
+    // No gates. The agent exits cleanly (exit 0) WITHOUT committing, and
+    // says why in its final message. The engine records that it exited and
+    // quotes the message; what the exit meant stays the chain's reading.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -6942,7 +6942,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
       name: "bailing-singleton",
       async invoke(inv) {
         prompts.push(inv.prompt);
-        // Clean exit, no commit, constraint stated in the final message.
+        // Clean exit, no commit, the reason stated in the final message.
         // `finalMessage` stands in for what claudeCode's own extraction
         // would produce for this plain-text transcript (Agent.ts,
         // extractFinalMessage) — the Dispatcher no longer re-derives it.
@@ -6966,12 +6966,12 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
     const first = await dispatcher.tick();
     expect(first.result?.committed).toBe(false);
-    expect(first.noCommit).toBe("voluntary-bail");
+    expect(first.noCommit).toBe("clean-exit");
     // v0.8 §5: the verdict carries the same no-commit fact — no shipped
     // tags, no gates ran (the agent never committed), nothing to
     // cherry-pick/merge.
     expect(first.verdict?.committed).toBe(false);
-    expect(first.verdict?.noCommit).toBe("voluntary-bail");
+    expect(first.verdict?.noCommit).toBe("clean-exit");
     expect(first.verdict?.shippedTags).toEqual([]);
     expect(first.verdict?.gateResults).toEqual([]);
     expect(first.verdict?.mergeOutcomes).toEqual([]);
@@ -6981,10 +6981,11 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
     expect(prompts.length).toBe(2);
     expect(prompts[0]).not.toContain("<prior-attempt>");
-    // Distinct voluntary-bail variant naming the refused constraint.
+    // Distinct clean-exit variant, quoting the message under a neutral
+    // label rather than calling it a refused constraint.
     expect(prompts[1]).toContain("<prior-attempt>");
-    expect(prompts[1]).toContain(BAIL_INTRO);
-    expect(prompts[1]).toContain("Refused constraint");
+    expect(prompts[1]).toContain(CLEAN_EXIT_INTRO);
+    expect(prompts[1]).toContain("Prior attempt's final message");
     expect(prompts[1]).toContain(
       "spec/loop.md, outside the build phase writablePaths",
     );
@@ -6993,7 +6994,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 
-  it("voluntary-bail under a stream-json agent: §5 block names the refused constraint legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
+  it("clean-exit under a stream-json agent: §5 block quotes the final message legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -7002,7 +7003,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     // the decorators pass stdout through raw, so AgentResult.stdout is the
     // stream-json NDJSON transcript. Tailing it raw would forward
     // escaped-JSON assistant/result events + cost/usage metadata — the §6
-    // noise this entry replaces with the refused constraint.
+    // noise this entry replaces with the agent's own final message.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -7094,7 +7095,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
       name: "bailing-stream-json-singleton",
       async invoke(inv) {
         prompts.push(inv.prompt);
-        // Clean exit, no commit; the constraint is the final message,
+        // Clean exit, no commit; the closing prose is the final message,
         // delivered only inside the stream-json transcript. `finalMessage`
         // stands in for claudeCode's own extraction (Agent.ts,
         // extractFinalMessage) — the Dispatcher no longer re-parses stdout.
@@ -7117,7 +7118,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
     const first = await dispatcher.tick();
     expect(first.result?.committed).toBe(false);
-    expect(first.noCommit).toBe("voluntary-bail");
+    expect(first.noCommit).toBe("clean-exit");
 
     baton.wake("plan");
     await dispatcher.tick();
@@ -7126,11 +7127,11 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[0]).not.toContain("<prior-attempt>");
 
     const retry = prompts[1]!;
-    // The constraint is forwarded as clean prose, in the voluntary-bail
+    // The final message is forwarded as clean prose, in the clean-exit
     // variant only.
     expect(retry).toContain("<prior-attempt>");
-    expect(retry).toContain(BAIL_INTRO);
-    expect(retry).toContain("Refused constraint");
+    expect(retry).toContain(CLEAN_EXIT_INTRO);
+    expect(retry).toContain("Prior attempt's final message");
     expect(retry).toContain(
       "spec/loop.md and .claude/rules/spec-plan-build.md",
     );
@@ -7149,7 +7150,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(retry).not.toContain('\\"text\\"');
   }, 20_000);
 
-  it("voluntary-bail under a stream-json agent with no result/assistant event: falls back to the bounded raw transcript, never an empty constraint", async () => {
+  it("clean-exit under a stream-json agent with no result/assistant event: falls back to the bounded raw transcript, never an empty final message", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -7158,7 +7159,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     // event — e.g. the process was cut off after the `system`/`init` line.
     // DISPATCHER-FINALAGENTMESSAGE-STREAMJSON-SILENT-EMPTY: pre-fix,
     // finalAgentMessage (now Agent.ts's extractFinalMessage) tailBound'd the
-    // empty string here, and the retry prompt lost the bail entirely.
+    // empty string here, and the retry prompt lost the message entirely.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -7199,7 +7200,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
     const first = await dispatcher.tick();
     expect(first.result?.committed).toBe(false);
-    expect(first.noCommit).toBe("voluntary-bail");
+    expect(first.noCommit).toBe("clean-exit");
 
     baton.wake("plan");
     await dispatcher.tick();
@@ -7207,8 +7208,8 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts.length).toBe(2);
     const retry = prompts[1]!;
     expect(retry).toContain("<prior-attempt>");
-    expect(retry).toContain(BAIL_INTRO);
-    expect(retry).toContain("Refused constraint");
+    expect(retry).toContain(CLEAN_EXIT_INTRO);
+    expect(retry).toContain("Prior attempt's final message");
     // The raw transcript tail reached the retry prompt…
     expect(retry).toContain('"type":"system"');
     expect(retry).toContain("s1");
@@ -7262,10 +7263,10 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).toContain("exited with code 137");
     // …and ONLY that variant.
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
-    expect(prompts[1]).not.toContain(BAIL_INTRO);
+    expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
   }, 20_000);
 
-  it("render-refused (RELEASE-v0.10 §3): an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from voluntary-bail", async () => {
+  it("render-refused (RELEASE-v0.10 §3): an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from clean-exit", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -7303,7 +7304,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts.length).toBe(0);
     expect(first.result?.committed).toBe(false);
     expect(first.noCommit).toBe("render-refused");
-    expect(first.noCommit).not.toBe("voluntary-bail");
+    expect(first.noCommit).not.toBe("clean-exit");
     expect(first.verdict?.committed).toBe(false);
     expect(first.verdict?.noCommit).toBe("render-refused");
     expect(first.verdict?.gateResults).toEqual([]);
@@ -7324,7 +7325,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[0]).toContain("boom-detail");
     // …and ONLY that variant.
     expect(prompts[0]).not.toContain(GATE_REVERT_INTRO);
-    expect(prompts[0]).not.toContain(BAIL_INTRO);
+    expect(prompts[0]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[0]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 });
@@ -7334,7 +7335,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 // Dispatcher.ts:1836-1853: when a fanout wave ships nothing, the single
 // wave-level `noCommit` label is picked from the set of per-entry causes by
 // precedence gate-revert > render-refused > platform-preempt >
-// voluntary-bail. Every other test above drives one mode per wave in
+// clean-exit. Every other test above drives one mode per wave in
 // isolation, so a swapped or dropped precedence branch is invisible to the
 // suite (engineering.md "A green verdict is proven non-vacuous"). These
 // tests build waves whose entries fail via ≥2 distinct causes at once and
@@ -7352,7 +7353,7 @@ function mixedCausePromptArgs(ctx: TickContext): Record<string, string> {
 
 // A fanout agent whose behavior is keyed by slug, producing gate-revert
 // (commits, then the always-failing gate reverts it), platform-preempt
-// (non-zero exit), and voluntary-bail (clean exit, no commit). RENDER-FOUR
+// (non-zero exit), and clean-exit (clean exit, no commit). RENDER-FOUR
 // never reaches the agent — its render aborts first — so no case is
 // registered for it; an accidental invocation throws.
 const mixedCauseAgent: Agent = {
@@ -7382,7 +7383,7 @@ const alwaysRevert: Gate = {
 };
 
 describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-entry causes (DISPATCHER-WAVE-NOCOMMIT-PRECEDENCE-TEST)", () => {
-  it("gate-revert + render-refused + platform-preempt + voluntary-bail in one wave → wave-level noCommit is gate-revert (top precedence)", async () => {
+  it("gate-revert + render-refused + platform-preempt + clean-exit in one wave → wave-level noCommit is gate-revert (top precedence)", async () => {
     await writePending(fx.repo, [
       makeEntry("GATE-ONE", ["src/a.ts"]),
       makeEntry("RENDER-FOUR", ["src/d.ts"]),
@@ -7421,7 +7422,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(warnings.some((w) => w.includes("GATE-ONE") && w.includes("commit reverted"))).toBe(true);
     expect(warnings.some((w) => w.includes("RENDER-FOUR") && w.includes("render-refused"))).toBe(true);
     expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
-    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("clean-exit"))).toBe(true);
 
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.result?.shippedTags).toEqual([]);
@@ -7430,7 +7431,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(4);
   }, 20_000);
 
-  it("render-refused + platform-preempt + voluntary-bail, no gate-revert → wave-level noCommit is render-refused", async () => {
+  it("render-refused + platform-preempt + clean-exit, no gate-revert → wave-level noCommit is render-refused", async () => {
     await writePending(fx.repo, [
       makeEntry("RENDER-FOUR", ["src/d.ts"]),
       makeEntry("PREEMPT-TWO", ["src/b.ts"]),
@@ -7463,7 +7464,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
 
     expect(warnings.some((w) => w.includes("RENDER-FOUR") && w.includes("render-refused"))).toBe(true);
     expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
-    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("clean-exit"))).toBe(true);
 
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.noCommit).toBe("render-refused");
@@ -7471,7 +7472,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(3);
   }, 20_000);
 
-  it("platform-preempt + voluntary-bail, no gate-revert/render-refused → wave-level noCommit is platform-preempt", async () => {
+  it("platform-preempt + clean-exit, no gate-revert/render-refused → wave-level noCommit is platform-preempt", async () => {
     await writePending(fx.repo, [
       makeEntry("PREEMPT-TWO", ["src/b.ts"]),
       makeEntry("BAIL-THREE", ["src/c.ts"]),
@@ -7500,7 +7501,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     const outcome = await dispatcher.tick();
 
     expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
-    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("voluntary-bail"))).toBe(true);
+    expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("clean-exit"))).toBe(true);
 
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.noCommit).toBe("platform-preempt");
@@ -7687,7 +7688,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(prompts[1]).toContain(TIP_MOVED_INTRO);
     // …and ONLY that variant.
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
-    expect(prompts[1]).not.toContain(BAIL_INTRO);
+    expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 
@@ -8862,7 +8863,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
   /**
    * None of the five modes below land anything on trunk (afterCommit
    * gate-revert and tip-moved both revert/discard on the private worktree
-   * branch; voluntary-bail/platform-preempt/render-refused never commit at
+   * branch; clean-exit/platform-preempt/render-refused never commit at
    * all) — so `headSha` on every one of them is the pre-tick trunk tip.
    */
   it("gate-revert record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
@@ -8905,7 +8906,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(new Date(record.at).toISOString()).toBe(record.at);
   }, 20_000);
 
-  it("voluntary-bail record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
+  it("clean-exit record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
     const preHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
@@ -8932,7 +8933,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
         "utf8",
       ),
     );
-    expect(record.mode).toBe("voluntary-bail");
+    expect(record.mode).toBe("clean-exit");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
   }, 20_000);
@@ -9083,7 +9084,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
       ),
     );
 
-  /** Exits clean without committing — a voluntary-bail, so nothing ships. */
+  /** Exits clean without committing — a clean-exit, so nothing ships. */
   const bailingAgent = (slugs: string[]): Agent =>
     fanoutAgent(Object.fromEntries(slugs.map((slug) => [slug, async () => {}])));
 
@@ -9139,7 +9140,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     const phaseRecord = JSON.parse(
       await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
     ) as Record<string, unknown>;
-    expect(phaseRecord.mode).toBe("voluntary-bail");
+    expect(phaseRecord.mode).toBe("clean-exit");
     expect(phaseRecord.key).toBe("phase");
   }, 30_000);
 
@@ -9196,7 +9197,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
       await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
     ) as Record<string, unknown>;
     expect(phaseRecord.key).toBe("phase");
-    expect(phaseRecord.mode).toBe("voluntary-bail");
+    expect(phaseRecord.mode).toBe("clean-exit");
   }, 30_000);
 
   it("the tick verdict reports the prior-attempt keys the wave cleared", async () => {
@@ -9309,8 +9310,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     const flumeDir = join(fx.repo, ".flume");
     await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
     const validRecord: PriorAttempt = {
-      mode: "voluntary-bail",
-      constraint: "off-writablePaths edit",
+      mode: "clean-exit",
+      finalMessage: "off-writablePaths edit",
       key: "entry",
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
@@ -9401,7 +9402,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
   it("a record carrying a recognized `mode` but no `headSha` is absent from `TickContext.priorAttempts`, the degrade an unrecognized `mode` already earns", async () => {
     const captured = await priorAttemptsSeenBy({
-      "un-anchored": { mode: "voluntary-bail", constraint: "no anchor", key: "phase", at: "2024-01-01T00:00:00.000Z" },
+      "un-anchored": { mode: "clean-exit", finalMessage: "no anchor", key: "phase", at: "2024-01-01T00:00:00.000Z" },
       "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), key: "phase", at: "2024-01-01T00:00:00.000Z" },
     });
 
@@ -9437,7 +9438,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     // hiding behind a sibling that happened to survive.
     const anchored: Record<string, PriorAttempt> = {
       "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", ...anchor },
-      "voluntary-bail": { mode: "voluntary-bail", constraint: "off-writablePaths edit", ...anchor },
+      "clean-exit": { mode: "clean-exit", finalMessage: "off-writablePaths edit", ...anchor },
       "platform-preempt": { mode: "platform-preempt", failureClass: "rate-limit", ...anchor },
       "render-refused": { mode: "render-refused", failures: "! `git log`: exit 128", ...anchor },
       "tip-moved": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), ...anchor },
@@ -9527,7 +9528,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     );
   }, 20_000);
 
-  it("a fanout wave with a shipped entry and a voluntarily-bailed sibling reports the bail's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape", async () => {
+  it("a fanout wave with a shipped entry and a clean-exit sibling reports that sibling's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape", async () => {
     await writePending(fx.repo, [
       makeEntry("SHIPS", ["src/a.ts"]),
       makeEntry("BAILS", ["src/b.ts"]),
@@ -9549,7 +9550,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       agent: fanoutAgent({
         ships: (cwd) =>
           writeAndCommit(cwd, "src/a.ts", "a\n", "build(SHIPS): ship"),
-        // Clean exit, no commit — the voluntary-bail leg.
+        // Clean exit, no commit — the clean-exit leg.
         bails: async () => {},
       }),
       log: silent,
@@ -9558,7 +9559,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     const outcome = await dispatcher.tick();
 
     // The existing wave-summary shape is unchanged: a sibling shipped, so the
-    // wave-level noCommit reads absent even though BAILS bailed.
+    // wave-level noCommit reads absent even though BAILS exited clean.
     expect(outcome.result?.shippedTags).toEqual(["SHIPS"]);
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.result?.noCommit).toBeUndefined();
@@ -9581,7 +9582,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       committed: false,
       shipped: false,
       reverted: false,
-      noCommit: "voluntary-bail",
+      noCommit: "clean-exit",
     });
   }, 20_000);
 });
@@ -9734,7 +9735,7 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
     expect(invoked).toBe(false);
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.noCommit).toBe("render-refused");
-    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.noCommit).not.toBe("clean-exit");
     expect(outcome.verdict?.noCommit).toBe("render-refused");
     expect(outcome.verdict?.gateResults).toEqual([]);
     // Never reached cherry-pick/merge — the entry stays pending for a retry
@@ -9901,10 +9902,10 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
     expect(await head(fx.repo)).toBe(preHead);
     expect(outcome.result?.gateResults).toEqual([]);
 
-    // Declined is its own fact — never folded into noCommit/voluntary-bail.
+    // Declined is its own fact — never folded into noCommit/clean-exit.
     expect(outcome.declined).toBe(true);
     expect(outcome.noCommit).toBeUndefined();
-    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.noCommit).not.toBe("clean-exit");
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.noCommit).toBeUndefined();
     expect(outcome.verdict?.committed).toBe(false);
@@ -10125,7 +10126,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.declined).toBe(true);
     expect(outcome.noCommit).toBeUndefined();
-    expect(outcome.noCommit).not.toBe("voluntary-bail");
+    expect(outcome.noCommit).not.toBe("clean-exit");
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.noCommit).toBeUndefined();
     expect(outcome.verdict?.shippedTags).toEqual([]);
@@ -10235,12 +10236,12 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
 // SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan
 // tick woke: `Dispatcher.tick` computed the §6 classification but discarded
 // it before calling `phase.handoff(result)`, so no chain's handoff could
-// ever distinguish a voluntary-bail from a genuine nothing-pickable no-op.
+// ever distinguish a clean-exit from a genuine nothing-pickable no-op.
 // These assert the fix at the one seam that matters: what `handoff` itself
 // receives.
 
 describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () => {
-  it("voluntary-bail: the TickResult handed to handoff carries noCommit: 'voluntary-bail'", async () => {
+  it("clean-exit: the TickResult handed to handoff carries noCommit: 'clean-exit'", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -10258,7 +10259,7 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () =
     const agent: Agent = {
       name: "bailing-singleton",
       async invoke() {
-        // Clean exit, no commit — a voluntary bail per §6.
+        // Clean exit, no commit — a clean-exit per §6.
         return { exitCode: 0, stdout: "BAILED: no path forward\n", stderr: "" };
       },
     };
@@ -10274,9 +10275,9 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () =
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(false);
-    expect(outcome.noCommit).toBe("voluntary-bail");
+    expect(outcome.noCommit).toBe("clean-exit");
     expect(handoffResults).toHaveLength(1);
-    expect(handoffResults[0]?.noCommit).toBe("voluntary-bail");
+    expect(handoffResults[0]?.noCommit).toBe("clean-exit");
   }, 20_000);
 
   it("committed tick: the TickResult handed to handoff has no noCommit field", async () => {
@@ -10848,7 +10849,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.erroredTicks[0]).toContain("gate-revert");
   });
 
-  it("render-refused (RELEASE-v0.10 §3) counts as errored — a broken prompt is a genuine failure, not a voluntary-bail no-op", async () => {
+  it("render-refused (RELEASE-v0.10 §3) counts as errored — a broken prompt is a genuine failure, not a clean-exit no-op", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
     const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
@@ -11570,7 +11571,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
-  it("a voluntary bail never joins the accounting, however many times it repeats", async () => {
+  it("a clean exit never joins the accounting, however many times it repeats", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -11587,7 +11588,7 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
           verdictFixture({
             phaseName: "plan",
             committed: false,
-            noCommit: "voluntary-bail",
+            noCommit: "clean-exit",
           }),
         ),
         "utf8",
@@ -15032,7 +15033,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
    * wrote"): the verdict handed to `superviseLoop` is the one a real declined
    * wave produced, not a fixture. A chain declining a landed commit is that
    * chain's verdict, never a failure of the tick that produced it — the same
-   * reason `voluntary-bail` stays out of the errored derivation.
+   * reason `clean-exit` stays out of the errored derivation.
    */
   it("a run whose only no-commit fact is `not-shipped` is not derived as errored", async () => {
     await writePending(fx.repo, [
