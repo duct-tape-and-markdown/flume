@@ -445,7 +445,7 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     );
     const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
     expect(result.ok).toBe(true);
-    expect(result.message).toMatch(/untouched/);
+    expect(result.skipped).toMatch(/untouched/);
   });
 
   it("fails a syntactically-broken chain.ts", async () => {
@@ -505,7 +505,7 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       ctx(repo, { commitSha: sha, configDir: join(repo, "custom-config") }),
     );
     expect(result.ok).toBe(true);
-    expect(result.message).toMatch(/untouched/);
+    expect(result.skipped).toMatch(/untouched/);
   });
 });
 
@@ -550,7 +550,7 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
       ctx(notARepo, { commitSha: "deadbeef", touchedPaths: ["src/unrelated.ts"] }),
     );
     expect(result.ok).toBe(true);
-    expect(result.message).toMatch(/untouched/);
+    expect(result.skipped).toMatch(/untouched/);
   });
 
   it("chainLoadGate loads chain.ts straight off ctx.cwd when injected touchedPaths names it, without deriving touched paths from git", async () => {
@@ -576,7 +576,7 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
       expect(wp.ok).toBe(true);
       const cl = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
       expect(cl.ok).toBe(true);
-      expect(cl.message).toMatch(/untouched/);
+      expect(cl.skipped).toMatch(/untouched/);
     } finally {
       await rm(repo, { recursive: true, force: true });
     }

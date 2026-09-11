@@ -858,6 +858,100 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
   });
 });
 
+// ---------- GateResult.skipped → TickVerdictGateResult.skipped
+// (GATE-RESULT-SKIPPED, spec/chain.md "What a gate returns") ----------
+
+describe("TickVerdictGateResult.skipped — a verdict row states a green no judge earned", () => {
+  it("a gate returning `skipped` lands its reason on the tick verdict's gate row unchanged", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const reason = "no TypeScript among the touched paths — judge not run";
+    const skippingGate: Gate = {
+      name: "vacuous-by-design",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "type-check skipped", skipped: reason };
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [skippingGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    const rows = outcome.verdict?.gateResults ?? [];
+    // Vacuity pin: the gate loop really ran and really produced this row.
+    expect(rows.length).toBeGreaterThan(0);
+    const row = rows.find((g) => g.gate === "vacuous-by-design");
+    expect(row).toEqual({
+      gate: "vacuous-by-design",
+      ok: true,
+      message: "type-check skipped",
+      skipped: reason,
+    });
+    // The whole point: the fact is readable as a field, not pattern-matched
+    // out of `message`.
+    expect(row?.skipped).toBe(reason);
+  });
+
+  it("a gate that returned `ok: true` without `skipped` leaves no `skipped` on its verdict row", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const ranGate: Gate = {
+      name: "really-ran",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "type-check clean" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [ranGate],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    const rows = outcome.verdict?.gateResults ?? [];
+    expect(rows.length).toBeGreaterThan(0);
+    const row = rows.find((g) => g.gate === "really-ran");
+    expect(row).toEqual({ gate: "really-ran", ok: true, message: "type-check clean" });
+    expect(row).not.toHaveProperty("skipped");
+    // The auto-attached writable-paths gate ran too, and claims it ran.
+    const auto = rows.find((g) => g.gate === "writable-paths");
+    expect(auto).toBeDefined();
+    expect(auto).not.toHaveProperty("skipped");
+  });
+});
+
 describe("Dispatcher singleton — handoff wakes the successor", () => {
   it("sleeps the running phase and wakes only the named successor", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

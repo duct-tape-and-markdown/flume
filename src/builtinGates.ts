@@ -254,7 +254,14 @@ export const chainLoadGate: Gate = {
       .split(/[\\/]/)
       .join("/");
     if (!touched.includes(chainRelPath)) {
-      return { ok: true, message: "chain.ts untouched — gate skipped" };
+      // Vacuous by design, and spelled as such: nothing loaded, so the green
+      // is declared on `skipped` rather than left for a reader to pattern-
+      // match out of `message` (spec/chain.md "What a gate returns").
+      return {
+        ok: true,
+        message: "chain-load skipped",
+        skipped: `${chainRelPath} untouched by this commit`,
+      };
     }
     try {
       // Declared divergence: under `afterCommit` these three roots do not

@@ -154,6 +154,17 @@ export interface GateResult {
   /** Optional captured output (e.g. tsc stderr) for context injection. */
   details?: string;
   /**
+   * The gate did not run its judge, and why: no code path among the touched
+   * paths, a runner the chain scopes out by design. `ok` stays required and
+   * stays the verdict the engine acts on; this is the fact that the verdict
+   * was not *earned* by running anything. The dispatcher copies it onto the
+   * tick verdict's gate result verbatim and interprets it no further
+   * (spec/chain.md "What a gate returns"). A gate returning `ok: true`
+   * without it claims it ran — vacuous-by-design is spelled, never inherited
+   * (`.claude/rules/engineering.md` "A green verdict is proven non-vacuous").
+   */
+  skipped?: string;
+  /**
    * Repo-relative paths the gate attributes the failure to, when its runner
    * can name them (a test reporter's JSON, a type-checker's diagnostics).
    * When present alongside the reverted span's own touched paths, the

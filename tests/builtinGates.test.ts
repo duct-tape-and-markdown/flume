@@ -700,6 +700,61 @@ describe("src/index.ts — ShellGateOptions/PkgManagerOverride/PkgManagerGate ba
   });
 });
 
+// ---------- GateResult.skipped on the one builtin that skips
+// (GATE-RESULT-SKIPPED, spec/chain.md "What a gate returns") ----------
+
+const SKIP_TEST_CHAIN =
+  `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
+  `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
+  `gates: [], handoff: () => [] }], humanOnly: [] } });\n`;
+
+describe("chainLoadGate — a green it did not earn is declared, not spelled into message", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await createBootstrappedRepo("flume-gate-skipped-");
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("`chainLoadGate` over a commit that touched no chain file returns `ok: true` with a `skipped` reason", async () => {
+    const sha = await commitFiles(
+      repo,
+      { "src/unrelated.ts": "export const x = 1;\n" },
+      "build: nothing to do with the chain",
+    );
+    // Vacuity pin: the gate judged a populated touched-path list and found no
+    // chain file in it — not an empty commit skipping by accident.
+    const touchedPaths = ["src/unrelated.ts"];
+
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(typeof result.skipped).toBe("string");
+    expect(result.skipped).toContain(".flume/chain.ts");
+  });
+
+  it("chainLoadGate that actually loaded the chain leaves skipped absent", async () => {
+    const sha = await commitFiles(
+      repo,
+      { ".flume/chain.ts": SKIP_TEST_CHAIN },
+      "build: rewrite chain",
+    );
+
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: [".flume/chain.ts"] }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/valid Chain/);
+    expect(result.skipped).toBeUndefined();
+  });
+});
+
 describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md 'The builtin gates')", () => {
   it("shellGate declares command as cmd followed by args, space-joined", () => {
     const gate = shellGate({

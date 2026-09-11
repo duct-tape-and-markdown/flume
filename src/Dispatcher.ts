@@ -71,6 +71,7 @@ type GateResultEntry = {
   ok: boolean;
   message: string;
   details?: string;
+  skipped?: string;
 };
 import type {
   Chain,
@@ -204,6 +205,14 @@ export interface TickVerdictGateResult {
   ok: boolean;
   message: string;
   details?: string;
+  /**
+   * The gate's own `GateResult.skipped` (`./Gate.js`), copied verbatim: `ok`
+   * was not earned by running a judge, and the gate said why. Absent means
+   * the gate claims it ran. Copied, never interpreted — a verdict reader
+   * tells a passed gate from one that never ran without pattern-matching
+   * `message` (spec/chain.md "What a gate returns").
+   */
+  skipped?: string;
 }
 
 /**
@@ -2061,6 +2070,7 @@ export class Dispatcher {
                 ok: gr.ok,
                 message: gr.message,
                 ...(gr.details ? { details: gr.details } : {}),
+                ...(gr.skipped ? { skipped: gr.skipped } : {}),
               });
               if (!gr.ok) {
                 entryFailure = {
@@ -2644,6 +2654,7 @@ export class Dispatcher {
           ok: gr.ok,
           message: gr.message,
           ...(gr.details ? { details: gr.details } : {}),
+          ...(gr.skipped ? { skipped: gr.skipped } : {}),
         });
         if (!gr.ok) {
           entryFailure = {
@@ -3519,6 +3530,7 @@ export class Dispatcher {
         ok: r.ok,
         message: r.message,
         ...(r.details ? { details: r.details } : {}),
+        ...(r.skipped ? { skipped: r.skipped } : {}),
       });
       if (!r.ok) {
         if (r.details) this.log.warn(r.details);
