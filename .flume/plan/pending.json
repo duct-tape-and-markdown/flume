@@ -1,37 +1,5 @@
 [
   {
-    "tag": "VERDICT-SPAN-ROW-BASE-SHA",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "`baseSha` on `TickVerdictMergeOutcome` beside `headSha` (:290). Singleton emits no span row at all today — `mergeOutcomes` is fanout-only and `commitSha` is set only on success, so a gate-reverted singleton commit's sha survives nowhere on the verdict."
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "Pins."
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The verdict's span row carries the span's base sha — and a singleton tick gains a span row at all, so its reverted commit is re-cherry-pickable from the verdict alone",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The tick verdict — one facts artifact"
-    },
-    "tests": [
-      "a fanout entry's span row carries the base it branched from beside its head sha",
-      "a singleton tick reverted by an afterCommit gate leaves a span row naming both shas"
-    ],
-    "acceptance": "Every span the verdict records is re-cherry-pickable from base and head without re-running the agent; the pins fail on the pre-fix tree.",
-    "notes": "The singleton half is pre-existing drift the base-sha widening surfaces: the section's \"the phase's own single span under singleton\" has never held for `headSha` either. Verified on disk this tick — `runSingleton`'s return sets no `mergeOutcomes`, and the afterCommit revert at :1946 drops `postWtHead` after `buildPriorAttempt`."
-  },
-  {
     "tag": "PRE-0.10-CHAIN-SHAPE-TAUGHT",
     "gate": {
       "kind": "open"
