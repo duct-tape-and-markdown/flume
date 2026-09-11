@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "SPEC-CITE-MODULE-PATH-PINNED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the scan, beside the existing `spec/`-reading doc-to-source describes"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "repoint the stale supervisor pair at :686 — `defaultTickRunner` is `src/loopSupervisor.ts`, as :746 already says"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin spec's module-path cites against src/ in tests/retired-narration.test.ts; repoint the stale supervisor pair at src/cli.ts:686",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "pins": [
+      "every `src/<file>.ts:<symbol>` cite in `spec/` names a file that holds that symbol",
+      "every `` `<symbol>` (`src/<file>.ts`) `` cite in `spec/` names a file that holds that symbol",
+      "the spec module-path scan reads a populated set of cites in both shapes",
+      "a spec cite whose module no longer holds its symbol is flagged"
+    ],
+    "acceptance": "`pnpm test` green with the spec module-path scan in `tests/retired-narration.test.ts`; `src/cli.ts:686` names `src/loopSupervisor.ts`.",
+    "notes": "Four extraction waves shipped fourteen stale cites; the amendment repointed them (a18b40e), so the scan is green today — 74 cites across the two path-carrying shapes, all resolving, verified this tick. `Class.method` cites (`PriorAttemptStore.clear`, `Dispatcher.sweepStaleWorktrees`) need a member list and bare-symbol cites resolve nowhere — both out of scope, declared at the site. Scan `spec/` only."
+  }
+]

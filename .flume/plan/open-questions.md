@@ -256,150 +256,6 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## Fourteen spec cites name the modules the extractions emptied (NEEDS AMENDMENT)
-
-Drained from `DISPATCHER-EXTRACT-LOOP-SUPERVISOR`'s,
-`DISPATCHER-EXTRACT-PRIOR-ATTEMPTS`'s, `DISPATCHER-EXTRACT-FRICTION`'s and
-`DISPATCHER-EXTRACT-WORKTREES`'s notes; every cite re-verified on disk at the
-tick that drained it. Four pure moves have now left fourteen spec cites
-pointing at symbols their old modules no longer hold.
-
-The supervisor got its own module at `39c8207` — three cites, one wider than
-that note reported:
-
-- `spec/chain.md:348` and `:358` — `src/Dispatcher.ts:superviseLoop`. The
-  symbol is `src/loopSupervisor.ts:170`; `src/Dispatcher.ts` now only mentions
-  it in doc comments.
-- `spec/cli.md:182` — ``` `defaultTickRunner` (`src/Dispatcher.ts`) ```. It is
-  `src/loopSupervisor.ts:491`.
-
-The prior-attempt store got `src/priorAttempts.ts` at `8139875` — three more,
-and these moved *name* as well as home, so a reader's grep finds nothing:
-
-- `spec/worktrees.md:253` — `src/Dispatcher.ts:snapshotRevertedFiles`. It is
-  `PriorAttemptStore.snapshotReverted` (`src/priorAttempts.ts:351`).
-- `spec/loop.md:285` — bare `snapshotRevertedFiles`, same symbol.
-- `spec/loop.md:357` — bare `clearPriorAttempt`. It is `PriorAttemptStore.clear`
-  (`src/priorAttempts.ts`, called at `src/Dispatcher.ts:2257,2968`).
-
-The friction channel got `src/friction.ts` at `ee1ea40` — three more:
-
-- `spec/cli.md:136` — ``` `frictionCountLine` (`src/Dispatcher.ts`) ```. It is
-  `src/friction.ts:69`.
-- `spec/chain.md:319` — "`src/Dispatcher.ts:loadChainModule` →
-  `validateFrictionDeclaration`". The loader stays
-  (`src/Dispatcher.ts:1035`); the validator is `src/friction.ts:43`.
-- `spec/worktrees.md:296` — `src/Dispatcher.ts:harvestFriction`. It is
-  `src/friction.ts:128`.
-
-The worktree lifecycle got `src/worktrees.ts` at `fc246f4` — five more, and
-the last two carry no path at all, so they name the wrong *owner* rather than
-the wrong file:
-
-- `spec/worktrees.md:21` and `:61` — `src/Dispatcher.ts:createWorktree`. It is
-  `src/worktrees.ts:100`.
-- `spec/worktrees.md:95` — ``` `worktreeDirName(tag)` (`src/Dispatcher.ts`) ```.
-  It is `src/worktrees.ts:84`.
-- `spec/loop.md:92` and `spec/jobs.md:54` — `Dispatcher.createWorktree`. A free
-  function now, on no class.
-
-`spec/worktrees.md`'s startup-sweep section needs no change:
-`Dispatcher.sweepStaleWorktrees` is still a method (`src/Dispatcher.ts:3760`,
-`src/cli.ts` calls it), delegating to `src/worktrees.ts:250`. The remaining
-bare `createWorktree` cites (`spec/worktrees.md:69,76,125`,
-`spec/loop.md:421,758`, `spec/pending.md:55`) are path-free and stay correct.
-
-`spec/worktrees.md:276` (`writeRevertNote`) stays correct — that writer stayed
-in `src/Dispatcher.ts`, built from a commit message only the dispatcher holds,
-and the divergence is declared at `src/friction.ts:17`.
-
-Every other cite is path-free (`spec/loop.md:6,31,43,168,624`,
-`spec/chain.md:364`) and stays correct.
-
-**Recommend** repointing all nine. No fork — all three extractions were pure
-moves, and the surrounding claims (`quarantineScope ?? "run"`,
-`abortThreshold ?? 3`, "binds both before entering the tick loop", the
-child-env copy; the snapshot's gate-revert-leg-only rule, the `.reverted/`
-layout; the friction channel's relative-path rule and the teardown harvest)
-all hold at the new homes. Parked only because `spec/` is human-only
-(`.claude/rules/spec-plan-build.md`).
-
-**One in-fence rider.** `src/cli.ts:686` carries the same stale supervisor pair
-— "set by `defaultTickRunner`, `src/Dispatcher.ts`" — while `:746`, three
-comments down, was repointed in the same commit. Inside build's fence, so it
-rides whatever entry the amendment files rather than earning one.
-
-**And the fork this raises, now with a fourth data point and the forecast
-landed: pin the module path, or keep re-noticing it?** Nothing checks a spec
-cite's module path, which is why four green waves have now shipped fourteen
-stale ones. The prior tick predicted three from `DISPATCHER-EXTRACT-WORKTREES`
-and got five — the two it missed being the `Dispatcher.createWorktree` pair,
-which is the point: **the cites come in three shapes**, not one.
-`src/f.ts:symbol`, `` `symbol` (`src/f.ts`) ``, and `Class.method` — and the
-bare-symbol cites (`spec/loop.md:285,357`) are a fourth that resolves nowhere.
-A scan is still buildable and cheap — in `tests/retired-narration.test.ts`,
-which already reads `spec/` paths for its doc-to-source scans — but scope is
-now a sub-fork: the first two shapes alone (~30 cites, mechanical) catch 10 of
-the 14; adding `Class.method` catches 12 and needs the class's member list;
-bare symbols are out of reach either way. It is **red until the amendment
-lands**, so it ships after, never with. Against it: a symbol-resolving scan
-over prose is a second parser to maintain, and the same commit that moves a
-symbol is the cheapest place to fix its cites — but that is exactly what all
-four waves could not do, since build cannot edit `spec/`.
-Say the word and it files as an entry.
-
-## Nothing type-checks the merged tree, and a vitest fixture is the accidental oracle (PARKED)
-
-Drained from `DISPATCHER-EXTRACT-FRICTION`'s `afterMerge` gate-revert record
-(`bd322f5`, 2026-09-11 wave); root cause traced on disk this tick.
-
-**What happened.** The friction extraction moved the `chmod`-using case out of
-`tests/Dispatcher.test.ts` and left the import dead at `:3`. Its fanout worktree
-was cut from the pre-wave base, so `noUnusedLocals` was not yet on and the
-`afterCommit` `tscGate` was green. `TSCONFIG-REFUSES-DEAD-IMPORTS` landed the
-flag on the trunk in that same wave; the cherry-pick then produced a tree that
-does not compile — `spec/chain.md` *Gate placement is the chain's decision*,
-fifth bullet, the sibling-composition case exactly.
-
-**Nothing in the `afterMerge` lane type-checks.** `.flume/chain.ts:826` is
-`[tscGate, recordsGate, vitestOnCode]`, and `tscGate` is `afterCommit`-only. The
-one thing that caught it was `tests/builtinGates.test.ts:611` — a case that
-shells `npm exec -- tsc --noEmit` over the repo as the *fixture* for an
-unrelated claim about arg overrides. So the verdict read "tscGate / vitestGate /
-eslintGate — args override … expected false to be true", and the engine marked
-it `suspectFlake`. The real answer was "the merged tree does not compile."
-
-The comment that chose this at `.flume/chain.ts:825` — "tscGate stays
-afterCommit — cheap, structural, catches type errors before merge" — is the
-staleness window the spec's first bullet describes, stated as though it were
-coverage. Expired narration on a live decision (`posture-sweep.md`, *A violation
-counts only when verified on disk this tick*).
-
-Options:
-
-- **Add a type check at `afterMerge`, keep the `afterCommit` one.**
-  `tsc --noEmit` is seconds, per-entry revert isolation already makes an
-  `afterMerge` failure safe (`spec/worktrees.md`), and the pre-merge structural
-  catch that keeps a broken commit off the trunk survives. Cost: one tsc per
-  merged entry.
-- **Move `tscGate` to `afterMerge` only.** One gate instead of two, but it
-  surrenders the second bullet's cheap pre-merge catch and lets a
-  non-compiling commit reach the trunk before anything objects.
-- **Do nothing.** Rejected on the evidence: the oracle is another test's
-  fixture, one `npm exec` from deletion, and its verdict misattributes to a
-  gate-override claim that was never implicated.
-
-**Recommend the first.** It is a one-gate chain edit, and the surface it needed
-has landed: `BUILTINGATES-WHEN-OVERRIDE` shipped at `3850420`, so
-`PkgManagerOverride` carries `when` and the edit is literally
-`tscGate({ when: "afterMerge" })` beside the existing `tscGate` — no
-hand-rolled `shellGate` copying the builtin's own `cmd`/`args`. **Only the
-decision is left.** `.flume/chain.ts:826` still reads
-`[tscGate, recordsGate, vitestOnCode]`, and the stale-coverage comment above it
-(`:825`) still reads as though the `afterCommit` placement covered the merged
-tree. Parked only because `.flume/chain.ts` is outside every phase lane
-(`.claude/rules/spec-plan-build.md`); the spec needs no amendment — it already
-rules both bullets, and the chain chose against them.
 
 ## No sweep lens catches prose that contradicts the code it describes (PARKED)
 
@@ -447,30 +303,16 @@ expired-narration lens); `docs/` enters only through a retired-claim delta. The
 first data point above lives in `docs/`, so the lens as stated would not have
 caught it either — say whether this lens widens the domain to `docs/` or
 deliberately stops at the code surfaces. A third instance (2026-09-11 sweep of
-`bin/`) lives in `spec/` — the stale tarball enumeration questioned below — so
-the domain fork is three surfaces wide, not one, and `spec/` is the one the
-loop cannot fix itself.
+`bin/`) lived in `spec/` — `spec/cli.md` *Distribution*'s tarball enumeration,
+stale against the `"files"` allowlist it copied; amended and closed at
+`a18b40e` — so the domain fork is three surfaces wide, not one, and `spec/` is
+the one the loop cannot fix itself.
+
+A fourth instance, same shape, now has a mechanical answer that this lens does
+not: a `spec/` cite naming a symbol its module no longer holds is checkable,
+and `SPEC-CITE-MODULE-PATH-PINNED` pins the two path-carrying shapes. It
+bounds the lens rather than replacing it — `Class.method` and bare-symbol
+cites, and every assertion that is prose rather than a cite, stay judgment.
 
 Parked because `.claude/rules/**` is human-only
 (`.claude/rules/spec-plan-build.md`).
-
-## `spec/cli.md`'s tarball bullet restates the `files` allowlist, and the copy is stale (NEEDS AMENDMENT)
-
-`spec/cli.md`, *Distribution*: "**Tarball contents** are the `package.json`
-`"files"` allowlist and nothing else: `dist`, `bin`, `README.md`, `LICENSE`,
-`CHANGELOG.md`." The allowlist on disk also carries `docs`, `!docs/PRD-*.md`,
-and `examples` — added by `1b57b67` (cut 0.10.1) and never mirrored here.
-
-The rule half is right and already mechanical: CI's *npm pack file-set guard*
-(`.github/workflows/ci.yml`) reads `package.json` `"files"` generically and
-fails in both directions. Only the enumeration after the colon is a second
-copy of a value the manifest owns (`.claude/rules/engineering.md`, *Derived
-state is computed, never restated beside its source* — "In artifacts, the same
-bar"), and it is the copy that reads as authoritative while being wrong: it
-says `examples/` and `docs/` do not ship, which is the opposite of what
-`engine-boundary.md`'s *Opinion ships by name, opted into* rests on.
-
-**Recommended:** delete the enumeration, keep the rule — "…are the
-`package.json` `"files"` allowlist and nothing else." Nothing else in the
-section reads the list. Needs a human edit; `spec/` is outside every phase
-lane (`.claude/rules/spec-plan-build.md`).
