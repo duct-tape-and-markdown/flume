@@ -91,6 +91,23 @@ switch (mode) {
     out(del.length ? del.join("\n") : "(none)");
     break;
   }
+  case "records": {
+    // One file per record (`.flume/PROTOCOL.md`, *Records: one file each*),
+    // tracked, so the tick's own tree holds them. Oldest first within each
+    // directory: inbox names lead with their date.
+    let n = 0;
+    for (const dir of [".flume/inbox", ".flume/plan/notes"]) {
+      const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".md")).sort() : [];
+      for (const f of files) {
+        n++;
+        out(`--- ${dir}/${f} ---`);
+        out(readFileSync(join(dir, f), "utf8").trimEnd());
+        out();
+      }
+    }
+    if (n === 0) out("(no records)");
+    break;
+  }
   case "build-records": {
     const flumeDir = process.env.FLUME_DIR ?? ".flume";
     const dir = join(flumeDir, "prior-attempts");
@@ -108,6 +125,6 @@ switch (mode) {
     break;
   }
   default:
-    console.error(`delta-window: unknown mode '${mode}' (derive | sweep | build-records)`);
+    console.error(`delta-window: unknown mode '${mode}' (derive | sweep | records | build-records)`);
     process.exit(2);
 }

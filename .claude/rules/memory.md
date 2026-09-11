@@ -16,14 +16,15 @@ Flume ticks run autonomously via `claude -p`. Each iteration is a fresh process.
 | Flume chain config (writable paths, gates, ...) | `.flume/chain.ts`           |
 | Per-phase prompts                               | `.flume/prompts/*.md`       |
 | Active plan + scratch state                     | `.flume/plan/*`             |
-| Findings inbox (transient queue)                | `.flume/inbox.md`           |
+| Findings inbox (transient queue, one file each) | `.flume/inbox/`             |
+| Build notes to plan (one file per entry tag)    | `.flume/plan/notes/`        |
 | Engine contract, by topic                       | `spec/*.md`                 |
 | Longer-range design intent                      | `docs/INTENT.md`            |
 
-The `.flume/plan/open-questions.md` file doubles as cross-tick scratch space — when a build tick learns something the next plan tick should know about (debt observed, surprising pattern, blocker), it writes that there.
+When a build tick learns something the next plan tick should know about (debt observed, surprising pattern, blocker), it writes a note at `.flume/plan/notes/<TAG>.md` — one file per entry, so parallel ticks never collide (`.flume/PROTOCOL.md`, *Records: one file each*). `open-questions.md` is plan's alone.
 
 ## Don't
 
 - Don't write to `~/.claude/projects/.../memory/`.
 - Don't read from there expecting context — none should exist; if any does, it's stale.
-- Don't fall back to auto-memory "just in case." Add a file under `.claude/rules/`, capture in `spec/*.md` (human-edited), or note in `.flume/plan/open-questions.md` instead.
+- Don't fall back to auto-memory "just in case." Add a file under `.claude/rules/`, capture in `spec/*.md` (human-edited), or leave a record (`.flume/inbox/` from a session, `.flume/plan/notes/<TAG>.md` from a build tick) instead.

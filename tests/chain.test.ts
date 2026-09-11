@@ -12,11 +12,12 @@
  * of chain.ts's own sentinel-assertion logic (see
  * `tests/examples.integration.test.ts`, which drives `examples/` the same way).
  *
- * `plan.shouldRun` reads `<flumeDir>/inbox.md` and `plan.handoff` reads
- * `<flumeDir>/plan/state.md`, taking the root from what the engine hands them
- * (`TickContext.flumeDir`, `TickResult.flumeDir`) — never from env. Every test
- * below passes a fresh scratch directory as that root so the real
- * `.flume/inbox.md` / `.flume/plan/state.md` are never read or written.
+ * `plan.shouldRun` lists `<flumeDir>/inbox/` and `<flumeDir>/plan/notes/`
+ * and `plan.handoff` reads `<flumeDir>/plan/state.md`, taking the root from
+ * what the engine hands them (`TickContext.flumeDir`, `TickResult.flumeDir`)
+ * — never from env. Every test below passes a fresh scratch directory as
+ * that root so the real `.flume/` records and state are never read or
+ * written.
  */
 
 import { execFileSync } from "node:child_process";
@@ -56,9 +57,8 @@ const REPO_PATHS: FlumePaths = {
   flumeDir: fileURLToPath(new URL("../.flume", import.meta.url)),
 };
 
-const EMPTY_INBOX =
-  "# Inbox\n\nTransient queue.\n\n---\n\n<!-- entries below this line; newest first -->\n";
-const NONEMPTY_INBOX = `${EMPTY_INBOX}\n## 2026-08-03 — test finding (human)\n\nbody\n`;
+/** One record, one file (`.flume/PROTOCOL.md`, *Records: one file each*). */
+const RECORD = "# test finding (human)\n\nbody\n";
 
 function makeEntry(
   tag: string,
@@ -131,12 +131,6 @@ async function initRepo(prefix: string): Promise<string> {
 }
 
 /**
- * Plan is four slices whose liveness the chain computes from disk
- * (`.flume/PROTOCOL.md`, *Plan slices*). Every case here drives the real
- * factory against a temp repo whose cursors, queue, inbox, and git history
- * the test controls, so each predicate is judged on the facts it reads.
- */
-/**
  * Plan is three slices whose liveness the chain computes from disk
  * (`.flume/PROTOCOL.md`, *Plan slices*). Every case here drives the real
  * factory against a temp repo whose cursors, queue, inbox, and git history
@@ -178,7 +172,7 @@ describe("plan slices via the real .flume/chain.ts", () => {
     flumeDir = join(repo, ".flume");
     await mkdir(join(flumeDir, "plan"), { recursive: true });
     await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
-    await writeFile(join(flumeDir, "inbox.md"), EMPTY_INBOX);
+    await mkdir(join(flumeDir, "inbox"), { recursive: true });
     await mkdir(join(repo, "spec"), { recursive: true });
     await writeFile(join(repo, "spec", "x.md"), "# X\n\n## A\n\nbody\n");
     await mkdir(join(repo, "src"), { recursive: true });
@@ -211,10 +205,16 @@ describe("plan slices via the real .flume/chain.ts", () => {
       for (const name of LADDER) expect(phases[name]!.shouldRun!(ctx()), name).toBe(false);
     });
 
-    it("inbox: live iff an entry sits below the marker; an unreadable inbox runs the slice", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), NONEMPTY_INBOX);
+    it("inbox: live iff a record file sits under inbox/ or plan/notes/; a missing directory is drained; an unreadable one runs the slice", async () => {
+      await writeFile(join(flumeDir, "inbox", "2026-08-03-finding.md"), RECORD);
       expect(phases[INBOX]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(true);
-      await rm(join(flumeDir, "inbox.md"));
+      await rm(join(flumeDir, "inbox"), { recursive: true });
+      expect(phases[INBOX]!.shouldRun!(ctx())).toBe(false);
+      await mkdir(join(flumeDir, "plan", "notes"), { recursive: true });
+      await writeFile(join(flumeDir, "plan", "notes", "OPEN-1.md"), RECORD);
+      expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
+      await rm(join(flumeDir, "plan", "notes"), { recursive: true });
+      await writeFile(join(flumeDir, "inbox"), "not a directory");
       expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
     });
 
@@ -261,7 +261,7 @@ describe("plan slices via the real .flume/chain.ts", () => {
 
   describe("handoff — the ladder, then build, then hibernate", () => {
     it("a slice that committed and is still live re-wakes itself; one that did not commit hands on", async () => {
-      await writeFile(join(flumeDir, "inbox.md"), NONEMPTY_INBOX);
+      await writeFile(join(flumeDir, "inbox", "2026-08-03-finding.md"), RECORD);
       expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([INBOX]);
       expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([]);
       await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
@@ -632,5 +632,131 @@ describe("judgeVitestReport — the vitest gate's two claims over the real repor
     expect(r.failingFiles).toEqual(["tests/paths.test.ts"]);
     expect(r.details).toContain("boom");
     expect(r.details).not.toContain("stack");
+  });
+});
+
+/**
+ * Records are one file each and short (`.flume/PROTOCOL.md`, *Records: one
+ * file each*). The `records` gate rides every phase's afterCommit list and
+ * reads the commit through the engine's at-sha reader; `build.shipped` reads
+ * the entry's own note as the park signal. Refusal cases are hand-authored
+ * commits — a real writer cannot produce the malformed record a refusal is
+ * tested on (`engineering.md`, *A seam gate reads what the real writer wrote*).
+ */
+describe("records gate and the park predicate — one file each", () => {
+  let build: Phase;
+  let plan: Phase;
+  let repo: string;
+  const NOTE = ".flume/plan/notes/OPEN-1.md";
+  const gateOf = (p: Phase) => p.gates.find((g) => g.name === "records")!;
+
+  async function commitFiles(files: Record<string, string | null>, msg: string): Promise<string> {
+    for (const [rel, content] of Object.entries(files)) {
+      if (content === null) {
+        await rm(join(repo, rel));
+      } else {
+        await mkdir(join(repo, rel, ".."), { recursive: true });
+        await writeFile(join(repo, rel), content);
+      }
+    }
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", msg]);
+    return git(repo, ["rev-parse", "HEAD"]);
+  }
+
+  function gateCtx(sha: string, phaseName: string, entry?: PendingEntry) {
+    return {
+      cwd: repo,
+      repoRoot: repo,
+      flumeDir: join(repo, ".flume"),
+      stateRootRel: ".flume",
+      configDir: join(repo, ".flume"),
+      pendingPath: join(repo, ".flume", "plan", "pending.json"),
+      phaseName,
+      commitSha: sha,
+      log: () => {},
+      ...(entry ? { entry } : {}),
+    };
+  }
+
+  beforeAll(async () => {
+    const { chain } = await loadChainModule(REPO_PATHS);
+    build = chain.phases.find((p) => p.name === "build")!;
+    plan = chain.phases.find((p) => p.name === "plan-inbox")!;
+    for (const p of chain.phases) {
+      const g = p.gates.find((g) => g.name === "records");
+      expect(g, p.name).toBeDefined();
+      expect(g!.when).toBe("afterCommit");
+    }
+  });
+
+  beforeEach(async () => {
+    repo = await initRepo("flume-records-");
+    await mkdir(join(repo, ".flume", "plan"), { recursive: true });
+    await writeFile(join(repo, ".flume", "plan", "pending.json"), "[]\n");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "seed"]);
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("build: its own note, titled and within the cap, passes; over the cap or untitled is refused, naming the bytes", async () => {
+    const entry = makeEntry("OPEN-1", { kind: "open" });
+    const ok = await commitFiles({ [NOTE]: "# parked\n\nsrc/x.ts is outside the fence\n" }, "build: park");
+    const passed = await gateOf(build).run(gateCtx(ok, "build", entry));
+    expect(passed.ok).toBe(true);
+    expect(passed.message).toBe("1 record(s) touched, 1 written within 1200 bytes");
+
+    const big = await commitFiles({ [NOTE]: `# long\n\n${"x".repeat(1300)}\n` }, "build: long");
+    const refused = await gateOf(build).run(gateCtx(big, "build", entry));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain(`${NOTE}: 1309 bytes, cap 1200`);
+
+    const untitled = await commitFiles({ [NOTE]: "no title\n" }, "build: untitled");
+    const refusedAgain = await gateOf(build).run(gateCtx(untitled, "build", entry));
+    expect(refusedAgain.ok).toBe(false);
+    expect(refusedAgain.details).toContain(`${NOTE}: first line is not a "# title"`);
+  });
+
+  it("build: a sibling's note — written or deleted — is refused by name", async () => {
+    const entry = makeEntry("OPEN-1", { kind: "open" });
+    const other = await commitFiles({ ".flume/plan/notes/OTHER.md": "# theirs\n" }, "build: sibling");
+    const refused = await gateOf(build).run(gateCtx(other, "build", entry));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain(`.flume/plan/notes/OTHER.md: a build tick touches only ${NOTE}`);
+
+    const gone = await commitFiles({ ".flume/plan/notes/OTHER.md": null }, "build: delete sibling");
+    expect((await gateOf(build).run(gateCtx(gone, "build", entry))).ok).toBe(false);
+  });
+
+  it("plan: deleting records is the drain and passes; creating one is refused", async () => {
+    const added = await commitFiles({ ".flume/inbox/2026-08-03-finding.md": RECORD }, "plan: oops");
+    const refused = await gateOf(plan).run(gateCtx(added, "plan-inbox"));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain("a plan slice drains records, never writes one");
+
+    const drained = await commitFiles({ ".flume/inbox/2026-08-03-finding.md": null }, "plan: drain");
+    const passed = await gateOf(plan).run(gateCtx(drained, "plan-inbox"));
+    expect(passed.ok).toBe(true);
+    expect(passed.message).toBe("1 record(s) touched, 0 written within 1200 bytes");
+  });
+
+  it("a commit touching no record passes vacuously, and says so", async () => {
+    const sha = await commitFiles({ "src/a.ts": "export const a = 1;\n" }, "build: code");
+    const r = await gateOf(build).run(gateCtx(sha, "build", makeEntry("OPEN-1", { kind: "open" })));
+    expect(r.ok).toBe(true);
+    expect(r.message).toBe("no records touched");
+  });
+
+  it("build.shipped: a commit whose only path is the entry's own note is a park; the note beside code, or any other sole file, is a ship", () => {
+    const entry = makeEntry("OPEN-1", { kind: "open" });
+    const ship = (touchedPaths: string[]) =>
+      build.shipped!({ entry, touchedPaths, mergedSha: "m", baseSha: "b", gateResults: [], worktreePath: repo, repoRoot: repo });
+    expect(ship([NOTE])).toBe(false);
+    expect(ship([NOTE, "src/a.ts"])).toBe(true);
+    expect(ship([".flume/plan/notes/OTHER.md"])).toBe(true);
+    expect(ship([".flume/plan/open-questions.md"])).toBe(true);
   });
 });

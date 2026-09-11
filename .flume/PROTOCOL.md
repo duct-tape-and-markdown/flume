@@ -61,6 +61,18 @@ No schema holds these; they are the plan tick's actual work.
 
 Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Spec derived through:`, `Posture swept through:`; the inbox and build's refusal records are the inbox slice's own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. The order is dependency order — route notes to plan, update intent, then build against it — so only the sweep yields to pickable work. There is no review phase: the gates are the review (the suite, the behaviors an entry names, the fence), and what they cannot judge is observed in the field and arrives through the inbox. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
 
+## Records: one file each
+
+A finding for plan and a note from build are **records**: one file per record, never a section appended to a shared document. Git merges by line position, so two ticks appending to one file conflict whatever the syntax; two ticks creating two files never do, and the fence can name a file where it cannot name a section.
+
+- **Inbox** — `.flume/inbox/<YYYY-MM-DD>-<slug>.md`, written by whoever observes something in the field (a human, a review skill). First line `# <title> (<source>)`.
+- **Build notes** — `.flume/plan/notes/<TAG>.md`, written by the build tick assigned that entry and no other. First line `# <title>`. One file carries either an observation the next plan tick should know, or a **park**: a commit whose only path is the entry's note is the signal that the entry cannot ship inside its fence, and `build.shipped` keeps it in the queue.
+- **Open questions** stay one file, `.flume/plan/open-questions.md`, because plan is its only writer and plan is a singleton.
+
+**A record is short.** It says what was observed, where (a path and line, or a sha), and why it matters — at most **1,200 bytes**. Options appear only when a decision genuinely forks, one line each. What a record does not carry: the reasoning that led to it, restated spec, or a proposed patch; the reader re-verifies against the tree regardless. The `records` gate (`.flume/chain.ts`) refuses a commit that writes a record over the cap, without a title line, under a tag that is not the tick's own, or from a plan slice — plan **drains** records and never creates one.
+
+Drained means **deleted**: the inbox slice routes each record to an entry, an open question, or an accepted-debt line in its commit body, then removes the file. An empty directory is the steady state.
+
 ## Disk vs git log
 
 When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending.json`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.

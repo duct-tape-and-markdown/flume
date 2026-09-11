@@ -1,5 +1,5 @@
 /**
- * Flume's own Flume chain — four plan slices → build. Loaded by the flume CLI from
+ * Flume's own Flume chain — three plan slices → build. Loaded by the flume CLI from
  * `.flume/chain.ts`; the default export is the Chain.
  *
  * Dogfood note: chain.ts imports the in-repo runtime (`../src/`), not the
@@ -13,23 +13,24 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
 /**
- * Does inbox.md carry an undrained finding? Entries are `##` subsections
- * below the file's own marker; everything above it is format documentation
- * that also uses `##`, hence the slice.
- *
- * Read synchronously and cheaply (one small file) per `shouldRun`'s contract —
- * the same idiom the slices' cursor reads use for state.md. Any failure
- * returns `true`: plan's `shouldRun` treats an unreadable inbox as a reason
- * to run the tick, never to skip it.
+ * Records are files, one each (`.flume/PROTOCOL.md`, *Records: one file
+ * each*): a finding under `inbox/`, a build note under `plan/notes/`, both
+ * relative to the state root. The inbox slice is live while either holds
+ * one. Read synchronously per `shouldRun`'s contract — two small directory
+ * listings. A missing directory is the drained state; any other failure
+ * returns `true`, since an unreadable queue is a reason to run the tick,
+ * never to skip it.
  */
-function inboxHasEntries(flumeDir: string): boolean {
-  try {
-    const text = readFileSync(resolve(flumeDir, "inbox.md"), "utf8");
-    const marker = text.indexOf("<!-- entries below this line");
-    return /^## /m.test(marker === -1 ? text : text.slice(marker));
-  } catch {
-    return true;
+const RECORD_DIRS = ["inbox", "plan/notes"] as const;
+function recordsPending(flumeDir: string): boolean {
+  for (const rel of RECORD_DIRS) {
+    try {
+      if (readdirSync(resolve(flumeDir, rel)).some((n) => n.endsWith(".md"))) return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") return true;
+    }
   }
+  return false;
 }
 
 /**
@@ -182,26 +183,32 @@ const factory: ChainFactory = (api) => {
   // ---------- build fence ----------
 
   /**
-   * The single-file park build commits when an entry cannot ship — read back
-   * by `build.shipped` below, written per `prompts/build.md`. One constant so
-   * the instruction and the predicate cannot name different files.
+   * Build's one cross-tick channel: the note file named by the entry's tag
+   * (`.flume/PROTOCOL.md`, *Records: one file each*). An observation for
+   * the next plan tick, or — as a commit's sole path — the park `shipped`
+   * reads back. One function so the fence, the gate, the prompt, and the
+   * predicate cannot name different files.
    */
-  const PARK_FILE = ".flume/plan/open-questions.md";
+  const STATE_ROOT = ".flume";
+  const NOTES_DIR = `${STATE_ROOT}/plan/notes`;
+  const notePath = (tag: string) => `${NOTES_DIR}/${tag}.md`;
+  const RECORD_MAX_BYTES = 1200;
 
   /**
    * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
-   * declarations: every behavior-changing entry edits tests, and
-   * open-questions.md is the always-writable parking lane (collaboration
-   * rule). Requiring these in entry.files turns one under-declaration into a
-   * fence revert on otherwise-correct work; cross-entry collisions stay
-   * covered by per-entry afterMerge revert (spec/worktrees.md).
+   * declarations: every behavior-changing entry edits tests, and every
+   * entry may write its own note. Requiring these in entry.files turns one
+   * under-declaration into a fence revert on otherwise-correct work;
+   * cross-entry collisions stay covered by per-entry afterMerge revert
+   * (spec/worktrees.md). The notes glob admits any tag's file; the
+   * `records` gate below narrows it to the tick's own.
    *
    * CHANGELOG.md is deliberately NOT here. It is not mandatory on every
    * entry — no gate demands it — so it stays an ordinary declared path: an
    * entry that edits it says so, and serializes against other entries that
    * do, which is correct.
    */
-  const channelPaths = [PARK_FILE, "tests/**"];
+  const channelPaths = [`${NOTES_DIR}/*.md`, "tests/**"];
 
   /**
    * Build's fence, hoisted so plan's `pendingGate` can pre-check
@@ -267,6 +274,78 @@ const factory: ChainFactory = (api) => {
       // `.claude/rules/spec-plan-build.md`.
     ],
     entryChannelPaths: channelPaths,
+  };
+
+  /**
+   * Records are one file each and short (`.flume/PROTOCOL.md`, *Records:
+   * one file each*). On every phase's commit: a build tick writes only the
+   * note named by its own tag; a plan slice writes none — it drains. A
+   * written record opens with a title line and fits the cap. Read at the
+   * commit through the engine's at-sha reader, so the bytes judged are the
+   * bytes that landed.
+   */
+  const recordsGate: Gate = {
+    name: "records",
+    when: "afterCommit",
+    async run(ctx) {
+      if (!ctx.commitSha) {
+        return { ok: false, message: "records gate requires commitSha" };
+      }
+      const sha = ctx.commitSha;
+      const dirs = RECORD_DIRS.map((d) => `${STATE_ROOT}/${d}/`);
+      const touched = execFileSync(
+        "git",
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", sha],
+        { cwd: ctx.repoRoot, encoding: "utf8" },
+      )
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => {
+          const cols = l.split("\t");
+          return { deleted: cols[0]!.startsWith("D"), path: cols[cols.length - 1]! };
+        })
+        .filter((t) => dirs.some((d) => t.path.startsWith(d)));
+      if (touched.length === 0) return { ok: true, message: "no records touched" };
+
+      const problems: string[] = [];
+      const written: string[] = [];
+      for (const { deleted, path } of touched) {
+        if (ctx.phaseName === BUILD) {
+          const own = ctx.entry ? notePath(ctx.entry.tag) : undefined;
+          if (path !== own) {
+            problems.push(`${path}: a build tick touches only ${own ?? "its own note (no entry on this tick)"}`);
+          } else if (!deleted) {
+            written.push(path);
+          }
+        } else if (!deleted) {
+          problems.push(`${path}: a plan slice drains records, never writes one`);
+        }
+      }
+      for (const path of written) {
+        const text = await api.git.readFileAtRef(ctx.repoRoot, sha, path);
+        if (text === null) {
+          problems.push(`${path}: not readable at ${sha.slice(0, 7)}`);
+          continue;
+        }
+        if (!/^# \S/.test(text)) problems.push(`${path}: first line is not a "# title"`);
+        const bytes = Buffer.byteLength(text);
+        if (bytes > RECORD_MAX_BYTES) {
+          problems.push(`${path}: ${bytes} bytes, cap ${RECORD_MAX_BYTES} — what, where, why it matters; cut the rest`);
+        }
+      }
+      if (problems.length > 0) {
+        return {
+          ok: false,
+          message: `${problems.length} record problem(s)`,
+          details: problems.join("\n"),
+        };
+      }
+      return {
+        ok: true,
+        message: `${touched.length} record(s) touched, ${written.length} written within ${RECORD_MAX_BYTES} bytes`,
+      };
+    },
   };
 
   /**
@@ -535,8 +614,8 @@ const factory: ChainFactory = (api) => {
   const SLICES: Slice[] = [
     {
       name: INBOX,
-      description: "Drain .flume/inbox.md and build's refusals: route each to an entry, a question, or accepted debt.",
-      live: ({ flumeDir }) => inboxHasEntries(flumeDir),
+      description: "Drain the records (.flume/inbox/, .flume/plan/notes/) and build's refusals: route each to an entry, a question, or accepted debt.",
+      live: ({ flumeDir }) => recordsPending(flumeDir),
     },
     {
       name: DERIVE,
@@ -585,7 +664,10 @@ const factory: ChainFactory = (api) => {
     ".flume/plan/pending.json",
     ".flume/plan/state.md",
     ".flume/plan/open-questions.md",
-    ".flume/inbox.md",
+    // Records are drained by deletion; the `records` gate refuses a plan
+    // slice that creates one (`.flume/PROTOCOL.md`, *Records: one file each*).
+    ".flume/inbox/**",
+    `${NOTES_DIR}/**`,
     // spec/ is human-directed and edited in-session, never by a phase; a
     // slice that finds ambiguity parks it in open-questions.md. Plan's own
     // findings never pass through the inbox — that is the external surface
@@ -602,6 +684,7 @@ const factory: ChainFactory = (api) => {
     // Every slice writes the queue, so every slice is held to its shape, the
     // fence pre-check, and its cites resolving.
     gates: [
+      recordsGate,
       pendingGate({ extension: entryExtension, targetFence: buildFence }),
       perResolvesGate,
     ],
@@ -684,24 +767,24 @@ const factory: ChainFactory = (api) => {
      * (`spec/pending.md`, *Ship detection trusts the agent's own account*).
      * The engine reports facts and holds no notion of a park — the vocabulary
      * and the convention are ours, and `prompts/build.md` is the other half:
-     * it instructs a **single-file committed park** into open-questions.md
-     * when an entry cannot ship, and this reads exactly that shape back.
+     * it instructs a **single-file committed park** into the entry's own
+     * note when an entry cannot ship, and this reads exactly that shape back.
      *
      * Deliberately not "touched only `entryChannelPaths`": `tests/**` is a
      * channel, so that predicate would misclassify an entry whose work *is*
      * tests — a real case (CHAINTS-PREDICATE-COVERAGE shipped that way).
-     * Only the park file itself, and nothing else, is a park.
+     * Only the entry's note, and nothing else, is a park.
      */
-    shipped: ({ touchedPaths }) =>
+    shipped: ({ entry, touchedPaths }) =>
       !(
         touchedPaths.length > 0 &&
-        touchedPaths.every((p) => p === PARK_FILE)
+        touchedPaths.every((p) => p === notePath(entry.tag))
       ),
     // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
     // afterCommit — cheap, structural, catches type errors before merge.
-    gates: [tscGate, vitestOnCode],
+    gates: [tscGate, recordsGate, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {

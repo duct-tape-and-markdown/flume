@@ -22,7 +22,7 @@ Every file here is re-injected into future ticks, so size is a per-tick tax paid
 
 - `open-questions.md` — open questions only. Closing one deletes its section. No ledgers, no "closed this tick" blocks. Steady state with nothing open is the header alone.
 - `state.md` — exactly the two cursor lines (`Spec derived through:`, `Posture swept through:`) and, while a posture rotation is open, a paragraph beginning `Rotation open` carrying its covered set. Nothing else: no queue listing, no HEAD sha, no narrative, no continuation marker. A slice edits its own cursor and leaves every other byte identical. A cursor advances only to a sha the slice actually processed through — never as bookkeeping, never reflexively to HEAD — and is copied forward verbatim otherwise. Losing a line re-arms the whole window; a sha that does not resolve makes the slice's window refuse, and the repair goes in the commit body.
-- `inbox.md` — drained means deleted; the header stays.
+- `inbox/`, `plan/notes/` — one file per record; a routed record is `git rm`'d. Plan never creates one (`.flume/PROTOCOL.md`, *Records: one file each*).
 - `pending.json` — entries only; the harness removes shipped entries.
 
 ## Closing a slice

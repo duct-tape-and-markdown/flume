@@ -10,7 +10,7 @@
 - Propose 2-3 alternatives with tradeoffs. Don't pick on the user's behalf.
 - Be especially loud about API surfaces, error states, naming choices, audience considerations, and edge cases.
 - Treat liberty-taking as a failure mode. If the spec doesn't say, ask.
-- This applies in interactive work AND in autonomous Flume ticks — when a build tick hits a judgment call mid-run, write the open question into `.flume/plan/open-questions.md` instead of deciding silently.
+- This applies in interactive work AND in autonomous Flume ticks — when a build tick hits a judgment call mid-run, write it into the entry's note (`.flume/plan/notes/<TAG>.md`) instead of deciding silently; plan routes it to `open-questions.md`.
 
 ## Inform before parking
 
