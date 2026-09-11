@@ -112,9 +112,10 @@ line between this and `seedDir` is the same line as "machinery vs.
 opinion" everywhere else in this doc:
 
 - Merging `awake/`, `prior-attempts/`, `rendered-prompts/`, `worktrees/`,
-  `node_modules/`, `loop.pid` into the job dir — the runtime's own ignore
-  entries, written to `.gitignore` there, creating the file if `seedDir`
-  carries none and preserving any lines it does.
+  `node_modules/`, `loop.pid`, `tick-verdict.json`, `tick-verdicts.jsonl`,
+  `stop` into the job dir — the runtime's own ignore entries, written to
+  `.gitignore` there, creating the file if `seedDir` carries none and
+  preserving any lines it does.
 - Pinning `core.longpaths true` repo-locally on Windows.
 - Baseline-committing the seeded harness so subsequent plan/build ticks
   produce clean deltas.

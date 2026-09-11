@@ -61,7 +61,7 @@ export function entryWriteScopeUnion(
 /**
  * The names the runtime itself owns directly under a flume state root
  * (`flumeDir`) — the baton dir, the prior-attempt records, the one-supervisor
- * lock, the stop flag. Writer and reader of each of these sit in different
+ * lock, the stop flag, the tick verdicts. Writer and reader of each of these sit in different
  * modules (`flume stop` refuses, the supervisor honors; `flume loop` claims
  * the lock, `liveLoopPid` reads it back), so a copy of the name in each is a
  * rename away from a silent bypass — this is the one place any of them is
@@ -80,6 +80,8 @@ export const STATE_ROOT_NAMES = {
   worktrees: "worktrees",
   loopLock: "loop.pid",
   stopFlag: "stop",
+  tickVerdict: "tick-verdict.json",
+  tickVerdictsLog: "tick-verdicts.jsonl",
 } as const;
 
 /**
@@ -166,6 +168,26 @@ export function loopLockPath(flumeDir: string): string {
  */
 export function stopFlagPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.stopFlag);
+}
+
+/**
+ * The latest tick's verdict alone, overwritten every real `flume tick` and
+ * removed by `clearTickVerdict` before that tick's own work begins.
+ * Re-exported from `src/Dispatcher.ts`, which owns what the file carries and
+ * when — this module owns only the name, so the job `.gitignore` seed can
+ * reach it without importing the dispatcher.
+ */
+export function tickVerdictPath(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.tickVerdict);
+}
+
+/**
+ * The append-only verdict history `readTickVerdicts` (`src/Dispatcher.ts`)
+ * reads back for a chain's recent-tick rendering. Same split as
+ * {@link tickVerdictPath}: the name here, the semantics there.
+ */
+export function tickVerdictsLogPath(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.tickVerdictsLog);
 }
 
 /**

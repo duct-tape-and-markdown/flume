@@ -60,6 +60,9 @@ export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.worktrees}/`,
   "node_modules/",
   STATE_ROOT_NAMES.loopLock,
+  STATE_ROOT_NAMES.tickVerdict,
+  STATE_ROOT_NAMES.tickVerdictsLog,
+  STATE_ROOT_NAMES.stopFlag,
 ] as const;
 
 /**

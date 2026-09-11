@@ -55,6 +55,8 @@ import {
   resolvePendingPath,
   STATE_ROOT_NAMES,
   stopFlagPath,
+  tickVerdictPath,
+  tickVerdictsLogPath,
   worktreesBase,
 } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
@@ -485,8 +487,11 @@ type PhaseTickOutcome = {
 
 /**
  * v0.8 §5: two files under the state dir, both stable paths, neither a
- * dogfood convention:
- *  - {@link TICK_VERDICT_FILE} — this tick's verdict alone, overwritten
+ * dogfood convention. Their names live in `STATE_ROOT_NAMES`
+ * (`src/paths.ts`) with the rest of the state root's layout, so the job
+ * `.gitignore` seed carries them without a second spelling; the accessors
+ * are re-exported here, where what each file carries is defined:
+ *  - {@link tickVerdictPath} — this tick's verdict alone, overwritten
  *    every real `flume tick` process (the CLI's `tick` command writes it,
  *    from the `TickVerdict` its own `dispatcher.tick()` call returned —
  *    never `Dispatcher.tick()` itself, which plain unit tests call directly
@@ -494,27 +499,16 @@ type PhaseTickOutcome = {
  *    removes it before that same tick's own work begins, so a tick that
  *    never reaches the write (chain-load failure, hibernation, terminal
  *    misconfiguration) leaves nothing for `superviseLoop` to misread as its
- *    own. Untracked, ungitignored (same tolerance as the loop lock's own
- *    `<flumeDir>/loop.pid`).
- *  - {@link TICK_VERDICTS_LOG_FILE} — every verdict ever written, appended
+ *    own.
+ *  - {@link tickVerdictsLogPath} — every verdict ever written, appended
  *    and bounded to {@link MAX_TICK_VERDICTS}, read back by the exported
  *    `readTickVerdicts` accessor so a chain can render recent tick history
  *    into a prompt. Never cleared — it is history, not a per-tick signal.
  */
-const TICK_VERDICT_FILE = "tick-verdict.json";
-const TICK_VERDICTS_LOG_FILE = "tick-verdicts.jsonl";
-/** Bound on {@link TICK_VERDICTS_LOG_FILE} — a rolling window, not an unbounded log. */
+export { tickVerdictPath, tickVerdictsLogPath };
+
+/** Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an unbounded log. */
 const MAX_TICK_VERDICTS = 200;
-
-/** Path to {@link TICK_VERDICT_FILE} under a given flume dir — the same rule `writeTickVerdict`/`clearTickVerdict` key writes by, exported so a consumer never restates it. */
-export function tickVerdictPath(flumeDir: string): string {
-  return join(flumeDir, TICK_VERDICT_FILE);
-}
-
-/** Path to {@link TICK_VERDICTS_LOG_FILE} under a given flume dir — the same rule `writeTickVerdict`/`readTickVerdicts` key writes and reads by, exported so a consumer never restates it. */
-export function tickVerdictsLogPath(flumeDir: string): string {
-  return join(flumeDir, TICK_VERDICTS_LOG_FILE);
-}
 
 /** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
 function isTickVerdict(rec: unknown): rec is TickVerdict {

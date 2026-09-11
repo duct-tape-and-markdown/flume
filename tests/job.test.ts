@@ -39,6 +39,7 @@ import {
   validateJobName,
 } from "../src/job.ts";
 import { Baton } from "../src/Baton.ts";
+import { STATE_ROOT_NAMES } from "../src/paths.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { gitOut, runCli } from "./helpers/subprocess.ts";
 
@@ -208,6 +209,55 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
       expect(content.match(/^friction\/$/gm)).toHaveLength(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Mechanism pin (RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS, per spec/jobs.md
+// "Runtime ignores"): the seeded set covered the dirs and the loop lock but
+// stopped short of the three runtime *files* a tick drops beside them — the
+// stop flag and the two tick-verdict artifacts — so every state root this
+// verb seeds left them trackable, and the first `git add -A` after a tick
+// committed harness runtime state. The names are the state root's own
+// (`STATE_ROOT_NAMES`, `src/paths.ts`), so this drives the real ignore file
+// through the real reader — git — rather than asserting the set against a
+// list respelled here.
+describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
+  it("RUNTIME_IGNORES names the stop flag, the latest-tick verdict and the verdict log", async () => {
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
+    // empty set would leave `check-ignore` below judging nothing.
+    expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+    const tickArtifacts = [
+      STATE_ROOT_NAMES.stopFlag,
+      STATE_ROOT_NAMES.tickVerdict,
+      STATE_ROOT_NAMES.tickVerdictsLog,
+    ];
+    for (const name of tickArtifacts) {
+      expect(RUNTIME_IGNORES).toContain(name);
+    }
+
+    const repo = await makeRepo();
+    try {
+      const jobDir = join(repo.dir, ".flume", "jobs", "t-ignores");
+      await mkdir(jobDir, { recursive: true });
+      await ensureRuntimeIgnores(jobDir);
+      // The artifacts as a tick leaves them: git only reports an ignore for
+      // a path it would otherwise see, so write each one first.
+      for (const name of tickArtifacts) {
+        await writeFile(join(jobDir, name), "");
+      }
+      // git's own verdict on what it would track under the job dir: the
+      // seeded `.gitignore` and nothing else.
+      const seen = await gitOut(repo.dir, [
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        join(".flume", "jobs", "t-ignores"),
+      ]);
+      expect(seen).toBe("?? .flume/jobs/t-ignores/.gitignore");
+    } finally {
+      await repo.cleanup();
     }
   });
 });

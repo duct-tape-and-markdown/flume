@@ -1,4 +1,6 @@
-import { join, resolve, toNamespacedPath } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve, toNamespacedPath } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,6 +10,8 @@ import {
   matchesAny,
   namespacedJoin,
   STATE_ROOT_NAMES,
+  tickVerdictPath,
+  tickVerdictsLogPath,
   worktreesBase,
 } from "../src/paths.ts";
 
@@ -159,6 +163,49 @@ describe("worktreesBase — the one worktree-base resolution", () => {
     process.env.FLUME_WORKTREES_DIR = "";
     expect(worktreesBase(join("state", "root"))).toBe(
       join("state", "root", STATE_ROOT_NAMES.worktrees),
+    );
+  });
+});
+
+// Mechanism pin (RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS, per
+// .claude/rules/engineering.md "Derived state is computed, never restated
+// beside its source"): the two tick-verdict filenames were module-local
+// consts in `src/Dispatcher.ts`, out of reach of the one consumer that needs
+// the bare name — the job `.gitignore` seed. A seed that respelled them
+// would have been a rename away from ignoring nothing, so the names moved
+// into `STATE_ROOT_NAMES` with the rest of the state root's layout. This
+// holds them to exactly one spelling across `src/`.
+describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
+  const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+
+  it("the tick-verdict filenames are spelled once, in STATE_ROOT_NAMES", () => {
+    const names = [
+      STATE_ROOT_NAMES.tickVerdict,
+      STATE_ROOT_NAMES.tickVerdictsLog,
+    ];
+    expect(names).toEqual(["tick-verdict.json", "tick-verdicts.jsonl"]);
+
+    const modules = readdirSync(SRC).filter((n) => n.endsWith(".ts"));
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // scan over no modules would report one spelling for every name.
+    expect(modules.length).toBeGreaterThan(1);
+
+    for (const name of names) {
+      const spellers = modules.filter((m) =>
+        readFileSync(join(SRC, m), "utf8").includes(`"${name}"`),
+      );
+      expect(
+        spellers,
+        `src/: '${name}' is spelled as a string literal outside paths.ts — ` +
+          "a rename there would leave the copy pointing at the old file",
+      ).toEqual(["paths.ts"]);
+    }
+
+    // The accessors read the record, so a rename moves the paths with it.
+    const root = join("state", "root");
+    expect(tickVerdictPath(root)).toBe(join(root, STATE_ROOT_NAMES.tickVerdict));
+    expect(tickVerdictsLogPath(root)).toBe(
+      join(root, STATE_ROOT_NAMES.tickVerdictsLog),
     );
   });
 });
