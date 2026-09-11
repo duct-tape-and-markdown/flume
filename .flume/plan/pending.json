@@ -1,63 +1,5 @@
 [
   {
-    "tag": "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the opening orientation (:3-:15) names `.flume/chain.ts` as the living reference and the examples as its shipped floor"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The doc calls cascade-chain.ts the reference and never names `.flume/chain.ts`, which is the only chain carrying the current shape",
-    "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Surface, not prescription"
-    },
-    "tests": [],
-    "pins": [],
-    "acceptance": "A reader opening the doc learns that `.flume/chain.ts` in this repo is the living reference chain and that `examples/` is the shipped floor \u2014 the recommended shape ships by name, not as a default.",
-    "notes": "Ruling of 2026-09-11 (option C, first half). The promotions into cascade-chain.ts follow as their own entries, blocked on this one so the doc's claim lands before the shapes it points at."
-  },
-  {
-    "tag": "FANOUT-MERGE-OUTCOME-ONE-PER-TAG",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the `entries` map's at-most-one comment (:3277-:3284) shrinks to a pointer at the pin"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the pin, on the wave that already drives the per-entry tip-verify leg (:7777)"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`entries[].mergeOutcome` resolves by `find`, and the one-record-per-tag rule it rests on is held by a comment \u2014 no push site and no test pins it",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "pins": [
-      "a fanout wave whose entry fails the per-entry tip verify records exactly one mergeOutcomes entry for that tag"
-    ],
-    "acceptance": "A second `mergeOutcomes` record for one tag turns the pin red, so `entries[].mergeOutcome` can no longer silently report the first of two while the verdict carries both.",
-    "notes": "From the HANDOFF-ENTRY-MERGE-OUTCOME note; re-verified on disk. The `dropped-work` push (`if (r.tipMoved)`) does not `continue`, so it falls into the `afterCommit-reverted` push guarded on `r.footprint`; single-valued only because the tipMoved return (src/Dispatcher.ts:3495) carries no footprint. Give that return a footprint later and one tag gets two records."
-  },
-  {
     "tag": "PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES",
     "gate": {
       "kind": "open"
@@ -87,15 +29,12 @@
     ],
     "pins": [],
     "acceptance": "A chain author reading that section learns all six variants, the `headSha`/`at` anchoring and the record-side `suspectFlake`, and the mode list is read off src/Prompt.ts's union rather than hand-listed by the test.",
-    "notes": "From the CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR note; re-verified on disk. The section opens \"When a tick commits and a gate reverts it\" and its prose is all gate `name`/`details`/diffstat; `suspectFlake` appears at :316 from the gate side with no record-side home. The cost is a chain author rebuilding \"was the last build a park\" \u2014 the rebuild `not-shipped` exists to retire."
+    "notes": "From the CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR note; re-verified on disk. The section opens \"When a tick commits and a gate reverts it\" and its prose is all gate `name`/`details`/diffstat; `suspectFlake` appears at :316 from the gate side with no record-side home. The cost is a chain author rebuilding \"was the last build a park\" — the rebuild `not-shipped` exists to retire."
   },
   {
     "tag": "CASCADE-SHOULDRUN-FROM-DISK",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "CHAIN-AUTHORING-NAMES-LIVING-REFERENCE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -121,7 +60,7 @@
       "the cascade example's plan phase declines a tick when nothing on disk gives it work"
     ],
     "pins": [],
-    "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` \u2014 not `process.env`, not a directory scan \u2014 and the integration test drives both the decline and the run.",
+    "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` — not `process.env`, not a directory scan — and the integration test drives both the decline and the run.",
     "notes": "Ruling of 2026-09-11 (option C): promote the shapes a new adopter most needs, in order. This is the first."
   },
   {
@@ -157,7 +96,7 @@
     ],
     "pins": [],
     "acceptance": "A `tests[]` line on a cascade entry is judged by a gate fed from the reporter's own output, and an entry naming a behavior no test carries fails that gate.",
-    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry \u2014 that fork is still open."
+    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry — that fork is still open."
   },
   {
     "tag": "CASCADE-GATE-READS-ENTRY-AND-BASE",
@@ -235,7 +174,7 @@
     ],
     "pins": [],
     "acceptance": "cascade declares more than one plan slice, each computing its own liveness from disk, with a handoff that passes the baton down a declared order; the integration test ticks the ladder.",
-    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) \u2014 the quote moves in the same commit or the pin reverts the tick."
+    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick."
   },
   {
     "tag": "RELEASE-CITES-CUT-DISPATCHER",
@@ -248,12 +187,12 @@
       "edit": [
         {
           "path": "src/Dispatcher.ts",
-          "description": "81 `RELEASE-v0.N \u00a7M` / `v0.N \u00a7M` cites"
+          "description": "81 `RELEASE-v0.N §M` / `v0.N §M` cites"
         }
       ],
       "retire": []
     },
-    "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted \u2014 a cite no reader can follow",
+    "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted — a cite no reader can follow",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -262,100 +201,15 @@
       "src/Dispatcher.ts carries no release-numbered spec cite"
     ],
     "pins": [],
-    "acceptance": "No `RELEASE-v0.N \u00a7M` or `v0.N \u00a7M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
+    "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
     "notes": "Ruling of 2026-09-11, option B: git carries provenance. Split by module because 183 sites across 19 files is more than one tick can land green; this is the largest."
-  },
-  {
-    "tag": "RELEASE-CITES-CUT-SRC-TAIL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "18 cites"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "16"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "12"
-        },
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "9"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "7"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "7"
-        },
-        {
-          "path": "src/cliVerdict.ts",
-          "description": "6"
-        },
-        {
-          "path": "src/cliHelp.ts",
-          "description": "6"
-        },
-        {
-          "path": "src/cliJobResolution.ts",
-          "description": "4"
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "3"
-        },
-        {
-          "path": "src/Gate.ts",
-          "description": "2"
-        },
-        {
-          "path": "src/cliJobVerbs.ts",
-          "description": "2"
-        },
-        {
-          "path": "src/paths.ts",
-          "description": "1"
-        },
-        {
-          "path": "src/standardSchema.ts",
-          "description": "1"
-        },
-        {
-          "path": "src/flumeApi.ts",
-          "description": "1"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The other 95 dead release cites in src/, across fifteen modules \u2014 same grammar, same reason, split off Dispatcher.ts so each lands green in a tick",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      "no src/ module outside Dispatcher.ts carries a release-numbered spec cite"
-    ],
-    "pins": [],
-    "acceptance": "No `RELEASE-v0.N \u00a7M` or `v0.N \u00a7M` cite remains under src/ outside Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand.",
-    "notes": "Counts verified on disk 2026-09-11. Sibling of RELEASE-CITES-CUT-DISPATCHER; the two collide on nothing and the pin entry waits on both."
   },
   {
     "tag": "RELEASE-CITES-PINNED",
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "RELEASE-CITES-CUT-DISPATCHER",
-        "RELEASE-CITES-CUT-SRC-TAIL"
+        "RELEASE-CITES-CUT-DISPATCHER"
       ]
     },
     "dependsOnForks": [],
@@ -431,7 +285,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, the supervisor's tests move with it and differ only in import path.",
-    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) \u2014 take it first."
+    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) — take it first."
   },
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
@@ -461,7 +315,7 @@
       ],
       "retire": []
     },
-    "summary": "Prior-attempt persistence \u2014 key, read, write, clear, revert snapshots, record builders \u2014 is a separate home inside Dispatcher.ts",
+    "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
     "per": {
       "path": ".claude/rules/posture-sweep.md",
       "section": "A violation counts only when verified on disk this tick"
@@ -511,7 +365,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share \u2014 the new module keeps that direction."
+    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction."
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
