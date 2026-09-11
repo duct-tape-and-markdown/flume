@@ -2,16 +2,31 @@
 
 The long-form walkthrough for writing your own `.flume/chain.ts`; assumes
 you've read the README. The running example,
-[`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is the
-plan → build derivation pipeline this repo dogfoods — every section quotes a
-slice, so open it in a second pane. For the bare-minimum shape (no fanout,
-no plan/build split), see
+[`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is a
+plan → build derivation pipeline distilled from the one this repo runs on
+itself — every section quotes a slice, so open it in a second pane. For the
+bare-minimum shape (no fanout, no plan/build split), see
 [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
-**Two reference chains, one engine.** Cascade is the flagship: multi-phase,
+**`examples/` is the shipped floor; `.flume/chain.ts` is the living
+reference.** The examples arrive in the package and the suite pins their
+shape, so every shape quoted below is one you can copy and run today. The
+chain flume develops flume with is a different artifact —
+[`.flume/chain.ts`][living] in the flume repository, not part of an
+install — and it is the one that moves first: it imports the runtime from
+`src/` rather than from a published `flume`, so a breaking engine change
+lands in it in the same commit, while an example adopts the new shape later
+as its own change. Expect it to be ahead of both the examples and this
+page; read it when you want the current shape rather than the settled one.
+Neither is an engine default — a recommended shape ships by name, opted
+into (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
+[living]: https://github.com/duct-tape-and-markdown/flume/blob/main/.flume/chain.ts
+
+**Two example chains, one engine.** Cascade is the flagship: multi-phase,
 fanout, `pending.json`, the full derivation pipeline — but it is *an*
 example, not the engine's assumption. The engine ships mechanism, never
-convention (`.claude/rules/engine-boundary.md`), and the second reference
+convention (`.claude/rules/engine-boundary.md`), and the second example
 chain is the proof:
 [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts)
 is single-phase, has no plan/build split, and reads a plain
@@ -1461,11 +1476,14 @@ its phases derive from disk, so either is safe to wake autonomously.
 - [`examples/cascade-chain.ts`](../examples/cascade-chain.ts) — the
   flagship plan → build derivation chain this walkthrough quotes from.
 - [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts) —
-  the peer reference chain: single-phase, no plan/build split, its own
+  the peer example chain: single-phase, no plan/build split, its own
   entry extension and tag refinement on the same engine. See the intro
   above for the framing.
 - [`examples/minimal-chain.ts`](../examples/minimal-chain.ts) — the
   single-phase starter.
+- [`.flume/chain.ts`][living] in the flume repository — the living
+  reference: the chain this engine is developed against, ahead of the
+  examples by construction. See the intro above.
 - [`docs/INTENT.md`](INTENT.md) — design rationale.
 - [`docs/CLI.md`](CLI.md) — every `flume <subcommand>` with exit semantics.
 - `src/Phase.ts`, `src/Gate.ts`, `src/Agent.ts`, `src/Prompt.ts`,
