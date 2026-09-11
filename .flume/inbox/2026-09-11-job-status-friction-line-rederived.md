@@ -1,3 +1,0 @@
-# `flume job status` builds its friction line by hand instead of sharing the one source
-
-Surfaced while rewriting a spec Drift callout as contract (spec/cli.md, the friction-count paragraph): `src/cliJobVerbs.ts` composes "friction: N note(s) await routing" / "friction: unreadable" as its own literal, while `flume status` and the loop-end summary print the line from `frictionCountLine` (`src/friction.ts`). Same count today, two hand-kept wordings — a future edit to one silently diverges the other. Route: entry, `per` `engineering.md`, *The fix lands at the mechanism* (detection a sibling surface already performs is shared, never re-derived). The spec now states only the rule (one home); this record carries the drift the deleted callout narrated.
