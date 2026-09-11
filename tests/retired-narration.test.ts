@@ -2277,3 +2277,219 @@ describe("dead release cites are gone from src/, examples/, and current docs", (
     ).not.toEqual([]);
   });
 });
+
+// ---------- module-path cites ----------
+
+/**
+ * A doc comment that names another module — "`quarantineKey`
+ * (`src/Dispatcher.ts`)" — is a pointer a reader follows, and the cheapest
+ * prose there is to get wrong: nothing moves it when the symbol moves. Four
+ * extraction waves have now stranded cites this way, and each round was
+ * repointed by hand, which is narration defending itself with discipline
+ * (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung").
+ * This is the rung above: the cite is checked against the tree it points at.
+ *
+ * **Declares, not references.** A cite resolves only when the named module
+ * *declares* the symbol — an import of it does not count. The looser reading
+ * is measurably toothless: at `a18b40e^`, `src/Dispatcher.ts` still imported
+ * `superviseLoop`, `createWorktree` and `harvestFriction` after the
+ * extraction moved them, so "the module mentions it" would have passed over
+ * the entire class of staleness this scan exists to catch.
+ *
+ * Scope is `src/` and `examples/` — the engine's own prose and the worked
+ * chains a consumer copies. `spec/` carries the same shape and is human-only
+ * (chain.ts writable-paths), so its half is not swept from here.
+ */
+
+/** A module path a cite can name: a TypeScript file in a scanned tree. */
+const CITE_MODULE_RE = "(?:src|examples|tests|bin|scripts)/[A-Za-z0-9_./-]+\\.ts";
+
+/** A backticked symbol, dotted or not: `quarantineKey`, `git.readFileAtRef`. */
+const CITE_SYMBOL_RE = "`([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)`";
+
+/** A module path as prose spells it: backticked or bare, with an optional `:NN` line. */
+const CITE_PATH_RE = `\`?(${CITE_MODULE_RE})(?::\\d+)?\`?`;
+
+/**
+ * The three shapes this corpus writes a cite in. Two are parenthesized and
+ * differ only in order — "`sym` (`src/x.ts`)" and its comma variant "`sym`,
+ * `src/x.ts`" read symbol-first; "(`src/x.ts`, `git.readFileAtRef`)" reads
+ * module-first. The third is the colon shape, `src/x.ts:sym`, which is
+ * spelled tightly on purpose: no space around the colon and no backtick
+ * between, so "`src/x.ts`: it is …" — a path ending a clause, followed by
+ * ordinary prose — is not a cite.
+ */
+const CITE_SHAPES: readonly { shape: "colon" | "parenthesized"; re: RegExp; pathAt: number; symbolAt: number }[] = [
+  { shape: "parenthesized", re: new RegExp(`${CITE_SYMBOL_RE}\\s*,?\\s*\\(?\\s*${CITE_PATH_RE}`, "g"), pathAt: 2, symbolAt: 1 },
+  { shape: "parenthesized", re: new RegExp(`${CITE_PATH_RE}\\s*,?\\s+${CITE_SYMBOL_RE}`, "g"), pathAt: 1, symbolAt: 2 },
+  { shape: "colon", re: new RegExp(`(${CITE_MODULE_RE}):([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)`, "g"), pathAt: 1, symbolAt: 2 },
+];
+
+interface ModuleCite {
+  /** The file whose comment carries the cite. */
+  from: string;
+  /** The module the cite names. */
+  path: string;
+  /** The symbol the cite names, as written — possibly dotted. */
+  symbol: string;
+  shape: "colon" | "parenthesized";
+}
+
+/** Every module-path cite in the comment prose of `src/` and `examples/`. */
+function moduleCites(): ModuleCite[] {
+  const cites: ModuleCite[] = [];
+  for (const from of CITE_SCANNED_ROOTS.flatMap((root) =>
+    readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
+      .map((name) => join(root, name))
+      .filter((path) => statSync(join(REPO_ROOT, path)).isFile())
+      .sort(),
+  )) {
+    const prose = proseOf(from, readFileSync(join(REPO_ROOT, from), "utf8"));
+    const seen = new Set<string>();
+    for (const { shape, re, pathAt, symbolAt } of CITE_SHAPES) {
+      for (const m of prose.matchAll(re)) {
+        const path = m[pathAt]!.split("/").join(sep);
+        const symbol = m[symbolAt]!;
+        if (seen.has(`${path}|${symbol}`)) continue;
+        seen.add(`${path}|${symbol}`);
+        cites.push({ from, path, symbol, shape });
+      }
+    }
+  }
+  return cites;
+}
+
+/**
+ * A module's declaring body: comments gone, and every name-binding `import`
+ * or `export … from` gone with them. Stripping those is the whole difference
+ * between "declares" and "references" — an extraction leaves the import
+ * behind at the old home, which is exactly the tree a cite goes stale
+ * against.
+ */
+function declaringBody(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => line.replace(/(^|[^:"'`])\/\/.*$/, "$1"))
+    .join("\n")
+    .replace(/^\s*import\s[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm, "")
+    .replace(/^\s*import\s+["'][^"']+["'];?\s*$/gm, "")
+    .replace(/^\s*export\s*\{[\s\S]*?\}\s*from\s+["'][^"']+["'];?\s*$/gm, "");
+}
+
+/**
+ * Does `body` declare `name`? Three forms cover what this corpus cites: a
+ * top-level `function` / `const` / `class` / `interface` / `type` / `enum`
+ * binding, a member or property declaration (a class method, an interface
+ * field, an object-literal key), and a shorthand property.
+ */
+function declaresSymbol(body: string, name: string): boolean {
+  const n = name.replace(/\$/g, "\\$&");
+  return [
+    new RegExp(`^\\s*(?:export\\s+)?(?:declare\\s+)?(?:default\\s+)?(?:abstract\\s+)?(?:async\\s+)?(?:function|const|let|var|class|interface|type|enum)\\s+${n}\\b`, "m"),
+    new RegExp(`^\\s*(?:(?:public|private|protected|readonly|static|abstract|async|get|set)\\s+)*${n}\\s*[(<?:=]`, "m"),
+    new RegExp(`^\\s*${n}\\s*,\\s*$`, "m"),
+  ].some((p) => p.test(body));
+}
+
+/**
+ * Resolve a cite against the tree. A dotted symbol resolves against its last
+ * segment — `Chain.supervisorPolicy.maxParallel` is the `maxParallel` field
+ * the named module declares, and the path in front of it is the reader's
+ * route to it, not a second file to open.
+ */
+function resolveCite(cite: ModuleCite): string | null {
+  let body: string;
+  try {
+    body = declaringBody(readFileSync(join(REPO_ROOT, cite.path), "utf8"));
+  } catch {
+    return `${cite.from} cites ${cite.path}, which does not exist`;
+  }
+  const leaf = cite.symbol.split(".").at(-1)!;
+  return declaresSymbol(body, leaf)
+    ? null
+    : `${cite.from} cites \`${cite.symbol}\` in ${cite.path}, which does not declare ${leaf}`;
+}
+
+describe("module-path cites in src/ and examples/ resolve against the tree", () => {
+  const cites = moduleCites();
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"): a
+  // grammar that matches nothing, or only one of the two shapes, leaves the
+  // refusal below passing over an empty set. Both shapes are load-bearing —
+  // the corpus writes overwhelmingly in the parenthesized one, and the colon
+  // shape is the one a `path:symbol` extraction strands most quietly.
+  it("the comment module-path scan reads a populated set of cites in both the colon and the parenthesized shape", () => {
+    expect(cites.length, "no cite matched — the grammar is off target").toBeGreaterThan(20);
+    expect(cites.filter((c) => c.shape === "parenthesized").length).toBeGreaterThan(20);
+    expect(cites.filter((c) => c.shape === "colon").length).toBeGreaterThan(0);
+    // Named carriers: the engine's heaviest cross-referencing modules, and
+    // the worked chain — a file list that lost any of them would refuse over
+    // a thinner corpus than the one this scan exists to hold.
+    for (const from of [join("src", "Phase.ts"), join("src", "paths.ts"), join("src", "job.ts"), join("examples", "cascade-chain.ts")]) {
+      expect(cites.map((c) => c.from), `${from} yielded no cite`).toContain(from);
+    }
+  });
+
+  // Sensitivity pin: the grammar reports an empty list whether it is watching
+  // or dead, and `declaresSymbol` reports true whether it is reading a
+  // declaration or an import. Drive both over hand-authored input — a
+  // refusal's own input is the one case the real writer cannot produce
+  // (engineering.md, "A seam gate reads what the real writer wrote").
+  it("the cite grammar reads every shape the corpus writes, and no clause-ending path", () => {
+    const found = (prose: string) =>
+      CITE_SHAPES.flatMap(({ re, pathAt, symbolAt }) =>
+        [...prose.matchAll(re)].map((m) => `${m[pathAt]}:${m[symbolAt]}`),
+      );
+    expect(found("the same helper `quarantineKey` (`src/Dispatcher.ts`) builds")).toContain("src/Dispatcher.ts:quarantineKey");
+    expect(found("told via FLUME_TIP_CLAIM_HELD (set by `defaultTickRunner`, src/loopSupervisor.ts) —")).toContain("src/loopSupervisor.ts:defaultTickRunner");
+    expect(found("reads the second as the first (`src/flumeApi.ts`, `git.readFileAtRef`)")).toContain("src/flumeApi.ts:git.readFileAtRef");
+    expect(found("the phase name for a singleton one (`src/priorAttempts.ts:priorAttemptRef`)")).toContain("src/priorAttempts.ts:priorAttemptRef");
+    // Not cites: a path ending a clause, and a `path:NN` line pointer that
+    // names no symbol at all.
+    expect(found("`writeRevertNote` stays in `src/Dispatcher.ts`: it is the gate-revert note")).not.toContain("src/Dispatcher.ts:it");
+    expect(found("`superviseLoop` (`src/loopSupervisor.ts:170`, both occurrences)")).not.toContain("src/loopSupervisor.ts:170");
+  });
+
+  it("`declaresSymbol` reads a declaration and refuses an import of the same name", () => {
+    const declaring = declaringBody(
+      [
+        `import { superviseLoop } from "./loopSupervisor.js";`,
+        `import {`,
+        `  harvestFriction,`,
+        `} from "./friction.js";`,
+        `export function priorAttemptRef(phase: string): string {`,
+        `  return phase;`,
+        `}`,
+        `interface Opts {`,
+        `  maxParallel?: number;`,
+        `}`,
+      ].join("\n"),
+    );
+    expect(declaresSymbol(declaring, "priorAttemptRef")).toBe(true);
+    expect(declaresSymbol(declaring, "maxParallel")).toBe(true);
+    expect(declaresSymbol(declaring, "superviseLoop"), "an import counts as a declaration — the scan is toothless").toBe(false);
+    expect(declaresSymbol(declaring, "harvestFriction"), "a multi-line import's binding counts as a declaration").toBe(false);
+  });
+
+  // The dotted half of the grammar, named because it is the rule a reader
+  // would otherwise have to guess: `Chain.supervisorPolicy.maxParallel`
+  // resolves as `maxParallel`, in the module the cite names.
+  it("a cite whose symbol is dotted resolves against its last segment in the named file", () => {
+    const dotted = cites.filter((c) => c.symbol.includes("."));
+    expect(dotted.length, "no dotted cite in the corpus — the rule is pinning nothing").toBeGreaterThan(0);
+    expect(dotted.map((c) => resolveCite(c)).filter((p) => p !== null)).toEqual([]);
+    // The rule is the last segment, not the whole dotted string: a module
+    // declaring the leaf need not declare the path in front of it.
+    const chained = dotted.find((c) => c.symbol.split(".").length > 2);
+    expect(chained, "no multi-segment cite — the last-segment rule is untested").toBeDefined();
+    expect(declaresSymbol(declaringBody(readFileSync(join(REPO_ROOT, chained!.path), "utf8")), chained!.symbol)).toBe(false);
+  });
+
+  it("every module-path cite in a `src/` or `examples/` comment names a file that declares the symbol", () => {
+    expect(
+      cites.map((c) => resolveCite(c)).filter((p) => p !== null),
+      "a doc comment points at a module that no longer declares the symbol — repoint it at the declaring module",
+    ).toEqual([]);
+  });
+});

@@ -684,8 +684,8 @@ async function main(): Promise<number> {
   const resolveChain = diskChainLoader(paths);
   // The `flume loop` supervisor's run-scoped quarantine crosses the process
   // boundary via this env var (set by `defaultTickRunner`,
-  // `src/Dispatcher.ts`) — an entry whose quarantine key (`slug@hash` of its
-  // bytes in the queue) is named here is skipped by this tick's fanout pick
+  // `src/loopSupervisor.ts`) — an entry whose quarantine key (`slug@hash` of
+  // its bytes in the queue) is named here is skipped by this tick's fanout pick
   // without touching pending.json. The values are opaque equality keys, split
   // apart on the comma the writer joined on and never parsed further: the hash
   // half means an entry re-scoped since the failing tick simply stops
