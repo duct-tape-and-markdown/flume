@@ -241,11 +241,11 @@
       "section": "Narration is the ladder's bottom rung"
     },
     "tests": [
-      "no file under src/ or examples/ carries a release-numbered spec cite outside a declared-historical marker"
+      "no file under src/ or examples/ carries a release-numbered spec cite"
     ],
     "pins": [],
-    "acceptance": "The grammar is refused mechanically, so the cut cannot regress, and a site that genuinely wants historical provenance says so in a declared marker the pin recognizes.",
-    "notes": "Ruling of 2026-09-11: the promotion rides the same pass. Blocked on both cut entries because the pin is red until they land. docs/ and README are out of scope."
+    "acceptance": "The grammar is refused mechanically over src/ and examples/, so the cut cannot regress; git carries the provenance the cites stood in for.",
+    "notes": "Ruling of 2026-09-11: the promotion rides the same pass; docs/ and README stay out of scope. The needle, `unwrapProse` and the vacuity/sensitivity pins already ship (tests/retired-narration.test.ts, 'dead release cites are gone from the engine's prose'): this entry widens the scan to examples/, deletes the `CITE_EXCLUDED` exclusion it is the named actor for, and cuts the 7 cites those three files carry (1/4/2 as declared)."
   },
   {
     "tag": "DISPATCHER-EXTRACT-LOOP-SUPERVISOR",
