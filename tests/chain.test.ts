@@ -31,14 +31,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import type { TickVerdict, TickVerdictMergeOutcome } from "../src/Dispatcher.ts";
-import {
-  loadChainModule,
-  readLatestVerdictsSync,
-  slugify,
-  priorAttemptPath,
-  writeTickVerdict,
-} from "../src/Dispatcher.ts";
+import type { PriorAttempt } from "../src/Prompt.ts";
+import { loadChainModule, slugify, priorAttemptPath } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
@@ -85,33 +79,6 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     shippedTags: [],
     revertedTags: [],
     ...overrides,
-  };
-}
-
-/**
- * A {@link TickVerdict} for `phaseName` whose only load-bearing content is
- * `mergeOutcomes` — the fact `plan.shouldRun`'s park leg reads. Every other
- * field carries the minimum a verdict record needs to survive the log's own
- * structural check; the tests below write these through the engine's real
- * `writeTickVerdict`, never a hand-rolled log line.
- */
-function buildVerdict(
-  phaseName: string,
-  mergeOutcomes: TickVerdictMergeOutcome[],
-): TickVerdict {
-  return {
-    phaseName,
-    tags: mergeOutcomes.flatMap((o) => (o.tag ? [o.tag] : [])),
-    committed: true,
-    gateResults: [],
-    shippedTags: mergeOutcomes.flatMap((o) =>
-      o.tag && o.outcome === "merged" ? [o.tag] : [],
-    ),
-    mergeOutcomes,
-    invocations: [],
-    summary: mergeOutcomes.map((o) => `${o.tag}=${o.outcome}`).join(", "),
-    headSha: "0".repeat(40),
-    at: new Date().toISOString(),
   };
 }
 
@@ -218,20 +185,20 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
     });
 
-    it("inbox: a standing voluntary-bail record or a park in the last build verdict is build's note to plan and wakes it, even over pickable work", async () => {
-      const pickable = ctx([open("OPEN-1")]);
-      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(false);
-
-      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "not-shipped" }]));
-      expect(readLatestVerdictsSync(flumeDir)["build"]?.mergeOutcomes).toHaveLength(1);
-      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(true);
-
-      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "merged" }]));
-      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(false);
-
-      await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
-      await writeFile(priorAttemptPath(flumeDir, "OPEN-1"), JSON.stringify({ mode: "voluntary-bail", constraint: "already shipped" }));
-      expect(phases[INBOX]!.shouldRun!(pickable)).toBe(true);
+    it("inbox: a refusal record — a clean exit or a park — under a key still in the queue wakes it even over pickable work; a record whose key left the queue, or a phase's own record, does not", () => {
+      const withRecords = (records: Record<string, string>): TickContext => ({
+        ...ctx([open("OPEN-1")]),
+        priorAttempts: new Map(Object.entries(records).map(([key, mode]) => [key, { mode } as unknown as PriorAttempt])),
+      });
+      expect(phases[INBOX]!.shouldRun!(ctx([open("OPEN-1")]))).toBe(false);
+      for (const mode of ["not-shipped", "voluntary-bail", "clean-exit"]) {
+        expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("OPEN-1")]: mode })), mode).toBe(true);
+      }
+      expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("OPEN-1")]: "gate-revert" }))).toBe(false);
+      // The record outlived its entry: stale, ignored.
+      expect(phases[INBOX]!.shouldRun!(withRecords({ [slugify("GONE")]: "not-shipped" }))).toBe(false);
+      // A singleton slice's own record is keyed by phase name, which no tag slugifies to.
+      expect(phases[INBOX]!.shouldRun!(withRecords({ "plan-inbox": "voluntary-bail" }))).toBe(false);
     });
 
     it("derive: live on a spec commit past the cursor, not on a code commit, and ahead of pickable work — a queued entry citing a rewritten section is stale input", async () => {
@@ -268,9 +235,12 @@ describe("plan slices via the real .flume/chain.ts", () => {
       expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([DERIVE]);
     });
 
-    it("a build refusal never re-wakes the inbox slice by itself: it is a reason to be woken, cleared only by a build wave", async () => {
-      await writeTickVerdict(flumeDir, buildVerdict("build", [{ tag: "OPEN-1", outcome: "not-shipped" }]));
-      expect(phases[INBOX]!.shouldRun!(ctx())).toBe(true);
+    it("a build refusal never re-wakes the inbox slice by itself: it is a reason to be woken, cleared only by a build wave", () => {
+      const woken: TickContext = {
+        ...ctx([open("OPEN-1")]),
+        priorAttempts: new Map([[slugify("OPEN-1"), { mode: "not-shipped" } as unknown as PriorAttempt]]),
+      };
+      expect(phases[INBOX]!.shouldRun!(woken)).toBe(true);
       expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([]);
     });
 

@@ -33,38 +33,6 @@ function recordsPending(flumeDir: string): boolean {
   return false;
 }
 
-/**
- * Any persisted prior-attempt record whose mode is `voluntary-bail` means a
- * build agent looked at an entry and refused it — "acceptance already holds"
- * being the field-traced case (an entry whose fix landed out-of-band via the
- * verdict-sha recovery flow bails forever, with no failure signature for the
- * quarantine brake — the 2026-08-17 decline/bail livelock). That verdict is
- * plan's to reconcile, so `shouldRun` treats it as a reason to run plan even
- * while the entry stays pickable. Same read-small-files contract as
- * `inboxHasEntries`; a corrupt record reads as absent, matching the engine's
- * own treatment (`spec/loop.md`, *Prior-outcome feedback*).
- */
-function anyVoluntaryBailRecord(
-  priorAttemptsDir: FlumeApi["priorAttemptsDir"],
-  flumeDir: string,
-): boolean {
-  try {
-    const dir = priorAttemptsDir(flumeDir);
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".json")) continue;
-      try {
-        const rec = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
-        if (rec?.mode === "voluntary-bail") return true;
-      } catch {
-        // unreadable record is not evidence of a bail
-      }
-    }
-  } catch {
-    // no prior-attempts dir — no records
-  }
-  return false;
-}
-
 import type {
   Chain,
   Phase,
@@ -73,7 +41,6 @@ import type {
 } from "../src/Phase.ts";
 import type { Gate } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
-import type { FlumeApi } from "../src/flumeApi.ts";
 
 import { z } from "zod";
 import type { EntryExtension } from "../src/PendingSchema.ts";
@@ -586,18 +553,30 @@ const factory: ChainFactory = (api) => {
   ];
 
   /**
-   * A build refusal only plan can resolve: a standing voluntary-bail record,
-   * or a park in the last build wave (a committed `not-shipped` outcome,
-   * which writes no prior-attempt record and is visible only on the
-   * verdict). Without this leg a parked entry stays pickable, plan yields to
-   * build, and build re-parks against the same fence forever (four attempts,
-   * 2026-09-07). Read at `shouldRun` only — it is a reason to be woken, never
-   * a reason for a slice to re-wake itself, since only a build wave clears it.
+   * A build refusal only plan can resolve, read off the records the engine
+   * hands `shouldRun` (`TickContext.priorAttempts`; `spec/loop.md`,
+   * *Prior-outcome feedback*): the agent exited without committing, or this
+   * chain's `shipped` said no — under a key the queue still carries. A key
+   * the queue no longer carries is a record that outlived its entry and is
+   * ignored; a singleton slice's own record is keyed by phase name, which no
+   * tag slugifies to. Without this leg a parked entry stays pickable, plan
+   * yields to build, and build re-parks against the same fence forever (four
+   * attempts, 2026-09-07). Read at `shouldRun` only — a reason to be woken,
+   * never a reason for a slice to re-wake itself, since only a build wave
+   * clears it.
+   *
+   * `clean-exit` is the mode the taxonomy ruling of 2026-09-11 renames
+   * `voluntary-bail` to (`spec/loop.md`, *The no-commit taxonomy*); both are
+   * read until that entry ships, and the `voluntary-bail` arm is deleted in
+   * the `chore(flume):` that pairs with it.
    */
-  function reconcileDue(flumeDir: string): boolean {
-    if (anyVoluntaryBailRecord(api.priorAttemptsDir, flumeDir)) return true;
-    const lastBuild = api.readLatestVerdictsSync(flumeDir)[BUILD];
-    return lastBuild?.mergeOutcomes?.some((o) => o.outcome === "not-shipped") ?? false;
+  const REFUSAL_MODES: ReadonlySet<string> = new Set(["voluntary-bail", "clean-exit", "not-shipped"]);
+  function parkStanding(ctx: TickContext): boolean {
+    const live = new Set((ctx.pending ?? []).map((e) => api.slugify(e.tag)));
+    for (const [key, rec] of ctx.priorAttempts ?? []) {
+      if (live.has(key) && REFUSAL_MODES.has(rec.mode)) return true;
+    }
+    return false;
   }
 
   interface SliceInputs {
@@ -689,7 +668,7 @@ const factory: ChainFactory = (api) => {
       perResolvesGate,
     ],
     shouldRun: (ctx) =>
-      (slice.name === INBOX && reconcileDue(ctx.flumeDir)) ||
+      (slice.name === INBOX && parkStanding(ctx)) ||
       slice.live({ flumeDir: ctx.flumeDir, pickable: pickableIn(ctx) }),
     promptArgs: () => ({ PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) }),
     handoff: (result) =>
@@ -822,6 +801,16 @@ const factory: ChainFactory = (api) => {
       // else build re-picks the same entry into the same wall. Otherwise the
       // ladder decides: the first live slice, or build while anything is
       // pickable, or hibernate.
+      //
+      // `TickResult.entries` cannot tell a park from a cherry-pick conflict
+      // (both: committed, not shipped, not reverted; inbox
+      // 2026-09-11 *build.handoff cannot tell a park from a cherry-pick
+      // conflict*), and this tick's verdict is not yet written when handoff
+      // runs. So a conflict wakes the inbox slice too, whose `shouldRun`
+      // reads the records — no record is written for a conflict — and
+      // declines: one declined tick, then the ladder retries the entry from
+      // the new base. Bounded, and named here until the engine reports the
+      // merge outcome per entry.
       const refused =
         result.noCommit === "voluntary-bail" ||
         (result.entries ?? []).some(
