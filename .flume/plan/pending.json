@@ -34,5 +34,36 @@
     ],
     "acceptance": "The docs' harness-managed list names only paths src/ spells; `sessions/` and the plan artifacts read as this chain's, and the pin fails on the pre-fix tree.",
     "notes": "`sessions/` is chain-placed (src/Dispatcher.ts:123-128, src/job.ts:43; only `.flume/chain.ts:485` spells it), yet docs/CHAIN-AUTHORING.md:69 calls it harness-managed and README.md:171 lists it under FLUME_DIR. README.md:145-158 mixes engine paths (`awake/`, `worktrees/`, `loop.pid`, pending via DEFAULT_PENDING_REL) with chain artifacts (`plan/state.md`, `open-questions.md`, `inbox/` — `rg inbox src/` empty). Writer side: STATE_ROOT_NAMES + src/paths.ts accessors."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-PHASE-TABLE-AGREEMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "§1's field table (:137-:152) and the `fields that matter` framing above it"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the table-vs-`src/Phase.ts` equality pin, beside the GateResult/Gate pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md §1's Phase field table is unpinned and three rows short, so `scopeWritesToEntry` and `shipped` are unlearnable from the doc",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the chain-authoring doc's Phase field table names every field src/Phase.ts declares"
+    ],
+    "acceptance": "§1's table names every field `Phase` declares and no others, the subset framing is gone, and the equality pin fails on the pre-fix tree.",
+    "notes": "Last unpinned restatement beside the shipped GateResult/Gate pins (tests/retired-narration.test.ts:376-478). `Phase` declares 15 fields; the table carries 12. `scopeWritesToEntry` and `shipped` appear nowhere in the doc; `entryChannelPaths` is taught (:329, :1013) with no row — and declaring it without the flag is a load refusal (spec/chain.md, *A dead declaration is refused at load*). Reader is a markdown column, not `interfaceFields`; vacuity rides inline as the siblings do."
   }
 ]
