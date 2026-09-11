@@ -26,7 +26,10 @@ Three consumers, and only three:
   code *is*, never what it should *become*), `acceptance` (what done means,
   decidably), `tests[]` (acceptance decomposed, one line per behavior the work
   must pin, written as a test title — build titles a passing test with the
-  line and the `vitest` gate proves it; the file it lands in is build's call).
+  line and the `vitest` gate proves it, then proves it **red on the base**:
+  the named test is run against the pre-fix tree and a line that already
+  passes there pins nothing and is refused; the file it lands in is build's
+  call).
 - **The next plan tick** reads `observedFiles` — dispatcher-written, the real
   footprint of a reverted attempt.
 

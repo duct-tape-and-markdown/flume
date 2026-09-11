@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +37,7 @@ import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
-import { judgeVitestReport, parseVitestReport } from "../.flume/vitestJudge.ts";
+import { filesPinning, judgeRedOnBase, judgeVitestReport, materializeBase, parseVitestReport, removeWorktree } from "../.flume/vitestJudge.ts";
 
 /**
  * The roots a real tick resolves for this repo's own chain: `.flume` is both
@@ -728,5 +728,75 @@ describe("records gate and the park predicate — one file each", () => {
     expect(ship([NOTE, "src/a.ts"])).toBe(true);
     expect(ship([".flume/plan/notes/OTHER.md"])).toBe(true);
     expect(ship([".flume/plan/open-questions.md"])).toBe(true);
+  });
+});
+
+/**
+ * The gate's third claim: a named behavior's test is red on the pre-fix
+ * tree (`engineering.md`, *A fix ships the test that would have caught it*).
+ * The judge runs over the real reporter's output; the base is materialized
+ * with real git and the engine's own at-ref reader.
+ */
+describe("red on the base — the fix's tests against the pre-fix tree", () => {
+  let details: string;
+  let title: string;
+
+  beforeAll(() => {
+    const repoRoot = REPO_PATHS.repoRoot;
+    details = execFileSync(
+      process.execPath,
+      [join(repoRoot, "node_modules", "vitest", "vitest.mjs"), "run", "tests/paths.test.ts", "--reporter=json"],
+      { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 << 20 },
+    );
+    title = parseVitestReport(details)!.testResults[0]!.assertionResults[0]!.fullName;
+    expect(title.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("a named behavior that already passes at the base is refused by name; one with no passing test there is red; no report is refused", () => {
+    const refused = judgeRedOnBase(details, [title, "nobody pins this"]);
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toContain("1 of 2 named behavior(s) already pass on the base");
+    expect(refused.details).toContain(`- ${title}`);
+    expect(refused.details).not.toContain("- nobody pins this");
+    const red = judgeRedOnBase(details, ["nobody pins this"]);
+    expect(red.ok).toBe(true);
+    expect(red.message).toBe("1 named behavior(s) red on the base");
+    expect(judgeRedOnBase("no report here", [title]).ok).toBe(false);
+  });
+
+  it("filesPinning names the repo-relative file holding each named line's passing test, and nothing for a line nobody pinned", () => {
+    expect(filesPinning(details, [title], REPO_PATHS.repoRoot)).toEqual(["tests/paths.test.ts"]);
+    expect(filesPinning(details, ["nobody pins this"], REPO_PATHS.repoRoot)).toEqual([]);
+  });
+
+  it("materializeBase checks the base out detached and lays the merged commit's named files over it, leaving every other file at the base; a named file absent from the commit throws", async () => {
+    const repo = await initRepo("flume-red-base-");
+    const put = async (rel: string, content: string) => {
+      await mkdir(join(repo, rel, ".."), { recursive: true });
+      await writeFile(join(repo, rel), content);
+    };
+    await put("src/a.ts", "base\n");
+    await put("tests/a.test.ts", "old test\n");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "base"]);
+    const base = git(repo, ["rev-parse", "HEAD"]);
+    await put("src/a.ts", "fixed\n");
+    await put("tests/a.test.ts", "new test\n");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "fix"]);
+    const merged = git(repo, ["rev-parse", "HEAD"]);
+    const wt = join(repo, ".flume", "worktrees", "red-on-base-x");
+
+    await materializeBase(repo, base, merged, ["tests/a.test.ts"], wt, readFileAtRef);
+    expect(readFileSync(join(wt, "src", "a.ts"), "utf8")).toBe("base\n");
+    expect(readFileSync(join(wt, "tests", "a.test.ts"), "utf8")).toBe("new test\n");
+
+    await expect(materializeBase(repo, base, merged, ["tests/missing.test.ts"], wt, readFileAtRef)).rejects.toThrow(
+      "tests/missing.test.ts is not in",
+    );
+    removeWorktree(repo, wt);
+    expect(existsSync(wt)).toBe(false);
+    removeWorktree(repo, wt); // absent is fine
+    await rm(repo, { recursive: true, force: true });
   });
 });

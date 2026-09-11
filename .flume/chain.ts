@@ -8,7 +8,7 @@
  * ownership: `.claude/rules/spec-plan-build.md`.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
@@ -39,12 +39,12 @@ import type {
   TickContext,
   WorktreeSetupContext,
 } from "../src/Phase.ts";
-import type { Gate } from "../src/Gate.ts";
+import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
 
 import { z } from "zod";
 import type { EntryExtension } from "../src/PendingSchema.ts";
-import { judgeVitestReport } from "./vitestJudge.ts";
+import { filesPinning, judgeRedOnBase, judgeVitestReport, materializeBase, removeWorktree } from "./vitestJudge.ts";
 
 
 
@@ -707,6 +707,40 @@ const factory: ChainFactory = (api) => {
   });
   const codePath =
     /^(src|tests|examples|bin)\/|^\.flume\/(chain|vitestJudge)\.ts$|^(package\.json|pnpm-lock\.yaml|tsconfig[^/]*\.json|vitest\.config\.ts)$/;
+  /**
+   * The other half of the acceptance claim (`engineering.md`, *A fix ships
+   * the test that would have caught it*): a named behavior's test must fail
+   * on the pre-fix tree, or it pins nothing. The base is checked out
+   * detached under the worktree base, provisioned the way a build worktree
+   * is, and the merged commit's bytes for the files holding the named tests
+   * are laid over it; only those files run. Chain-side by ruling (open
+   * question of 2026-09-11, *A named behavior is proven by a test that also
+   * passes at the base*): the engine surface is filed the day a second
+   * chain copies this.
+   */
+  async function redOnBase(ctx: GateContext, named: readonly string[], details: string | undefined): Promise<GateResult> {
+    if (!ctx.baseSha || !ctx.commitSha) {
+      return { ok: false, message: "red-on-base needs baseSha and commitSha on the gate context" };
+    }
+    const files = filesPinning(details, named, ctx.repoRoot);
+    const wt = join(api.paths.flumeDir, "worktrees", `red-on-base-${ctx.commitSha.slice(0, 7)}`);
+    try {
+      await materializeBase(ctx.repoRoot, ctx.baseSha, ctx.commitSha, files, wt, api.git.readFileAtRef);
+      await setupBuildWorktree({ worktreePath: wt, repoRoot: ctx.repoRoot, entryTag: ctx.entry?.tag ?? "red-on-base" });
+      const out = await new Promise<string>((res) =>
+        execFile(
+          "pnpm",
+          ["vitest", "run", "--reporter=json", ...files],
+          { cwd: wt, encoding: "utf8", maxBuffer: 64 << 20 },
+          (_err, stdout) => res(String(stdout ?? "")),
+        ),
+      );
+      return judgeRedOnBase(out, named);
+    } finally {
+      removeWorktree(ctx.repoRoot, wt);
+    }
+  }
+
   const vitestOnCode: typeof vitestSuite = {
     ...vitestSuite,
     run: async (ctx) => {
@@ -720,7 +754,10 @@ const factory: ChainFactory = (api) => {
         };
       }
       const r = await vitestSuite.run(ctx);
-      return judgeVitestReport(r.details, r.ok, named, ctx.repoRoot);
+      const judged = judgeVitestReport(r.details, r.ok, named, ctx.repoRoot);
+      if (!judged.ok || named.length === 0) return judged;
+      const red = await redOnBase(ctx, named, r.details);
+      return red.ok ? { ...judged, message: `${judged.message}; ${red.message}` } : red;
     },
   };
 

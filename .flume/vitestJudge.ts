@@ -11,7 +11,9 @@
  * the real writer wrote*). The engine never reads `tests[]`; this is the
  * chain's contract with itself.
  */
-import { relative } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import type { GateResult } from "../src/Gate.ts";
 
 interface Assertion {
@@ -89,4 +91,79 @@ export function judgeVitestReport(
     ok: true,
     message: `vitest green (${report.numPassedTests} passed)${named.length > 0 ? `; ${named.length} named behavior(s) each have a passing test` : "; no behavior named by the entry"}`,
   };
+}
+
+// ---------- red on the base ----------
+
+/** Repo-relative files holding a passing test titled with a named line — where the pins live. */
+export function filesPinning(details: string | undefined, named: readonly string[], repoRoot: string): string[] {
+  const report = parseVitestReport(details);
+  if (!report) return [];
+  const files = new Set<string>();
+  for (const f of report.testResults) {
+    if (f.assertionResults.some((a) => a.status === "passed" && named.some((line) => a.fullName.includes(line)))) {
+      files.add(relative(repoRoot, f.name).split("\\").join("/"));
+    }
+  }
+  return [...files];
+}
+
+/**
+ * Check `baseSha` out detached at `worktreePath` and lay the merged commit's
+ * bytes for `files` over it — the fix's tests on the pre-fix tree. `readAtRef`
+ * is the engine's reader (`api.git.readFileAtRef`), so a bad ref fails loud
+ * and a path absent from the commit is named, never skipped.
+ */
+export async function materializeBase(
+  repoRoot: string,
+  baseSha: string,
+  mergedSha: string,
+  files: readonly string[],
+  worktreePath: string,
+  readAtRef: (repoRoot: string, ref: string, path: string) => Promise<string | null>,
+): Promise<void> {
+  removeWorktree(repoRoot, worktreePath);
+  execFileSync("git", ["worktree", "add", "--detach", worktreePath, baseSha], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  for (const f of files) {
+    const bytes = await readAtRef(repoRoot, mergedSha, f);
+    if (bytes === null) throw new Error(`red-on-base: ${f} is not in ${mergedSha.slice(0, 7)}`);
+    mkdirSync(dirname(join(worktreePath, f)), { recursive: true });
+    writeFileSync(join(worktreePath, f), bytes);
+  }
+}
+
+/** Remove a throwaway worktree; absent is fine. */
+export function removeWorktree(repoRoot: string, worktreePath: string): void {
+  try {
+    execFileSync("git", ["worktree", "remove", "--force", worktreePath], { cwd: repoRoot, stdio: "ignore" });
+  } catch {
+    // nothing at that path, or not a worktree — either way there is nothing to remove
+  }
+}
+
+/**
+ * At the base every named behavior must lack a passing test; the runner's
+ * exit status is irrelevant, red is the expectation. A file that fails to
+ * load there (a symbol the fix introduced) has no passing tests and reads
+ * as red — conservative in the direction that matters.
+ */
+export function judgeRedOnBase(details: string | undefined, named: readonly string[]): GateResult {
+  const report = parseVitestReport(details);
+  if (!report) {
+    return { ok: false, message: "red-on-base: vitest wrote no report at the base — nothing to judge", ...(details ? { details } : {}) };
+  }
+  const passing = report.testResults.flatMap((f) => f.assertionResults).filter((a) => a.status === "passed");
+  const green = named.filter((line) => passing.some((a) => a.fullName.includes(line)));
+  if (green.length > 0) {
+    return {
+      ok: false,
+      message: `${green.length} of ${named.length} named behavior(s) already pass on the base — the test pins nothing this entry changed`,
+      details: ["A tests[] line names a behavior the entry introduces; its test fails on the pre-fix tree:", ...green.map((g) => `- ${g}`)].join("\n"),
+    };
+  }
+  return { ok: true, message: `${named.length} named behavior(s) red on the base` };
 }
