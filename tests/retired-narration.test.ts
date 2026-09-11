@@ -2667,3 +2667,217 @@ describe("spec/ names public surface, never a path locator", () => {
     }
   });
 });
+
+/**
+ * The other half of the spec-lint pin (`.claude/rules/spec-writing.md`, "What
+ * holds this page above prose"): the path half above refuses a locator, and
+ * this one holds the names a page is left with. `spec-writing.md` ("A claim
+ * names behavior, never location") sends every sentence that wanted a path to
+ * a **public name** instead — which only stays true while the name does. A
+ * renamed field leaves the spec asserting a member the engine no longer has,
+ * in the one form the page told the author to prefer, and nothing but a
+ * reader's memory was watching.
+ *
+ * **Subject: a dotted token whose prefix is a public type.** The page's
+ * *Public surface* bullet is the authority for which types those are, so the
+ * prefix set is read off the bullet itself and off `src/index.ts`'s export
+ * inventory — the two surfaces the bullet names — rather than restated here
+ * (`engineering.md`, *Derived state is computed, never restated beside its
+ * source*). Keying on the prefix is also what keeps ordinary prose out: this
+ * corpus writes `process.env.FLUME_DIR`, `core.longpaths` and `cmd.exe` in
+ * backticks routinely, and none of them is a claim about this engine's
+ * surface. No vocabulary list does that work; the export inventory does.
+ *
+ * **Resolved on the last segment, anywhere in `src/`.** `Chain.seedDir` is
+ * the `seedDir` field, and the type in front of it is the reader's route to
+ * it. The page may not name the module that declares it — that is the path
+ * half's whole point — so the resolution is over the tree, not over a named
+ * file as the comment-cite scan above resolves.
+ */
+
+/**
+ * A backticked dotted token: `Chain.seedDir`, `api.paths.flumeDir`. Two
+ * segments minimum — a bare `createWorktree` names no type and is out of
+ * subject.
+ */
+const SPEC_DOTTED_RE = /`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)`/g;
+
+/**
+ * Filename tails. `Dispatcher.test.ts` wears the subject's shape — a public
+ * type, then dotted segments — but names a file, which is the path half's
+ * subject, not a member of anything. The tail is the only structural thing
+ * that tells it from `Chain.friction`.
+ */
+const FILENAME_TAILS = new Set(["ts", "js", "mjs", "cjs", "json", "md", "lock", "exe"]);
+
+/**
+ * The types the *Public surface* bullet names, read off the bullet. Taking
+ * them from the page means a ninth type ratified there widens this scan in
+ * the same commit, rather than in whichever later one notices.
+ */
+function publicSurfaceTypes(): string[] {
+  const page = readFileSync(join(REPO_ROOT, ".claude", "rules", "spec-writing.md"), "utf8");
+  const bullet = /^- \*\*Public surface\*\*([\s\S]*?)(?=^- |\n\n)/m.exec(page);
+  if (!bullet) return [];
+  return [...new Set([...bullet[1]!.matchAll(/`([A-Z][\w$]*)`/g)].map((m) => m[1]!))];
+}
+
+/** Every name `src/index.ts` re-exports — the bullet's other named surface. */
+function indexExports(): string[] {
+  const idx = readFileSync(join(REPO_ROOT, "src", "index.ts"), "utf8");
+  const names = new Set<string>();
+  for (const block of idx.matchAll(/export\s+(?:type\s+)?\{([\s\S]*?)\}\s*from/g)) {
+    for (const part of block[1]!.split(",")) {
+      const spec = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/);
+      const name = (spec[1] ?? spec[0] ?? "").trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/** Every `src/` module's declaring body — where a last segment has to land. */
+function srcDeclaringBodies(): string[] {
+  return readdirSync(join(REPO_ROOT, "src"), { recursive: true, encoding: "utf8" })
+    .map((name) => join(REPO_ROOT, "src", name))
+    .filter((path) => statSync(path).isFile() && path.endsWith(".ts"))
+    .map((path) => declaringBody(readFileSync(path, "utf8")));
+}
+
+interface SpecSymbolCite {
+  /** The spec page carrying the cite. */
+  page: string;
+  /** The dotted token, as written. */
+  symbol: string;
+}
+
+/** Every in-subject dotted cite a page carries, deduped per page. */
+function specSymbolCites(pages: { path: string; text: string }[], prefixes: Set<string>): SpecSymbolCite[] {
+  const cites: SpecSymbolCite[] = [];
+  for (const page of pages) {
+    const seen = new Set<string>();
+    for (const m of page.text.matchAll(SPEC_DOTTED_RE)) {
+      const symbol = m[1]!;
+      const segments = symbol.split(".");
+      if (!prefixes.has(segments[0]!)) continue;
+      if (FILENAME_TAILS.has(segments.at(-1)!)) continue;
+      if (seen.has(symbol)) continue;
+      seen.add(symbol);
+      cites.push({ page: page.path, symbol });
+    }
+  }
+  return cites;
+}
+
+/**
+ * The member cites `src/` deliberately does not declare, each with the claim
+ * that needs the name in order to deny it. A spec section whose subject is an
+ * absence — a knob that does not exist, a verb that was removed — has to
+ * spell the absent name or say nothing, and an unresolvable cite is the
+ * correct shape for it. The equality below refuses a stale entry as loudly as
+ * a newly-stranded cite: when the engine grows one of these, its line leaves
+ * in the same commit the spec section does.
+ */
+const SPEC_ABSENT_SYMBOLS: Record<string, string> = {
+  "Chain.harvest":
+    "removed with `job extract`, and nothing replaced it — the section's " +
+    "subject is that there is no clean-history ending",
+  "Chain.worktreesDir":
+    "never existed: the worktree base is machine-local placement, and the " +
+    "section names the knob to say a committed chain file is the wrong home",
+  "DispatcherOptions.trunkBranch":
+    "does not exist, and the absence is pinned type-level — the section " +
+    "names it to bound the fanout branch carve-out beside it",
+};
+
+describe("spec/ names members the engine still declares", () => {
+  const pages = specPages();
+  const prefixes = new Set([...publicSurfaceTypes(), ...indexExports()]);
+  const cites = specSymbolCites(pages, prefixes);
+  const bodies = srcDeclaringBodies();
+  const unresolved = (cite: SpecSymbolCite): boolean =>
+    !bodies.some((body) => declaresSymbol(body, cite.symbol.split(".").at(-1)!));
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+  // the refusal below reads an empty set whether the corpus is clean or the
+  // page list, the prefix set and the `src/` bodies are each off target. All
+  // four inputs are asserted populated, and the prefix set against both
+  // surfaces the bullet names — a parser that silently matched neither would
+  // leave every cite out of subject and the refusal green over nothing.
+  it("the spec symbol scan reads every page of spec/", () => {
+    expect(pages.length, "spec/ read empty — the scan is off target").toBeGreaterThan(0);
+    for (const carrier of ["chain.md", "loop.md", "pending.md", "worktrees.md"]) {
+      expect(pages.map((p) => p.path), `spec/${carrier} left the scanned set`).toContain(join("spec", carrier));
+    }
+    expect(publicSurfaceTypes(), "the Public surface bullet yielded no type").toEqual(
+      expect.arrayContaining(["Chain", "Phase", "TickContext", "TickResult", "PendingEntry"]),
+    );
+    expect(indexExports().length, "src/index.ts yielded no export").toBeGreaterThan(20);
+    expect(indexExports()).toEqual(expect.arrayContaining(["Dispatcher", "DispatcherOptions", "TickOutcome"]));
+    expect(bodies.length, "src/ read empty — nothing to resolve against").toBeGreaterThan(10);
+    expect(cites.length, "no dotted cite is in subject — the prefix set is off target").toBeGreaterThan(30);
+    // Coverage is the directory, not the set of carriers: every page must be
+    // read, including the ones holding no in-subject cite at all.
+    for (const page of pages) {
+      expect(page.text.length, `${page.path} read empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it("every dotted spec cite whose prefix is a public type resolves on its last segment to a declaration in src/", () => {
+    const stale = cites.filter(unresolved);
+    expect(
+      [...new Set(stale.map((c) => c.symbol))].sort(),
+      "a spec sentence names a member `src/` no longer declares: repoint it " +
+        "at the current public name, or — where the absence is the claim's " +
+        "subject — declare it below with that reason. Sites: " +
+        stale.map((c) => `${c.page} → ${c.symbol}`).join(", "),
+    ).toEqual(Object.keys(SPEC_ABSENT_SYMBOLS).sort());
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the refusal above reports the same inventory whether the
+  // resolver is watching or dead, and the absence list would swallow a real
+  // staleness if the resolver stopped reading `src/`. Drive both directions
+  // over a real page with a stale member injected — the corpus cannot produce
+  // the violation itself (engineering.md, "A seam gate reads what the real
+  // writer wrote") — and confirm the declared absences are the only survivors
+  // rather than an artifact of a resolver that resolves nothing.
+  it("the symbol needle flags an injected stale member cite and leaves the not-exist sentences the allowlist declares", () => {
+    const carrier = pages.find((p) => specSymbolCites([p], prefixes).length > 0);
+    expect(carrier, "no spec page carries an in-subject cite — nothing to inject into").toBeDefined();
+    const injected = {
+      path: carrier!.path,
+      text: `${carrier!.text}\n\`TickResult.thereIsNoSuchField\` is reported per tick.\n`,
+    };
+    const found = specSymbolCites([injected], prefixes);
+    expect(found.map((c) => c.symbol), "the needle missed an injected member cite").toContain(
+      "TickResult.thereIsNoSuchField",
+    );
+    expect(found.filter(unresolved).map((c) => c.symbol)).toContain("TickResult.thereIsNoSuchField");
+
+    // The resolver is not blanket-refusing: the carrier's own cites, minus
+    // whatever absence it declares, all resolve.
+    const live = specSymbolCites([carrier!], prefixes).filter((c) => !(c.symbol in SPEC_ABSENT_SYMBOLS));
+    expect(live.length, `${carrier!.path} carries no live cite — the carrier proves nothing`).toBeGreaterThan(0);
+    expect(live.filter(unresolved), "the resolver refuses a member src/ declares").toEqual([]);
+
+    // Each declared absence is genuinely unresolvable — an entry that started
+    // resolving is a section whose subject has shipped, and the equality above
+    // will not catch it while the entry sits in the list.
+    for (const symbol of Object.keys(SPEC_ABSENT_SYMBOLS)) {
+      expect(
+        unresolved({ page: "spec", symbol }),
+        `${symbol} now resolves — the engine grew it; retire the spec section's absence claim`,
+      ).toBe(true);
+      expect(cites.map((c) => c.symbol), `${symbol} is declared absent but no page cites it`).toContain(symbol);
+    }
+
+    // Out of subject, structurally: ordinary dotted prose whose prefix names
+    // no public type, and a filename wearing a type's name.
+    const outOfSubject = specSymbolCites(
+      [{ path: "spec/x.md", text: "`process.env.FLUME_DIR`, `core.longpaths`, `cmd.exe`, `Dispatcher.test.ts`" }],
+      prefixes,
+    );
+    expect(outOfSubject, "the symbol needle over-fires on non-symbol prose").toEqual([]);
+  });
+});
