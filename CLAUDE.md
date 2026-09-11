@@ -6,7 +6,7 @@
 
 ## Source of truth
 
-**Read the spec corpus first** — `spec/*.md`. One file per topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`), each describing what flume *is*, present tense. Not release targets: the corpus states current truth and the ship target together, so a section that no longer matches `src/` is a defect in one of them. What a spec sentence may name is governed by **@.claude/rules/spec-writing.md**: behavior and public surface, never `src/` paths, line numbers, or internal helpers. Plan derives against whatever changed in `spec/` since its derive stamp. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
+**Read the spec corpus first** — `spec/*.md`. One file per topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`), each describing what flume *is*, present tense. Not release targets: the corpus states current truth and the ship target together, so a section that no longer matches `src/` is a defect in one of them. What a spec sentence may name is governed by **.claude/rules/spec-writing.md**: behavior and public surface, never `src/` paths, line numbers, or internal helpers. Plan derives against whatever changed in `spec/` since its derive stamp. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
 
 This is flume operating on flume: `.flume/chain.ts` imports the runtime from `../src/` (this repo), not from `flume/` (a published dep). Breaking runtime changes must update chain.ts in the same commit.
 
@@ -17,7 +17,7 @@ This is flume operating on flume: `.flume/chain.ts` imports the runtime from `..
 - Runtime deps: `tsx` (loads chain.ts), `zod` (PendingSchema validation)
 
 Stack-specific conventions belong in `.claude/rules/<area>.md` and should be path-scoped where possible.
-**@.claude/rules/platform-facts.md** is the home for facts about the toolchain and host OS — a pnpm behavior, a git limit, a Node constraint, a measured platform failure. Each is external, so no test pins it and no type holds it; a code comment carrying one is a copy the harness should own instead, seen only by an agent that already opened that file.
+**.claude/rules/platform-facts.md** is the home for facts about the toolchain and host OS — a pnpm behavior, a git limit, a Node constraint, a measured platform failure. Each is external, so no test pins it and no type holds it; a code comment carrying one is a copy the harness should own instead, seen only by an agent that already opened that file.
 
 ## Workflow: Flume
 
@@ -25,7 +25,7 @@ Four autonomous phases — three plan slices (`plan-inbox`, `plan-derive`, `plan
 
 Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
-**Pushback is the point.** Never silently fill product/UX gaps — challenge them. See @.claude/rules/collaboration.md.
+**Pushback is the point.** Never silently fill product/UX gaps — challenge them. See .claude/rules/collaboration.md.
 
 ## Common Commands
 
@@ -47,13 +47,13 @@ Publish: `. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKE
 
 ## Quality Standard
 
-Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, writable-paths, pending-parse, changelog) validate each tick — they check *shape*. Shape is not truth: a gate can pass over an input that never resolved, a changelog that describes nothing, a schema whose two sides disagree. **@.claude/rules/engineering.md** holds the standard that closes that gap (the ladder, non-vacuity, agreement gates, a fix ships its test); **@.claude/rules/posture-sweep.md** is how it reaches code that already exists. Product/UX pressure-test remains human.
+Engineering: **Safe**, **Fast**, **Reliable.** Chain-config gates (tsc, vitest, writable-paths, pending-parse, changelog) validate each tick — they check *shape*. Shape is not truth: a gate can pass over an input that never resolved, a changelog that describes nothing, a schema whose two sides disagree. **.claude/rules/engineering.md** holds the standard that closes that gap (the ladder, non-vacuity, agreement gates, a fix ships its test); **.claude/rules/posture-sweep.md** is how it reaches code that already exists. Product/UX pressure-test remains human.
 
 ## Non-Negotiables
 
-- **Engine ships mechanism, never convention.** Every `src/` change passes the second-implementation test; the engine validates only what its mechanics consume. See @.claude/rules/engine-boundary.md.
+- **Engine ships mechanism, never convention.** Every `src/` change passes the second-implementation test; the engine validates only what its mechanics consume. See .claude/rules/engine-boundary.md.
 - **A complicated solution is likely chasing a tail.** Go with the simple solution; if there is none, raise a flag (park/open question) instead of building the complicated one.
-- **Every check lives at the most deterministic layer that can express it** — type, then test/pin, then gate, then prose. Prose is a queue for promotion, not an archive. See @.claude/rules/engineering.md.
+- **Every check lives at the most deterministic layer that can express it** — type, then test/pin, then gate, then prose. Prose is a queue for promotion, not an archive. See .claude/rules/engineering.md.
 - **A fix ships the test that would have caught it** — one that fails on the pre-fix tree. A fix aimed at a described symptom instead of a reproduced one is a guess.
 - Build phase commits per pending entry directly to `main` after green validation.
 - NEVER force-push, amend pushed commits, or `--no-verify`.

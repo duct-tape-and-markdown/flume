@@ -1,10 +1,13 @@
+---
+paths:
+  - "spec/**"
+---
+
 # Spec writing
 
 What a sentence in `spec/*.md` may say. `spec-plan-build.md` says who writes
 the spec; this page says what belongs in it once they do. Citable: a `per`
 into one of these sections is how a spec-shape defect becomes an entry.
-
-**Scope: `spec/**`.**
 
 ## A claim names behavior, never location
 
