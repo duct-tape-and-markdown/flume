@@ -23,7 +23,7 @@ import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD } from "../src/Dispatcher.ts";
 import { resolvePendingPath } from "../src/paths.ts";
-import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, runCli, runCliStreams } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -1115,6 +1115,86 @@ describe("flume status — names the missing capability on a requiresCapability 
       expect(r.out).toContain("hibernating");
       expect(r.out).not.toContain("GATED");
       expect(r.out).not.toContain("missing capability");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
+ * A chain.ts whose factory throws — the load failure `status` and `job
+ * status` must report rather than absorb. Throwing from the factory (not a
+ * syntax error) keeps the failure the operator's own, with a message this
+ * suite can name verbatim.
+ */
+const THROWING_CHAIN_SRC =
+  `export default () => {\n  throw new Error("chain factory exploded");\n};\n`;
+
+/**
+ * CHAIN-LOAD-FAILURE-REPORTED — both observational surfaces load the chain
+ * best-effort, for `Chain.pendingPath`, `Chain.friction`, and
+ * `Chain.capabilities`. Best-effort used to mean silent: a chain that threw
+ * left `status` printing a pending count rebased on the default queue path,
+ * exit 0, with nothing said — a confident wrong number
+ * (`.claude/rules/engineering.md`, "Loud or nothing"). The load is shared
+ * (`loadChainForObservation`, `src/cliChainLoad.ts`) and reports its own
+ * failure; the surfaces' exit codes and stdout are unchanged.
+ */
+describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORTED)", () => {
+  it("flume status names the chain-load failure it proceeded past", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-status-chainfail-"));
+    try {
+      await writeRepoConfig(dir, THROWING_CHAIN_SRC);
+      // The entries the chain's own `pendingPath` would have pointed at —
+      // unreachable now, so the count below rebases on plan/pending.json
+      // (absent) and reads 0. That rebase is exactly what must not be silent.
+      await mkdir(join(dir, ".flume", "custom"), { recursive: true });
+      await writeFile(
+        join(dir, ".flume", "custom", "queue.json"),
+        JSON.stringify([
+          {
+            tag: "A",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
+          },
+        ]),
+        "utf8",
+      );
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("status: chain failed to load");
+      expect(r.out).toContain("chain factory exploded");
+      expect(r.out).toContain("the pending count reads the default queue path");
+      // Non-vacuity: the degraded count really is the one being reported on.
+      expect(r.out).toContain("pending: 0");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("both observational surfaces still exit 0 when the chain fails to load", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+      await mkdir(join(repo.dir, ".flume", "jobs", "j1"), { recursive: true });
+
+      const status = await runCliStreams(repo.dir, ["status"]);
+      const jobStatus = await runCliStreams(repo.dir, ["job", "status"]);
+
+      expect(status.code).toBe(0);
+      expect(jobStatus.code).toBe(0);
+      // The report rides stderr; the observational stdout is the same text
+      // either surface prints over a chain that loads.
+      expect(status.stderr).toContain("chain failed to load");
+      expect(jobStatus.stderr).toContain("chain failed to load");
+      expect(status.stdout).toContain("hibernating");
+      expect(status.stdout).toContain("pending: 0");
+      expect(status.stdout).not.toContain("chain failed to load");
+      expect(jobStatus.stdout).toContain("j1");
+      expect(jobStatus.stdout).not.toContain("chain failed to load");
     } finally {
       await repo.cleanup();
     }

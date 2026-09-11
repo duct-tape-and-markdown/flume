@@ -310,6 +310,41 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
   }, 30_000);
 });
 
+/**
+ * CHAIN-LOAD-FAILURE-REPORTED — `job status` loads the repo chain for its
+ * declared friction dir and queue path, best-effort. When that load fails
+ * every job's pending count silently rebases on the default queue path
+ * (`resolvePendingPath`, `src/paths.ts`); the shared load
+ * (`loadChainForObservation`, `src/cliChainLoad.ts`) now says so instead
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+describe("flume job status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORTED)", () => {
+  it("flume job status names the chain-load failure it proceeded past", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(
+        repo.dir,
+        `export default () => {\n  throw new Error("chain factory exploded");\n};\n`,
+      );
+      const jobDir = join(repo.dir, ".flume", "jobs", "j1");
+      await mkdir(join(jobDir, "plan"), { recursive: true });
+      await writeFile(join(jobDir, "plan", "pending.json"), "[]", "utf8");
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("job status: chain failed to load");
+      expect(r.out).toContain("chain factory exploded");
+      expect(r.out).toContain("the pending count reads the default queue path");
+      // Non-vacuity: the job row the degraded counts describe still printed.
+      expect(r.out).toContain("j1");
+      expect(r.out).toContain("pending: 0");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
 describe("flume job extract — removed (v0.11 §3)", () => {
   it("exits as an unrecognized verb rather than running", async () => {
     const repo = await makeJobRepo("main");

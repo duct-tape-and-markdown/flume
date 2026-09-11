@@ -118,26 +118,42 @@ export function exitStatusOf(err: unknown): number {
   );
 }
 
-/** Spawn one real `flume <args>`; collect combined output + exit code. */
-export async function runCli(
+/**
+ * Spawn one real `flume <args>`; collect the two streams apart, plus the
+ * exit code. For assertions that turn on *which* stream carried a line — an
+ * observational verb whose stdout must stay unchanged while a failure report
+ * rides stderr. `runCli` is this with the streams concatenated.
+ */
+export async function runCliStreams(
   cwd: string,
   args: string[],
   env: NodeJS.ProcessEnv = hermeticEnv(),
-): Promise<{ out: string; code: number }> {
+): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
     const { stdout, stderr } = await exec(
       process.execPath,
       [TSX_CLI, CLI, ...args],
       { cwd, env },
     );
-    return { out: stdout + stderr, code: 0 };
+    return { stdout, stderr, code: 0 };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     return {
-      out: (e.stdout ?? "") + (e.stderr ?? ""),
+      stdout: e.stdout ?? "",
+      stderr: e.stderr ?? "",
       code: exitStatusOf(err),
     };
   }
+}
+
+/** Spawn one real `flume <args>`; collect combined output + exit code. */
+export async function runCli(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = hermeticEnv(),
+): Promise<{ out: string; code: number }> {
+  const { stdout, stderr, code } = await runCliStreams(cwd, args, env);
+  return { out: stdout + stderr, code };
 }
 
 /** Run a git subprocess in `cwd`; return its trimmed stdout. */

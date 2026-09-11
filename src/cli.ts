@@ -72,6 +72,7 @@ import {
   formatTickVerdictLine,
 } from "./cliVerdict.js";
 import { HELP_TOP, HELP_SUB, HELP_JOB, isSubcommand, wantsHelp } from "./cliHelp.js";
+import { loadChainForObservation } from "./cliChainLoad.js";
 import { runJobVerb } from "./cliJobVerbs.js";
 import type { FlumePaths } from "./flumeApi.js";
 
@@ -351,15 +352,11 @@ async function main(): Promise<number> {
       }
     }
     // §6 (v0.6.2) / spec/pending.md "The pending queue": best-effort — a
-    // missing or broken chain must never fail `status`, only silently
-    // withhold the friction line and the chain-declared pendingPath (the
-    // pending count below then falls back to the default location).
-    let chain: Chain | undefined;
-    try {
-      ({ chain } = await diskChainLoader(paths)());
-    } catch {
-      chain = undefined;
-    }
+    // missing or broken chain must never fail `status` — but never silent:
+    // the shared load (`loadChainForObservation`, src/cliChainLoad.ts)
+    // reports the failure and names what it costs, because the pending
+    // count below then rebases on the default queue path.
+    const chain = await loadChainForObservation(paths, "status");
     // §3: the pending entry count, independent of whether the chain loads —
     // `flume job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically

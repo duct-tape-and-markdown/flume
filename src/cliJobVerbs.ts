@@ -5,7 +5,8 @@
  */
 
 import { jobNew, jobRm, jobStatus, JobUsageError } from "./job.js";
-import { diskChainLoader, CjsContextLoadError } from "./Dispatcher.js";
+import { CjsContextLoadError } from "./Dispatcher.js";
+import { loadChainForObservation } from "./cliChainLoad.js";
 import type { FlumePaths } from "./flumeApi.js";
 
 /**
@@ -33,22 +34,15 @@ export async function runJobVerb(
     }
     try {
       // §6 (v0.6.2): the friction dir is job-dir-relative but declared once
-      // on the repo-resident chain — load it here, best-effort (a missing or
-      // broken chain must never fail `job status`, only silently withhold
-      // the friction counts). `Chain.pendingPath` (spec/pending.md "The
-      // pending queue") rides the same best-effort load, alongside it.
-      let frictionDir: string | undefined;
-      let pendingPath: string | undefined;
-      try {
-        const { chain } = await diskChainLoader(paths)();
-        frictionDir = chain.friction;
-        pendingPath = chain.pendingPath;
-      } catch {
-        frictionDir = undefined;
-        pendingPath = undefined;
-      }
+      // on the repo-resident chain — and `Chain.pendingPath` (spec/pending.md
+      // "The pending queue") rides the same load. Best-effort so a missing or
+      // broken chain never fails `job status`, and loud so it never quietly
+      // rebases every job's pending count on the default queue path: the
+      // shared load (`loadChainForObservation`, src/cliChainLoad.ts) reports
+      // the failure and what it withholds.
+      const chain = await loadChainForObservation(paths, "job status");
 
-      const jobs = jobStatus(repoRoot, frictionDir, pendingPath);
+      const jobs = jobStatus(repoRoot, chain?.friction, chain?.pendingPath);
       if (jobs.length === 0) {
         console.log("no jobs");
         return 0;
