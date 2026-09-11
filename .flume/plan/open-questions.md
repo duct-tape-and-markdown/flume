@@ -314,3 +314,48 @@ exposes. The prose clause above stays the right default.
 
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
+
+## Flume's own build has no declared-files gate, and the copy has no clean home (PARKED)
+
+Drained from `CASCADE-GATE-REFUSES-UNDECLARED-SPAN`'s note, leg 2; verified on
+disk. The finding was filed against the example, and the example is now the only
+place it holds: `examples/cascade-chain.ts:238` exports `declaredFilesGate`,
+while this repo's own build runs `[tscGate, recordsGate, vitestOnCode]`
+(`.flume/chain.ts:824`) and judges an entry's `files` declaration against the
+span it produced not at all.
+
+**Narrower here than in cascade, but not closed.** This chain declares a
+`shipped` predicate (`.flume/chain.ts:815-823`), so a note-only commit is a park
+and retires nothing — the case cascade had no defence for. What remains: `tests/**`
+is a channel path, so a commit touching only tests counts as shipped and retires
+the entry with **none** of its declared paths met, and nothing says so.
+
+**The judgement cannot move into the engine.** The engine reads `files` as a path
+union alone (`declaredPaths`, `src/PendingSchema.ts:574-583`) plus
+`files.edit[].path` for the partition; what `new` / `edit` / `retire` *claim about
+the tree* is payload it never interprets, so an engine-side gate would be
+enforcing shape on payload it does not consume (`engine-boundary.md`, *Capability
+vs convention*). The rule is the chain's either way — which is what leaves the
+copy homeless.
+
+Options:
+
+- **Copy the gate into `.flume/chain.ts`.** ~80 lines duplicated from `examples/`.
+  `engine-boundary.md` *Surface, not prescription* names verbatim copying as the
+  detector of a missing surface — but the surface it points at is unavailable
+  above, so the copy is the honest price of a chain-owned rule rather than
+  evidence against the engine.
+- **Import `declaredFilesGate` from `../examples/cascade-chain.ts`.** Zero
+  duplication, and the export is already parameterised over `readFileAtRef` so it
+  drops in. **Recommend against:** `examples/**` is inside build's fence while
+  `.flume/chain.ts` is outside it, so a build tick editing the example would be
+  editing this repo's own build gate — the lane separation `spec-plan-build.md`
+  rests on, inverted.
+- **Take the floor only** (recommended). Not the class judgement — just the zero
+  refusal: a commit that touched none of a non-empty `files` declaration fails.
+  Ten lines against eighty, no `readFileAtRef`, and it is the whole of what this
+  chain is missing, since the partial span is accepted below. The full
+  new/edit/retire judgement stays cascade's to teach.
+
+Parked, not filed: `.flume/chain.ts` is outside every phase lane, so any of the
+three is a `chore(flume):` from an interactive session.
