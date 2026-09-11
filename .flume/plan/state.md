@@ -13,5 +13,7 @@ Rotation open (phrase delta off `3d52cd0`, engine-boundary.md). Covered:
 with `src/Gate.ts`; `src/Prompt.ts` with `src/PendingSchema.ts` and
 `src/paths.ts`; `src/builtinGates.ts`; `src/cli.ts` with `src/job.ts` and
 `src/Baton.ts`; `src/Dispatcher.ts` with its immediate imports; `examples/`'s
-three chain modules with `src/index.ts`.
+three chain modules with `src/index.ts`; `src/cli.ts`'s remaining helper
+imports — `src/cliHelp.ts`, `src/cliJobResolution.ts`, `src/cliJobVerbs.ts`,
+`src/cliVerdict.ts` — with `src/standardSchema.ts`.
 
