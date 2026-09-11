@@ -108,8 +108,33 @@ a code change. This repo's own `.gitignore` carries the stale `.flume/last-tick.
 line too — harmless (it ignores nothing), and inside build's fence, so it rides
 whatever entry the amendment files.
 
-**The first half closed.** The block was also missing `merging/`; the amendment landed
-at `17cf6a3`, and `RUNTIME-IGNORES-NAMES-MERGING` now carries the code half.
+**The first half closed, and its code half shipped.** The block was also missing
+`merging/`; the amendment landed at `17cf6a3` and `RUNTIME-IGNORES-NAMES-MERGING`
+shipped on 2026-09-11.
+
+**A second fork that ship raised — pin the block, or shrink it to a pointer?**
+Drained from that entry's note; verified on disk. `docs/CHAIN-AUTHORING.md`'s copy of
+this same list is equality-pinned to `RUNTIME_IGNORES` (`tests/retired-narration.test.ts`,
+"the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES
+carries and no others") and structurally cannot drift. The spec's copy
+(`spec/jobs.md:105-116`) is pinned by nothing — which is why the stale name above sits in
+the spec and not in the doc, and why the `merging/` gap stayed open long enough to need an
+entry. A drift the pinned copy cannot have is evidence about the unpinned one. Two closes,
+both spec edits, so the choice is the human's:
+
+- **Pin it.** A second equality pin reading the fenced block through `RUNTIME_IGNORES`.
+  Cheapest, and the spec section stays readable standing alone. Red until the name fix
+  above lands, so it ships after that amendment, never with it.
+- **Shrink it to a pointer** at `RUNTIME_IGNORES` (`.claude/rules/engineering.md`,
+  *Derived state is computed, never restated beside its source* — "in artifacts, the same
+  bar"). Removes the drift surface instead of policing it. Against it: in this pipeline
+  the spec is upstream of the code, so a spec section citing `src/` inverts the flow
+  `spec-plan-build.md` rests on, and a reader can no longer evaluate the section without
+  opening the tree.
+
+**Recommend the pin** — it buys the drift refusal without inverting the pipeline, and the
+merged set is short enough that carrying it twice costs little. Either way the name fix
+lands first.
 
 ## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
 
