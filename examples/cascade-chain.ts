@@ -255,40 +255,38 @@ export default factory;
 /* --------------------------------------------------------------------------
  * Plugging this into a host repo's `.flume/chain.ts`
  *
- * The flume CLI loads `<repo>/.flume/chain.ts` and expects a default export
- * of `Chain`. To use this file as a starting point in a consumer repo:
+ * The flume CLI loads `<repo>/.flume/chain.ts` and calls its default export:
+ * a factory `(api) => ({ chain })`, which is what `export default factory`
+ * above hands it. To use this file as a starting point in a consumer repo:
  *
  *   1. Copy this file to `<your-repo>/.flume/chain.ts`.
  *
- *   2. Replace the `../src/index.ts` import paths with `"flume"` — the
- *      package's single public entry point:
+ *   2. Replace the `../src/index.ts` import path with `"flume"` — the
+ *      package's single public entry point. The engine values this chain
+ *      composes with arrive on the factory's `api` parameter, so the only
+ *      engine import is `import type`:
  *
- *          import type { Chain, Gate, Phase, TickContext } from "flume";
- *          import {
- *            pendingGate,
- *            renderSchemaForPrompt,
- *            shellGate,
- *            tscGate,
- *            vitestGate,
- *            eslintGate,
+ *          import type {
+ *            Chain,
+ *            ChainFactory,
+ *            EntryExtension,
+ *            Gate,
+ *            Phase,
+ *            TickContext,
  *          } from "flume";
  *
  *   3. Adapt the phases to your project:
  *      - Trim phases you don't need (e.g. drop `spec` for a two-phase chain).
  *      - Update `writablePaths` to match your repo layout.
- *      - Swap in your own custom gates; drop the built-ins you don't use.
+ *      - Swap in your own custom gates; drop the built-ins you don't use —
+ *        they are destructured off `api` at the top of the factory.
  *      - Point `promptPath` at prompts that live next to chain.ts (e.g.
  *        `.flume/prompts/build.md`).
  *
- *   4. Change the named export `cascadeChain` to a default export:
- *
- *          export default cascadeChain;
- *
- *      The CLI imports the default export when loading chain.ts.
- *
- *   5. Optionally export an `agent` alongside the chain to customize the
- *      provider seam (`claudeCode` + decorators); the dispatcher picks it up
- *      automatically. See `flume/.flume/chain.ts` in this repo for the
+ *   4. To customize the provider seam (`claudeCode` + decorators), return an
+ *      `agent` from the factory alongside the chain — `{ chain, agent }`, not
+ *      a module export; a named export cannot receive the API. Same for a
+ *      `forkResolver`. See `flume/.flume/chain.ts` in this repo for the
  *      pattern.
  *
  * Run `pnpm exec flume status` to confirm the harness loaded your chain.

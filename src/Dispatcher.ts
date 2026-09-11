@@ -1090,8 +1090,9 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
 
 /**
  * Load + normalize + validate a chain module from an absolute `chain.ts`
- * path. Throws on a missing file, a compile/syntax error, or a shape that
- * isn't a Chain (no resolvable default export, or `phases` not an array).
+ * path. Throws on a missing file, a compile/syntax error, or a module that is
+ * not the §6 factory shape: a default export that is not a function, or a
+ * factory whose return carries no `chain` with a `phases[]` array.
  *
  * This is the single load+validate path the runtime trusts. `diskChainLoader`
  * wraps it (one load per call, no memo); `chainLoadGate` (builtinGates) calls
@@ -1125,7 +1126,8 @@ export async function loadChainModule(
   // namespacedJoin (src/paths.ts) is the shared idiom.
   if (!existsSync(namespacedJoin(path))) {
     throw new Error(
-      `chain config not found at ${path}; create .flume/chain.ts that default-exports a Chain.`,
+      `chain config not found at ${path}; create .flume/chain.ts that ` +
+        `default-exports a chain factory: (api) => ({ chain }).`,
     );
   }
   let ns: Record<string, unknown>;
@@ -1154,7 +1156,7 @@ export async function loadChainModule(
   const factory = (interop ? d!.default : d) as ChainFactory | undefined;
 
   // §6: a non-function default export is refused, never accepted as the
-  // pre-§6 `Chain` object. A silent fallback would readmit the very thing
+  // pre-§6 `Chain` object the factory replaced. A silent fallback would readmit the very thing
   // the section removes — a chain resolving engine values through its own
   // import, and with them a second physical engine.
   if (typeof factory !== "function") {
@@ -1251,9 +1253,9 @@ export interface DispatcherOptions {
   namespace?: string;
   /**
    * Default agent. Per-tick resolution is
-   * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` that exports
-   * `agent` overrides this (the agent re-resolves with the chain), and a
-   * phase carrying its own `agent` overrides both for its ticks.
+   * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` whose factory
+   * returns `agent` overrides this (the agent re-resolves with the chain),
+   * and a phase carrying its own `agent` overrides both for its ticks.
    */
   agent: Agent;
   /**

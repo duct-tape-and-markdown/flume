@@ -7,8 +7,8 @@
  * is the authoritative reference; see HELP_TEXT below.
  *
  * The chain config is loaded from `./.flume/chain.ts` (resolved with tsx).
- * That file must default-export a `Chain` and may export `agent` to override
- * the default `claudeCode()`.
+ * That file must default-export a factory — `(api) => ({ chain })` — whose
+ * return may carry `agent` to override the default `claudeCode()`.
  */
 
 import { resolve, join, dirname } from "node:path";
@@ -661,8 +661,8 @@ async function main(): Promise<number> {
 
   // Dispatcher resolves .flume/chain.ts from configDir once at tick start
   // (one load per process — `flume loop` re-resolves by spawning a fresh
-  // `flume tick` per iteration, §2); a chain.ts that exports `agent`
-  // overrides the default agent per tick.
+  // `flume tick` per iteration, §2); a chain.ts whose factory returns
+  // `agent` overrides the default agent per tick.
   const resolveChain = diskChainLoader(paths);
   // §16 (RELEASE-v0.7): the `flume loop` supervisor's run-scoped quarantine
   // crosses the process boundary via this env var (set by

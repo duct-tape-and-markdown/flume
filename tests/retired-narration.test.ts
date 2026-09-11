@@ -15,9 +15,9 @@ import { describe, expect, it } from "vitest";
 // the page onto a rung that fails.
 //
 // Scope is what a chain author reads to learn the shapes — published prose,
-// the engine's own doc comments, and the dogfood chain, which teaches by
-// being read as a worked example. Excluded, each for a reason that is about
-// the file's job rather than convenience:
+// the engine's own doc comments, and the chains that teach by being read as
+// worked examples: the dogfood chain and `examples/`. Excluded, each for a
+// reason that is about the file's job rather than convenience:
 //   - `tests/` — a test legitimately drives the retired argv through
 //     `extraArgs` to pin that the passthrough still works
 //     (tests/Agent.test.ts).
@@ -27,6 +27,19 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /** The dogfood chain — the surface both retired shapes lived on longest. */
 const CHAIN_PATH = join(".flume", "chain.ts");
+
+/**
+ * The reference chains. `engine-boundary.md` ("Opinion ships by name, opted
+ * into") makes `examples/` where this repo's recommended shapes live, so a
+ * chain author reads them as the worked answer — the same job the dogfood
+ * chain does, on a surface a consumer copies wholesale.
+ */
+function exampleChainPaths(): string[] {
+  return readdirSync(join(REPO_ROOT, "examples"))
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => join("examples", name))
+    .sort();
+}
 
 const RETIRED = [
   {
@@ -52,7 +65,7 @@ function scannedPaths(): string[] {
   const src = readdirSync(join(REPO_ROOT, "src"))
     .filter((name) => name.endsWith(".ts"))
     .map((name) => join("src", name));
-  return [...docs, ...src, "README.md", CHAIN_PATH];
+  return [...docs, ...src, ...exampleChainPaths(), "README.md", CHAIN_PATH];
 }
 
 describe("retired chain-authoring shapes stay retired", () => {
@@ -108,6 +121,129 @@ describe("retired chain-authoring shapes stay retired", () => {
       "a chain-authoring file mentions `process.env.FLUME_DIR`: point it at " +
         "`api.paths.flumeDir`, or add it here with the reason it survives",
     ).toEqual(Object.keys(ALLOWED_ENV_MENTIONS).sort());
+  });
+
+  // Pin (PRE-0.10-CHAIN-SHAPE-TAUGHT, same section): §6 replaced the chain
+  // module shape — a default-exported `Chain` object, with `agent` as a named
+  // module export — with a default-exported factory whose return carries
+  // both. The loader refuses the old shape outright, so the only place it can
+  // still be taught is prose: a doc comment, a host-repo walkthrough, or the
+  // loader's own missing-chain error, which told an author to write exactly
+  // what the next check rejected.
+  //
+  // The hazard: this shape is named as often to deny it as to teach it, in
+  // the same verbs ("refuses a default export that is not a function"). The
+  // split is the replacement — prose that binds `Chain` to chain.ts's default
+  // export and never names the factory (nor writes its `=>` signature) is
+  // teaching the retired shape; prose that names both is pointing at the
+  // current one. That is why the needles read chunks, not files: the two
+  // claims routinely sit in neighbouring sentences of one doc block.
+  const DEFAULT_EXPORT = /default[-\s]export(?:s|ed|ing)?\b/i;
+  /** The type/object — `chain.ts`, `{ chain }`, and "a chain" are not it. */
+  const CHAIN_TYPE = /\bChain\b/;
+  /** The shape that replaced it, named or written. */
+  const FACTORY = /factory|=>/i;
+  const CHAIN_DEFAULT_CODE = /export\s+default\s+\w*[Cc]hain\w*/;
+  const AGENT_MODULE_EXPORT = /\bexports?\s+(?:an?\s+|the\s+)?[`'"]agent[`'"]/i;
+
+  /**
+   * `text` as narration chunks: comment markers stripped, whitespace
+   * collapsed, split at sentence terminators that carry a following space.
+   * Prose wraps across lines and comment markers, so a needle reading raw
+   * text misses every wrapped mention; and the trailing space is what keeps
+   * `0.10` and `chain.ts` inside one chunk rather than splitting a claim into
+   * fragments the needles then read separately.
+   */
+  function narrationChunks(text: string): string[] {
+    return text
+      .split("\n")
+      .map((line) => line.replace(/^\s*(?:\*\/?|\/\*+|\/\/|#+)\s?/, ""))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .split(/(?<=[.;:!?])\s+/);
+  }
+
+  /** Every chunk of `text` that teaches one of the two retired shapes. */
+  function pre010Sites(text: string): string[] {
+    return narrationChunks(text).filter(
+      (chunk) =>
+        (DEFAULT_EXPORT.test(chunk) &&
+          CHAIN_TYPE.test(chunk) &&
+          !FACTORY.test(chunk)) ||
+        CHAIN_DEFAULT_CODE.test(chunk) ||
+        AGENT_MODULE_EXPORT.test(chunk),
+    );
+  }
+
+  /**
+   * Sites this entry's fence could not reach, each with what it still says —
+   * the same inventory shape the env-mention pin above uses, but these are
+   * unfixed violations rather than surviving denials. An entry leaves when
+   * the prose moves to the factory; a new site fails until it is named.
+   */
+  const UNFIXED_SITES: Record<string, string> = {
+    [CHAIN_PATH]:
+      "dogfood chain header: `the default export is the Chain` — outside " +
+      "the fence of the entry that promoted this pin",
+  };
+
+  it("no chain-authoring surface teaches the pre-0.10 module shape — a default-exported `Chain` object, or `agent` as a module export", () => {
+    const sites = corpus.flatMap((f) =>
+      pre010Sites(f.text).map((chunk) => ({ path: f.path, chunk })),
+    );
+    expect(
+      [...new Set(sites.map((s) => s.path))].sort(),
+      "teach the factory instead — `(api) => ({ chain })`, with `agent` on " +
+        "its return — or name the site here with what it still says. Sites: " +
+        sites.map((s) => `${s.path}: ${s.chunk.slice(0, 90)}`).join(" | "),
+    ).toEqual(Object.keys(UNFIXED_SITES).sort());
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the pin above reports "no sites" whether the needles are
+  // watching or dead. Drive both directions — each retired shape as an
+  // author would write it, and the corpus's own denial of that shape, which
+  // must stay unflagged while still being prose about the default export.
+  it("flags each retired shape and none of the corpus's denials of it", () => {
+    for (const taught of [
+      "That file must default-export a `Chain` and may export `agent`.",
+      "create .flume/chain.ts that default-exports a Chain.",
+      "The CLI expects a default export of `Chain`.",
+      "   4. Change the named export to a default export: export default cascadeChain;",
+      "Optionally export an `agent` alongside the chain.",
+    ]) {
+      expect(pre010Sites(taught), `needles missed: ${taught}`).not.toEqual([]);
+    }
+    for (const denier of [join("docs", "CHAIN-AUTHORING.md"), "src"]) {
+      const file = corpus.find((f) =>
+        denier === "src" ? f.path === join("src", "Dispatcher.ts") : f.path === denier,
+      );
+      expect(file, `${denier} left the scanned set`).toBeDefined();
+      expect(
+        DEFAULT_EXPORT.test(file!.text),
+        `${file!.path} no longer discusses the default export — the negative ` +
+          "control is vacuous",
+      ).toBe(true);
+      expect(pre010Sites(file!.text), `${file!.path} denies the shape`).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("the scanned corpus covers `examples/`'s chain modules, the surface engine-boundary.md names as opinion's home", () => {
+    const examples = exampleChainPaths();
+    expect(examples.length, "examples/ holds no chain module").toBeGreaterThan(
+      0,
+    );
+    const scanned = corpus.map((f) => f.path);
+    for (const path of examples) expect(scanned).toContain(path);
+    // Non-vacuity: a directory listing proves nothing about what was read.
+    // Every example is a chain module, so every one carries the default
+    // export these pins judge.
+    for (const path of examples) {
+      const text = corpus.find((f) => f.path === path)!.text;
+      expect(text, `${path} is not a chain module`).toMatch(/export default/);
+    }
   });
 });
 
