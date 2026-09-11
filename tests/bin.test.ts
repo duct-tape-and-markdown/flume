@@ -124,9 +124,10 @@ describe("bin/flume symlink walk", () => {
  * bin/flume.js is `bin.flume` in package.json — the only entry a consumer
  * invokes, since npm's generated shims (including the Windows `.cmd`/`.ps1`)
  * wrap it. scripts/smoke-install.mjs drives it off a full pack+install but
- * asserts exit 0 on success paths only, so the failure halves of what
- * spec/cli.md, "Distribution" declares of it — the child's exit code, or
- * terminating signal, propagated — had no check at all.
+ * asserts exit 0 on success paths only, so most of what spec/cli.md,
+ * "Distribution" declares of it had no check at all. The cases below hold
+ * that list whole: argv preserved, the exit code or terminating signal
+ * propagated, stdio inherited on all three fds, and no environment opinion.
  *
  * Each case lays the real shim into a package-shaped temp dir beside a fake
  * dist/cli.js that does exactly the one thing the case is about, and spawns
@@ -164,9 +165,14 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     return shim;
   }
 
-  // As npm's shims invoke it: node.exe on the script, argv after it.
-  const runShim = (shim: string, args: string[]) =>
-    spawnSync(process.execPath, [shim, ...args], { encoding: "utf8" });
+  // As npm's shims invoke it: node.exe on the script, argv after it. The
+  // shim's own stdio defaults to pipes, so what `stdio: "inherit"` hands the
+  // grandchild lands back here per-fd — which is what the stdio cases read.
+  const runShim = (
+    shim: string,
+    args: string[],
+    opts: { input?: string; env?: NodeJS.ProcessEnv } = {},
+  ) => spawnSync(process.execPath, [shim, ...args], { encoding: "utf8", ...opts });
 
   it("bin/flume.js execs dist/cli.js with argv preserved", async () => {
     // Identifies itself, so a shim that resolved some *other* file (or
@@ -183,6 +189,67 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ entry: "dist/cli.js", argv });
+  });
+
+  /**
+   * Distinct markers per fd, and a non-zero exit — the path where a chatty
+   * shim would be most tempted to add a diagnostic of its own. Exact
+   * equality on both streams is the whole assertion: a shim that merged the
+   * two fds, buffered and re-emitted them, or prefixed either one fails.
+   * `process.exitCode` rather than `process.exit()` so the writes flush —
+   * exiting outright can truncate a pipe write mid-flight.
+   */
+  it("bin/flume.js passes the child's stdout and stderr through unmixed and adds no bytes of its own", async () => {
+    const shim = await makePackage(
+      `process.stdout.write("OUT:dist/cli.js");\nprocess.stderr.write("ERR:dist/cli.js");\nprocess.exitCode = 3;\n`,
+    );
+
+    const result = runShim(shim, ["status"]);
+
+    // The child ran and ran to completion, so the stream assertions below
+    // are judging something.
+    expect(result.status).toBe(3);
+    expect(result.stdout).toBe("OUT:dist/cli.js");
+    expect(result.stderr).toBe("ERR:dist/cli.js");
+  });
+
+  /**
+   * `stdio: "inherit"` gives fd 0 to the child too: the shim never reads it,
+   * so everything spawnSync writes into the pipe is the child's to consume.
+   * Multi-line and with a trailing newline, since a shim that round-tripped
+   * stdin through a line reader would drop or normalize those.
+   */
+  it("bin/flume.js passes stdin through to the child", async () => {
+    const shim = await makePackage(
+      `import { readFileSync } from "node:fs";\nprocess.stdout.write(JSON.stringify({ stdin: readFileSync(0, "utf8") }));\n`,
+    );
+
+    const input = "first line\nsecond line\n";
+    const result = runShim(shim, ["tick"], { input });
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ stdin: input });
+  });
+
+  /**
+   * The shim passes no `env` to spawnSync, so the child's environment is the
+   * shim's verbatim. Deep equality against the exact env handed in catches
+   * both directions — a var injected (a NODE_OPTIONS, a FLUME_* default) and
+   * one rewritten on the way through.
+   */
+  it("bin/flume.js adds nothing to the child's environment", async () => {
+    const shim = await makePackage(`process.stdout.write(JSON.stringify(process.env));\n`);
+
+    // Built off the real env so node.exe still finds what it needs on the
+    // Windows lane; the sentinel proves the environment reached the child at
+    // all, so the equality below is not being judged over an empty set.
+    const env = { ...process.env, FLUME_BIN_SENTINEL: "sentinel-value" };
+    const result = runShim(shim, ["status"], { env });
+
+    expect(result.status).toBe(0);
+    const childEnv = JSON.parse(result.stdout) as NodeJS.ProcessEnv;
+    expect(childEnv["FLUME_BIN_SENTINEL"]).toBe("sentinel-value");
+    expect(childEnv).toEqual(env);
   });
 
   it("bin/flume.js propagates the child's non-zero exit status", async () => {
