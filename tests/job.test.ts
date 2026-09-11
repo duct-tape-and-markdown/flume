@@ -21,7 +21,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ import {
   validateJobName,
 } from "../src/job.ts";
 import { Baton } from "../src/Baton.ts";
-import { STATE_ROOT_NAMES } from "../src/paths.ts";
+import { mergingMarkerPath, STATE_ROOT_NAMES } from "../src/paths.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { gitOut, runCli } from "./helpers/subprocess.ts";
 
@@ -256,6 +256,47 @@ describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
         join(".flume", "jobs", "t-ignores"),
       ]);
       expect(seen).toBe("?? .flume/jobs/t-ignores/.gitignore");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
+// Mechanism pin (RUNTIME-IGNORES-NAMES-MERGING, per spec/jobs.md "Runtime
+// ignores"): the merge stage stakes `<stateRoot>/merging/<slug>.json` before
+// each pick and clears it after, so a crash mid-merge leaves the marker on
+// disk — exactly the moment an operator reaches for `git add`. The seed
+// covered every other runtime dir but not this one, so the crash artifact the
+// next `loop` start refuses on was untracked-visible and addable. The name is
+// the state root's own (`STATE_ROOT_NAMES`, `src/paths.ts`) and the marker
+// path is built by the real accessor, so this drives the real writer through
+// the real reader — git — rather than respelling either side here.
+describe("ensureRuntimeIgnores — the crash-surviving merge marker", () => {
+  it("RUNTIME_IGNORES names the merging-marker dir", async () => {
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
+    // empty set would leave `status` below judging nothing.
+    expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.merging}/`);
+
+    const repo = await makeRepo();
+    try {
+      const jobDir = join(repo.dir, ".flume", "jobs", "t-merging");
+      await mkdir(jobDir, { recursive: true });
+      await ensureRuntimeIgnores(jobDir);
+      // The marker as an interrupted merge leaves it: git only reports an
+      // ignore for a path it would otherwise see, so write it first.
+      const marker = mergingMarkerPath(jobDir, "some-entry-tag");
+      await mkdir(dirname(marker), { recursive: true });
+      await writeFile(marker, "{}\n");
+
+      const seen = await gitOut(repo.dir, [
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        join(".flume", "jobs", "t-merging"),
+      ]);
+      expect(seen).toBe("?? .flume/jobs/t-merging/.gitignore");
     } finally {
       await repo.cleanup();
     }
