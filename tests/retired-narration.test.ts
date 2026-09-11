@@ -2335,16 +2335,24 @@ interface ModuleCite {
   shape: "colon" | "parenthesized";
 }
 
-/** Every module-path cite in the comment prose of `src/` and `examples/`. */
-function moduleCites(): ModuleCite[] {
-  const cites: ModuleCite[] = [];
-  for (const from of CITE_SCANNED_ROOTS.flatMap((root) =>
+/**
+ * Every file under the cite-scanned roots paired with its reader-visible
+ * prose — the corpus both comment-cite scans read, walked once so neither
+ * scan carries its own copy of the descent.
+ */
+function citeProseCorpus(): { from: string; prose: string }[] {
+  return CITE_SCANNED_ROOTS.flatMap((root) =>
     readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
       .map((name) => join(root, name))
       .filter((path) => statSync(join(REPO_ROOT, path)).isFile())
       .sort(),
-  )) {
-    const prose = proseOf(from, readFileSync(join(REPO_ROOT, from), "utf8"));
+  ).map((from) => ({ from, prose: proseOf(from, readFileSync(join(REPO_ROOT, from), "utf8")) }));
+}
+
+/** Every module-path cite in the comment prose of `src/` and `examples/`. */
+function moduleCites(): ModuleCite[] {
+  const cites: ModuleCite[] = [];
+  for (const { from, prose } of citeProseCorpus()) {
     const seen = new Set<string>();
     for (const { shape, re, pathAt, symbolAt } of CITE_SHAPES) {
       for (const m of prose.matchAll(re)) {
@@ -2490,6 +2498,178 @@ describe("module-path cites in src/ and examples/ resolve against the tree", () 
     expect(
       cites.map((c) => resolveCite(c)).filter((p) => p !== null),
       "a doc comment points at a module that no longer declares the symbol — repoint it at the declaring module",
+    ).toEqual([]);
+  });
+});
+
+// ---------- quoted test-title cites ----------
+
+/**
+ * The other half of the same pointer: a doc comment that names the *test*
+ * pinning what the sentence just claimed — "byte shape pinned by
+ * tests/Prompt.test.ts's "byte-identical to the pre-§2 collapsed rendering"
+ * case". `CITE_SHAPES` above cannot see one: every shape there requires a
+ * backticked symbol, and a test title is a sentence in quotes, so the whole
+ * class was selected at zero — a green verdict over an empty set
+ * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
+ *
+ * These rot the same way and more quietly: a suite extraction moves the
+ * `it(…)` and leaves the pointer behind, and the sentence still reads as
+ * though something is watching. Resolution is by *title*, not by symbol —
+ * the quoted text is a substring of the named file — because a title is what
+ * a reader searches for and what a rename changes.
+ */
+const CITE_TEST_MODULE_RE = "tests/[A-Za-z0-9_./-]+\\.test\\.ts";
+
+/**
+ * A quoted test title: straight double quotes, no newline between them —
+ * after `proseOf` a newline is a code line, so the needle never composes a
+ * quote in one comment run with a quote in the next. The length floor keeps
+ * a one-word quoted term ("run", "none") from reading as a title.
+ */
+const CITE_TITLE_RE = '"([^"\\n]{8,})"';
+
+/**
+ * Both orders the corpus writes, mirroring `CITE_SHAPES`: path-first —
+ * `tests/Gate.test.ts's "…"`, `tests/Dispatcher.test.ts, "…"` — and
+ * title-first, where the path follows the quote in parentheses. Each demands
+ * the quote and the path be adjacent, so a path that merely ends a clause
+ * ahead of ordinary prose is not a cite.
+ */
+const TITLE_CITE_SHAPES: readonly {
+  order: "path-first" | "title-first";
+  re: RegExp;
+  pathAt: number;
+  titleAt: number;
+}[] = [
+  {
+    order: "path-first",
+    re: new RegExp(`\`?(${CITE_TEST_MODULE_RE})\`?(?:'s)?\\s*,?\\s+${CITE_TITLE_RE}`, "g"),
+    pathAt: 1,
+    titleAt: 2,
+  },
+  {
+    order: "title-first",
+    re: new RegExp(`${CITE_TITLE_RE}\\s*,?\\s*\\(?\\s*\`?(${CITE_TEST_MODULE_RE})\`?`, "g"),
+    pathAt: 2,
+    titleAt: 1,
+  },
+];
+
+interface TitleCite {
+  /** The file whose comment carries the cite. */
+  from: string;
+  /** The test module the cite names. */
+  path: string;
+  /** The test title the cite quotes, as written. */
+  title: string;
+  order: "path-first" | "title-first";
+}
+
+/** Every quoted test-title cite in the comment prose of `src/` and `examples/`. */
+function titleCites(): TitleCite[] {
+  const cites: TitleCite[] = [];
+  for (const { from, prose } of citeProseCorpus()) {
+    const seen = new Set<string>();
+    for (const { order, re, pathAt, titleAt } of TITLE_CITE_SHAPES) {
+      for (const m of prose.matchAll(re)) {
+        const path = m[pathAt]!.split("/").join(sep);
+        const title = m[titleAt]!;
+        if (seen.has(`${path}|${title}`)) continue;
+        seen.add(`${path}|${title}`);
+        cites.push({ from, path, title, order });
+      }
+    }
+  }
+  return cites;
+}
+
+/**
+ * Resolve a title cite against the tree: the named file exists and carries
+ * the quoted title. Whitespace is flattened on both sides — a title the
+ * comment wrapped across two lines is the same title the `it(…)` spells on
+ * one.
+ */
+function resolveTitleCite(cite: TitleCite): string | null {
+  const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+  let text: string;
+  try {
+    text = readFileSync(join(REPO_ROOT, cite.path), "utf8");
+  } catch {
+    return `${cite.from} cites ${cite.path}, which does not exist`;
+  }
+  return flat(text).includes(flat(cite.title))
+    ? null
+    : `${cite.from} cites "${cite.title}" in ${cite.path}, which carries no such title`;
+}
+
+describe("quoted test-title cites in src/ and examples/ resolve against the suite", () => {
+  const cites = titleCites();
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+  // this needle exists because the shape it reads was selected at zero by the
+  // symbol grammar, so an empty selection here is the exact failure it was
+  // added to end. Both orders are load-bearing — the corpus writes mostly
+  // path-first, and the title-first order is what a reader writes when the
+  // claim, not the file, is the sentence's subject.
+  it("the quoted-title cite scan reads a populated set of cites across both orders the corpus writes", () => {
+    expect(cites.length, "no test-title cite matched — the grammar is off target").toBeGreaterThanOrEqual(5);
+    expect(cites.filter((c) => c.order === "path-first").length).toBeGreaterThan(0);
+    expect(cites.filter((c) => c.order === "title-first").length).toBeGreaterThan(0);
+    // Named carriers: the modules that state a default here and pin it in a
+    // suite over there, which is the whole reason this cite shape exists. A
+    // file list that lost one would refuse over a thinner corpus.
+    for (const from of [
+      join("src", "paths.ts"),
+      join("src", "Prompt.ts"),
+      join("src", "Dispatcher.ts"),
+      join("src", "loopSupervisor.ts"),
+    ]) {
+      expect(cites.map((c) => c.from), `${from} yielded no test-title cite`).toContain(from);
+    }
+  });
+
+  // Sensitivity pin: the grammar reports an empty list whether it is watching
+  // or dead, and `resolveTitleCite` reports null whether it read the title or
+  // read nothing at all. Drive both over hand-authored input — a refusal's
+  // own input is the one case the real writer cannot produce
+  // (engineering.md, "A seam gate reads what the real writer wrote").
+  it("the quoted-title needle flags a cite whose named file does not carry the title and leaves the resolving ones unflagged", () => {
+    const found = (prose: string) =>
+      TITLE_CITE_SHAPES.flatMap(({ re, pathAt, titleAt }) =>
+        [...prose.matchAll(re)].map((m) => `${m[pathAt]}|${m[titleAt]}`),
+      );
+    expect(
+      found(`byte shape pinned by tests/Prompt.test.ts's "byte-identical to the pre-§2 collapsed rendering" case`),
+    ).toContain("tests/Prompt.test.ts|byte-identical to the pre-§2 collapsed rendering");
+    expect(
+      found(`pinned against the real writer by tests/Dispatcher.test.ts, "revert note to the friction channel (§5)": a gate-revert`),
+    ).toContain("tests/Dispatcher.test.ts|revert note to the friction channel (§5)");
+    expect(
+      found(`at most one record per tag, pinned by "records exactly one mergeOutcomes entry for that tag" (tests/Dispatcher.test.ts).`),
+    ).toContain("tests/Dispatcher.test.ts|records exactly one mergeOutcomes entry for that tag");
+    // Not a cite: a path ending a clause, with an unrelated quoted phrase
+    // further along the same sentence.
+    expect(found('the seam lives in `tests/Gate.test.ts`: the omit case calls it "the unset environment"')).toEqual([]);
+
+    const stale: TitleCite = {
+      from: join("src", "loopSupervisor.ts"),
+      path: join("tests", "Dispatcher.test.ts"),
+      title: "a chain declaring neither knob gets the supervisor-policy defaults, byte-identical",
+      order: "path-first",
+    };
+    expect(
+      resolveTitleCite(stale),
+      "an extraction-stranded cite resolves — the scan is toothless",
+    ).toMatch(/carries no such title/);
+    expect(resolveTitleCite({ ...stale, path: join("tests", "loopSupervisor.test.ts") })).toBeNull();
+    expect(resolveTitleCite({ ...stale, path: join("tests", "no-such-file.test.ts") })).toMatch(/does not exist/);
+  });
+
+  it("every quoted test-title cite in a `src/` or `examples/` comment names a file that carries the title", () => {
+    expect(
+      cites.map((c) => resolveTitleCite(c)).filter((p) => p !== null),
+      "a doc comment quotes a test title the named suite no longer carries — repoint it at the suite that runs it",
     ).toEqual([]);
   });
 });

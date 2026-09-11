@@ -57,7 +57,7 @@ export interface SuperviseLoopOptions {
    * consecutive-identical-failure backstop (`abortThreshold` below) still
    * applies. Default `"run"`: quarantine a tagged failure's slug for the
    * rest of the run — exact default byte shape pinned by
-   * tests/Dispatcher.test.ts's "a chain declaring neither knob gets the
+   * tests/loopSupervisor.test.ts's "a chain declaring neither knob gets the
    * supervisor-policy defaults, byte-identical" case. The CLI forwards this from the
    * resolved chain's `supervisorPolicy.quarantineScope` (`src/Phase.ts`);
    * undeclared falls through to the default here.
@@ -68,7 +68,7 @@ export interface SuperviseLoopOptions {
    * threshold — the number of consecutive ticks the same *stage-tagged* signature
    * (provision, merge, or gate) must repeat, with no successful tick between
    * them, before the run aborts. Default 3, pinned by the same
-   * tests/Dispatcher.test.ts case cited on `quarantineScope` above. The CLI
+   * tests/loopSupervisor.test.ts case cited on `quarantineScope` above. The CLI
    * forwards this from the resolved chain's `supervisorPolicy.abortThreshold`;
    * undeclared falls through to the default here.
    */
