@@ -394,7 +394,7 @@ The suite has two lanes:
 
   Raw `git` plumbing on temp fixtures is **not** a trigger by itself: measured across ~190
   default-lane tests it is fast and has never flaked, and naming it here would move most of
-  `Dispatcher.test.ts` for a cost it does not pay. The lane boundary names the measured cost
+  the dispatcher's default-lane suite for a cost it does not pay. The lane boundary names the measured cost
   drivers — Node startup, agent invocations, timing probes — not "subprocess" as a category.
   A load-sensitive timing assertion belongs in *neither* lane until it is event-based: under
   the afterMerge gate's full-suite contention it reverts innocent entries (three in one day,
