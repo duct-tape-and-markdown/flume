@@ -121,7 +121,11 @@ export function formatTickVerdictLine(v: TickVerdict): string {
     .map((g) => `${g.gate}:${g.ok ? "ok" : "FAIL"}`)
     .join(",");
   const merge = v.mergeOutcomes
-    .map((m) => `${m.tag}:${m.outcome}`)
+    // A singleton phase's own span carries no tag (`TickVerdictMergeOutcome.
+    // tag`), so it renders as the bare outcome. Not the phase name in its
+    // place: the line's first field already states it (engineering.md,
+    // "Derived state is computed, never restated beside its source").
+    .map((m) => (m.tag === undefined ? m.outcome : `${m.tag}:${m.outcome}`))
     .join(",");
   return (
     `${v.phaseName}  committed=${v.committed}  gates=[${gates}]  ` +

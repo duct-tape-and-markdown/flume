@@ -434,6 +434,60 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
+  // LOG-TAGLESS-SPAN-ROW — `TickVerdictMergeOutcome.tag` is absent on a
+  // singleton phase's own span, and the human line used to interpolate it
+  // unconditionally, printing `undefined:merged`. Both legs run through the
+  // real CLI so the rendering is read off the real formatter, not a copy.
+  it("flume log renders a merge outcome carrying no tag as the outcome alone", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeTickVerdictsLog(repo.dir, [
+        makeVerdict({
+          phaseName: "plan",
+          committed: true,
+          shippedTags: [],
+          mergeOutcomes: [{ outcome: "merged" }],
+        }),
+      ]);
+
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(0);
+      const line = r.out.trim();
+      expect(line).toContain("merge=[merged]");
+      expect(line).not.toContain("undefined");
+      // The phase name is the line's own first field, never restated as a
+      // stand-in tag for the span.
+      expect(line).not.toContain("plan:merged");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("flume log renders a tagged merge outcome as tag:outcome", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeTickVerdictsLog(repo.dir, [
+        makeVerdict({
+          phaseName: "build",
+          committed: true,
+          shippedTags: ["TAG-A"],
+          mergeOutcomes: [
+            { tag: "TAG-A", outcome: "merged" },
+            { tag: "TAG-B", outcome: "not-shipped" },
+          ],
+        }),
+      ]);
+
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(0);
+      const line = r.out.trim();
+      expect(line).toContain("merge=[TAG-A:merged,TAG-B:not-shipped]");
+      expect(line).not.toContain("undefined");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
   it("--help short-circuits before any side effect", async () => {
     const repo = await makeJobRepo("main");
     try {
