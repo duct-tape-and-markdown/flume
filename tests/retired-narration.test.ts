@@ -70,16 +70,30 @@ const RECOMPOSED_QUEUE_PATH =
  */
 const RETIRED_INBOX_FILE = /inbox\.md/;
 
+/**
+ * The retired artifact-root fallback: a `??` leg immediately beside
+ * `process.env.FLUME_DIR`. The fallback leg specifically, not every mention
+ * of the env var — the canonicalization write-back is real, and documented as
+ * the child-process channel, so prose that names the var and denies the
+ * fallback in one sentence stays unflagged on the whitespace bound alone.
+ */
+const RETIRED_ROOT_FALLBACK = /process\.env\.FLUME_DIR\s*\?\?/;
+
+/**
+ * `--model` assembled into a chain's `extraArgs`. Keyed on the `extraArgs:`
+ * head rather than the flag, because the engine's own argv assembly — the
+ * shape that replaced this one — names the same flag in the same array
+ * literal (`src/Agent.ts`), and must stay unflagged.
+ */
+const RETIRED_MODEL_ARG = /extraArgs\s*:\s*\[\s*['"]--model['"]/;
+
 const RETIRED = [
   {
     behavior:
       "teaches api.paths.flumeDir, never a `?? …` fallback beside " +
       "`process.env.FLUME_DIR`",
-    // The fallback leg specifically, not every mention of the env var: the
-    // canonicalization write-back is real, and documented as the
-    // child-process channel.
     what: "a `?? …` fallback beside `process.env.FLUME_DIR`",
-    pattern: /process\.env\.FLUME_DIR\s*\?\?/,
+    pattern: RETIRED_ROOT_FALLBACK,
     instead: "api.paths.flumeDir",
     unfixed: {} as Record<string, string>,
   },
@@ -88,7 +102,7 @@ const RETIRED = [
       "teaches ClaudeCodeOptions.model, never `--model` assembled into " +
       "`extraArgs`",
     what: "`--model` assembled into `extraArgs`",
-    pattern: /extraArgs\s*:\s*\[\s*['"]--model['"]/,
+    pattern: RETIRED_MODEL_ARG,
     instead: "ClaudeCodeOptions.model",
     unfixed: {} as Record<string, string>,
   },
@@ -230,6 +244,35 @@ describe("retired chain-authoring shapes stay retired", () => {
     }
   });
 
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): every chain declares `ClaudeCodeOptions.model` now, so the
+  // model refusal compares [] to [] and a needle that stopped matching would
+  // report the same empty inventory. Drive both directions — the spellings a
+  // chain author writes, and the engine's own argv assembly, which names the
+  // same flag in the same array literal and must stay unflagged.
+  it("the model needle flags `--model` assembled into `extraArgs` and not the engine's own argv assembly", () => {
+    for (const taught of [
+      'agent: claudeCode({ extraArgs: ["--model", "opus"] }),',
+      "const buildAgent = claudeCode({ extraArgs: ['--model', MODEL] });",
+      'extraArgs: [\n      "--model",\n      "sonnet",\n    ],',
+    ]) {
+      expect(RETIRED_MODEL_ARG.test(taught), `needle missed: ${taught}`).toBe(
+        true,
+      );
+    }
+    const agent = corpus.find((f) => f.path === join("src", "Agent.ts"));
+    expect(agent, "src/Agent.ts left the scanned corpus").toBeDefined();
+    // The near miss, read off disk rather than paraphrased: the flag opening
+    // an argv array literal, and `extraArgs` in the same file — everything
+    // the needle keys on except the `extraArgs:` head.
+    expect(agent!.text).toContain('["--model"');
+    expect(agent!.text).toContain("extraArgs");
+    expect(
+      RETIRED_MODEL_ARG.test(agent!.text),
+      "needle over-fires on the engine's own `--model` assembly",
+    ).toBe(false);
+  });
+
   // The `?? …` pattern above catches the fallback leg only. The rest of the
   // retirement — prose pointing a chain at the env var for artifact placement
   // with no fallback beside it — reads in the same verbs as the two sentences
@@ -252,6 +295,42 @@ describe("retired chain-authoring shapes stay retired", () => {
       "a chain-authoring file mentions `process.env.FLUME_DIR`: point it at " +
         "`api.paths.flumeDir`, or add it here with the reason it survives",
     ).toEqual(Object.keys(ALLOWED_ENV_MENTIONS).sort());
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the fallback refusal compares [] to [] as well. Its
+  // negative control is the inventory above, read off disk rather than
+  // paraphrased — both allowed files name the env var, and neither may trip
+  // the needle.
+  it("the FLUME_DIR-fallback needle flags a `?? …` beside `process.env.FLUME_DIR` and not the mentions the inventory allows", () => {
+    for (const taught of [
+      "const flumeDir = process.env.FLUME_DIR ?? CHAIN_DIR;",
+      'join(process.env.FLUME_DIR ?? CHAIN_DIR, "plan", "state.md")',
+      "const root =\n  process.env.FLUME_DIR ??\n  dirname(fileURLToPath(import.meta.url));",
+    ]) {
+      expect(
+        RETIRED_ROOT_FALLBACK.test(taught),
+        `needle missed: ${taught}`,
+      ).toBe(true);
+    }
+    expect(Object.keys(ALLOWED_ENV_MENTIONS)).not.toEqual([]);
+    for (const [path, why] of Object.entries(ALLOWED_ENV_MENTIONS)) {
+      const file = corpus.find((f) => f.path === path);
+      expect(file, `${path} left the scanned corpus`).toBeDefined();
+      expect(file!.text).toContain("process.env.FLUME_DIR");
+      expect(
+        RETIRED_ROOT_FALLBACK.test(file!.text),
+        `needle over-fires on ${path}: ${why}`,
+      ).toBe(false);
+    }
+    // The tightest of the two, sharpened: `FlumePaths`' doc names the env var
+    // and a `??` leg on one line and only the whitespace bound keeps the
+    // needle quiet. A denial that stopped saying both is a control lost.
+    expect(
+      corpus.find((f) => f.path === join("src", "flumeApi.ts"))!.text,
+      "FlumePaths' doc no longer denies the fallback on the line that names " +
+        "the env var — the needle's closest negative control is gone",
+    ).toMatch(/process\.env\.FLUME_DIR[^\n]*\?\?/);
   });
 
   // Pin (PRE-0.10-CHAIN-SHAPE-TAUGHT, same section): §6 replaced the chain
@@ -1308,6 +1387,52 @@ describe("no doc block is orphaned", () => {
     expect(
       (dispatcher!.text.match(OPENER_ANYWHERE) ?? []).length,
     ).toBeGreaterThan(10);
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): no source in the scanned set carries an orphan, so the
+  // refusal below compares [] to [] — a scanner that stopped recognising an
+  // opener, or stopped scanning forward across the blank lines between two
+  // blocks, reports the same empty result. Drive it against the real file
+  // with one block pushed in front of an attached one: the injected block
+  // comes back, and the attached block it now precedes does not.
+  it("the orphan scan flags an injected doc block followed by another and leaves an attached block unflagged", () => {
+    const dispatcher = sources.find(
+      (f) => f.path === join("src", "Dispatcher.ts"),
+    );
+    expect(dispatcher, "src/Dispatcher.ts left the scanned set").toBeDefined();
+    expect(
+      dispatcher!.orphans,
+      "src/Dispatcher.ts already carries an orphan — the control is not clean",
+    ).toEqual([]);
+
+    const lines = dispatcher!.text.split("\n");
+    // The first block past the module header: a real block on its real
+    // symbol, so the injection is judged against the file's own shape rather
+    // than against a fixture written by the same hand as the expectation.
+    const attached = lines.findIndex((l, i) => i > 0 && OPENER.test(l.trim()));
+    expect(
+      attached,
+      "src/Dispatcher.ts has no doc block past its module header",
+    ).toBeGreaterThan(0);
+
+    const injected = [
+      ...lines.slice(0, attached),
+      "/**",
+      " * Injected orphan: prose whose next non-blank line opens another block.",
+      " */",
+      "",
+      ...lines.slice(attached),
+    ].join("\n");
+
+    expect(
+      orphanedBlocks(dispatcher!.path, injected).map((o) => o.id),
+      "the scan must report the injected block and nothing else — the " +
+        "attached block it now precedes still documents its own symbol",
+    ).toEqual([
+      `${dispatcher!.path}: Injected orphan: prose whose next non-blank ` +
+        "line opens another block.",
+    ]);
   });
 
   it("closes every doc block onto a symbol, never onto another block", () => {
