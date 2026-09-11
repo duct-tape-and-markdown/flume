@@ -1,150 +1,119 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+/**
+ * Narration and agreement pins over the published prose: the retired
+ * chain-authoring shapes, the chain-authoring doc's restatements of the
+ * engine's types, the docs' claims about a state root's layout, the comment
+ * cites in `src/` and `examples/`, and the spec-lint refusals over `spec/`.
+ *
+ * The scanners each pin drives live under `tests/helpers/`, never here. This
+ * file is the one red-on-base copies over the pre-fix tree, so a grammar
+ * declared in it would ride forward inside that copy and its fix could never
+ * go red — the defect the last describe in this file pins against
+ * (`tests/helpers/suiteShape.ts`). What stays here is the corpus wiring, the
+ * assertions, and the drivers an `it` builds for one of them.
+ */
+import { readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { worktreesBase } from "../src/paths.ts";
-import { buildFlumeApi } from "../src/flumeApi.ts";
-import cascadeFactory from "../examples/cascade-chain.ts";
-
-// Narration pin (RETIRED-ROOTS-AND-MODEL-NARRATION, per
-// .claude/rules/engineering.md "Narration is the ladder's bottom rung"):
-// `FlumeApi.paths` and `ClaudeCodeOptions.model` replaced two shapes the
-// engine used to make every chain author assemble by hand — a
-// `process.env.FLUME_DIR ?? CHAIN_DIR` fallback for artifact placement, and
-// `--model` pushed into `extraArgs`. Both replacements are typed, so the only
-// place the retired shapes can still be taught is prose, where nothing
-// mechanical was watching. This is that watch: the retirement promoted off
-// the page onto a rung that fails.
-//
-// Scope is what a chain author reads to learn the shapes — published prose,
-// the engine's own doc comments, and the chains that teach by being read as
-// worked examples: the dogfood chain and `examples/`. Excluded, each for a
-// reason that is about the file's job rather than convenience:
-//   - `tests/` — a test legitimately drives the retired argv through
-//     `extraArgs` to pin that the passthrough still works
-//     (tests/Agent.test.ts).
-//   - `docs/MIGRATING-*.md` — a migration guide's job is to show the shape
-//     you are leaving alongside the one you are moving to.
-const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-/** The dogfood chain — the surface both retired shapes lived on longest. */
-const CHAIN_PATH = join(".flume", "chain.ts");
-
-/**
- * The reference chains. `engine-boundary.md` ("Opinion ships by name, opted
- * into") makes `examples/` where this repo's recommended shapes live, so a
- * chain author reads them as the worked answer — the same job the dogfood
- * chain does, on a surface a consumer copies wholesale.
- */
-function exampleChainPaths(): string[] {
-  return readdirSync(join(REPO_ROOT, "examples"))
-    .filter((name) => name.endsWith(".ts"))
-    .map((name) => join("examples", name))
-    .sort();
-}
-
-/**
- * The queue path a gate composes for itself: a `ctx.*` root followed on the
- * same line by the literal segments, in either spelling — `join(ctx.flumeDir,
- * "plan", "pending.json")` or a `${ctx.cwd}/.flume/plan/pending.json`
- * template. Keyed on `ctx.` because the retired shape is specifically a
- * *gate* rebuilding the path: prose naming `<flumeDir>/plan/pending.json` as
- * the default, a prompt writing `{{FLUME_DIR}}/plan/pending.json`, and
- * `DEFAULT_PENDING_REL`'s own definition are all the fact itself, not a copy
- * of it. `ctx.pendingPath` is excluded as the root for the same reason: it
- * *is* the answer, so a line that names it beside the default layout is
- * documenting the resolved value rather than re-deriving one.
- */
-const RECOMPOSED_QUEUE_PATH =
-  /ctx\.(?!pendingPath\b)\w+[^\n]{0,40}?(?:plan\/pending\.json|["']plan["']\s*,\s*["']pending\.json["'])/;
-
-/**
- * The retired single-file findings queue. `.flume/PROTOCOL.md` ("Records:
- * one file each") replaced it with a directory whose entries are one file
- * per finding, so parallel ticks never collide on one file's text. The
- * needle is the `.md` suffix alone: `inbox/` — the shape that replaced it —
- * is the subject every surviving mention should be about.
- */
-const RETIRED_INBOX_FILE = /inbox\.md/;
-
-/**
- * The retired artifact-root fallback: a `??` leg immediately beside
- * `process.env.FLUME_DIR`. The fallback leg specifically, not every mention
- * of the env var — the canonicalization write-back is real, and documented as
- * the child-process channel, so prose that names the var and denies the
- * fallback in one sentence stays unflagged on the whitespace bound alone.
- */
-const RETIRED_ROOT_FALLBACK = /process\.env\.FLUME_DIR\s*\?\?/;
-
-/**
- * `--model` assembled into a chain's `extraArgs`. Keyed on the `extraArgs:`
- * head rather than the flag, because the engine's own argv assembly — the
- * shape that replaced this one — names the same flag in the same array
- * literal (`src/Agent.ts`), and must stay unflagged.
- */
-const RETIRED_MODEL_ARG = /extraArgs\s*:\s*\[\s*['"]--model['"]/;
-
-const RETIRED = [
-  {
-    behavior:
-      "teaches api.paths.flumeDir, never a `?? …` fallback beside " +
-      "`process.env.FLUME_DIR`",
-    what: "a `?? …` fallback beside `process.env.FLUME_DIR`",
-    pattern: RETIRED_ROOT_FALLBACK,
-    instead: "api.paths.flumeDir",
-    unfixed: {} as Record<string, string>,
-  },
-  {
-    behavior:
-      "teaches ClaudeCodeOptions.model, never `--model` assembled into " +
-      "`extraArgs`",
-    what: "`--model` assembled into `extraArgs`",
-    pattern: RETIRED_MODEL_ARG,
-    instead: "ClaudeCodeOptions.model",
-    unfixed: {} as Record<string, string>,
-  },
-  {
-    // Pin (CHAIN-AUTHORING-GATE-SURFACE, same section): `GateContext`
-    // carries `pendingPath` — the resolved `Chain.pendingPath`, absolute,
-    // one value per tick. A gate that joins the path together instead is
-    // holding a copy of a fact the engine already resolved, and reads the
-    // wrong file the moment a chain relocates the queue.
-    behavior:
-      "the retired queue-path shape has no surviving unfixed site — a gate " +
-      "reads `GateContext.pendingPath`",
-    what: "a gate reading a hardcoded plan/pending.json",
-    pattern: RECOMPOSED_QUEUE_PATH,
-    instead: "GateContext.pendingPath",
-    unfixed: {} as Record<string, string>,
-  },
-  {
-    // Pin (RETIRED-NARRATION-INBOX-AND-QUEUE-PATH, same section): the
-    // findings queue is a directory of one-file records, not a single
-    // `inbox.md` every writer appends to. The old name survived in two
-    // state-layout listings after the directory landed, where it still read
-    // as the current shape.
-    behavior:
-      "no scanned surface names the retired single-file .flume/inbox.md queue",
-    what: "the single-file `.flume/inbox.md` queue",
-    pattern: RETIRED_INBOX_FILE,
-    instead: "the `.flume/inbox/` directory of one-file records",
-    unfixed: {} as Record<string, string>,
-  },
-] as const;
-
-/** Every file whose prose teaches a chain author how to write a chain. */
-function scannedPaths(): string[] {
-  const docs = readdirSync(join(REPO_ROOT, "docs"))
-    .filter((name) => name.endsWith(".md") && !name.startsWith("MIGRATING-"))
-    .map((name) => join("docs", name));
-  const src = readdirSync(join(REPO_ROOT, "src"))
-    .filter((name) => name.endsWith(".ts"))
-    .map((name) => join("src", name));
-  return [...docs, ...src, ...exampleChainPaths(), "README.md", CHAIN_PATH];
-}
+import {
+  CHAIN_PATH,
+  REPO_ROOT,
+  docsPages,
+  exampleChainPaths,
+  readDoc,
+  scannedPaths,
+  specPages,
+} from "./helpers/scanCorpus.ts";
+import {
+  ALLOWED_ENV_MENTIONS,
+  DEFAULT_EXPORT,
+  RETIRED,
+  RETIRED_INBOX_FILE,
+  RETIRED_MODEL_ARG,
+  RETIRED_ROOT_FALLBACK,
+  RECOMPOSED_QUEUE_PATH,
+  UNFIXED_SITES,
+  pre010Sites,
+} from "./helpers/retiredShapes.ts";
+import {
+  ALLOWED_ORPHANS,
+  OPENER,
+  OPENER_ANYWHERE,
+  SECTION_1,
+  arrowRuns,
+  cascadeMentions,
+  cwdDoc,
+  declaredModes,
+  declaredPhaseNames,
+  declineBullets,
+  declineSection,
+  docModes,
+  docPendingGateOptions,
+  docPhaseFields,
+  docTableFields,
+  docTickContextFields,
+  interfaceFields,
+  normalizeTs,
+  orphanedBlocks,
+  predicateReads,
+  priorAttemptSection,
+  quotedDeclaration,
+  singletonConsultRoots,
+  variantNames,
+} from "./helpers/docAgreement.ts";
+import {
+  BASE_DOCS,
+  DOC_CLAIM_FLUME_DIR as FLUME_DIR,
+  FLUME_API_PATH as API_PATH,
+  JOB_SEED_DOC as DOC,
+  STATE_SCANNED_DOCS as SCANNED_DOCS,
+  baseDisagreements,
+  childrenClaim,
+  claimChunks,
+  claimedPaths,
+  flumeDirWhole as whole,
+  formulaClaims,
+  namesSrcSpells,
+  seedChunk,
+  stateRegion,
+  stateRootName,
+  templateSegments,
+} from "./helpers/docClaims.ts";
+import {
+  CITE_SHAPES,
+  RELEASE_CITE_RE,
+  TITLE_CITE_SHAPES,
+  citeScannedFiles,
+  declaresSymbol,
+  declaringBody,
+  moduleCites,
+  proseOf,
+  resolveCite,
+  resolveTitleCite,
+  titleCites,
+} from "./helpers/citeScanners.ts";
+import type { TitleCite } from "./helpers/citeScanners.ts";
+import {
+  SPEC_ABSENT_SYMBOLS,
+  SPEC_SRC_PATH_ALLOWLIST,
+  indexExports,
+  lineLocatorsIn,
+  publicSurfaceTypes,
+  specSymbolCites,
+  srcDeclaringBodies,
+  srcPathsIn,
+  testPathsIn,
+  unresolvedSpecCite,
+} from "./helpers/specLocators.ts";
+import {
+  SUITE_PATH,
+  declaredGrammar,
+  helperImports,
+  suiteSource,
+} from "./helpers/suiteShape.ts";
 
 describe("retired chain-authoring shapes stay retired", () => {
   const corpus = scannedPaths().map((path) => ({
@@ -273,19 +242,6 @@ describe("retired chain-authoring shapes stay retired", () => {
     ).toBe(false);
   });
 
-  // The `?? …` pattern above catches the fallback leg only. The rest of the
-  // retirement — prose pointing a chain at the env var for artifact placement
-  // with no fallback beside it — reads in the same verbs as the two sentences
-  // that legitimately survive ("reads no `process.env.FLUME_DIR`", "is still
-  // set"), so no regex separates violation from denial. Inventory instead:
-  // every remaining mention is named, and a new one fails until it is.
-  const ALLOWED_ENV_MENTIONS: Record<string, string> = {
-    [join("src", "flumeApi.ts")]:
-      "FlumePaths' doc denies the env as a chain read path",
-    [join("docs", "CHAIN-AUTHORING.md")]:
-      "names the env as the child-process channel, not a read path",
-  };
-
   it("names every surviving `process.env.FLUME_DIR` mention", () => {
     const mentions = corpus
       .filter((f) => f.text.includes("process.env.FLUME_DIR"))
@@ -332,70 +288,6 @@ describe("retired chain-authoring shapes stay retired", () => {
         "the env var — the needle's closest negative control is gone",
     ).toMatch(/process\.env\.FLUME_DIR[^\n]*\?\?/);
   });
-
-  // Pin (PRE-0.10-CHAIN-SHAPE-TAUGHT, same section): §6 replaced the chain
-  // module shape — a default-exported `Chain` object, with `agent` as a named
-  // module export — with a default-exported factory whose return carries
-  // both. The loader refuses the old shape outright, so the only place it can
-  // still be taught is prose: a doc comment, a host-repo walkthrough, or the
-  // loader's own missing-chain error, which told an author to write exactly
-  // what the next check rejected.
-  //
-  // The hazard: this shape is named as often to deny it as to teach it, in
-  // the same verbs ("refuses a default export that is not a function"). The
-  // split is the replacement — prose that binds `Chain` to chain.ts's default
-  // export and never names the factory (nor writes its `=>` signature) is
-  // teaching the retired shape; prose that names both is pointing at the
-  // current one. That is why the needles read chunks, not files: the two
-  // claims routinely sit in neighbouring sentences of one doc block.
-  const DEFAULT_EXPORT = /default[-\s]export(?:s|ed|ing)?\b/i;
-  /** The type/object — `chain.ts`, `{ chain }`, and "a chain" are not it. */
-  const CHAIN_TYPE = /\bChain\b/;
-  /** The shape that replaced it, named or written. */
-  const FACTORY = /factory|=>/i;
-  const CHAIN_DEFAULT_CODE = /export\s+default\s+\w*[Cc]hain\w*/;
-  const AGENT_MODULE_EXPORT = /\bexports?\s+(?:an?\s+|the\s+)?[`'"]agent[`'"]/i;
-
-  /**
-   * `text` as narration chunks: comment markers stripped, whitespace
-   * collapsed, split at sentence terminators that carry a following space.
-   * Prose wraps across lines and comment markers, so a needle reading raw
-   * text misses every wrapped mention; and the trailing space is what keeps
-   * `0.10` and `chain.ts` inside one chunk rather than splitting a claim into
-   * fragments the needles then read separately.
-   */
-  function narrationChunks(text: string): string[] {
-    return text
-      .split("\n")
-      .map((line) => line.replace(/^\s*(?:\*\/?|\/\*+|\/\/|#+)\s?/, ""))
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .split(/(?<=[.;:!?])\s+/);
-  }
-
-  /** Every chunk of `text` that teaches one of the two retired shapes. */
-  function pre010Sites(text: string): string[] {
-    return narrationChunks(text).filter(
-      (chunk) =>
-        (DEFAULT_EXPORT.test(chunk) &&
-          CHAIN_TYPE.test(chunk) &&
-          !FACTORY.test(chunk)) ||
-        CHAIN_DEFAULT_CODE.test(chunk) ||
-        AGENT_MODULE_EXPORT.test(chunk),
-    );
-  }
-
-  /**
-   * Sites this entry's fence could not reach, each with what it still says —
-   * the same inventory shape the env-mention pin above uses, but these are
-   * unfixed violations rather than surviving denials. An entry leaves when
-   * the prose moves to the factory; a new site fails until it is named.
-   */
-  const UNFIXED_SITES: Record<string, string> = {
-    [CHAIN_PATH]:
-      "dogfood chain header: `the default export is the Chain` — outside " +
-      "the fence of the entry that promoted this pin",
-  };
 
   it("no chain-authoring surface teaches the pre-0.10 module shape — a default-exported `Chain` object, or `agent` as a module export", () => {
     const sites = corpus.flatMap((f) =>
@@ -457,76 +349,6 @@ describe("retired chain-authoring shapes stay retired", () => {
   });
 });
 
-/**
- * Field names declared by `interface <name>` in `text` — the span from its
- * opening brace to the first `}` at column 0, with block and line comments
- * stripped so only declarations are read. Deliberately not `<name>`-aware
- * beyond the word boundary, and deliberately the same reader for every
- * caller: a doc's fenced `ts` block and the engine's own source are the same
- * grammar, so one parser keeps the comparison honest.
- *
- * Both callable spellings count as the same field: a member declared as a
- * property (`run: (ctx) => …`, how `src/Gate.ts` writes it) and the same
- * member written as method shorthand (`run(ctx): …`, how the doc writes it)
- * name one field, and a reader that saw only the first would call the doc's
- * block short by a name it does declare.
- *
- * Only lines at the body's shallowest indentation are members. A member
- * whose type wraps across lines indents its continuation deeper — the
- * `ctx: WorktreeSetupContext,` parameter line of `Phase.setupWorktree` is
- * the live case — and a reader that took every match would report `ctx` as
- * a field the interface declares.
- */
-function interfaceFields(text: string, name: string): string[] {
-  const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(text);
-  if (!open) return [];
-  const start = open.index + open[0].length;
-  const end = text.indexOf("\n}", start);
-  const body = text
-    .slice(start, end === -1 ? undefined : end)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "");
-  const matches = [...body.matchAll(/^([ \t]*)(\w+)\??\s*[:(]/gm)];
-  if (matches.length === 0) return [];
-  const member = Math.min(...matches.map((m) => m[1]!.length));
-  return matches.filter((m) => m[1]!.length === member).map((m) => m[2]!);
-}
-
-/**
- * Field names a markdown table teaches: under `heading`, the first table
- * whose header row matches `header`, read one row at a time, taking the
- * backticked name in the **first** column only.
- *
- * Second-column prose names sibling fields freely — the `entryChannelPaths`
- * row cites `scopeWritesToEntry`, the `cwd` row cites `flumeDir` — so a
- * reader that took every backticked span in a row would count fields the
- * table never gives a row.
- *
- * Keyed on the heading rather than a line number, so a pin follows its
- * section when the doc moves, and one reader for every field table in the
- * page, so a second table cannot drift into a second grammar.
- */
-/**
- * The §1 heading both field tables live under — `Phase`'s and
- * `TickContext`'s. One constant, so a reworded heading fails both pins at
- * once rather than silently emptying one of them.
- */
-const SECTION_1 = /^## 1\. Declaring a Phase$/m;
-
-function docTableFields(doc: string, heading: RegExp, header: RegExp): string[] {
-  const section = doc.split(heading)[1] ?? "";
-  const rows = section.split("\n");
-  const start = rows.findIndex((l) => header.test(l));
-  if (start === -1) return [];
-  const fields: string[] = [];
-  for (const row of rows.slice(start + 2)) {
-    if (!row.startsWith("|")) break;
-    const name = /^\|\s*`([^`]+)`\s*\|/.exec(row);
-    if (name) fields.push(name[1]!);
-  }
-  return fields;
-}
-
 // Agreement pin (CHAIN-AUTHORING-GATE-SURFACE, per .claude/rules/engineering.md
 // "A fact the engine holds is reported, never rediscovered"):
 // docs/CHAIN-AUTHORING.md is where a chain author learns the gate surface, and
@@ -537,26 +359,10 @@ function docTableFields(doc: string, heading: RegExp, header: RegExp): string[] 
 // invented option is a call that silently does nothing. The rung that holds
 // it is a field-set comparison against the declaring source.
 describe("the chain-authoring doc's gate surface agrees with the engine types", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /**
-   * The option names the doc's built-ins list teaches, off the one line that
-   * writes the signature as destructuring — not the call sites further down,
-   * which legitimately pass a subset.
-   */
-  function docPendingGateOptions(): string[] {
-    const m = /^- `pendingGate\(\{([^}]*)\}\)`/m.exec(doc);
-    if (!m) return [];
-    return m[1]!
-      .split(",")
-      .map((s) => s.trim().replace(/\?$/, ""))
-      .filter((s) => s !== "");
-  }
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
 
   it("the chain-authoring doc's GateResult block names every field src/Gate.ts declares", () => {
-    const declared = interfaceFields(read("src", "Gate.ts"), "GateResult");
+    const declared = interfaceFields(readDoc("src", "Gate.ts"), "GateResult");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // parser that found nothing would compare two empty sets forever.
     expect(declared, "src/Gate.ts: GateResult did not parse").toContain("ok");
@@ -569,7 +375,7 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
   });
 
   it("the chain-authoring doc's Gate block names every field src/Gate.ts declares", () => {
-    const declared = interfaceFields(read("src", "Gate.ts"), "Gate");
+    const declared = interfaceFields(readDoc("src", "Gate.ts"), "Gate");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // parser that found nothing would compare two empty sets forever, and one
     // that skipped the optional field would agree with a doc that omits it.
@@ -587,7 +393,7 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
 
   it("the chain-authoring doc's pendingGate signature names every PendingGateOptions field and no others", () => {
     const declared = interfaceFields(
-      read("src", "builtinGates.ts"),
+      readDoc("src", "builtinGates.ts"),
       "PendingGateOptions",
     );
     expect(
@@ -596,7 +402,7 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
     ).toContain("targetFence");
     expect(declared.length).toBeGreaterThan(2);
     expect(
-      docPendingGateOptions().slice().sort(),
+      docPendingGateOptions(doc).slice().sort(),
       "docs/CHAIN-AUTHORING.md's built-ins list writes pendingGate's " +
         "signature: it names the options PendingGateOptions declares, and no " +
         "option it does not",
@@ -616,16 +422,10 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
 // comparison the gate-surface pins above make, with the markdown table as the
 // restating side.
 describe("the chain-authoring doc's Phase surface agrees with the engine type", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /** The §1 field table headed `Role` — the one that tabulates `Phase`. */
-  const docPhaseFields = (): string[] =>
-    docTableFields(doc, SECTION_1, /^\| Field\s*\| Role/);
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
 
   it("the chain-authoring doc's Phase field table names every field src/Phase.ts declares", () => {
-    const declared = interfaceFields(read("src", "Phase.ts"), "Phase");
+    const declared = interfaceFields(readDoc("src", "Phase.ts"), "Phase");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // parser that found nothing on either side would compare two empty sets
     // forever, and one that stopped at the first wrapped member would agree
@@ -638,12 +438,12 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
     ).toContain("teardownWorktree");
     expect(declared.length).toBeGreaterThan(10);
     expect(
-      docPhaseFields(),
+      docPhaseFields(doc),
       "docs/CHAIN-AUTHORING.md §1: the field table did not parse — the " +
         "heading was reworded, or the table moved",
     ).toContain("name");
     expect(
-      docPhaseFields().slice().sort(),
+      docPhaseFields(doc).slice().sort(),
       "docs/CHAIN-AUTHORING.md §1 tabulates Phase: every field src/Phase.ts " +
         "declares gets a row, and nothing it does not declare does",
     ).toEqual(declared.slice().sort());
@@ -653,7 +453,7 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
   // table reader is keyed on rows and on the first column. Drive both
   // failures the reader is shaped to avoid.
   it("the Phase table reader counts one field per row, from the first column only", () => {
-    const fields = docPhaseFields();
+    const fields = docPhaseFields(doc);
     expect(fields.length, "the table yielded no rows").toBeGreaterThan(10);
     // One name per row, no duplicates — the `entryChannelPaths` row's prose
     // cites `scopeWritesToEntry`, which has its own row and must not be
@@ -683,67 +483,16 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
 // comparison the surface pins above make, with the section's mode bullets as
 // the restating side and the union's own `mode` literals as the declaring one.
 describe("the chain-authoring doc's `<prior-attempt>` section agrees with the engine union", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const promptSrc = read("src", "Prompt.ts");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /**
-   * The interface names `export type PriorAttempt` unions together, in
-   * declaration order. Read off the union rather than a list kept here: a
-   * seventh variant must arrive as a test failure, not as a doc gap nobody
-   * is watching.
-   */
-  function variantNames(): string[] {
-    const union = /export type PriorAttempt =([\s\S]*?);/.exec(promptSrc)?.[1];
-    if (!union) return [];
-    return [...union.matchAll(/\|\s*(\w+)/g)].map((m) => m[1]!);
-  }
-
-  /**
-   * The `mode` discriminant each variant declares, read out of that
-   * interface's own body — sliced brace-to-`\n}` the same way
-   * `interfaceFields` slices one, so a later interface's discriminant can
-   * never stand in for a variant that dropped its own.
-   */
-  function declaredModes(): string[] {
-    const modes: string[] = [];
-    for (const name of variantNames()) {
-      const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(promptSrc);
-      if (!open) continue;
-      const start = open.index + open[0].length;
-      const end = promptSrc.indexOf("\n}", start);
-      const body = promptSrc.slice(start, end === -1 ? undefined : end);
-      const mode = /^\s*mode:\s*"([a-z-]+)"/m.exec(body);
-      if (mode) modes.push(mode[1]!);
-    }
-    return modes;
-  }
-
-  /** The `<prior-attempt>` section: its heading through the next `## `. */
-  function section(): string {
-    return (
-      /^### The `<prior-attempt>` block$([\s\S]*?)^## /m.exec(doc)?.[1] ?? ""
-    );
-  }
-
-  /**
-   * The modes the section's bullet list teaches: one per bullet that opens
-   * with a backticked kebab-case token. Prose and the bolded paragraphs name
-   * `headSha`, `suspectFlake` and the gate phases freely — none of those
-   * opens a bullet in that spelling, so the reader counts variants only.
-   */
-  function docModes(): string[] {
-    return [...section().matchAll(/^- `([a-z][a-z-]*)` — /gm)].map((m) => m[1]!);
-  }
+  const promptSrc = readDoc("src", "Prompt.ts");
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
 
   it("the chain-authoring doc's `<prior-attempt>` section names every PriorAttempt mode src/Prompt.ts declares", () => {
-    const declared = declaredModes();
+    const declared = declaredModes(promptSrc);
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // reader that lost the union, or one that found interfaces but no `mode`
     // literal, would compare two empty sets forever.
     expect(
-      variantNames().length,
+      variantNames(promptSrc).length,
       "src/Prompt.ts: the PriorAttempt union did not parse",
     ).toBeGreaterThan(4);
     expect(declared, "src/Prompt.ts: no `mode` literal parsed").toContain(
@@ -752,14 +501,14 @@ describe("the chain-authoring doc's `<prior-attempt>` section agrees with the en
     expect(
       declared.length,
       "src/Prompt.ts: a PriorAttempt variant declared no `mode` literal",
-    ).toBe(variantNames().length);
+    ).toBe(variantNames(promptSrc).length);
     expect(
-      docModes(),
+      docModes(doc),
       "docs/CHAIN-AUTHORING.md: the `<prior-attempt>` section's mode bullets " +
         "did not parse — the heading was reworded, or the list moved",
     ).toContain("gate-revert");
     expect(
-      docModes().slice().sort(),
+      docModes(doc).slice().sort(),
       "docs/CHAIN-AUTHORING.md's `<prior-attempt>` section enumerates the " +
         "PriorAttempt union: every mode src/Prompt.ts declares gets a bullet, " +
         "and nothing it does not declare does",
@@ -767,11 +516,11 @@ describe("the chain-authoring doc's `<prior-attempt>` section agrees with the en
   });
 
   it("the `<prior-attempt>` section teaches the anchor every record carries and the record-side flake marker", () => {
-    const body = section();
+    const body = priorAttemptSection(doc);
     // Vacuity: hold the doc against what the union actually declares, so a
     // renamed engine field fails here rather than leaving the doc teaching a
     // field no record has.
-    for (const name of variantNames()) {
+    for (const name of variantNames(promptSrc)) {
       expect(
         interfaceFields(promptSrc, name),
         `src/Prompt.ts: ${name} lost its anchor fields`,
@@ -801,57 +550,12 @@ describe("the chain-authoring doc's `<prior-attempt>` section agrees with the en
 // mechanical watched the claim; this is that watch. The side the prose is
 // held to is the singleton callsite's own `cwd` argument.
 describe("the shouldRun cwd split is taught where a chain author reads it", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const phaseSrc = read("src", "Phase.ts");
-  const dispatcherSrc = read("src", "Dispatcher.ts");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /**
-   * The doc block immediately above `cwd: string;` inside `TickContext`:
-   * the nearest one, matched so that no block terminator may fall between
-   * it and the field, so a preceding member's comment cannot stand in.
-   */
-  function cwdDoc(): string {
-    const body =
-      /export interface TickContext \{([\s\S]*?)\n\}/.exec(phaseSrc)?.[1] ?? "";
-    return (
-      /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*cwd: string;/.exec(body)?.[1] ?? ""
-    );
-  }
-
-  /**
-   * The `cwd` the dispatcher's **singleton** consult passes. It builds its
-   * context inline (`phase.shouldRun({ cwd: …, ...ctxFacts })`) where the
-   * fanout consult passes an already-named `ctx`, so the object-literal form
-   * identifies the singleton site on its own. Returns every match, so a
-   * second inline consult appearing later cannot hide behind the first.
-   */
-  function singletonConsultRoots(): string[] {
-    return [...dispatcherSrc.matchAll(/phase\.shouldRun\(\{\s*cwd:\s*(\w+)/g)].map(
-      (m) => m[1]!,
-    );
-  }
-
-  /**
-   * The bullet list under the `shouldRun` section heading, one entry each,
-   * with the markdown wrapping collapsed — a phrase this pin looks for may
-   * straddle a line break, and where the author happened to wrap is not
-   * what is being held.
-   */
-  function declineBullets(): string[] {
-    const section =
-      /^### `shouldRun`: decline a tick before the invocation$([\s\S]*?)^## /m.exec(
-        doc,
-      )?.[1] ?? "";
-    return section
-      .split(/\n(?=- )/)
-      .filter((b) => b.startsWith("- "))
-      .map((b) => b.replace(/\s+/g, " ").trim());
-  }
+  const phaseSrc = readDoc("src", "Phase.ts");
+  const dispatcherSrc = readDoc("src", "Dispatcher.ts");
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
 
   it("the TickContext.cwd doc comment names the repo root a singleton shouldRun sees", () => {
-    const block = cwdDoc();
+    const block = cwdDoc(phaseSrc);
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
     // interface or field reader that found nothing would pass every content
     // assertion below against the empty string.
@@ -864,7 +568,7 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
     // the repo root. If it ever stops doing so, this fails here rather than
     // leaving the comment quietly wrong.
     expect(
-      singletonConsultRoots(),
+      singletonConsultRoots(dispatcherSrc),
       "src/Dispatcher.ts: the singleton shouldRun consult no longer builds " +
         "its context inline — re-read what root it passes before trusting " +
         "the doc comment",
@@ -880,7 +584,7 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
   });
 
   it("the chain-authoring decline section separates what a singleton decline saves from a fanout one", () => {
-    const bullets = declineBullets();
+    const bullets = declineBullets(doc);
     // Vacuity: the section heading still parses and still carries its list.
     expect(
       bullets.length,
@@ -956,46 +660,11 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
 // same row/first-column reader the `Phase` table above is held to and
 // compared set-equal both ways.
 describe("the chain-authoring doc teaches every TickContext field", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-  const exampleSrc = read("examples", "cascade-chain.ts");
-
-  /**
-   * The §1 field table headed `What it carries` — the one that tabulates
-   * `TickContext`, distinguished from `Phase`'s by its second-column
-   * heading alone, so both live under one section without either reader
-   * reaching the other's rows.
-   */
-  const docTickContextFields = (text: string): string[] =>
-    docTableFields(text, SECTION_1, /^\| Field\s*\| What it carries/);
-
-  /**
-   * The bullet-free prose of the `shouldRun` section — the span from its
-   * heading to the next `##`, wrapping collapsed. This is where the decline
-   * story names the facts its worked predicate reads.
-   */
-  function declineSection(): string {
-    return (
-      /^### `shouldRun`: decline a tick before the invocation$([\s\S]*?)^## /m
-        .exec(doc)?.[1] ?? ""
-    ).replace(/\s+/g, " ");
-  }
-
-  /**
-   * The `shouldRun` body `examples/cascade-chain.ts` ships on its plan phase
-   * — the declaration §1 quotes whole, held against that quote byte-for-byte
-   * by the agreement pin above. Read off the example rather than off the
-   * quote, so the fields the pin demands come from the real writer.
-   */
-  function predicateReads(): string[] {
-    const body =
-      / {4}shouldRun\(ctx\) \{([\s\S]*?)\n {4}\},/.exec(exampleSrc)?.[1] ?? "";
-    return [...new Set([...body.matchAll(/ctx\.(\w+)/g)].map((m) => m[1]!))];
-  }
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
+  const exampleSrc = readDoc("examples", "cascade-chain.ts");
 
   it("the chain-authoring doc's TickContext field table names every field src/Phase.ts declares and no others", () => {
-    const declared = interfaceFields(read("src", "Phase.ts"), "TickContext");
+    const declared = interfaceFields(readDoc("src", "Phase.ts"), "TickContext");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // reader that found nothing on either side would compare two empty sets
     // forever, and one that stopped at the first wrapped member would agree
@@ -1053,8 +722,8 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
   });
 
   it("the chain-authoring decline section names every TickContext field the quoted predicate reads", () => {
-    const reads = predicateReads();
-    const declared = interfaceFields(read("src", "Phase.ts"), "TickContext");
+    const reads = predicateReads(exampleSrc);
+    const declared = interfaceFields(readDoc("src", "Phase.ts"), "TickContext");
     // Vacuity: a predicate reader that found nothing, or that picked up a
     // name the interface does not declare, would hold the prose to nothing.
     expect(
@@ -1070,7 +739,7 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
           `does not declare`,
       ).toContain(field);
     }
-    const section = declineSection();
+    const section = declineSection(doc);
     expect(
       section,
       "docs/CHAIN-AUTHORING.md: the `shouldRun` section did not parse — the " +
@@ -1097,77 +766,10 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
 // is the quoted file itself: the real declaration, read off disk, compared
 // against the block that claims to be it.
 describe("the chain-authoring doc quotes the example chain it names", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-  const doc = read("docs", "CHAIN-AUTHORING.md");
-
-  /**
-   * The fenced `ts` block the doc introduces as a declaration from the
-   * example chain, and the identifier it names as the thing being quoted.
-   * Keyed on the sentence that makes the claim rather than a line number, so
-   * the pin follows the prose when the section moves — and fails loudly if
-   * the claim itself is reworded, which is the point at which a human should
-   * re-decide what the block is quoting. The identifier is read out of the
-   * claim rather than baked in here, so the page decides what it is quoting
-   * and this only holds it to it.
-   */
-  const DOC_QUOTE =
-    /The `([A-Za-z_$][\w$]*)` declaration from `examples\/cascade-chain\.ts`[\s\S]*?```ts\n([\s\S]*?)```/;
-
-  /**
-   * The `const <id> … ;` declaration as a chain module writes it: the
-   * declaration line through the first line closing it at the same
-   * indentation, so the span survives the example's factory nesting.
-   */
-  function declarationSource(text: string, id: string): string {
-    if (id === "") return "";
-    const lines = text.split("\n");
-    const opens = new RegExp(`^\\s*const ${id}\\b.*[({[]$`);
-    const start = lines.findIndex((l) => opens.test(l));
-    if (start === -1) return "";
-    const indent = /^\s*/.exec(lines[start]!)![0];
-    const closes = new Set([`${indent}};`, `${indent}});`, `${indent}];`]);
-    const end = lines.findIndex((l, i) => i > start && closes.has(l));
-    if (end === -1) return "";
-    return lines.slice(start, end + 1).join("\n");
-  }
-
-  /** The declaration the doc's claim points at, read off the example. */
-  function quotedDeclaration(): { id: string; quoted: string; example: string } {
-    const m = DOC_QUOTE.exec(doc);
-    const id = m?.[1] ?? "";
-    return {
-      id,
-      quoted: m?.[2] ?? "",
-      example: declarationSource(read("examples", "cascade-chain.ts"), id),
-    };
-  }
-
-  /**
-   * Formatting-insensitive form of a TypeScript span: trailing line comments
-   * dropped, every line trimmed, whitespace around structural punctuation
-   * removed, and trailing commas before a closer dropped. What survives is
-   * the declaration — the doc's dedent, the example's factory indentation,
-   * and prettier's choice of where to wrap all normalize away, so only a
-   * difference in what is declared can fail the comparison.
-   *
-   * The comment strip is the spaced `// …` form deliberately: a path literal
-   * (`"specs/_aligned/**"`) carries no space before its slashes, so it is not
-   * mistaken for a comment.
-   */
-  function normalizeTs(span: string): string {
-    return span
-      .split("\n")
-      .map((line) => line.replace(/\s+\/\/.*$/, "").trim())
-      .filter((line) => line !== "")
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .replace(/\s*([{}[\](),;])\s*/g, "$1")
-      .replace(/,([}\])])/g, "$1");
-  }
+  const doc = readDoc("docs", "CHAIN-AUTHORING.md");
 
   it("the chain-authoring doc's quoted plan phase agrees with examples/cascade-chain.ts", () => {
-    const { id, quoted, example } = quotedDeclaration();
+    const { id, quoted, example } = quotedDeclaration(doc, readDoc("examples", "cascade-chain.ts"));
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): two
     // spans that failed to parse agree forever — and a claim naming no
     // identifier would resolve neither side.
@@ -1196,7 +798,7 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
   // normalizer erases formatting and nothing else. Drive both directions off
   // the real declaration — re-wrapped agrees, re-declared does not.
   it("the quote comparison ignores wrapping and catches a changed declaration", () => {
-    const { example } = quotedDeclaration();
+    const { example } = quotedDeclaration(doc, readDoc("examples", "cascade-chain.ts"));
     expect(example, "the example's quoted declaration did not parse").toContain(
       "gates: [pendingGate({ targetFence: build, extension: entryExtension })],",
     );
@@ -1236,47 +838,6 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
 // the phase declarations spell, is what README's arrow lists are compared
 // against.
 describe("the README cascade pointer", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
-
-  /**
-   * The phase names cascade ships, in chain order — off the chain its factory
-   * returns, not re-parsed from its source. A source reader would have to
-   * re-implement whatever shape the module builds its phase list with (a
-   * literal, a `map` over a slice ladder, a spread), and would read `[]` —
-   * agreeing with anything — the first time that shape changed. The module
-   * is the writer; this asks it (engineering.md, *A seam gate reads what the
-   * real writer wrote*).
-   */
-  function declaredPhaseNames(): string[] {
-    const { chain } = cascadeFactory(
-      buildFlumeApi({
-        repoRoot: REPO_ROOT,
-        configDir: join(REPO_ROOT, "examples"),
-        flumeDir: join(REPO_ROOT, ".flume"),
-      }),
-    );
-    return chain.phases.map((p) => p.name);
-  }
-
-  /**
-   * The prose units of `readme` that mention `cascade-chain.ts`: paragraphs
-   * split on blank lines, then again at list-item boundaries, so the Pointers
-   * bullet is judged as itself rather than as its whole list.
-   */
-  function cascadeMentions(readme: string): string[] {
-    return readme
-      .split(/\n\s*\n/)
-      .flatMap((para) => para.split(/\n(?=- )/))
-      .filter((unit) => unit.includes("cascade-chain.ts"));
-  }
-
-  /** Every arrow-joined run of phase-shaped words in a prose unit. */
-  function arrowRuns(unit: string): string[][] {
-    const runs = unit.match(/[a-z][a-z-]*(?:\s*→\s*[a-z][a-z-]*)+/g) ?? [];
-    return runs.map((run) => run.split("→").map((word) => word.trim()));
-  }
-
   it("README's cascade description names the phases cascade-chain.ts declares", () => {
     const declared = declaredPhaseNames();
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
@@ -1289,7 +850,7 @@ describe("the README cascade pointer", () => {
     ).not.toHaveLength(0);
     expect(declared.length).toBeGreaterThan(2);
 
-    const listings = cascadeMentions(read("README.md")).flatMap(arrowRuns);
+    const listings = cascadeMentions(readDoc("README.md")).flatMap(arrowRuns);
     expect(
       listings,
       "README.md names cascade's phases at two sites — the getting-started " +
@@ -1315,57 +876,10 @@ describe("the README cascade pointer", () => {
 // rewritten, or moved with nothing pointing at the staleness. Prose with no
 // owner; the rung that can hold it is a source-shape check.
 //
-// Scope is the TypeScript half of the corpus above: the same files, minus the
+// Scope is the TypeScript half of the scanned corpus: the same files, minus the
 // markdown ones, where a doc block is a source shape rather than a fenced
 // example.
 describe("no doc block is orphaned", () => {
-  const OPENER = /^\/\*\*/;
-  const CLOSER = /\*\/$/;
-  /** Same opener, counted across a whole file for the vacuity pin. */
-  const OPENER_ANYWHERE = /^\s*\/\*\*/gm;
-
-  /**
-   * A doc block that opens a file documents the module, so the block after it
-   * is its first symbol's, not evidence of an orphan. Spelled as a carve-out
-   * rather than inherited: every other block is judged.
-   */
-  const MODULE_HEADER_LINE = 1;
-
-  /**
-   * Orphans this fence cannot reach, each with why it survives — the same
-   * inventory shape the env-mention pin above uses. An entry leaves when the
-   * block moves onto its symbol; a new orphan fails until it is named here.
-   */
-  const ALLOWED_ORPHANS: Record<string, string> = {};
-
-  type Orphan = { path: string; open: number; id: string };
-
-  /**
-   * Every doc block in `text` whose close is followed — across blank lines
-   * only — by another doc block's open. Identified by its first content line
-   * rather than its line number, so the inventory above survives line drift.
-   */
-  function orphanedBlocks(path: string, text: string): Orphan[] {
-    const lines = text.split("\n").map((l) => l.trim());
-    const orphans: Orphan[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (!OPENER.test(lines[i]!)) continue;
-      const open = i;
-      // A single-line block closes on its own opener; otherwise scan forward.
-      while (i < lines.length && !CLOSER.test(lines[i]!)) i++;
-      let next = i + 1;
-      while (next < lines.length && lines[next] === "") next++;
-      if (next >= lines.length || !OPENER.test(lines[next]!)) continue;
-      if (open + 1 === MODULE_HEADER_LINE) continue;
-      const first = lines
-        .slice(open + 1, i + 1)
-        .map((l) => l.replace(/^\*\s?/, "").replace(CLOSER, "").trim())
-        .find((l) => l !== "");
-      orphans.push({ path, open: open + 1, id: `${path}: ${first ?? ""}` });
-    }
-    return orphans;
-  }
-
   const sources = scannedPaths()
     .filter((path) => path.endsWith(".ts"))
     .map((path) => {
@@ -1447,80 +961,6 @@ describe("no doc block is orphaned", () => {
   });
 });
 
-// ---------- shared doc-claim readers ----------
-//
-// Both pins below hold a prose list against the `src/` value that writes it,
-// and both read a doc the same way: find the paragraph that opens the claim,
-// take the bullet list under it when one follows, and read the backticked
-// tokens each chunk names. One set of readers, so the two pins cannot drift
-// into two markdown dialects.
-
-const readDoc = (...parts: string[]): string =>
-  readFileSync(join(REPO_ROOT, ...parts), "utf8");
-
-/**
- * The claim region for `marker`: the marker's own paragraph, plus a bullet
- * list beneath it when one follows. It ends at the first line that opens a
- * new block at column 0 — which is what keeps README's *chain*-placed list,
- * three lines further down, out of a scan about what the harness places.
- */
-function regionLines(text: string, marker: RegExp): string[] | null {
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => marker.test(l));
-  if (start === -1) return null;
-  const region: string[] = [];
-  let i = start;
-  while (i < lines.length && lines[i]!.trim() !== "") region.push(lines[i++]!);
-  let j = i;
-  while (j < lines.length && lines[j]!.trim() === "") j++;
-  if (j < lines.length && /^-\s/.test(lines[j]!)) {
-    region.push("");
-    for (; j < lines.length; j++) {
-      const l = lines[j]!;
-      if (/^-\s/.test(l) || /^\s+\S/.test(l) || l.trim() === "") {
-        region.push(l);
-        continue;
-      }
-      break;
-    }
-  }
-  return region;
-}
-
-/**
- * The region as claim chunks — the marker paragraph, then one chunk per
- * bullet with its continuation lines. Prose wraps, so a chunk is the unit a
- * claim is actually written in.
- */
-function claimChunks(lines: string[]): string[] {
-  const out: string[][] = [];
-  let cur: string[] | null = null;
-  for (const line of lines) {
-    if (/^-\s/.test(line)) {
-      if (cur) out.push(cur);
-      cur = [line];
-    } else if (line.trim() === "") {
-      if (cur) out.push(cur);
-      cur = null;
-    } else if (cur) cur.push(line);
-    else cur = [line];
-  }
-  if (cur) out.push(cur);
-  return out.map((chunk) => chunk.join(" "));
-}
-
-/**
- * The paths a chunk claims: every backticked token ahead of the chunk's
- * first em dash. The dash is where a chunk stops naming and starts
- * explaining, and the explanation legitimately names things that are not on
- * the list — a CLI invocation, a `Chain` field, the file a list is merged
- * into, the chain-placed directory a list exists to disown.
- */
-function claimedPaths(chunk: string): string[] {
-  const named = chunk.split("—")[0]!;
-  return [...named.matchAll(/`([^`]+)`/g)].map((m) => m[1]!);
-}
-
 // Agreement pin (DOC-HARNESS-STATE-OWNERSHIP, per .claude/rules/engineering.md
 // "A seam gate reads what the real writer wrote"): the docs tell a chain
 // author which paths under a state root are the harness's, and they told it
@@ -1534,107 +974,6 @@ function claimedPaths(chunk: string): string[] {
 // `flumeDir`, `DEFAULT_PENDING_REL`, and the literals the dispatcher joins on
 // directly. This pin reads that writer and holds the docs' claim to it.
 describe("the docs' harness-managed state list agrees with what src/ spells", () => {
-  const read = readDoc;
-
-  /** The docs that teach a state root's layout, and must agree about it. */
-  const SCANNED_DOCS = ["README.md", join("docs", "CHAIN-AUTHORING.md")];
-
-  /**
-   * The line that opens a harness-managed-state claim, in either doc's
-   * register: README's list header, the chain doc's inline bold run-in.
-   */
-  const MARKER = /^\s*(?:\*\*)?Harness-managed state\b/;
-
-  /** The claim region for this pin's marker. */
-  const stateRegion = (text: string): string[] | null =>
-    regionLines(text, MARKER);
-
-  /**
-   * A doc's path token as a state-root-relative name: the `.flume/` prefix
-   * and any trailing separator dropped, and a trailing `<placeholder>`
-   * segment — `<phase>`, `<entry-slug>`, `<timestamp>.jsonl` — dropped with
-   * it, since what the runtime owns is the directory, not the names it generates
-   * inside it.
-   */
-  function stateRootName(claim: string): string {
-    const parts = claim
-      .replace(/^\.flume\//, "")
-      .split("/")
-      .filter((s) => s !== "");
-    while (parts.length > 0 && /^<.+>/.test(parts[parts.length - 1]!)) {
-      parts.pop();
-    }
-    return parts.join("/");
-  }
-
-  /** `const NAME = "literal";` declarations in one module. */
-  function stringConsts(text: string): Map<string, string> {
-    const out = new Map<string, string>();
-    for (const m of text.matchAll(/\bconst\s+(\w+)\s*=\s*"([^"]+)"\s*;/g)) {
-      out.set(m[1]!, m[2]!);
-    }
-    return out;
-  }
-
-  /** `STATE_ROOT_NAMES`'s key → name map, read off its declaration. */
-  function stateRootNamesMap(): Map<string, string> {
-    const block =
-      /export const STATE_ROOT_NAMES = \{([\s\S]*?)\n\} as const;/.exec(
-        read("src", "paths.ts"),
-      );
-    const out = new Map<string, string>();
-    if (!block) return out;
-    for (const m of block[1]!.matchAll(/(\w+)\s*:\s*"([^"]+)"/g)) {
-      out.set(m[1]!, m[2]!);
-    }
-    return out;
-  }
-
-  /**
-   * The writer side: every name `src/` itself places directly under a state
-   * root. Read off the real writers rather than a list kept here — each
-   * `join(flumeDir, …)` with an argument this reader can resolve (a literal,
-   * a `STATE_ROOT_NAMES` member, a module-local string const), plus the
-   * default queue path, which is joined onto a state root by
-   * `resolvePendingPath` rather than spelled at a `flumeDir` call site.
-   *
-   * An argument that does not resolve is skipped on purpose: `chain.friction`
-   * is a chain-supplied name, which is exactly the category this pin exists
-   * to keep out of a harness-managed list.
-   */
-  function namesSrcSpells(): string[] {
-    const roots = stateRootNamesMap();
-    const names = new Set<string>();
-    for (const file of readdirSync(join(REPO_ROOT, "src")).filter((n) =>
-      n.endsWith(".ts"),
-    )) {
-      const text = read("src", file);
-      const consts = stringConsts(text);
-      for (const m of text.matchAll(
-        /join\(\s*(?:this\.)?flumeDir\s*,\s*([^),]+?)\s*\)/g,
-      )) {
-        const arg = m[1]!;
-        const literal = /^"([^"]+)"$/.exec(arg);
-        const member = /^STATE_ROOT_NAMES\.(\w+)$/.exec(arg);
-        const resolved = literal
-          ? literal[1]!
-          : member
-            ? roots.get(member[1]!)
-            : consts.get(arg);
-        if (resolved) names.add(resolved);
-      }
-    }
-    const pending = /export const DEFAULT_PENDING_REL = join\(([^)]*)\);/.exec(
-      read("src", "paths.ts"),
-    );
-    if (pending) {
-      names.add(
-        [...pending[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).join("/"),
-      );
-    }
-    return [...names];
-  }
-
   const spelled = namesSrcSpells();
 
   it("the harness-managed state scan covers both README.md and docs/CHAIN-AUTHORING.md", () => {
@@ -1643,7 +982,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     // line, would leave the refusal below judging an empty claim set in a doc
     // that still teaches the layout.
     for (const doc of SCANNED_DOCS) {
-      const region = stateRegion(read(doc));
+      const region = stateRegion(readDoc(doc));
       expect(
         region,
         `${doc} states no harness-managed state claim the scan can find — ` +
@@ -1675,7 +1014,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     );
 
     for (const doc of SCANNED_DOCS) {
-      const claimed = claimChunks(stateRegion(read(doc))!)
+      const claimed = claimChunks(stateRegion(readDoc(doc))!)
         .flatMap(claimedPaths)
         .map(stateRootName);
       expect(
@@ -1719,7 +1058,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     };
 
     for (const [doc, inject] of Object.entries(injections)) {
-      const region = stateRegion(read(doc))!;
+      const region = stateRegion(readDoc(doc))!;
       const clean = claimChunks(region)
         .flatMap(claimedPaths)
         .map(stateRootName);
@@ -1749,7 +1088,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     };
 
     for (const [doc, remove] of Object.entries(removals)) {
-      const region = stateRegion(read(doc))!;
+      const region = stateRegion(readDoc(doc))!;
       const thinned = claimChunks(remove(region))
         .flatMap(claimedPaths)
         .map(stateRootName);
@@ -1778,33 +1117,6 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
 // they need not put in `seedDir`, so a name the doc has and the runtime does
 // not is an ignore line nobody writes.
 describe("docs/CHAIN-AUTHORING.md's job-seed ignore list agrees with RUNTIME_IGNORES", () => {
-  const DOC = join("docs", "CHAIN-AUTHORING.md");
-  const MARKER = /^\s*(?:\*\*)?What the runtime still owns\b/;
-
-  /**
-   * The bullet that names the merged entries — the one bullet in the region
-   * that is about ignoring anything; its siblings pin `core.longpaths` and
-   * baseline-commit the seed. Selected by what it says rather than by
-   * position, so reordering the list does not silently point this pin at
-   * `core.longpaths`.
-   */
-  function seedChunk(text: string): string {
-    const region = regionLines(text, MARKER);
-    expect(
-      region,
-      `${DOC} states no "What the runtime still owns" claim the scan can ` +
-        "find — restore the marker, or this pin is blind",
-    ).not.toBeNull();
-    const bullets = claimChunks(region!).filter(
-      (c) => /^-\s/.test(c) && /ignore/i.test(c),
-    );
-    expect(
-      bullets,
-      `${DOC}: the runtime-owned region holds no ignore-list bullet`,
-    ).toHaveLength(1);
-    return bullets[0]!;
-  }
-
   it("the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES carries and no others", () => {
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
     // empty writer would make every doc list agree with it.
@@ -1870,71 +1182,6 @@ describe("docs/CHAIN-AUTHORING.md's job-seed ignore list agrees with RUNTIME_IGN
 // re-asserts them: it asserts only that what the docs say is what that
 // resolver does.
 describe("the docs' worktree-base claims agree with worktreesBase", () => {
-  /** The two published surfaces that teach where a worktree lands. */
-  const BASE_DOCS = ["README.md", join("docs", "CHAIN-AUTHORING.md")];
-
-  /**
-   * A state root to resolve against. Never touched on disk — `worktreesBase`
-   * is pure — and absolute, so an override probe below is comparable to it
-   * without a second `resolve` on this side.
-   */
-  const FLUME_DIR = resolve("doc-claim-state-root");
-
-  /**
-   * The resolution as a doc states it: one backticked
-   * `<ENV> ?? join(flumeDir, "<segment>")` token. Both docs write the formula
-   * in a single quoted expression, which is why this pin needs no markdown
-   * region reader — the claim is the token.
-   */
-  const FORMULA =
-    /^([A-Z][A-Z0-9_]*)\s*\?\?\s*join\(\s*flumeDir\s*,\s*"([^"]+)"\s*\)$/;
-
-  /**
-   * A per-entry worktree path template — the state root (spelled
-   * `<flumeDir>`, or concretely as this repo's own `.flume`), the segments
-   * the doc puts under it, and the entry placeholder that makes the token a
-   * claim about *this* base rather than a sibling under the same root. The
-   * placeholder anchor is what keeps README's state list — `.flume/awake/…`,
-   * `.flume/loop.pid` and the rest — out of a scan about worktrees.
-   */
-  const TEMPLATE =
-    /^(?:<flumeDir>|<repoRoot>\/\.flume|\.flume)\/(.+?)\/<entry[\w-]*>\/?$/;
-
-  const backticked = (text: string): string[] =>
-    [...text.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
-
-  /** Every `<ENV> ?? join(flumeDir, …)` formula the doc spells. */
-  function formulaClaims(text: string): { env: string; segments: string }[] {
-    return backticked(text).flatMap((tok) => {
-      const m = FORMULA.exec(tok);
-      return m ? [{ env: m[1]!, segments: m[2]! }] : [];
-    });
-  }
-
-  /** Every per-entry template's segment path, e.g. `"worktrees"`. */
-  function templateSegments(text: string): string[] {
-    return backticked(text).flatMap((tok) => {
-      const m = TEMPLATE.exec(tok);
-      return m ? [m[1]!] : [];
-    });
-  }
-
-  /** A doc's claimed base path, built from its own segments. */
-  const claimedBase = (segments: string): string =>
-    join(FLUME_DIR, ...segments.split("/"));
-
-  /**
-   * Every base a doc claims — the formula's default and each per-entry
-   * template's — that is not the path the resolver actually builds.
-   */
-  function baseDisagreements(text: string): string[] {
-    const real = worktreesBase(FLUME_DIR);
-    return [
-      ...formulaClaims(text).map((f) => f.segments),
-      ...templateSegments(text),
-    ].filter((segments) => claimedBase(segments) !== real);
-  }
-
   const savedOverride = process.env.FLUME_WORKTREES_DIR;
 
   beforeEach(() => {
@@ -2049,76 +1296,12 @@ describe("the docs' worktree-base claims agree with worktreesBase", () => {
 // actually roots, and the comment points at the resolver for the one it does
 // not.
 describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () => {
-  const API_PATH = join("src", "flumeApi.ts");
-
-  /**
-   * The doc comment immediately above a field declaration — the block that
-   * closes on the line before it. Returned as raw source lines so the
-   * paragraph reader below is the only place markers are stripped.
-   */
-  function fieldDocBlock(text: string, field: string): string[] | null {
-    const lines = text.split("\n");
-    const decl = lines.findIndex((l) =>
-      new RegExp(`^\\s*${field}:\\s`).test(l),
-    );
-    if (decl === -1) return null;
-    const end = decl - 1;
-    if (end < 0 || !/\*\/\s*$/.test(lines[end]!)) return null;
-    let start = end;
-    while (start >= 0 && !/\/\*\*/.test(lines[start]!)) start--;
-    return start < 0 ? null : lines.slice(start, end + 1);
-  }
-
-  /**
-   * A doc block as reader-visible paragraphs: markers stripped, wrapped
-   * lines rejoined, blank comment lines taken as the breaks they render as.
-   * The paragraph is the unit here because the claim about children and the
-   * pointer away from them are deliberately different paragraphs.
-   */
-  function docParagraphs(block: string[]): string[] {
-    const prose = block
-      .join("\n")
-      .replace(/\/\*\*/, "")
-      .replace(/\*\/\s*$/, "")
-      .split("\n")
-      .map((l) => l.replace(/^\s*\*\s?/, "").trim());
-    const out: string[][] = [];
-    let cur: string[] = [];
-    for (const line of prose) {
-      if (line === "") {
-        if (cur.length) out.push(cur);
-        cur = [];
-      } else cur.push(line);
-    }
-    if (cur.length) out.push(cur);
-    return out.map((p) => p.join(" "));
-  }
-
-  const flumeDirBlock = (text: string): string[] =>
-    fieldDocBlock(text, "flumeDir") ??
-    (() => {
-      throw new Error(
-        `${API_PATH}: no doc comment found above \`flumeDir\` — the reader ` +
-          "lost its subject, and every claim below would pass blind",
-      );
-    })();
-
-  /** The comment's opening paragraph: the list of what the root holds. */
-  const childrenClaim = (text: string): string =>
-    docParagraphs(flumeDirBlock(text))[0] ?? "";
-
-  /** Everything the comment says, as one run — where a pointer may live. */
-  const whole = (text: string): string =>
-    docParagraphs(flumeDirBlock(text)).join(" ");
-
-  const source = (): string => readDoc(API_PATH);
-
   // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): the
   // claim below is an absence over a paragraph a reader regex produced. A
   // reworded comment that the block finder misses, or an opening paragraph
   // that names nothing, reports the same clean absence as a correct one.
   it("scans a children claim that names at least one state-root child", () => {
-    const claim = childrenClaim(source());
+    const claim = childrenClaim(readDoc(API_PATH));
     expect(
       claim,
       `${API_PATH}: \`flumeDir\`'s opening paragraph read empty — restore ` +
@@ -2133,7 +1316,7 @@ describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () 
 
   it("the FlumePaths.flumeDir doc comment does not name worktrees as a state-root child", () => {
     expect(
-      childrenClaim(source()),
+      childrenClaim(readDoc(API_PATH)),
       `${API_PATH}: \`flumeDir\` is taught as rooting worktrees, which ` +
         "`FLUME_WORKTREES_DIR` makes false — worktreesBase (src/paths.ts) " +
         "resolves the override ahead of the state root",
@@ -2142,7 +1325,7 @@ describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () 
 
   it("the comment points at worktreesBase for the child it does not root", () => {
     expect(
-      whole(source()),
+      whole(readDoc(API_PATH)),
       `${API_PATH}: \`flumeDir\` drops worktrees from its list without ` +
         "sending the reader to the resolver that owns the base",
     ).toMatch(/worktreesBase/);
@@ -2153,7 +1336,7 @@ describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () 
   // also what a reader that read the wrong paragraph reports. Drive it
   // against a comment with the child put back.
   it("a reintroduced worktrees child in the list is flagged", () => {
-    const text = source();
+    const text = readDoc(API_PATH);
     const restated = text.replace(
       "baton (`awake/`), pending, rendered prompts, prior",
       "baton (`awake/`), pending, worktrees, rendered prompts, prior",
@@ -2167,110 +1350,9 @@ describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () 
 });
 
 // ---------- dead release cites ----------
-
-/**
- * The release-spec corpus (`spec/RELEASE-v*.md`) is gone: one topic file per
- * subject replaced it, and no file carries a `§` numbering a reader can
- * follow. Every `RELEASE-v0.N §M` / `v0.N §M` cite left behind therefore
- * points at a file that does not exist — narration outliving its referent
- * (engineering.md, "Narration is the ladder's bottom rung"). Git carries the
- * provenance those cites were standing in for.
- *
- * Scope is `src/` and `examples/` entire, walked recursively — the engine's
- * own prose, and the reference chains a consumer reads as the worked answer
- * and copies wholesale (`engine-boundary.md`, "Opinion ships by name, opted
- * into") — plus every current-reference page of `docs/`, the published prose
- * a consumer reads before either. Nothing is scanned on an exclusion's word:
- * the cut and this refusal ship together, so no file is left pinned only by a
- * promise that a later entry will reach it.
- */
-
-/** The trees a chain author reads the shapes off: engine, and worked example. */
-const CITE_SCANNED_ROOTS = ["src", "examples"];
-
-/**
- * `docs/` is the one scanned tree where a dead cite can be the point. A
- * migration guide, a port finding, and a design record each describe a moment
- * that has passed, and a `v0.N §M` cite in one names the corpus that existed
- * then — provenance, not a pointer a reader is meant to follow.
- *
- * So `docs/` is **partitioned, never excluded**: each page declares which it
- * is, in a blockquote under its own H1, and the two declarations must cover
- * the directory exactly. The declaration lives on the page rather than in an
- * inventory here for two reasons — the reader who lands on
- * `docs/CASCADE-DRY-RUN.md` and hits `v0.8 §4` is the one who needs it, and a
- * list here would be a second copy of a fact the page owns (`engineering.md`,
- * *Derived state is computed, never restated beside its source*). A new page
- * carries neither marker and fails the partition below until it picks one.
- */
-const CURRENT_REFERENCE = /^>\s*\*\*Current reference\.\*\*/m;
-const DATED_RECORD = /^>\s*\*\*Dated record\.\*\*/m;
-
-/** Every `.md` page of `docs/`, with the status each one declares. */
-function docsPages(): { path: string; text: string; current: boolean; dated: boolean }[] {
-  return readdirSync(join(REPO_ROOT, "docs"))
-    .filter((name) => name.endsWith(".md"))
-    .sort()
-    .map((name) => {
-      const path = join("docs", name);
-      const text = readFileSync(join(REPO_ROOT, path), "utf8");
-      return {
-        path,
-        text,
-        current: CURRENT_REFERENCE.test(text),
-        dated: DATED_RECORD.test(text),
-      };
-    });
-}
-
-/**
- * The cite grammar: a `RELEASE-v` prefix on its own, or a version token and a
- * `§` close enough together to be one citation rather than two unrelated
- * mentions. Both orders occur — `v0.8 §4` and `(§6, v0.6.2)` — so both are
- * spelled. Neither alternative crosses a newline, which after `proseOf`
- * below survives only where the source left prose.
- */
-const RELEASE_CITE_RE =
-  /RELEASE-v\d+\.\d+(?:\.\d+)?|v\d+\.\d+(?:\.\d+)?[^§\n]{0,24}§|§[^§v\n]{0,24}v\d+\.\d+(?:\.\d+)?/;
-
-/**
- * Comment prose as one reader-visible run: strip each comment line's `*` /
- * `//` marker and join, so a cite wrapped across two lines still reads as one
- * phrase. Code lines become newlines, which the needle above refuses to
- * cross — two unrelated mentions on either side of a statement never compose
- * into a false hit.
- */
-function unwrapProse(text: string): string {
-  return text
-    .split("\n")
-    .map((line) =>
-      /^\s*(?:\*|\/\/)/.test(line) ? line.replace(/^\s*(?:\*|\/\/)\s?/, "") : "\n",
-    )
-    .join(" ");
-}
-
-/**
- * Reader-visible prose per file: the comment runs in TypeScript, the whole
- * text in Markdown, where every line is already prose. Both join their lines,
- * so a cite wrapped across two of them still reads as one phrase.
- */
-function proseOf(path: string, text: string): string {
-  return path.endsWith(".ts") ? unwrapProse(text) : text.split("\n").join(" ");
-}
-
-/**
- * Every file under the scanned roots, recursively — `examples/prompts/` is
- * the descent that a top-level `readdirSync` would silently drop — plus the
- * `docs/` pages that declare themselves current reference.
- */
-function citeScannedFiles(): string[] {
-  const roots = CITE_SCANNED_ROOTS.flatMap((root) =>
-    readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
-      .map((name) => join(root, name))
-      .filter((path) => statSync(join(REPO_ROOT, path)).isFile()),
-  );
-  return [...roots, ...docsPages().filter((p) => p.current).map((p) => p.path)].sort();
-}
+//
+// Why the shape is dead, what `docs/` partition exempts a page, and the
+// grammar itself: tests/helpers/citeScanners.ts.
 
 describe("dead release cites are gone from src/, examples/, and current docs", () => {
   const files = citeScannedFiles().map((path) => ({
@@ -2404,145 +1486,9 @@ describe("dead release cites are gone from src/, examples/, and current docs", (
 });
 
 // ---------- module-path cites ----------
-
-/**
- * A doc comment that names another module — "`quarantineKey`
- * (`src/Dispatcher.ts`)" — is a pointer a reader follows, and the cheapest
- * prose there is to get wrong: nothing moves it when the symbol moves. Four
- * extraction waves have now stranded cites this way, and each round was
- * repointed by hand, which is narration defending itself with discipline
- * (`.claude/rules/engineering.md`, "Narration is the ladder's bottom rung").
- * This is the rung above: the cite is checked against the tree it points at.
- *
- * **Declares, not references.** A cite resolves only when the named module
- * *declares* the symbol — an import of it does not count. The looser reading
- * is measurably toothless: at `a18b40e^`, `src/Dispatcher.ts` still imported
- * `superviseLoop`, `createWorktree` and `harvestFriction` after the
- * extraction moved them, so "the module mentions it" would have passed over
- * the entire class of staleness this scan exists to catch.
- *
- * Scope is `src/` and `examples/` — the engine's own prose and the worked
- * chains a consumer copies. `spec/` carries the same shape and is human-only
- * (chain.ts writable-paths), so its half is not swept from here.
- */
-
-/** A module path a cite can name: a TypeScript file in a scanned tree. */
-const CITE_MODULE_RE = "(?:src|examples|tests|bin|scripts)/[A-Za-z0-9_./-]+\\.ts";
-
-/** A backticked symbol, dotted or not: `quarantineKey`, `git.readFileAtRef`. */
-const CITE_SYMBOL_RE = "`([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)`";
-
-/** A module path as prose spells it: backticked or bare, with an optional `:NN` line. */
-const CITE_PATH_RE = `\`?(${CITE_MODULE_RE})(?::\\d+)?\`?`;
-
-/**
- * The three shapes this corpus writes a cite in. Two are parenthesized and
- * differ only in order — "`sym` (`src/x.ts`)" and its comma variant "`sym`,
- * `src/x.ts`" read symbol-first; "(`src/x.ts`, `git.readFileAtRef`)" reads
- * module-first. The third is the colon shape, `src/x.ts:sym`, which is
- * spelled tightly on purpose: no space around the colon and no backtick
- * between, so "`src/x.ts`: it is …" — a path ending a clause, followed by
- * ordinary prose — is not a cite.
- */
-const CITE_SHAPES: readonly { shape: "colon" | "parenthesized"; re: RegExp; pathAt: number; symbolAt: number }[] = [
-  { shape: "parenthesized", re: new RegExp(`${CITE_SYMBOL_RE}\\s*,?\\s*\\(?\\s*${CITE_PATH_RE}`, "g"), pathAt: 2, symbolAt: 1 },
-  { shape: "parenthesized", re: new RegExp(`${CITE_PATH_RE}\\s*,?\\s+${CITE_SYMBOL_RE}`, "g"), pathAt: 1, symbolAt: 2 },
-  { shape: "colon", re: new RegExp(`(${CITE_MODULE_RE}):([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)`, "g"), pathAt: 1, symbolAt: 2 },
-];
-
-interface ModuleCite {
-  /** The file whose comment carries the cite. */
-  from: string;
-  /** The module the cite names. */
-  path: string;
-  /** The symbol the cite names, as written — possibly dotted. */
-  symbol: string;
-  shape: "colon" | "parenthesized";
-}
-
-/**
- * Every file under the cite-scanned roots paired with its reader-visible
- * prose — the corpus both comment-cite scans read, walked once so neither
- * scan carries its own copy of the descent.
- */
-function citeProseCorpus(): { from: string; prose: string }[] {
-  return CITE_SCANNED_ROOTS.flatMap((root) =>
-    readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
-      .map((name) => join(root, name))
-      .filter((path) => statSync(join(REPO_ROOT, path)).isFile())
-      .sort(),
-  ).map((from) => ({ from, prose: proseOf(from, readFileSync(join(REPO_ROOT, from), "utf8")) }));
-}
-
-/** Every module-path cite in the comment prose of `src/` and `examples/`. */
-function moduleCites(): ModuleCite[] {
-  const cites: ModuleCite[] = [];
-  for (const { from, prose } of citeProseCorpus()) {
-    const seen = new Set<string>();
-    for (const { shape, re, pathAt, symbolAt } of CITE_SHAPES) {
-      for (const m of prose.matchAll(re)) {
-        const path = m[pathAt]!.split("/").join(sep);
-        const symbol = m[symbolAt]!;
-        if (seen.has(`${path}|${symbol}`)) continue;
-        seen.add(`${path}|${symbol}`);
-        cites.push({ from, path, symbol, shape });
-      }
-    }
-  }
-  return cites;
-}
-
-/**
- * A module's declaring body: comments gone, and every name-binding `import`
- * or `export … from` gone with them. Stripping those is the whole difference
- * between "declares" and "references" — an extraction leaves the import
- * behind at the old home, which is exactly the tree a cite goes stale
- * against.
- */
-function declaringBody(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => line.replace(/(^|[^:"'`])\/\/.*$/, "$1"))
-    .join("\n")
-    .replace(/^\s*import\s[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm, "")
-    .replace(/^\s*import\s+["'][^"']+["'];?\s*$/gm, "")
-    .replace(/^\s*export\s*\{[\s\S]*?\}\s*from\s+["'][^"']+["'];?\s*$/gm, "");
-}
-
-/**
- * Does `body` declare `name`? Three forms cover what this corpus cites: a
- * top-level `function` / `const` / `class` / `interface` / `type` / `enum`
- * binding, a member or property declaration (a class method, an interface
- * field, an object-literal key), and a shorthand property.
- */
-function declaresSymbol(body: string, name: string): boolean {
-  const n = name.replace(/\$/g, "\\$&");
-  return [
-    new RegExp(`^\\s*(?:export\\s+)?(?:declare\\s+)?(?:default\\s+)?(?:abstract\\s+)?(?:async\\s+)?(?:function|const|let|var|class|interface|type|enum)\\s+${n}\\b`, "m"),
-    new RegExp(`^\\s*(?:(?:public|private|protected|readonly|static|abstract|async|get|set)\\s+)*${n}\\s*[(<?:=]`, "m"),
-    new RegExp(`^\\s*${n}\\s*,\\s*$`, "m"),
-  ].some((p) => p.test(body));
-}
-
-/**
- * Resolve a cite against the tree. A dotted symbol resolves against its last
- * segment — `Chain.supervisorPolicy.maxParallel` is the `maxParallel` field
- * the named module declares, and the path in front of it is the reader's
- * route to it, not a second file to open.
- */
-function resolveCite(cite: ModuleCite): string | null {
-  let body: string;
-  try {
-    body = declaringBody(readFileSync(join(REPO_ROOT, cite.path), "utf8"));
-  } catch {
-    return `${cite.from} cites ${cite.path}, which does not exist`;
-  }
-  const leaf = cite.symbol.split(".").at(-1)!;
-  return declaresSymbol(body, leaf)
-    ? null
-    : `${cite.from} cites \`${cite.symbol}\` in ${cite.path}, which does not declare ${leaf}`;
-}
+//
+// Why a cite rots, why resolution is *declares* and not *references*, and the
+// three shapes the corpus writes: tests/helpers/citeScanners.ts.
 
 describe("module-path cites in src/ and examples/ resolve against the tree", () => {
   const cites = moduleCites();
@@ -2628,105 +1574,9 @@ describe("module-path cites in src/ and examples/ resolve against the tree", () 
 });
 
 // ---------- quoted test-title cites ----------
-
-/**
- * The other half of the same pointer: a doc comment that names the *test*
- * pinning what the sentence just claimed — "byte shape pinned by
- * tests/Prompt.test.ts's "byte-identical to the pre-§2 collapsed rendering"
- * case". `CITE_SHAPES` above cannot see one: every shape there requires a
- * backticked symbol, and a test title is a sentence in quotes, so the whole
- * class was selected at zero — a green verdict over an empty set
- * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
- *
- * These rot the same way and more quietly: a suite extraction moves the
- * `it(…)` and leaves the pointer behind, and the sentence still reads as
- * though something is watching. Resolution is by *title*, not by symbol —
- * the quoted text is a substring of the named file — because a title is what
- * a reader searches for and what a rename changes.
- */
-const CITE_TEST_MODULE_RE = "tests/[A-Za-z0-9_./-]+\\.test\\.ts";
-
-/**
- * A quoted test title: straight double quotes, no newline between them —
- * after `proseOf` a newline is a code line, so the needle never composes a
- * quote in one comment run with a quote in the next. The length floor keeps
- * a one-word quoted term ("run", "none") from reading as a title.
- */
-const CITE_TITLE_RE = '"([^"\\n]{8,})"';
-
-/**
- * Both orders the corpus writes, mirroring `CITE_SHAPES`: path-first —
- * `tests/Gate.test.ts's "…"`, `tests/Dispatcher.test.ts, "…"` — and
- * title-first, where the path follows the quote in parentheses. Each demands
- * the quote and the path be adjacent, so a path that merely ends a clause
- * ahead of ordinary prose is not a cite.
- */
-const TITLE_CITE_SHAPES: readonly {
-  order: "path-first" | "title-first";
-  re: RegExp;
-  pathAt: number;
-  titleAt: number;
-}[] = [
-  {
-    order: "path-first",
-    re: new RegExp(`\`?(${CITE_TEST_MODULE_RE})\`?(?:'s)?\\s*,?\\s+${CITE_TITLE_RE}`, "g"),
-    pathAt: 1,
-    titleAt: 2,
-  },
-  {
-    order: "title-first",
-    re: new RegExp(`${CITE_TITLE_RE}\\s*,?\\s*\\(?\\s*\`?(${CITE_TEST_MODULE_RE})\`?`, "g"),
-    pathAt: 2,
-    titleAt: 1,
-  },
-];
-
-interface TitleCite {
-  /** The file whose comment carries the cite. */
-  from: string;
-  /** The test module the cite names. */
-  path: string;
-  /** The test title the cite quotes, as written. */
-  title: string;
-  order: "path-first" | "title-first";
-}
-
-/** Every quoted test-title cite in the comment prose of `src/` and `examples/`. */
-function titleCites(): TitleCite[] {
-  const cites: TitleCite[] = [];
-  for (const { from, prose } of citeProseCorpus()) {
-    const seen = new Set<string>();
-    for (const { order, re, pathAt, titleAt } of TITLE_CITE_SHAPES) {
-      for (const m of prose.matchAll(re)) {
-        const path = m[pathAt]!.split("/").join(sep);
-        const title = m[titleAt]!;
-        if (seen.has(`${path}|${title}`)) continue;
-        seen.add(`${path}|${title}`);
-        cites.push({ from, path, title, order });
-      }
-    }
-  }
-  return cites;
-}
-
-/**
- * Resolve a title cite against the tree: the named file exists and carries
- * the quoted title. Whitespace is flattened on both sides — a title the
- * comment wrapped across two lines is the same title the `it(…)` spells on
- * one.
- */
-function resolveTitleCite(cite: TitleCite): string | null {
-  const flat = (s: string) => s.replace(/\s+/g, " ").trim();
-  let text: string;
-  try {
-    text = readFileSync(join(REPO_ROOT, cite.path), "utf8");
-  } catch {
-    return `${cite.from} cites ${cite.path}, which does not exist`;
-  }
-  return flat(text).includes(flat(cite.title))
-    ? null
-    : `${cite.from} cites "${cite.title}" in ${cite.path}, which carries no such title`;
-}
+//
+// Why the symbol grammar cannot see one, and why resolution is by title:
+// tests/helpers/citeScanners.ts.
 
 describe("quoted test-title cites in src/ and examples/ resolve against the suite", () => {
   const cites = titleCites();
@@ -2799,133 +1649,11 @@ describe("quoted test-title cites in src/ and examples/ resolve against the suit
   });
 });
 
-/**
- * `.claude/rules/spec-writing.md` ("A claim names behavior, never location")
- * lets a spec sentence name behavior and public surface, and refuses a `src/`
- * file path or a line number: where a symbol lives is layout, and layout is
- * build's lane. That refusal is the one half of the spec-lint pin this scan
- * carries — a locator rots on the next extraction while still reading as
- * authoritative, and nothing but a reader's memory was watching for one.
- *
- * A path is not always a locator, which is why the `src/` half is an
- * allowlist rather than a ban. Two claims take a module as their *subject*:
- * the export inventory, which the rule itself names as public surface, and
- * the deep-import specifier packaging refuses, where the string is what a
- * consumer types. Each surviving path is named below with which it is; a new
- * one fails until it is.
- *
- * The line-number half is a flat refusal — no claim in this corpus has a line
- * as its subject — so it asserts the empty case explicitly (`engineering.md`,
- * "A green verdict is proven non-vacuous"), with the grammar driven both ways
- * beside it.
- *
- * The `tests/` half is the same flat refusal, and for a stronger reason: the
- * rule's third bullet refuses a test title or a fixture outright, because
- * tests pin the spec and the spec does not cite them. There is no
- * allowlist-shaped escape the way `src/` has one — no spec claim takes a test
- * file as its subject — so the refusal is unconditional, currently green over
- * zero sites, and the emptiness is spelled here rather than inherited from a
- * silent `[]`.
- *
- * Its sibling roots are deliberately *not* swept. `bin/flume.js`, `bin/env`,
- * `scripts/smoke-install.mjs` and `examples/backlog-groomer-chain.ts` are each
- * a claim's subject — a shim the package ships, a fixture set CI installs
- * against, a reference chain a consumer copies — not a route to a symbol, and
- * `spec-writing.md` refuses neither. Widening the needle to them would be a
- * ban the page never states.
- *
- * Scope is `spec/` alone. The same shape in `src/` and `examples/` is swept
- * by the cite scan above, which can resolve a cite against the tree; `spec/`
- * is human-only (chain.ts writable-paths), so a finding here leaves as a
- * directed edit rather than a build fix.
- */
-
-/** Every `.md` page of `spec/`, read whole — fenced code included. */
-function specPages(): { path: string; text: string }[] {
-  return readdirSync(join(REPO_ROOT, "spec"))
-    .filter((name) => name.endsWith(".md"))
-    .sort()
-    .map((name) => {
-      const path = join("spec", name);
-      return { path, text: readFileSync(join(REPO_ROOT, path), "utf8") };
-    });
-}
-
-/**
- * A `src/` file path. Matched wherever it starts, including inside a longer
- * specifier — `@dtmd/flume/src/Dispatcher.ts` names the module as surely as a
- * bare cite does. Segments carry no dots before the extension, which is what
- * keeps a bare `src/` directory mention out — "a section that no longer
- * matches `src/`" names the tree, not a route to a symbol, and the corpus
- * writes that sentence routinely.
- */
-const SPEC_SRC_PATH = /src\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.[A-Za-z]{1,5}/g;
-
-/**
- * A `path:NN` line locator: any filename with an extension, followed
- * immediately by a colon and digits. Not anchored to `src/` — a line number
- * is refused wherever it points, and `spec/chain.md:120` would be the same
- * defect aimed at a sibling page.
- *
- * The leading lookbehind bars a start inside a URL authority, so a
- * `https://host:443/x` port is not read as a line. A path that merely *ends*
- * a clause — "`spec/jobs.md`, *Runtime ignores*" — carries no digits and
- * never reaches the colon.
- */
-const SPEC_LINE_LOCATOR =
-  /(?<![A-Za-z0-9_.:/-])[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z]{1,5}:\d+/g;
-
-/**
- * A path under a `tests/` root, anchored on the root itself: `tests/x.ts`,
- * `tests/fixtures/chain.ts`, and the same path inside a longer prefix
- * (`flume/tests/x.ts`). The lookbehind bars a word character before `tests`,
- * so `integration-tests/…` is a different root and not this one.
- *
- * Unlike the `src/` needle, segments may carry dots — `.test.ts` is the
- * convention every file under that root follows, and a truncated hit would
- * report the violation by the wrong name.
- *
- * An extension is required, which is what keeps a bare directory mention out:
- * a sentence naming `tests/` as a lane names the tree, not a file. Anchoring
- * on the root is also why a bare `Dispatcher.test.ts` or the
- * `*.integration.test.ts` filename convention the corpus writes does not fire
- * — a filename with no root is not a path, and whether the corpus may write
- * one is an open question for the human, not a claim this needle settles.
- */
-const SPEC_TEST_PATH =
-  /(?<![A-Za-z0-9_.-])tests\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z]{1,5}/g;
-
-/**
- * The `src/` paths a spec page may name, each with the claim that takes the
- * module as its subject. An entry leaves in the commit that removes its last
- * site; the equality below refuses a stale one as loudly as a new locator.
- */
-const SPEC_SRC_PATH_ALLOWLIST: Record<string, string> = {
-  "src/index.ts":
-    "the export inventory is the claim's subject — spec-writing.md names an " +
-    "export of `src/index.ts` as public surface, and the pages point at the " +
-    "module instead of restating what it lists",
-  "src/Dispatcher.ts":
-    "the deep-import specifier packaging refuses " +
-    "(`@dtmd/flume/src/Dispatcher.ts`) — the string is what a consumer types, " +
-    "not a route to a symbol",
-};
-
-/** Distinct `src/` paths a page names, in source order. */
-function srcPathsIn(text: string): string[] {
-  return [...new Set(text.match(SPEC_SRC_PATH) ?? [])];
-}
-
-/** Every `tests/` path a page names, as written. */
-function testPathsIn(text: string): string[] {
-  return text.match(SPEC_TEST_PATH) ?? [];
-}
-
-/** Every `path:NN` locator a page carries, as written. */
-function lineLocatorsIn(text: string): string[] {
-  return text.match(SPEC_LINE_LOCATOR) ?? [];
-}
-
+// Spec-lint pin (per .claude/rules/spec-writing.md, "A claim names behavior,
+// never location"): a `src/` path, a `path:NN` locator and a `tests/` cite are
+// each layout, and layout rots on the next extraction while still reading as
+// authoritative. The needles, the allowlist, and the reason each surviving
+// path is a claim's subject rather than a route: tests/helpers/specLocators.ts.
 describe("spec/ names public surface, never a path locator", () => {
   const pages = specPages();
 
@@ -3069,135 +1797,16 @@ describe("spec/ names public surface, never a path locator", () => {
   });
 });
 
-/**
- * The other half of the spec-lint pin (`.claude/rules/spec-writing.md`, "What
- * holds this page above prose"): the path half above refuses a locator, and
- * this one holds the names a page is left with. `spec-writing.md` ("A claim
- * names behavior, never location") sends every sentence that wanted a path to
- * a **public name** instead — which only stays true while the name does. A
- * renamed field leaves the spec asserting a member the engine no longer has,
- * in the one form the page told the author to prefer, and nothing but a
- * reader's memory was watching.
- *
- * **Subject: a dotted token whose prefix is a public type.** The page's
- * *Public surface* bullet is the authority for which types those are, so the
- * prefix set is read off the bullet itself and off `src/index.ts`'s export
- * inventory — the two surfaces the bullet names — rather than restated here
- * (`engineering.md`, *Derived state is computed, never restated beside its
- * source*). Keying on the prefix is also what keeps ordinary prose out: this
- * corpus writes `process.env.FLUME_DIR`, `core.longpaths` and `cmd.exe` in
- * backticks routinely, and none of them is a claim about this engine's
- * surface. No vocabulary list does that work; the export inventory does.
- *
- * **Resolved on the last segment, anywhere in `src/`.** `Chain.seedDir` is
- * the `seedDir` field, and the type in front of it is the reader's route to
- * it. The page may not name the module that declares it — that is the path
- * half's whole point — so the resolution is over the tree, not over a named
- * file as the comment-cite scan above resolves.
- */
-
-/**
- * A backticked dotted token: `Chain.seedDir`, `api.paths.flumeDir`. Two
- * segments minimum — a bare `createWorktree` names no type and is out of
- * subject.
- */
-const SPEC_DOTTED_RE = /`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)`/g;
-
-/**
- * Filename tails. `Dispatcher.test.ts` wears the subject's shape — a public
- * type, then dotted segments — but names a file, which is the path half's
- * subject, not a member of anything. The tail is the only structural thing
- * that tells it from `Chain.friction`.
- */
-const FILENAME_TAILS = new Set(["ts", "js", "mjs", "cjs", "json", "md", "lock", "exe"]);
-
-/**
- * The types the *Public surface* bullet names, read off the bullet. Taking
- * them from the page means a ninth type ratified there widens this scan in
- * the same commit, rather than in whichever later one notices.
- */
-function publicSurfaceTypes(): string[] {
-  const page = readFileSync(join(REPO_ROOT, ".claude", "rules", "spec-writing.md"), "utf8");
-  const bullet = /^- \*\*Public surface\*\*([\s\S]*?)(?=^- |\n\n)/m.exec(page);
-  if (!bullet) return [];
-  return [...new Set([...bullet[1]!.matchAll(/`([A-Z][\w$]*)`/g)].map((m) => m[1]!))];
-}
-
-/** Every name `src/index.ts` re-exports — the bullet's other named surface. */
-function indexExports(): string[] {
-  const idx = readFileSync(join(REPO_ROOT, "src", "index.ts"), "utf8");
-  const names = new Set<string>();
-  for (const block of idx.matchAll(/export\s+(?:type\s+)?\{([\s\S]*?)\}\s*from/g)) {
-    for (const part of block[1]!.split(",")) {
-      const spec = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/);
-      const name = (spec[1] ?? spec[0] ?? "").trim();
-      if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
-    }
-  }
-  return [...names];
-}
-
-/** Every `src/` module's declaring body — where a last segment has to land. */
-function srcDeclaringBodies(): string[] {
-  return readdirSync(join(REPO_ROOT, "src"), { recursive: true, encoding: "utf8" })
-    .map((name) => join(REPO_ROOT, "src", name))
-    .filter((path) => statSync(path).isFile() && path.endsWith(".ts"))
-    .map((path) => declaringBody(readFileSync(path, "utf8")));
-}
-
-interface SpecSymbolCite {
-  /** The spec page carrying the cite. */
-  page: string;
-  /** The dotted token, as written. */
-  symbol: string;
-}
-
-/** Every in-subject dotted cite a page carries, deduped per page. */
-function specSymbolCites(pages: { path: string; text: string }[], prefixes: Set<string>): SpecSymbolCite[] {
-  const cites: SpecSymbolCite[] = [];
-  for (const page of pages) {
-    const seen = new Set<string>();
-    for (const m of page.text.matchAll(SPEC_DOTTED_RE)) {
-      const symbol = m[1]!;
-      const segments = symbol.split(".");
-      if (!prefixes.has(segments[0]!)) continue;
-      if (FILENAME_TAILS.has(segments.at(-1)!)) continue;
-      if (seen.has(symbol)) continue;
-      seen.add(symbol);
-      cites.push({ page: page.path, symbol });
-    }
-  }
-  return cites;
-}
-
-/**
- * The member cites `src/` deliberately does not declare, each with the claim
- * that needs the name in order to deny it. A spec section whose subject is an
- * absence — a knob that does not exist, a verb that was removed — has to
- * spell the absent name or say nothing, and an unresolvable cite is the
- * correct shape for it. The equality below refuses a stale entry as loudly as
- * a newly-stranded cite: when the engine grows one of these, its line leaves
- * in the same commit the spec section does.
- */
-const SPEC_ABSENT_SYMBOLS: Record<string, string> = {
-  "Chain.harvest":
-    "removed with `job extract`, and nothing replaced it — the section's " +
-    "subject is that there is no clean-history ending",
-  "Chain.worktreesDir":
-    "never existed: the worktree base is machine-local placement, and the " +
-    "section names the knob to say a committed chain file is the wrong home",
-  "DispatcherOptions.trunkBranch":
-    "does not exist, and the absence is pinned type-level — the section " +
-    "names it to bound the fanout branch carve-out beside it",
-};
-
+// The other half of that pin: the path half sends every sentence that wanted
+// a path to a public name instead, which only stays true while the name does.
+// The dotted-cite grammar, the prefix set read off spec-writing.md and
+// src/index.ts, and the declared absences: tests/helpers/specLocators.ts.
 describe("spec/ names members the engine still declares", () => {
   const pages = specPages();
   const prefixes = new Set([...publicSurfaceTypes(), ...indexExports()]);
   const cites = specSymbolCites(pages, prefixes);
   const bodies = srcDeclaringBodies();
-  const unresolved = (cite: SpecSymbolCite): boolean =>
-    !bodies.some((body) => declaresSymbol(body, cite.symbol.split(".").at(-1)!));
+  const unresolved = unresolvedSpecCite(bodies);
 
   // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
   // the refusal below reads an empty set whether the corpus is clean or the
@@ -3280,5 +1889,81 @@ describe("spec/ names members the engine still declares", () => {
       prefixes,
     );
     expect(outOfSubject, "the symbol needle over-fires on non-symbol prose").toEqual([]);
+  });
+});
+
+// Extraction pin (TEST-SCANNERS-OUT-OF-SUITE-FILE, per
+// .claude/rules/engineering.md "A fix ships the test that would have caught
+// it"): red-on-base lays the merged bytes of every file holding a named test
+// over the pre-fix tree, and for this suite that file is this one. A scanner
+// declared here therefore rides forward inside that copy: the fixed grammar
+// runs on both sides, the `tests[]` line passes on the base, and the entry
+// reverts for pinning nothing. Two entries reverted that way before the
+// scanners moved to `tests/helpers/`, where what the copied suite imports is
+// the base's own version.
+describe("the retired-narration suite's scanners live in tests/helpers/", () => {
+  const source = suiteSource();
+  const imports = helperImports(source);
+  const imported = imports.flatMap((m) => m.names).sort();
+
+  it("the retired-narration suite's scanners are imported from `tests/helpers/`, not declared in the suite file", () => {
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): the
+    // refusal below is an absence, and an absence over a file that read empty
+    // — or over a suite importing no scanner at all — reports the same clean
+    // verdict. Name the set that was found, and name the two grammars whose
+    // fixes reverted on this defect, so the pin cannot pass over none.
+    expect(source.length, `${SUITE_PATH} read empty`).toBeGreaterThan(10_000);
+    expect(
+      imports.map((m) => m.module).sort(),
+      `${SUITE_PATH} imports nothing from tests/helpers/`,
+    ).not.toEqual([]);
+    expect(
+      imported.length,
+      `scanners imported: ${imported.join(", ")}`,
+    ).toBeGreaterThan(40);
+    for (const scanner of ["orphanedBlocks", "testPathsIn"]) {
+      expect(
+        imported,
+        `${scanner} is not imported — the grammar whose fix this entry ` +
+          "unblocked is back inside the suite file",
+      ).toContain(scanner);
+    }
+
+    expect(
+      declaredGrammar(source),
+      `${SUITE_PATH} declares a scanner of its own: move it under ` +
+        "tests/helpers/, or red-on-base carries its next fix forward inside " +
+        "this file and the fix pins nothing",
+    ).toEqual([]);
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the refusal above compares [] to [] now that the move has
+  // landed, so a reader that stopped recognising a declaration reports the
+  // same empty result. Drive it over the real writers — a helper module,
+  // whose grammar it must name, and this suite's own wiring and drivers,
+  // which it must leave alone.
+  it("the extraction scan names a helper's grammar and leaves the suite's wiring and its `it`-local drivers unflagged", () => {
+    const helper = readDoc("tests", "helpers", "docAgreement.ts");
+    expect(
+      declaredGrammar(helper),
+      "tests/helpers/docAgreement.ts declares no grammar the scan can see — " +
+        "the reader is dead, and the refusal above proves nothing",
+    ).toEqual(expect.arrayContaining(["interfaceFields", "orphanedBlocks"]));
+
+    // The wiring the scan must not read as grammar: a describe-scoped `const`
+    // whose initializer merely contains an arrow. Read off this file rather
+    // than paraphrased — if the line moves, the control moves with it.
+    expect(
+      source,
+      "the suite no longer builds its corpus with a mapped callback — the " +
+        "false-positive control is gone",
+    ).toContain("  const corpus = scannedPaths().map((path) => ({");
+    // …and a driver an `it` builds for one assertion, which is the test's own
+    // and is meant to ride forward with the file.
+    expect(source, "the suite declares no `it`-local driver").toMatch(
+      /^ {4}const found = \(prose: string\) =>/m,
+    );
+    expect(declaredGrammar(source)).toEqual([]);
   });
 });
