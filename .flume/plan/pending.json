@@ -1,15 +1,67 @@
 [
   {
-    "tag": "SPEC-TEST-CITE-NEEDLE-ROOTLESS",
+    "tag": "TEST-SCANNERS-OUT-OF-SUITE-FILE",
     "gate": {
       "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/scanCorpus.ts",
+          "description": "the corpus readers — repo root, scanned paths, the docs/ and spec/ page lists"
+        },
+        {
+          "path": "tests/helpers/retiredShapes.ts",
+          "description": "the retired-shape needles and their inventory"
+        },
+        {
+          "path": "tests/helpers/docAgreement.ts",
+          "description": "doc-to-type readers: interface and table fields, claim regions, orphaned blocks"
+        },
+        {
+          "path": "tests/helpers/citeScanners.ts",
+          "description": "the release, module-path and test-title cite grammars and their resolvers"
+        },
+        {
+          "path": "tests/helpers/specLocators.ts",
+          "description": "the spec path, line-locator and symbol-cite needles"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "import the scanners; keep the corpus wiring and the assertions"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Move the retired-narration suite's scanner grammars into tests/helpers/ modules, so red-on-base stops carrying each fix forward inside the test file",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fix ships the test that would have caught it"
+    },
+    "tests": [],
+    "pins": [
+      "the retired-narration suite's scanners are imported from `tests/helpers/`, not declared in the suite file"
+    ],
+    "acceptance": "the suite is green with every scanner imported, and the pin names the set of scanners it actually found rather than passing over none",
+    "notes": "Pure move, no behavior change. red-on-base lays the merged bytes of each file holding a named test over the base (`.flume/vitestJudge.ts`); a grammar declared beside its own test rides in that copy, so the line can never be red — two entries reverted on it. The five modules are a prediction; the cut is build's call."
+  },
+  {
+    "tag": "SPEC-TEST-CITE-NEEDLE-ROOTLESS",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "TEST-SCANNERS-OUT-OF-SUITE-FILE"
+      ]
     },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
         {
-          "path": "tests/retired-narration.test.ts",
+          "path": "tests/helpers/specLocators.ts",
           "description": "widen the tests/ half of the spec locator scan to rootless filenames; retire the doc comment's park"
         }
       ],
@@ -32,19 +84,22 @@
       "no spec page cites a bare test filename"
     ],
     "acceptance": "the widened needle is green over the corpus, and the needle's doc comment no longer parks the rootless half as a human question",
-    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker — the string a consumer types, the claim's own subject — so the needle matches a concrete filename and leaves the glob. The last rootless site (`spec/worktrees.md`) was rewritten to name the dispatcher's default-lane suite, so this is green today; the doc comment deferring it to a human is expired narration and goes in the same commit."
+    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker, so the needle matches a concrete filename and leaves the glob. Green today — `spec/worktrees.md`'s last rootless site was rewritten — and the doc comment deferring the rootless half to a human is expired narration, retired in the same commit. Reverted 9e9b326 is a working implementation. Blocked until the needle leaves the suite file; until then `tests[]` cannot go red."
   },
   {
     "tag": "ORPHAN-ID-SINGLE-LINE-BLOCK",
     "gate": {
-      "kind": "open"
+      "kind": "blockedBy",
+      "tags": [
+        "TEST-SCANNERS-OUT-OF-SUITE-FILE"
+      ]
     },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
         {
-          "path": "tests/retired-narration.test.ts",
+          "path": "tests/helpers/docAgreement.ts",
           "description": "read a single-line doc block's orphan id off its own opener"
         }
       ],
@@ -64,6 +119,6 @@
     ],
     "pins": [],
     "acceptance": "an injected single-line orphan comes back keyed by its text, and two such orphans in one file are two distinct ALLOWED_ORPHANS keys",
-    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. The existing sensitivity pin's injection is multi-line to steer around this."
+    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. Blocked until `orphanedBlocks` leaves the suite file; until then `tests[]` cannot go red (4dbfc07)."
   }
 ]
