@@ -245,9 +245,19 @@ promptArgs(ctx) {
 ```
 
 `TickContext` carries `cwd` (the path the tick works in — its worktree, with
-one exception a singleton `shouldRun` hits, below), `assignedEntry` (fanout
-only), and `pending` (the full list, for singleton phases reasoning about
-queue state).
+one exception a singleton `shouldRun` hits, below) and `flumeDir` (the
+absolute, resolved flume state root, the same path on both consults, and
+auto-injected as the reserved `{{FLUME_DIR}}` prompt arg) on every tick. The
+plan arrives on `assignedEntry` (the entry this tick was handed, fanout only)
+and `pending` (the full list, for singleton phases reasoning about queue
+state). Two more are facts the dispatcher already computed, carried so a hook
+reads them instead of rebuilding them: `pickable` — the entries the
+dispatcher would select right now, with `blockedBy` resolved, forks and
+capabilities checked and this run's quarantine drop applied — and
+`priorAttempts`, every persisted prior-attempt record, keyed as the files
+under `<flumeDir>/prior-attempts/` are. Those two are optional in the type
+only so a hand-built fixture may omit them; a dispatcher-built context always
+sets them.
 
 ### `shouldRun`: decline a tick before the invocation
 

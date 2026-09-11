@@ -841,6 +841,148 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
   });
 });
 
+// Agreement pin (TICKCONTEXT-DOC-NAMES-ALL-FIELDS, per
+// .claude/rules/engineering.md "A fact the engine holds is reported, never
+// rediscovered"): §1 of docs/CHAIN-AUTHORING.md is where a chain author
+// learns what arrives on a `TickContext`, and it summarized three of the
+// fields `src/Phase.ts` declares. A field absent from the page is a fact no
+// chain knows it receives: `pickable` and `priorAttempts` exist precisely so
+// a hook stops re-deriving pickability and scanning the engine's
+// prior-attempts directory, and `flumeDir` is the one root a singleton
+// predicate can resolve paths off — a summary that never names them leaves
+// every one of those rebuilds in place. The rung that holds it is the same
+// field-set comparison the surface pins above make: the interface's own
+// members as the declaring side, the summary prose as the restating one.
+describe("the chain-authoring doc teaches every TickContext field", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+  const exampleSrc = read("examples", "cascade-chain.ts");
+
+  /**
+   * The §1 paragraph introducing `TickContext`: from the sentence that names
+   * it through the blank line that ends the paragraph, wrapping collapsed.
+   * Scoped to the paragraph rather than to the section, because the section
+   * also quotes a `promptArgs` body reading `ctx.assignedEntry` — a field
+   * named in sample code is not a field the prose teaches.
+   */
+  function summary(text: string): string {
+    const start = text.indexOf("`TickContext` carries");
+    if (start === -1) return "";
+    const end = text.indexOf("\n\n", start);
+    return text.slice(start, end === -1 ? undefined : end).replace(/\s+/g, " ");
+  }
+
+  /**
+   * The bullet-free prose of the `shouldRun` section — the span from its
+   * heading to the next `##`, wrapping collapsed. This is where the decline
+   * story names the facts its worked predicate reads.
+   */
+  function declineSection(): string {
+    return (
+      /^### `shouldRun`: decline a tick before the invocation$([\s\S]*?)^## /m
+        .exec(doc)?.[1] ?? ""
+    ).replace(/\s+/g, " ");
+  }
+
+  /**
+   * The `shouldRun` body `examples/cascade-chain.ts` ships on its plan phase
+   * — the declaration §1 quotes whole, held against that quote byte-for-byte
+   * by the agreement pin above. Read off the example rather than off the
+   * quote, so the fields the pin demands come from the real writer.
+   */
+  function predicateReads(): string[] {
+    const body =
+      / {4}shouldRun\(ctx\) \{([\s\S]*?)\n {4}\},/.exec(exampleSrc)?.[1] ?? "";
+    return [...new Set([...body.matchAll(/ctx\.(\w+)/g)].map((m) => m[1]!))];
+  }
+
+  it("the chain-authoring doc's TickContext summary names every field src/Phase.ts declares", () => {
+    const declared = interfaceFields(read("src", "Phase.ts"), "TickContext");
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // reader that found nothing would assert over an empty field set, and one
+    // that stopped at the first wrapped member would pass on a summary
+    // missing everything after it.
+    expect(declared, "src/Phase.ts: TickContext did not parse").toContain(
+      "cwd",
+    );
+    expect(
+      declared,
+      "src/Phase.ts: TickContext declares `priorAttempts` last — the reader " +
+        "stopped short of it",
+    ).toContain("priorAttempts");
+    expect(declared.length).toBeGreaterThan(3);
+    const paragraph = summary(doc);
+    expect(
+      paragraph,
+      "docs/CHAIN-AUTHORING.md §1: the `TickContext` summary did not parse " +
+        "— the sentence introducing it was reworded, or the paragraph moved",
+    ).not.toBe("");
+    for (const field of declared) {
+      expect(
+        paragraph,
+        `docs/CHAIN-AUTHORING.md §1: the \`TickContext\` summary never names ` +
+          `\`${field}\`, so a chain author cannot learn it from the page`,
+      ).toContain(`\`${field}\``);
+    }
+  });
+
+  // Sensitivity pin: the comparison above is only worth its green if the
+  // paragraph reader really stops at the paragraph. A reader that ran on into
+  // the section body would find every field named somewhere below and agree
+  // with a summary that taught none of them.
+  it("the TickContext summary reader stops at the paragraph break", () => {
+    expect(summary(doc)).toMatch(/^`TickContext` carries `cwd`/);
+    expect(summary(doc), "the reader swallowed a fenced block").not.toContain(
+      "```",
+    );
+    const heading = "### `shouldRun`: decline a tick before the invocation";
+    const beyond = doc.replace(
+      heading,
+      `\`notAField\` is named past the break.\n\n${heading}`,
+    );
+    expect(beyond, "the doctoring was a no-op").not.toBe(doc);
+    expect(
+      summary(beyond),
+      "the reader ran past the paragraph into the section body",
+    ).not.toContain("`notAField`");
+  });
+
+  it("the chain-authoring decline section names every TickContext field the quoted predicate reads", () => {
+    const reads = predicateReads();
+    const declared = interfaceFields(read("src", "Phase.ts"), "TickContext");
+    // Vacuity: a predicate reader that found nothing, or that picked up a
+    // name the interface does not declare, would hold the prose to nothing.
+    expect(
+      reads,
+      "examples/cascade-chain.ts: the plan phase's `shouldRun` body did not " +
+        "parse — the declaration was rewrapped or renamed",
+    ).toContain("pickable");
+    expect(reads.length).toBeGreaterThan(1);
+    for (const field of reads) {
+      expect(
+        declared,
+        `examples/cascade-chain.ts reads ctx.${field}, which src/Phase.ts ` +
+          `does not declare`,
+      ).toContain(field);
+    }
+    const section = declineSection();
+    expect(
+      section,
+      "docs/CHAIN-AUTHORING.md: the `shouldRun` section did not parse — the " +
+        "heading was reworded, or the section moved",
+    ).toContain("concurrency");
+    for (const field of reads) {
+      expect(
+        section,
+        `docs/CHAIN-AUTHORING.md: the decline section never names ` +
+          `\`${field}\`, so the worked predicate reads a fact the prose that ` +
+          `explains it leaves unnamed`,
+      ).toMatch(new RegExp("`(?:ctx\\.)?" + field + "`"));
+    }
+  });
+});
+
 // Agreement pin (CHAIN-AUTHORING-DOC-AGREEMENT, per
 // .claude/rules/engineering.md "A seam gate reads what the real writer
 // wrote"): docs/CHAIN-AUTHORING.md introduces a fenced block as "the `plan`
