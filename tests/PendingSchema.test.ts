@@ -922,7 +922,7 @@ describe("renderSchemaForPrompt", () => {
         "tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>",   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
         "gate": { "kind": "open" }                                  // ready to ship
               | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
-              | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
+              | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
@@ -936,6 +936,17 @@ describe("renderSchemaForPrompt", () => {
       Output is a JSON array of these entries, ordered by execution priority (top = next).
       Empty array is valid (means nothing pending)."
     `);
+  });
+
+  it("the rendered pending schema carries no `workshop` phase name", () => {
+    // The gate hint is injected verbatim into every downstream chain's plan
+    // prompt, so a phase name from this repo's chain ships as if the engine
+    // owned it (engine-boundary.md § Capability vs convention). Assert the
+    // parked line is present before asserting the absence — an absence over
+    // a vanished subject is a vacuous green.
+    const rendered = renderSchemaForPrompt();
+    expect(rendered).toContain(`"kind": "parked"`);
+    expect(rendered).not.toMatch(/workshop/i);
   });
 
   it("the retire hint advertises a path only, never a non-path alternative (engineering.md § A seam gate reads what the real writer wrote)", () => {

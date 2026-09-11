@@ -45,8 +45,8 @@ const FileChange = z.object({
  *                       so `tags` is non-empty by construction: an author
  *                       who meant to name blockers and named none gets a
  *                       parse error, never a silently-open gate.
- * - parked:             human action required (workshop, design call) before
- *                       the entry can be refined enough to ship.
+ * - parked:             a human action the entry waits on, named by
+ *                       `reason`; no harness step clears it.
  * - deferred:           carried indefinitely; no consumer surface yet.
  * - requiresCapability: pickable iff the named capability is asserted in the
  *                       chain's declared `capabilities` (Chain.capabilities,
@@ -512,7 +512,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
   const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship
         | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
-        | { "kind": "parked",    "reason": "workshop on ..." }  // human action needed
+        | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
   "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
