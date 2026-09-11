@@ -30,5 +30,41 @@
     ],
     "acceptance": "Both blocks are compared against the real source by a pin that fails on the pre-fix tree; the doc's `interface Gate` names `command?` and its quoted phase's `gates`/`promptArgs` match the example's.",
     "notes": "docs/CHAIN-AUTHORING.md:259-263 omits `command?` (src/Gate.ts:199) — the field a chain reads so its prompt need not restate a gate's command line; the existing interfaceFields helper (tests/retired-narration.test.ts:341) generalizes by one name. :157 claims to quote examples/cascade-chain.ts's plan phase; :169 shows `gates: [pendingParseGate]` where the file declares `pendingGate({...})` (:232), and promptArgs drops the extension."
+  },
+  {
+    "tag": "DOC-HARNESS-STATE-OWNERSHIP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "the `Where state lives` list and the `FLUME_DIR` bullet's `sessions/` claim"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the harness-managed-state sentence (:69)"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the docs-vs-`src/paths.ts` ownership pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Docs teach chain conventions as harness-managed state: `sessions/` is chain-placed, and README's state list mixes engine paths with this chain's plan artifacts",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the docs' harness-managed state list names only paths `src/` spells",
+      "the harness-managed state scan covers both README.md and docs/CHAIN-AUTHORING.md"
+    ],
+    "acceptance": "The docs' harness-managed list names only paths src/ spells; `sessions/` and the plan artifacts read as this chain's, and the pin fails on the pre-fix tree.",
+    "notes": "`sessions/` is chain-placed (src/Dispatcher.ts:123-128, src/job.ts:43; only `.flume/chain.ts:485` spells it), yet docs/CHAIN-AUTHORING.md:69 calls it harness-managed and README.md:171 lists it under FLUME_DIR. README.md:145-158 mixes engine paths (`awake/`, `worktrees/`, `loop.pid`, pending via DEFAULT_PENDING_REL) with chain artifacts (`plan/state.md`, `open-questions.md`, `inbox/` — `rg inbox src/` empty). Writer side: STATE_ROOT_NAMES + src/paths.ts accessors."
   }
 ]
