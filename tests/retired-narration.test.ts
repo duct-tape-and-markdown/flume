@@ -105,6 +105,7 @@ import {
   specSymbolCites,
   srcDeclaringBodies,
   srcPathsIn,
+  testFilenamesIn,
   testPathsIn,
   unresolvedSpecCite,
 } from "./helpers/specLocators.ts";
@@ -1724,6 +1725,24 @@ describe("spec/ names public surface, never a path locator", () => {
     ).toBe(0);
   });
 
+  // Empty by design, the rootless spelling of the same refusal: a sentence
+  // that drops the root still hands the reader one file to open. Zero
+  // asserted here, proved real by the sensitivity pin below.
+  it("no spec page cites a bare test filename", () => {
+    const sites = pages.flatMap((p) =>
+      testFilenamesIn(p.text).map((hit) => `${p.path} → ${hit}`),
+    );
+    expect(
+      sites,
+      "a test filename with the root dropped is still a locator — state the " +
+        "behavior the suite pins, or the public name it drives",
+    ).toEqual([]);
+    expect(
+      pages.flatMap((p) => testFilenamesIn(p.text)).length,
+      "the rootless refusal is empty by design, not by a dead needle",
+    ).toBe(0);
+  });
+
   // Sensitivity pin (engineering.md, "A green verdict is proven
   // non-vacuous"): the line-locator refusal passes over an empty set by
   // design, and the allowlist refusal reports its inventory whether the
@@ -1781,18 +1800,69 @@ describe("spec/ names public surface, never a path locator", () => {
     }
 
     // The spellings the corpus writes today, each left unflagged on purpose:
-    // three sibling-root cites whose module is the claim's subject, a bare
-    // filename with no root, and the lane's filename convention.
+    // three sibling-root cites whose module is the claim's subject, the
+    // lane's filename convention, and `tests/` named as a tree.
     for (const denied of [
       "`bin.flume` points at `bin/flume.js`, a Node script with a `#!/usr/bin/env node` shebang",
       "The POSIX `bin/flume` shell script stays in the package for direct callers",
       "`CHAIN_FIXTURE` in `scripts/smoke-install.mjs` (Windows lane)",
       "exported for tooling that holds its own shipped-tags set (`examples/backlog-groomer-chain.ts`)",
-      "naming it here would move most of `Dispatcher.test.ts` for a cost it does not pay",
       "Marked by the `*.integration.test.ts` filename convention",
       "a chain declares `tests/**` writable and the fence holds it",
     ]) {
       expect(testPathsIn(denied), `test needle over-fires on: ${denied}`).toEqual([]);
+      expect(testFilenamesIn(denied), `filename needle over-fires on: ${denied}`).toEqual([]);
+    }
+  });
+
+  // The rootless half of the same refusal, driven the same way: the corpus
+  // cites no test file at all, so the violation has to be injected. The first
+  // spelling below is the one spec/worktrees.md carried until it was
+  // rewritten to name the suite's behavior instead.
+  it("the test-cite needle flags a bare `Dispatcher.test.ts` filename carrying no root", () => {
+    const clean = pages.find((p) => testFilenamesIn(p.text).length === 0);
+    expect(clean, "every spec page cites a test filename — nothing to inject into").toBeDefined();
+    expect(
+      testFilenamesIn(
+        `${clean!.text}\nnaming it here would move most of \`Dispatcher.test.ts\` for a cost it does not pay\n`,
+      ),
+      "the needle went blind on a bare test filename",
+    ).toEqual(["Dispatcher.test.ts"]);
+    for (const injected of [
+      "the worktrees lane runs `examples.integration.test.ts` on its own",
+      "pinned by loopSupervisor.test.ts",
+      "the report the judge reads comes from vitestJudge.test.mts",
+    ]) {
+      expect(
+        testFilenamesIn(`${clean!.text}\n${injected}\n`).length,
+        `filename needle went blind on: ${injected}`,
+      ).toBe(1);
+    }
+  });
+
+  // The glob is the ruled exception: `*.integration.test.ts` is the marker a
+  // consumer types to put a suite in the slow lane, so the string is the
+  // claim's own subject. Non-vacuity first (engineering.md, "A green verdict
+  // is proven non-vacuous") — the corpus must still be writing it, or this
+  // pin guards a spelling nobody uses.
+  it("the test-cite needle leaves the `*.integration.test.ts` lane convention unflagged", () => {
+    const carriers = pages.filter((p) => p.text.includes("*.integration.test.ts"));
+    expect(
+      carriers.map((p) => p.path),
+      "no spec page writes the lane glob — the exception guards nothing",
+    ).not.toEqual([]);
+    for (const page of carriers) {
+      expect(
+        [...testPathsIn(page.text), ...testFilenamesIn(page.text)],
+        `${page.path} → the lane glob read as a file cite`,
+      ).toEqual([]);
+    }
+    for (const glob of [
+      "excluded by `*.integration.test.ts` from the default `vitest run`",
+      "the slow lane is `tests/*.integration.test.ts`",
+      "`*.test.ts` is the default lane's glob",
+    ]) {
+      expect(testFilenamesIn(glob), `filename needle read a glob as a file: ${glob}`).toEqual([]);
     }
   });
 });

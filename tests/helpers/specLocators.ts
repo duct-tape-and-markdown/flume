@@ -41,6 +41,16 @@ import { declaresSymbol, declaringBody } from "./citeScanners.ts";
  * zero sites, and the emptiness is spelled here rather than inherited from a
  * silent `[]`.
  *
+ * It refuses a *concrete* test file by either spelling: under the root
+ * (`tests/Dispatcher.test.ts`) or as the bare filename a sentence drops the
+ * root from (`Dispatcher.test.ts`). Dropping the root does not make a locator
+ * anything else — a reader still has one file to open, and a rename still
+ * leaves the page asserting a name the tree no longer carries. What it leaves
+ * alone is the lane's glob, `*.integration.test.ts`: that string is the
+ * marker a consumer types to put a suite in the slow lane, so it is the
+ * claim's own subject, not a route to a symbol — the same ground the sibling
+ * roots below stand on.
+ *
  * Its sibling roots are deliberately *not* swept. `bin/flume.js`, `bin/env`,
  * `scripts/smoke-install.mjs` and `examples/backlog-groomer-chain.ts` are each
  * a claim's subject — a shim the package ships, a fixture set CI installs
@@ -89,14 +99,29 @@ export const SPEC_LINE_LOCATOR =
  * report the violation by the wrong name.
  *
  * An extension is required, which is what keeps a bare directory mention out:
- * a sentence naming `tests/` as a lane names the tree, not a file. Anchoring
- * on the root is also why a bare `Dispatcher.test.ts` or the
- * `*.integration.test.ts` filename convention the corpus writes does not fire
- * — a filename with no root is not a path, and whether the corpus may write
- * one is an open question for the human, not a claim this needle settles.
+ * a sentence naming `tests/` as a lane names the tree, not a file. The same
+ * file named without its root is the sibling needle below.
  */
 export const SPEC_TEST_PATH =
   /(?<![A-Za-z0-9_.-])tests\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z]{1,5}/g;
+
+/**
+ * The same file named without its root: `Dispatcher.test.ts`,
+ * `examples.integration.test.ts`. A test file's tail is what identifies it —
+ * `.test.` followed by a JS/TS extension — so the needle keys on the tail and
+ * takes whatever dotted name precedes it. Keying on the tail is also what
+ * keeps every other rootless filename the corpus writes out: `chain.ts` and
+ * `pending.json` name artifacts, not suites.
+ *
+ * The lookbehind is what separates a filename from the lane's glob. A hit may
+ * not start after `*`, `.` or `/`, so `*.integration.test.ts` matches at no
+ * position: every start inside it sits behind a dot or the star, and the
+ * pattern needs a name segment ahead of `.test.`. The same lookbehind keeps a
+ * rooted path from being reported twice — `tests/Dispatcher.test.ts` is the
+ * needle above's hit, by its full name.
+ */
+export const SPEC_TEST_FILENAME =
+  /(?<![A-Za-z0-9_.*/-])[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.test\.[cm]?[jt]s(?![A-Za-z0-9_-])/g;
 
 /**
  * The `src/` paths a spec page may name, each with the claim that takes the
@@ -122,6 +147,11 @@ export function srcPathsIn(text: string): string[] {
 /** Every `tests/` path a page names, as written. */
 export function testPathsIn(text: string): string[] {
   return text.match(SPEC_TEST_PATH) ?? [];
+}
+
+/** Every rootless test filename a page names, as written. */
+export function testFilenamesIn(text: string): string[] {
+  return text.match(SPEC_TEST_FILENAME) ?? [];
 }
 
 /** Every `path:NN` locator a page carries, as written. */
