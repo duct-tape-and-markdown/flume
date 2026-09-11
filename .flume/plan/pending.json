@@ -29,11 +29,44 @@
       "flume log renders a tagged merge outcome as tag:outcome"
     ],
     "acceptance": "A singleton tick's `flume log` line carries `merge=[<outcome>]`, with no `undefined` in the human form.",
-    "notes": "TickVerdictMergeOutcome.tag is optional (src/Dispatcher.ts:300); formatTickVerdictLine interpolates it unconditionally (src/cliVerdict.ts:123). Emit the outcome alone when absent — never the phase name, which the line already prints as its first field (engineering.md, Derived state is computed, never restated beside its source). Closes the observation filed from VERDICT-SPAN-ROW-BASE-SHA.",
+    "notes": "TickVerdictMergeOutcome.tag is optional (src/Dispatcher.ts:300); formatTickVerdictLine interpolates it unconditionally (src/cliVerdict.ts:123). Emit the outcome alone when absent \u2014 never the phase name, which the line already prints as its first field (engineering.md, Derived state is computed, never restated beside its source). Closes the observation filed from VERDICT-SPAN-ROW-BASE-SHA.",
     "observedFiles": [
       ".flume/plan/open-questions.md",
       "src/cliVerdict.ts",
       "tests/cliVerdict.test.ts"
     ]
+  },
+  {
+    "tag": "CHAIN-AUTHORING-GATE-SURFACE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the GateResult block, the pendingGate option list, the gates-get-flumeDir bullet"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "a RETIRED pattern for the queue-path hardcode, plus the two doc/type agreement pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md teaches three retired gate-surface facts: a pendingGate pendingPath option, a hardcoded queue path, and a GateResult missing skipped",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "tests": [
+      "teaches GateContext.pendingPath, never a gate reading a hardcoded plan/pending.json",
+      "the chain-authoring doc's GateResult block names every field src/Gate.ts declares",
+      "the chain-authoring doc's pendingGate signature names every PendingGateOptions field and no others"
+    ],
+    "acceptance": "docs/CHAIN-AUTHORING.md's gate surface agrees with src/Gate.ts and src/builtinGates.ts, and the retired-narration scan fails on a reintroduced queue-path hardcode.",
+    "notes": "Verified on disk: :265-269 omits GateResult.skipped (src/Gate.ts:166) and failingFiles; :293 lists a `pendingPath?` option PendingGateOptions never had and omits `hint`; :855-858 tells a gate to validate join(ctx.flumeDir,'plan','pending.json'), citing the dogfood pendingParseGate \u2014 which reads ctx.pendingPath (.flume/chain.ts:295). Retired-claim delta off the spec's deleted `opts.pendingPath` and GateResult lines."
   }
 ]
