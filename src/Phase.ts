@@ -473,7 +473,7 @@ export interface WorktreeSetupResult {
 
 /**
  * A Chain is an ordered set of phases plus the rules for which phases
- * humans can wake manually (e.g. spec from a workshop session).
+ * humans can wake manually.
  */
 export interface Chain {
   phases: Phase[];
@@ -487,9 +487,10 @@ export interface Chain {
   entryExtension?: EntryExtension;
   /**
    * Phases the dispatcher is forbidden to wake via another phase's handoff.
-   * Humans can still wake them by touching `.flume/awake/<name>`. The
-   * canonical example is `spec`, which derives from human-authored workshop
-   * content and shouldn't be woken autonomously.
+   * Humans still wake them by touching `.flume/awake/<name>`. Reach for it
+   * when a phase consumes something a human authors between runs: a
+   * sibling's handoff cannot produce that input, so waking it autonomously
+   * would only burn a tick. Empty means every phase is handoff-wakeable.
    */
   humanOnly: string[];
   /**
