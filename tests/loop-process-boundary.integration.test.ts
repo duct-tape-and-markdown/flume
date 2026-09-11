@@ -20,7 +20,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
-import { CLI, TSX_CLI, gitOut, hermeticEnv } from "./helpers/subprocess.ts";
+import {
+  CLI,
+  TSX_CLI,
+  gitOut,
+  hermeticEnv,
+  runCli,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -194,17 +200,8 @@ async function makeRepo(): Promise<Repo> {
 }
 
 /** Spawn one real `flume tick`; collect combined stdout+stderr and exit code. */
-async function runTick(cwd: string): Promise<{ out: string; code: number }> {
-  try {
-    const { stdout, stderr } = await exec(process.execPath, [TSX_CLI, CLI, "tick"], {
-      cwd,
-      env: hermeticEnv(),
-    });
-    return { out: stdout + stderr, code: 0 };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-  }
+function runTick(cwd: string): Promise<{ out: string; code: number }> {
+  return runCli(cwd, ["tick"]);
 }
 
 /**
@@ -213,22 +210,12 @@ async function runTick(cwd: string): Promise<{ out: string; code: number }> {
  * spawns the child `flume tick` itself (`defaultTickRunner`, no `env:`
  * override), so the boundary under test is real, not stubbed.
  */
-async function runLoop(
+function runLoop(
   cwd: string,
   env: NodeJS.ProcessEnv,
   max = 1,
 ): Promise<{ out: string; code: number }> {
-  try {
-    const { stdout, stderr } = await exec(
-      process.execPath,
-      [TSX_CLI, CLI, "loop", "--max", String(max)],
-      { cwd, env },
-    );
-    return { out: stdout + stderr, code: 0 };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-  }
+  return runCli(cwd, ["loop", "--max", String(max)], env);
 }
 
 let repo: Repo;

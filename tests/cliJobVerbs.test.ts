@@ -13,7 +13,11 @@ import { promisify } from "node:util";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import {
+  hermeticEnv,
+  runCli,
+  runNodeStreams,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -44,16 +48,12 @@ describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNE
     cwd: string,
     args: string[],
   ): Promise<{ out: string; code: number }> {
-    try {
-      const { stdout, stderr } = await exec(process.execPath, [DIST_CLI, ...args], {
-        cwd,
-        env: hermeticEnv(),
-      });
-      return { out: stdout + stderr, code: 0 };
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string; code?: number };
-      return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
-    }
+    const { stdout, stderr, code } = await runNodeStreams(
+      cwd,
+      [DIST_CLI, ...args],
+      hermeticEnv(),
+    );
+    return { out: stdout + stderr, code };
   }
 
   it(

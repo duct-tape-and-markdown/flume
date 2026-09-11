@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { runNodeStreams } from "./helpers/subprocess.ts";
+
 const exec = promisify(execFile);
 
 const SCRIPT = fileURLToPath(
@@ -31,19 +33,16 @@ async function commit(
   return git(cwd, ["rev-parse", "HEAD"]);
 }
 
-/** Spawn the script against `cwd`; never throws on non-zero exit. */
+/**
+ * Spawn the script against `cwd`; never throws on non-zero exit. The ambient
+ * env, not the CLI suites' hermetic one: the script is git-driven and reads
+ * no FLUME_* var.
+ */
 async function runChangelog(
   cwd: string,
 ): Promise<{ out: string; err: string; code: number }> {
-  try {
-    const { stdout, stderr } = await exec(process.execPath, [SCRIPT], {
-      cwd,
-    });
-    return { out: stdout, err: stderr, code: 0 };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: e.stdout ?? "", err: e.stderr ?? "", code: e.code ?? 1 };
-  }
+  const { stdout, stderr, code } = await runNodeStreams(cwd, [SCRIPT]);
+  return { out: stdout, err: stderr, code };
 }
 
 let repo: string;

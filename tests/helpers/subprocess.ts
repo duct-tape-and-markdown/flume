@@ -288,22 +288,31 @@ export function exitStatusOf(err: unknown): number {
 }
 
 /**
- * Spawn one real `flume <args>`; collect the two streams apart, plus the
- * exit code. For assertions that turn on *which* stream carried a line — an
- * observational verb whose stdout must stay unchanged while a failure report
- * rides stderr. `runCli` is this with the streams concatenated.
+ * Spawn one node entry point in `cwd`; collect the two streams apart, plus
+ * the exit status read through `exitStatusOf`.
+ *
+ * The shape under every suite that runs a real process — the source CLI
+ * (`runCliStreams` below), the built `dist/cli.js`, a `scripts/*.mjs`, a
+ * `flume tick` spawned for the process boundary. Each of those hand-rolled
+ * its own spawn-and-catch, and every copy read the status itself, so every
+ * copy turned a child that never ran into an ordinary exit 1
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism":
+ * detection a sibling surface already performs is shared, never re-derived).
+ *
+ * `env` omitted inherits this process's environment — what a script spawned
+ * outside the CLI's hermetic fixture wants. A CLI spawn passes
+ * `hermeticEnv()`.
  */
-export async function runCliStreams(
+export async function runNodeStreams(
   cwd: string,
-  args: string[],
-  env: NodeJS.ProcessEnv = hermeticEnv(),
+  argv: readonly string[],
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
-    const { stdout, stderr } = await exec(
-      process.execPath,
-      [TSX_CLI, CLI, ...args],
-      { cwd, env },
-    );
+    const { stdout, stderr } = await exec(process.execPath, [...argv], {
+      cwd,
+      ...(env ? { env } : {}),
+    });
     return { stdout, stderr, code: 0 };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
@@ -313,6 +322,20 @@ export async function runCliStreams(
       code: exitStatusOf(err),
     };
   }
+}
+
+/**
+ * Spawn one real `flume <args>`; collect the two streams apart, plus the
+ * exit code. For assertions that turn on *which* stream carried a line — an
+ * observational verb whose stdout must stay unchanged while a failure report
+ * rides stderr. `runCli` is this with the streams concatenated.
+ */
+export function runCliStreams(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = hermeticEnv(),
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return runNodeStreams(cwd, [TSX_CLI, CLI, ...args], env);
 }
 
 /** Spawn one real `flume <args>`; collect combined output + exit code. */

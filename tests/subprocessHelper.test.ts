@@ -7,7 +7,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -246,6 +246,150 @@ describe("the suite refuses a flume state root above its fixtures", () => {
         (m) => m.ARMED_STATE_ROOT_WATCH?.scope ?? [],
       );
       expect(scopes).toContain(join(tmpdir(), ".flume"));
+    }
+  });
+});
+
+/**
+ * TESTS-EXIT-STATUS-VIA-HELPER — the fence that keeps `exitStatusOf` the
+ * only reader of a spawned child's exit status in `tests/`
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism":
+ * detection a sibling surface already performs is shared, never re-derived
+ * beside it).
+ *
+ * Four suites used to hand-roll the extraction — each typing `e.code` as a
+ * `number` it is not (a spawn failure carries an errno *string*, a kill
+ * carries none) and then defaulting the miss to 1, into assertions checking
+ * for 0, 2, 69 and 78. A copy of a refusal that does not refuse reads as the
+ * mechanism while being its opposite, so the check is on the shape rather
+ * than on any one site.
+ *
+ * The needles are matched line by line against `tests/**` on disk, so a new
+ * suite is in scope the moment it exists. The fixtures below are assembled
+ * through `${"code"}` for exactly that reason: spelled out, this file's own
+ * text would be a site.
+ */
+describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-STATUS-VIA-HELPER)", () => {
+  const TESTS_DIR = fileURLToPath(new URL(".", import.meta.url));
+
+  /** A line the needles must flag, spelled so this file is not itself a site. */
+  const handRolled = {
+    nullish: `return { out, code: e.${"code"} ?? 1 };`,
+    or: `return { out, code: e.${"code"} || 1 };`,
+    typedNumber: `const e = err as { stdout?: string; ${"code"}?: number };`,
+    narrowing: `if (typeof e.${"code"} === "number") return e.code;`,
+  };
+
+  /**
+   * Each re-derivation of the mechanism, with the sites allowed to carry it.
+   * The narrowing has exactly one home; the other two shapes have none —
+   * they are the bug, not the mechanism.
+   */
+  const RE_DERIVED = [
+    {
+      what: "a fallback default on a spawned child's exit `code`",
+      pattern: /\bcode\s*(?:\?\?|\|\|)\s*\d/,
+      instead: "`exitStatusOf(err)`, which refuses instead of defaulting",
+      allowed: {} as Record<string, string>,
+    },
+    {
+      what: "an error cast typing `code` as `number`",
+      pattern: /\bas\s*\{[^}\n]*\bcode\?\s*:\s*number/,
+      instead:
+        "`runNodeStreams`/`runCliStreams`, which own the cast and read the " +
+        "status through `exitStatusOf`",
+      allowed: {} as Record<string, string>,
+    },
+    {
+      what: "a hand-rolled narrowing of a child's `code` to a number",
+      pattern: /typeof\s+\w+\.code\s*===\s*["']number["']/,
+      instead: "`exitStatusOf(err)`",
+      allowed: {
+        [join("helpers", "subprocess.ts")]:
+          "exitStatusOf — the mechanism itself, where the narrowing lives",
+      } as Record<string, string>,
+    },
+  ] as const;
+
+  const corpus = readdirSync(TESTS_DIR, { recursive: true })
+    .map((entry) => String(entry))
+    .filter((rel) => rel.endsWith(".ts"))
+    .sort()
+    .map((rel) => ({
+      path: rel,
+      lines: readFileSync(join(TESTS_DIR, rel), "utf8").split("\n"),
+    }));
+
+  /** `path:line` for every line the needle flags, minus the declared homes. */
+  function sitesOf(
+    pattern: RegExp,
+    allowed: Record<string, string>,
+  ): string[] {
+    return corpus
+      .filter((f) => !(f.path in allowed))
+      .flatMap((f) =>
+        f.lines.flatMap((line, i) =>
+          pattern.test(line) ? [`${f.path}:${i + 1}`] : [],
+        ),
+      );
+  }
+
+  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+  // the refusals below pass over an empty set once every site is fixed, so a
+  // corpus that walked nothing — a non-recursive read, a wrong directory, a
+  // filter that keeps no file — would read exactly like a clean tree. Pinned
+  // on the subject rather than the count: the files that spawn a child are
+  // the only ones that can hold the defect at all.
+  it("scans a populated tests/ corpus, recursively, including the suites that spawn a child", () => {
+    expect(corpus.length).toBeGreaterThan(0);
+    expect(corpus.map((f) => f.path)).toContain(join("helpers", "subprocess.ts"));
+    const spawners = corpus
+      .filter((f) => f.lines.some((line) => line.includes("execFile")))
+      .map((f) => f.path);
+    expect(
+      spawners,
+      "no scanned file spawns a subprocess — the corpus is off target",
+    ).not.toEqual([]);
+  });
+
+  it("no suite outside the subprocess helper defaults a missing exit status to 1", () => {
+    for (const { what, pattern, instead, allowed } of RE_DERIVED) {
+      expect(
+        sitesOf(pattern, allowed),
+        `${what}: read the status through ${instead} — a hand-rolled ` +
+          "extraction reports a status no process returned",
+      ).toEqual([]);
+    }
+  });
+
+  // Sensitivity pin (same section): all three refusals above are green over
+  // an empty set by design now, so a needle that stopped matching anything
+  // would be indistinguishable from a clean tree. Drive both directions —
+  // each shape as the four suites actually wrote it, and the mechanism's own
+  // lines, which must stay unflagged while still being code about `code`.
+  it("the exit-status needles flag the hand-rolled shapes and not the mechanism", () => {
+    const [nullish, typedNumber, narrowing] = RE_DERIVED;
+    for (const [needle, flagged] of [
+      [nullish, [handRolled.nullish, handRolled.or]],
+      [typedNumber, [handRolled.typedNumber]],
+      [narrowing, [handRolled.narrowing]],
+    ] as const) {
+      for (const line of flagged) {
+        expect(needle.pattern.test(line), `needle missed: ${line}`).toBe(true);
+      }
+    }
+    for (const [needle, clean] of [
+      [nullish, "  return { stdout: e.stdout ?? \"\", code: exitStatusOf(err) };"],
+      [nullish, "  maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,"],
+      [nullish, "  if ((err as { code?: unknown }).code !== 1) throw err;"],
+      [typedNumber, "  const e = err as { code?: unknown; signal?: unknown };"],
+      [typedNumber, "  expect(exitStatusOf({ code: 2, signal: null })).toBe(2);"],
+      [narrowing, "  const { code } = await runCli(dir, [\"status\"]);"],
+    ] as const) {
+      expect(
+        needle.pattern.test(clean),
+        `needle over-fires on: ${clean}`,
+      ).toBe(false);
     }
   });
 });
