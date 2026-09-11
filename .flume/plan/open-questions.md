@@ -273,7 +273,14 @@ over-fire case its sensitivity test asserts must stay unflagged.
 
 **Build cannot close this.** `spec/` is human-only, so a widened needle goes red
 on the current corpus with no lane able to make it green. `SPEC-TEST-CITES-PINNED`
-therefore stays scoped to `tests/` paths until this resolves.
+shipped scoped to a `tests/` root for that reason, and its sensitivity pin now
+asserts `Dispatcher.test.ts` and the `*.integration.test.ts` glob stay unflagged.
+
+**So the rootless half is unwatched, and this question is the only thing watching
+it.** Three sites today: `Dispatcher.test.ts` in `spec/worktrees.md`, and the glob
+in `spec/worktrees.md` and `spec/chain.md`. Nothing on disk fails if a page grows a
+fourth. Whichever way this resolves, the needle widens (or the allowlist lands) in
+that same commit.
 
 Options:
 
