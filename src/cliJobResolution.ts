@@ -25,6 +25,15 @@ export class JobResolutionConflictError extends Error {}
  * never inferred: a `FLUME_DIR` typed fresh for this invocation carries no
  * stamp at all, so it is never refused on this basis regardless of what its
  * path happens to look like.
+ *
+ * The stamp is what the refusal keys on, so the stamp is what the remedy
+ * names: clearing it is necessary, and clearing it *alone* while `FLUME_DIR`
+ * still points at the other repo would resolve straight into the hazard this
+ * guard exists to stop. The message therefore names both vars when
+ * `FLUME_DIR` is set and the stamp alone when it is not — and the
+ * remedy-agreement pins in `tests/cliJobResolution.test.ts` read the var
+ * names back out of the message and apply them, so a message that names a
+ * remedy which does not clear the refusal fails the suite.
  */
 export class CrossRepoFlumeDirError extends Error {}
 
@@ -103,12 +112,20 @@ export function resolveStateDirs(
     env.FLUME_DIR_RESOLVED_FOR &&
     resolve(env.FLUME_DIR_RESOLVED_FOR) !== resolve(repoRoot)
   ) {
+    // Both halves of the message vary with whether `FLUME_DIR` came along:
+    // an inherited stamp can outlive the dir it was written beside, and
+    // naming an unset var — as a value in the evidence or as a var to clear
+    // in the remedy — sends the operator to a no-op.
+    const evidence = env.FLUME_DIR
+      ? `FLUME_DIR ${env.FLUME_DIR} was resolved for repo ${env.FLUME_DIR_RESOLVED_FOR}`
+      : `an inherited FLUME_DIR_RESOLVED_FOR stamp names repo ${env.FLUME_DIR_RESOLVED_FOR}`;
+    const remedy = env.FLUME_DIR
+      ? `Unset FLUME_DIR and FLUME_DIR_RESOLVED_FOR together`
+      : `Unset FLUME_DIR_RESOLVED_FOR`;
     throw new CrossRepoFlumeDirError(
-      `FLUME_DIR ${env.FLUME_DIR} was resolved for repo ${env.FLUME_DIR_RESOLVED_FOR}, ` +
-        `not this invocation's resolved repo root ${repoRoot} — refusing to ` +
-        `write there (inherited from a different repo's flume process). ` +
-        `Unset FLUME_DIR, or pass --job <name> to resolve fresh against ` +
-        `this repo.`,
+      `${evidence}, not this invocation's resolved repo root ${repoRoot} — ` +
+        `refusing to write there (inherited from a different repo's flume ` +
+        `process). ${remedy} to resolve fresh against this repo.`,
     );
   }
   const job = jobFlag ?? (env.FLUME_JOB || undefined);

@@ -209,6 +209,115 @@ describe("resolveStateDirs — cross-repo FLUME_DIR provenance-stamp refusal", (
     }
   });
 
+  /**
+   * Remedy agreement: the env var names the refusal *prints* are the ones the
+   * test *applies*, so a message advertising a remedy that does not clear the
+   * refusal fails here rather than at an operator's terminal.
+   */
+  const remedyVars = (message: string): string[] => {
+    const at = message.indexOf("Unset ");
+    expect(at).toBeGreaterThanOrEqual(0);
+    return [...message.slice(at).matchAll(/FLUME_[A-Z_]+/g)].map((m) => m[0]);
+  };
+
+  const refusalOf = (env: NodeJS.ProcessEnv): Error => {
+    try {
+      resolveStateDirs(env, repoRoot);
+    } catch (err) {
+      return err as Error;
+    }
+    throw new Error("expected a cross-repo refusal, but resolution succeeded");
+  };
+
+  it("the cross-repo refusal names FLUME_DIR_RESOLVED_FOR as the stamp to unset", () => {
+    // Both shapes the guard fires in: the stamp inherited beside its dir, and
+    // the stamp inherited alone. The stamp is what the check keys on, so
+    // neither remedy can omit it.
+    const withDir = remedyVars(
+      refusalOf({
+        FLUME_DIR: otherRepoFlumeDir,
+        FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+      }).message,
+    );
+    const stampOnly = remedyVars(
+      refusalOf({ FLUME_DIR_RESOLVED_FOR: otherRepoRoot }).message,
+    );
+
+    expect(withDir.length).toBeGreaterThan(0);
+    expect(stampOnly.length).toBeGreaterThan(0);
+    expect(withDir).toContain("FLUME_DIR_RESOLVED_FOR");
+    expect(stampOnly).toContain("FLUME_DIR_RESOLVED_FOR");
+
+    // And each stated remedy, applied verbatim, actually clears the refusal.
+    const cases: Array<[NodeJS.ProcessEnv, string[]]> = [
+      [
+        {
+          FLUME_DIR: otherRepoFlumeDir,
+          FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+        },
+        withDir,
+      ],
+      [{ FLUME_DIR_RESOLVED_FOR: otherRepoRoot }, stampOnly],
+    ];
+    for (const [env, vars] of cases) {
+      for (const name of vars) delete env[name];
+      expect(resolveStateDirs(env, repoRoot).flumeDir).toBe(
+        join(repoRoot, ".flume"),
+      );
+    }
+  });
+
+  it("the cross-repo refusal message omits an unset FLUME_DIR rather than printing undefined", () => {
+    // An inherited stamp outlives the dir it was written beside whenever an
+    // operator clears only FLUME_DIR. The refusal still fires — correctly —
+    // but it has no dir value to quote.
+    const message = refusalOf({
+      FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+    }).message;
+
+    expect(message).not.toContain("undefined");
+    expect(message).toContain("FLUME_DIR_RESOLVED_FOR");
+    expect(message).toContain(otherRepoRoot);
+    expect(message).toContain(repoRoot);
+  });
+
+  it("unsetting FLUME_DIR and FLUME_DIR_RESOLVED_FOR together resolves the state root under this repo", () => {
+    const env: NodeJS.ProcessEnv = {
+      FLUME_DIR: otherRepoFlumeDir,
+      FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+    };
+    // Exactly this pair is what the message tells the operator to clear —
+    // not FLUME_DIR alone (the stamp survives and re-refuses) and not the
+    // stamp alone (resolution then lands in the other repo, the hazard).
+    expect(new Set(remedyVars(refusalOf({ ...env }).message))).toEqual(
+      new Set(["FLUME_DIR", "FLUME_DIR_RESOLVED_FOR"]),
+    );
+
+    delete env.FLUME_DIR;
+    delete env.FLUME_DIR_RESOLVED_FOR;
+    const { flumeDir, configDir } = resolveStateDirs(env, repoRoot);
+
+    expect(flumeDir).toBe(join(repoRoot, ".flume"));
+    expect(configDir).toBe(join(repoRoot, ".flume"));
+    expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(repoRoot));
+  });
+
+  it("clearing FLUME_DIR alone leaves the stamp refusing, and clearing the stamp alone lands in the other repo", () => {
+    // Why the remedy names the pair: each half taken alone is a trap. This is
+    // the refusal's own justification, pinned.
+    const dirCleared: NodeJS.ProcessEnv = {
+      FLUME_DIR_RESOLVED_FOR: otherRepoRoot,
+    };
+    expect(() => resolveStateDirs(dirCleared, repoRoot)).toThrow(
+      CrossRepoFlumeDirError,
+    );
+
+    const stampCleared: NodeJS.ProcessEnv = { FLUME_DIR: otherRepoFlumeDir };
+    expect(resolveStateDirs(stampCleared, repoRoot).flumeDir).toBe(
+      otherRepoFlumeDir,
+    );
+  });
+
   it("a stamp that agrees with the freshly-resolved repoRoot does not throw", () => {
     const env: NodeJS.ProcessEnv = {
       FLUME_DIR: resolve(join(repoRoot, ".flume")),
