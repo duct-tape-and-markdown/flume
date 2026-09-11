@@ -575,13 +575,8 @@ const factory: ChainFactory = (api) => {
    * attempts, 2026-09-07). Read at `shouldRun` only — a reason to be woken,
    * never a reason for a slice to re-wake itself, since only a build wave
    * clears it.
-   *
-   * `clean-exit` is the mode the taxonomy ruling of 2026-09-11 renames
-   * `voluntary-bail` to (`spec/loop.md`, *The no-commit taxonomy*); both are
-   * read until that entry ships, and the `voluntary-bail` arm is deleted in
-   * the `chore(flume):` that pairs with it.
    */
-  const REFUSAL_MODES: ReadonlySet<string> = new Set(["voluntary-bail", "clean-exit", "not-shipped"]);
+  const REFUSAL_MODES: ReadonlySet<string> = new Set(["clean-exit", "not-shipped"]);
   /**
    * A `tests[]` line the gate found already green on the base is a line
    * plan mis-declared (it belongs in `pins[]`, or nowhere) — build cannot
@@ -859,28 +854,17 @@ const factory: ChainFactory = (api) => {
     },
     handoff(result) {
       // A refusal only plan can resolve is build's note to plan and wakes
-      // the inbox slice regardless of what is pickable: a voluntary bail, or
-      // a commit that landed and this chain's `shipped` declined (a park) —
-      // else build re-picks the same entry into the same wall. Otherwise the
-      // ladder decides: the first live slice, or build while anything is
-      // pickable, or hibernate.
-      //
-      // `TickResult.entries` cannot tell a park from a cherry-pick conflict
-      // (both: committed, not shipped, not reverted; inbox
-      // 2026-09-11 *build.handoff cannot tell a park from a cherry-pick
-      // conflict*), and this tick's verdict is not yet written when handoff
-      // runs. So a conflict wakes the inbox slice too, whose `shouldRun`
-      // reads the records — no record is written for a conflict — and
-      // declines: one declined tick, then the ladder retries the entry from
-      // the new base. Bounded, and named here until the engine reports the
-      // merge outcome per entry.
-      // `clean-exit` is the name the taxonomy ruling gives `voluntary-bail`
-      // (see REFUSAL_MODES); both read until that entry ships.
-      const bailed = (mode: string | undefined) => mode === "voluntary-bail" || mode === "clean-exit";
+      // the inbox slice regardless of what is pickable: a clean exit with no
+      // commit, or a commit that landed and this chain's `shipped` declined
+      // (a park, `mergeOutcome: "not-shipped"`) — else build re-picks the
+      // same entry into the same wall. A cherry-pick conflict is neither:
+      // the next wave retries it from the new base. Otherwise the ladder
+      // decides: the first live slice, or build while anything is pickable,
+      // or hibernate.
       const refused =
-        bailed(result.noCommit) ||
+        result.noCommit === "clean-exit" ||
         (result.entries ?? []).some(
-          (e) => bailed(e.noCommit) || (e.committed && !e.shipped && !e.reverted),
+          (e) => e.noCommit === "clean-exit" || e.mergeOutcome === "not-shipped",
         );
       if (refused) return [INBOX];
       return nextPhase(result.flumeDir, result.pickableAfter.length > 0);

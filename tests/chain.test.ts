@@ -267,16 +267,20 @@ describe("plan slices via the real .flume/chain.ts", () => {
       const pickable = { pendingAfter: [entry], pickableAfter: [entry] };
       expect(build.handoff(result({ phaseName: "build", shippedTags: ["DONE"], ...pickable }))).toEqual(["build"]);
       expect(build.handoff(result({ phaseName: "build", noCommit: "clean-exit", ...pickable }))).toEqual([INBOX]);
-      expect(
+      // A park — merged, and this chain's `shipped` said no — is plan's to
+      // reconcile; a cherry-pick conflict is the next wave's to retry. The
+      // engine reports which on `entries[].mergeOutcome`.
+      const wave = (mergeOutcome: "not-shipped" | "cherry-pick-conflict") =>
         build.handoff(
           result({
             phaseName: "build",
             committed: true,
-            entries: [{ tag: "OPEN-1", committed: true, shipped: false, reverted: false }],
+            entries: [{ tag: "OPEN-1", committed: true, shipped: false, reverted: false, mergeOutcome }],
             ...pickable,
           }),
-        ),
-      ).toEqual([INBOX]);
+        );
+      expect(wave("not-shipped")).toEqual([INBOX]);
+      expect(wave("cherry-pick-conflict")).toEqual(["build"]);
       // Nothing pickable: a shipped wave has no reviewer to wake — the gates
       // were its review — so the ladder falls through to the sweep, whose
       // domain the shipped code touched …
