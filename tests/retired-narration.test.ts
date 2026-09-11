@@ -1,10 +1,11 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { RUNTIME_IGNORES } from "../src/job.ts";
+import { worktreesBase } from "../src/paths.ts";
 
 // Narration pin (RETIRED-ROOTS-AND-MODEL-NARRATION, per
 // .claude/rules/engineering.md "Narration is the ladder's bottom rung"):
@@ -1412,5 +1413,194 @@ describe("docs/CHAIN-AUTHORING.md's job-seed ignore list agrees with RUNTIME_IGN
       RUNTIME_IGNORES.filter((e) => !thinned.includes(e)),
       `${DOC}: a dropped \`node_modules/\` entry went unflagged`,
     ).toEqual(["node_modules/"]);
+  });
+});
+
+// Agreement pin (WORKTREE-BASE-DOCS-PINNED, per .claude/rules/engineering.md
+// "A seam gate reads what the real writer wrote"): `worktreesBase`
+// (`src/paths.ts`) is deliberately the only resolution of the fanout worktree
+// base in `src/` — two resolutions agreed only by luck once swept nothing and
+// then failed every `git branch -D` against worktrees still standing at the
+// real base. README and docs/CHAIN-AUTHORING.md are where an operator and a
+// chain author learn that base, and each spells the formula by hand: a third
+// and a fourth copy of the one resolution, held by nothing.
+//
+// A copy reads as authoritative while being stale, and both halves fail
+// quietly. An operator who relocates worktrees from a doc naming the wrong
+// env var exports a variable the runtime never reads and gets the default
+// base with no error; a hook author who reads the wrong default segment
+// hardcodes a path the dispatcher never creates. The side both are held to is
+// the resolver itself — the env var name and the default segment are read off
+// the docs' own words and driven through `worktreesBase`.
+//
+// `tests/paths.test.ts` pins the resolver's own branches. This pin never
+// re-asserts them: it asserts only that what the docs say is what that
+// resolver does.
+describe("the docs' worktree-base claims agree with worktreesBase", () => {
+  /** The two published surfaces that teach where a worktree lands. */
+  const BASE_DOCS = ["README.md", join("docs", "CHAIN-AUTHORING.md")];
+
+  /**
+   * A state root to resolve against. Never touched on disk — `worktreesBase`
+   * is pure — and absolute, so an override probe below is comparable to it
+   * without a second `resolve` on this side.
+   */
+  const FLUME_DIR = resolve("doc-claim-state-root");
+
+  /**
+   * The resolution as a doc states it: one backticked
+   * `<ENV> ?? join(flumeDir, "<segment>")` token. Both docs write the formula
+   * in a single quoted expression, which is why this pin needs no markdown
+   * region reader — the claim is the token.
+   */
+  const FORMULA =
+    /^([A-Z][A-Z0-9_]*)\s*\?\?\s*join\(\s*flumeDir\s*,\s*"([^"]+)"\s*\)$/;
+
+  /**
+   * A per-entry worktree path template — the state root (spelled
+   * `<flumeDir>`, or concretely as this repo's own `.flume`), the segments
+   * the doc puts under it, and the entry placeholder that makes the token a
+   * claim about *this* base rather than a sibling under the same root. The
+   * placeholder anchor is what keeps README's state list — `.flume/awake/…`,
+   * `.flume/loop.pid` and the rest — out of a scan about worktrees.
+   */
+  const TEMPLATE =
+    /^(?:<flumeDir>|<repoRoot>\/\.flume|\.flume)\/(.+?)\/<entry[\w-]*>\/?$/;
+
+  const backticked = (text: string): string[] =>
+    [...text.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
+
+  /** Every `<ENV> ?? join(flumeDir, …)` formula the doc spells. */
+  function formulaClaims(text: string): { env: string; segments: string }[] {
+    return backticked(text).flatMap((tok) => {
+      const m = FORMULA.exec(tok);
+      return m ? [{ env: m[1]!, segments: m[2]! }] : [];
+    });
+  }
+
+  /** Every per-entry template's segment path, e.g. `"worktrees"`. */
+  function templateSegments(text: string): string[] {
+    return backticked(text).flatMap((tok) => {
+      const m = TEMPLATE.exec(tok);
+      return m ? [m[1]!] : [];
+    });
+  }
+
+  /** A doc's claimed base path, built from its own segments. */
+  const claimedBase = (segments: string): string =>
+    join(FLUME_DIR, ...segments.split("/"));
+
+  /**
+   * Every base a doc claims — the formula's default and each per-entry
+   * template's — that is not the path the resolver actually builds.
+   */
+  function baseDisagreements(text: string): string[] {
+    const real = worktreesBase(FLUME_DIR);
+    return [
+      ...formulaClaims(text).map((f) => f.segments),
+      ...templateSegments(text),
+    ].filter((segments) => claimedBase(segments) !== real);
+  }
+
+  const savedOverride = process.env.FLUME_WORKTREES_DIR;
+
+  beforeEach(() => {
+    delete process.env.FLUME_WORKTREES_DIR;
+  });
+
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = savedOverride;
+  });
+
+  // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): both
+  // agreement tests below pass over a doc they found no claim in, and the
+  // readers are regexes over prose — a rephrased token silently empties one.
+  // This is the populated-corpus assertion that keeps that quiet.
+  it("scans one formula and at least one per-entry template in each doc", () => {
+    for (const doc of BASE_DOCS) {
+      const text = readDoc(doc);
+      expect(
+        formulaClaims(text),
+        `${doc} spells no \`<ENV> ?? join(flumeDir, "…")\` formula the scan ` +
+          "can find — restore the token, or this pin is blind",
+      ).toHaveLength(1);
+      expect(
+        templateSegments(text).length,
+        `${doc} spells no \`<flumeDir>/…/<entry-slug>\` template the scan ` +
+          "can find — restore the placeholder, or this pin is blind",
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("every base the docs spell is the path worktreesBase builds by default", () => {
+    for (const doc of BASE_DOCS) {
+      expect(
+        baseDisagreements(readDoc(doc)),
+        `${doc} teaches a worktree base worktreesBase (src/paths.ts) does ` +
+          `not build — the resolver's default is ${worktreesBase(FLUME_DIR)}`,
+      ).toEqual([]);
+    }
+  });
+
+  it("the env var the docs name is the one worktreesBase reads", () => {
+    const override = resolve("doc-claim-override-base");
+    for (const doc of BASE_DOCS) {
+      const [formula] = formulaClaims(readDoc(doc));
+      expect(formula, `${doc}: no formula to read an env var off`).toBeDefined();
+
+      process.env[formula!.env] = override;
+      expect(
+        worktreesBase(FLUME_DIR),
+        `${doc} teaches \`${formula!.env}\` as the worktree-base override, ` +
+          "but worktreesBase (src/paths.ts) ignored it",
+      ).toBe(override);
+      delete process.env[formula!.env];
+    }
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the two agreement tests report agreement by finding
+  // nothing wrong, which is also what a reader that read nothing reports.
+  // Drive each one against a doc edited away from the resolver.
+  it("a doc edited away from the resolver is flagged, both halves", () => {
+    const text = readDoc("README.md");
+
+    // The formula's default segment, drifted.
+    const drifted = text.replace(
+      'join(flumeDir, "worktrees")',
+      'join(flumeDir, "wt")',
+    );
+    expect(drifted, "the formula edit was a no-op").not.toEqual(text);
+    expect(
+      baseDisagreements(drifted),
+      "a drifted default segment went unflagged",
+    ).toEqual(["wt"]);
+
+    // A per-entry template, drifted away from the formula beside it.
+    const retemplated = text.replace(
+      "`.flume/worktrees/<entry-slug>/`",
+      "`.flume/wt/<entry-slug>/`",
+    );
+    expect(retemplated, "the template edit was a no-op").not.toEqual(text);
+    expect(
+      baseDisagreements(retemplated),
+      "a drifted per-entry template went unflagged",
+    ).toEqual(["wt"]);
+
+    // The env var, drifted to a name the runtime never reads.
+    const renamed = text.replace(
+      'FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")',
+      'FLUME_WORKTREE_DIR ?? join(flumeDir, "worktrees")',
+    );
+    expect(renamed, "the env-var edit was a no-op").not.toEqual(text);
+    const [formula] = formulaClaims(renamed);
+    expect(formula!.env).toBe("FLUME_WORKTREE_DIR");
+    process.env[formula!.env] = resolve("ignored-base");
+    expect(
+      worktreesBase(FLUME_DIR),
+      "an env var the resolver never reads was taught as the override",
+    ).toBe(join(FLUME_DIR, "worktrees"));
+    delete process.env[formula!.env];
   });
 });
