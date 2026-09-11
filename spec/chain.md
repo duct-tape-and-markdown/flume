@@ -653,7 +653,8 @@ into it.
   relative dir would land in a worktree git later removes.
 - A relocated state root is expected to live outside the working tree, so no
   in-repo gitignore glob is added for it; the default `<repoRoot>/.flume`
-  stays ignored as it already is.
+  receives the same runtime-ignore merge a job dir does (`spec/jobs.md`,
+  *Runtime ignores*).
 
 ## The package a chain loads through
 
@@ -689,8 +690,3 @@ Durable packaging policy:
 **Standing acceptance:** a fresh consumer project resolves and typechecks
 `import { … } from "@dtmd/flume"`; deep paths (`@dtmd/flume/src/Dispatcher.ts`,
 `@dtmd/flume/dist/Dispatcher.js`) fail at module resolution.
-
-> **Gap:** the loader contract's runtime half is only exercised by the
-> consumer-install smoke, whose chain fixture is pre-factory (see the drift
-> note above). Nothing currently proves a *published* package loads a
-> factory-shaped chain end to end.

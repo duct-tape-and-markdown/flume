@@ -98,8 +98,10 @@ inside a job dir and the walk-up never passes through one.
 
 ## Runtime ignores
 
-`RUNTIME_IGNORES` (`src/job.ts`) is the runtime-owned set merged into every job dir's
-`.gitignore`:
+`RUNTIME_IGNORES` (`src/job.ts`) is the runtime-owned set merged into every state root's
+`.gitignore` — a job dir at `job new`, and the default `<repoRoot>/.flume` at every
+`loop` / `job run` start, under the tip claim, so a fresh adopter never commits a tick
+artifact because a line was missing from the repo's own ignore file:
 
 ```
 awake/
@@ -108,6 +110,9 @@ rendered-prompts/
 worktrees/
 node_modules/
 loop.pid
+last-tick.json
+tick-verdicts.jsonl
+stop
 ```
 
 - `node_modules/` stays even though no link is planted: it is harmless and keeps stray
@@ -175,7 +180,7 @@ dir prints `no jobs`.
   (nothing planned is nothing pending), unparsable is surfaced as `unparsable` rather than
   thrown — one broken plan never hides the others.
 - The chain load that supplies the friction dir is best-effort: a missing or broken chain
-  silently withholds the friction counts and never fails the verb.
+  withholds the friction counts, says so on stderr, and never fails the verb.
 
 ## There is no clean-history ending
 

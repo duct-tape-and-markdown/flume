@@ -65,6 +65,14 @@ The override exists for one measured vector: an agent whose `pwd` contains the r
 path as a prefix can derive the root and write there. Pointing `FLUME_WORKTREES_DIR` outside
 every repo-path prefix removes the prefix, and with it the inference.
 
+**The base is resolved once.** One function computes it and every reader takes it from
+there — `createWorktree`, per-wave stale-slug removal, and the startup sweep (*Startup
+sweep*, below). A second computation is a defect: a sweep basing on the default while
+creation honored the override found nothing to remove, then failed every `git branch -D`
+against worktrees still standing at the real base (field-traced four times). There is no
+`Chain.worktreesDir`: the base is machine-local placement, the operator's to set per host,
+and a committed chain file is the wrong home for it.
+
 **The base must be flume-exclusive.** Before `worktree add`, `createWorktree` removes whatever
 sits at the computed `<base>/[<namespace>/]<dirName>` path if anything does — `git worktree
 remove --force` first (`src/git.ts:removeWorktree`), a recursive filesystem delete as the

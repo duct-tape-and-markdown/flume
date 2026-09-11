@@ -49,7 +49,11 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
   `EX_DATAERR` (65), naming the entry and the offending paths — the same
   refusal the next tick would have bought with an invocation. Scope is
   deliberately the engine's own mechanics alone: chain gates need a tick's
-  `GateContext` and do not run here.
+  `GateContext` and do not run here. A chain declaring no fanout phase has no
+  consumer and therefore no fence: the parse still runs, the fence step is
+  skipped, and the output says so — `no fanout phase declared; fence not
+  checked` — vacuous by design and spelled, never a refusal of every
+  declared path.
 - `friction [name]` — bare, lists the declared friction channel's notes
   (filename, size, mtime); with `name`, prints that note's bytes verbatim.
   Output is **never interpreted** — the engine's lifecycle guarantee over
@@ -109,7 +113,8 @@ In printed order:
    the same loose read `flume job status` performs (`readPendingLoose`,
    `src/job.ts`), so a corrupt queue reads identically on both surfaces.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
-   fail status — a missing or broken chain silently withholds them: the
+   fail status — a missing or broken chain withholds them and says so on
+   stderr, never silently; nothing above this line is withheld: the
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
