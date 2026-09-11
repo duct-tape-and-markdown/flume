@@ -1,44 +1,26 @@
 [
   {
-    "tag": "SPEC-SYMBOL-CITES-PINNED",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "symbol half of the spec-lint pin, beside the path half the same scan already carries"
-        }
-      ]
-    },
-    "summary": "Pin spec/'s dotted cites into public types against src/ declarations — the symbol half of the spec-lint pin",
-    "per": {
-      "path": ".claude/rules/spec-writing.md",
-      "section": "What holds this page above prose"
-    },
-    "pins": [
-      "every dotted spec cite whose prefix is a public type resolves on its last segment to a declaration in src/",
-      "the spec symbol scan reads every page of spec/",
-      "the symbol needle flags an injected stale member cite and leaves the not-exist sentences the allowlist declares"
-    ],
-    "acceptance": "The scan's symbol half runs green over spec/ as it stands, with its subject, its allowlist and its sensitivity driven both ways.",
-    "notes": "Subject ruled by the operator: a backticked dotted token whose prefix is a type the page's *Public surface* bullet names (the eight, plus src/index.ts exports), resolved on its last segment. No non-symbol vocabulary. Declared allowlist for the sentences naming a symbol to say it does not exist — DispatcherOptions.trunkBranch, Chain.harvest, Chain.worktreesDir. Measured green at bbc39b2."
-  },
-  {
     "tag": "SPEC-TEST-CITES-PINNED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/retired-narration.test.ts",
           "description": "a tests/ root on the spec locator scan, beside the src/ and path:NN needles"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "Pin spec/ against test cites — a flat refusal on tests/ paths, with the empty case asserted explicitly",
     "per": {
       "path": ".claude/rules/spec-writing.md",
       "section": "A claim names behavior, never location"
     },
+    "tests": [],
     "pins": [
       "no spec page cites a path under tests/",
       "the test-cite needle flags an injected tests/ path and leaves the bin/, scripts/ and examples/ cites the corpus writes"
