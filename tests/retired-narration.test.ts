@@ -998,14 +998,16 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
 
   it("the docs' harness-managed state list names every path src/ spells", () => {
     // Vacuity: a writer-side reader that resolved nothing would accept every
-    // claim. Name the shapes it must have resolved — a literal the dispatcher
-    // joins, a `STATE_ROOT_NAMES` member behind an accessor, and the queue
-    // default that no `flumeDir` call site spells.
-    expect(spelled, "src/: no `worktrees` literal resolved").toContain(
-      "worktrees",
-    );
+    // claim. Name the shapes it must have resolved — a `STATE_ROOT_NAMES`
+    // member behind an accessor, a module-local const the dispatcher joins,
+    // and the queue default that no `flumeDir` call site spells.
     expect(spelled, "src/: STATE_ROOT_NAMES did not resolve").toEqual(
-      expect.arrayContaining(["awake", "prior-attempts", "loop.pid"]),
+      expect.arrayContaining([
+        "awake",
+        "prior-attempts",
+        "loop.pid",
+        "worktrees",
+      ]),
     );
     expect(spelled, "src/: DEFAULT_PENDING_REL did not resolve").toContain(
       "plan/pending.json",

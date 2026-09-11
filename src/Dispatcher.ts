@@ -55,6 +55,7 @@ import {
   resolvePendingPath,
   STATE_ROOT_NAMES,
   stopFlagPath,
+  worktreesBase,
 } from "./paths.js";
 import { declaredPaths, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
@@ -3906,8 +3907,9 @@ export class Dispatcher {
    * unchanged.
    *
    * Scope is exactly the engine's own residue: every directory directly
-   * under the worktree base — namespace-scoped the same way
-   * `createWorktree`'s path is when a namespace is set. Without one,
+   * under the worktree base — the same `worktreesBase` (`src/paths.ts`)
+   * `createWorktree` provisions into, namespace-scoped the same way its
+   * path is when a namespace is set. Without one,
    * `sweepBase` is the bare worktrees dir, which a shared
    * `FLUME_WORKTREES_DIR` also holds every *namespaced* sibling job's
    * container directory (`<wtBase>/<their-namespace>/`) at that exact same
@@ -3940,9 +3942,7 @@ export class Dispatcher {
    */
   async sweepStaleWorktrees(): Promise<void> {
     const repoRoot = this.opts.repoRoot;
-    const wtBase = process.env.FLUME_WORKTREES_DIR
-      ? resolve(process.env.FLUME_WORKTREES_DIR)
-      : join(this.flumeDir, "worktrees");
+    const wtBase = worktreesBase(this.flumeDir);
     const sweepBase = this.opts.namespace
       ? join(wtBase, this.opts.namespace)
       : wtBase;
@@ -4068,14 +4068,10 @@ export class Dispatcher {
     const branch = this.opts.namespace
       ? `flume/${this.opts.namespace}/${slug}`
       : `flume/${slug}`;
-    // FLUME_WORKTREES_DIR: ephemeral worktrees relocate OUTSIDE the repo so an
-    // agent's pwd never contains the root checkout's path as a prefix (the
-    // observed stray-write vector: a model that sees `<root>/.flume/worktrees/x`
-    // derives `<root>` and operates there). Default tracks the state root
-    // (§16), which is itself relocatable via FLUME_DIR.
-    const wtBase = process.env.FLUME_WORKTREES_DIR
-      ? resolve(process.env.FLUME_WORKTREES_DIR)
-      : join(this.flumeDir, "worktrees");
+    // One resolution for the base, shared with the startup sweep
+    // (`worktreesBase`, src/paths.ts — which is also where the override's
+    // stray-write rationale lives).
+    const wtBase = worktreesBase(this.flumeDir);
     // The path mirrors the branch namespacing: under a shared
     // FLUME_WORKTREES_DIR two jobs with identical slugs would otherwise
     // collide on <base>/<dirName>, and the stale-cleanup below would rm the

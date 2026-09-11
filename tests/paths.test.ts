@@ -1,8 +1,15 @@
-import { join, toNamespacedPath } from "node:path";
+import { join, resolve, toNamespacedPath } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { entryWriteScopeUnion, matchesAny, namespacedJoin } from "../src/paths.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
+import {
+  entryWriteScopeUnion,
+  matchesAny,
+  namespacedJoin,
+  STATE_ROOT_NAMES,
+  worktreesBase,
+} from "../src/paths.ts";
 
 // Mechanism pin (WIN32-NAMESPACEDPATH-JOIN-UNSHARED, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"):
@@ -104,5 +111,54 @@ describe("matchesAny — single-`*` is segment-bound, unlike `**`", () => {
 
   it("a bare `*` still matches the zero-deeper-segment case `**` also matches", () => {
     expect(matchesAny("src/a.ts", ["src/**.ts"])).toBe(true);
+  });
+});
+
+// Mechanism pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
+// "Placement — the worktree base and the job namespace"): the worktree base
+// used to be resolved at two independent call sites, which agreed only
+// because both happened to spell the same fallback. This pins the single
+// resolver's two branches, and holds the one name that leaked out of it —
+// the job `.gitignore` seed's `worktrees/` line — to `STATE_ROOT_NAMES`
+// rather than a hand-kept copy.
+describe("worktreesBase — the one worktree-base resolution", () => {
+  const saved = process.env.FLUME_WORKTREES_DIR;
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = saved;
+  });
+
+  it("STATE_ROOT_NAMES names the worktrees dir", () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    expect(STATE_ROOT_NAMES.worktrees).toBe("worktrees");
+    // The default base is that name joined onto the state root — the record
+    // owns it, so the accessor cannot drift from the ignore seed below.
+    expect(worktreesBase(join("state", "root"))).toBe(
+      join("state", "root", STATE_ROOT_NAMES.worktrees),
+    );
+    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.worktrees}/`);
+  });
+
+  it("an override is resolved absolute, replacing the state-root default", () => {
+    const override = join(process.cwd(), "elsewhere", "wt");
+    process.env.FLUME_WORKTREES_DIR = override;
+    expect(worktreesBase(join("state", "root"))).toBe(override);
+  });
+
+  it("a relative override resolves against cwd, not the state root", () => {
+    process.env.FLUME_WORKTREES_DIR = join("..", "wt-base");
+    expect(worktreesBase(join("state", "root"))).toBe(
+      resolve(join("..", "wt-base")),
+    );
+  });
+
+  it("an empty override is no override — the default stands", () => {
+    // `resolve("")` is cwd, which would silently scatter worktrees across
+    // the checkout. An unset-looking value reads as unset.
+    process.env.FLUME_WORKTREES_DIR = "";
+    expect(worktreesBase(join("state", "root"))).toBe(
+      join("state", "root", STATE_ROOT_NAMES.worktrees),
+    );
   });
 });

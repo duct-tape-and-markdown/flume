@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14686,4 +14687,57 @@ describe("TickVerdict span rows — base beside head", () => {
     expect(await readFile(join(fx.repo, "src/plan-a.ts"), "utf8")).toBe("a\n");
     expect(await readFile(join(fx.repo, "outside/b.ts"), "utf8")).toBe("b\n");
   }, 20_000);
+});
+
+/**
+ * Single-resolution pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
+ * "Placement — the worktree base and the job namespace": *The base is
+ * resolved once*). `createWorktree` and `sweepStaleWorktrees` each used to
+ * spell `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")` for themselves.
+ * They agreed only because the two spellings happened to match: a sweep
+ * basing on the default while creation honored the override reads an empty
+ * base, removes nothing, and then fails every `git branch -D` against
+ * worktrees still standing where creation actually put them (field-traced
+ * four times).
+ *
+ * Agreement between two copies is not checkable by running them — they agree
+ * in every tree where the bug has not been introduced yet. What is checkable
+ * is that the second copy does not exist, so this reads `src/` and refuses a
+ * second reader.
+ */
+describe("Dispatcher fanout — worktree base resolution has one home", () => {
+  const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src");
+
+  /** A read of the override env var, however it is subscripted. */
+  const READS_OVERRIDE =
+    /process\.env(?:\.FLUME_WORKTREES_DIR\b|\[\s*["']FLUME_WORKTREES_DIR["']\s*\])/;
+
+  it("src/ resolves the worktree base in exactly one place", async () => {
+    const modules = (await readdir(SRC_DIR)).filter((n) => n.endsWith(".ts"));
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // scan that read no modules would report no second reader either.
+    expect(modules.length).toBeGreaterThan(0);
+
+    const readers: string[] = [];
+    const sources = new Map<string, string>();
+    for (const name of modules) {
+      const text = await readFile(join(SRC_DIR, name), "utf8");
+      sources.set(name, text);
+      if (READS_OVERRIDE.test(text)) readers.push(name);
+    }
+
+    // The resolver's own module, and nothing else. A second reader is the
+    // defect whether or not it currently spells the same fallback.
+    expect(readers).toEqual(["paths.ts"]);
+
+    // And the dispatcher's two consumers take the base from there rather
+    // than rebuilding it: `createWorktree` (whose stale-slug removal runs
+    // against the path it computes) and the startup sweep.
+    const dispatcher = sources.get("Dispatcher.ts")!;
+    expect(
+      dispatcher.match(/worktreesBase\(this\.flumeDir\)/g) ?? [],
+    ).toHaveLength(2);
+    // No hand-rolled default survives beside them.
+    expect(dispatcher).not.toMatch(/join\(this\.flumeDir,\s*"worktrees"\)/);
+  });
 });

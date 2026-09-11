@@ -12,7 +12,7 @@
  * baton, and the job verbs can all reach it without a cycle.
  */
 
-import { join, toNamespacedPath } from "node:path";
+import { join, resolve, toNamespacedPath } from "node:path";
 
 /** `join(...paths)`, then `toNamespacedPath` — the win32 MAX_PATH fix idiom. */
 export function namespacedJoin(...paths: string[]): string {
@@ -72,13 +72,12 @@ export function entryWriteScopeUnion(
  * the job `.gitignore` seed (`RUNTIME_IGNORES`, `src/job.ts`). Everything
  * that builds a path takes an accessor below.
  *
- * `worktrees/` is not here: where it lands is the open `Chain.worktreesDir`
- * fork, and it joins this record in whichever commit resolves that fork.
  */
 export const STATE_ROOT_NAMES = {
   awake: "awake",
   priorAttempts: "prior-attempts",
   renderedPrompts: "rendered-prompts",
+  worktrees: "worktrees",
   loopLock: "loop.pid",
   stopFlag: "stop",
 } as const;
@@ -117,6 +116,38 @@ export function priorAttemptsDir(flumeDir: string): string {
  */
 export function renderedPromptsDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.renderedPrompts);
+}
+
+/**
+ * The fanout worktree base: `FLUME_WORKTREES_DIR` when set (resolved
+ * absolute), else `<flumeDir>/worktrees` (spec/worktrees.md, "Placement —
+ * the worktree base and the job namespace").
+ *
+ * **The one resolution in `src/`.** `createWorktree`, the per-wave
+ * stale-slug removal it runs, and `sweepStaleWorktrees` all take the base
+ * from here. Two resolutions agreed only by luck: a sweep basing on the
+ * default while creation honored the override found nothing to remove, then
+ * failed every `git branch -D` against worktrees still standing at the real
+ * base (field-traced four times).
+ *
+ * The override exists for one measured vector: an agent whose `pwd` contains
+ * the root checkout's path as a prefix can derive the root and write there
+ * (observed: a model that sees `<root>/.flume/worktrees/x` operates in
+ * `<root>`). Pointing the base outside every repo-path prefix removes the
+ * prefix, and with it the inference. The default tracks the state root,
+ * itself relocatable via `FLUME_DIR`, so the one-`rm` teardown promise holds.
+ *
+ * Read at call time, not at module load: the CLI resolves `FLUME_DIR` and a
+ * chain may export `FLUME_WORKTREES_DIR` during its own load, both after
+ * this module is first evaluated.
+ *
+ * Machine-local placement is the operator's per host — there is deliberately
+ * no `Chain.worktreesDir`, since a committed chain file is the wrong home
+ * for it.
+ */
+export function worktreesBase(flumeDir: string): string {
+  const override = process.env.FLUME_WORKTREES_DIR;
+  return override ? resolve(override) : join(flumeDir, STATE_ROOT_NAMES.worktrees);
 }
 
 /**

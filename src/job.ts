@@ -45,15 +45,19 @@ export class JobUsageError extends Error {}
  *
  * Derived from `STATE_ROOT_NAMES` (`src/paths.ts`) wherever an accessor owns
  * the name, so renaming a runtime path cannot leave the ignore behind
- * pointing at the old one. `worktrees/` has no accessor yet (the open
- * `Chain.worktreesDir` fork) and `node_modules/` is not the runtime's to
- * name, so both stay spelled here.
+ * pointing at the old one. `node_modules/` is not the runtime's to name, so
+ * it stays spelled here.
+ *
+ * `worktrees/` is the default base alone (`worktreesBase`, `src/paths.ts`):
+ * an operator who relocates it via `FLUME_WORKTREES_DIR` has already moved
+ * it outside the job dir, so there is nothing under this `.gitignore` to
+ * ignore.
  */
 export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.awake}/`,
   `${STATE_ROOT_NAMES.priorAttempts}/`,
   `${STATE_ROOT_NAMES.renderedPrompts}/`,
-  "worktrees/",
+  `${STATE_ROOT_NAMES.worktrees}/`,
   "node_modules/",
   STATE_ROOT_NAMES.loopLock,
 ] as const;
