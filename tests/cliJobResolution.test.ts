@@ -8,7 +8,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -23,7 +23,12 @@ import {
   resolveStateDirs,
 } from "../src/cliJobResolution.ts";
 import { Baton } from "../src/Baton.ts";
-import { gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import {
+  gitOut,
+  hermeticEnv,
+  mkFixtureRoot,
+  runCli,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -362,9 +367,8 @@ describe("resolveStateDirs — cross-repo FLUME_DIR provenance-stamp refusal", (
  */
 describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
   it("cwd itself holds .flume: returns cwd", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-"));
+    const dir = await mkFixtureRoot("flume-walkup-");
     try {
-      await mkdir(join(dir, ".flume"), { recursive: true });
       expect(resolveRepoRoot(dir)).toBe(dir);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -372,9 +376,8 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
   });
 
   it("cwd nested several levels below the bay: walks up to the nearest .flume", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-"));
+    const dir = await mkFixtureRoot("flume-walkup-");
     try {
-      await mkdir(join(dir, ".flume"), { recursive: true });
       const nested = join(dir, "src", "deep", "here");
       await mkdir(nested, { recursive: true });
       expect(resolveRepoRoot(nested)).toBe(dir);
@@ -391,6 +394,12 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
     expect(resolveRepoRoot(fake)).toBe(dirname(fake));
   });
 
+  // The one fixture in this suite that cannot be rooted (`mkFixtureRoot`,
+  // tests/helpers/subprocess.ts): its subject *is* the walk reaching the
+  // filesystem root without meeting a `.flume`, so planting one would delete
+  // the behavior under test. It stays on a plain `mkdtemp` and stays
+  // vulnerable to a `.flume` littered above `tmpdir()` — a red here means the
+  // host has one, not that the fallback regressed.
   it("no .flume anywhere above cwd: falls back to cwd unchanged", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-walkup-nodock-"));
     try {
@@ -416,7 +425,7 @@ async function makeJobRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-"));
+  const dir = await mkFixtureRoot("flume-job-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -594,7 +603,7 @@ describe("§3 job resolution — real CLI", () => {
   it(
     "--job alongside explicit FLUME_DIR is a usage error (exit 2); a valueless --job likewise; FLUME_CONFIG_DIR beside --job is no conflict",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-job-conflict-"));
+      const dir = await mkFixtureRoot("flume-job-conflict-");
       try {
         const conflict = await runCli(dir, ["--job", "foo", "status"], {
           ...hermeticEnv(),
@@ -958,7 +967,10 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
         expect(wake.out).toContain(outer.dir);
         expect(wake.out).toContain(inner.dir);
         expect(existsSync(join(outerFlumeDir, "awake", "groom"))).toBe(false);
-        expect(existsSync(join(inner.dir, ".flume"))).toBe(false);
+        // The inner fixture's bay is planted empty (`mkFixtureRoot`), so
+        // "wrote nowhere" reads as "wrote nothing into its own bay either" —
+        // a stricter claim than the bay's absence.
+        expect(readdirSync(join(inner.dir, ".flume"))).toEqual([]);
       } finally {
         await outer.cleanup();
         await inner.cleanup();
@@ -990,4 +1002,40 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
     },
     30_000,
   );
+});
+
+/**
+ * CLI-FIXTURE-ANCESTOR-PROOF — the job-verb half of the rooting pin (the
+ * `flume status` half lives in tests/cli.test.ts). `job status` enumerates
+ * `<repoRoot>/.flume/jobs`, so it reports the walk-up's answer directly:
+ * whichever bay `repoRoot` landed on is the one whose jobs it lists.
+ */
+describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCESTOR-PROOF)", () => {
+  it("a `.flume` planted above the fixture does not change a job verb's resolved state root", async () => {
+    const attic = await mkdtemp(join(tmpdir(), "flume-attic-job-"));
+    try {
+      // The litter: a bay above every fixture created under it, holding a
+      // job no fixture below ever creates.
+      await mkdir(join(attic, ".flume", "jobs", "ghostjob"), {
+        recursive: true,
+      });
+
+      // Control: an unrooted sibling resolves through the litter and lists
+      // the attic's job, so the rooted case below has a wrong answer
+      // available to it.
+      const stray = join(attic, "stray");
+      await mkdir(stray, { recursive: true });
+      const unrooted = await runCli(stray, ["job", "status"]);
+      expect(unrooted.code).toBe(0);
+      expect(unrooted.out).toContain("ghostjob");
+
+      const dir = await mkFixtureRoot("flume-rooted-job-", attic);
+      const rooted = await runCli(dir, ["job", "status"]);
+      expect(rooted.code).toBe(0);
+      expect(rooted.out).toContain("no jobs");
+      expect(rooted.out).not.toContain("ghostjob");
+    } finally {
+      await rm(attic, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

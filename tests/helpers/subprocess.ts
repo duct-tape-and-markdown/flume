@@ -9,6 +9,9 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -97,6 +100,45 @@ export function hermeticEnv(): NodeJS.ProcessEnv {
     if (/^FLUME_/.test(key)) delete env[key];
   }
   return env;
+}
+
+/**
+ * A fresh temp fixture directory that **owns its own bay** — `mkdtemp`, plus
+ * an empty `.flume` planted at the root.
+ *
+ * Bay discovery walks up from cwd to the nearest `.flume` and only falls back
+ * to cwd at the filesystem root (spec/cli.md, "Bay discovery walks up to the
+ * nearest `.flume`"). A fixture rooted at `mkdtemp(tmpdir(), …)` therefore
+ * resolves through `/tmp`'s ancestors: any `.flume` a crashed run, another
+ * suite, or an unrelated process leaves at `/tmp` — or above it — captures
+ * every fixture below and silently retargets `repoRoot`, every state-dir
+ * resolution, and every `job` verb at the litter. The suite then asserts a
+ * verdict the CLI reached about a directory the test never wrote
+ * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
+ *
+ * The planted `.flume` stops the walk at the fixture, so no ancestor can
+ * change a verdict regardless of who wrote the litter. It is behaviour-inert
+ * for the fixture itself: an empty bay is what `<dir>/.flume` resolution
+ * already assumed, and nothing reads a directory that holds no chain, no
+ * baton markers, and no queue.
+ *
+ * `parent` exists for the tests that plant the ancestor litter deliberately —
+ * they need a fixture underneath a directory they control. Fixtures that are
+ * never a CLI cwd (a scratch output dir, a worktree base handed over by env)
+ * do not need rooting and keep plain `mkdtemp`.
+ *
+ * Not rootable: a fixture whose subject **is** the no-ancestor fallback. It
+ * must reach the filesystem root without meeting a `.flume`, which no fixture
+ * can guarantee — `resolveRepoRoot`'s fallback case in
+ * `tests/cliJobResolution.test.ts` is the one such site in this suite.
+ */
+export async function mkFixtureRoot(
+  prefix: string,
+  parent: string = tmpdir(),
+): Promise<string> {
+  const dir = await mkdtemp(join(parent, prefix));
+  await mkdir(join(dir, ".flume"), { recursive: true });
+  return dir;
 }
 
 /**

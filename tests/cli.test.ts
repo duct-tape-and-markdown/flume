@@ -10,7 +10,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -23,7 +23,7 @@ import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD } from "../src/Dispatcher.ts";
 import { resolvePendingPath } from "../src/paths.ts";
-import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, runCli, runCliStreams } from "./helpers/subprocess.ts";
+import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -227,7 +227,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "`--max abc` (non-numeric) exits 2 naming usage and spawns no tick",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      const dir = await mkFixtureRoot("flume-loop-max-");
       try {
         const r = await runCli(dir, ["loop", "--max", "abc"]);
         expect(r.code).toBe(2);
@@ -243,7 +243,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "`--max` with no following value exits 2 naming usage and spawns no tick",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      const dir = await mkFixtureRoot("flume-loop-max-");
       try {
         const r = await runCli(dir, ["loop", "--max"]);
         expect(r.code).toBe(2);
@@ -259,7 +259,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "`--max -1` (negative) exits 2 naming usage and spawns no tick",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-loop-max-"));
+      const dir = await mkFixtureRoot("flume-loop-max-");
       try {
         const r = await runCli(dir, ["loop", "--max", "-1"]);
         expect(r.code).toBe(2);
@@ -689,10 +689,9 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
  */
 describe("flume status — supervisor liveness (v0.7 §17)", () => {
   it("names the pid of a live supervisor", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-live-"));
+    const dir = await mkFixtureRoot("flume-status-live-");
     try {
       const flumeDir = join(dir, ".flume");
-      await mkdir(flumeDir, { recursive: true });
       // The vitest worker itself plays the live supervisor — its own pid is
       // guaranteed alive for the duration of this test.
       await writeFile(join(flumeDir, "loop.pid"), String(process.pid), "utf8");
@@ -708,10 +707,9 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
   }, 30_000);
 
   it("reports a stale pidfile when the recorded pid is dead", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-stale-"));
+    const dir = await mkFixtureRoot("flume-status-stale-");
     try {
       const flumeDir = join(dir, ".flume");
-      await mkdir(flumeDir, { recursive: true });
       // Harvest a genuinely dead pid: spawn a no-op node child and wait for
       // it to exit before recording its pid as the stale holder.
       const probe = exec(process.execPath, ["-e", ""]);
@@ -732,7 +730,7 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
   }, 30_000);
 
   it("is unchanged from today when no pidfile exists", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-nopid-"));
+    const dir = await mkFixtureRoot("flume-status-nopid-");
     try {
       const r = await runCli(dir, ["status"]);
 
@@ -758,7 +756,7 @@ async function makeJobRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-"));
+  const dir = await mkFixtureRoot("flume-job-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -939,7 +937,7 @@ describe("flume status — friction line (§6)", () => {
  */
 describe("flume status — pending entry count (§3)", () => {
   it("names the entry count for a valid pending.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const planDir = join(dir, ".flume", "plan");
       await mkdir(planDir, { recursive: true });
@@ -971,7 +969,7 @@ describe("flume status — pending entry count (§3)", () => {
   }, 30_000);
 
   it('prints "pending: unparsable" for a corrupt pending.json instead of dropping it silently', async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const planDir = join(dir, ".flume", "plan");
       await mkdir(planDir, { recursive: true });
@@ -986,7 +984,7 @@ describe("flume status — pending entry count (§3)", () => {
   }, 30_000);
 
   it('prints "pending: 0" when plan/pending.json is absent', async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -997,7 +995,7 @@ describe("flume status — pending entry count (§3)", () => {
   }, 30_000);
 
   it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — counts entries at the custom location, not plan/pending.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-pending-"));
+    const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const customRel = join("custom", "queue.json");
       await writeRepoConfig(dir, minimalChainSrc(undefined, customRel));
@@ -1142,7 +1140,7 @@ const THROWING_CHAIN_SRC =
  */
 describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORTED)", () => {
   it("flume status names the chain-load failure it proceeded past", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-chainfail-"));
+    const dir = await mkFixtureRoot("flume-status-chainfail-");
     try {
       await writeRepoConfig(dir, THROWING_CHAIN_SRC);
       // The entries the chain's own `pendingPath` would have pointed at —
@@ -1292,7 +1290,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
   it(
     "writes the flag and names the path plus what happens next, exit 0",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-stop-"));
+      const dir = await mkFixtureRoot("flume-stop-");
       try {
         const stopPath = join(dir, ".flume", "stop");
         const r = await runCli(dir, ["stop"]);
@@ -1315,7 +1313,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
   it(
     "is idempotent — a repeat call finds the flag already present and prints the same statement, exit 0",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-stop-idempotent-"));
+      const dir = await mkFixtureRoot("flume-stop-idempotent-");
       try {
         const first = await runCli(dir, ["stop"]);
         const second = await runCli(dir, ["stop"]);
@@ -1331,7 +1329,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
   );
 
   it("flume stop --help short-circuits before writing the flag", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-stop-help-"));
+    const dir = await mkFixtureRoot("flume-stop-help-");
     try {
       const r = await runCli(dir, ["stop", "--help"]);
       expect(r.code).toBe(0);
@@ -1345,7 +1343,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
 
 describe("flume status — stop flag line (spec/cli.md \"flume status owes exactly this\", line 3)", () => {
   it("prints nothing when the flag is absent", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-absent-"));
+    const dir = await mkFixtureRoot("flume-status-stop-absent-");
     try {
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1358,10 +1356,9 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
   it(
     "names the path and that the running supervisor will finish and end the run, ordered after supervisor liveness and before the tip claim",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-live-"));
+      const dir = await mkFixtureRoot("flume-status-stop-live-");
       try {
         const flumeDir = join(dir, ".flume");
-        await mkdir(flumeDir, { recursive: true });
         // The vitest worker itself plays the live supervisor.
         await writeFile(join(flumeDir, "loop.pid"), String(process.pid), "utf8");
         await writeFile(join(flumeDir, "stop"), "", "utf8");
@@ -1387,10 +1384,9 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
   it(
     "names the path and that the next loop/job run refuses, when no supervisor is live",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-status-stop-dead-"));
+      const dir = await mkFixtureRoot("flume-status-stop-dead-");
       try {
         const flumeDir = join(dir, ".flume");
-        await mkdir(flumeDir, { recursive: true });
         await writeFile(join(flumeDir, "stop"), "", "utf8");
 
         const r = await runCli(dir, ["status"]);
@@ -1749,7 +1745,10 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["check", "--help"]);
       expect(r.code).toBe(0);
       expect(r.out).toContain("Usage: flume check");
-      expect(existsSync(join(repo.dir, ".flume"))).toBe(false);
+      // The fixture's bay is planted empty (`mkFixtureRoot`), so "created
+      // nothing" reads as "wrote nothing into it" — a stricter claim than
+      // the bay's absence, which only ever proved `Baton` never ran.
+      expect(readdirSync(join(repo.dir, ".flume"))).toEqual([]);
     } finally {
       await repo.cleanup();
     }
@@ -1792,7 +1791,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume stop <positional> exits 2",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-stop-positional-"));
+      const dir = await mkFixtureRoot("flume-stop-positional-");
       try {
         const r = await runCli(dir, ["stop", "extra"]);
         expect(r.code).toBe(2);
@@ -1865,7 +1864,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume status ignores extra positionals and still exits 0 (the one named exception)",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-status-positional-"));
+      const dir = await mkFixtureRoot("flume-status-positional-");
       try {
         const r = await runCli(dir, ["status", "extra", "more"]);
         expect(r.code).toBe(0);
@@ -2341,4 +2340,42 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
     },
     60_000,
   );
+});
+
+/**
+ * CLI-FIXTURE-ANCESTOR-PROOF — the rooting idiom every CLI fixture above now
+ * goes through (`mkFixtureRoot`, tests/helpers/subprocess.ts), pinned against
+ * the litter it exists to survive: a `.flume` planted in an ancestor the
+ * fixture happens to live under, which is what a leaked `/tmp/.flume` is.
+ * Each case carries its own control — the same CLI invocation from an
+ * unrooted sibling, proving the planted bay is load-bearing rather than a
+ * directory nothing ever reads.
+ */
+describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCESTOR-PROOF)", () => {
+  it("a `.flume` planted above the fixture does not change `flume status`'s verdict", async () => {
+    const attic = await mkdtemp(join(tmpdir(), "flume-attic-"));
+    try {
+      // The litter: a bay above every fixture created under it, awake on a
+      // phase no fixture below ever declares.
+      await mkdir(join(attic, ".flume", "awake"), { recursive: true });
+      await writeFile(join(attic, ".flume", "awake", "ghostphase"), "", "utf8");
+
+      // Control: an unrooted sibling resolves straight through the litter,
+      // so the planted bay below is answering a question that has a wrong
+      // answer available.
+      const stray = join(attic, "stray");
+      await mkdir(stray, { recursive: true });
+      const unrooted = await runCli(stray, ["status"]);
+      expect(unrooted.code).toBe(0);
+      expect(unrooted.out).toContain("awake: ghostphase");
+
+      const dir = await mkFixtureRoot("flume-rooted-status-", attic);
+      const rooted = await runCli(dir, ["status"]);
+      expect(rooted.code).toBe(0);
+      expect(rooted.out).toContain("hibernating");
+      expect(rooted.out).not.toContain("ghostphase");
+    } finally {
+      await rm(attic, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
