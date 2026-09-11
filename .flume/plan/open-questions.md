@@ -52,13 +52,13 @@ names the bound in a comment meanwhile. `HANDOFF-ENTRY-MERGE-OUTCOME` is the eng
 half: once `TickResult.entries` carries the per-entry merge outcome, the predicate and
 its comment go in the adopting commit.
 
-**The clean-exit rename is parked on the other.** `CLEAN-EXIT-TAXONOMY` renames
-`voluntary-bail` to `clean-exit` in `NoCommitMode`; `.flume/chain.ts:852-854` compares
-`result.noCommit` and `e.noCommit` against the literal `"voluntary-bail"`, a TS2367
-error the moment the member leaves the union — and chain.ts is in `tsconfig.json`'s
-`include`, so the build tick would revert on its own tsc gate. `REFUSAL_MODES` (:573) is
-already forward-compatible; only the `===` arms are not. Deleting them unparks the entry,
-and it is the same edit as the predicate above.
+**The clean-exit rename no longer waits on this — the arms are owed after it, not
+before.** The chore of 2026-09-11 made both comparison sites `string`-typed
+(`REFUSAL_MODES` :584, `bailed` :879), so `CLEAN-EXIT-TAXONOMY` can rename the
+`NoCommitMode` member without tripping chain.ts's own tsc gate; the entry is unparked
+and `open`. What remains here is the deletion: once the entry ships, the
+`voluntary-bail` arm in `bailed` and in `REFUSAL_MODES` is dead, and each site names
+that ship as its trigger. Same edit as the predicate above.
 
 **The worktree base, hand-built — and the fork.** Drained from
 `WORKTREE-BASE-DOCS-PINNED`'s note; verified on disk. `redOnBase`
@@ -89,31 +89,9 @@ Riding whichever commit lands first, by the 2026-09-11 ruling on `stateRootRel`:
 (`spec/chain.md`, *What a gate receives*) so a later sweep does not re-file it as
 restatement.
 
-## The `spec/jobs.md` ignore block is missing a line and names a retired file (NEEDS AMENDMENT)
+## The `spec/jobs.md` ignore block names a retired file, `last-tick.json` (NEEDS AMENDMENT)
 
-The 2026-09-11 rulings landed two lines that pull against each other. `spec/loop.md`
-*Crash equals stop* introduces `<flumeDir>/merging/<slug>.json`, written and removed by
-the dispatcher on every merge — runtime state directly under the state root.
-`spec/jobs.md` *Runtime ignores* enumerates `RUNTIME_IGNORES` as a closed block, and
-`merging/` is not in it. The ruling's own stated purpose is that "a fresh adopter never
-commits a tick artifact because a line was missing", so the omission reads as an
-oversight rather than a decision, but the block is explicit enough that filling it
-silently would be plan choosing for the human.
-
-Both entries are derived and independently shippable either way
-(`MERGE-INTERRUPTED-MARKER`, `RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`); only the line
-is missing. `MERGE-INTERRUPTED-MARKER` is now re-declared **without** `src/job.ts` —
-filling the block from the entry would be plan choosing for the human — so it carries
-`merging/` in this repo's `.gitignore` alone, and an adopting repo leaves the marker
-trackable until the amendment lands.
-
-**Recommend:** add `merging/` to the `spec/jobs.md` block, at which point `RUNTIME_IGNORES`
-gains it off `STATE_ROOT_NAMES` — one name, one accessor, no second spelling — as a
-one-line entry the next derive files. The alternative — the marker lives somewhere already
-ignored — would put crash-recovery state under `prior-attempts/`, whose lifecycle
-(cleared on a clean ship) is the wrong one for a file only the operator may remove.
-
-**Second defect in the same block — `last-tick.json` no longer exists.** Drained from
+**`last-tick.json` no longer exists.** Drained from
 `RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`'s note. The block lists `last-tick.json`;
 nothing in `src/` writes that name. The per-tick verdict file is `tick-verdict.json`
 (`STATE_ROOT_NAMES.tickVerdict`), and `CHANGELOG.md:1357` records the rename.
@@ -124,8 +102,13 @@ trackable, which is the defect that entry existed to close — so `RUNTIME_IGNOR
 reads one line off the spec block verbatim. No agreement pin is driven off the block
 today; the first one authored would fail against the runtime.
 
-**Recommend:** `last-tick.json` → `tick-verdict.json`, in the same edit as the
-`merging/` line above. Both are `spec/` and so human-only; neither is a code change.
+**Recommend:** `last-tick.json` → `tick-verdict.json`. `spec/` is human-only; it is not
+a code change. This repo's own `.gitignore` carries the stale `.flume/last-tick.json`
+line too — harmless (it ignores nothing), and inside build's fence, so it rides
+whatever entry the amendment files.
+
+**The first half closed.** The block was also missing `merging/`; the amendment landed
+at `17cf6a3`, and `RUNTIME-IGNORES-NAMES-MERGING` now carries the code half.
 
 ## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
 
@@ -233,3 +216,43 @@ must cover the whole entry, and move the `observedFiles` merge out of the
 blaming wave so the accretion no longer re-keys. That is the larger change and
 it buys nothing the exclusion does not already buy — but if it is the ruling,
 say so and this becomes an entry against `commitPendingUpdate`.
+
+## A contract-touching entry ships mid-run with no ordering and no signal (PARKED)
+
+Drained from the inbox (2026-09-11, human). Loop of 2026-09-11, 15 ticks:
+`QUARANTINE-KEYS-THE-ENTRY-AS-READ` shipped at wave 6 and re-keyed
+`FLUME_QUARANTINED_SLUGS` from a bare slug to `slug@hash`. The resident supervisor
+kept sending the old form; wave 7's fresh children compared it against the new key,
+matched nothing, and re-picked two entries quarantined "for the rest of this run".
+Harmless here — both merged — but it is `spec/loop.md` *A run finishes on the
+contract it started with* failing with no signal at all, and the key is documented as
+an opaque equality key "never parsed apart by either side of the channel"
+(`src/Dispatcher.ts:869`), which is exactly why neither side can notice the skew.
+Observed at `bec94406`.
+
+**`.flume/PROTOCOL.md` rule 6 does not reach it.** Rule 6 orders an entry against *the
+entry that completes the contract's other half*. Here there is no other half: the
+change is complete in one entry, and its effect is simply deferred to the next run.
+Plan filed nothing because nothing in the rule told it to.
+
+Options, in rising cost:
+
+- **Say it in the rule.** Rule 6 gains the single-entry case — an entry changing a
+  supervisor↔child contract with no paired entry carries a note that its effect lands
+  at the next run start. Prose, one `chore(flume):`, zero mechanism, and one forgetful
+  plan tick from being nothing.
+- **Mechanize on existing surface**, which `spec/loop.md` sanctions in the same
+  paragraph ("a chain may mechanize this … its build handoff writing the stop flag
+  after shipping an entry plan marked contract-touching"): this chain's
+  `entryExtension` gains the flag and `build.handoff` writes the stop flag when a
+  shipped entry carries it. Chain-side only, no engine change; costs a relaunch per
+  such ship, which is the point.
+- **Engine fence.** The spec names its own arming condition — "a second livelock
+  despite the documented rule" — and this was not a livelock, so by the spec's own
+  terms it has not fired.
+
+**Recommend** the second: it is the mechanism the spec already points at, it lives
+entirely in `.flume/chain.ts` plus the extension declaration, and it degrades to the
+first when the flag goes unset. Parked rather than filed because both edits are
+human-only — `spec/`, `.flume/PROTOCOL.md` and `.flume/chain.ts` are outside every
+phase lane.

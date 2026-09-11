@@ -2,8 +2,7 @@
   {
     "tag": "CLEAN-EXIT-TAXONOMY",
     "gate": {
-      "kind": "parked",
-      "reason": ".flume/chain.ts:852 compares noCommit === \"voluntary-bail\"; off every phase lane, so the paired chore(flume): lands first or tsc reverts the tick"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -62,7 +61,101 @@
       "the prior-attempt block quotes the prior attempt's final message without naming a refused constraint"
     ],
     "acceptance": "`NoCommitMode` carries `clean-exit` in place of `voluntary-bail` across src/, the record carries the bounded final-message tail under a neutral field, and the rendered block says what happened without saying why.",
-    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. chain.ts already reads both modes through a ReadonlySet<string> (:573); the one `===` at :852-854 is what parks this. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) carry the old name. The decline bullets it edits carry a pin: exactly one names both singleton and fanout — do not reintroduce the pair."
+    "notes": "Ruling of 2026-09-11. Pre-1.0 clean slate: rename in place, no alias. Unparked: `.flume/chain.ts` reads both modes as `string` (`REFUSAL_MODES` :584, `bailed` :879), so the rename no longer trips its tsc gate; the chore dropping the `voluntary-bail` arms is owed once this ships. Precedence (:2312), the verdict's errored formula (:4942) and the builder (:5272) carry the old name. The decline bullets it edits carry a pin: exactly one names both singleton and fanout — do not reintroduce the pair."
+  },
+  {
+    "tag": "RUNTIME-IGNORES-NAMES-MERGING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "RUNTIME_IGNORES gains the merging dir off STATE_ROOT_NAMES"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the job-seed ignore list, :117-119"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "the name-coverage assertion"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The spec's ignore block now names `merging/` and `RUNTIME_IGNORES` does not, so a job dir leaves a crash's merge marker untracked-visible and addable",
+    "per": {
+      "path": "spec/jobs.md",
+      "section": "Runtime ignores"
+    },
+    "tests": [
+      "RUNTIME_IGNORES names the merging-marker dir"
+    ],
+    "pins": [],
+    "acceptance": "`RUNTIME_IGNORES` carries `merging/` off `STATE_ROOT_NAMES.merging`, the doc's job-seed list agrees under its equality pin, and a fresh `job new` .gitignore covers the marker.",
+    "notes": "The amendment this waited on landed at 17cf6a3 — the open question's `merging/` half is closed. `STATE_ROOT_NAMES.merging` already exists (src/paths.ts:81): one name, one accessor, no second spelling. docs/CHAIN-AUTHORING.md:117-119 is equality-pinned to RUNTIME_IGNORES (tests/retired-narration.test.ts:1375), so the two move in one commit or the pin reverts the tick."
+  },
+  {
+    "tag": "PENDINGSCHEMA-PARKED-GLOSS-DECHAINED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "the `parked` doc gloss :48 and the rendered example :515"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "the rendered-block pin, :925"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The engine's `parked` gloss and its rendered schema both name `workshop`, one chain's phase layer, so every downstream plan prompt is taught a convention the engine does not own",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Capability vs convention"
+    },
+    "tests": [
+      "the rendered pending schema carries no `workshop` phase name"
+    ],
+    "pins": [],
+    "acceptance": "Neither the `parked` doc comment nor the rendered schema block names a phase; both state what `parked` means by mechanism — human action the entry waits on.",
+    "notes": "Drained from PHASE-HUMANONLY-DOC-DECHAINED's note; verified on disk (src/PendingSchema.ts:48, :515). Same class as that entry, one rung out: the rendered block is injected into every downstream chain's plan prompt, so the gloss ships this repo's vocabulary with the engine's authority. The two sites are an agreement pair — tests/PendingSchema.test.ts:925 holds the rendered text verbatim."
+  },
+  {
+    "tag": "MERGING-MARKER-DIVERGENCE-RETIRED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "clearMergingMarkers' doc comment, :3586-3599"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`clearMergingMarkers` still declares a divergence from a spec sentence the 2026-09-11 amendment already tightened, so the site reads as deliberately off-spec",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "The comment states the wait point and cites `spec/loop.md` *Crash equals stop* as agreeing, carrying no divergence marker — so a sweep reads the site as covered rather than exempt.",
+    "notes": "spec/loop.md:222 now states the verdict is the CLI's and the marker is not held for it (17cf6a3) — precisely what the site declares as divergence. A stale declaration is worse than none: posture-sweep never files against a site citing its divergence as deliberate, so the marker exempts it permanently. Collides with RELEASE-CITES-CUT-DISPATCHER on src/Dispatcher.ts; the partitioner serializes them."
   },
   {
     "tag": "HANDOFF-ENTRY-MERGE-OUTCOME",
