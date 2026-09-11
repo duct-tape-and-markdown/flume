@@ -64,47 +64,6 @@
     "notes": "Ruling of 2026-09-11 (gh#19). Re-declared after the park at d828915: the docs' harness-state pin (tests/retired-narration.test.ts) is an equality check, so a new `join(flumeDir, …)` name reverts unless README and CHAIN-AUTHORING teach it — both now declared. `src/job.ts` RUNTIME_IGNORES stays out: `spec/jobs.md` *Runtime ignores* is a closed block missing the line (open question). Removal is the operator's acknowledgement; the check precedes `sweepStaleWorktrees` (src/cli.ts:857)."
   },
   {
-    "tag": "QUARANTINE-KEYS-THE-ENTRY-AS-READ",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the key, the per-entry failure records that carry it, the drop filter, the supervisor's set"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "quarantinedTags reports the key beside the tag"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the FLUME_QUARANTINED_SLUGS parse"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the re-scope lift and the reported key"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A run-scoped quarantine keyed on the slug alone survives a re-scope and forces stop-and-relaunch; key on the entry as read and report the key",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Repeated identical failures — quarantine, then abort"
-    },
-    "tests": [
-      "a quarantine key is the entry's slug and a hash of its bytes in the queue",
-      "an entry re-scoped on trunk is pickable again without a relaunch",
-      "a quarantined tag is reported with the key its hold stands under"
-    ],
-    "acceptance": "`FLUME_QUARANTINED_SLUGS` carries `slug@hash` values (the name stands), the drop filter matches the entry as read, and `TickResult.quarantinedTags` names the key beside each tag.",
-    "notes": "Ruling of 2026-09-11 (field report, 0.12.0). The supervisor holds only the verdict, so the key rides the per-entry failure records it already tags (ProvisionFailure / MergeFailure / GateFailure) rather than a second read of pending.json (`engineering.md`, *A fact the engine holds is reported*). Closes the parked question."
-  },
-  {
     "tag": "CLEAN-EXIT-TAXONOMY",
     "gate": {
       "kind": "parked",
@@ -229,91 +188,6 @@
     "tests": [],
     "acceptance": "Both doc claims are driven against `worktreesBase` (src/paths.ts) itself — default and override — and a doc edited away from the resolver turns the pin red.",
     "notes": "Re-scoped after the revert at 95bd3a6: both doc copies are correct today, so any `tests[]` line naming the pin passes on the base by construction (`.flume/vitestJudge.ts`, judgeRedOnBase) — a promotion up the ladder is not a fix, and the suite's own green is the gate. Build's implementation was whole-doc, covering the restatement at CHAIN-AUTHORING.md:610; neither doc needed an edit, so neither is declared."
-  },
-  {
-    "tag": "EXAMPLES-UNIT-DESCRIBES-FAST-LANE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "the two in-process describes leave"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "they land beside the gate-split pin"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Two pure in-process describes sit in the integration lane, so the afterMerge gate that decides every build never runs them",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "The default test lane must stay fast"
-    },
-    "tests": [],
-    "acceptance": "`example chains — entry phase is machine-wakeable` and `cascade-chain.ts — plan phase gates through the pendingGate builtin` run under the default `vitest run`; the integration lane keeps only tests whose method the cited section names.",
-    "notes": "Drained from CASCADE-VITEST-AFTERMERGE's note; verified on disk at tests/examples.integration.test.ts:335 and :359 — neither spawns. The describe at :98 drives dispatcher ticks over a git fixture and stays. `tests[]` is empty by construction: a relocation changes no behavior, and redOnBase lays the moved file over the base, where the titles pass (`.flume/vitestJudge.ts`)."
-  },
-  {
-    "tag": "CHAIN-AUTHORING-CASCADE-GATE-PLACEMENT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the gate-placement paragraph at :503-:506"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The doc teaches that cascade keeps vitestGate at afterCommit and offers the afterMerge move as a later step; the example shipped that move",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "acceptance": "The paragraph's illustration of a suite small enough to stay at `afterCommit` no longer cites cascade, whose `vitestOnTrunk` (examples/cascade-chain.ts:124) declares `when: \"afterMerge\"`; the split-by-cost guidance around it survives.",
-    "notes": "Drained from CASCADE-VITEST-AFTERMERGE's note; both sides verified on disk. No pin: the fix deletes the sentence a pin would read, and a whole-doc scan of gate-placement prose is the same shape as WORKTREE-BASE-DOCS-PINNED's — file that if the drift recurs."
-  },
-  {
-    "tag": "README-CASCADE-PIPELINE-CURRENT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "README.md",
-          "description": "the two cascade descriptions, :77-80 and :387-389"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "the pin, beside the doc-quotes-the-example-chain pins at :732"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "README calls cascade a workshop → spec → plan → build pipeline at both mention sites; the example ships plan + build alone",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [
-      "README's cascade description names the phases cascade-chain.ts declares"
-    ],
-    "acceptance": "Both README mentions describe the phases `examples/cascade-chain.ts` actually declares, and the claim is driven against the chain module itself, so a later phase change turns the pin red.",
-    "notes": "Drained from EXAMPLES-SPEC-PHASE-CUT's and INTENT-WORKSHOP-LAYER-RETIRED's notes; both sites verified on disk after the cut at 58092d0. The front door is the last place the retired layer is still taught as current."
   },
   {
     "tag": "PHASE-HUMANONLY-DOC-DECHAINED",
