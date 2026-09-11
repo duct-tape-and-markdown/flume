@@ -16,7 +16,6 @@
       "retire": []
     },
     "observedFiles": [
-      ".flume/plan/notes/SPEC-TEST-CITE-NEEDLE-ROOTLESS.md",
       "tests/retired-narration.test.ts"
     ],
     "summary": "Widen the spec test-cite needle past its tests/ root to a bare *.test.ts filename, leaving the lane's glob",
@@ -32,7 +31,7 @@
       "no spec page cites a bare test filename"
     ],
     "acceptance": "the widened needle is green over the corpus, and the needle's doc comment no longer parks the rootless half as a human question",
-    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker, so the needle matches a concrete filename and leaves the glob. Green today — `spec/worktrees.md`'s last rootless site was rewritten — and the doc comment deferring the rootless half to a human is expired narration, retired in the same commit. Reverted 9e9b326 is a working implementation. Blocked until the needle leaves the suite file; until then `tests[]` cannot go red."
+    "notes": "Grammar ruled (inbox, 2026-09-11, operator): `*.integration.test.ts` is the lane's marker, so the needle matches a concrete filename and leaves the glob. Green today — `spec/worktrees.md`'s last rootless site was rewritten — and the doc comment deferring the rootless half to a human is expired narration, retired in the same commit. Reverted 9e9b326 is a working implementation. The needle now lives in `tests/helpers/specLocators.ts`, so `tests[]` goes red on the base."
   },
   {
     "tag": "ORPHAN-ID-SINGLE-LINE-BLOCK",
@@ -51,7 +50,6 @@
       "retire": []
     },
     "observedFiles": [
-      ".flume/plan/notes/ORPHAN-ID-SINGLE-LINE-BLOCK.md",
       "tests/retired-narration.test.ts"
     ],
     "summary": "orphanedBlocks degrades a single-line doc block's id to the empty string; read the id off the opener instead",
@@ -64,6 +62,39 @@
     ],
     "pins": [],
     "acceptance": "an injected single-line orphan comes back keyed by its text, and two such orphans in one file are two distinct ALLOWED_ORPHANS keys",
-    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. Blocked until `orphanedBlocks` leaves the suite file; until then `tests[]` cannot go red (4dbfc07)."
+    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. `orphanedBlocks` now lives in `tests/helpers/docAgreement.ts`, so the 4dbfc07 wall (fix riding forward inside the suite file) is gone."
+  },
+  {
+    "tag": "SUITE-DEPTH-BOUND-PINNED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/suiteShape.ts",
+          "description": "expose the nested-`describe` reader the depth bound rests on; shrink the bound's doc comment to a pointer at it"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "pin the depth bound beside the extraction scan, with a nested-`describe` sample as its sensitivity control"
+        }
+      ],
+      "retire": []
+    },
+    "observedFiles": [],
+    "summary": "declaredGrammar's column-0-or-2 bound rests on an unchecked precondition — pin that the suite nests no `describe`",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "tests": [],
+    "pins": [
+      "the extraction scan's depth bound holds — the retired-narration suite declares every `describe` at the top level"
+    ],
+    "acceptance": "a nested `describe` sample fails the new pin, and the bound's doc comment points at the pin instead of asserting the condition itself",
+    "notes": "Build's note on the extraction: indentation is the proxy for `outside an it body`, so a nested `describe` puts its scanners at column 4 and the extraction scan reads them as `it`-local drivers — going quiet on exactly the residue it exists to catch. Not vacuous today (19 top-level describes, none nested), but Agent/chain/Dispatcher suites all nest, so the shape is routine here. An AST reader is the rung above; a checkable precondition is the cheap one."
   }
 ]
