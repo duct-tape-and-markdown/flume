@@ -1,22 +1,27 @@
 /**
  * Cascade chain — the canonical spec → plan → build pipeline, expressed as
  * Flume Phases. The spec corpus is a human maintenance surface, so the chain
- * itself is the two machine phases that derive from it:
+ * itself is the machine phases that derive from it:
  *
- *   - plan: re-derives pending.json + state.md from the spec corpus + src
- *     (singleton).
+ *   - plan-inbox: routes the findings under `.flume/inbox/` (singleton).
+ *   - plan-derive: re-derives pending.json + state.md from the spec corpus
+ *     + src (singleton).
  *   - build: ships pending entries to the trunk (fanout).
  *
  * This file is the load-bearing example: it demonstrates the shape a chain
- * takes when derivation splits across a singleton deriver and a fanout
- * shipper. Read it alongside the JSDoc on `Phase`, `Gate`, and the
- * pending-schema exports.
+ * takes when derivation splits across a ladder of singleton planners and a
+ * fanout shipper — the plan slices share one dispatcher and one prompt, and
+ * the handoff passes the baton down their declared order. Read it alongside
+ * the JSDoc on `Phase`, `Gate`, and the pending-schema exports.
  *
  * Imports come from `../src/index.ts` — the same public surface a consumer
  * sees as `import { ... } from "flume"`. Path is relative because this file
  * lives inside the flume repo; in a host repo, swap `../src/index.ts` for
  * `flume`. See the trailing block.
  */
+
+import { readdirSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { z } from "zod";
 import type {
@@ -397,11 +402,12 @@ const factory: ChainFactory = (api) => {
    * also buy nothing but host contention, where a timeout reverts a clean
    * commit.
    *
-   * Always hands off to plan so pending.json reconciles against the new trunk
-   * state, regardless of success, bail, or validation-fail.
+   * Hands the baton back to the plan ladder rather than to a phase named
+   * outright, so pending.json reconciles against the new trunk state — see
+   * `nextPhase` below, the one place the order lives.
    *
-   * Declared above `plan` (rather than in the plan/build reading order)
-   * so `plan.gates` can reference `build` directly as `pendingGate`'s
+   * Declared above the plan slices (rather than in the plan/build reading
+   * order) so their `gates` can reference `build` directly as `pendingGate`'s
    * `targetFence` — `build.writablePaths` is a static array literal here, not
    * declaration-driven, so no `get gates()` deferral is needed (contrast the
    * getter-backed pattern in `docs/CHAIN-AUTHORING.md`'s `pendingGate` section
@@ -445,36 +451,130 @@ const factory: ChainFactory = (api) => {
         TESTS_HINT: entryExtension.tests.hint,
       };
     },
-    handoff() {
-      return ["plan"];
+    handoff(result) {
+      // A refusal only plan can resolve wakes the re-derive whatever is
+      // pickable: a clean exit with no commit, or a commit that landed and a
+      // `shipped` predicate declined — otherwise the ladder hands build the
+      // same entry into the same wall. The engine reports which
+      // (`TickResult.noCommit`, `entries[].mergeOutcome`); what it means is
+      // this chain's reading. A cherry-pick conflict is neither: the next
+      // wave retries it from the new base.
+      const refused =
+        result.noCommit === "clean-exit" ||
+        (result.entries ?? []).some(
+          (e) => e.noCommit === "clean-exit" || e.mergeOutcome === "not-shipped",
+        );
+      if (refused) return [DERIVE];
+      return nextPhase(result.flumeDir, result.pickableAfter.length > 0);
     },
   };
 
+  // ---------- plan slices ----------
+
   /**
-   * Plan phase — re-derives `.flume/plan/pending.json` and `state.md` from the
-   * spec corpus + current src state, every tick from scratch.
+   * Plan is two singleton slices sharing one prompt, not one phase doing
+   * every plan job. Each slice owns one job and computes its own liveness
+   * before the invocation — the verdict `shouldRun` exists for
+   * (spec/loop.md, *Declining a tick before the invocation*), one level
+   * down: "which plan job is there to do" is answered here, never by paying
+   * an agent invocation to have the model answer it.
    *
-   * Singleton: pending.json and state.md are shared artifacts; two concurrent
-   * planners would race. Gates the output through `pendingGate` so a
-   * malformed pending.json, or an entry whose declared `files` can't survive
-   * build's fence, reverts the commit instead of poisoning build.
+   * Liveness is a fact of disk, reached two ways. Where the engine already
+   * reports the fact, the slice reads it off the `TickContext` — `pickable`
+   * is the dispatcher's own selection verdict and `priorAttempts` its
+   * persisted records, and a chain recomputing either is naming a field that
+   * should exist (`.claude/rules/engine-boundary.md`, *Surface, not
+   * prescription*). Where no engine field reports it — `<flumeDir>/inbox/`
+   * is this chain's own directory, not the engine's — the slice reads the
+   * artifact itself, in one cheap synchronous listing.
    *
-   * Hands off to build when at least one entry is `gate.kind === "open"`
-   * (pickable); otherwise hibernates and waits for human signal.
-   *
-   * Declares `shouldRun` so the "is there anything to re-derive against"
-   * question is answered from the `TickContext` the dispatcher already built,
-   * before the invocation rather than after one that commits nothing.
+   * Ladder order is dependency order: the inbox first, because a finding an
+   * operator filed can invalidate anything derived below it; the re-derive
+   * next, so the queue build picks from is current before build picks from
+   * it. `nextPhase` is the only place that order lives — both slices'
+   * `handoff` and build's route through it, so the chain has one ladder
+   * rather than three copies of one.
    */
-  const plan: Phase = {
-    name: "plan",
-    description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+  const INBOX = "plan-inbox";
+  const DERIVE = "plan-derive";
+
+  /** One plan job: the phase it becomes, the prompt material it carries, and when it is live. */
+  interface PlanSlice {
+    name: string;
+    description: string;
+    /** This slice's own task text, rendered into the shared prompt as `{{SLICE_JOB}}`. */
+    job: string;
+    /**
+     * This slice's window is non-empty. Pure over its inputs and
+     * synchronous, per `shouldRun`'s contract — two facts in, and no I/O
+     * beyond a single directory listing.
+     */
+    live: (inputs: { flumeDir: string; pickable: boolean }) => boolean;
+  }
+
+  /**
+   * Does `<flumeDir>/inbox/` hold a finding? A missing directory is the
+   * drained state; any other failure answers live, because an unreadable
+   * queue is a reason to run the tick and never a reason to skip it
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  function inboxPending(flumeDir: string): boolean {
+    try {
+      return readdirSync(resolve(flumeDir, "inbox")).some((f) => f.endsWith(".md"));
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code !== "ENOENT";
+    }
+  }
+
+  const SLICES: PlanSlice[] = [
+    {
+      name: INBOX,
+      description: "Route every finding in .flume/inbox/ to an entry, a question, or accepted debt.",
+      job: "Drain `.flume/inbox/`. Route each finding to a pending entry, an open question, or an accepted-debt line in the commit body — then delete the file it arrived in.",
+      live: ({ flumeDir }) => inboxPending(flumeDir),
+    },
+    {
+      name: DERIVE,
+      description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+      job: "Re-derive the plan artifacts from current disk reality. Reconcile every entry against the spec section its `per` names, file what the spec states and the code does not, and rewrite state.md from scratch.",
+      live: ({ pickable }) => !pickable,
+    },
+  ];
+
+  /**
+   * The phase to wake after a plan slice or a build wave: the first live
+   * slice down the ladder, else build while anything is pickable, else
+   * nobody — hibernation. `exclude` is the slice that just ran and committed
+   * nothing: no progress, so no self-rewake, and an unroutable finding costs
+   * one tick instead of a loop. A slice that committed and is still live (a
+   * window wider than one tick's budget) does re-wake itself.
+   */
+  function nextPhase(flumeDir: string, pickable: boolean, exclude?: string): string[] {
+    const live = SLICES.find((s) => s.name !== exclude && s.live({ flumeDir, pickable }));
+    if (live) return [live.name];
+    return pickable ? [build.name] : [];
+  }
+
+  /**
+   * One `Phase` per slice. Both write the same artifacts, so both carry the
+   * same fence and the same `pendingGate`; what a slice varies is the job it
+   * is woken for, the material its prompt renders, and when it is live.
+   *
+   * Singleton: pending.json and state.md are shared artifacts, and two
+   * concurrent planners would race — which is also why the slices are a
+   * ladder rather than a fanout.
+   */
+  const slicePhase = (slice: PlanSlice): Phase => ({
+    name: slice.name,
+    description: slice.description,
     promptPath: "prompts/plan.md",
     concurrency: "singleton",
     writablePaths: [
       ".flume/plan/pending.json",
       ".flume/plan/state.md",
       ".flume/plan/open-questions.md",
+      // The inbox is drained by deletion, so the fence has to reach it.
+      ".flume/inbox/**",
     ],
     gates: [pendingGate({ targetFence: build, extension: entryExtension })],
     shouldRun(ctx) {
@@ -486,23 +586,36 @@ const factory: ChainFactory = (api) => {
       // commit was declined) that only a re-derive reconciles, and a queue
       // with nothing build can pick. Read from the context, never from
       // process.env or a readdir of the engine's prior-attempts directory.
+      // The standing record is a reason to be woken, never a reason for a
+      // slice to re-wake itself, so it is read here and not in `handoff`.
       const hasStandingAttempt = (ctx.priorAttempts?.size ?? 0) > 0;
-      const pickable = ctx.pickable ?? [];
-      return hasStandingAttempt || pickable.length === 0;
+      const pickable = (ctx.pickable ?? []).length > 0;
+      return (
+        (slice.name === DERIVE && hasStandingAttempt) ||
+        slice.live({ flumeDir: ctx.flumeDir, pickable })
+      );
     },
     promptArgs() {
-      return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
+      return {
+        PENDING_SCHEMA: renderSchemaForPrompt(entryExtension),
+        SLICE_JOB: slice.job,
+      };
     },
     handoff(result) {
-      const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
-      return hasPickable ? ["build"] : [];
+      return nextPhase(
+        result.flumeDir,
+        result.pickableAfter.length > 0,
+        result.committed ? undefined : slice.name,
+      );
     },
-  };
+  });
+
+  const planSlices: Phase[] = SLICES.map(slicePhase);
 
   // ---------- chain ----------
 
   const cascadeChain: Chain = {
-    phases: [plan, build],
+    phases: [...planSlices, build],
     entryExtension,
     humanOnly: [], // both phases are machine-woken; the spec corpus a human edits is not a phase
   };

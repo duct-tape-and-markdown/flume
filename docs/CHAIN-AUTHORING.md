@@ -181,18 +181,22 @@ omitted; the rest are required.
 | `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. See §3. |
 | `teardownWorktree` | Optional fanout hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. See §3. |
 
-The `plan` phase from `examples/cascade-chain.ts`:
+The `slicePhase` declaration from `examples/cascade-chain.ts` — that chain's
+plan is a ladder of singleton slices sharing one prompt, and this is the one
+`Phase` all of them are built from, parameterized by the slice it serves:
 
 ```ts
-const plan: Phase = {
-  name: "plan",
-  description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+const slicePhase = (slice: PlanSlice): Phase => ({
+  name: slice.name,
+  description: slice.description,
   promptPath: "prompts/plan.md",
   concurrency: "singleton",
   writablePaths: [
     ".flume/plan/pending.json",
     ".flume/plan/state.md",
     ".flume/plan/open-questions.md",
+    // The inbox is drained by deletion, so the fence has to reach it.
+    ".flume/inbox/**",
   ],
   gates: [pendingGate({ targetFence: build, extension: entryExtension })],
   shouldRun(ctx) {
@@ -204,18 +208,29 @@ const plan: Phase = {
     // commit was declined) that only a re-derive reconciles, and a queue
     // with nothing build can pick. Read from the context, never from
     // process.env or a readdir of the engine's prior-attempts directory.
+    // The standing record is a reason to be woken, never a reason for a
+    // slice to re-wake itself, so it is read here and not in `handoff`.
     const hasStandingAttempt = (ctx.priorAttempts?.size ?? 0) > 0;
-    const pickable = ctx.pickable ?? [];
-    return hasStandingAttempt || pickable.length === 0;
+    const pickable = (ctx.pickable ?? []).length > 0;
+    return (
+      (slice.name === DERIVE && hasStandingAttempt) ||
+      slice.live({ flumeDir: ctx.flumeDir, pickable })
+    );
   },
   promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
+    return {
+      PENDING_SCHEMA: renderSchemaForPrompt(entryExtension),
+      SLICE_JOB: slice.job,
+    };
   },
   handoff(result) {
-    const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
-    return hasPickable ? ["build"] : [];
+    return nextPhase(
+      result.flumeDir,
+      result.pickableAfter.length > 0,
+      result.committed ? undefined : slice.name,
+    );
   },
-};
+});
 ```
 
 Things to notice:
@@ -228,6 +243,12 @@ Things to notice:
   fanout wave reverted at merge — lets a handoff distinguish merge-thrash
   from a clean wave). Return `[]` to leave nobody awake — the system
   hibernates when no flag files are present.
+- **A `Phase` is data, so a ladder of them is a `map`.** Cascade's plan is two
+  slices — `plan-inbox` then `plan-derive` — built from the one declaration
+  above and listed in `phases` in dependency order. Each `handoff` returns the
+  first slice whose window is non-empty rather than a fixed sibling name, so
+  the baton walks the ladder and falls through to `build` when no plan job is
+  live.
 - **`promptArgs` returns strings only.** Pre-stringify JSON yourself.
 
 A fanout phase's `promptArgs` reads the `assignedEntry` for the tick:
@@ -268,7 +289,7 @@ measured 50-tick run, 14 plan ticks (28%) did exactly that. `shouldRun` lets
 the chain answer the question before the invocation, from the same
 `TickContext` `promptArgs` sees — every field but `cwd`, below.
 
-`examples/cascade-chain.ts` ships that predicate on its `plan` phase, and §1
+`examples/cascade-chain.ts` ships that predicate on every plan slice, and §1
 above quotes the declaration whole. It reads two facts the dispatcher already
 computed: `ctx.pickable` — the entries build would select right now, so a
 non-empty list means the queue needs no re-derive — and `ctx.priorAttempts`,

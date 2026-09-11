@@ -5,13 +5,22 @@
  * beside the tick-cycle drives in `examples.integration.test.ts`.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Gate, GateContext } from "../src/Gate.ts";
-import type { Chain, TickContext } from "../src/Phase.ts";
+import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import {
@@ -83,7 +92,11 @@ describe("cascade-chain.ts — the shipped phase list", () => {
     // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
     // an empty phase list would satisfy every absence assertion below.
     expect(cascadeChain.phases.length).toBeGreaterThan(0);
-    expect(cascadeChain.phases.map((p) => p.name)).toEqual(["plan", "build"]);
+    expect(cascadeChain.phases.map((p) => p.name)).toEqual([
+      "plan-inbox",
+      "plan-derive",
+      "build",
+    ]);
 
     // The retired phase's fence partition goes with it — a `specs/**` or
     // `workshop/**` glob surviving on a sibling phase would keep teaching the
@@ -169,9 +182,15 @@ describe("example chains — entry phase is machine-wakeable", () => {
  */
 describe("cascade-chain.ts — plan phase gates through the pendingGate builtin", () => {
   it("plan.gates contains a gate named 'pending-gate'", () => {
-    const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
-    expect(planPhase).toBeDefined();
-    expect(planPhase!.gates.map((g) => g.name)).toContain("pending-gate");
+    const slices = cascadeChain.phases.filter((p) => p.name.startsWith("plan"));
+    // Vacuity pin: every slice writes the queue, so the loop below is only
+    // worth its green over a populated ladder.
+    expect(slices.length).toBeGreaterThan(1);
+    for (const slice of slices) {
+      expect(slice.gates.map((g) => g.name), slice.name).toContain(
+        "pending-gate",
+      );
+    }
   });
 });
 
@@ -183,15 +202,17 @@ describe("cascade-chain.ts — plan phase gates through the pendingGate builtin"
  * directory. No shipped example declared the hook at all, so an adopter
  * learning the shape from `examples/` never saw a phase decline a tick.
  *
- * Both verdicts are driven here: the decline (the queue already carries work
- * build can pick, and nothing stands unreconciled) and the two runs. The
- * fixture's `cwd`/`flumeDir` point at a directory that does not exist —
- * a predicate that scanned disk instead of reading the context would throw
- * or answer differently, so the pin holds the "from `TickContext`" half of
- * the claim too.
+ * Both verdicts are driven here on the slice that reads them — `plan-derive`,
+ * the one woken by a queue with nothing in it and by a record only a
+ * re-derive reconciles. The fixture's `cwd`/`flumeDir` point at a directory
+ * that does not exist, so a predicate rebuilding either fact from the engine's
+ * `prior-attempts/` directory would throw or answer differently and the pin
+ * holds the "from `TickContext`" half of the claim too. The sibling slice's
+ * own liveness — a listing of this chain's inbox, which no engine field
+ * reports — is driven over a real directory in the ladder pin below.
  */
 describe("cascade-chain.ts — plan decides from the TickContext", () => {
-  const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+  const planPhase = cascadeChain.phases.find((p) => p.name === "plan-derive");
 
   const openEntry = (tag: string): PendingEntry => ({
     tag,
@@ -218,11 +239,11 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
     // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
     // an undeclared hook, or an empty `pickable`, would make the decline
     // below assert nothing about a predicate that read the queue.
-    expect(planPhase, "cascade declares a plan phase").toBeDefined();
+    expect(planPhase, "cascade declares a plan-derive slice").toBeDefined();
     expect(
       planPhase!.shouldRun,
-      "examples/cascade-chain.ts: plan declares `shouldRun` — the hook is " +
-        "what this pin exists to drive",
+      "examples/cascade-chain.ts: every plan slice declares `shouldRun` — " +
+        "the hook is what this pin exists to drive",
     ).toBeTypeOf("function");
 
     const pickable = [openEntry("ALREADY-PICKABLE")];
@@ -255,6 +276,162 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
         ctx({ pending: pickable, pickable, priorAttempts }),
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * `.claude/rules/engine-boundary.md`, *Surface, not prescription* — the engine
+ * offers `handoff` and reads nothing into it: which phase runs next is the
+ * chain's verdict, and a chain whose plan is more than one job has to order
+ * those jobs itself. Cascade's plan was one phase, so the flagship never
+ * showed slices sharing a dispatcher, and an adopter splitting plan had no
+ * worked answer to "who decides what runs next" but a sibling's name
+ * hardcoded in every handoff.
+ *
+ * Driven over the real phases the factory returns, against a scratch state
+ * root this test owns: the first slice's window is a listing of
+ * `<flumeDir>/inbox/`, a directory no engine field reports, so the facts the
+ * ladder walks are put on disk here rather than stubbed behind the predicate
+ * that reads them.
+ */
+describe("cascade-chain.ts — the plan ladder", () => {
+  const planSlices = cascadeChain.phases.filter((p) => p.name !== "build");
+  const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
+
+  let flumeDir: string;
+  const finding = (): string => join(flumeDir, "inbox", "2026-09-11-report.md");
+
+  beforeEach(() => {
+    flumeDir = join(mkdtempSync(join(tmpdir(), "cascade-ladder-")), ".flume");
+    mkdirSync(join(flumeDir, "inbox"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(flumeDir, { recursive: true, force: true });
+  });
+
+  const openEntry: PendingEntry = {
+    tag: "PICKABLE",
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: { new: [], edit: [], retire: [] },
+  };
+
+  const after = (over: Partial<TickResult>): TickResult => ({
+    phaseName: "build",
+    committed: true,
+    gateResults: [],
+    pendingAfter: [],
+    pickableAfter: [],
+    flumeDir,
+    configDir: "/nonexistent/cascade-ladder-fixture",
+    shippedTags: [],
+    revertedTags: [],
+    ...over,
+  });
+
+  /** Where `phase` sends the baton after a tick with `over` folded in. */
+  const from = (phase: Phase, over: Partial<TickResult> = {}): string[] =>
+    phase.handoff(after({ phaseName: phase.name, ...over }));
+
+  it("the cascade example's plan slices hand off in dependency order", () => {
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a single-slice plan, or a chain that lost `build`, would satisfy every
+    // routing claim below over a ladder with nothing to order.
+    expect(
+      planSlices.length,
+      "cascade's plan is a ladder — one slice orders nothing",
+    ).toBeGreaterThan(1);
+    expect(buildPhase, "cascade declares a build phase").toBeDefined();
+    expect(cascadeChain.phases.map((p) => p.name)).toEqual([
+      ...planSlices.map((p) => p.name),
+      buildPhase!.name,
+    ]);
+    const [first, second] = planSlices as [Phase, Phase];
+    expect(planSlices.every((p) => p.concurrency === "singleton")).toBe(true);
+
+    // A finding on disk: the slice that owns it is the ladder's first rung,
+    // and every handoff in the chain answers with it — the upstream slice's
+    // own window, a downstream slice's, and a shipped build wave's.
+    writeFileSync(finding(), "# a report from the field\n");
+    expect(from(first)).toEqual([first.name]);
+    expect(from(second)).toEqual([first.name]);
+    expect(from(buildPhase!, { shippedTags: ["SHIPPED"] })).toEqual([
+      first.name,
+    ]);
+
+    // Drained, and the baton falls through to the next rung down.
+    rmSync(finding());
+    expect(from(first)).toEqual([second.name]);
+    expect(from(buildPhase!, { shippedTags: ["SHIPPED"] })).toEqual([
+      second.name,
+    ]);
+
+    // A slice that committed nothing does not re-wake itself on a window it
+    // just failed to close: the ladder skips it and carries on down, so an
+    // unroutable finding costs one tick rather than a loop.
+    writeFileSync(finding(), "# a report nothing routes\n");
+    expect(from(first, { committed: false })).toEqual([second.name]);
+    // Its sibling is not skipped for it — the exclusion is the slice's own.
+    expect(from(second, { committed: false })).toEqual([first.name]);
+
+    // Below the ladder: build while the queue carries work, and nobody when
+    // the queue is empty and the slice that would refill it just declined to.
+    rmSync(finding());
+    const pickable = { pendingAfter: [openEntry], pickableAfter: [openEntry] };
+    expect(from(second, pickable)).toEqual([buildPhase!.name]);
+    expect(from(first, pickable)).toEqual([buildPhase!.name]);
+    expect(from(second, { committed: false })).toEqual([]);
+  });
+
+  it("a build wave that refused wakes the slice that reconciles it, whatever is pickable", () => {
+    const pickable = { pendingAfter: [openEntry], pickableAfter: [openEntry] };
+    const derive = planSlices[planSlices.length - 1]!;
+
+    // Vacuity pin: with the queue pickable and nothing live above it, the
+    // ladder's own answer is build — so each refusal below is the refusal
+    // moving the verdict, not the default.
+    expect(from(buildPhase!, { shippedTags: ["SHIPPED"], ...pickable })).toEqual([
+      buildPhase!.name,
+    ]);
+
+    // The agent exited without committing.
+    expect(
+      from(buildPhase!, { committed: false, noCommit: "clean-exit", ...pickable }),
+    ).toEqual([derive.name]);
+
+    // The commit landed and a `shipped` predicate declined it — a park.
+    expect(
+      from(buildPhase!, {
+        entries: [
+          {
+            tag: "PICKABLE",
+            committed: true,
+            shipped: false,
+            reverted: false,
+            mergeOutcome: "not-shipped",
+          },
+        ],
+        ...pickable,
+      }),
+    ).toEqual([derive.name]);
+
+    // A cherry-pick conflict is not a refusal: the next wave retries it from
+    // the new base, so the ladder decides as usual.
+    expect(
+      from(buildPhase!, {
+        entries: [
+          {
+            tag: "PICKABLE",
+            committed: true,
+            shipped: false,
+            reverted: false,
+            mergeOutcome: "cherry-pick-conflict",
+          },
+        ],
+        ...pickable,
+      }),
+    ).toEqual([buildPhase!.name]);
   });
 });
 
@@ -608,7 +785,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
  */
 describe("cascade-chain.ts — build's prompt quotes the declaration it is judged by", () => {
   const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
-  const planPhase = cascadeChain.phases.find((p) => p.name === "plan");
+  const planPhase = cascadeChain.phases.find((p) => p.name === "plan-derive");
 
   const ctx = (over: Partial<TickContext>): TickContext => ({
     cwd: "/nonexistent/build-prompt-fixture",
@@ -622,7 +799,7 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
     // asserted over nothing.
     expect(buildPhase?.promptArgs, "cascade's build declares promptArgs")
       .toBeTypeOf("function");
-    expect(planPhase?.promptArgs, "cascade's plan declares promptArgs")
+    expect(planPhase?.promptArgs, "cascade's plan slices declare promptArgs")
       .toBeTypeOf("function");
 
     const args = buildPhase!.promptArgs!(

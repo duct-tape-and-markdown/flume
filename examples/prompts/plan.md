@@ -12,6 +12,10 @@
 !`cat .flume/plan/open-questions.md 2>/dev/null || echo "(none)"`
 </open-questions>
 
+<inbox>
+!`ls .flume/inbox/*.md 2>/dev/null || echo "(drained)"`
+</inbox>
+
 <active-specs>
 !`find specs/active -name '*.md' 2>/dev/null | sort | head -60 || echo "(no specs/active)"`
 </active-specs>
@@ -30,20 +34,22 @@
 
 # TASK
 
-Re-derive the plan artifacts from current disk reality.
+{{SLICE_JOB}}
 
-1. **Reconcile** every existing pending entry against the spec section named in `per` and the files named in `files`. Stale entries get a full rewrite, never a patch.
+One tick is one slice's job. The chain woke this slice because its window is
+non-empty; work that window, and leave what another slice owns to the tick
+that owns it — the handoff wakes it next. Nothing here is a patch: the plan
+artifacts are re-derived from disk every tick.
 
-2. **File new observations** as additional entries:
-   - Spec sections current code violates → file with `per` cite.
-   - tsc / vitest / eslint failures → `MAINTAIN-*` entries at the top of pending, deduped by signature.
-   - Gated entries whose unblock has shipped → promote to `gate.kind = "open"`.
-
-3. **Graduate aligned specs.** Fully-aligned `specs/active/<path>` → `specs/_aligned/<path>` via `git mv` in this same commit. Cap ~5 per tick.
-
-4. **Re-derive state.md from scratch** (~5 lines: phase, last shipped tag, in-flight work). Never carry forward.
-
-5. **Open questions** belong in `open-questions.md`, never in pending. If a candidate entry can't carry a clean `per` cite, it's an open question, not pending.
+- **Reconcile before you add.** Every existing entry is judged against the
+  spec section its `per` names and the files its `files` names. A stale entry
+  is rewritten whole, never patched; one whose work has shipped leaves the
+  queue.
+- **An entry carries a `per` cite that resolves.** If a candidate can't, it is
+  an open question for a human, not a pending entry.
+- **Open questions live in `open-questions.md`**, never in pending.json.
+- **state.md is rewritten from scratch** (~5 lines: phase, last shipped tag,
+  in-flight work), never carried forward.
 
 # OUTPUT
 
@@ -53,7 +59,7 @@ Commit all changes in one commit prefixed `plan:`. Write:
 - `.flume/plan/state.md` — ~5 line markdown.
 - `.flume/plan/open-questions.md` — markdown.
 
-The harness will reject your commit if `pending.json` doesn't parse, or if you modify anything outside the phase's writable paths.
+The harness will reject your commit if `pending.json` doesn't parse, if an entry's declared `files` can't survive build's fence, or if you modify anything outside this slice's writable paths.
 
 <schema>
 {{PENDING_SCHEMA}}

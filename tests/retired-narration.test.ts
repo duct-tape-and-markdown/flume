@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { worktreesBase } from "../src/paths.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
+import cascadeFactory from "../examples/cascade-chain.ts";
 
 // Narration pin (RETIRED-ROOTS-AND-MODEL-NARRATION, per
 // .claude/rules/engineering.md "Narration is the ladder's bottom rung"):
@@ -1021,28 +1023,45 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
   const doc = read("docs", "CHAIN-AUTHORING.md");
 
   /**
-   * The fenced `ts` block the doc introduces as the example's `plan` phase.
+   * The fenced `ts` block the doc introduces as a declaration from the
+   * example chain, and the identifier it names as the thing being quoted.
    * Keyed on the sentence that makes the claim rather than a line number, so
    * the pin follows the prose when the section moves — and fails loudly if
    * the claim itself is reworded, which is the point at which a human should
-   * re-decide what the block is quoting.
+   * re-decide what the block is quoting. The identifier is read out of the
+   * claim rather than baked in here, so the page decides what it is quoting
+   * and this only holds it to it.
    */
   const DOC_QUOTE =
-    /The `plan` phase from `examples\/cascade-chain\.ts`:\s*```ts\n([\s\S]*?)```/;
+    /The `([A-Za-z_$][\w$]*)` declaration from `examples\/cascade-chain\.ts`[\s\S]*?```ts\n([\s\S]*?)```/;
 
   /**
-   * The `const plan: Phase = { … };` declaration as a chain module writes it:
-   * the declaration line through the first line closing it at the same
+   * The `const <id> … ;` declaration as a chain module writes it: the
+   * declaration line through the first line closing it at the same
    * indentation, so the span survives the example's factory nesting.
    */
-  function planPhaseSource(text: string): string {
+  function declarationSource(text: string, id: string): string {
+    if (id === "") return "";
     const lines = text.split("\n");
-    const start = lines.findIndex((l) => /^\s*const plan: Phase = \{$/.test(l));
+    const opens = new RegExp(`^\\s*const ${id}\\b.*[({[]$`);
+    const start = lines.findIndex((l) => opens.test(l));
     if (start === -1) return "";
     const indent = /^\s*/.exec(lines[start]!)![0];
-    const end = lines.findIndex((l, i) => i > start && l === `${indent}};`);
+    const closes = new Set([`${indent}};`, `${indent}});`, `${indent}];`]);
+    const end = lines.findIndex((l, i) => i > start && closes.has(l));
     if (end === -1) return "";
     return lines.slice(start, end + 1).join("\n");
+  }
+
+  /** The declaration the doc's claim points at, read off the example. */
+  function quotedDeclaration(): { id: string; quoted: string; example: string } {
+    const m = DOC_QUOTE.exec(doc);
+    const id = m?.[1] ?? "";
+    return {
+      id,
+      quoted: m?.[2] ?? "",
+      example: declarationSource(read("examples", "cascade-chain.ts"), id),
+    };
   }
 
   /**
@@ -1069,13 +1088,18 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
   }
 
   it("the chain-authoring doc's quoted plan phase agrees with examples/cascade-chain.ts", () => {
-    const example = planPhaseSource(read("examples", "cascade-chain.ts"));
-    const quoted = DOC_QUOTE.exec(doc)?.[1] ?? "";
+    const { id, quoted, example } = quotedDeclaration();
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): two
-    // spans that failed to parse agree forever.
+    // spans that failed to parse agree forever — and a claim naming no
+    // identifier would resolve neither side.
+    expect(
+      id,
+      "docs/CHAIN-AUTHORING.md: no block claims to quote a declaration from " +
+        "examples/cascade-chain.ts — the sentence was reworded",
+    ).not.toBe("");
     expect(
       example,
-      "examples/cascade-chain.ts: the plan phase did not parse",
+      `examples/cascade-chain.ts: \`${id}\` did not parse`,
     ).toMatch(/gates:/);
     expect(
       quoted,
@@ -1093,8 +1117,8 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
   // normalizer erases formatting and nothing else. Drive both directions off
   // the real declaration — re-wrapped agrees, re-declared does not.
   it("the quote comparison ignores wrapping and catches a changed declaration", () => {
-    const example = planPhaseSource(read("examples", "cascade-chain.ts"));
-    expect(example, "the example's plan phase did not parse").toContain(
+    const { example } = quotedDeclaration();
+    expect(example, "the example's quoted declaration did not parse").toContain(
       "gates: [pendingGate({ targetFence: build, extension: entryExtension })],",
     );
 
@@ -1137,25 +1161,23 @@ describe("the README cascade pointer", () => {
     readFileSync(join(REPO_ROOT, ...parts), "utf8");
 
   /**
-   * The phase names a chain module declares, in chain order: the identifiers
-   * listed in `phases: […]` resolved through each `const <id>: Phase = {`
-   * declaration to the `name` literal it spells. Read off the identifiers
-   * rather than off every `name:` in the file, so a `Phase` the module
-   * declares but leaves out of the chain cannot count as shipped.
+   * The phase names cascade ships, in chain order — off the chain its factory
+   * returns, not re-parsed from its source. A source reader would have to
+   * re-implement whatever shape the module builds its phase list with (a
+   * literal, a `map` over a slice ladder, a spread), and would read `[]` —
+   * agreeing with anything — the first time that shape changed. The module
+   * is the writer; this asks it (engineering.md, *A seam gate reads what the
+   * real writer wrote*).
    */
-  function declaredPhaseNames(text: string): string[] {
-    const listed = /phases:\s*\[([^\]]*)\]/.exec(text)?.[1] ?? "";
-    return listed
-      .split(",")
-      .map((part) => part.trim())
-      .filter((id) => /^[A-Za-z_$][\w$]*$/.test(id))
-      .map((id) => {
-        const decl = new RegExp(
-          `const ${id}: Phase = \\{[\\s\\S]*?name:\\s*"([^"]+)"`,
-        ).exec(text);
-        return decl?.[1] ?? "";
-      })
-      .filter((name) => name !== "");
+  function declaredPhaseNames(): string[] {
+    const { chain } = cascadeFactory(
+      buildFlumeApi({
+        repoRoot: REPO_ROOT,
+        configDir: join(REPO_ROOT, "examples"),
+        flumeDir: join(REPO_ROOT, ".flume"),
+      }),
+    );
+    return chain.phases.map((p) => p.name);
   }
 
   /**
@@ -1177,15 +1199,16 @@ describe("the README cascade pointer", () => {
   }
 
   it("README's cascade description names the phases cascade-chain.ts declares", () => {
-    const declared = declaredPhaseNames(read("examples", "cascade-chain.ts"));
+    const declared = declaredPhaseNames();
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // chain that failed to parse, or a README that stopped naming phases,
-    // agrees with anything.
+    // chain that shipped no phases, or a README that stopped naming them,
+    // agrees with anything. Cascade's plan is a ladder, so the list is longer
+    // than the one-planner shape and the order is load-bearing.
     expect(
       declared,
-      "examples/cascade-chain.ts: the chain's `phases` array did not resolve " +
-        "to phase names — the declarations or the array were reshaped",
+      "examples/cascade-chain.ts: the chain shipped no phases",
     ).not.toHaveLength(0);
+    expect(declared.length).toBeGreaterThan(2);
 
     const listings = cascadeMentions(read("README.md")).flatMap(arrowRuns);
     expect(
