@@ -1,44 +1,5 @@
 [
   {
-    "tag": "CASCADE-SHOULDRUN-FROM-DISK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "a `shouldRun` on one phase computed from TickContext"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the block quoting cascade's `plan` phase, held by the agreement pin"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the decline case \u2014 fast lane, where the vitest gate looks"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "No shipped example declares `shouldRun`, so a new adopter never sees a phase decline a tick from what is on disk",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a hook receives"
-    },
-    "tests": [
-      "the cascade example's plan phase declines a tick when nothing on disk gives it work"
-    ],
-    "pins": [],
-    "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` \u2014 not `process.env`, not a directory scan \u2014 and a fast-lane test drives both the decline and the run.",
-    "notes": "Park answered (2026-09-11): `docs/CHAIN-AUTHORING.md` quotes cascade's `plan` verbatim under an agreement pin (tests/retired-narration.test.ts), so the quote moves in the same commit \u2014 now declared. The named behavior must sit in the fast lane: the vitest gate runs `vitest run`, which vitest.config.ts excludes `*.integration.test.ts` from. Ruling of 2026-09-11 (option C): first of four promotions.",
-    "observedFiles": [
-      ".flume/plan/notes/CASCADE-SHOULDRUN-FROM-DISK.md"
-    ]
-  },
-  {
     "tag": "TICKCONTEXT-DOC-NAMES-ALL-FIELDS",
     "gate": {
       "kind": "open"
@@ -49,7 +10,7 @@
       "edit": [
         {
           "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the \u00a72 `TickContext` summary gains `pickable` and `priorAttempts`"
+          "description": "the §2 `TickContext` summary gains `pickable` and `priorAttempts`"
         },
         {
           "path": "tests/retired-narration.test.ts",
@@ -67,16 +28,13 @@
       "the chain-authoring doc's TickContext summary names every field src/Phase.ts declares"
     ],
     "pins": [],
-    "acceptance": "The \u00a72 summary names all five fields, and a pin over `interfaceFields(Phase.ts, \"TickContext\")` refuses the next field added without its prose.",
+    "acceptance": "The §2 summary names all five fields, and a pin over `interfaceFields(Phase.ts, \"TickContext\")` refuses the next field added without its prose.",
     "notes": "Drained from PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES's note; verified on disk. Doc at :234; `pickable` (src/Phase.ts:107) and `priorAttempts` (:119) are the two fields whose doc comments exist so a hook stops re-deriving pickability and stops scanning `prior-attempts/`. `interfaceFields` (tests/retired-narration.test.ts:399) already drives this family and already parses `TickContext` for the `cwd` gloss pin."
   },
   {
     "tag": "CASCADE-TESTS-JUDGED-BY-GATE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "CASCADE-SHOULDRUN-FROM-DISK"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -88,7 +46,7 @@
         },
         {
           "path": "tests/examples.test.ts",
-          "description": "the refusal case \u2014 fast lane, where the vitest gate looks"
+          "description": "the refusal case — fast lane, where the vitest gate looks"
         }
       ],
       "retire": []
@@ -103,7 +61,7 @@
     ],
     "pins": [],
     "acceptance": "A `tests[]` line on a cascade entry is judged by a gate fed from the reporter's own output, and an entry naming a behavior no test carries fails that gate.",
-    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry \u2014 that fork is still open. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park: the gate's own refusal drives off a hand-authored reporter payload, which `engineering.md` *A seam gate reads what the real writer wrote* sanctions for refusal tests."
+    "notes": "The shape ships in `.flume/vitestJudge.ts`; the example carries its own, sized to the example. Red-on-base judging is not part of this entry — that fork is still open. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park: the gate's own refusal drives off a hand-authored reporter payload, which `engineering.md` *A seam gate reads what the real writer wrote* sanctions for refusal tests."
   },
   {
     "tag": "CASCADE-GATE-READS-ENTRY-AND-BASE",
@@ -123,7 +81,7 @@
         },
         {
           "path": "tests/examples.test.ts",
-          "description": "the gate's context read \u2014 fast lane, where the vitest gate looks"
+          "description": "the gate's context read — fast lane, where the vitest gate looks"
         }
       ],
       "retire": []
@@ -166,7 +124,7 @@
         },
         {
           "path": "tests/examples.test.ts",
-          "description": "the slice order \u2014 fast lane, where the vitest gate looks"
+          "description": "the slice order — fast lane, where the vitest gate looks"
         }
       ],
       "retire": []
@@ -181,7 +139,7 @@
     ],
     "pins": [],
     "acceptance": "cascade declares more than one plan slice, each computing its own liveness from disk, with a handoff that passes the baton down a declared order; the integration test ticks the ladder.",
-    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) \u2014 the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
+    "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick. Fast-lane home per CASCADE-SHOULDRUN-FROM-DISK's park."
   },
   {
     "tag": "RELEASE-CITES-PINNED",
@@ -261,7 +219,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, the supervisor's tests move with it and differ only in import path.",
-    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) \u2014 take it first."
+    "notes": "Ruling of 2026-09-11, option C: extract the acyclic concerns; chain-load plus tick execution stay with buildFlumeApi, whose cycle constraint (src/Dispatcher.ts:42-44) is the declared reason. This one is genuinely module-scope already (:4730-:5213) — take it first."
   },
   {
     "tag": "DISPATCHER-EXTRACT-PRIOR-ATTEMPTS",
@@ -291,7 +249,7 @@
       ],
       "retire": []
     },
-    "summary": "Prior-attempt persistence \u2014 key, read, write, clear, revert snapshots, record builders \u2014 is a separate home inside Dispatcher.ts",
+    "summary": "Prior-attempt persistence — key, read, write, clear, revert snapshots, record builders — is a separate home inside Dispatcher.ts",
     "per": {
       "path": ".claude/rules/posture-sweep.md",
       "section": "A violation counts only when verified on disk this tick"
@@ -341,7 +299,7 @@
     ],
     "pins": [],
     "acceptance": "A pure move: no behavior change, `src/index.ts` unchanged, tests move with their subjects and differ only in import path.",
-    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share \u2014 the new module keeps that direction."
+    "notes": "`frictionCountLine` (src/Dispatcher.ts:1032), `validateFrictionDeclaration` (:935), `harvestFriction` (:3738). src/job.ts:444 already exports a helper for `frictionCountLine` to share — the new module keeps that direction."
   },
   {
     "tag": "DISPATCHER-EXTRACT-WORKTREES",
