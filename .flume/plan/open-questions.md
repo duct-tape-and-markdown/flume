@@ -52,13 +52,14 @@ names the bound in a comment meanwhile. `HANDOFF-ENTRY-MERGE-OUTCOME` is the eng
 half: once `TickResult.entries` carries the per-entry merge outcome, the predicate and
 its comment go in the adopting commit.
 
-**The clean-exit rename no longer waits on this — the arms are owed after it, not
-before.** The chore of 2026-09-11 made both comparison sites `string`-typed
-(`REFUSAL_MODES` :584, `bailed` :879), so `CLEAN-EXIT-TAXONOMY` can rename the
-`NoCommitMode` member without tripping chain.ts's own tsc gate; the entry is unparked
-and `open`. What remains here is the deletion: once the entry ships, the
-`voluntary-bail` arm in `bailed` and in `REFUSAL_MODES` is dead, and each site names
-that ship as its trigger. Same edit as the predicate above.
+**The clean-exit arms are dead now — the deletion is owed.**
+`CLEAN-EXIT-TAXONOMY` shipped (`59ff134`, `6a6e446`): `NoCommitMode` carries no
+`voluntary-bail` member and the engine emits `clean-exit` alone. Both chain sites read
+`string`, so nothing breaks and two arms are simply unreachable — `REFUSAL_MODES`
+(`.flume/chain.ts:584`) still lists `"voluntary-bail"`, and `bailed` (:879) still tests
+for it. The doc comment at :579-582 and the aside at :877-878 each name that ship as
+their own trigger, so both expire with the arms (`engineering.md`, *Narration is the
+ladder's bottom rung*). Same edit as the predicate above.
 
 **The worktree base, hand-built — and the fork.** Drained from
 `WORKTREE-BASE-DOCS-PINNED`'s note; verified on disk. `redOnBase`
