@@ -1,5 +1,8 @@
 # Migrating to 0.11.0
 
+> **Dated record.** Describes the world as of the 0.11 upgrade, not flume as
+> it ships now.
+
 From a pin **earlier than 0.10.0**: do [MIGRATING-0.10.md](MIGRATING-0.10.md)
 first — it routes by starting version and its § 3 must land before the 0.10
 pin bump. Then return here.

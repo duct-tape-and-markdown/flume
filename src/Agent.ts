@@ -498,8 +498,9 @@ export function assistantTurnText(e: NdjsonEvent): string {
  * The agent's final message, lifted from the full captured stdout — the
  * spec/chain.md "agent seam" extraction every `Agent.invoke` implementation
  * owns for its own transcript shape. Unbound: a caller that persists this
- * (the dispatcher's §6 clean-exit record) applies its own size policy —
- * record-size bounding is not provider shape.
+ * (the dispatcher's clean-exit record — `spec/loop.md`, "The no-commit
+ * taxonomy") applies its own size policy — record-size bounding is not
+ * provider shape.
  *
  * `claudeCode({ outputFormat: "stream-json" })` produces NDJSON on stdout,
  * not prose — tailing it raw forwards escaped-JSON assistant/result events

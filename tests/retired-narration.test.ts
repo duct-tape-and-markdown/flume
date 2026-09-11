@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -2051,16 +2051,52 @@ describe("`FlumePaths.flumeDir`'s doc comment lists only children it roots", () 
  * (engineering.md, "Narration is the ladder's bottom rung"). Git carries the
  * provenance those cites were standing in for.
  *
- * Scope is `src/` and `examples/` entire, walked recursively: the engine's
+ * Scope is `src/` and `examples/` entire, walked recursively — the engine's
  * own prose, and the reference chains a consumer reads as the worked answer
  * and copies wholesale (`engine-boundary.md`, "Opinion ships by name, opted
- * into"). Nothing is scanned on an exclusion's word — the cut and this
- * refusal ship together, so no file is left pinned only by a promise that a
- * later entry will reach it.
+ * into") — plus every current-reference page of `docs/`, the published prose
+ * a consumer reads before either. Nothing is scanned on an exclusion's word:
+ * the cut and this refusal ship together, so no file is left pinned only by a
+ * promise that a later entry will reach it.
  */
 
 /** The trees a chain author reads the shapes off: engine, and worked example. */
 const CITE_SCANNED_ROOTS = ["src", "examples"];
+
+/**
+ * `docs/` is the one scanned tree where a dead cite can be the point. A
+ * migration guide, a port finding, and a design record each describe a moment
+ * that has passed, and a `v0.N §M` cite in one names the corpus that existed
+ * then — provenance, not a pointer a reader is meant to follow.
+ *
+ * So `docs/` is **partitioned, never excluded**: each page declares which it
+ * is, in a blockquote under its own H1, and the two declarations must cover
+ * the directory exactly. The declaration lives on the page rather than in an
+ * inventory here for two reasons — the reader who lands on
+ * `docs/CASCADE-DRY-RUN.md` and hits `v0.8 §4` is the one who needs it, and a
+ * list here would be a second copy of a fact the page owns (`engineering.md`,
+ * *Derived state is computed, never restated beside its source*). A new page
+ * carries neither marker and fails the partition below until it picks one.
+ */
+const CURRENT_REFERENCE = /^>\s*\*\*Current reference\.\*\*/m;
+const DATED_RECORD = /^>\s*\*\*Dated record\.\*\*/m;
+
+/** Every `.md` page of `docs/`, with the status each one declares. */
+function docsPages(): { path: string; text: string; current: boolean; dated: boolean }[] {
+  return readdirSync(join(REPO_ROOT, "docs"))
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => {
+      const path = join("docs", name);
+      const text = readFileSync(join(REPO_ROOT, path), "utf8");
+      return {
+        path,
+        text,
+        current: CURRENT_REFERENCE.test(text),
+        dated: DATED_RECORD.test(text),
+      };
+    });
+}
 
 /**
  * The cite grammar: a `RELEASE-v` prefix on its own, or a version token and a
@@ -2099,17 +2135,19 @@ function proseOf(path: string, text: string): string {
 
 /**
  * Every file under the scanned roots, recursively — `examples/prompts/` is
- * the descent that a top-level `readdirSync` would silently drop.
+ * the descent that a top-level `readdirSync` would silently drop — plus the
+ * `docs/` pages that declare themselves current reference.
  */
 function citeScannedFiles(): string[] {
-  return CITE_SCANNED_ROOTS.flatMap((root) =>
+  const roots = CITE_SCANNED_ROOTS.flatMap((root) =>
     readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
       .map((name) => join(root, name))
       .filter((path) => statSync(join(REPO_ROOT, path)).isFile()),
-  ).sort();
+  );
+  return [...roots, ...docsPages().filter((p) => p.current).map((p) => p.path)].sort();
 }
 
-describe("dead release cites are gone from src/ and examples/", () => {
+describe("dead release cites are gone from src/, examples/, and current docs", () => {
   const files = citeScannedFiles().map((path) => ({
     path,
     prose: proseOf(path, readFileSync(join(REPO_ROOT, path), "utf8")),
@@ -2133,8 +2171,15 @@ describe("dead release cites are gone from src/ and examples/", () => {
       join("examples", "backlog-groomer-chain.ts"),
       join("examples", "minimal-chain.ts"),
       join("examples", "prompts", "build.md"),
+      join("docs", "CHAIN-AUTHORING.md"),
+      join("docs", "CLI.md"),
     ]) {
       expect(files.map((f) => f.path)).toContain(name);
+    }
+    // The dated half is out, and stays out by its own declaration rather than
+    // by a name listed here — a page that dropped its marker rejoins the scan.
+    for (const p of docsPages().filter((p) => p.dated)) {
+      expect(files.map((f) => f.path), `${p.path} is scanned despite declaring itself dated`).not.toContain(p.path);
     }
     const dispatcher = files.find((f) => f.path === join("src", "Dispatcher.ts"))!;
     expect(
@@ -2179,11 +2224,56 @@ describe("dead release cites are gone from src/ and examples/", () => {
     }
   });
 
+  const CUT_HINT =
+    "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
+    "reform deleted — name the live `spec/*.md` section instead, or drop the " +
+    "pointer and let git carry the provenance";
+
   it("no file under src/ or examples/ carries a release-numbered spec cite", () => {
     expect(
-      files.filter((f) => RELEASE_CITE_RE.test(f.prose)).map((f) => f.path),
-      "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
-        "reform deleted — state the fact, or let git carry the provenance",
+      files
+        .filter((f) => !f.path.startsWith(`docs${sep}`))
+        .filter((f) => RELEASE_CITE_RE.test(f.prose))
+        .map((f) => f.path),
+      CUT_HINT,
     ).toEqual([]);
+  });
+
+  it("no current-reference docs page carries a release-numbered spec cite", () => {
+    const pages = files.filter((f) => f.path.startsWith(`docs${sep}`));
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // every page could have declared itself a dated record, and this refusal
+    // would pass over nothing. Name the two the cut had to reach.
+    for (const name of ["CHAIN-AUTHORING.md", "CLI.md"]) {
+      expect(
+        pages.map((f) => f.path),
+        `${name} left the scanned half of docs/`,
+      ).toContain(join("docs", name));
+    }
+    expect(pages.filter((f) => RELEASE_CITE_RE.test(f.prose)).map((f) => f.path), CUT_HINT).toEqual([]);
+  });
+
+  it("every docs page is either scanned for release cites or declared a dated record", () => {
+    const pages = docsPages();
+    expect(pages.length, "docs/ holds no pages — the partition is vacuous").toBeGreaterThan(0);
+    expect(
+      pages.filter((p) => !p.current && !p.dated).map((p) => p.path),
+      "a docs page declares neither status. Under its H1 put `> **Current " +
+        "reference.** …` — and then it is scanned, so its spec cites must " +
+        "name live sections — or `> **Dated record.** …`, naming the moment " +
+        "it describes, which exempts the cites that moment owned",
+    ).toEqual([]);
+    expect(
+      pages.filter((p) => p.current && p.dated).map((p) => p.path),
+      "a docs page declares both statuses — it is one or the other",
+    ).toEqual([]);
+    // The dated half earns itself: if no exempted page carried a cite, the
+    // exemption is buying nothing and the partition is ceremony.
+    expect(
+      pages
+        .filter((p) => p.dated && RELEASE_CITE_RE.test(proseOf(p.path, p.text)))
+        .map((p) => p.path),
+      "no dated record carries a release cite — nothing needs the exemption",
+    ).not.toEqual([]);
   });
 });

@@ -1,5 +1,8 @@
 # Authoring a Flume chain
 
+> **Current reference.** Describes flume as it ships now; every spec cite
+> names a live `spec/*.md` section.
+
 The long-form walkthrough for writing your own `.flume/chain.ts`; assumes
 you've read the README. The running example,
 [`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is a
@@ -394,7 +397,7 @@ const factory: ChainFactory = (flume) => {
   a command, fail on non-zero". The four built-ins above are all
   `shellGate` instances.
 
-### `pendingGate`: composed validation + fence pre-check (v0.8 §6)
+### `pendingGate`: composed validation + fence pre-check
 
 `pendingGate` replaces a hand-rolled "does `pending.json` parse" gate
 (below) with one that also catches a class of guaranteed-revert bug
@@ -472,9 +475,10 @@ already a fact the dispatcher hands every gate.
 
 Reach for one when the check needs structured logic (read a file, parse
 JSON, summarize N issues) rather than just an exit code. The example
-below predates the `pendingGate` builtin above (v0.8 §6) — reach for that
-first; it composes this exact parse check with a fence pre-check the
-hand-rolled version doesn't have. Write a bespoke gate when the built-ins
+below predates the `pendingGate` builtin above (`spec/pending.md`,
+"`pendingGate` — validation and fence pre-check as an opt-in builtin") —
+reach for that first; it composes this exact parse check with a fence
+pre-check the hand-rolled version doesn't have. Write a bespoke gate when the built-ins
 genuinely don't fit:
 
 ```ts
@@ -1087,7 +1091,7 @@ declared capabilities. On an entry-scoped fanout tick (one carrying an
 `assignedEntry`), it states the **effective** fence the write guard will
 actually enforce — `entry.files ∪ phase.entryChannelPaths` — separately
 from `phase.writablePaths`, the outer ceiling both checks must clear
-(RELEASE-v0.7 §2):
+(`spec/prompt.md`, "The harness block"):
 
 ```text
 <harness>
@@ -1398,7 +1402,8 @@ const chain: Chain = {
   the remaining `--max` ticks against the same wall. Default 3.
 
 Both fields are optional and independent; a chain declaring neither gets the
-v0.7 §16 defaults, byte-identical. `flume loop` reads this block from the
+engine defaults, byte-identical (`spec/loop.md`, "Repeated identical
+failures — quarantine, then abort"). `flume loop` reads this block from the
 resolved chain once at supervisor start — a chain that fails to load there
 surfaces nothing new; the defaults apply for that run and the first child
 tick still reports the load failure exactly as it does today.

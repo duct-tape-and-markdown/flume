@@ -1,5 +1,8 @@
 # Flume — Intent
 
+> **Current reference.** Describes flume as it ships now; every spec cite
+> names a live `spec/*.md` section.
+
 ## What Flume is
 
 A library for orchestrating AI-derivation pipelines as a sequence of disciplined, disk-rooted phases.

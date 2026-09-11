@@ -1,5 +1,10 @@
 # Cascade dry-run — v0 port findings
 
+> **Dated record.** Describes the world as of the 2026-05-12 Cascade port,
+> not flume as it ships now. Its `v0.N §M` spec cites name the
+> `spec/RELEASE-v*.md` corpus that existed then; topic files replaced it,
+> and git carries the originals.
+
 Date: 2026-05-12
 Cascade SHA: `2eae5b8`
 

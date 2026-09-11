@@ -1,5 +1,10 @@
 # PRD — Collapse flume-dock into flume
 
+> **Dated record.** Describes the world as of the dock-collapse design
+> review, not flume as it ships now. Its `v0.N §M` spec cites name the
+> `spec/RELEASE-v*.md` corpus that existed then; topic files replaced it,
+> and git carries the originals.
+
 Status: **draft for review** (uncommitted). On acceptance, the normative
 content ingests into `spec/RELEASE-v0.5.md`; this document is the design
 record. Decisions were pressure-tested in an adversarial source review and a

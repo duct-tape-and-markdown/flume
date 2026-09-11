@@ -1,5 +1,8 @@
 # Migrating a chain from 0.11 to 0.12
 
+> **Dated record.** Describes the world as of the 0.12 upgrade, not flume as
+> it ships now.
+
 0.12 changes *when and where* the engine touches git, not the chain factory
 shape — most 0.11 chains load unmodified. Walk this checklist before bumping
 the pin; each item names who is affected.

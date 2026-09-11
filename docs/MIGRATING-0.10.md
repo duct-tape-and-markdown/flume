@@ -1,5 +1,10 @@
 # Migrating an existing chain to 0.10.0
 
+> **Dated record.** Describes the world as of the 0.10.0 upgrade, not flume
+> as it ships now. Its `v0.N §M` spec cites name the `spec/RELEASE-v*.md`
+> corpus that existed then; topic files replaced it, and git carries the
+> originals.
+
 Audience: any repo with a `.flume/chain.ts` pinned to an earlier
 `@dtmd/flume` — `0.2.x`, `0.6.x`, `0.9.0` — that needs to move onto
 `0.10.0`. This one guide replaces the per-version chain (`MIGRATING-0.8.md`,
