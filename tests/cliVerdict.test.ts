@@ -20,9 +20,9 @@ import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
-  type SuperviseResult,
   type TickVerdict,
 } from "../src/Dispatcher.ts";
+import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import {
   tickExitCode,
   loopExitCode,

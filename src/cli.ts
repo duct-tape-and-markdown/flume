@@ -46,7 +46,6 @@ import {
   Dispatcher,
   diskChainLoader,
   frictionCountLine,
-  superviseLoop,
   clearTickVerdict,
   writeTickVerdict,
   readTickVerdicts,
@@ -55,6 +54,7 @@ import {
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
+import { superviseLoop } from "./loopSupervisor.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
 import { parsePending, declaredPaths } from "./PendingSchema.js";
@@ -743,7 +743,8 @@ async function main(): Promise<number> {
     }
     // spec/loop.md "The loop lock and the tip claim": scope is per run. A
     // loop-spawned child trusts the supervisor's claim — told via
-    // FLUME_TIP_CLAIM_HELD (set by `defaultTickRunner`, src/Dispatcher.ts) —
+    // FLUME_TIP_CLAIM_HELD (set by `defaultTickRunner`,
+    // src/loopSupervisor.ts) —
     // rather than probing pids and inferring parentage, and takes none
     // itself. A bare tick has no supervisor to trust, so it acquires and
     // releases its own claim around this single tick, refusing (exit 1) when

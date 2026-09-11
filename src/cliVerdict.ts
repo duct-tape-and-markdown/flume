@@ -8,9 +8,9 @@ import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
   type TickOutcome,
-  type SuperviseResult,
   type TickVerdict,
 } from "./Dispatcher.js";
+import type { SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 
 /**

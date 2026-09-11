@@ -551,10 +551,10 @@ export interface Chain {
    * the run-scoped quarantine and the consecutive-identical-failure abort
    * threshold ship as engine defaults; this block lets a chain choose
    * otherwise. Undeclared or omitted fields fall through to the defaults in
-   * `src/Dispatcher.ts`'s
+   * `src/loopSupervisor.ts`'s
    * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
    * byte shape is pinned by the chain-declares-neither-knob case in
-   * tests/Dispatcher.test.ts.
+   * tests/loopSupervisor.test.ts.
    */
   supervisorPolicy?: {
     /**

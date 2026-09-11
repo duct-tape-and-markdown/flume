@@ -586,7 +586,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
 /**
  * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
  * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
- * `superviseLoop` forwarding). `tests/Dispatcher.test.ts`'s "supervisor
+ * `superviseLoop` forwarding). `tests/loopSupervisor.test.ts`'s "supervisor
  * policy knobs" suite already proves the quarantine/abort-backstop
  * mechanics themselves at the `superviseLoop` options seam with a stubbed
  * `runTick`; this suite proves only that the CLI's real chain-load-and-
