@@ -121,16 +121,13 @@ mid-validation, because git scans every worktree's metadata during validation.
 
 - A pre-wave `git worktree prune` recovers from prior crashes and partial waves. Without it,
   one half-broken `.git/worktrees/<slug>/` fails `worktree add` for *every* subsequent slug.
-- Worktree creation is a sequential `for…await` over the batch — `createWorktree` internally
-  does a stale-directory removal followed by the add, both mutating the shared dir.
+- Worktree creation runs sequentially across the batch — one worktree fully created before the
+  next begins — because creating a worktree mutates the shared `.git/worktrees/` directory.
 - Teardown is the same sequential walk, with the chain's `teardownWorktree` hook, the friction
   harvest, the removal, and the branch delete all riding it. Teardown is off the critical path,
   so a plain serial walk beats interleaving the git-mutating step out alone.
 - **The expensive work stays parallel**: per-entry agent invocations run concurrently, and so
   do the chain's `setupWorktree` hooks. Neither touches `.git/worktrees/`.
-
-A mutex would be equivalent; `for…await` is preferred as the simpler mechanism, mirroring the
-already-serialized prune.
 
 Provisioning failure is isolated to the entry that hit it: the failed entry stays pending and
 the wave continues with the rest, with `provisioned` and `worktrees` kept index-aligned for
@@ -230,10 +227,8 @@ So the reverted entry's actual touched paths are recorded as an `afterCommit-rev
 outcome and land on the tip through the **same** footprint-commit mechanism the `afterMerge`
 path uses. One bookkeeping surface, not two.
 
-The footprint is `verdict.touchedPaths`, which the gate loop already computed for this commit —
-reused rather than re-derived with a second `git show --name-only`, and captured before
-`dropLastCommit` discards the evidence. It reaches the tip by being merged into the entry's
-`observedFiles` (`spec/pending.md`), which is what the next partition reads.
+The footprint is the reverted commit's actual touched paths. It reaches the tip by being merged
+into the entry's `observedFiles` (`spec/pending.md`), which is what the next partition reads.
 
 > **Drift:** the recorded footprint is the tag plus the touched paths. The gate name, its
 > message, and the specific out-of-allowance paths from the gate's details are *not* on the

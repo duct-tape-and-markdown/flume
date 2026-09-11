@@ -31,11 +31,6 @@ runtime.
   rather than at a consumer's tick. The object is built by
   `buildFlumeApi` and passed **by reference** — the identity-same
   objects the dispatcher holds, never resolved a second time.
-- `buildFlumeApi` is a function, not a module-level constant, and that is
-  load-bearing: `builtinGates` initializes before `Dispatcher`
-  and `builtinGates` imports `Dispatcher` (a documented intentional cycle), so
-  a top-level object literal would read exports still in their temporal dead
-  zone. Property access is deferred into the call.
 - **Type-only imports stay.** `import type { Chain, FlumeApi } from "@dtmd/flume"`
   is erased at runtime, so a types-only devDependency cannot execute and its
   staleness cannot reach a tick.

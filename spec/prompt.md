@@ -105,9 +105,8 @@ authoritative prompt surface never misstates its own enforcement — so a phase 
 narrows shows the narrowed fence, and a phase that does not shows the phase fence alone.
 Both come from the same computation the guard consumes, so neither can drift from it.
 
-The union is computed once, in `entryWriteScopeUnion`, and consumed by
-both `effectiveFenceLines` (which renders it) and `writablePathsGate`
-(which enforces it). The two can never state a different fence
+The union is computed once and consumed by both the rendered fence and the
+enforcing gate. The two can never state a different fence
 because there is only one derivation. `tests/Prompt.test.ts` carries the agreement case
 — a path the rendered fence names is accepted by the real gate, and a ceiling-only path
 the fence omits is rejected by it — driving the real writer's output through the real

@@ -454,9 +454,7 @@ classify). A nothing-pickable no-op carries no `noCommit` either — no agent wa
 attempted.
 
 - **The four modes classify how a tick failed to produce a usable commit — nothing
-  else.** How the agent process ended is consulted only when the ref did not move:
-  `Dispatcher.runSingleton` and `runFanoutEntry` both `rev-parse` unconditionally after
-  the invocation and reach `classifyNoCommit` only in the no-commit branch. A commit the
+  else.** How the agent process ended is consulted only when the ref did not move. A commit the
   agent made *before* a non-zero exit, an abort, or a spawn failure is honored like any
   other — tip verify, the full afterCommit stack, cherry-pick, afterMerge, and it can
   ship. `Dispatcher.AgentTermination` declares this deliberate: with a commit in hand,

@@ -129,19 +129,12 @@ Supervisor liveness is on `status` because the awake markers alone cannot
 answer the question an operator asks before relaunching. A tree whose
 supervisor is still working reads `hibernating` from the baton, and two
 supervisors against one tree is what that misreading produces. The liveness
-probe is the same shape the job path uses (`liveLoopPid`) — one detection,
-shared, not re-derived per surface.
+verdict is the one `flume job status` and `flume job rm` report for the same
+pidfile — one detection, never re-derived per surface.
 
-The friction count line belongs in one home. `frictionCountLine`
-is the count-and-format helper behind `flume status` and
-the loop-end completion summary. The engine announces that mail exists and
+The friction count line has one home: `flume status` and the loop-end
+completion summary print the same line from one source. The engine announces that mail exists and
 never reads it; the declaration and its validation are in `spec/chain.md`.
-
-> **Drift:** `flume job status` does not reach that helper. It re-derives the
-> count per job dir (`countFrictionFiles`, reached through
-> `jobStatus`) and formats its own column inline — one wording in two homes,
-> against `engineering.md`'s *the fix lands at the mechanism* ("detection a
-> sibling surface already performs is shared, never re-derived").
 
 ## State-root and config-dir resolution
 
@@ -392,14 +385,6 @@ Standing consequences:
   entry-derived segment does. `namespacedJoin` is the shared
   helper: it joins and namespaces in one call, and passing it a single path is
   a legitimate use — the join is a no-op and the namespacing is the point.
-
-  > **Drift:** which of the two forms a site uses is not a rule the code
-  > follows. Several sites call `namespacedJoin` on a path they already hold
-  > (`Dispatcher`'s mirror-drain `readdir`/`mkdir`, `writeRevertNote`'s `mkdir`,
-  > `job.ts:countFrictionFiles`), while `git.ts` and much of `Dispatcher`
-  > call `toNamespacedPath` directly on held paths. The two are interchangeable
-  > in effect; nothing enforces a split, and any stated one would be authored
-  > rather than observed.
 
   `job new` additionally pins `core.longpaths` repo-locally on win32. The
   ceiling `git worktree add` imposes is separate and unreachable by this idiom

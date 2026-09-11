@@ -131,12 +131,11 @@ merging/
 Wake the chain's entry phase iff the job's baton is hibernating, then run the standard loop
 under the job resolution.
 
-- No existence precondition on `<name>`. `jobRun` validates the name's shape, then constructs
-  `new Baton(flumeDir)` — whose constructor `mkdir`s `awake/` recursively. A name never passed
-  to `job new` is not refused: it materializes a bare state root, wakes the entry phase there,
-  loops against it with no seed and no `pending.json`, and appears in `flume job status`
-  afterward. A job is a directory, not a registration (above), so there is no registry to
-  check against — `rm`'s refusal on an unknown name (below) does not generalize to `run`.
+- No existence precondition on `<name>`. A name never passed to `job new` is not refused: it
+  materializes a bare state root, wakes the entry phase there, loops against it with no seed
+  and no `pending.json`, and appears in `flume job status` afterward. A job is a directory,
+  not a registration (above), so there is no registry to check against — `rm`'s refusal on an
+  unknown name (below) does not generalize to `run`.
 - The entry phase is `chain.phases[0]` — the chain's first declared phase, content-free by
   decision. No phase name is hardcoded in the engine. A chain declaring no phases is an
   operational failure.
@@ -152,9 +151,10 @@ under the job resolution.
 Throw the harness away, keep the work.
 
 1. A `<name>` naming no job dir is a usage error.
-2. Refuse while the job's `loop.pid` records a live pid (`liveLoopPid` — the same pid-liveness
-   probe the loop lock and `flume status`'s supervisor check use, one implementation).
-   Removing a state root out from under a running supervisor would strand its ticks.
+2. Refuse while the job's `loop.pid` records a live pid — the same liveness verdict `flume
+   loop`'s own startup refusal and `flume status`'s supervisor line report for that pid, so
+   the three surfaces never disagree on one pidfile. Removing a state root out from under a
+   running supervisor would strand its ticks.
 3. `git rm -r` the tracked harness plus a pathspec-scoped cleanup commit **on the current
    HEAD** (nothing tracked → no commit). Message overridable, as with `job new`.
 4. `fs.rm` the untracked runtime remnants the ignore entries kept out of git — including a

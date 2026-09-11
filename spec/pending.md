@@ -265,13 +265,13 @@ It is written from three paths:
 
 - an **`afterMerge` gate failure**, where the cherry-picked commit's diff is the footprint and
   trunk is reset;
-- an **in-worktree `afterCommit` gate revert**, where the footprint is captured from the gate
-  loop's already-computed diff before `dropLastCommit` discards the evidence;
+- an **in-worktree `afterCommit` gate revert**, where the footprint is the reverted commit's
+  touched paths;
 - a **cherry-pick conflict**, where the un-merged worktree commit's diff is captured before
-  `cherryPickAbort` — best-effort: if `showNameOnly` throws, no footprint is recorded and the
-  retry partitions on declared files alone. Nothing landed on trunk, so this is not a revert, but
-  it grows the collision record all the same: `commitPendingUpdate` folds in every merge outcome
-  carrying a non-empty footprint, without filtering on outcome kind.
+  the cherry-pick is aborted — best-effort: if reading that diff fails, no footprint is recorded
+  and the retry partitions on declared files alone. Nothing landed on trunk, so this is not a revert, but
+  the collision record draws from every merge-stage outcome that carries a footprint — a conflict
+  included, not gate failures and reverts alone.
 
 All three land through the same wave-end `pending.json` rewrite, sourced from the wave's own verdict
 records rather than a second bookkeeping map. A producer phase may carry or drop the field
