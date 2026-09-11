@@ -200,7 +200,7 @@
       "edit": [
         {
           "path": "src/Phase.ts",
-          "description": "the Chain and humanOnly doc comments, :459-460 and :473-476"
+          "description": "the Chain and humanOnly doc comments, :476 and :488-493"
         }
       ],
       "retire": []
@@ -215,7 +215,7 @@
     "notes": "Drained from INTENT-WORKSHOP-LAYER-RETIRED's note; the doc half it also flagged (CHAIN-AUTHORING.md:1447) shipped with the cut. tests[] empty by construction: a doc-comment rewording changes no behavior, and a source-text pin over engine prose would be a new lens, not this fix."
   },
   {
-    "tag": "PRIOR-ATTEMPT-KEYSPACE-EXPORTED",
+    "tag": "INDEX-EXPORTS-ORPHANED-TYPES",
     "gate": {
       "kind": "open"
     },
@@ -225,23 +225,23 @@
       "edit": [
         {
           "path": "src/index.ts",
-          "description": "re-export beside NoCommitMode / PriorAttempt (:67)"
+          "description": "PriorAttemptKeyspace beside NoCommitMode / PriorAttempt (:67); QuarantinedTag beside the ./Phase.js types (:19)"
         },
         {
           "path": "tests/Dispatcher.test.ts",
-          "description": "the barrel pin, beside NoCommitMode's at :14440"
+          "description": "the two barrel pins, beside NoCommitMode's at :14631"
         }
       ],
       "retire": []
     },
-    "summary": "`PriorAttemptKeyspace` types `PriorAttempt.key` but is off the barrel, so a chain reading `rec.key` cannot name the type it already consumes",
+    "summary": "`PriorAttemptKeyspace` and `QuarantinedTag` type fields on exported surfaces yet are off the barrel, so a chain cannot name what it already consumes",
     "per": {
       "path": "spec/chain.md",
       "section": "The package a chain loads through"
     },
     "tests": [],
-    "acceptance": "`PriorAttemptKeyspace` resolves from the package entry point, pinned the way `NoCommitMode` and `ProvisionFailure` are — the pin fails tsc if the re-export drops.",
-    "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED's note; verified on disk (src/Prompt.ts:73, absent from src/index.ts:67). tests[] empty by construction: the pin is type-level, so tsc is its gate and vitest is green over the base either way (`.flume/vitestJudge.ts`, judgeRedOnBase)."
+    "acceptance": "Both types resolve from the package entry point, pinned the way `NoCommitMode` and `ProvisionFailure` are — each pin fails tsc if its re-export drops.",
+    "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED and QUARANTINE-KEYS-THE-ENTRY-AS-READ notes; verified on disk (src/Prompt.ts:73, src/Phase.ts:161; neither in src/index.ts). One entry, not two: same file, same one-line shape, and two would serialize into separate waves. tests[] empty by construction — the pins are type-level, so tsc is their gate and vitest is green over the base either way (`.flume/vitestJudge.ts`, judgeRedOnBase)."
   },
   {
     "tag": "CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR",

@@ -203,3 +203,33 @@ Options:
 Parked rather than filed because arming, restating and retiring are three different
 answers about whether the lenses are still wanted, and the section is a design-intent
 ruling — plan choosing among them would be filling a gap silently.
+
+## The quarantine key excludes `observedFiles`, and `spec/loop.md` says "a hash of its bytes" (NEEDS AMENDMENT)
+
+Drained from `QUARANTINE-KEYS-THE-ENTRY-AS-READ`'s note; verified on disk.
+`spec/loop.md` *Repeated identical failures* keys the run-scoped quarantine by
+"its slug and a hash of its bytes in `pending.json`". `quarantineKey`
+(`src/Dispatcher.ts:768-801`) hashes the entry **minus `observedFiles`**, and
+declares the divergence at the site.
+
+The exclusion is load-bearing, not a shortcut. `commitPendingUpdate` merges a
+failed attempt's footprint into `entry.observedFiles` (`src/Dispatcher.ts:4826`)
+in the *same* wave that blames the entry, so a whole-bytes hash mints a fresh
+key on the next read: every merge- and gate-stage quarantine lifts its own hold
+one tick later and the run re-attempts the same wall at full agent price — the
+burn the section exists to prevent. Provision-stage failures are unaffected (no
+`mergeOutcome`, so no write-back). Every other write-back — `blockedBy` →
+`open` — is a real state change and re-keys deliberately, which is the behavior
+the sentence wants to keep.
+
+**Recommend:** amend the bullet so the hash is stated over the entry *as
+declared*, naming `observedFiles` as the engine's own accretion that is excluded
+— the code's rule, said once in the spec, at which point the declared divergence
+at `quarantineKey` shrinks to a pointer (`engineering.md`, *Narration is the
+ladder's bottom rung*).
+
+The alternative is a behavior change rather than a spec edit: rule that the key
+must cover the whole entry, and move the `observedFiles` merge out of the
+blaming wave so the accretion no longer re-keys. That is the larger change and
+it buys nothing the exclusion does not already buy — but if it is the ruling,
+say so and this becomes an entry against `commitPendingUpdate`.
