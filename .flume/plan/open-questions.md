@@ -282,3 +282,29 @@ entirely in `.flume/chain.ts` plus the extension declaration, and it degrades to
 first when the flag goes unset. Parked rather than filed because both edits are
 human-only — `spec/`, `.flume/PROTOCOL.md` and `.flume/chain.ts` are outside every
 phase lane.
+
+## A `tests[]` line homed in the integration lane is invisible to the vitest gate (NEEDS AMENDMENT)
+
+Drained from `CASCADE-SHOULDRUN-FROM-DISK`'s park (2026-09-11 build wave); verified
+on disk. The build gate runs `vitest run --reporter=json` (`.flume/chain.ts:728`) —
+the **fast** lane, and `vitest.config.ts` excludes `*.integration.test.ts` from it.
+So a `tests[]` line whose only passing test lands in `tests/*.integration.test.ts`
+is absent from the gate's report, and the entry reverts with "N of N named
+behavior(s) have no passing test" no matter how green the work is. That is exactly
+what cost this entry a wave: plan declared the decline case against
+`tests/examples.integration.test.ts`, which the gate cannot see.
+
+**Nothing warns at plan time, and nothing can.** `.flume/prompts/plan-discipline.md`
+(*Tests ride the entry, and the gate reads them*) says "the file a test lands in is
+build's call" — true, and the constraint the sentence omits is that the call is
+bounded to the fast lane. The `pendingGate` cannot check it: the file does not exist
+when plan derives.
+
+**Recommend** one clause in that paragraph — a `tests[]` line names a behavior a
+**fast-lane** test can carry; work whose only honest home is the integration lane
+declares its named behavior over the fast-lane surface it exposes, or carries no
+`tests[]` line at all. No fork, no mechanism, one `chore(flume):`. Parked only
+because `.flume/prompts/**` is outside every phase lane.
+
+I have re-homed all four `CASCADE-*` entries onto `tests/examples.test.ts`
+meanwhile, so the queue does not re-hit this wall while the wording is ruled.
