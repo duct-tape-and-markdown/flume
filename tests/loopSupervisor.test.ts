@@ -10,7 +10,7 @@
 
 import { existsSync } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 

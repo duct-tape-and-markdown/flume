@@ -28,8 +28,6 @@ import {
   clearTickVerdict,
   readTickVerdicts,
   readLatestVerdictsSync,
-  EX_TERMINAL_MISCONFIG,
-  EX_MOUNT_DEAD,
   worktreeDirName,
   quarantineKey,
   computeStateRootRel,
@@ -38,7 +36,6 @@ import {
   type ChainModule,
   type DispatcherOptions,
   type Logger,
-  type TickVerdict,
 } from "../src/Dispatcher.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
@@ -46,7 +43,6 @@ import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
-import { RUNTIME_IGNORES } from "../src/job.ts";
 import {
   chainLoadGate,
   // §6 identity pin: the engine's own gate object, compared by reference
