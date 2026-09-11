@@ -753,23 +753,6 @@ describe("records gate and the park predicate — one file each", () => {
     expect(r.message).toBe("no records touched");
   });
 
-  it("declared span: a build span meeting none of a non-empty files declaration is refused; a partial span, an empty declaration, and a park pass", async () => {
-    const gate = build.gates.find((g) => g.name === "declared span")!;
-    expect(gate.when).toBe("afterCommit");
-    const entry: PendingEntry = { ...makeEntry("OPEN-1", { kind: "open" }), files: { new: [], edit: [{ path: "src/a.ts", description: "x" }, { path: "src/b.ts", description: "y" }], retire: [] } };
-    const run = (touchedPaths: string[], e: PendingEntry = entry) => gate.run({ ...gateCtx("HEAD", "build", e), touchedPaths });
-
-    const none = await run(["tests/a.test.ts"]);
-    expect(none.ok).toBe(false);
-    expect(none.message).toBe("0 of 2 declared path(s) touched");
-    expect(none.details).toContain("touched: tests/a.test.ts");
-
-    expect((await run(["src/a.ts", "tests/a.test.ts"])).message).toBe("1 of 2 declared path(s) touched");
-    expect((await run([NOTE])).message).toBe("park: the note alone, not judged");
-    expect((await run(["tests/a.test.ts"], makeEntry("EMPTY", { kind: "open" }))).message).toBe("entry declares no files");
-    expect((await run(["tests/a.test.ts"], entry)).ok).toBe(false);
-  });
-
   it("vitest: a park commit is not judged against the entry's named tests", async () => {
     const gate = build.gates.find((g) => g.name === "vitest")!;
     const entry: PendingEntry = { ...makeEntry("OPEN-1", { kind: "open" }), tests: ["a behavior the park never attempted"] } as PendingEntry;

@@ -44,7 +44,7 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type { ChainFactory } from "../src/Dispatcher.ts";
 
 import { z } from "zod";
-import { declaredPaths, type EntryExtension, type PendingEntry } from "../src/PendingSchema.ts";
+import type { EntryExtension, PendingEntry } from "../src/PendingSchema.ts";
 import { filesPinning, judgeRedOnBase, judgeVitestReport, materializeBase, removeWorktree } from "./vitestJudge.ts";
 
 
@@ -165,8 +165,8 @@ const factory: ChainFactory = (api) => {
    * Build's one cross-tick channel: the note file named by the entry's tag
    * (`.flume/PROTOCOL.md`, *Records: one file each*). An observation for
    * the next plan tick, or — as a commit's sole path — the park `shipped`
-   * reads back. One function so the fence, the gate, the prompt, and the
-   * predicate cannot name different files.
+   * reads back. One function so the gate, the prompt, and the predicate
+   * cannot name different files.
    */
   const STATE_ROOT = ".flume";
   const NOTES_DIR = `${STATE_ROOT}/plan/notes`;
@@ -174,29 +174,19 @@ const factory: ChainFactory = (api) => {
   const RECORD_MAX_BYTES = 1200;
 
   /**
-   * Mandatory-on-every-entry surfaces ride the channel instead of per-entry
-   * declarations: every behavior-changing entry edits tests, and every
-   * entry may write its own note. Requiring these in entry.files turns one
-   * under-declaration into a fence revert on otherwise-correct work;
-   * cross-entry collisions stay covered by per-entry afterMerge revert
-   * (spec/worktrees.md). The notes glob admits any tag's file; the
-   * `records` gate below narrows it to the tick's own.
+   * The phase fence is the whole of build's containment. There is no
+   * per-entry fence: `entry.files` is plan's prediction of where the work
+   * lands, consumed by the fanout partitioner and nothing else
+   * (`.flume/PROTOCOL.md`, *What an entry carries*). Plan states the
+   * architecture; where the edits fall is build's call, and a wrong
+   * prediction costs a cherry-pick conflict and a retry from the new base —
+   * never a revert, never a park. Measured before the flip (2026-09-11):
+   * every park that day was a fence gap, not an architectural refusal, and
+   * each cost a park, a plan tick, and a re-pick to carry one path name.
    *
-   * CHANGELOG.md is deliberately NOT here. It is not mandatory on every
-   * entry — no gate demands it — so it stays an ordinary declared path: an
-   * entry that edits it says so, and serializes against other entries that
-   * do, which is correct.
-   */
-  const channelPaths = [`${NOTES_DIR}/*.md`, "tests/**"];
-
-  /**
-   * Build's fence, hoisted so plan's `pendingGate` can pre-check
-   * every derived entry's declared files against the fence build will
-   * actually enforce — an entry that can't survive it fails at plan time,
-   * naming the paths, instead of burning a build tick into a revert.
-   * On a fanout tick the write guard narrows to the entry's declared files ∪
-   * channelPaths; the phase globs below stay the outer ceiling
-   * (spec/pending.md: the entry-scoped write guard).
+   * Hoisted so plan's `pendingGate` pre-checks every derived entry's
+   * declared files against the same globs — a prediction outside the phase
+   * fence is a lie the scheduler would partition on.
    */
   const buildFence = {
     writablePaths: [
@@ -243,16 +233,16 @@ const factory: ChainFactory = (api) => {
       // CI
       ".github/**",
 
-      // Mandatory per-entry surfaces — one declaration, shared with
-      // entryChannelPaths (the engine requires channel ⊆ writable).
-      ...channelPaths,
+      // Build's note to plan (the `records` gate narrows the glob to the
+      // tick's own tag) and the tests every behavior-changing entry edits.
+      `${NOTES_DIR}/*.md`,
+      "tests/**",
 
       // NOTE: pending.json is harness-written post-merge (the ship commit);
       // spec/** and harness surfaces (.flume/{chain.ts,prompts/**},
       // .claude/**) are outside every phase lane —
       // `.claude/rules/spec-plan-build.md`.
     ],
-    entryChannelPaths: channelPaths,
   };
 
   /**
@@ -329,44 +319,11 @@ const factory: ChainFactory = (api) => {
 
   /**
    * The park shape, read once: a commit whose only path is the entry's own
-   * note. `build.shipped` and the `declared span` gate both key on it, so
-   * the two never disagree about what a park looks like.
+   * note. `build.shipped` and the vitest gate both key on it, so the two
+   * never disagree about what a park looks like.
    */
   const isPark = (entry: PendingEntry, touchedPaths: readonly string[]): boolean =>
     touchedPaths.length > 0 && touchedPaths.every((p) => p === notePath(entry.tag));
-
-  /**
-   * The floor of a declared-files judgement: a build span that touched
-   * **none** of a non-empty `files` declaration is refused, never shipped.
-   * `files` is a prediction, so a partial span is plan's to re-derive and
-   * passes here; the empty declaration is spelled as its own vacuous pass;
-   * a park is the note alone and is not judged. What the three classes
-   * claim about the tree stays `examples/cascade-chain.ts`'s to teach —
-   * this chain wants only the refusal that stops `tests/**` (a channel
-   * path) from retiring an entry whose whole declaration went unmet.
-   * (`.claude/rules/engineering.md`, *Loud or nothing*.)
-   */
-  const declaredSpanGate: Gate = {
-    name: "declared span",
-    when: "afterCommit",
-    async run(ctx) {
-      const { entry, touchedPaths } = ctx;
-      if (!entry) return { ok: true, message: "no entry on this tick" };
-      if (!touchedPaths) return { ok: false, message: "declared span gate requires touchedPaths" };
-      const declared = declaredPaths(entry);
-      if (declared.length === 0) return { ok: true, message: "entry declares no files" };
-      if (isPark(entry, touchedPaths)) return { ok: true, message: "park: the note alone, not judged" };
-      const met = declared.filter((p) => touchedPaths.includes(p));
-      if (met.length === 0) {
-        return {
-          ok: false,
-          message: `0 of ${declared.length} declared path(s) touched`,
-          details: [`declared: ${declared.join(", ")}`, `touched: ${touchedPaths.join(", ")}`].join("\n"),
-        };
-      }
-      return { ok: true, message: `${met.length} of ${declared.length} declared path(s) touched` };
-    },
-  };
 
   /**
    * Every entry's `per` cite resolves: the path is in the gated commit and
@@ -616,7 +573,7 @@ const factory: ChainFactory = (api) => {
    * the queue no longer carries is a record that outlived its entry and is
    * ignored; a singleton slice's own record is keyed by phase name, which no
    * tag slugifies to. Without this leg a parked entry stays pickable, plan
-   * yields to build, and build re-parks against the same fence forever (four
+   * yields to build, and build re-parks into the same wall forever (four
    * attempts, 2026-09-07). Read at `shouldRun` only — a reason to be woken,
    * never a reason for a slice to re-wake itself, since only a build wave
    * clears it.
@@ -846,34 +803,27 @@ const factory: ChainFactory = (api) => {
     agent: buildAgent,
     // Fence hoisted to `buildFence` above so plan's pendingGate pre-checks
     // against the same object build enforces — one declaration, no drift.
+    // No `scopeWritesToEntry`, no `entryChannelPaths`: the phase fence is
+    // the whole containment (buildFence's comment).
     writablePaths: buildFence.writablePaths,
-    entryChannelPaths: buildFence.entryChannelPaths,
-    // Entry-scoped narrowing on, completing this chain's own migration
-    // across the flip that made it opt-in — buildFence's comment and the
-    // pendingGate pre-check were both written assuming it; without the flag
-    // the channel declaration above is the dead config the load refusal
-    // (spec/chain.md, *A dead declaration is refused at load*) exists to
-    // catch.
-    scopeWritesToEntry: true,
     /**
      * This chain's own answer to "did that commit finish the work?"
      * (`spec/pending.md`, *Ship detection trusts the agent's own account*).
      * The engine reports facts and holds no notion of a park — the vocabulary
      * and the convention are ours, and `prompts/build.md` is the other half:
      * it instructs a **single-file committed park** into the entry's own
-     * note when an entry cannot ship, and this reads exactly that shape back.
-     *
-     * Deliberately not "touched only `entryChannelPaths`": `tests/**` is a
-     * channel, so that predicate would misclassify an entry whose work *is*
-     * tests — a real case (CHAINTS-PREDICATE-COVERAGE shipped that way).
-     * Only the entry's note, and nothing else, is a park.
+     * note when an entry cannot ship as written — a premise the tree
+     * contradicts, a decision nobody made, work already shipped — and this
+     * reads exactly that shape back. A tests-only commit is a ship: an
+     * entry whose work *is* tests is a real case (CHAINTS-PREDICATE-COVERAGE
+     * shipped that way). Only the entry's note, and nothing else, is a park.
      */
     shipped: ({ entry, touchedPaths }) => !isPark(entry, touchedPaths),
     // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
     // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
     // afterCommit — cheap, structural, catches type errors before merge.
-    gates: [tscGate, recordsGate, declaredSpanGate, vitestOnCode],
+    gates: [tscGate, recordsGate, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {

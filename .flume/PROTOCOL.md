@@ -19,7 +19,7 @@ Three consumers, and only three:
 
 - **The engine** reads `tag` (identity — commit token, worktree dir, ship record,
   uniqueness), `gate` (pickable now), `dependsOnForks` (foundation settled), and
-  `files` (the fanout partition's disjointness input, and the ship predicate's).
+  `files` (the fanout partition's disjointness input, and nothing else).
   Nothing else in an entry is engine business.
 - **The build tick** reads what a fresh context cannot derive from the repo:
   `summary` (what), `per` (why, and on whose authority — the repo shows what the
@@ -37,9 +37,11 @@ Three consumers, and only three:
   footprint of a reverted attempt.
 
 An entry does **not** carry where build may write (`files` is a prediction for the
-scheduler, never a permission), how to implement, which file a test lands in, or
-its own history (prior attempts arrive in the engine's `<prior-attempt>` block).
-Each of those is one lane prescribing inside another's.
+scheduler, never a permission and never a fence — build's `writablePaths` in
+`.flume/chain.ts` is the whole containment), how to implement, which file a test
+lands in, or its own history (prior attempts arrive in the engine's
+`<prior-attempt>` block). Each of those is one lane prescribing inside another's.
+Plan states the architecture; where the edits fall is build's call.
 
 ## What makes an entry good, not merely valid
 
@@ -72,7 +74,7 @@ Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `p
 A finding for plan and a note from build are **records**: one file per record, never a section appended to a shared document. Git merges by line position, so two ticks appending to one file conflict whatever the syntax; two ticks creating two files never do, and the fence can name a file where it cannot name a section.
 
 - **Inbox** — `.flume/inbox/<YYYY-MM-DD>-<slug>.md`, written by whoever observes something in the field (a human, a review skill). First line `# <title> (<source>)`.
-- **Build notes** — `.flume/plan/notes/<TAG>.md`, written by the build tick assigned that entry and no other. First line `# <title>`. One file carries either an observation the next plan tick should know, or a **park**: a commit whose only path is the entry's note is the signal that the entry cannot ship inside its fence, and `build.shipped` keeps it in the queue.
+- **Build notes** — `.flume/plan/notes/<TAG>.md`, written by the build tick assigned that entry and no other. First line `# <title>`. One file carries either an observation the next plan tick should know, or a **park**: a commit whose only path is the entry's note is the signal that the entry cannot ship as written — its premise is contradicted by the tree, it needs a decision nobody made, or the work is already there — and `build.shipped` keeps it in the queue. A park is never about paths: there is no per-entry fence to fall outside.
 - **Open questions** stay one file, `.flume/plan/open-questions.md`, because plan is its only writer and plan is a singleton.
 
 **A record is short.** It says what was observed, where (a path and line, or a sha), and why it matters — at most **1,200 bytes**. Options appear only when a decision genuinely forks, one line each. What a record does not carry: the reasoning that led to it, restated spec, or a proposed patch; the reader re-verifies against the tree regardless. The `records` gate (`.flume/chain.ts`) refuses a commit that writes a record over the cap, without a title line, under a tag that is not the tick's own, or from a plan slice — plan **drains** records and never creates one.
