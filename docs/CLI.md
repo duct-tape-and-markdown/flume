@@ -179,9 +179,13 @@ phase's declared fence, the same computation the write guard enforces at commit
 time. Read-only — touches no baton flag, loads the chain only to compute the fence,
 and invokes nothing. Scope is deliberately the engine's own mechanics alone; chain
 gates need a tick's `GateContext` and do not run here. No `pending.json` present
-prints `plan/pending.json absent — nothing to check` and exits `0`. Consumes no
-positionals. Exits `0` when the file parses and every entry's paths clear the fence;
-exits `65` (`EX_DATAERR`) on a parse failure or a fence violation, naming the
+prints `plan/pending.json absent — nothing to check` and exits `0`. A chain that
+declares no fanout phase has no consumer and therefore no fence: the parse still
+runs, the fence step is skipped, and the output says `no fanout phase declared;
+fence not checked` — vacuous by design and spelled out, never a refusal of every
+declared path. Consumes no positionals. Exits `0` when the file parses and every
+entry's paths clear the fence (and on either skip above); exits `65`
+(`EX_DATAERR`) on a parse failure or a fence violation, naming the
 offending entry and paths — the same refusal the next tick would otherwise have
 spent an invocation to discover; exits `2` if given any argument, or `69`
 (`EX_MOUNT_DEAD`) if the chain itself fails to load.
@@ -193,6 +197,9 @@ flume check
 flume check
 # [flume] check: 1 pending entry declares files outside the consumer phase's fence
 #   [DOCS-CLI-1] src/forbidden.ts
+
+flume check   # a chain with no fanout phase
+# plan/pending.json valid (3 entries), no fanout phase declared; fence not checked
 ```
 
 ## `flume friction [name]`

@@ -217,9 +217,12 @@ enforces. Read-only: no baton flag is touched, no agent runs, and chain
 gates never run — only the engine's own parse + fence mechanics.
 
 Exit codes:
-  0    Pending queue parses clean and every entry's declared files survive
-       the consumer phase's fence (also 0 when plan/pending.json is absent
-       — nothing to check).
+  0    Three routes: the queue parses clean and every entry's declared
+       files survive the consumer phase's fence; plan/pending.json is
+       absent (nothing to check); or the chain declares no fanout phase, so
+       there is no consumer and no fence — the parse still runs and the
+       output says "no fanout phase declared; fence not checked", never a
+       refusal of every declared path.
   2    A stray trailing positional (\`check\` consumes none), checked before
        the chain load below; or the chain failed to load with the
        CJS-context refusal — the host repo's package.json (or the one
