@@ -837,6 +837,88 @@ describe("the chain-authoring doc quotes the example chain it names", () => {
   });
 });
 
+// Agreement pin (README-CASCADE-PIPELINE-CURRENT, per
+// .claude/rules/engineering.md "A seam gate reads what the real writer
+// wrote"): README names cascade's phases twice — in the getting-started
+// pointer and again under Pointers — and both listings were hand-written
+// beside the example rather than read off it. So when the example dropped
+// phases, the front door kept teaching the retired pipeline as current. The
+// writer here is the chain module: its `phases` array, resolved to the names
+// the phase declarations spell, is what README's arrow lists are compared
+// against.
+describe("the README cascade pointer", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+
+  /**
+   * The phase names a chain module declares, in chain order: the identifiers
+   * listed in `phases: […]` resolved through each `const <id>: Phase = {`
+   * declaration to the `name` literal it spells. Read off the identifiers
+   * rather than off every `name:` in the file, so a `Phase` the module
+   * declares but leaves out of the chain cannot count as shipped.
+   */
+  function declaredPhaseNames(text: string): string[] {
+    const listed = /phases:\s*\[([^\]]*)\]/.exec(text)?.[1] ?? "";
+    return listed
+      .split(",")
+      .map((part) => part.trim())
+      .filter((id) => /^[A-Za-z_$][\w$]*$/.test(id))
+      .map((id) => {
+        const decl = new RegExp(
+          `const ${id}: Phase = \\{[\\s\\S]*?name:\\s*"([^"]+)"`,
+        ).exec(text);
+        return decl?.[1] ?? "";
+      })
+      .filter((name) => name !== "");
+  }
+
+  /**
+   * The prose units of `readme` that mention `cascade-chain.ts`: paragraphs
+   * split on blank lines, then again at list-item boundaries, so the Pointers
+   * bullet is judged as itself rather than as its whole list.
+   */
+  function cascadeMentions(readme: string): string[] {
+    return readme
+      .split(/\n\s*\n/)
+      .flatMap((para) => para.split(/\n(?=- )/))
+      .filter((unit) => unit.includes("cascade-chain.ts"));
+  }
+
+  /** Every arrow-joined run of phase-shaped words in a prose unit. */
+  function arrowRuns(unit: string): string[][] {
+    const runs = unit.match(/[a-z][a-z-]*(?:\s*→\s*[a-z][a-z-]*)+/g) ?? [];
+    return runs.map((run) => run.split("→").map((word) => word.trim()));
+  }
+
+  it("README's cascade description names the phases cascade-chain.ts declares", () => {
+    const declared = declaredPhaseNames(read("examples", "cascade-chain.ts"));
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // chain that failed to parse, or a README that stopped naming phases,
+    // agrees with anything.
+    expect(
+      declared,
+      "examples/cascade-chain.ts: the chain's `phases` array did not resolve " +
+        "to phase names — the declarations or the array were reshaped",
+    ).not.toHaveLength(0);
+
+    const listings = cascadeMentions(read("README.md")).flatMap(arrowRuns);
+    expect(
+      listings,
+      "README.md names cascade's phases at two sites — the getting-started " +
+        "pointer and the Pointers list; a site that stopped listing them is " +
+        "a change a human should re-decide, not a pin that quietly passes",
+    ).toHaveLength(2);
+
+    for (const listing of listings) {
+      expect(
+        listing,
+        "README.md must describe the phases examples/cascade-chain.ts " +
+          "declares, not a pipeline it used to ship",
+      ).toEqual(declared);
+    }
+  });
+});
+
 // Orphan pin (LOADCHAINMODULE-DOC-ORPHANED, per
 // .claude/rules/engineering.md "Narration is the ladder's bottom rung"): a
 // doc block whose next non-blank line opens another doc block documents no

@@ -75,7 +75,7 @@ npx flume loop      # tick until hibernation
 
 For a readable single-phase starter with each field on its own line, see
 [`examples/minimal-chain.ts`](examples/minimal-chain.ts). For multi-phase
-pipelines (workshop → spec → plan → build), copy
+pipelines (plan → build), copy
 [`examples/cascade-chain.ts`](examples/cascade-chain.ts) instead.
 
 ## The chain
@@ -386,7 +386,7 @@ follows enough usage signal to commit under semver.
 - [`examples/minimal-chain.ts`](examples/minimal-chain.ts) — single-phase
   starter.
 - [`examples/cascade-chain.ts`](examples/cascade-chain.ts) — multi-phase
-  workshop → spec → plan → build pipeline.
+  plan → build pipeline.
 
 ## License
 
