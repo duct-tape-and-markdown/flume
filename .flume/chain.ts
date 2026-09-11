@@ -190,7 +190,7 @@ const factory: ChainFactory = (api) => {
    */
   const buildFence = {
     writablePaths: [
-      // Source, bin, examples, docs, ad-hoc scripts (tests/** rides the channel)
+      // Source, bin, examples, docs, ad-hoc scripts
       "src/**",
       "bin/**",
       "examples/**",
@@ -795,6 +795,18 @@ const factory: ChainFactory = (api) => {
     },
   };
 
+  /**
+   * The same type check, on the merged tree. The afterCommit `tscGate` runs
+   * in a worktree cut from the pre-wave base, so it cannot see a sibling
+   * that landed in the same wave — a flag one entry turned on, a symbol
+   * another moved. Until this gate existed, the only thing type-checking
+   * the trunk after a merge was an unrelated test's `npm exec tsc` fixture,
+   * and its failures wore that test's name (DISPATCHER-EXTRACT-FRICTION,
+   * 2026-09-11). Per-entry afterMerge revert makes this safe
+   * (`spec/worktrees.md`); one tsc per merged entry is the cost.
+   */
+  const tscOnTrunk = tscGate({ when: "afterMerge" });
+
   const build: Phase = {
     name: "build",
     description: "Ship one (or N disjoint) pending entries to the trunk.",
@@ -821,9 +833,10 @@ const factory: ChainFactory = (api) => {
     shipped: ({ entry, touchedPaths }) => !isPark(entry, touchedPaths),
     // spec/chain.md (gate placement): vitest runs afterMerge, not afterCommit. Under
     // fanout, N parallel afterCommit suites contend and flaky-timeout-revert
-    // clean commits; afterMerge revert is now per-entry (§7b). tscGate stays
-    // afterCommit — cheap, structural, catches type errors before merge.
-    gates: [tscGate, recordsGate, vitestOnCode],
+    // clean commits; afterMerge revert is per-entry (§7b). tscGate runs
+    // afterCommit — cheap, structural, keeps a non-compiling commit off the
+    // trunk — and again on the merged tree, where sibling composition lives.
+    gates: [tscGate, recordsGate, tscOnTrunk, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {

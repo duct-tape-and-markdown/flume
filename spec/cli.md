@@ -133,7 +133,7 @@ probe is the same shape the job path uses (`liveLoopPid`) — one detection,
 shared, not re-derived per surface.
 
 The friction count line belongs in one home. `frictionCountLine`
-(`src/Dispatcher.ts`) is the count-and-format helper behind `flume status` and
+(`src/friction.ts`) is the count-and-format helper behind `flume status` and
 the loop-end completion summary. The engine announces that mail exists and
 never reads it; the declaration and its validation are in `spec/chain.md`.
 
@@ -180,7 +180,7 @@ instead of re-deriving the default or falling back to a coincidentally-equal
 `configDir`. `FLUME_DIR` is a reliable, always-present source of truth for the
 state root, not a maybe-absent caller convenience. The values reach the tick
 child through the supervisor's own `process.env`, which `defaultTickRunner`
-(`src/Dispatcher.ts`) copies into the child's `env` — plus
+(`src/loopSupervisor.ts`) copies into the child's `env` — plus
 `FLUME_QUARANTINED_SLUGS` when the run has quarantined slugs, the one channel
 the supervisor's quarantine crosses the process boundary on (read back at
 `quarantinedSlugs`, `src/cli.ts`). No var is dropped or rewritten on the way
@@ -311,7 +311,7 @@ unrelated package.
   is gitignored and ships in the tarball. `prepack` and `prepublishOnly` both
   run the build, so a local `npm pack` cannot ship a stale `dist/`.
 - **Tarball contents** are the `package.json` `"files"` allowlist and nothing
-  else: `dist`, `bin`, `README.md`, `LICENSE`, `CHANGELOG.md`. There is no
+  else — the allowlist is its own enumeration, and this page does not restate it. There is no
   `.npmignore` — the allowlist is the single source of truth, and CI asserts
   the packed file set matches it in **both** directions: a packed path no entry
   covers (over-inclusion) and an entry that packs nothing (under-inclusion) are

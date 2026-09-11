@@ -18,7 +18,7 @@ condition are exercised — these are the details:
 
 - `git worktree add -B <branch> <path> <fromRef>` (`src/git.ts:addWorktree`), where `branch`
   is `flume/<namespace>/<slug>` when a namespace is set and `flume/<slug>` otherwise
-  (`src/Dispatcher.ts:createWorktree`), and `fromRef` is the tip the tick started on.
+  (`src/worktrees.ts:createWorktree`), and `fromRef` is the tip the tick started on.
 - `git branch -D <branch>` at teardown (`src/git.ts:deleteBranch`).
 - The per-entry commits are `cherry-pick`ed onto that same tip, in batch order
   (`src/Dispatcher.ts:runFanout`) — the other half of the same carve-out, declared in
@@ -58,7 +58,7 @@ install expresses that in its own hook, not in engine policy.
 ## Placement — the worktree base and the job namespace
 
 The base directory is `FLUME_WORKTREES_DIR` when set (resolved absolute), else
-`<flumeDir>/worktrees` (`src/Dispatcher.ts:createWorktree`). The default tracks the state root,
+`<flumeDir>/worktrees` (`src/worktrees.ts:createWorktree`). The default tracks the state root,
 which is itself relocatable via `FLUME_DIR`, so the one-`rm` teardown promise holds.
 
 The override exists for one measured vector: an agent whose `pwd` contains the root checkout's
@@ -92,7 +92,7 @@ The namespace is a `DispatcherOptions.namespace` value the CLI resolves from `--
 
 ## Worktree directory names are length-bounded
 
-The filesystem component is `worktreeDirName(tag)` (`src/Dispatcher.ts`): `slugify(tag)`
+The filesystem component is `worktreeDirName(tag)` (`src/worktrees.ts`): `slugify(tag)`
 when it fits `WORKTREE_DIRNAME_MAX` (48), else the slug cut to leave room for a separator plus
 a 10-hex-character SHA-1 of the **full** tag — so the finished component is exactly 48
 characters, and two tags sharing a long common prefix still land on distinct directories. The
@@ -250,7 +250,7 @@ reading session logs.**
 
 Before the drop, every non-deleted file the reverted commit touched is snapshotted verbatim —
 post-image content, under a mirror of its repo path — into
-`<flumeDir>/prior-attempts/<key>.reverted/` (`src/Dispatcher.ts:snapshotRevertedFiles`).
+`<flumeDir>/prior-attempts/<key>.reverted/` (`src/priorAttempts.ts:PriorAttemptStore.snapshotReverted`).
 
 - It is a sibling of the prior-attempt JSON, under the state root and gitignored, **not** in
   the worktree — so it outlives both the reset and worktree teardown.
@@ -293,7 +293,7 @@ it, and the note plus the snapshot are what remain.
 
 Only the engine is present when a fanout worktree dies, so only the engine can guarantee a
 worktree-local friction note survives it. At wave end, for each worktree, **before removal**
-(`src/Dispatcher.ts:harvestFriction`):
+(`src/friction.ts:harvestFriction`):
 
 - Resolve the worktree-local mirror of the declared channel — the state root's repo-relative
   path, joined inside the worktree, joined with `chain.friction` — and **move** every file in

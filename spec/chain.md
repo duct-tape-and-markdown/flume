@@ -317,7 +317,7 @@ directory naming the friction channel (e.g. `"friction"`), resolved against the
 resolved `flumeDir`, same idiom as `seedDir`.
 
 - Validated at chain load (`src/Dispatcher.ts:loadChainModule` →
-  `validateFrictionDeclaration`): must be relative and must resolve inside the
+  `src/friction.ts:validateFrictionDeclaration`): must be relative and must resolve inside the
   state root, else a usage-shaped error. The check is base-independent — it
   resolves the declared path against a sentinel root and asks whether the
   result still sits under it — because the real state root legitimately varies
@@ -345,7 +345,7 @@ number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[]
 entry slug whose worktree provisioning failed, abort after three consecutive
 identical failure signatures, fanout batch width, the per-invocation wall-clock
 cap, and the paths the fanout partition ignores — ships as **defaults, not
-behavior** (`src/Dispatcher.ts:superviseLoop`, `quarantineScope ?? "run"`,
+behavior** (`src/loopSupervisor.ts:superviseLoop`, `quarantineScope ?? "run"`,
 `abortThreshold ?? 3`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default
 unset — no cap; `partitionIgnore` default `[]`). A chain declaring nothing gets
 the defaults byte-identically.
@@ -355,7 +355,7 @@ the defaults byte-identically.
 - **`quarantineScope`/`abortThreshold` are read once per run** — the one
   declaration outside the per-tick guarantee above. The supervisor resolves
   the chain in its own process before the first child (`src/cli.ts` loop
-  branch) and `src/Dispatcher.ts:superviseLoop` binds both before entering the
+  branch) and `src/loopSupervisor.ts:superviseLoop` binds both before entering the
   tick loop; nothing re-reads them between children. A tick that commits a
   changed value is governed by the old one until the operator restarts
   `flume loop`, with no indication the new declaration was ignored. Run scope

@@ -51,7 +51,7 @@ The only branch grammar the engine holds is the ephemeral fanout branches declar
   (`tests/Dispatcher.test.ts`, "Trunk contract — HEAD-is-truth").
 - **Declared fanout carve-out.** The engine does construct ephemeral worktree branch names —
   `flume/<slug>`, or `flume/<namespace>/<slug>` when a namespace is set
-  (`Dispatcher.createWorktree`) — does create them (`src/git.ts:addWorktree`, `-B`), does
+  (`src/worktrees.ts:createWorktree`) — does create them (`src/git.ts:addWorktree`, `-B`), does
   delete them at teardown (`src/git.ts:deleteBranch`, `git branch -D`), and does cherry-pick a
   wave's per-entry worktree commits onto the tip the tick started on. All of it touches only
   the tick's own record, never a ref the operator chose; it is named here as a boundary the

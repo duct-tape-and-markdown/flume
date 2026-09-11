@@ -722,6 +722,15 @@ describe("records gate and the park predicate — one file each", () => {
     expect(r.message).toBe("no records touched");
   });
 
+  it("build type-checks the merged tree with the same command it type-checks the commit", () => {
+    const byWhen = (when: string) => build.gates.filter((g) => g.when === when && /tsc/.test(g.name));
+    const [before] = byWhen("afterCommit");
+    const [after] = byWhen("afterMerge");
+    expect(before?.command, "an afterCommit tsc gate with a command").toBeTruthy();
+    expect(after?.command, "an afterMerge tsc gate with a command").toBeTruthy();
+    expect(after!.command).toBe(before!.command);
+  });
+
   it("vitest: a park commit is not judged against the entry's named tests", async () => {
     const gate = build.gates.find((g) => g.name === "vitest")!;
     const entry: PendingEntry = { ...makeEntry("OPEN-1", { kind: "open" }), tests: ["a behavior the park never attempted"] } as PendingEntry;

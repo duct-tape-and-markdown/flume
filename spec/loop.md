@@ -89,7 +89,7 @@ output:
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
   tip the tick started on, in order, with `cherry-pick --abort` on conflict
   (`git.cherryPick`, `Dispatcher.runFanout`).
-- **Ephemeral `flume/**` branch names.** `Dispatcher.createWorktree` constructs
+- **Ephemeral `flume/**` branch names.** `createWorktree` (`src/worktrees.ts`) constructs
   `flume/<namespace>/<slug>` (or repo-global `flume/<slug>` with no namespace) —
   the slug is a fanout entry's tag under fanout and the phase name under singleton
   (`spec/worktrees.md`, *Singleton runs in a worktree*); provisioning is
@@ -282,7 +282,7 @@ What survives a refusal on disk: where the dispatcher undoes a commit it observe
 (`Dispatcher.checkTipMoved`), the undo is `reset --soft` (`revertTipMovedCommit`,
 which itself refuses unless the current tip is the sha it observed) — run inside
 the tick's worktree, which teardown removes along with any uncommitted work; no
-snapshot is taken (`snapshotRevertedFiles` rides the afterCommit gate-revert leg
+snapshot is taken (`PriorAttemptStore.snapshotReverted` rides the afterCommit gate-revert leg
 only). Where a wave refuses *before* cherry-picking, no reset is involved: the
 commit is still on its private worktree branch, which teardown removes. The entry
 stays pending in every case; only the residue differs.
@@ -354,7 +354,7 @@ stays pending in every case; only the residue differs.
 - **Absorbing the ledger commit is what closes the queue-behind-tree hazard.**
   Under refuse-on-moved semantics, a ref moving between the last cherry-pick and
   the ledger commit left `pending.json` listing entries whose commits were already
-  on the tip — prior-attempt slots already cleared (`clearPriorAttempt`) — and the
+  on the tip — prior-attempt slots already cleared (`PriorAttemptStore.clear`) — and the
   next tick dispatched agents against shipped work with nothing on disk to say so.
   The ledger landing on the moved tip removes the window: a tick can no longer end
   with the queue behind the tree it describes.
