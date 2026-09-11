@@ -315,3 +315,25 @@ both spec lines want is one clause — the load never fails the verb and never
 withholds a line above it, *and* names its own failure. Whoever moves them
 can file the `docs/CLI.md` sentence as an ordinary docs entry in the same
 pass.
+
+## Three more gate-surface restatements, out of this entry's scope (observation, from CHAIN-AUTHORING-GATE-SURFACE)
+
+The doc/type agreement pins landed for `GateResult` and `PendingGateOptions`.
+Three neighbouring restatements were verified on disk this tick and left:
+
+- `src/Gate.ts:43-45` — `flumeDir`'s doc still uses
+  `join(ctx.flumeDir, "plan", "pending.json")` as its worked example of a
+  state-relative read, which is the shape `ctx.pendingPath` (same file, :86-93)
+  retired. `src/` was outside this entry's fence, so the site is named in the
+  new pin's `unfixed` inventory rather than fixed; the pin fails on any new
+  one. Mechanical if filed: swap the example for a non-queue path.
+- `docs/CHAIN-AUTHORING.md:259-263` — the `interface Gate` block omits
+  `command?`, the field a chain reads so its prompt doesn't restate a gate's
+  command line from a parallel constant. Same defect class as the `GateResult`
+  omission this entry fixed; the pin generalizes to it by adding one
+  interface name to the same helper.
+- `docs/CHAIN-AUTHORING.md:169` — the quoted `plan` phase shows
+  `gates: [pendingParseGate]`, but `examples/cascade-chain.ts:232` (the file it
+  says it is quoting) now declares
+  `pendingGate({ targetFence: build, extension: entryExtension })`. A doc/example
+  agreement claim with nothing comparing the two sides.

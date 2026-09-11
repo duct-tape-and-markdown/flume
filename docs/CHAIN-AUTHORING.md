@@ -266,6 +266,8 @@ interface GateResult {
   ok: boolean;
   message: string; // one-line verdict for dispatcher + agent
   details?: string; // captured output, fed into next tick's prompt as context
+  skipped?: string; // the judge never ran, and why — `ok` is still the verdict
+  failingFiles?: string[]; // paths the runner blamed, when it can name them
 }
 ```
 
@@ -274,6 +276,20 @@ entry stays pending. `afterMerge` runs on the trunk after a fanout wave
 lands; failure reverts **only the offending entry's commit** — its clean
 siblings stay shipped and that one entry returns to pending. Singleton
 phases never run `afterMerge` (they commit straight to the trunk).
+
+`skipped` and `failingFiles` are **facts about the run, not verdicts**: the
+dispatcher copies both onto the tick verdict and interprets them no further.
+
+- Set `skipped` whenever the gate returns `ok: true` **without running its
+  judge** — no touched path its runner covers, a runner the chain scopes out
+  by design. A bare `ok: true` claims the check was earned; spelling the skip
+  is how a green verdict stays non-vacuous.
+- Set `failingFiles` (repo-relative, forward-slash) when the runner names the
+  files it blamed — a test reporter's JSON, a type-checker's diagnostics. The
+  dispatcher compares that list against the reverted span's own touched paths
+  to mark a suspect flake on the prior-attempt record, so a gate never has to
+  call "flake" itself. Omit it and you get today's behavior: no marker, no
+  inference.
 
 ### Use the built-ins first
 
@@ -290,7 +306,7 @@ const factory: ChainFactory = (flume) => {
 - `eslintGate` — `pnpm lint`. Opt-in.
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
-- `pendingGate({ targetFence, extension?, pendingPath?, fenceWhen? })` —
+- `pendingGate({ targetFence, extension?, fenceWhen?, hint? })` —
   composed `pending.json` validation plus a plan-time fence pre-check
   against the target phase. See below.
 - `shellGate({ name, when, cmd, args, failHint? })` — escape hatch for "run
@@ -361,6 +377,16 @@ const plan: Phase = {
 every entry) — supply it to exempt park-exempt `gate.kind` values (e.g.
 `"parked"`, `"deferred"`) the same way the build fence itself does.
 
+`hint` appends chain-authored operator guidance verbatim to both violation
+messages (schema and fence) — the same capability/convention split as
+`failHint` on `shellGate`: you supply the text, the engine supplies the
+enforcement. Omitted, the messages read exactly as they did before the option
+existed.
+
+The queue this gate validates is `ctx.pendingPath`, the resolved
+`Chain.pendingPath` — there is no `pendingPath` option, because the path is
+already a fact the dispatcher hands every gate.
+
 ### When to write a bespoke Gate
 
 Reach for one when the check needs structured logic (read a file, parse
@@ -375,7 +401,7 @@ const pendingParseGate: Gate = {
   name: "pending.json parses",
   when: "afterCommit",
   async run(ctx) {
-    const raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, "utf8");
+    const raw = await readFile(ctx.pendingPath, "utf8");
     const r = parsePending(raw);
     if (r.ok)
       return { ok: true, message: `parsed (${r.entries.length} entries)` };
@@ -401,6 +427,12 @@ The shape to internalize:
 - **Respect `ctx.cwd`.** For fanout phases, gates run inside the per-entry
   worktree, not the main repo. `ctx.commitSha` is set if you need to
   inspect the commit (`git show`, `git diff`).
+- **Read the roots off `ctx`; never re-compose one.** `ctx.pendingPath` is
+  the resolved queue, `ctx.flumeDir` the state root, `ctx.configDir` the
+  chain/prompts dir — each resolved once per tick by the dispatcher. A gate
+  that rebuilds one of them out of literal segments is keeping a second copy
+  of a fact the engine already holds, and it goes wrong the moment the chain
+  relocates the real one.
 
 ### Where to place a gate: cheap structural at `afterCommit`, expensive at `afterMerge`
 
@@ -852,10 +884,13 @@ them over depends on where you are, and there is one for every position:
 - **The factory** receives `api.paths` at chain-load — the seam for anything
   decided before a tick exists: artifact placement (the sessions case above)
   and `writablePaths`.
-- **Gates** receive `ctx.flumeDir` on `GateContext` — the absolute resolved
-  state root. A gate that reads pending validates
-  `join(ctx.flumeDir, "plan", "pending.json")`. The dogfood `pendingParseGate`
-  is the worked example.
+- **Gates** receive the resolved roots on `GateContext` — `ctx.flumeDir`
+  (state root), `ctx.configDir` (chain/prompts dir), and `ctx.pendingPath`
+  (the queue, already resolved from `Chain.pendingPath`). A gate that reads
+  pending reads `ctx.pendingPath` directly; re-composing that path out of
+  `ctx.flumeDir` and literal segments both hardcodes a layout the chain can
+  move and re-derives a value the dispatcher resolved once per tick. The
+  builtin `pendingGate` is the worked example.
 - **Prompts** can use the reserved `{{FLUME_DIR}}` placeholder with **no
   `promptArgs` boilerplate** — the dispatcher auto-injects it into every
   prompt's substitution map. Write `{{FLUME_DIR}}/plan/pending.json` (or

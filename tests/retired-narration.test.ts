@@ -41,6 +41,21 @@ function exampleChainPaths(): string[] {
     .sort();
 }
 
+/**
+ * The queue path a gate composes for itself: a `ctx.*` root followed on the
+ * same line by the literal segments, in either spelling — `join(ctx.flumeDir,
+ * "plan", "pending.json")` or a `${ctx.cwd}/.flume/plan/pending.json`
+ * template. Keyed on `ctx.` because the retired shape is specifically a
+ * *gate* rebuilding the path: prose naming `<flumeDir>/plan/pending.json` as
+ * the default, a prompt writing `{{FLUME_DIR}}/plan/pending.json`, and
+ * `DEFAULT_PENDING_REL`'s own definition are all the fact itself, not a copy
+ * of it. `ctx.pendingPath` is excluded as the root for the same reason: it
+ * *is* the answer, so a line that names it beside the default layout is
+ * documenting the resolved value rather than re-deriving one.
+ */
+const RECOMPOSED_QUEUE_PATH =
+  /ctx\.(?!pendingPath\b)\w+[^\n]{0,40}?(?:plan\/pending\.json|["']plan["']\s*,\s*["']pending\.json["'])/;
+
 const RETIRED = [
   {
     // The fallback leg specifically, not every mention of the env var: the
@@ -49,11 +64,29 @@ const RETIRED = [
     what: "a `?? …` fallback beside `process.env.FLUME_DIR`",
     pattern: /process\.env\.FLUME_DIR\s*\?\?/,
     instead: "api.paths.flumeDir",
+    unfixed: {} as Record<string, string>,
   },
   {
     what: "`--model` assembled into `extraArgs`",
     pattern: /extraArgs\s*:\s*\[\s*['"]--model['"]/,
     instead: "ClaudeCodeOptions.model",
+    unfixed: {} as Record<string, string>,
+  },
+  {
+    // Pin (CHAIN-AUTHORING-GATE-SURFACE, same section): `GateContext`
+    // carries `pendingPath` — the resolved `Chain.pendingPath`, absolute,
+    // one value per tick. A gate that joins the path together instead is
+    // holding a copy of a fact the engine already resolved, and reads the
+    // wrong file the moment a chain relocates the queue.
+    what: "a gate reading a hardcoded plan/pending.json",
+    pattern: RECOMPOSED_QUEUE_PATH,
+    instead: "GateContext.pendingPath",
+    unfixed: {
+      [join("src", "Gate.ts")]:
+        "`flumeDir`'s own doc uses the queue path as its worked example of a " +
+        "state-relative read — src/ is outside the fence of the entry that " +
+        "promoted this pin",
+    } as Record<string, string>,
   },
 ] as const;
 
@@ -79,10 +112,14 @@ describe("retired chain-authoring shapes stay retired", () => {
   // neither subject, and every refusal below would pass over an empty set.
   // The chain pin is named separately: it contributes neither needle below,
   // so nothing else here would notice it dropping out of the file list.
-  it("scans a populated corpus that discusses both subjects", () => {
+  it("scans a populated corpus that discusses every subject", () => {
     expect(corpus.length).toBeGreaterThan(0);
     expect(corpus.map((f) => f.path)).toContain(CHAIN_PATH);
-    for (const needle of ["process.env.FLUME_DIR", "--model"]) {
+    for (const needle of [
+      "process.env.FLUME_DIR",
+      "--model",
+      "pending.json",
+    ]) {
       expect(
         corpus.filter((f) => f.text.includes(needle)).map((f) => f.path),
         `no scanned file mentions ${needle} — the corpus is off target`,
@@ -90,14 +127,49 @@ describe("retired chain-authoring shapes stay retired", () => {
     }
   });
 
-  for (const { what, pattern, instead } of RETIRED) {
+  for (const { what, pattern, instead, unfixed } of RETIRED) {
     it(`teaches ${instead}, never ${what}`, () => {
       expect(
-        corpus.filter((f) => pattern.test(f.text)).map((f) => f.path),
-        `use ${instead} instead`,
-      ).toEqual([]);
+        corpus
+          .filter((f) => pattern.test(f.text))
+          .map((f) => f.path)
+          .sort(),
+        `use ${instead} instead — or, for a site this entry's fence could ` +
+          "not reach, name it in the shape's `unfixed` inventory with why it " +
+          "survives",
+      ).toEqual(Object.keys(unfixed).sort());
     });
   }
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the queue-path needle reports its inventory whether it is
+  // watching or dead. Drive both directions — each spelling as an author
+  // would write it, and the prose that tells a gate *not* to, which must stay
+  // unflagged while still being a sentence about `ctx.flumeDir` and the
+  // queue.
+  it("the queue-path needle flags a re-composed path and not the prose denying it", () => {
+    for (const taught of [
+      'const p = join(ctx.flumeDir, "plan", "pending.json");',
+      "const raw = await readFile(`${ctx.cwd}/.flume/plan/pending.json`, 'utf8');",
+      "A gate that reads pending validates ctx.flumeDir + '/plan/pending.json'.",
+    ]) {
+      expect(
+        RECOMPOSED_QUEUE_PATH.test(taught),
+        `needle missed: ${taught}`,
+      ).toBe(true);
+    }
+    for (const denied of [
+      "A gate that reads pending reads `ctx.pendingPath` directly; " +
+        "re-composing that path out of `ctx.flumeDir` and literal segments " +
+        "hardcodes a layout the chain can move.",
+      "`ctx.pendingPath` — absolute, default `<flumeDir>/plan/pending.json`.",
+    ]) {
+      expect(
+        RECOMPOSED_QUEUE_PATH.test(denied),
+        `needle over-fires on: ${denied}`,
+      ).toBe(false);
+    }
+  });
 
   // The `?? …` pattern above catches the fallback leg only. The rest of the
   // retirement — prose pointing a chain at the env var for artifact placement
@@ -244,6 +316,86 @@ describe("retired chain-authoring shapes stay retired", () => {
       const text = corpus.find((f) => f.path === path)!.text;
       expect(text, `${path} is not a chain module`).toMatch(/export default/);
     }
+  });
+});
+
+// Agreement pin (CHAIN-AUTHORING-GATE-SURFACE, per .claude/rules/engineering.md
+// "A fact the engine holds is reported, never rediscovered"):
+// docs/CHAIN-AUTHORING.md is where a chain author learns the gate surface, and
+// it learns it from a restatement — a fenced `GateResult` block and a
+// one-line `pendingGate({...})` signature, both hand-copied from types the
+// compiler never compares them against. A copy reads as authoritative while
+// being stale: an omitted field is a capability no chain knows it has, an
+// invented option is a call that silently does nothing. The rung that holds
+// it is a field-set comparison against the declaring source.
+describe("the chain-authoring doc's gate surface agrees with the engine types", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+
+  /**
+   * Field names declared by `interface <name>` in `text` — the span from its
+   * opening brace to the first `}` at column 0, with block and line comments
+   * stripped so only declarations are read. Deliberately not `<name>`-aware
+   * beyond the word boundary, and deliberately the same reader for both
+   * sides: the doc's fenced `ts` block and the engine's own source are the
+   * same grammar, so one parser keeps the comparison honest.
+   */
+  function interfaceFields(text: string, name: string): string[] {
+    const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(text);
+    if (!open) return [];
+    const start = open.index + open[0].length;
+    const end = text.indexOf("\n}", start);
+    const body = text
+      .slice(start, end === -1 ? undefined : end)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return [...body.matchAll(/^\s*(\w+)\??\s*:/gm)].map((m) => m[1]!);
+  }
+
+  /**
+   * The option names the doc's built-ins list teaches, off the one line that
+   * writes the signature as destructuring — not the call sites further down,
+   * which legitimately pass a subset.
+   */
+  function docPendingGateOptions(): string[] {
+    const m = /^- `pendingGate\(\{([^}]*)\}\)`/m.exec(doc);
+    if (!m) return [];
+    return m[1]!
+      .split(",")
+      .map((s) => s.trim().replace(/\?$/, ""))
+      .filter((s) => s !== "");
+  }
+
+  it("the chain-authoring doc's GateResult block names every field src/Gate.ts declares", () => {
+    const declared = interfaceFields(read("src", "Gate.ts"), "GateResult");
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // parser that found nothing would compare two empty sets forever.
+    expect(declared, "src/Gate.ts: GateResult did not parse").toContain("ok");
+    expect(declared.length).toBeGreaterThan(3);
+    expect(
+      interfaceFields(doc, "GateResult").slice().sort(),
+      "docs/CHAIN-AUTHORING.md restates GateResult: every field src/Gate.ts " +
+        "declares belongs in that block, and nothing else does",
+    ).toEqual(declared.slice().sort());
+  });
+
+  it("the chain-authoring doc's pendingGate signature names every PendingGateOptions field and no others", () => {
+    const declared = interfaceFields(
+      read("src", "builtinGates.ts"),
+      "PendingGateOptions",
+    );
+    expect(
+      declared,
+      "src/builtinGates.ts: PendingGateOptions did not parse",
+    ).toContain("targetFence");
+    expect(declared.length).toBeGreaterThan(2);
+    expect(
+      docPendingGateOptions().slice().sort(),
+      "docs/CHAIN-AUTHORING.md's built-ins list writes pendingGate's " +
+        "signature: it names the options PendingGateOptions declares, and no " +
+        "option it does not",
+    ).toEqual(declared.slice().sort());
   });
 });
 
