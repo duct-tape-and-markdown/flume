@@ -67,12 +67,15 @@ resolve relative to `.flume/`.
 ```
 
 **Harness-managed state:** `awake/`, `worktrees/`, `prior-attempts/`,
-`rendered-prompts/`, `loop.pid` — the runtime spells each of those names
-itself, so you neither author nor move them. `sessions/` is *not* among them:
-session capture is a chain's own artifact (`withSessionCapture`), placed by
-the chain that captures it — the runtime never puts a directory there. Per-run
-artifacts your chain writes are yours to place: root them at
-`api.paths.flumeDir` and the one-`rm` teardown covers them too.
+`rendered-prompts/`, `plan/pending.json`, `loop.pid`, `stop`,
+`tick-verdict.json`, `tick-verdicts.jsonl` — the runtime spells each of those
+names itself, so you neither author nor move them (`plan/pending.json` is the
+default the runtime places; `Chain.pendingPath` moves it). `sessions/` is
+*not* among them: session capture is a chain's own artifact
+(`withSessionCapture`), placed by the chain that captures it — the runtime
+never puts a directory there. Per-run artifacts your chain writes are yours
+to place: root them at `api.paths.flumeDir` and the one-`rm` teardown covers
+them too.
 
 **One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
 retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —
@@ -108,10 +111,10 @@ class of error, checked before the state root is touched.
 line between this and `seedDir` is the same line as "machinery vs.
 opinion" everywhere else in this doc:
 
-- Merging the runtime `.gitignore` entries (`awake/`, `prior-attempts/`,
-  `rendered-prompts/`, `worktrees/`, `node_modules/`, `loop.pid`) into the
-  job dir — creating
-  the file if `seedDir` carries none, preserving any lines it does.
+- Merging `awake/`, `prior-attempts/`, `rendered-prompts/`, `worktrees/`,
+  `node_modules/`, `loop.pid` into the job dir — the runtime's own ignore
+  entries, written to `.gitignore` there, creating the file if `seedDir`
+  carries none and preserving any lines it does.
 - Pinning `core.longpaths true` repo-locally on Windows.
 - Baseline-committing the seeded harness so subsequent plan/build ticks
   produce clean deltas.

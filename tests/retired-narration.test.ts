@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { RUNTIME_IGNORES } from "../src/job.ts";
+
 // Narration pin (RETIRED-ROOTS-AND-MODEL-NARRATION, per
 // .claude/rules/engineering.md "Narration is the ladder's bottom rung"):
 // `FlumeApi.paths` and `ClaudeCodeOptions.model` replaced two shapes the
@@ -784,6 +786,80 @@ describe("no doc block is orphaned", () => {
   });
 });
 
+// ---------- shared doc-claim readers ----------
+//
+// Both pins below hold a prose list against the `src/` value that writes it,
+// and both read a doc the same way: find the paragraph that opens the claim,
+// take the bullet list under it when one follows, and read the backticked
+// tokens each chunk names. One set of readers, so the two pins cannot drift
+// into two markdown dialects.
+
+const readDoc = (...parts: string[]): string =>
+  readFileSync(join(REPO_ROOT, ...parts), "utf8");
+
+/**
+ * The claim region for `marker`: the marker's own paragraph, plus a bullet
+ * list beneath it when one follows. It ends at the first line that opens a
+ * new block at column 0 — which is what keeps README's *chain*-placed list,
+ * three lines further down, out of a scan about what the harness places.
+ */
+function regionLines(text: string, marker: RegExp): string[] | null {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => marker.test(l));
+  if (start === -1) return null;
+  const region: string[] = [];
+  let i = start;
+  while (i < lines.length && lines[i]!.trim() !== "") region.push(lines[i++]!);
+  let j = i;
+  while (j < lines.length && lines[j]!.trim() === "") j++;
+  if (j < lines.length && /^-\s/.test(lines[j]!)) {
+    region.push("");
+    for (; j < lines.length; j++) {
+      const l = lines[j]!;
+      if (/^-\s/.test(l) || /^\s+\S/.test(l) || l.trim() === "") {
+        region.push(l);
+        continue;
+      }
+      break;
+    }
+  }
+  return region;
+}
+
+/**
+ * The region as claim chunks — the marker paragraph, then one chunk per
+ * bullet with its continuation lines. Prose wraps, so a chunk is the unit a
+ * claim is actually written in.
+ */
+function claimChunks(lines: string[]): string[] {
+  const out: string[][] = [];
+  let cur: string[] | null = null;
+  for (const line of lines) {
+    if (/^-\s/.test(line)) {
+      if (cur) out.push(cur);
+      cur = [line];
+    } else if (line.trim() === "") {
+      if (cur) out.push(cur);
+      cur = null;
+    } else if (cur) cur.push(line);
+    else cur = [line];
+  }
+  if (cur) out.push(cur);
+  return out.map((chunk) => chunk.join(" "));
+}
+
+/**
+ * The paths a chunk claims: every backticked token ahead of the chunk's
+ * first em dash. The dash is where a chunk stops naming and starts
+ * explaining, and the explanation legitimately names things that are not on
+ * the list — a CLI invocation, a `Chain` field, the file a list is merged
+ * into, the chain-placed directory a list exists to disown.
+ */
+function claimedPaths(chunk: string): string[] {
+  const named = chunk.split("—")[0]!;
+  return [...named.matchAll(/`([^`]+)`/g)].map((m) => m[1]!);
+}
+
 // Agreement pin (DOC-HARNESS-STATE-OWNERSHIP, per .claude/rules/engineering.md
 // "A seam gate reads what the real writer wrote"): the docs tell a chain
 // author which paths under a state root are the harness's, and they told it
@@ -797,8 +873,7 @@ describe("no doc block is orphaned", () => {
 // `flumeDir`, `DEFAULT_PENDING_REL`, and the literals the dispatcher joins on
 // directly. This pin reads that writer and holds the docs' claim to it.
 describe("the docs' harness-managed state list agrees with what src/ spells", () => {
-  const read = (...parts: string[]): string =>
-    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const read = readDoc;
 
   /** The docs that teach a state root's layout, and must agree about it. */
   const SCANNED_DOCS = ["README.md", join("docs", "CHAIN-AUTHORING.md")];
@@ -809,68 +884,9 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
    */
   const MARKER = /^\s*(?:\*\*)?Harness-managed state\b/;
 
-  /**
-   * The claim region: the marker's own paragraph, plus a bullet list beneath
-   * it when one follows. It ends at the first line that opens a new block at
-   * column 0 — which is what keeps README's *chain*-placed list, three lines
-   * further down, out of a scan about what the harness places.
-   */
-  function regionLines(text: string): string[] | null {
-    const lines = text.split("\n");
-    const start = lines.findIndex((l) => MARKER.test(l));
-    if (start === -1) return null;
-    const region: string[] = [];
-    let i = start;
-    while (i < lines.length && lines[i]!.trim() !== "") region.push(lines[i++]!);
-    let j = i;
-    while (j < lines.length && lines[j]!.trim() === "") j++;
-    if (j < lines.length && /^-\s/.test(lines[j]!)) {
-      region.push("");
-      for (; j < lines.length; j++) {
-        const l = lines[j]!;
-        if (/^-\s/.test(l) || /^\s+\S/.test(l) || l.trim() === "") {
-          region.push(l);
-          continue;
-        }
-        break;
-      }
-    }
-    return region;
-  }
-
-  /**
-   * The region as claim chunks — the marker paragraph, then one chunk per
-   * bullet with its continuation lines. Prose wraps, so a chunk is the unit a
-   * claim is actually written in.
-   */
-  function claimChunks(lines: string[]): string[] {
-    const out: string[][] = [];
-    let cur: string[] | null = null;
-    for (const line of lines) {
-      if (/^-\s/.test(line)) {
-        if (cur) out.push(cur);
-        cur = [line];
-      } else if (line.trim() === "") {
-        if (cur) out.push(cur);
-        cur = null;
-      } else if (cur) cur.push(line);
-      else cur = [line];
-    }
-    if (cur) out.push(cur);
-    return out.map((chunk) => chunk.join(" "));
-  }
-
-  /**
-   * The paths a chunk claims: every backticked token ahead of the chunk's
-   * first em dash. The dash is where a bullet stops naming and starts
-   * explaining, and the explanation legitimately names things that are not
-   * state-root paths — a CLI invocation, a `Chain` field, the chain-placed
-   * directory this list exists to disown.
-   */
-  function claimedPaths(chunk: string): string[] {
-    const named = chunk.split("—")[0]!;
-    return [...named.matchAll(/`([^`]+)`/g)].map((m) => m[1]!);
-  }
+  /** The claim region for this pin's marker. */
+  const stateRegion = (text: string): string[] | null =>
+    regionLines(text, MARKER);
 
   /**
    * A doc's path token as a state-root-relative name: the `.flume/` prefix
@@ -966,7 +982,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     // line, would leave the refusal below judging an empty claim set in a doc
     // that still teaches the layout.
     for (const doc of SCANNED_DOCS) {
-      const region = regionLines(read(doc));
+      const region = stateRegion(read(doc));
       expect(
         region,
         `${doc} states no harness-managed state claim the scan can find — ` +
@@ -980,7 +996,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     }
   });
 
-  it("the docs' harness-managed state list names only paths `src/` spells", () => {
+  it("the docs' harness-managed state list names every path src/ spells", () => {
     // Vacuity: a writer-side reader that resolved nothing would accept every
     // claim. Name the shapes it must have resolved — a literal the dispatcher
     // joins, a `STATE_ROOT_NAMES` member behind an accessor, and the queue
@@ -996,13 +1012,22 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     );
 
     for (const doc of SCANNED_DOCS) {
-      const claimed = claimChunks(regionLines(read(doc))!)
+      const claimed = claimChunks(stateRegion(read(doc))!)
         .flatMap(claimedPaths)
         .map(stateRootName);
       expect(
         claimed.filter((name) => !spelled.includes(name)),
         `${doc} teaches a path as harness-managed that nothing in src/ ` +
-          `places under a state root — src/ spells: ${spelled.sort().join(", ")}`,
+          `places under a state root — src/ spells: ${[...spelled].sort().join(", ")}`,
+      ).toEqual([]);
+      // The other direction. A subset check passes a list that names three
+      // of nine, and a chain author reads a short list as a complete one —
+      // taking a path the runtime will keep placing for one of their own to
+      // put there. Agreement is equality or it is not agreement.
+      expect(
+        [...spelled].filter((name) => !claimed.includes(name)).sort(),
+        `${doc} omits a path src/ places under a state root — the list ` +
+          "reads as complete, so every name src/ spells belongs on it",
       ).toEqual([]);
     }
   });
@@ -1031,7 +1056,7 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
     };
 
     for (const [doc, inject] of Object.entries(injections)) {
-      const region = regionLines(read(doc))!;
+      const region = stateRegion(read(doc))!;
       const clean = claimChunks(region)
         .flatMap(claimedPaths)
         .map(stateRootName);
@@ -1045,5 +1070,118 @@ describe("the docs' harness-managed state list agrees with what src/ spells", ()
           "unflagged — the region parser or the em-dash cut has gone blind",
       ).toEqual(["sessions"]);
     }
+  });
+
+  // Sensitivity pin for the equality direction: the omission refusal reports
+  // "nothing missing" whether it is watching or dead, and it is the half that
+  // went unwatched — the chain doc named five of the nine for a full release
+  // line. Drive it with `stop` removed from each doc's real region, in that
+  // doc's own register.
+  it("flags a path src/ spells that the docs' harness-managed list omits", () => {
+    const removals: Record<string, (region: string[]) => string[]> = {
+      "README.md": (region) =>
+        region.filter((l) => !l.includes("`.flume/stop`")),
+      [join("docs", "CHAIN-AUTHORING.md")]: (region) =>
+        region.map((l) => l.replace(/`stop`,?\s*/, "")),
+    };
+
+    for (const [doc, remove] of Object.entries(removals)) {
+      const region = stateRegion(read(doc))!;
+      const thinned = claimChunks(remove(region))
+        .flatMap(claimedPaths)
+        .map(stateRootName);
+      expect(
+        thinned,
+        `${doc}: the removal was a no-op — the register this control edits ` +
+          "has moved, so it proves nothing",
+      ).not.toContain("stop");
+      expect(
+        [...spelled].filter((name) => !thinned.includes(name)),
+        `${doc}: a dropped \`stop\` went unflagged — the omission refusal ` +
+          "has gone blind",
+      ).toEqual(["stop"]);
+    }
+  });
+});
+
+// Agreement pin (CHAIN-AUTHORING-RUNTIME-NAME-AGREEMENT, per
+// .claude/rules/engineering.md "A seam gate reads what the real writer
+// wrote"): §5a's "what the runtime still owns" bullet hand-lists the ignore
+// entries `flume job new` merges into a fresh job dir. The writer is
+// `RUNTIME_IGNORES` (`src/job.ts`), which derives most of its own entries
+// from `STATE_ROOT_NAMES` precisely so a renamed state root cannot leave the
+// seed pointing at the old name — and the doc's copy is where that chain of
+// derivation stopped. A chain author reads the bullet to learn which lines
+// they need not put in `seedDir`, so a name the doc has and the runtime does
+// not is an ignore line nobody writes.
+describe("docs/CHAIN-AUTHORING.md's job-seed ignore list agrees with RUNTIME_IGNORES", () => {
+  const DOC = join("docs", "CHAIN-AUTHORING.md");
+  const MARKER = /^\s*(?:\*\*)?What the runtime still owns\b/;
+
+  /**
+   * The bullet that names the merged entries — the one bullet in the region
+   * that is about ignoring anything; its siblings pin `core.longpaths` and
+   * baseline-commit the seed. Selected by what it says rather than by
+   * position, so reordering the list does not silently point this pin at
+   * `core.longpaths`.
+   */
+  function seedChunk(text: string): string {
+    const region = regionLines(text, MARKER);
+    expect(
+      region,
+      `${DOC} states no "What the runtime still owns" claim the scan can ` +
+        "find — restore the marker, or this pin is blind",
+    ).not.toBeNull();
+    const bullets = claimChunks(region!).filter(
+      (c) => /^-\s/.test(c) && /ignore/i.test(c),
+    );
+    expect(
+      bullets,
+      `${DOC}: the runtime-owned region holds no ignore-list bullet`,
+    ).toHaveLength(1);
+    return bullets[0]!;
+  }
+
+  it("the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES carries and no others", () => {
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
+    // empty writer would make every doc list agree with it.
+    expect(
+      RUNTIME_IGNORES.length,
+      "src/job.ts: RUNTIME_IGNORES is empty — nothing to hold the doc to",
+    ).toBeGreaterThan(0);
+
+    const claimed = claimedPaths(seedChunk(readDoc(DOC)));
+    expect(
+      [...claimed].sort(),
+      `${DOC}'s job-seed list disagrees with RUNTIME_IGNORES (src/job.ts) — ` +
+        `the runtime merges: ${[...RUNTIME_IGNORES].sort().join(", ")}`,
+    ).toEqual([...RUNTIME_IGNORES].sort());
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the equality above reads a prose list through an em-dash
+  // cut, and a cut that lands in the wrong place reports agreement over a
+  // set it never saw. Drive it both ways against the doc's real bullet.
+  it("flags a job-seed ignore list that drifts from RUNTIME_IGNORES", () => {
+    const chunk = seedChunk(readDoc(DOC));
+    const clean = claimedPaths(chunk);
+
+    // An entry the runtime does not merge, taught as one it does.
+    const extra = chunk.replace("`awake/`", "`awake/`, `sessions/`");
+    expect(extra, "the injection was a no-op").not.toEqual(chunk);
+    expect(
+      claimedPaths(extra).filter((e) => !RUNTIME_IGNORES.includes(e as never)),
+      `${DOC}: an invented \`sessions/\` entry went unflagged`,
+    ).toEqual(["sessions/"]);
+
+    // An entry the runtime does merge, dropped from the doc.
+    const missing = chunk.replace("`node_modules/`, ", "");
+    expect(missing, "the removal was a no-op").not.toEqual(chunk);
+    const thinned = claimedPaths(missing);
+    expect(thinned, `${DOC}: the removal changed nothing`).not.toEqual(clean);
+    expect(
+      RUNTIME_IGNORES.filter((e) => !thinned.includes(e)),
+      `${DOC}: a dropped \`node_modules/\` entry went unflagged`,
+    ).toEqual(["node_modules/"]);
   });
 });
