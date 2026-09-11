@@ -394,6 +394,12 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
    * beyond the word boundary, and deliberately the same reader for both
    * sides: the doc's fenced `ts` block and the engine's own source are the
    * same grammar, so one parser keeps the comparison honest.
+   *
+   * Both callable spellings count as the same field: a member declared as a
+   * property (`run: (ctx) => …`, how `src/Gate.ts` writes it) and the same
+   * member written as method shorthand (`run(ctx): …`, how the doc writes
+   * it) name one field, and a reader that saw only the first would call the
+   * doc's block short by a name it does declare.
    */
   function interfaceFields(text: string, name: string): string[] {
     const open = new RegExp(`interface\\s+${name}\\s*\\{`).exec(text);
@@ -404,7 +410,7 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
       .slice(start, end === -1 ? undefined : end)
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    return [...body.matchAll(/^\s*(\w+)\??\s*:/gm)].map((m) => m[1]!);
+    return [...body.matchAll(/^\s*(\w+)\??\s*[:(]/gm)].map((m) => m[1]!);
   }
 
   /**
@@ -434,6 +440,23 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
     ).toEqual(declared.slice().sort());
   });
 
+  it("the chain-authoring doc's Gate block names every field src/Gate.ts declares", () => {
+    const declared = interfaceFields(read("src", "Gate.ts"), "Gate");
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // parser that found nothing would compare two empty sets forever, and one
+    // that skipped the optional field would agree with a doc that omits it.
+    expect(declared, "src/Gate.ts: Gate did not parse").toContain("run");
+    expect(
+      declared,
+      "src/Gate.ts: Gate declares `command?` — the reader dropped it",
+    ).toContain("command");
+    expect(
+      interfaceFields(doc, "Gate").slice().sort(),
+      "docs/CHAIN-AUTHORING.md restates Gate: every field src/Gate.ts " +
+        "declares belongs in that block, and nothing else does",
+    ).toEqual(declared.slice().sort());
+  });
+
   it("the chain-authoring doc's pendingGate signature names every PendingGateOptions field and no others", () => {
     const declared = interfaceFields(
       read("src", "builtinGates.ts"),
@@ -450,6 +473,123 @@ describe("the chain-authoring doc's gate surface agrees with the engine types", 
         "signature: it names the options PendingGateOptions declares, and no " +
         "option it does not",
     ).toEqual(declared.slice().sort());
+  });
+});
+
+// Agreement pin (CHAIN-AUTHORING-DOC-AGREEMENT, per
+// .claude/rules/engineering.md "A seam gate reads what the real writer
+// wrote"): docs/CHAIN-AUTHORING.md introduces a fenced block as "the `plan`
+// phase from `examples/cascade-chain.ts`" and then hand-copies it. The copy
+// is what a chain author reads as the worked shape, and nothing compared it
+// to the file it names — so it drifted to a `gates` entry and a
+// `promptArgs` call the example does not write. The rung that holds a quote
+// is the quoted file itself: the real declaration, read off disk, compared
+// against the block that claims to be it.
+describe("the chain-authoring doc quotes the example chain it names", () => {
+  const read = (...parts: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...parts), "utf8");
+  const doc = read("docs", "CHAIN-AUTHORING.md");
+
+  /**
+   * The fenced `ts` block the doc introduces as the example's `plan` phase.
+   * Keyed on the sentence that makes the claim rather than a line number, so
+   * the pin follows the prose when the section moves — and fails loudly if
+   * the claim itself is reworded, which is the point at which a human should
+   * re-decide what the block is quoting.
+   */
+  const DOC_QUOTE =
+    /The `plan` phase from `examples\/cascade-chain\.ts`:\s*```ts\n([\s\S]*?)```/;
+
+  /**
+   * The `const plan: Phase = { … };` declaration as a chain module writes it:
+   * the declaration line through the first line closing it at the same
+   * indentation, so the span survives the example's factory nesting.
+   */
+  function planPhaseSource(text: string): string {
+    const lines = text.split("\n");
+    const start = lines.findIndex((l) => /^\s*const plan: Phase = \{$/.test(l));
+    if (start === -1) return "";
+    const indent = /^\s*/.exec(lines[start]!)![0];
+    const end = lines.findIndex((l, i) => i > start && l === `${indent}};`);
+    if (end === -1) return "";
+    return lines.slice(start, end + 1).join("\n");
+  }
+
+  /**
+   * Formatting-insensitive form of a TypeScript span: trailing line comments
+   * dropped, every line trimmed, whitespace around structural punctuation
+   * removed, and trailing commas before a closer dropped. What survives is
+   * the declaration — the doc's dedent, the example's factory indentation,
+   * and prettier's choice of where to wrap all normalize away, so only a
+   * difference in what is declared can fail the comparison.
+   *
+   * The comment strip is the spaced `// …` form deliberately: a path literal
+   * (`"specs/_aligned/**"`) carries no space before its slashes, so it is not
+   * mistaken for a comment.
+   */
+  function normalizeTs(span: string): string {
+    return span
+      .split("\n")
+      .map((line) => line.replace(/\s+\/\/.*$/, "").trim())
+      .filter((line) => line !== "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .replace(/\s*([{}[\](),;])\s*/g, "$1")
+      .replace(/,([}\])])/g, "$1");
+  }
+
+  it("the chain-authoring doc's quoted plan phase agrees with examples/cascade-chain.ts", () => {
+    const example = planPhaseSource(read("examples", "cascade-chain.ts"));
+    const quoted = DOC_QUOTE.exec(doc)?.[1] ?? "";
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): two
+    // spans that failed to parse agree forever.
+    expect(
+      example,
+      "examples/cascade-chain.ts: the plan phase did not parse",
+    ).toMatch(/gates:/);
+    expect(
+      quoted,
+      "docs/CHAIN-AUTHORING.md: the quoted plan phase did not parse — the " +
+        "sentence introducing the block was reworded, or the fence moved",
+    ).toMatch(/gates:/);
+    expect(
+      normalizeTs(quoted),
+      "docs/CHAIN-AUTHORING.md quotes examples/cascade-chain.ts's plan " +
+        "phase: the block must be that declaration, not a paraphrase of it",
+    ).toBe(normalizeTs(example));
+  });
+
+  // Sensitivity pin: the comparison above is only worth its green if the
+  // normalizer erases formatting and nothing else. Drive both directions off
+  // the real declaration — re-wrapped agrees, re-declared does not.
+  it("the quote comparison ignores wrapping and catches a changed declaration", () => {
+    const example = planPhaseSource(read("examples", "cascade-chain.ts"));
+    expect(example, "the example's plan phase did not parse").toContain(
+      "gates: [pendingGate({ targetFence: build, extension: entryExtension })],",
+    );
+
+    const rewrapped = example
+      .replace(
+        "gates: [pendingGate({ targetFence: build, extension: entryExtension })],",
+        "gates: [\n  pendingGate({\n    targetFence: build,\n    extension: entryExtension,\n  }),\n],",
+      )
+      .replace(/^ {4}/gm, "");
+    expect(rewrapped, "the rewrap was a no-op").not.toBe(example);
+    expect(normalizeTs(rewrapped)).toBe(normalizeTs(example));
+
+    // The drift this entry found: the doc named a different gate and dropped
+    // the extension argument.
+    const drifted = example
+      .replace(
+        "gates: [pendingGate({ targetFence: build, extension: entryExtension })],",
+        "gates: [pendingParseGate],",
+      )
+      .replace(
+        "renderSchemaForPrompt(entryExtension)",
+        "renderSchemaForPrompt()",
+      );
+    expect(drifted, "the drift was a no-op").not.toBe(example);
+    expect(normalizeTs(drifted)).not.toBe(normalizeTs(example));
   });
 });
 

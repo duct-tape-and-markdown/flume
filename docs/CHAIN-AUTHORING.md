@@ -163,12 +163,12 @@ const plan: Phase = {
     ".flume/plan/pending.json",
     ".flume/plan/state.md",
     ".flume/plan/open-questions.md",
-    "specs/_aligned/**",
-    "specs/active/**",
+    "specs/_aligned/**", // graduation moves files into here
+    "specs/active/**", // graduation removes them from here
   ],
-  gates: [pendingParseGate],
+  gates: [pendingGate({ targetFence: build, extension: entryExtension })],
   promptArgs() {
-    return { PENDING_SCHEMA: renderSchemaForPrompt() };
+    return { PENDING_SCHEMA: renderSchemaForPrompt(entryExtension) };
   },
   handoff(result) {
     const hasPickable = result.pendingAfter.some((e) => e.gate.kind === "open");
@@ -260,6 +260,7 @@ interface Gate {
   name: string;
   when: "afterCommit" | "afterMerge";
   run(ctx: GateContext): Promise<GateResult>;
+  command?: string; // the one command line this gate runs, when it has one
 }
 
 interface GateResult {
@@ -290,6 +291,12 @@ dispatcher copies both onto the tick verdict and interprets them no further.
   to mark a suspect flake on the prior-attempt record, so a gate never has to
   call "flake" itself. Omit it and you get today's behavior: no marker, no
   inference.
+- `command` is the gate's **own command line**, and the harness block shows
+  it to the agent beside the gate's name — so a chain asking the agent to
+  self-check before committing doesn't restate the command in its prompt from
+  a parallel constant. `shellGate` sets it from its `cmd`/`args`, and the
+  built-ins composed from it inherit it; a hand-rolled gate with no single
+  command line declares none and renders as name alone.
 
 ### Use the built-ins first
 
