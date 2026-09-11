@@ -770,6 +770,14 @@ describe("records gate and the park predicate — one file each", () => {
     expect((await run(["tests/a.test.ts"], entry)).ok).toBe(false);
   });
 
+  it("vitest: a park commit is not judged against the entry's named tests", async () => {
+    const gate = build.gates.find((g) => g.name === "vitest")!;
+    const entry: PendingEntry = { ...makeEntry("OPEN-1", { kind: "open" }), tests: ["a behavior the park never attempted"] } as PendingEntry;
+    const r = await gate.run({ ...gateCtx("HEAD", "build", entry), touchedPaths: [NOTE] });
+    expect(r.ok).toBe(true);
+    expect(r.message).toBe("park: the note alone, not judged");
+  });
+
   it("build.shipped: a commit whose only path is the entry's own note is a park; the note beside code, or any other sole file, is a ship", () => {
     const entry = makeEntry("OPEN-1", { kind: "open" });
     const ship = (touchedPaths: string[]) =>

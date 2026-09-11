@@ -817,6 +817,13 @@ const factory: ChainFactory = (api) => {
       const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
       const pinned = entryExtension.pins.schema.parse(ctx.entry?.pins);
       const touched = ctx.touchedPaths ?? [];
+      // A park is the note alone: nothing to judge, and the named lines are
+      // the work's, which the park did not attempt. Judging them here turned
+      // every park on an entry that names a test into a gate revert, which
+      // threw the note away before plan could read it.
+      if (ctx.entry && isPark(ctx.entry, touched)) {
+        return { ok: true, message: "park: the note alone, not judged" };
+      }
       if (named.length + pinned.length === 0 && touched.length > 0 && !touched.some((p) => codePath.test(p))) {
         return {
           ok: true,
