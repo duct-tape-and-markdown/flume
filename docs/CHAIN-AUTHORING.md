@@ -66,8 +66,8 @@ resolve relative to `.flume/`.
     open-questions.md
 ```
 
-`awake/`, `worktrees/`, `sessions/`, and `inbox.md` are harness-managed
-state — you don't author them.
+`awake/`, `worktrees/`, and `sessions/` are harness-managed state — you
+don't author them.
 
 **One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
 retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —

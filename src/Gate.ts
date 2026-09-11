@@ -41,8 +41,11 @@ export interface GateContext {
    * Absolute, resolved flume state root (`flumeDir`) — where the baton,
    * pending, worktrees, and prior-attempts live (default `<repoRoot>/.flume`,
    * relocatable via `FLUME_DIR`). A gate reads state-relative paths from here
-   * (`join(ctx.flumeDir, "plan", "pending.json")`) instead of hardcoding
-   * `.flume/` or reaching into `process.env` (RELEASE-v0.3 §16).
+   * (`join(ctx.flumeDir, "prior-attempts")`) instead of hardcoding `.flume/`
+   * or reaching into `process.env` (RELEASE-v0.3 §16). The queue is not one
+   * of them — it has its own resolved field, `pendingPath` below, and a gate
+   * that rebuilds the path from this root instead reads the wrong file the
+   * moment a chain relocates the queue.
    *
    * This is the **primary checkout's** state root at both gate points, never
    * rebased onto a worktree: runtime state (`awake/`, `prior-attempts/`,

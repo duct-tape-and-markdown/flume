@@ -56,8 +56,20 @@ function exampleChainPaths(): string[] {
 const RECOMPOSED_QUEUE_PATH =
   /ctx\.(?!pendingPath\b)\w+[^\n]{0,40}?(?:plan\/pending\.json|["']plan["']\s*,\s*["']pending\.json["'])/;
 
+/**
+ * The retired single-file findings queue. `.flume/PROTOCOL.md` ("Records:
+ * one file each") replaced it with a directory whose entries are one file
+ * per finding, so parallel ticks never collide on one file's text. The
+ * needle is the `.md` suffix alone: `inbox/` — the shape that replaced it —
+ * is the subject every surviving mention should be about.
+ */
+const RETIRED_INBOX_FILE = /inbox\.md/;
+
 const RETIRED = [
   {
+    behavior:
+      "teaches api.paths.flumeDir, never a `?? …` fallback beside " +
+      "`process.env.FLUME_DIR`",
     // The fallback leg specifically, not every mention of the env var: the
     // canonicalization write-back is real, and documented as the
     // child-process channel.
@@ -67,6 +79,9 @@ const RETIRED = [
     unfixed: {} as Record<string, string>,
   },
   {
+    behavior:
+      "teaches ClaudeCodeOptions.model, never `--model` assembled into " +
+      "`extraArgs`",
     what: "`--model` assembled into `extraArgs`",
     pattern: /extraArgs\s*:\s*\[\s*['"]--model['"]/,
     instead: "ClaudeCodeOptions.model",
@@ -78,15 +93,26 @@ const RETIRED = [
     // one value per tick. A gate that joins the path together instead is
     // holding a copy of a fact the engine already resolved, and reads the
     // wrong file the moment a chain relocates the queue.
+    behavior:
+      "the retired queue-path shape has no surviving unfixed site — a gate " +
+      "reads `GateContext.pendingPath`",
     what: "a gate reading a hardcoded plan/pending.json",
     pattern: RECOMPOSED_QUEUE_PATH,
     instead: "GateContext.pendingPath",
-    unfixed: {
-      [join("src", "Gate.ts")]:
-        "`flumeDir`'s own doc uses the queue path as its worked example of a " +
-        "state-relative read — src/ is outside the fence of the entry that " +
-        "promoted this pin",
-    } as Record<string, string>,
+    unfixed: {} as Record<string, string>,
+  },
+  {
+    // Pin (RETIRED-NARRATION-INBOX-AND-QUEUE-PATH, same section): the
+    // findings queue is a directory of one-file records, not a single
+    // `inbox.md` every writer appends to. The old name survived in two
+    // state-layout listings after the directory landed, where it still read
+    // as the current shape.
+    behavior:
+      "no scanned surface names the retired single-file .flume/inbox.md queue",
+    what: "the single-file `.flume/inbox.md` queue",
+    pattern: RETIRED_INBOX_FILE,
+    instead: "the `.flume/inbox/` directory of one-file records",
+    unfixed: {} as Record<string, string>,
   },
 ] as const;
 
@@ -119,6 +145,7 @@ describe("retired chain-authoring shapes stay retired", () => {
       "process.env.FLUME_DIR",
       "--model",
       "pending.json",
+      "inbox",
     ]) {
       expect(
         corpus.filter((f) => f.text.includes(needle)).map((f) => f.path),
@@ -127,16 +154,16 @@ describe("retired chain-authoring shapes stay retired", () => {
     }
   });
 
-  for (const { what, pattern, instead, unfixed } of RETIRED) {
-    it(`teaches ${instead}, never ${what}`, () => {
+  for (const { behavior, what, pattern, instead, unfixed } of RETIRED) {
+    it(behavior, () => {
       expect(
         corpus
           .filter((f) => pattern.test(f.text))
           .map((f) => f.path)
           .sort(),
-        `use ${instead} instead — or, for a site this entry's fence could ` +
-          "not reach, name it in the shape's `unfixed` inventory with why it " +
-          "survives",
+        `${what} is retired: use ${instead} instead — or, for a site this ` +
+          "entry's fence could not reach, name it in the shape's `unfixed` " +
+          "inventory with why it survives",
       ).toEqual(Object.keys(unfixed).sort());
     });
   }
@@ -167,6 +194,33 @@ describe("retired chain-authoring shapes stay retired", () => {
       expect(
         RECOMPOSED_QUEUE_PATH.test(denied),
         `needle over-fires on: ${denied}`,
+      ).toBe(false);
+    }
+  });
+
+  // Sensitivity pin (engineering.md, "A green verdict is proven
+  // non-vacuous"): the inbox refusal passes over an empty set by design now
+  // that every site is fixed, so nothing else here would notice the needle
+  // going dead. Drive both directions — the retired spelling as the two
+  // state-layout listings wrote it, and the directory that replaced it,
+  // which must stay unflagged while still being prose about the inbox.
+  it("the inbox needle flags the retired single file and not the directory that replaced it", () => {
+    for (const taught of [
+      "- `.flume/inbox.md` — transient findings queue drained by plan.",
+      "`awake/`, `worktrees/`, `sessions/`, and `inbox.md` are harness-managed",
+    ]) {
+      expect(RETIRED_INBOX_FILE.test(taught), `needle missed: ${taught}`).toBe(
+        true,
+      );
+    }
+    for (const current of [
+      "- `.flume/inbox/` — transient findings queue, one file per finding.",
+      "a finding under `inbox/`, a build note under `plan/notes/`, both " +
+        "relative to the state root.",
+    ]) {
+      expect(
+        RETIRED_INBOX_FILE.test(current),
+        `needle over-fires on: ${current}`,
       ).toBe(false);
     }
   });

@@ -149,7 +149,8 @@ Everything is on disk under `.flume/`:
 - `.flume/plan/pending.json` — structured handoff between plan and build.
 - `.flume/plan/state.md`, `.flume/plan/open-questions.md` — prose scratch
   that survives across ticks.
-- `.flume/inbox.md` — transient findings queue drained by plan.
+- `.flume/inbox/` — transient findings queue, one file per finding, drained
+  by plan.
 - `.flume/worktrees/<entry-slug>/` — per-entry worktrees during fanout. The
   base dir is overridable via `FLUME_WORKTREES_DIR` (below).
 - `.flume/loop.pid` — cross-process loop lock, present while a `flume loop`
