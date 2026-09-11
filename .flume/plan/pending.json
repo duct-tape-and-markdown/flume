@@ -1,67 +1,5 @@
 [
   {
-    "tag": "RUNTIME-IGNORES-NAMES-MERGING",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "RUNTIME_IGNORES gains the merging dir off STATE_ROOT_NAMES"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the job-seed ignore list, :117-119"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "the name-coverage assertion"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The spec's ignore block now names `merging/` and `RUNTIME_IGNORES` does not, so a job dir leaves a crash's merge marker untracked-visible and addable",
-    "per": {
-      "path": "spec/jobs.md",
-      "section": "Runtime ignores"
-    },
-    "tests": [
-      "RUNTIME_IGNORES names the merging-marker dir"
-    ],
-    "pins": [],
-    "acceptance": "`RUNTIME_IGNORES` carries `merging/` off `STATE_ROOT_NAMES.merging`, the doc's job-seed list agrees under its equality pin, and a fresh `job new` .gitignore covers the marker.",
-    "notes": "The amendment this waited on landed at 17cf6a3 — the open question's `merging/` half is closed. `STATE_ROOT_NAMES.merging` already exists (src/paths.ts:81): one name, one accessor, no second spelling. docs/CHAIN-AUTHORING.md:117-119 is equality-pinned to RUNTIME_IGNORES (tests/retired-narration.test.ts:1375), so the two move in one commit or the pin reverts the tick."
-  },
-  {
-    "tag": "MERGING-MARKER-DIVERGENCE-RETIRED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "clearMergingMarkers' doc comment, :3586-3599"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`clearMergingMarkers` still declares a divergence from a spec sentence the 2026-09-11 amendment already tightened, so the site reads as deliberately off-spec",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "pins": [],
-    "acceptance": "The comment states the wait point and cites `spec/loop.md` *Crash equals stop* as agreeing, carrying no divergence marker — so a sweep reads the site as covered rather than exempt.",
-    "notes": "spec/loop.md:222 now states the verdict is the CLI's and the marker is not held for it (17cf6a3) — precisely what the site declares as divergence. A stale declaration is worse than none: posture-sweep never files against a site citing its divergence as deliberate, so the marker exempts it permanently. Collides with RELEASE-CITES-CUT-DISPATCHER on src/Dispatcher.ts; the partitioner serializes them."
-  },
-  {
     "tag": "HANDOFF-ENTRY-MERGE-OUTCOME",
     "gate": {
       "kind": "open"
@@ -97,36 +35,6 @@
     "pins": [],
     "acceptance": "`handoff` separates `cherry-pick-conflict` from `not-shipped` off `result.entries` alone, without reading the verdict log.",
     "notes": "Ratified at 17cf6a3 — the section now enumerates `mergeOutcome?` and names `merged` / `not-shipped` / `cherry-pick-conflict`. `mergeOutcomes` is in scope at the `entries` map (declared src/Dispatcher.ts:2736, mapped :3275); read it, never re-derive. `MergeOutcome` is Dispatcher's and already on the barrel, and src/Phase.ts:10 already imports type-only from ./Dispatcher.js — the field adds no edge. The existing entries[] shape test is tests/Dispatcher.test.ts:9530."
-  },
-  {
-    "tag": "INDEX-EXPORTS-ORPHANED-TYPES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/index.ts",
-          "description": "PriorAttemptKeyspace beside NoCommitMode / PriorAttempt (:67); QuarantinedTag beside the ./Phase.js types (:19)"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the two barrel pins, beside NoCommitMode's at :14631"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`PriorAttemptKeyspace` and `QuarantinedTag` type fields on exported surfaces yet are off the barrel, so a chain cannot name what it already consumes",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "The package a chain loads through"
-    },
-    "tests": [],
-    "pins": [],
-    "acceptance": "Both types resolve from the package entry point, pinned the way `NoCommitMode` and `ProvisionFailure` are — each pin fails tsc if its re-export drops.",
-    "notes": "Drained from PRIOR-ATTEMPT-STALE-RECORDS-CLEARED and QUARANTINE-KEYS-THE-ENTRY-AS-READ notes; verified on disk (src/Prompt.ts:73, src/Phase.ts:161; neither in src/index.ts). One entry, not two: same file, same one-line shape, and two would serialize into separate waves. tests[] empty by construction — the pins are type-level, so tsc is their gate and vitest is green over the base either way (`.flume/vitestJudge.ts`, judgeRedOnBase)."
   },
   {
     "tag": "CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR",
