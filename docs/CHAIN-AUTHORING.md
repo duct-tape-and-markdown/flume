@@ -244,20 +244,18 @@ promptArgs(ctx) {
 }
 ```
 
-`TickContext` carries `cwd` (the path the tick works in — its worktree, with
-one exception a singleton `shouldRun` hits, below) and `flumeDir` (the
-absolute, resolved flume state root, the same path on both consults, and
-auto-injected as the reserved `{{FLUME_DIR}}` prompt arg) on every tick. The
-plan arrives on `assignedEntry` (the entry this tick was handed, fanout only)
-and `pending` (the full list, for singleton phases reasoning about queue
-state). Two more are facts the dispatcher already computed, carried so a hook
-reads them instead of rebuilding them: `pickable` — the entries the
-dispatcher would select right now, with `blockedBy` resolved, forks and
-capabilities checked and this run's quarantine drop applied — and
-`priorAttempts`, every persisted prior-attempt record, keyed as the files
-under `<flumeDir>/prior-attempts/` are. Those two are optional in the type
-only so a hand-built fixture may omit them; a dispatcher-built context always
-sets them.
+Both `promptArgs` and the `shouldRun` predicate below receive the same
+per-tick `TickContext`. It too lives in `src/Phase.ts`; every field it
+declares is below, in declaration order.
+
+| Field           | What it carries                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `cwd`           | The path this tick works in — its worktree, with one exception: a singleton `shouldRun` is consulted before provisioning, so its `cwd` is the repo root. A predicate that must resolve paths on both consults uses `flumeDir` instead. |
+| `flumeDir`      | The absolute, resolved flume state root — the same path on both consults, and auto-injected as the reserved `{{FLUME_DIR}}` prompt arg, so most prompts need no `promptArgs` boilerplate to reach it. |
+| `assignedEntry` | The pending entry this tick was handed. Fanout phases only.                                                                       |
+| `pending`       | The full pending list, for a singleton phase reasoning about queue state.                                                         |
+| `pickable`      | The entries the dispatcher would select right now — `blockedBy` resolved, declared forks checked through the chain's `forkResolver`, capabilities checked, this run's quarantine drop applied. A fact the dispatcher already computed, carried so a hook reads it instead of rebuilding it. Optional in the type only so a hand-built fixture may omit it; a dispatcher-built context always sets it. |
+| `priorAttempts` | Every persisted prior-attempt record, keyed as the files under `<flumeDir>/prior-attempts/` are — the entry tag slug for a fanout record, the phase name for a singleton one. Optional in the type for the same fixture reason as `pickable`. |
 
 ### `shouldRun`: decline a tick before the invocation
 

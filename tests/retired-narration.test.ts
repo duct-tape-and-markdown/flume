@@ -411,6 +411,41 @@ function interfaceFields(text: string, name: string): string[] {
   return matches.filter((m) => m[1]!.length === member).map((m) => m[2]!);
 }
 
+/**
+ * Field names a markdown table teaches: under `heading`, the first table
+ * whose header row matches `header`, read one row at a time, taking the
+ * backticked name in the **first** column only.
+ *
+ * Second-column prose names sibling fields freely — the `entryChannelPaths`
+ * row cites `scopeWritesToEntry`, the `cwd` row cites `flumeDir` — so a
+ * reader that took every backticked span in a row would count fields the
+ * table never gives a row.
+ *
+ * Keyed on the heading rather than a line number, so a pin follows its
+ * section when the doc moves, and one reader for every field table in the
+ * page, so a second table cannot drift into a second grammar.
+ */
+/**
+ * The §1 heading both field tables live under — `Phase`'s and
+ * `TickContext`'s. One constant, so a reworded heading fails both pins at
+ * once rather than silently emptying one of them.
+ */
+const SECTION_1 = /^## 1\. Declaring a Phase$/m;
+
+function docTableFields(doc: string, heading: RegExp, header: RegExp): string[] {
+  const section = doc.split(heading)[1] ?? "";
+  const rows = section.split("\n");
+  const start = rows.findIndex((l) => header.test(l));
+  if (start === -1) return [];
+  const fields: string[] = [];
+  for (const row of rows.slice(start + 2)) {
+    if (!row.startsWith("|")) break;
+    const name = /^\|\s*`([^`]+)`\s*\|/.exec(row);
+    if (name) fields.push(name[1]!);
+  }
+  return fields;
+}
+
 // Agreement pin (CHAIN-AUTHORING-GATE-SURFACE, per .claude/rules/engineering.md
 // "A fact the engine holds is reported, never rediscovered"):
 // docs/CHAIN-AUTHORING.md is where a chain author learns the gate surface, and
@@ -504,30 +539,9 @@ describe("the chain-authoring doc's Phase surface agrees with the engine type", 
     readFileSync(join(REPO_ROOT, ...parts), "utf8");
   const doc = read("docs", "CHAIN-AUTHORING.md");
 
-  /**
-   * Field names the §1 table teaches: the first markdown table under the
-   * section heading, read one row at a time, taking the backticked name in
-   * the **first** column only. Second-column prose names sibling fields
-   * freely — the `entryChannelPaths` row cites `scopeWritesToEntry` — so a
-   * reader that took every backticked span in a row would count fields the
-   * table never gives a row.
-   *
-   * Keyed on the heading rather than a line number, so the pin follows the
-   * section when the doc moves.
-   */
-  function docPhaseFields(): string[] {
-    const section = doc.split(/^## 1\. Declaring a Phase$/m)[1] ?? "";
-    const rows = section.split("\n");
-    const start = rows.findIndex((l) => /^\| Field\s*\| Role/.test(l));
-    if (start === -1) return [];
-    const fields: string[] = [];
-    for (const row of rows.slice(start + 2)) {
-      if (!row.startsWith("|")) break;
-      const name = /^\|\s*`([^`]+)`\s*\|/.exec(row);
-      if (name) fields.push(name[1]!);
-    }
-    return fields;
-  }
+  /** The §1 field table headed `Role` — the one that tabulates `Phase`. */
+  const docPhaseFields = (): string[] =>
+    docTableFields(doc, SECTION_1, /^\| Field\s*\| Role/);
 
   it("the chain-authoring doc's Phase field table names every field src/Phase.ts declares", () => {
     const declared = interfaceFields(read("src", "Phase.ts"), "Phase");
@@ -822,17 +836,18 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
   });
 
   it("the sentence introducing `TickContext.cwd` sends a reader to the singleton exception", () => {
-    // The gloss on `cwd` alone — the parenthetical right after it. Scoped
-    // that tightly because the same sentence glosses `pending` as "for
-    // singleton phases", which would satisfy a match over the whole
-    // sentence while `cwd` still read as unconditionally a worktree.
+    // The gloss on `cwd` alone — the `Role` cell of its own row in the §1
+    // `TickContext` table. Scoped to that one cell because the `pickable`
+    // and `pending` rows gloss themselves as "for a singleton phase", which
+    // would satisfy a match over the whole table while `cwd` still read as
+    // unconditionally a worktree.
     const gloss = (
-      /`TickContext` carries `cwd` \(([^)]*)\)/.exec(doc)?.[1] ?? ""
+      /^\|\s*`cwd`\s*\|([^|]*)\|/m.exec(doc)?.[1] ?? ""
     ).replace(/\s+/g, " ");
     expect(
       gloss,
-      "docs/CHAIN-AUTHORING.md: the `TickContext` summary's gloss on `cwd` " +
-        "was reworded — it is the first place a reader learns what `cwd` is",
+      "docs/CHAIN-AUTHORING.md: the `TickContext` table's `cwd` row was " +
+        "reworded — it is the first place a reader learns what `cwd` is",
     ).not.toBe("");
     expect(
       gloss,
@@ -841,18 +856,24 @@ describe("the shouldRun cwd split is taught where a chain author reads it", () =
   });
 });
 
-// Agreement pin (TICKCONTEXT-DOC-NAMES-ALL-FIELDS, per
-// .claude/rules/engineering.md "A fact the engine holds is reported, never
-// rediscovered"): §1 of docs/CHAIN-AUTHORING.md is where a chain author
-// learns what arrives on a `TickContext`, and it summarized three of the
-// fields `src/Phase.ts` declares. A field absent from the page is a fact no
-// chain knows it receives: `pickable` and `priorAttempts` exist precisely so
-// a hook stops re-deriving pickability and scanning the engine's
-// prior-attempts directory, and `flumeDir` is the one root a singleton
-// predicate can resolve paths off — a summary that never names them leaves
-// every one of those rebuilds in place. The rung that holds it is the same
-// field-set comparison the surface pins above make: the interface's own
-// members as the declaring side, the summary prose as the restating one.
+// Agreement pin (TICKCONTEXT-DOC-TABULATES-FIELDS, per
+// .claude/rules/engineering.md "Derived state is computed, never restated
+// beside its source"): §1 of docs/CHAIN-AUTHORING.md is where a chain author
+// learns what arrives on a `TickContext`, and it taught the interface by
+// restating it — first as a summary naming three of the fields
+// `src/Phase.ts` declares, then as one naming all six. A field absent from
+// the page is a fact no chain knows it receives: `pickable` and
+// `priorAttempts` exist precisely so a hook stops re-deriving pickability
+// and scanning the engine's prior-attempts directory.
+//
+// Free prose can only be held in one direction — every declared field is
+// named *somewhere* in it — because a paragraph backticks siblings
+// (`shouldRun`, `{{FLUME_DIR}}`) legitimately, so a name the interface no
+// longer declares cannot be told from one it never declared. A field
+// retired from `src/Phase.ts` left its clause standing and nothing failed.
+// The restating side is therefore a table, one row per field, read by the
+// same row/first-column reader the `Phase` table above is held to and
+// compared set-equal both ways.
 describe("the chain-authoring doc teaches every TickContext field", () => {
   const read = (...parts: string[]): string =>
     readFileSync(join(REPO_ROOT, ...parts), "utf8");
@@ -860,18 +881,13 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
   const exampleSrc = read("examples", "cascade-chain.ts");
 
   /**
-   * The §1 paragraph introducing `TickContext`: from the sentence that names
-   * it through the blank line that ends the paragraph, wrapping collapsed.
-   * Scoped to the paragraph rather than to the section, because the section
-   * also quotes a `promptArgs` body reading `ctx.assignedEntry` — a field
-   * named in sample code is not a field the prose teaches.
+   * The §1 field table headed `What it carries` — the one that tabulates
+   * `TickContext`, distinguished from `Phase`'s by its second-column
+   * heading alone, so both live under one section without either reader
+   * reaching the other's rows.
    */
-  function summary(text: string): string {
-    const start = text.indexOf("`TickContext` carries");
-    if (start === -1) return "";
-    const end = text.indexOf("\n\n", start);
-    return text.slice(start, end === -1 ? undefined : end).replace(/\s+/g, " ");
-  }
+  const docTickContextFields = (text: string): string[] =>
+    docTableFields(text, SECTION_1, /^\| Field\s*\| What it carries/);
 
   /**
    * The bullet-free prose of the `shouldRun` section — the span from its
@@ -897,12 +913,12 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
     return [...new Set([...body.matchAll(/ctx\.(\w+)/g)].map((m) => m[1]!))];
   }
 
-  it("the chain-authoring doc's TickContext summary names every field src/Phase.ts declares", () => {
+  it("the chain-authoring doc's TickContext field table names every field src/Phase.ts declares and no others", () => {
     const declared = interfaceFields(read("src", "Phase.ts"), "TickContext");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // reader that found nothing would assert over an empty field set, and one
-    // that stopped at the first wrapped member would pass on a summary
-    // missing everything after it.
+    // reader that found nothing on either side would compare two empty sets
+    // forever, and one that stopped at the first wrapped member would agree
+    // with a table missing everything after it.
     expect(declared, "src/Phase.ts: TickContext did not parse").toContain(
       "cwd",
     );
@@ -912,40 +928,47 @@ describe("the chain-authoring doc teaches every TickContext field", () => {
         "stopped short of it",
     ).toContain("priorAttempts");
     expect(declared.length).toBeGreaterThan(3);
-    const paragraph = summary(doc);
     expect(
-      paragraph,
-      "docs/CHAIN-AUTHORING.md §1: the `TickContext` summary did not parse " +
-        "— the sentence introducing it was reworded, or the paragraph moved",
-    ).not.toBe("");
-    for (const field of declared) {
-      expect(
-        paragraph,
-        `docs/CHAIN-AUTHORING.md §1: the \`TickContext\` summary never names ` +
-          `\`${field}\`, so a chain author cannot learn it from the page`,
-      ).toContain(`\`${field}\``);
-    }
+      docTickContextFields(doc),
+      "docs/CHAIN-AUTHORING.md §1: the `TickContext` field table did not " +
+        "parse — its header was reworded, or the table moved",
+    ).toContain("cwd");
+    expect(
+      docTickContextFields(doc).slice().sort(),
+      "docs/CHAIN-AUTHORING.md §1 tabulates TickContext: every field " +
+        "src/Phase.ts declares gets a row, and nothing it does not declare " +
+        "does",
+    ).toEqual(declared.slice().sort());
   });
 
-  // Sensitivity pin: the comparison above is only worth its green if the
-  // paragraph reader really stops at the paragraph. A reader that ran on into
-  // the section body would find every field named somewhere below and agree
-  // with a summary that taught none of them.
-  it("the TickContext summary reader stops at the paragraph break", () => {
-    expect(summary(doc)).toMatch(/^`TickContext` carries `cwd`/);
-    expect(summary(doc), "the reader swallowed a fenced block").not.toContain(
-      "```",
-    );
-    const heading = "### `shouldRun`: decline a tick before the invocation";
-    const beyond = doc.replace(
-      heading,
-      `\`notAField\` is named past the break.\n\n${heading}`,
-    );
-    expect(beyond, "the doctoring was a no-op").not.toBe(doc);
+  // Sensitivity pin: the comparison above is only worth its green in both
+  // directions if the table reader is keyed on rows and on the first column,
+  // and if it cannot stray into the `Phase` table sharing the section. Drive
+  // each failure the reader is shaped to avoid.
+  it("the TickContext table reader counts one field per row, from the first column only", () => {
+    const fields = docTickContextFields(doc);
+    expect(fields.length, "the table yielded no rows").toBeGreaterThan(3);
+    // One name per row, no duplicates — the `cwd` row's prose cites
+    // `flumeDir`, which has its own row and must not be counted twice.
+    expect(new Set(fields).size).toBe(fields.length);
+    const citing = doc.split("\n").filter((l) => /^\|\s*`cwd`\s*\|/.test(l));
+    expect(citing, "the cwd row left the table").toHaveLength(1);
     expect(
-      summary(beyond),
-      "the reader ran past the paragraph into the section body",
-    ).not.toContain("`notAField`");
+      citing[0],
+      "the second-column cross-reference this reader must ignore is gone — " +
+        "the sensitivity check is vacuous",
+    ).toContain("`flumeDir`");
+    // The two §1 tables are told apart by their second-column heading alone.
+    // A reader that matched the other one would report `Phase`'s fields here
+    // and still compare two populated sets.
+    expect(
+      fields,
+      "the reader reached the `Phase` table's rows",
+    ).not.toContain("promptPath");
+    expect(
+      docTableFields(doc, SECTION_1, /^\| Field\s*\| Role/),
+      "the `Phase` table reader reached the `TickContext` table's rows",
+    ).not.toContain("priorAttempts");
   });
 
   it("the chain-authoring decline section names every TickContext field the quoted predicate reads", () => {
