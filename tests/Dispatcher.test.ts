@@ -3083,12 +3083,14 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
       committed: true,
       shipped: true,
       reverted: false,
+      mergeOutcome: "merged",
     });
     expect(byTag.get("OK-B")).toEqual({
       tag: "OK-B",
       committed: true,
       shipped: true,
       reverted: false,
+      mergeOutcome: "merged",
     });
   }, 30_000);
 
@@ -9583,7 +9585,10 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       committed: true,
       shipped: true,
       reverted: false,
+      mergeOutcome: "merged",
     });
+    // A clean exit never reached a merge stage and captured no footprint, so
+    // it carries no merge outcome at all — absence is "nothing to merge".
     expect(byTag.get("BAILS")).toEqual({
       tag: "BAILS",
       committed: false,
@@ -9591,6 +9596,125 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       reverted: false,
       noCommit: "clean-exit",
     });
+  }, 20_000);
+
+  // The two fates below are byte-identical in `committed`/`shipped`/
+  // `reverted` — `{ committed: true, shipped: false, reverted: false }` in
+  // both — which is exactly why a `handoff` routing a park had to read the
+  // verdict log to avoid waking plan on a conflict. Each test pins that
+  // collapse alongside the outcome that resolves it.
+  const COLLAPSED = { committed: true, shipped: false, reverted: false };
+
+  it("TickResult.entries reports the merge outcome of an entry whose cherry-pick conflicted", async () => {
+    // Same conflict vector as the cherry-pick-conflict suite above: disjoint
+    // declared files, a shared entryChannelPaths file both agents rewrite,
+    // so the second pick lands on trunk content its diff does not expect.
+    await mkdir(join(fx.repo, "src"), { recursive: true });
+    await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
+    await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
+    await exec("git", ["commit", "-q", "-m", "seed shared"], { cwd: fx.repo });
+
+    await writePending(fx.repo, [
+      makeEntry("PICKS-CLEAN", ["src/decoy-a.ts"]),
+      makeEntry("PICKS-DIRTY", ["src/decoy-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      entryChannelPaths: ["src/shared.ts"],
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const collide = (decoy: string, mine: string) => async (cwd: string) => {
+      await mkdir(join(cwd, "src"), { recursive: true });
+      await writeFile(join(cwd, "src", decoy), `${mine}\n`);
+      await writeFile(join(cwd, "src", "shared.ts"), `from-${mine}\n`);
+      await exec("git", ["add", "."], { cwd });
+      await exec("git", ["commit", "-q", "-m", `build: ${mine}`], { cwd });
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "picks-clean": collide("decoy-a.ts", "A"),
+        "picks-dirty": collide("decoy-b.ts", "B"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    }).tick();
+
+    // Non-vacuity: the conflict leg really ran — one entry landed, the other
+    // stayed queued because its pick aborted.
+    expect(outcome.result?.shippedTags).toEqual(["PICKS-CLEAN"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "PICKS-DIRTY",
+    ]);
+
+    const entries = outcome.result?.entries;
+    expect(entries).toBeDefined();
+    expect(entries!.map((e) => e.tag).sort()).toEqual([
+      "PICKS-CLEAN",
+      "PICKS-DIRTY",
+    ]);
+    const dirty = entries!.find((e) => e.tag === "PICKS-DIRTY");
+    expect(dirty).toEqual({
+      tag: "PICKS-DIRTY",
+      ...COLLAPSED,
+      mergeOutcome: "cherry-pick-conflict",
+    });
+    // Reported, not re-derived: the same record the verdict persists.
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "PICKS-DIRTY")
+        ?.outcome,
+    ).toBe("cherry-pick-conflict");
+  }, 20_000);
+
+  it("TickResult.entries reports the merge outcome of an entry the chain declined to ship", async () => {
+    await writePending(fx.repo, [makeEntry("PARKED", ["src/parked.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+      shipped: () => false,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        parked: (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/parked.ts",
+            "landed\n",
+            "build(PARKED): land it",
+          ),
+      }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: the commit reached trunk and the chain's predicate is what
+    // kept it queued — not a bail that never committed.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PARKED"]);
+
+    const entries = outcome.result?.entries;
+    expect(entries).toEqual([
+      { tag: "PARKED", ...COLLAPSED, mergeOutcome: "not-shipped" },
+    ]);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "PARKED")?.outcome,
+    ).toBe("not-shipped");
   }, 20_000);
 });
 

@@ -3274,14 +3274,25 @@ export class Dispatcher {
     // failed never reached `runFanoutEntry`, and reports on
     // `provisionFailures` under its tag instead of as a record here with
     // every flag false.
-    const entries: FanoutEntryOutcome[] = perEntry.map((r) => ({
-      tag: r.entry.tag,
-      committed: r.committed,
-      shipped: shipped.some((s) => s.tag === r.entry.tag),
-      reverted: mergeReverted.some((e) => e.tag === r.entry.tag),
-      ...(r.declined ? { declined: true } : {}),
-      ...(r.noCommit ? { noCommit: r.noCommit } : {}),
-    }));
+    // `mergeOutcome` is read off this wave's own `mergeOutcomes` — the
+    // records the verdict persists — never re-derived from the tag lists: a
+    // park (`not-shipped`), a cherry-pick conflict, a dropped-work reset and
+    // a foreign tip claim are indistinguishable in `committed`/`shipped`/
+    // `reverted`, which is the fact a `handoff` would otherwise have to read
+    // the verdict log for. `find`, not a filter: the merge loop above pushes
+    // at most one record per tag, and the first is the entry's fate.
+    const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
+      const merge = mergeOutcomes.find((m) => m.tag === r.entry.tag);
+      return {
+        tag: r.entry.tag,
+        committed: r.committed,
+        shipped: shipped.some((s) => s.tag === r.entry.tag),
+        reverted: mergeReverted.some((e) => e.tag === r.entry.tag),
+        ...(r.declined ? { declined: true } : {}),
+        ...(r.noCommit ? { noCommit: r.noCommit } : {}),
+        ...(merge ? { mergeOutcome: merge.outcome } : {}),
+      };
+    });
 
     const pendingAfterWave = await this.readPendingTolerant();
     return {

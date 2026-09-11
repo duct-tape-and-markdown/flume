@@ -7,7 +7,7 @@
  */
 
 import type { Agent } from "./Agent.js";
-import type { ProvisionFailure } from "./Dispatcher.js";
+import type { MergeOutcome, ProvisionFailure } from "./Dispatcher.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
@@ -145,6 +145,21 @@ export interface FanoutEntryOutcome {
   declined?: boolean;
   /** §6 mode when this entry produced no usable commit. Absent when it shipped or was declined. */
   noCommit?: NoCommitMode;
+  /**
+   * This entry's merge-stage fact, the same {@link MergeOutcome} the tick
+   * verdict records for its span. `committed`/`shipped`/`reverted` collapse
+   * distinct fates into one shape — a cherry-pick conflict, a chain that
+   * declined to ship a landed commit (`not-shipped`), a per-entry
+   * dropped-work reset and a foreign tip claim all read `committed: true,
+   * shipped: false, reverted: false` — so a `handoff` routing a park apart
+   * from a conflict reads this rather than the verdict log (spec/chain.md
+   * "What a hook receives").
+   *
+   * Absent when the entry's span reached no merge stage and left no
+   * footprint behind: a declined entry, or a clean exit that never
+   * committed. Absence is therefore "nothing to merge", never "merged".
+   */
+  mergeOutcome?: MergeOutcome;
 }
 
 /**
@@ -217,7 +232,9 @@ export interface TickResult {
    * provisioning failed). What this adds beyond the fold: a no-commit
    * sibling's `noCommit` mode, otherwise invisible to `handoff` whenever
    * another entry in the same wave shipped and the wave-level `noCommit`
-   * reads absent.
+   * reads absent, and each entry's own
+   * {@link FanoutEntryOutcome.mergeOutcome}, which the summary's tag lists
+   * cannot express at all.
    *
    * An entry whose provisioning failed — at `createWorktree`, or in the
    * chain's `setupWorktree` hook — never reaches an agent and so is on
