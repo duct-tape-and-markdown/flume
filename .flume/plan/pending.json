@@ -50,6 +50,10 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/ORPHAN-ID-SINGLE-LINE-BLOCK.md",
+      "tests/retired-narration.test.ts"
+    ],
     "summary": "orphanedBlocks degrades a single-line doc block's id to the empty string; read the id off the opener instead",
     "per": {
       "path": ".claude/rules/engineering.md",
@@ -60,10 +64,6 @@
     ],
     "pins": [],
     "acceptance": "an injected single-line orphan comes back keyed by its text, and two such orphans in one file are two distinct ALLOWED_ORPHANS keys",
-    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. The existing sensitivity pin's injection is multi-line to steer around this.",
-    "observedFiles": [
-      ".flume/plan/notes/ORPHAN-ID-SINGLE-LINE-BLOCK.md",
-      "tests/retired-narration.test.ts"
-    ]
+    "notes": "A single-line block closes on its own opener, so the first-content-line slice is empty and the id falls to `<path>: ` — a placeholder standing in for content that failed to resolve. ALLOWED_ORPHANS is empty today, so the leak is latent: an allowlisted single-line grant would cover any later single-line orphan in the same file. The existing sensitivity pin's injection is multi-line to steer around this."
   }
 ]
