@@ -537,6 +537,20 @@ async function main(): Promise<number> {
     // fence, derived from the phase declaration instead of a chain-side
     // constant.
     const consumerPhases = chain.phases.filter((p) => p.concurrency === "fanout");
+
+    // No fanout phase means no consumer, and no consumer means no fence to
+    // measure against — not an empty fence every declared path falls outside
+    // of. The parse above still stands; the fence step is skipped and says so
+    // (spec/cli.md "Subcommand surface"), the vacuous case spelled rather
+    // than inherited (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous").
+    if (consumerPhases.length === 0) {
+      console.log(
+        `${pendingRel} valid (${parsed.entries.length} entries), no fanout phase declared; fence not checked`,
+      );
+      return 0;
+    }
+
     const fence = entryWriteScopeUnion(
       consumerPhases.flatMap((p) => p.writablePaths),
       consumerPhases.flatMap((p) => p.entryChannelPaths ?? []),

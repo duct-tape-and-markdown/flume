@@ -1530,6 +1530,32 @@ function fanoutCheckChainSrc(
   );
 }
 
+/**
+ * A chain with **no** fanout phase — one singleton "plan" and nothing that
+ * picks from `pending`. There is no consumer, so there is no fence for
+ * `flume check` to measure declared paths against; the entries below still
+ * declare files, which is what makes the vacuous-pass distinguishable from
+ * an empty fence refusing all of them.
+ */
+function noFanoutCheckChainSrc(): string {
+  return (
+    `export default () => ({ chain: {\n` +
+    `  phases: [\n` +
+    `    {\n` +
+    `      name: "plan",\n` +
+    `      description: "",\n` +
+    `      promptPath: "prompts/prompt.md",\n` +
+    `      concurrency: "singleton",\n` +
+    `      writablePaths: [".flume/plan/**"],\n` +
+    `      gates: [],\n` +
+    `      handoff: () => [],\n` +
+    `    },\n` +
+    `  ],\n` +
+    `  humanOnly: [],\n` +
+    `} });\n`
+  );
+}
+
 async function writeCheckPending(
   root: string,
   entries: unknown[],
@@ -1734,6 +1760,68 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     try {
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(EX_MOUNT_DEAD);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  /**
+   * Vacuous-by-design, spelled in its own test
+   * (`.claude/rules/engineering.md`, "A green verdict is proven
+   * non-vacuous"): the pass below is green over an unmeasured fence, so the
+   * entries deliberately declare paths that no fence could admit. Before the
+   * fix, `entryWriteScopeUnion` over zero consumer phases yielded an empty
+   * fence and every one of those paths read as a violation.
+   */
+  it("flume check exits 0 for a chain with no fanout phase whose entries declare files", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, noFanoutCheckChainSrc());
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "DECLARES-FILES",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [{ path: "src/new.ts", description: "declared, unfenced" }],
+            edit: [{ path: "docs/readme.md", description: "declared, unfenced" }],
+            retire: [],
+          },
+        },
+      ]);
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.code).toBe(0);
+      // The parse still ran and reported its count — the skip is the fence
+      // step alone, not the whole verb.
+      expect(r.out).toContain("valid (1 entries)");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("flume check names the absent fanout consumer rather than the declared paths", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, noFanoutCheckChainSrc());
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "DECLARES-FILES",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [{ path: "docs/readme.md", description: "declared, unfenced" }],
+            retire: [],
+          },
+        },
+      ]);
+
+      const r = await runCli(repo.dir, ["check"]);
+      expect(r.out).toContain("no fanout phase declared; fence not checked");
+      expect(r.out).not.toContain("outside the consumer phase's fence");
+      expect(r.out).not.toContain("docs/readme.md");
+      expect(r.out).not.toContain("DECLARES-FILES");
     } finally {
       await repo.cleanup();
     }
