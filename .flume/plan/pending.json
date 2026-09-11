@@ -1,37 +1,5 @@
 [
   {
-    "tag": "PRIOR-ATTEMPT-BLOCK-DOC-ALL-MODES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the `<prior-attempt>` section (:1079-:1123) covers all six modes, the anchoring fields, and the record-side flake marker"
-        },
-        {
-          "path": "tests/retired-narration.test.ts",
-          "description": "the mode-coverage agreement pin, beside the doc-vs-engine-type family at :423-:560"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The chain-authoring doc's `<prior-attempt>` section describes gate-revert alone; the other five PriorAttempt modes, `headSha`/`at` and record-side `suspectFlake` are absent",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Prior-outcome feedback to the retrying tick"
-    },
-    "tests": [
-      "the chain-authoring doc's `<prior-attempt>` section names every PriorAttempt mode src/Prompt.ts declares"
-    ],
-    "pins": [],
-    "acceptance": "A chain author reading that section learns all six variants, the `headSha`/`at` anchoring and the record-side `suspectFlake`, and the mode list is read off src/Prompt.ts's union rather than hand-listed by the test.",
-    "notes": "From the CHAIN-AUTHORING-PRIOR-ATTEMPT-STALE-CLEAR note; re-verified on disk. The section opens \"When a tick commits and a gate reverts it\" and its prose is all gate `name`/`details`/diffstat; `suspectFlake` appears at :316 from the gate side with no record-side home. The cost is a chain author rebuilding \"was the last build a park\" — the rebuild `not-shipped` exists to retire."
-  },
-  {
     "tag": "CASCADE-SHOULDRUN-FROM-DISK",
     "gate": {
       "kind": "open"
@@ -61,7 +29,10 @@
     ],
     "pins": [],
     "acceptance": "cascade-chain.ts declares a `shouldRun` reading `TickContext` — not `process.env`, not a directory scan — and the integration test drives both the decline and the run.",
-    "notes": "Ruling of 2026-09-11 (option C): promote the shapes a new adopter most needs, in order. This is the first."
+    "notes": "Ruling of 2026-09-11 (option C): promote the shapes a new adopter most needs, in order. This is the first.",
+    "observedFiles": [
+      ".flume/plan/notes/CASCADE-SHOULDRUN-FROM-DISK.md"
+    ]
   },
   {
     "tag": "CASCADE-TESTS-JUDGED-BY-GATE",
@@ -177,40 +148,9 @@
     "notes": "Ruling of 2026-09-11 (option C), last promotion. docs/CHAIN-AUTHORING.md quotes cascade's `plan` phase verbatim under an agreement pin (tests/retired-narration.test.ts) — the quote moves in the same commit or the pin reverts the tick."
   },
   {
-    "tag": "RELEASE-CITES-CUT-DISPATCHER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "81 `RELEASE-v0.N §M` / `v0.N §M` cites"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "src/Dispatcher.ts carries 81 doc cites into spec/RELEASE-v*.md, files the corpus reform deleted — a cite no reader can follow",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [
-      "src/Dispatcher.ts carries no release-numbered spec cite"
-    ],
-    "pins": [],
-    "acceptance": "No `RELEASE-v0.N §M` or `v0.N §M` cite remains in src/Dispatcher.ts. Cites into `spec/*.md` and `.claude/rules/*.md` stand. A sentence that loses its only justification stays if it is still true, and goes if it is not.",
-    "notes": "Ruling of 2026-09-11, option B: git carries provenance. Split by module because 183 sites across 19 files is more than one tick can land green; this is the largest."
-  },
-  {
     "tag": "RELEASE-CITES-PINNED",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RELEASE-CITES-CUT-DISPATCHER"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
