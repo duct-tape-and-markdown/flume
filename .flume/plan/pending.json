@@ -173,6 +173,10 @@
         {
           "path": "src/Dispatcher.ts",
           "description": "the `entries` map reads the wave's own mergeOutcomes"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the two per-entry merge-outcome cases, beside the entries[] bail test"
         }
       ],
       "retire": []
@@ -187,7 +191,7 @@
       "TickResult.entries reports the merge outcome of an entry the chain declined to ship"
     ],
     "acceptance": "`handoff` separates `cherry-pick-conflict` from `not-shipped` off `result.entries` alone, without reading the verdict log.",
-    "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
+    "notes": "Ratified at 17cf6a3 — the section now enumerates `mergeOutcome?` and names `merged` / `not-shipped` / `cherry-pick-conflict`. `mergeOutcomes` is in scope at the `entries` map (declared src/Dispatcher.ts:2736, mapped :3275); read it, never re-derive. `MergeOutcome` is Dispatcher's and already on the barrel, and src/Phase.ts:10 already imports type-only from ./Dispatcher.js — the field adds no edge. The existing entries[] shape test is tests/Dispatcher.test.ts:9530."
   },
   {
     "tag": "INDEX-EXPORTS-ORPHANED-TYPES",
