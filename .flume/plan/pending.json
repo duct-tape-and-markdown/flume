@@ -28,7 +28,7 @@
       "a run that creates a state root above its own fixture fails the suite and names the offender"
     ],
     "acceptance": "`pnpm test --run` fails loudly, naming the test, when a state root appears outside a fixture; the writer it attributes is fixed, or the note says the leak did not reproduce this tick.",
-    "notes": "Observed twice 2026-09-06; `rm -rf /tmp/.flume` made all 8 pass unchanged. The Baton constructor mkdirs `awake/` (src/job.ts:494), so any Baton built at a repoRoot that resolved to /tmp is a candidate. No src/ module reads tmpdir()."
+    "notes": "Observed twice 2026-09-06. CLI-FIXTURE-ANCESTOR-PROOF has since rooted those 8 fixtures, so the leak now shows only at `resolveRepoRoot`'s no-ancestor fallback (tests/cliJobResolution.test.ts, un-rootable by subject) — the suite is quieter, the writer still unnamed. The Baton constructor mkdirs `awake/` (src/job.ts:494), so any Baton built at a repoRoot that resolved to tmpdir is a candidate. No src/ module reads tmpdir()."
   },
   {
     "tag": "CHECK-NO-FANOUT-VACUOUS-PASS",
@@ -401,6 +401,42 @@
     ],
     "acceptance": "`handoff` separates `cherry-pick-conflict` from `not-shipped` off `result.entries` alone, without reading the verdict log.",
     "notes": "`mergeOutcomes` is already in scope at the `entries` map (src/Dispatcher.ts:2550, :3071); the verdict carrying it is written after `handoff` runs. The cited section enumerates the record as `{tag, committed, shipped, reverted, declined?, noCommit?}` — that list wants the human's amendment once this lands."
+  },
+  {
+    "tag": "SHOULDRUN-SINGLETON-CWD-PROSE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "the `shouldRun` and `TickContext.cwd` doc comments"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the decline section and the `TickContext` line above it"
+        },
+        {
+          "path": "tests/retired-narration.test.ts",
+          "description": "the two prose pins, beside the doc-agreement pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Three prose sites still say a singleton `shouldRun` sees `promptArgs`' exact context, so a chain reading `ctx.cwd` there is told it has a worktree",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Declining a tick before the invocation"
+    },
+    "tests": [
+      "the TickContext.cwd doc comment names the repo root a singleton shouldRun sees",
+      "the chain-authoring decline section separates what a singleton decline saves from a fanout one"
+    ],
+    "acceptance": "`src/Phase.ts`'s two doc comments and the docs decline section draw the singleton/fanout `cwd` split `spec/loop.md` states; both pins are red on the pre-fix tree.",
+    "notes": "Sites: src/Phase.ts:351 ('no new plumbing'), :69 ('the worktree this tick runs in' — false on a singleton consult), docs/CHAIN-AUTHORING.md:219-262. Collides with CLEAN-EXIT-TAXONOMY on both files; that one is parked, so this lands first. This repo's own chain is unaffected — its plan slices read `ctx.flumeDir`/`ctx.pickable` only (.flume/chain.ts:670)."
   },
   {
     "tag": "EXAMPLES-SPEC-PHASE-CUT",

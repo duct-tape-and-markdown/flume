@@ -86,3 +86,46 @@ is missing.
 one accessor, no second spelling. The alternative — the marker lives somewhere already
 ignored — would put crash-recovery state under `prior-attempts/`, whose lifecycle
 (cleared on a clean ship) is the wrong one for a file only the operator may remove.
+
+## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
+
+Drained from `DOCS-CLI-CHAIN-LOAD-REPORTED`'s note (2026-09-11 build wave).
+`loadChainForObservation` (`src/cliChainLoad.ts`) reports two costs of a failed
+load, and the code takes both: the withheld friction/capability lines, **and**
+the pending count falling back to the default queue path — `chain?.pendingPath`
+threads into `resolvePendingPath` at `src/cli.ts:365` and into `jobStatus` at
+`src/cliJobVerbs.ts:44`.
+
+Two spec sections name only the first, and one of them denies the second
+outright:
+
+- `spec/cli.md`, *`flume status` owes exactly this* — item 5 states the count
+  reads `<flumeDir>/plan/pending.json`, and item 6 then says "nothing above
+  this line is withheld". For a chain declaring a non-default `pendingPath`,
+  item 5 is false the moment the load fails: the degraded count reads a
+  different file than the healthy one.
+- `spec/jobs.md`, *`flume job status`* — "the entry count from
+  `<jobdir>/plan/pending.json`", and the best-effort bullet stops at "withholds
+  the friction counts".
+
+**Not a code defect.** `resolvePendingPath` is the single resolver
+(`src/paths.ts:155`) and both call sites already thread the declared path; both
+sites carry a comment naming the fallback. `docs/CLI.md` now states it too —
+the doc is ahead of the spec, which is the wrong direction for this pipeline.
+
+**Recommend:** amend both sections to say the count resolves through
+`Chain.pendingPath` when the chain loads and through the default relative path
+when it does not, and soften item 6's "nothing above this line is withheld" to
+exclude the queue path it does not cover. The alternative — ruling that a
+degraded count must refuse rather than rebase (`engineering.md`, *Loud or
+nothing*) — is a behavior change, and a plausible one: a `pending: N` read off
+the wrong file is a confident wrong answer where `pending: unknown` would not
+be. If that is the ruling, say so and this becomes an entry instead.
+
+**Also, a proposed sweep lens.** The stronger half of the same finding was
+`docs/CLI.md`'s `flume job status` paragraph asserting "no chain load" while
+the code takes one — prose *denying* a load rather than merely omitting it.
+`.claude/rules/posture-sweep.md`'s lens list (*A violation counts only when
+verified on disk this tick*) has no lens that would have caught it. Worth one:
+doc prose that denies a call the module makes. Human's file, so parked here
+beside the spec amendment it arrived with.
