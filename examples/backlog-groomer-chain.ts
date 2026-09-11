@@ -1,5 +1,5 @@
 /**
- * Backlog groomer — the second reference chain (v0.8 §7): single-phase, no
+ * Backlog groomer — the second reference chain: single-phase, no
  * plan/build split, no spec corpus. One phase reads `BACKLOG.json`, picks
  * the highest-priority pickable item, ships it, and commits — all in one
  * tick.
@@ -8,8 +8,8 @@
  * pipeline, this is the peer that proves the engine isn't shaped around
  * that pipeline. It has no fanout, no `pending.json`, no multi-phase
  * handoff — just one `Phase` — but it wires into the same PendingSchema
- * mechanics cascade uses (§§2-4), declared as its own small extension and
- * its own tag convention, applied to a completely different queue.
+ * mechanics cascade uses, declared as its own small extension and its own
+ * tag convention, applied to a completely different queue.
  *
  * The `groom` phase runs on a deterministic (non-LLM) agent: reading a
  * backlog, filtering by gate/capability, and picking the top pickable item
@@ -44,7 +44,7 @@ import type {
 const BACKLOG_PATH = "BACKLOG.json";
 const SHIPPED_PATH = "SHIPPED.md";
 
-// ---------- entry extension (v0.8 §2) + tag refinement (v0.8 §3) ----------
+// ---------- entry extension + tag refinement ----------
 
 /**
  * This chain's pending-entry fields beyond the engine core
@@ -71,12 +71,12 @@ const entryExtension = {
 } satisfies EntryExtension;
 
 
-// ---------- chain factory (RELEASE-v0.11 §6) ----------
+// ---------- chain factory ----------
 
 /**
  * The default export is a factory the engine calls with its own API. The
  * schema helpers this chain uses arrive as parameters rather than through an
- * engine import, so the chain resolves no engine copy of its own — see §6.
+ * engine import, so the chain resolves no engine copy of its own.
  */
 const factory: ChainFactory = (api) => {
   const { isPickableNow, parsePending, renderSchemaForPrompt } = api;
@@ -214,7 +214,7 @@ const factory: ChainFactory = (api) => {
     phases: [groom],
     entryExtension,
     humanOnly: [],
-    // No environment facts asserted (v0.8 §4): a backlog item gated
+    // No environment facts asserted: a backlog item gated
     // `requiresCapability` stays parked until a deployment of this chain
     // names the capability here.
     capabilities: [],

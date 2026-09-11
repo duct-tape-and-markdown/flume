@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1895,24 +1895,27 @@ describe("the docs' worktree-base claims agree with worktreesBase", () => {
 /**
  * The release-spec corpus (`spec/RELEASE-v*.md`) is gone: one topic file per
  * subject replaced it, and no file carries a `§` numbering a reader can
- * follow. Every `RELEASE-v0.N §M` / `v0.N §M` cite left in `src/` therefore
+ * follow. Every `RELEASE-v0.N §M` / `v0.N §M` cite left behind therefore
  * points at a file that does not exist — narration outliving its referent
  * (engineering.md, "Narration is the ladder's bottom rung"). Git carries the
  * provenance those cites were standing in for.
  *
- * `src/Dispatcher.ts` stays out of the loop's scanned set below only because
- * it is pinned on its own, immediately after — its cut has landed. The
- * follow-on RELEASE-CITES-PINNED widens this pin to the whole of `src/` and
- * `examples/`; that entry is the named actor that deletes both the exclusion
- * and the standalone case.
+ * Scope is `src/` and `examples/` entire, walked recursively: the engine's
+ * own prose, and the reference chains a consumer reads as the worked answer
+ * and copies wholesale (`engine-boundary.md`, "Opinion ships by name, opted
+ * into"). Nothing is scanned on an exclusion's word — the cut and this
+ * refusal ship together, so no file is left pinned only by a promise that a
+ * later entry will reach it.
  */
-const CITE_EXCLUDED = "Dispatcher.ts";
+
+/** The trees a chain author reads the shapes off: engine, and worked example. */
+const CITE_SCANNED_ROOTS = ["src", "examples"];
 
 /**
  * The cite grammar: a `RELEASE-v` prefix on its own, or a version token and a
  * `§` close enough together to be one citation rather than two unrelated
  * mentions. Both orders occur — `v0.8 §4` and `(§6, v0.6.2)` — so both are
- * spelled. Neither alternative crosses a newline, which after `unwrapProse`
+ * spelled. Neither alternative crosses a newline, which after `proseOf`
  * below survives only where the source left prose.
  */
 const RELEASE_CITE_RE =
@@ -1934,33 +1937,68 @@ function unwrapProse(text: string): string {
     .join(" ");
 }
 
-/** Modules under `src/`, sorted, minus the one still-excluded file. */
-function citeScannedModules(): string[] {
-  return readdirSync(join(REPO_ROOT, "src"))
-    .filter((name) => name.endsWith(".ts") && name !== CITE_EXCLUDED)
-    .map((name) => join("src", name))
-    .sort();
+/**
+ * Reader-visible prose per file: the comment runs in TypeScript, the whole
+ * text in Markdown, where every line is already prose. Both join their lines,
+ * so a cite wrapped across two of them still reads as one phrase.
+ */
+function proseOf(path: string, text: string): string {
+  return path.endsWith(".ts") ? unwrapProse(text) : text.split("\n").join(" ");
 }
 
-describe("dead release cites are gone from the engine's prose", () => {
-  const modules = citeScannedModules().map((path) => ({
+/**
+ * Every file under the scanned roots, recursively — `examples/prompts/` is
+ * the descent that a top-level `readdirSync` would silently drop.
+ */
+function citeScannedFiles(): string[] {
+  return CITE_SCANNED_ROOTS.flatMap((root) =>
+    readdirSync(join(REPO_ROOT, root), { recursive: true, encoding: "utf8" })
+      .map((name) => join(root, name))
+      .filter((path) => statSync(join(REPO_ROOT, path)).isFile()),
+  ).sort();
+}
+
+describe("dead release cites are gone from src/ and examples/", () => {
+  const files = citeScannedFiles().map((path) => ({
     path,
-    prose: unwrapProse(readFileSync(join(REPO_ROOT, path), "utf8")),
+    prose: proseOf(path, readFileSync(join(REPO_ROOT, path), "utf8")),
   }));
 
   // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"): a
   // mis-built file list scans nothing — or scans only files that never
   // carried a cite — and the refusal below passes over an empty set. Name the
-  // heaviest carriers the cut had to reach, and require the scan to have
-  // found prose at all.
-  it("scans a populated set of src/ modules, the cut's heaviest carriers included", () => {
-    expect(modules.length).toBeGreaterThan(0);
-    for (const name of ["cli.ts", "job.ts", "Prompt.ts", "PendingSchema.ts"]) {
-      expect(modules.map((m) => m.path)).toContain(join("src", name));
+  // heaviest carriers the cut had to reach in each tree, name one file only
+  // the recursive descent reaches, and require the engine's largest module to
+  // have yielded its doc prose rather than an empty read.
+  it("scans a populated set of src/ and examples/ files, the cut's heaviest carriers included", () => {
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of [
+      join("src", "Dispatcher.ts"),
+      join("src", "cli.ts"),
+      join("src", "job.ts"),
+      join("src", "Prompt.ts"),
+      join("src", "PendingSchema.ts"),
+      join("examples", "cascade-chain.ts"),
+      join("examples", "backlog-groomer-chain.ts"),
+      join("examples", "minimal-chain.ts"),
+      join("examples", "prompts", "build.md"),
+    ]) {
+      expect(files.map((f) => f.path)).toContain(name);
+    }
+    const dispatcher = files.find((f) => f.path === join("src", "Dispatcher.ts"))!;
+    expect(
+      dispatcher.prose.length,
+      "no prose read — wrong path, or proseOf is off target",
+    ).toBeGreaterThan(10_000);
+    // The live pointers the needle must not flag, read off the module that
+    // carries the most of them: a cut that deleted those too would pass an
+    // emptier refusal.
+    for (const live of ["spec/loop.md", ".claude/rules/platform-facts.md"]) {
+      expect(dispatcher.prose, `${live} pointer left the module`).toContain(live);
     }
     expect(
-      modules.filter((m) => m.prose.trim().length > 0).map((m) => m.path),
-      "no scanned module yielded prose — unwrapProse is off target",
+      files.filter((f) => f.prose.trim().length > 0).map((f) => f.path),
+      "no scanned file yielded prose — proseOf is off target",
     ).not.toEqual([]);
   });
 
@@ -1990,33 +2028,9 @@ describe("dead release cites are gone from the engine's prose", () => {
     }
   });
 
-  // Scanned on its own because `citeScannedModules` still excludes it (see
-  // `CITE_EXCLUDED` above). Same needle, same grammar — one module rather
-  // than a set, so the cut is pinned a rung up instead of resting on the
-  // exclusion's prose.
-  it("src/Dispatcher.ts carries no release-numbered spec cite", () => {
-    const prose = unwrapProse(
-      readFileSync(join(REPO_ROOT, "src", CITE_EXCLUDED), "utf8"),
-    );
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a mis-resolved path reads as empty prose and the refusal below passes
-    // over nothing. Require the engine's largest module's own doc prose, and
-    // require it to still carry the live pointers the needle must not flag —
-    // a cut that also deleted those would pass an emptier refusal.
-    expect(prose.length, "no prose read — wrong path, or unwrapProse is off target").toBeGreaterThan(10_000);
-    for (const live of ["spec/loop.md", ".claude/rules/platform-facts.md"]) {
-      expect(prose, `${live} pointer left the module`).toContain(live);
-    }
+  it("no file under src/ or examples/ carries a release-numbered spec cite", () => {
     expect(
-      RELEASE_CITE_RE.exec(prose)?.[0],
-      "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
-        "reform deleted — state the fact, or let git carry the provenance",
-    ).toBeUndefined();
-  });
-
-  it("no src/ module outside Dispatcher.ts carries a release-numbered spec cite", () => {
-    expect(
-      modules.filter((m) => RELEASE_CITE_RE.test(m.prose)).map((m) => m.path),
+      files.filter((f) => RELEASE_CITE_RE.test(f.prose)).map((f) => f.path),
       "a `RELEASE-v0.N §M` / `v0.N §M` cite points at a spec file the corpus " +
         "reform deleted — state the fact, or let git carry the provenance",
     ).toEqual([]);

@@ -11,12 +11,11 @@
  * fanout, gates, structured handoff, and the pending-schema surface, read
  * `cascade-chain.ts` instead.
  *
- * The default export is a **factory** the engine calls with its own API
- * (RELEASE-v0.11 §6). This chain needs no engine values, so it ignores the
- * parameter — but the factory shape is the contract regardless, and it is
- * why the only import below is `import type`. A chain never imports an
- * engine *value*: that is what would let a second physical engine into the
- * process.
+ * The default export is a **factory** the engine calls with its own API.
+ * This chain needs no engine values, so it ignores the parameter — but the
+ * factory shape is the contract regardless, and it is why the only import
+ * below is `import type`. A chain never imports an engine *value*: that is
+ * what would let a second physical engine into the process.
  *
  * Type imports come from `../src/index.ts` — the same public surface a
  * consumer sees as `import type { ... } from "flume"`. The path is relative

@@ -31,7 +31,7 @@ import type {
 } from "../src/index.ts";
 
 
-// ---------- entry extension (v0.8 §2) ----------
+// ---------- entry extension ----------
 
 /**
  * This project's pending-entry fields beyond the engine core
@@ -320,7 +320,7 @@ export function declaredFilesGate(
 }
 
 
-// ---------- chain factory (RELEASE-v0.11 §6) ----------
+// ---------- chain factory ----------
 
 /**
  * The default export is a factory the engine calls with its own API. Every
