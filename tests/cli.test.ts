@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
-import { EX_MOUNT_DEAD } from "../src/Dispatcher.ts";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { resolvePendingPath } from "../src/paths.ts";
 import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
@@ -1477,6 +1477,154 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
         expect(r.out).toContain(stopPath);
         expect(r.out).not.toContain("reached --max");
         expect(existsSync(join(jobFlumeDir, "loop.pid"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
+// spec/loop.md "Crash equals stop", "A merge the crash interrupted is refused,
+// never resumed". The marker's writer is the dispatcher's merge stage
+// (tests/Dispatcher.test.ts, "the merge-stage crash marker"); these hold the
+// reader — the startup refusal, which must fire under the tip claim and ahead
+// of the startup sweep, so the branch the marker names survives for the
+// operator to recover from.
+describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"Crash equals stop\")", () => {
+  /**
+   * A state root left as a crash between the pick and the ship bookkeeping
+   * leaves it: the marker, plus the abandoned wave's `flume/**` branch — the
+   * residue the startup sweep deletes, which is what makes its survival below
+   * evidence the sweep never ran.
+   */
+  async function seedInterruptedMerge(
+    repoDir: string,
+    stateRoot: string,
+  ): Promise<{ markerPath: string; baseSha: string }> {
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: repoDir,
+    });
+    const baseSha = stdout.trim();
+    await exec("git", ["branch", "flume/interrupted", baseSha], {
+      cwd: repoDir,
+    });
+    const markerPath = join(stateRoot, "merging", "interrupted.json");
+    await mkdir(join(stateRoot, "merging"), { recursive: true });
+    await writeFile(
+      markerPath,
+      JSON.stringify({
+        tag: "INTERRUPTED-ENTRY",
+        branch: "flume/interrupted",
+        baseSha,
+      }),
+      "utf8",
+    );
+    return { markerPath, baseSha };
+  }
+
+  const branchExists = async (repoDir: string): Promise<boolean> => {
+    const { stdout } = await exec(
+      "git",
+      ["branch", "--list", "flume/interrupted"],
+      { cwd: repoDir },
+    );
+    return stdout.trim() !== "";
+  };
+
+  it(
+    "a surviving merging marker refuses the next loop start with EX_CONFIG",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        // Awake, so absent the refusal this run would tick — "touches
+        // nothing" is only a claim about a run that otherwise had work.
+        new Baton(flumeDir).wake("probe");
+        const { markerPath, baseSha } = await seedInterruptedMerge(
+          repo.dir,
+          flumeDir,
+        );
+
+        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+
+        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
+        // The refusal names the file, the branch and the entry.
+        expect(r.out).toContain(markerPath);
+        expect(r.out).toContain("flume/interrupted");
+        expect(r.out).toContain("INTERRUPTED-ENTRY");
+        expect(r.out).toContain(baseSha);
+        // No tick ran, and the baton is where the operator left it.
+        expect(r.out).not.toMatch(/tick → probe/);
+        expect(existsSync(join(flumeDir, "awake", "probe"))).toBe(true);
+        // Removal is the operator's acknowledgement — no engine verb performs
+        // it, exactly as with the stop flag.
+        expect(existsSync(markerPath)).toBe(true);
+        // The check precedes the startup sweep, so the abandoned branch the
+        // marker names is still there to recover the span from.
+        expect(await branchExists(repo.dir)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "job run refuses at start too, sharing the same `loop` rewrite",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
+        await mkdir(jobFlumeDir, { recursive: true });
+        const { markerPath } = await seedInterruptedMerge(
+          repo.dir,
+          jobFlumeDir,
+        );
+
+        const r = await runCli(repo.dir, [
+          "job",
+          "run",
+          "probejob",
+          "--max",
+          "3",
+        ]);
+
+        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
+        expect(r.out).toContain(markerPath);
+        expect(r.out).toContain("INTERRUPTED-ENTRY");
+        expect(existsSync(markerPath)).toBe(true);
+        expect(await branchExists(repo.dir)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a marker too corrupt to parse still refuses, naming the file",
+    async () => {
+      // engineering.md "Loud or nothing": the presence of the file is the
+      // fact. Degrading an unreadable marker to "no interrupted merge" would
+      // proceed over exactly the state this refusal exists to stop.
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        new Baton(flumeDir).wake("probe");
+        const markerPath = join(flumeDir, "merging", "truncated.json");
+        await mkdir(join(flumeDir, "merging"), { recursive: true });
+        await writeFile(markerPath, '{"tag":"HALF-WRI', "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+
+        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
+        expect(r.out).toContain(markerPath);
+        expect(r.out).not.toMatch(/tick → probe/);
+        expect(existsSync(markerPath)).toBe(true);
       } finally {
         await repo.cleanup();
       }

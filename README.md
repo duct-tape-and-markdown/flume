@@ -158,6 +158,11 @@ Harness-managed state — every name here is one the runtime spells itself
   persisted before the agent runs.
 - `.flume/worktrees/<entry-slug>/` — per-entry worktrees during fanout. The
   base dir is overridable via `FLUME_WORKTREES_DIR` (below).
+- `.flume/merging/<entry-slug>.json` — one marker per entry whose span the
+  merge stage is mid-way through putting on trunk, written before the
+  cherry-pick and removed once the queue rewrite lands. A survivor is a merge
+  a crash interrupted: `flume loop` / `flume job run` refuse to start over it
+  (exit 78) until the operator reconciles and removes the file.
 - `.flume/loop.pid` — cross-process loop lock, present while a `flume loop`
   runs against this state root (below).
 - `.flume/stop` — graceful-stop flag: `flume stop` writes it, a live loop

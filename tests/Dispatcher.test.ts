@@ -3787,6 +3787,173 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
   }, 20_000);
 });
 
+// spec/loop.md "Crash equals stop", "A merge the crash interrupted is refused,
+// never resumed": the merge stage stakes `<flumeDir>/merging/<slug>.json`
+// before it picks an entry's span onto trunk and retires it once the queue
+// rewrite lands, so a death anywhere in between leaves the fact on disk for
+// the next start to refuse over (`src/cli.ts`; pinned in tests/cli.test.ts).
+describe("Dispatcher fanout — the merge-stage crash marker", () => {
+  /** Every `<flumeDir>/merging/*.json` as it stands right now, name → contents. */
+  async function markersNow(repo: string): Promise<Map<string, unknown>> {
+    const dir = join(repo, ".flume", "merging");
+    const out = new Map<string, unknown>();
+    if (!existsSync(dir)) return out;
+    for (const name of (await readdir(dir)).sort()) {
+      out.set(name, JSON.parse(await readFile(join(dir, name), "utf8")));
+    }
+    return out;
+  }
+
+  it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
+    // Three entries, picked in batch order. MARK-B's pick *conflicts* and is
+    // aborted — it never reaches an afterMerge gate, never lands on trunk,
+    // never ships. So MARK-B's marker being on disk when MARK-C's gate runs
+    // is only explicable by it having been written ahead of B's own pick:
+    // no later point in B's life had the chance. (The shared file is an
+    // entryChannelPaths allowance, the only way disjoint declared files can
+    // still collide — same vector as the cherry-pick-conflict test above.)
+    await mkdir(join(fx.repo, "src"), { recursive: true });
+    await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
+    await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
+    await exec("git", ["commit", "-q", "-m", "seed shared"], { cwd: fx.repo });
+
+    const entries = [
+      makeEntry("MARK-A", ["src/decoy-a.ts"]),
+      makeEntry("MARK-B", ["src/decoy-b.ts"]),
+      makeEntry("MARK-C", ["src/decoy-c.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const preHead = await head(fx.repo);
+
+    // Runs between each entry's pick and the wave's queue rewrite — the one
+    // window the marker is supposed to be observable in.
+    const seen: Array<Map<string, unknown>> = [];
+    const probe: Gate = {
+      name: "marker-probe",
+      when: "afterMerge",
+      async run() {
+        seen.push(await markersNow(fx.repo));
+        return { ok: true, message: "probed" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      entryChannelPaths: ["src/shared.ts"],
+      gates: [probe],
+    });
+
+    const writeEntry =
+      (decoy: string, shared?: string) => async (cwd: string) => {
+        await mkdir(join(cwd, "src"), { recursive: true });
+        await writeFile(join(cwd, "src", decoy), "x\n");
+        if (shared) await writeFile(join(cwd, "src", "shared.ts"), shared);
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", `build: ${decoy}`], { cwd });
+      };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "mark-a": writeEntry("decoy-a.ts", "from-A\n"),
+        "mark-b": writeEntry("decoy-b.ts", "from-B\n"),
+        "mark-c": writeEntry("decoy-c.ts"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The fates this pin depends on: B's pick conflicted (so B never reached
+    // the probe), A and C picked clean (so the probe ran exactly twice).
+    expect(outcome.result?.shippedTags).toEqual(["MARK-A", "MARK-C"]);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "MARK-B")?.outcome,
+    ).toBe("cherry-pick-conflict");
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // probe that never ran would leave every assertion below reading an
+    // empty snapshot list.
+    expect(seen, "the afterMerge probe never ran").toHaveLength(2);
+
+    // Each entry stakes its own marker immediately before its own pick, not
+    // the wave's worth up front: at A's gate only A's is on disk.
+    expect([...seen[0]!.keys()]).toEqual(["mark-a.json"]);
+    // At C's gate, B's marker stands alongside — written before the pick
+    // that then conflicted and was aborted.
+    expect([...seen[1]!.keys()]).toEqual([
+      "mark-a.json",
+      "mark-b.json",
+      "mark-c.json",
+    ]);
+    expect(seen[1]!.get("mark-b.json")).toEqual({
+      tag: "MARK-B",
+      branch: "flume/mark-b",
+      baseSha: preHead,
+    });
+    expect(seen[1]!.get("mark-a.json")).toEqual({
+      tag: "MARK-A",
+      branch: "flume/mark-a",
+      baseSha: preHead,
+    });
+  }, 30_000);
+
+  it("the merging marker is gone once the ship bookkeeping has landed", async () => {
+    const entries = [makeEntry("GONE-A", ["src/gone-a.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let duringWave: string[] = [];
+    const probe: Gate = {
+      name: "marker-probe",
+      when: "afterMerge",
+      async run() {
+        duringWave = [...(await markersNow(fx.repo)).keys()];
+        return { ok: true, message: "probed" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [probe] }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "gone-a": async (cwd) => {
+          await mkdir(join(cwd, "src"), { recursive: true });
+          await writeFile(join(cwd, "src", "gone-a.ts"), "a\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build: A"], { cwd });
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["GONE-A"]);
+    // Vacuity: "gone afterwards" says nothing unless the marker was ever
+    // there — the wave must have staked it mid-flight for the removal below
+    // to be a removal rather than an absence.
+    expect(duringWave, "no marker was staked mid-wave").toEqual([
+      "gone-a.json",
+    ]);
+    expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
+    // The queue rewrite is what the removal waits on — and it landed.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
+  }, 30_000);
+});
+
 describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry (§7b)", () => {
   it("ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the §5 block; per-entry agent fanout stays parallel", async () => {
     // ISO-PASS and ISO-FAIL fan out concurrently (disjoint declared files →

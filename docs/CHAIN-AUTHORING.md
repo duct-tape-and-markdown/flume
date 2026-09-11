@@ -68,7 +68,7 @@ resolve relative to `.flume/`.
 ```
 
 **Harness-managed state:** `awake/`, `worktrees/`, `prior-attempts/`,
-`rendered-prompts/`, `plan/pending.json`, `loop.pid`, `stop`,
+`rendered-prompts/`, `merging/`, `plan/pending.json`, `loop.pid`, `stop`,
 `tick-verdict.json`, `tick-verdicts.jsonl` — the runtime spells each of those
 names itself, so you neither author nor move them (`plan/pending.json` is the
 default the runtime places; `Chain.pendingPath` moves it). `sessions/` is

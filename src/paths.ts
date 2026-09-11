@@ -60,8 +60,8 @@ export function entryWriteScopeUnion(
 
 /**
  * The names the runtime itself owns directly under a flume state root
- * (`flumeDir`) — the baton dir, the prior-attempt records, the one-supervisor
- * lock, the stop flag, the tick verdicts. Writer and reader of each of these sit in different
+ * (`flumeDir`) — the baton dir, the prior-attempt records, the merge-stage
+ * markers, the one-supervisor lock, the stop flag, the tick verdicts. Writer and reader of each of these sit in different
  * modules (`flume stop` refuses, the supervisor honors; `flume loop` claims
  * the lock, `liveLoopPid` reads it back), so a copy of the name in each is a
  * rename away from a silent bypass — this is the one place any of them is
@@ -78,6 +78,7 @@ export const STATE_ROOT_NAMES = {
   priorAttempts: "prior-attempts",
   renderedPrompts: "rendered-prompts",
   worktrees: "worktrees",
+  merging: "merging",
   loopLock: "loop.pid",
   stopFlag: "stop",
   tickVerdict: "tick-verdict.json",
@@ -150,6 +151,30 @@ export function renderedPromptsDir(flumeDir: string): string {
 export function worktreesBase(flumeDir: string): string {
   const override = process.env.FLUME_WORKTREES_DIR;
   return override ? resolve(override) : join(flumeDir, STATE_ROOT_NAMES.worktrees);
+}
+
+/**
+ * spec/loop.md "Crash equals stop": where the merge stage leaves one marker
+ * per entry whose span it is mid-way through putting on trunk —
+ * `<flumeDir>/merging/<slug>.json`. Written before the pick and removed once
+ * the ship bookkeeping has landed, so a file here at the next `loop` / `job
+ * run` start is a merge a crash interrupted and the run refuses.
+ *
+ * Same split as {@link tickVerdictPath}: this module owns the name so the
+ * CLI's startup refusal can reach it without importing the dispatcher, and
+ * `src/Dispatcher.ts` owns what the file carries and when.
+ */
+export function mergingDir(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.merging);
+}
+
+/**
+ * One entry's marker under {@link mergingDir}, keyed by its `slugify`d tag —
+ * the same slug the entry's worktree and prior-attempt record use, so an
+ * operator reconciling a survivor reads one identity across all three.
+ */
+export function mergingMarkerPath(flumeDir: string, slug: string): string {
+  return join(mergingDir(flumeDir), `${slug}.json`);
 }
 
 /**

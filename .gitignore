@@ -7,6 +7,7 @@ dist/
 .flume/prior-attempts/
 .flume/rendered-prompts/
 .flume/worktrees/
+.flume/merging/
 .flume/last-tick.json
 .flume/loop.pid
 .flume/tick-verdict.json

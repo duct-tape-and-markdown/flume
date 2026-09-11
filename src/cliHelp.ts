@@ -143,7 +143,14 @@ Exit codes:
       tick instead of burning the remaining --max ticks against the same
       wall.
   78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
-      --help\`); the orphaned awake flags are left on disk.
+      --help\`); the orphaned awake flags are left on disk. Also, at start:
+      a merge interrupted before its ship bookkeeping is unreconciled — a
+      \`.flume/merging/<slug>.json\` marker survived a crash between the
+      cherry-pick and the queue rewrite, so the picked commit may sit on
+      trunk ungated with its entry still open (spec/loop.md "Crash equals
+      stop"). The refusal names the file, the branch and the entry; nothing
+      is touched and the startup sweep does not run, so the branch survives
+      — reconcile, then remove the file to acknowledge.
   2   Bad --max: missing, non-numeric, or negative. No tick runs. Also, a
       stray positional past --max/<value> — loop consumes no positionals,
       and running anything other than what was typed is refused rather
@@ -312,7 +319,9 @@ Exit codes:
       a declared seedDir absent on disk, rm on a <name> whose job dir does
       not exist, or status given any argument.
   78  run: stopped on a child tick's terminal misconfiguration (see
-      \`flume tick --help\`).
+      \`flume tick --help\`); also, at start, an unreconciled interrupted
+      merge — a \`merging/<slug>.json\` marker under the job dir (see
+      \`flume loop --help\`).
 `;
 
 export function isSubcommand(value: string): value is Subcommand {

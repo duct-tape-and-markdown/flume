@@ -50,8 +50,10 @@ import {
   clearTickVerdict,
   writeTickVerdict,
   readTickVerdicts,
+  readMergingMarkers,
   CjsContextLoadError,
   EX_MOUNT_DEAD,
+  EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
@@ -873,6 +875,36 @@ async function main(): Promise<number> {
       dropLock();
       process.exit(143);
     });
+    // spec/loop.md "Crash equals stop": a merge marker still standing is a
+    // pick that died before its ship bookkeeping — the picked commit may sit
+    // on trunk ungated with its entry still `open`, and starting would pick
+    // it again. Refuse here: under the tip claim (so no concurrent engine is
+    // mid-merge against this root) and ahead of both the ignore merge and the
+    // startup sweep below, so the run touches nothing and the abandoned
+    // branch each marker names survives for the operator. Removal is the
+    // acknowledgement — as with the stop flag, no engine verb performs it.
+    const interrupted = await readMergingMarkers(flumeDir);
+    if (interrupted.length > 0) {
+      console.error(
+        "[flume] loop refuses: a merge interrupted before its ship " +
+          "bookkeeping is unreconciled",
+      );
+      for (const { path, marker } of interrupted) {
+        console.error(
+          marker
+            ? `[flume]   ${path}: entry ${marker.tag} on branch ${marker.branch} (span ${marker.baseSha}..${marker.branch})`
+            : `[flume]   ${path}: unreadable marker — the interrupted merge it names cannot be identified`,
+        );
+      }
+      console.error(
+        "[flume] the picked commit may already sit on trunk ungated with its " +
+          "entry still open; reconcile (revert the commit, or mark the entry " +
+          "shipped), then remove the file to acknowledge. Nothing was " +
+          "touched and the startup sweep has not run, so each branch above " +
+          "still stands.",
+      );
+      return EX_TERMINAL_MISCONFIG;
+    }
     // v0.8 §8: best-effort read of the chain, for the two consumers below —
     // the `friction` dir the ignore merge folds in, and the
     // `supervisorPolicy` override the supervisor reads. A chain that fails

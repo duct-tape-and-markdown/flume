@@ -51,6 +51,8 @@ import {
   fsStamp,
   namespacedJoin,
   priorAttemptsDir,
+  mergingDir,
+  mergingMarkerPath,
   renderedPromptsDir,
   resolvePendingPath,
   STATE_ROOT_NAMES,
@@ -593,6 +595,76 @@ export async function writeTickVerdict(
     bounded.map((v) => JSON.stringify(v)).join("\n") + "\n",
     "utf8",
   );
+}
+
+/**
+ * spec/loop.md "Crash equals stop": what one `<flumeDir>/merging/<slug>.json`
+ * carries — the facts an operator needs to reconcile a merge a crash
+ * interrupted between the cherry-pick and the ship bookkeeping.
+ *
+ * `branch` and `baseSha` bound the span the pick was carrying (the entry's
+ * private worktree branch and the tip it was provisioned from), so the work
+ * is re-pickable whichever way the reconciliation goes; `tag` names the entry
+ * that is still `open` in the queue. The engine states these because it wrote
+ * them — nothing here is re-derived from commit shape or authorship
+ * (`engine-boundary.md`, "Told, not inferred").
+ */
+export type MergingMarker = {
+  /** The entry whose span the merge stage was picking. */
+  tag: string;
+  /** That entry's worktree branch — still standing, since the startup sweep runs after the refusal. */
+  branch: string;
+  /** The tip the branch was provisioned from: `baseSha..branch` is the span. */
+  baseSha: string;
+};
+
+/** Structural check a parsed JSON value is shaped like a {@link MergingMarker}. */
+function isMergingMarker(rec: unknown): rec is MergingMarker {
+  if (!rec || typeof rec !== "object") return false;
+  const r = rec as Partial<MergingMarker>;
+  return (
+    typeof r.tag === "string" &&
+    typeof r.branch === "string" &&
+    typeof r.baseSha === "string"
+  );
+}
+
+/**
+ * Every merge marker standing under a state root, each paired with the file
+ * it was read from — the CLI's startup refusal (`flume loop` / `flume job
+ * run`) is the one consumer.
+ *
+ * A file that will not parse, or parses to the wrong shape, still counts:
+ * the marker's *presence* is the fact, and degrading an unreadable one to
+ * "no interrupted merge" would proceed over exactly the state this refusal
+ * exists to stop (`engineering.md`, "Loud or nothing"). Its `marker` is
+ * `undefined` and the caller names the file alone.
+ */
+export async function readMergingMarkers(
+  flumeDir: string,
+): Promise<Array<{ path: string; marker: MergingMarker | undefined }>> {
+  const dir = mergingDir(flumeDir);
+  let names: string[];
+  try {
+    names = await readdir(namespacedJoin(dir));
+  } catch {
+    return [];
+  }
+  const out: Array<{ path: string; marker: MergingMarker | undefined }> = [];
+  for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
+    const path = join(dir, name);
+    let marker: MergingMarker | undefined;
+    try {
+      const rec: unknown = JSON.parse(
+        await readFile(namespacedJoin(path), "utf8"),
+      );
+      if (isMergingMarker(rec)) marker = rec;
+    } catch {
+      // unreadable or malformed — the file's presence is still the fact
+    }
+    out.push({ path, marker });
+  }
+  return out;
 }
 
 /**
@@ -2680,6 +2752,9 @@ export class Dispatcher {
     // `undefined` — is never retried on a later entry in the same wave.
     let checkpointAttempted = false;
     let bystanderCheckpointSha: string | undefined;
+    // spec/loop.md "Crash equals stop": the slugs this wave staked a merge
+    // marker for, retired together once the ledger rewrite below lands.
+    const mergingSlugs = new Set<string>();
     // spec/loop.md "Every agent invocation leaves a usage row": one row per
     // provisioned entry that actually reached `invokeAgent` — a declined or
     // render-refused entry carries no `termination` and gets no row.
@@ -2760,6 +2835,12 @@ export class Dispatcher {
         bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
       }
       const preCherry = await git.revParse(repoRoot);
+      // spec/loop.md "Crash equals stop": stake the merge before the pick —
+      // a death anywhere past this line leaves the marker standing, and the
+      // next `loop` / `job run` start refuses over it rather than picking
+      // the same span onto trunk a second time.
+      mergingSlugs.add(slugify(r.entry.tag));
+      await this.writeMergingMarker(r.entry, r.branch, r.spanBase);
       try {
         // The per-entry leg's ancestry check already cleared the whole
         // `spanBase..commitSha` span as one completed entry — cherry-pick
@@ -3131,6 +3212,12 @@ export class Dispatcher {
       }
     }
 
+    // spec/loop.md "Crash equals stop": every span this wave picked is now
+    // accounted for in the queue on disk, so the markers staked above have
+    // nothing left to warn the next start about — see `clearMergingMarkers`
+    // for why the ledger rewrite, not the verdict write, is the wait point.
+    await this.clearMergingMarkers(mergingSlugs);
+
     // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
     // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
     // releases while the worktree path still exists. Teardown failures are
@@ -3284,6 +3371,14 @@ export class Dispatcher {
     /** This entry's worktree, still on disk when the merge loop classifies it — `ShipContext.worktreePath`. */
     worktreePath: string;
     /**
+     * This entry's private worktree branch — the ref its span sits on until
+     * the merge stage picks it. Carried out of the per-entry leg because the
+     * merge marker (spec/loop.md "Crash equals stop") names the branch an
+     * interrupted pick left standing, and `perEntry` is filtered out of
+     * index-alignment with `worktrees` before the wave loop reads it.
+     */
+    branch: string;
+    /**
      * §13 (RELEASE-v0.7): the reverted commit's actual touched paths, captured
      * before `dropLastCommit` discards it — set only on an in-worktree
      * `afterCommit` gate revert, so the wave loop can feed it into `observed`
@@ -3328,7 +3423,7 @@ export class Dispatcher {
       this.log.info(
         `[flume] ${entry.tag}: declined (shouldRun) — no invocation`,
       );
-      return { entry, committed: false, gateResults: [], declined: true, worktreePath: wt.path };
+      return { entry, committed: false, gateResults: [], declined: true, worktreePath: wt.path, branch: wt.branch };
     }
 
     const args = phase.promptArgs?.(ctx) ?? {};
@@ -3349,7 +3444,7 @@ export class Dispatcher {
       // RELEASE-v0.10 §3: same abort as the singleton callsite, scoped to
       // this entry — the agent for this entry is never invoked.
       await this.persistRenderRefused(ref, entry.tag, err);
-      return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path };
+      return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path, branch: wt.branch };
     }
 
     const preHead = await git.revParse(wt.path);
@@ -3390,6 +3485,7 @@ export class Dispatcher {
           gateResults: [],
           tipMoved: true,
           worktreePath: wt.path,
+          branch: wt.branch,
           spanBase: preHead,
           headSha: postHead,
           termination,
@@ -3405,7 +3501,7 @@ export class Dispatcher {
       // must be legible without reading session logs).
       const mode = await this.classifyNoCommit(ref, termination);
       this.log.warn(`[flume] ${entry.tag}: ${mode} (no commit)`);
-      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, termination };
+      return { entry, committed: false, gateResults, noCommit: mode, worktreePath: wt.path, branch: wt.branch, termination };
     }
 
     // The ancestry check above cleared the whole base..postHead span as one
@@ -3443,6 +3539,7 @@ export class Dispatcher {
         gateResults,
         noCommit: "gate-revert",
         worktreePath: wt.path,
+        branch: wt.branch,
         footprint,
         gateFailure,
         spanBase: preHead,
@@ -3459,10 +3556,54 @@ export class Dispatcher {
       gateResults,
       termination,
       worktreePath: wt.path,
+      branch: wt.branch,
     };
   }
 
   // ---------- helpers ----------
+
+  /**
+   * spec/loop.md "Crash equals stop": stake this entry's merge before the
+   * pick runs. The marker is the engine's own statement that a span is
+   * mid-flight — what makes an interrupted merge a fact the next start reads
+   * off disk instead of an inference from commit shape (`engine-boundary.md`,
+   * "Told, not inferred"; "Evidence must be durable").
+   */
+  private async writeMergingMarker(
+    entry: PendingEntry,
+    branch: string,
+    baseSha: string,
+  ): Promise<void> {
+    const marker: MergingMarker = { tag: entry.tag, branch, baseSha };
+    await mkdir(namespacedJoin(mergingDir(this.flumeDir)), { recursive: true });
+    await writeFile(
+      namespacedJoin(mergingMarkerPath(this.flumeDir, slugify(entry.tag))),
+      JSON.stringify(marker),
+      "utf8",
+    );
+  }
+
+  /**
+   * Retire this wave's markers, once the hazard each one names is closed.
+   *
+   * **Declared divergence from spec/loop.md's "the pending.json rewrite, the
+   * records, the verdict"**: `Dispatcher.tick()` never writes the verdict —
+   * the CLI's `tick` command does, after `tick()` has returned
+   * ({@link writeTickVerdict}) — so the last bookkeeping this wave can wait
+   * on is the ledger rewrite above. That is also the point the hazard closes:
+   * once the queue no longer carries a picked entry as `open`, a crash before
+   * the verdict write leaves nothing a second run would pick again, and
+   * refusing over it would be a false refusal. A ledger rewrite that
+   * *refused* (`WaveLedgerParseFailure`) throws past this call, so its
+   * markers survive exactly as a crash's would.
+   */
+  private async clearMergingMarkers(slugs: Iterable<string>): Promise<void> {
+    for (const slug of slugs) {
+      await rm(namespacedJoin(mergingMarkerPath(this.flumeDir, slug)), {
+        force: true,
+      });
+    }
+  }
 
   /**
    * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
