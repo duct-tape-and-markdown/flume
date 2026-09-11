@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,12 +32,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Phase, TickContext, TickResult, WorktreeSetupContext } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
-import { loadChainModule } from "../src/Dispatcher.ts";
+import { Baton } from "../src/Baton.ts";
+import { Dispatcher, loadChainModule, type TickOutcome } from "../src/Dispatcher.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
+import { makeFixture, silent } from "./helpers/dispatcherFixture.ts";
 import chainFactory from "../.flume/chain.ts";
 import { filesPinning, judgeRedOnBase, judgeVitestReport, materializeBase, parseVitestReport, removeWorktree } from "../.flume/vitestJudge.ts";
 
@@ -228,15 +230,17 @@ describe("plan slices via the real .flume/chain.ts", () => {
     });
   });
 
-  describe("handoff — the ladder, then build, then hibernate", () => {
-    it("a slice that committed and is still live re-wakes itself; one that did not commit hands on", async () => {
-      await writeFile(join(flumeDir, "inbox", "2026-08-03-finding.md"), RECORD);
-      expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([INBOX]);
-      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([]);
-      await commit("spec/x.md", "# X\n\n## A\n\nnew body\n", "spec: widen A");
-      expect(phases[INBOX]!.handoff(result({ committed: false }))).toEqual([DERIVE]);
-    });
-
+  /**
+   * What is left here is what a real tick cannot produce on demand: a
+   * build wave's merge outcomes, a marker that must be ignored, a prior
+   * attempt's refusal record. Every rung transition between plan slices —
+   * self-rewake, hand-on, hand to build, hibernate — is driven through
+   * `Dispatcher.tick()` at the bottom of this file instead, because a
+   * `TickResult` this file folds by hand cannot prove the engine and the
+   * chain agree on it (`engineering.md`, *A seam gate reads what the real
+   * writer wrote*).
+   */
+  describe("handoff — the legs a hand-built TickResult still owns", () => {
     it("a build refusal never re-wakes the inbox slice by itself: it is a reason to be woken, cleared only by a build wave", () => {
       const woken: TickContext = {
         ...ctx([open("OPEN-1")]),
@@ -244,12 +248,6 @@ describe("plan slices via the real .flume/chain.ts", () => {
       };
       expect(phases[INBOX]!.shouldRun!(woken)).toBe(true);
       expect(phases[INBOX]!.handoff(result({ committed: true }))).toEqual([]);
-    });
-
-    it("hands to build while anything is pickable and nothing earlier is live; hibernates when nothing is", async () => {
-      const entry = open("OPEN-1");
-      expect(phases[DERIVE]!.handoff(result({ phaseName: DERIVE, committed: true, pendingAfter: [entry], pickableAfter: [entry] }))).toEqual(["build"]);
-      expect(phases[DERIVE]!.handoff(result({ phaseName: DERIVE, committed: true }))).toEqual([]);
     });
 
     it("the continuation marker is retired: 'Plan continues: yes' in state.md wakes nothing", async () => {
@@ -878,4 +876,265 @@ describe("pins[] — a property that already holds, judged green only", () => {
     expect(inbox.shouldRun!(withRecord({ mode: "gate-revert", gate: "tsc", message: "already pass on the base" }))).toBe(false);
     await rm(repo, { recursive: true, force: true });
   });
+});
+
+/**
+ * `.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote* — the ladder's claim is that this chain's `handoff` and the engine's
+ * `TickResult` agree, and the fixture above (`tickResult()`) folds the
+ * engine's half of that vocabulary by the tester's hand. A field renamed,
+ * dropped, or filled differently in `src/Dispatcher.ts` ships green over a
+ * suite that keeps handing `handoff` the old shape.
+ *
+ * So the rungs below are walked by `Dispatcher.tick()` itself: the real
+ * dispatcher checks the slice's `shouldRun`, renders its prompt, invokes the
+ * agent, carries the commit back to the trunk through this chain's own three
+ * plan gates, re-reads the queue, hands the `TickResult` it built to the
+ * slice's `handoff`, and writes the answer to the baton — `awakeAfter` is
+ * that baton, so nothing between the two sides is this test's.
+ *
+ * What stays the test's is the disk the ladder reads (a finding under
+ * `<flumeDir>/inbox/`, the cursors in state.md, the queue, the spec commit
+ * that arms derive) and the agent, which stands in for the model with a `git
+ * commit`. The agent is swapped at `api.claudeCode` — the one override, the
+ * same boundary `setupBuildWorktree`'s suite above overrides `setupWorktree`
+ * at — because each slice declares `agent: planAgent`, so a
+ * `DispatcherOptions.agent` never reaches it. Everything the factory
+ * composes on top (the capture and renderer decorators, the gate list, the
+ * prompt args) is the composition a real tick runs.
+ *
+ * Fast lane: no Node startup, no agent process, and the plan slices gate on
+ * records/pending/per alone — no gate here shells a package manager. Raw git
+ * plumbing on a temp fixture is not a lane trigger (spec/worktrees.md, *The
+ * default test lane must stay fast*).
+ */
+describe("the plan ladder over a real tick", () => {
+  const INBOX = "plan-inbox";
+  const DERIVE = "plan-derive";
+  const SWEEP = "plan-sweep";
+  const BUILD = "build";
+
+  /** What the re-derive leg files: pickable, inside build's fence, cite resolvable. */
+  const filedEntry = {
+    tag: "LADDER-PICKABLE",
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: {
+      new: [],
+      edit: [{ path: "src/seed.ts", description: "the work this entry ships" }],
+      retire: [],
+    },
+    summary: "one entry for the rung below the ladder",
+    per: { path: "spec/loop.md", section: "The baton" },
+    tests: [],
+    pins: [],
+    acceptance: "the ladder hands the baton to build",
+  };
+
+  it("this chain's plan ladder routes the baton from a TickResult the dispatcher produced", async () => {
+    const fx = await makeFixture();
+    try {
+      const repo = fx.repo;
+      const flumeDir = join(repo, ".flume");
+      const report = join(flumeDir, "inbox", "2026-09-11-report.md");
+      const statePath = (root: string) => join(root, ".flume", "plan", "state.md");
+      const stateMd = (derive: string, sweep: string, extra = "") =>
+        `# State\n\nSpec derived through: \`${derive}\`\n\nPosture swept through: \`${sweep}\`\n\n${extra}`;
+
+      // The disk the ladder reads, committed: a slice runs against tracked
+      // content, so an uncommitted finding is simply absent where the agent
+      // runs. `sessions/` is this chain's own artifact dir, gitignored the
+      // way an adopting repo's .gitignore carries it.
+      await writeFile(join(repo, ".gitignore"), ".flume/sessions/\n", { flag: "a" });
+      await mkdir(join(flumeDir, "inbox"), { recursive: true });
+      await mkdir(join(flumeDir, "plan"), { recursive: true });
+      await writeFile(report, "# a report from the field\n");
+      await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+      await mkdir(join(repo, "spec"), { recursive: true });
+      await writeFile(join(repo, "spec", "loop.md"), "# Loop\n\n## The baton\n\nbody\n");
+      git(repo, ["add", "-A"]);
+      git(repo, ["commit", "-q", "-m", "seed the plan artifacts"]);
+      // Both cursors at the tip: a quiet tree, so every slice's liveness
+      // below is the one this test arms and not a bootstrap default.
+      const seeded = git(repo, ["rev-parse", "HEAD"]);
+      await writeFile(statePath(repo), stateMd(seeded, seeded));
+      git(repo, ["add", "-A"]);
+      git(repo, ["commit", "-q", "-m", "plan: stamp the cursors"]);
+
+      // The real `Phase.promptPath` (`prompts/<slice>.md`), resolved against
+      // a config dir this test owns. The shipped prompt's body is not this
+      // seam — it is the agent's input, and the agent here is a stub — while
+      // its inline-exec spans would put `pnpm tsc` on the fast lane once per
+      // tick below.
+      await mkdir(join(fx.configDir, "prompts"), { recursive: true });
+      for (const slice of [INBOX, DERIVE, SWEEP]) {
+        await writeFile(join(fx.configDir, "prompts", `${slice}.md`), "{{PENDING_SCHEMA}}\n");
+      }
+
+      /** The agent's whole contribution: a commit the engine has to classify. */
+      let act: (cwd: string) => Promise<void> = async () => {};
+      const { chain } = chainFactory({
+        ...buildFlumeApi({ repoRoot: repo, configDir: fx.configDir, flumeDir }),
+        claudeCode: () => ({
+          name: "ladder-stub",
+          invoke: async ({ cwd }) => {
+            await act(cwd);
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        }),
+      });
+
+      // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+      // a chain that lost a slice would satisfy the routing below over a
+      // ladder with nothing to order.
+      expect(chain.phases.map((p) => p.name)).toEqual([INBOX, DERIVE, SWEEP, BUILD]);
+
+      const commits =
+        (message: string, edit: (cwd: string) => void) =>
+        async (cwd: string): Promise<void> => {
+          edit(cwd);
+          git(cwd, ["add", "-A"]);
+          git(cwd, ["commit", "-q", "-m", message]);
+        };
+      /** An agent that exits clean having produced nothing. */
+      const commitsNothing = async (): Promise<void> => {};
+
+      /**
+       * One real tick of `name`, with exactly that phase awake so the
+       * returned `awakeAfter` is this tick's handoff and no leftover flag.
+       * `DispatcherOptions.agent` throws: every slice declares its own, so
+       * reaching the default would mean the phase's agent was dropped.
+       */
+      const tick = async (
+        name: string,
+        action: (cwd: string) => Promise<void>,
+      ): Promise<TickOutcome> => {
+        act = action;
+        const baton = new Baton(flumeDir);
+        for (const p of chain.phases) baton.sleep(p.name);
+        baton.wake(name);
+        const outcome = await new Dispatcher({
+          repoRoot: repo,
+          configDir: fx.configDir,
+          flumeDir,
+          agent: {
+            name: "never-resolved",
+            invoke: async () => {
+              throw new Error("a plan slice declares its own agent");
+            },
+          },
+          chainLoader: async () => ({ chain }),
+          log: silent,
+        }).tick();
+        // Vacuity pin: a declined, hibernated or failed tick answers with a
+        // baton the chain's `handoff` never saw, and every leg below would
+        // be asserting over the flags this test set itself.
+        expect(outcome.hibernated, outcome.summary).toBe(false);
+        expect(outcome.failed, outcome.summary).toBeUndefined();
+        expect(outcome.declined, outcome.summary).toBeUndefined();
+        expect(outcome.result?.phaseName, outcome.summary).toBe(name);
+        expect(outcome.result?.flumeDir).toBe(flumeDir);
+        return outcome;
+      };
+
+      /**
+       * Every gate a plan slice runs under reported, and none refused: the
+       * three this chain declares plus the engine's own phase fence.
+       */
+      const gatesGreen = (outcome: TickOutcome): void => {
+        expect(outcome.result?.gateResults.map((g) => g.gate).sort()).toEqual([
+          "pending-gate",
+          "per cites resolve",
+          "records",
+          "writable-paths",
+        ]);
+        expect(
+          outcome.result?.gateResults.every((g) => g.ok),
+          JSON.stringify(outcome.result?.gateResults),
+        ).toBe(true);
+      };
+
+      // The finding is still on disk after the slice committed: a window
+      // wider than one tick's budget re-wakes its own slice.
+      const held = await tick(
+        INBOX,
+        commits("plan: record what the report says", (cwd) => {
+          writeFileSync(statePath(cwd), stateMd(seeded, seeded, "Read the report; routing next tick.\n"));
+        }),
+      );
+      expect(held.result?.committed).toBe(true);
+      gatesGreen(held);
+      expect(held.awakeAfter).toEqual([INBOX]);
+
+      // Same window, and this time the slice closed nothing. It does not
+      // re-wake itself, nothing below it is live, and the queue the engine
+      // re-read after the tick is empty: hibernation.
+      const quiet = await tick(INBOX, commitsNothing);
+      expect(quiet.result?.committed).toBe(false);
+      expect(quiet.noCommit).toBe("clean-exit");
+      expect(quiet.result?.pickableAfter).toEqual([]);
+      expect(quiet.awakeAfter).toEqual([]);
+
+      // Intent moves: a spec commit past the derive cursor arms the rung
+      // below the inbox (and the sweep, whose domain carries spec/ too).
+      await writeFile(join(repo, "spec", "loop.md"), "# Loop\n\n## The baton\n\nwider body\n");
+      git(repo, ["add", "-A"]);
+      git(repo, ["commit", "-q", "-m", "spec: widen The baton"]);
+
+      // Still nothing routed, but now the exclusion has somewhere to fall:
+      // the slice hands on rather than looping on its own unroutable note.
+      const handOn = await tick(INBOX, commitsNothing);
+      expect(handOn.result?.committed).toBe(false);
+      expect(handOn.awakeAfter).toEqual([DERIVE]);
+
+      // The exclusion is the slice's own: its sibling still answers with the
+      // rung above, whose window is open.
+      const sibling = await tick(DERIVE, commitsNothing);
+      expect(sibling.result?.committed).toBe(false);
+      expect(sibling.awakeAfter).toEqual([INBOX]);
+
+      // Drained — through a commit the engine carried back to the trunk the
+      // ladder's predicate reads — and the baton falls to the next rung.
+      const drained = await tick(
+        INBOX,
+        commits("plan: drain the inbox", (cwd) => {
+          rmSync(join(cwd, ".flume", "inbox", "2026-09-11-report.md"));
+        }),
+      );
+      expect(drained.result?.committed).toBe(true);
+      gatesGreen(drained);
+      // git removes the directory with its last tracked file, so the drained
+      // state the predicate answers on is the ENOENT leg of its own read.
+      expect(existsSync(report)).toBe(false);
+      expect(existsSync(join(flumeDir, "inbox"))).toBe(false);
+      expect(drained.awakeAfter).toEqual([DERIVE]);
+
+      // The re-derive files one entry and advances its own cursor — leaving
+      // the sweep's behind, so the last rung is the sweep yielding to
+      // pickable work rather than an empty frontier. `pickableAfter` is the
+      // dispatcher's own verdict over the queue this commit wrote.
+      const refilled = await tick(
+        DERIVE,
+        commits("plan: file one entry", (cwd) => {
+          writeFileSync(
+            join(cwd, ".flume", "plan", "pending.json"),
+            `${JSON.stringify([filedEntry], null, 2)}\n`,
+          );
+          writeFileSync(statePath(cwd), stateMd(git(cwd, ["rev-parse", "HEAD"]), seeded));
+        }),
+      );
+      expect(refilled.result?.committed).toBe(true);
+      gatesGreen(refilled);
+      expect(
+        refilled.result?.gateResults.find((g) => g.gate === "per cites resolve")?.message,
+      ).toBe("1 per cite(s) resolve");
+      expect(refilled.result?.pickableAfter.map((e) => e.tag)).toEqual([filedEntry.tag]);
+      // The sweep is live on the same spec commit its cursor never caught up
+      // to, and still yields: the queue is the product, the sweep insurance.
+      expect(chain.phases.find((p) => p.name === SWEEP)!.shouldRun!({ cwd: repo, flumeDir, pending: [] })).toBe(true);
+      expect(refilled.awakeAfter).toEqual([BUILD]);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 60_000);
 });
