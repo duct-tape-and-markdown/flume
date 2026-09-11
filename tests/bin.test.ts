@@ -1,4 +1,8 @@
 /**
+ * The two bin entries spec/cli.md, "Distribution" declares: the published
+ * `bin.flume` (bin/flume.js, second describe) and the POSIX shell script kept
+ * for direct callers (bin/flume, first describe).
+ *
  * spec/cli.md, "Distribution" — bin/flume "walks its own symlink chain
  * before computing the package dir". That walk was added by c336ead to fix
  * a real bug (dirname($0) resolved the *symlink's* directory, not the real
@@ -16,7 +20,7 @@
  * either assertion runs.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -28,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const exec = promisify(execFile);
 
 const BIN_FLUME = fileURLToPath(new URL("../bin/flume", import.meta.url));
+const BIN_FLUME_JS = fileURLToPath(new URL("../bin/flume.js", import.meta.url));
 
 // Stands in for the real build output: records argv and cwd as JSON so the
 // test can assert bin/flume resolved *this* file (relative to the real
@@ -113,4 +118,101 @@ describe("bin/flume symlink walk", () => {
 
     expect(JSON.parse(stdout)).toEqual({ argv: ["tick"], cwd });
   });
+});
+
+/**
+ * bin/flume.js is `bin.flume` in package.json — the only entry a consumer
+ * invokes, since npm's generated shims (including the Windows `.cmd`/`.ps1`)
+ * wrap it. scripts/smoke-install.mjs drives it off a full pack+install but
+ * asserts exit 0 on success paths only, so the failure halves of what
+ * spec/cli.md, "Distribution" declares of it — the child's exit code, or
+ * terminating signal, propagated — had no check at all.
+ *
+ * Each case lays the real shim into a package-shaped temp dir beside a fake
+ * dist/cli.js that does exactly the one thing the case is about, and spawns
+ * the shim as node would.
+ */
+describe("bin/flume.js — the published bin.flume entry", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "flume-bin-node-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /**
+   * The real shim's bytes at `<pkg>/bin/flume.js`, with `cli` as the body of
+   * the `<pkg>/dist/cli.js` it resolves. The package.json is the published
+   * package's `"type": "module"`, without which node reads the shim's ESM
+   * imports as CJS and the case fails on syntax rather than on its property.
+   * Returns the shim path.
+   */
+  async function makePackage(cli: string): Promise<string> {
+    const pkgDir = join(root, "pkg");
+    await mkdir(join(pkgDir, "bin"), { recursive: true });
+    await mkdir(join(pkgDir, "dist"), { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify({ type: "module" }));
+
+    const shim = join(pkgDir, "bin", "flume.js");
+    await writeFile(shim, await readFile(BIN_FLUME_JS));
+    await chmod(shim, 0o755);
+    await writeFile(join(pkgDir, "dist", "cli.js"), cli);
+
+    return shim;
+  }
+
+  // As npm's shims invoke it: node.exe on the script, argv after it.
+  const runShim = (shim: string, args: string[]) =>
+    spawnSync(process.execPath, [shim, ...args], { encoding: "utf8" });
+
+  it("bin/flume.js execs dist/cli.js with argv preserved", async () => {
+    // Identifies itself, so a shim that resolved some *other* file (or
+    // failed to resolve one and exited non-zero) cannot pass this.
+    const shim = await makePackage(
+      `process.stdout.write(JSON.stringify({ entry: "dist/cli.js", argv: process.argv.slice(2) }));\n`,
+    );
+
+    // Flags, a subcommand, and a `--` passthrough: anything the shim parsed
+    // or re-quoted instead of forwarding shows up here.
+    const argv = ["tick", "--phase", "build", "--", "-x", "a b"];
+    const result = runShim(shim, argv);
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ entry: "dist/cli.js", argv });
+  });
+
+  it("bin/flume.js propagates the child's non-zero exit status", async () => {
+    const shim = await makePackage(`process.exit(42);\n`);
+
+    const result = runShim(shim, ["status"]);
+
+    expect(result.status).toBe(42);
+    expect(result.signal).toBeNull();
+  });
+
+  /**
+   * win32 has no signal delivery: a child that self-kills with SIGTERM there
+   * yields a status, so there is no signal for the shim to re-raise and the
+   * property is POSIX's alone. Declared skip, not a silent pass — the two
+   * cases above still run on the Windows lane.
+   */
+  it.skipIf(process.platform === "win32")(
+    "bin/flume.js re-raises the child's terminating signal",
+    async () => {
+      // The timer keeps the child alive past the kill, so a shim that
+      // mistook a clean exit for a signal cannot pass by accident.
+      const shim = await makePackage(
+        `process.kill(process.pid, "SIGTERM");\nsetTimeout(() => {}, 10_000);\n`,
+      );
+
+      const result = runShim(shim, ["loop"]);
+
+      expect(result.signal).toBe("SIGTERM");
+      expect(result.status).toBeNull();
+    },
+  );
 });
