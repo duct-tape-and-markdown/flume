@@ -135,7 +135,18 @@ const factory: ChainFactory = (api) => {
      */
     tests: {
       schema: z.array(z.string().min(1)).default([]),
-      hint: `[ "behavior this pins" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim and the vitest gate proves it; the file is build's call`,
+      hint: `[ "behavior this entry introduces or changes" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim; the vitest gate proves it passes, then proves it fails on the pre-fix tree; the file is build's call`,
+    },
+    /**
+     * A property that already holds and gains its check here — an agreement
+     * pin, a doc-to-source scan. Judged green only: red-on-base cannot apply
+     * to a test whose subject was true before the entry, and refusing it
+     * turned a real pin back into prose (WORKTREE-BASE-DOCS-PINNED,
+     * 2026-09-11). Plan chooses the list a line belongs to.
+     */
+    pins: {
+      schema: z.array(z.string().min(1)).default([]),
+      hint: `[ "property that already holds and gains its check here" ] — same title discipline as tests[]; judged green, never red on the base`,
     },
     acceptance: {
       schema: z.string().min(1),
@@ -571,10 +582,22 @@ const factory: ChainFactory = (api) => {
    * the `chore(flume):` that pairs with it.
    */
   const REFUSAL_MODES: ReadonlySet<string> = new Set(["voluntary-bail", "clean-exit", "not-shipped"]);
+  /**
+   * A `tests[]` line the gate found already green on the base is a line
+   * plan mis-declared (it belongs in `pins[]`, or nowhere) — build cannot
+   * move it, so retrying is the wall. The gate's own message is this chain's
+   * vocabulary (`.flume/vitestJudge.ts`, `judgeRedOnBase`), read here by the
+   * same chain that wrote it.
+   */
+  const GREEN_ON_BASE = /already pass on the base/;
+  function misdeclaredLine(rec: { mode: string; gate?: string; message?: string }): boolean {
+    return rec.mode === "gate-revert" && rec.gate === "vitest" && GREEN_ON_BASE.test(rec.message ?? "");
+  }
   function parkStanding(ctx: TickContext): boolean {
     const live = new Set((ctx.pending ?? []).map((e) => api.slugify(e.tag)));
     for (const [key, rec] of ctx.priorAttempts ?? []) {
-      if (live.has(key) && REFUSAL_MODES.has(rec.mode)) return true;
+      if (!live.has(key)) continue;
+      if (REFUSAL_MODES.has(rec.mode) || misdeclaredLine(rec)) return true;
     }
     return false;
   }
@@ -744,17 +767,20 @@ const factory: ChainFactory = (api) => {
   const vitestOnCode: typeof vitestSuite = {
     ...vitestSuite,
     run: async (ctx) => {
-      // `tests[]` is this chain's extension field — narrow through its schema.
+      // `tests[]` and `pins[]` are this chain's extension fields — narrow
+      // through their schemas. Both must be green; only `tests[]` must also
+      // be red on the base.
       const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
+      const pinned = entryExtension.pins.schema.parse(ctx.entry?.pins);
       const touched = ctx.touchedPaths ?? [];
-      if (named.length === 0 && touched.length > 0 && !touched.some((p) => codePath.test(p))) {
+      if (named.length + pinned.length === 0 && touched.length > 0 && !touched.some((p) => codePath.test(p))) {
         return {
           ok: true,
           message: `vitest not run — no code path among ${touched.length} touched path(s), no behavior named`,
         };
       }
       const r = await vitestSuite.run(ctx);
-      const judged = judgeVitestReport(r.details, r.ok, named, ctx.repoRoot);
+      const judged = judgeVitestReport(r.details, r.ok, [...named, ...pinned], ctx.repoRoot);
       if (!judged.ok || named.length === 0) return judged;
       const red = await redOnBase(ctx, named, r.details);
       return red.ok ? { ...judged, message: `${judged.message}; ${red.message}` } : red;
@@ -848,10 +874,13 @@ const factory: ChainFactory = (api) => {
       // declines: one declined tick, then the ladder retries the entry from
       // the new base. Bounded, and named here until the engine reports the
       // merge outcome per entry.
+      // `clean-exit` is the name the taxonomy ruling gives `voluntary-bail`
+      // (see REFUSAL_MODES); both read until that entry ships.
+      const bailed = (mode: string | undefined) => mode === "voluntary-bail" || mode === "clean-exit";
       const refused =
-        result.noCommit === "voluntary-bail" ||
+        bailed(result.noCommit) ||
         (result.entries ?? []).some(
-          (e) => e.noCommit === "voluntary-bail" || (e.committed && !e.shipped && !e.reverted),
+          (e) => bailed(e.noCommit) || (e.committed && !e.shipped && !e.reverted),
         );
       if (refused) return [INBOX];
       return nextPhase(result.flumeDir, result.pickableAfter.length > 0);

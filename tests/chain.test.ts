@@ -800,3 +800,39 @@ describe("red on the base — the fix's tests against the pre-fix tree", () => {
     await rm(repo, { recursive: true, force: true });
   });
 });
+
+describe("pins[] — a property that already holds, judged green only", () => {
+  it("the entry extension declares pins[] beside tests[], both defaulting to empty", async () => {
+    const { chain } = await loadChainModule(REPO_PATHS);
+    const ext = chain.entryExtension!;
+    // The declared schema is a zod schema behind the Standard Schema face.
+    const parse = (field: string, v: unknown) => (ext[field]!.schema as unknown as { parse(v: unknown): unknown }).parse(v);
+    expect(parse("pins", undefined)).toEqual([]);
+    expect(parse("tests", undefined)).toEqual([]);
+    expect(parse("pins", ["a pinned property"])).toEqual(["a pinned property"]);
+    expect(ext["pins"]!.hint).toContain("never red on the base");
+  });
+
+  it("a vitest gate-revert record saying a named behavior already passes on the base wakes the inbox slice; any other gate-revert does not", async () => {
+    const repo = await initRepo("flume-pins-");
+    const flumeDir = join(repo, ".flume");
+    await mkdir(join(flumeDir, "plan"), { recursive: true });
+    await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+    await writeFile(join(flumeDir, "plan", "state.md"), "# State\n");
+    const { chain } = chainFactory(buildFlumeApi({ repoRoot: repo, configDir: flumeDir, flumeDir }));
+    const inbox = chain.phases.find((p) => p.name === "plan-inbox")!;
+    const pending = [makeEntry("OPEN-1", { kind: "open" })];
+    const withRecord = (rec: object): TickContext => ({
+      cwd: repo,
+      flumeDir,
+      pending,
+      priorAttempts: new Map([[slugify("OPEN-1"), rec as unknown as PriorAttempt]]),
+    });
+    expect(
+      inbox.shouldRun!(withRecord({ mode: "gate-revert", gate: "vitest", message: "2 of 2 named behavior(s) already pass on the base — the test pins nothing this entry changed" })),
+    ).toBe(true);
+    expect(inbox.shouldRun!(withRecord({ mode: "gate-revert", gate: "vitest", message: "3 test(s) failed — wave reverted" }))).toBe(false);
+    expect(inbox.shouldRun!(withRecord({ mode: "gate-revert", gate: "tsc", message: "already pass on the base" }))).toBe(false);
+    await rm(repo, { recursive: true, force: true });
+  });
+});

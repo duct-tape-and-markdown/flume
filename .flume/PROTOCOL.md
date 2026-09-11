@@ -28,8 +28,11 @@ Three consumers, and only three:
   must pin, written as a test title — build titles a passing test with the
   line and the `vitest` gate proves it, then proves it **red on the base**:
   the named test is run against the pre-fix tree and a line that already
-  passes there pins nothing and is refused; the file it lands in is build's
-  call).
+  passes there is refused; the file it lands in is build's call), and
+  `pins[]` (a property that already holds and gains its check in this entry
+  — an agreement pin, a doc-to-source scan — same title discipline, judged
+  green only). Plan chooses the list; a `tests[]` line the gate finds green
+  on the base wakes plan to move it, since build cannot.
 - **The next plan tick** reads `observedFiles` — dispatcher-written, the real
   footprint of a reverted attempt.
 
