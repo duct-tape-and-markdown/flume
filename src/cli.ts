@@ -151,7 +151,25 @@ async function chainRefusesPhase(
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
-  const repoRoot = resolveRepoRoot(process.cwd());
+
+  // Bay discovery's own stat refusal, mapped at the same boundary as every
+  // other one in this file: `resolveRepoRoot` throws on a `.flume` that is
+  // present but unstattable (src/cliJobResolution.ts), and this is the first
+  // thing the CLI does, ahead of every other try/catch. Uncaught, the throw
+  // reached `main().catch` and left the operator a raw stack and an exit 1 —
+  // the one stat refusal in the CLI that could not be classified from the
+  // exit status (`.claude/rules/platform-facts.md`, "Exit codes come from
+  // `sysexits.h`"). The stat error carries the offending path; the cwd here
+  // is the walk's origin, which it does not.
+  let repoRoot: string;
+  try {
+    repoRoot = resolveRepoRoot(process.cwd());
+  } catch (err) {
+    console.error(
+      `[flume] bay discovery from ${process.cwd()} failed to stat an ancestor bay: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return EX_IOERR;
+  }
 
   // Global `--job <name>`: extract it wherever it appears so it composes with
   // every subcommand, before any dispatch.

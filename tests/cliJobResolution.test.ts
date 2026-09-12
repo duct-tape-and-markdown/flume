@@ -448,6 +448,48 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
       await rm(outer, { recursive: true, force: true });
     }
   });
+
+  // The throw above is the walk's; this is what an operator sees. The call
+  // sits ahead of every try/catch in `main()`, so the throw fell through to
+  // `main().catch` — a raw stack on stderr and an unclassified exit 1, the
+  // one stat refusal in the CLI a caller could not key on
+  // (`.claude/rules/platform-facts.md`, "Exit codes come from
+  // `sysexits.h`"). It now maps to EX_IOERR with a `[flume]` line, as the
+  // `--job` state-root guard and the `status` probes below already do.
+  it(
+    "flume exits EX_IOERR naming the stat error when an ancestor .flume is present but unstattable",
+    async () => {
+      const outer = await mkFixtureRoot("flume-walkup-eloop-cli-");
+      try {
+        const bay = join(outer, "bay");
+        const nested = join(bay, "src", "deep");
+        await mkdir(nested, { recursive: true });
+        const unstattable = join(bay, ".flume");
+        // Vacuity guard: the symlink below is the only thing at this path, so
+        // the walk out of `nested` really does meet it first.
+        expect(existsSync(unstattable)).toBe(false);
+        // ELOOP — present, unstattable. Not a permission bit: a root-run test
+        // would bypass that.
+        await symlink(basename(unstattable), unstattable);
+        expect(lstatSync(unstattable).isSymbolicLink()).toBe(true);
+
+        const status = await runCliStreams(nested, ["status"]);
+        expect(status.code).toBe(EX_IOERR);
+        expect(status.stderr).toContain("[flume]");
+        expect(status.stderr).toMatch(/ELOOP/);
+        // The walk's origin and the path it choked on are both named.
+        expect(status.stderr).toContain(nested);
+        expect(status.stderr).toContain(unstattable);
+        // Not a raw stack dump through `main().catch`.
+        expect(status.stderr).not.toMatch(/^\s+at /m);
+        // And nothing ran over the unresolved root.
+        expect(status.stdout).not.toContain("hibernating");
+      } finally {
+        await rm(outer, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
 
 /**
