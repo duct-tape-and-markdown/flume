@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "ENTRY-WRITE-SCOPE-ONE-DERIVATION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "the scope decision's home, beside entryWriteScopeUnion" },
+        { "path": "src/builtinGates.ts", "description": "writablePathsGate takes the shared scope shape" },
+        { "path": "src/Prompt.ts", "description": "render the fence off the shared derivation" },
+        { "path": "src/Dispatcher.ts", "description": "configure the write guard off the shared derivation" },
+        { "path": "tests/Prompt.test.ts", "description": "agreement case builds the gate's half through the helper" }
+      ],
+      "retire": []
+    },
+    "summary": "Give the scoped-tick write-scope decision one home; the renderer, the write guard and the agreement case read it there instead of each restating it",
+    "per": { "path": ".claude/rules/engineering.md", "section": "The fix lands at the mechanism" },
+    "tests": [
+      "the shared entry write scope is the assigned entry's declared files union the phase's channel paths when scopeWritesToEntry is declared",
+      "the shared entry write scope is absent when the phase omits scopeWritesToEntry, and when no entry is assigned"
+    ],
+    "pins": [
+      "the rendered effective fence names exactly the paths the write guard accepts for the same phase and entry"
+    ],
+    "acceptance": "One derivation of scoped-or-not plus its two inputs; no site restates declaredPaths(entry) union entryChannelPaths beside it, and the agreement case no longer hand-builds the gate's scope.",
+    "notes": "Verified on disk: src/Prompt.ts:498 and :531-532, and src/Dispatcher.ts:3622-3626, each spell `assignedEntry && phase.scopeWritesToEntry` and `declaredPaths(entry)` with `phase.entryChannelPaths ?? []`; only the final set-union is shared. tests/Prompt.test.ts:416-419 hand-builds the gate's half, so a one-sided change to either production site ships green. EntryWriteScope is module-private in src/builtinGates.ts today."
+  }
+]
