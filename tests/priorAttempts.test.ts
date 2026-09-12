@@ -16,10 +16,11 @@
  */
 
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { slugify } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import { InlineExecRenderError } from "../src/Prompt.ts";
 import {
@@ -122,5 +123,76 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(dirname(priorAttemptPath(flumeDir, "any-key"))).toBe(
       priorAttemptsDir(flumeDir),
     );
+  });
+});
+
+describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.md`, 'The fix lands at the mechanism')", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("PriorAttemptStore.snapshotDir keys its directory by the same slug priorAttemptPath keys the record JSON by", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+
+    // Raw keys a `slugify` actually changes — a phase name the chain spells
+    // with an underscore, a tag with the shout-case the queue uses. A key
+    // already in slug form would make this vacuous.
+    const rawKeys = ["plan_sweep", "SNAPSHOT-KEY", "Plan Derive"];
+    expect(rawKeys.every((k) => slugify(k) !== k)).toBe(true);
+
+    for (const key of rawKeys) {
+      // The real writers, not a re-derivation: `write` places the record and
+      // `snapshotReverted` places the snapshot, each through the store's own
+      // keying.
+      await store.write({ key, keyspace: "phase" }, buildTipMoved(head, head));
+      await store.snapshotReverted(fx.repo, head, key);
+
+      const record = priorAttemptPath(flumeDir, key);
+      const snapshot = store.snapshotDir(key);
+      expect(existsSync(record), key).toBe(true);
+      expect(existsSync(snapshot), key).toBe(true);
+
+      // Same directory, same stem, different suffix — siblings by one
+      // identity rather than two spellings of the same attempt.
+      expect(dirname(snapshot)).toBe(dirname(record));
+      expect(basename(snapshot)).toBe(
+        `${basename(record, ".json")}.reverted`,
+      );
+      expect(basename(snapshot)).toBe(`${slugify(key)}.reverted`);
+    }
+  });
+
+  it("PriorAttemptStore.snapshotDir keeps a traversing key inside priorAttemptsDir", () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // `clear` and `snapshotReverted` both `rm -rf` this dir; a key that
+    // resolves out of `prior-attempts/` aims that removal at the tree.
+    for (const key of ["../../escape", "..", "a/../../b", "/abs"]) {
+      const dir = store.snapshotDir(key);
+      const rel = relative(priorAttemptsDir(flumeDir), dir);
+      expect(rel, key).not.toBe("");
+      expect(rel.startsWith("..") || isAbsolute(rel), key).toBe(false);
+      expect(dirname(dir), key).toBe(priorAttemptsDir(flumeDir));
+    }
+  });
+
+  it("priorAttemptPath keeps a traversing key inside priorAttemptsDir", () => {
+    const flumeDir = join(fx.repo, ".flume");
+
+    for (const key of ["../../escape", "..", "a/../../b", "/abs"]) {
+      const p = priorAttemptPath(flumeDir, key);
+      const rel = relative(priorAttemptsDir(flumeDir), p);
+      expect(rel, key).not.toBe("");
+      expect(rel.startsWith("..") || isAbsolute(rel), key).toBe(false);
+      expect(dirname(p), key).toBe(priorAttemptsDir(flumeDir));
+    }
   });
 });

@@ -90,6 +90,19 @@ export interface PriorAttemptRef {
 export { priorAttemptsDir };
 
 /**
+ * The keyed stem under `priorAttemptsDir` that every artifact of one prior
+ * attempt hangs a suffix off — the record JSON ({@link priorAttemptPath})
+ * and the reverted-file snapshot dir
+ * ({@link PriorAttemptStore.snapshotDir}). One `slugify` for both, so the
+ * two artifacts of a single attempt are named by one identity and neither
+ * can be keyed by a raw tag that walks out of the dir
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+function priorAttemptStem(flumeDir: string, key: string): string {
+  return join(priorAttemptsDir(flumeDir), slugify(key));
+}
+
+/**
  * Filesystem path of a tag's/phase's prior-attempt record
  * (spec/loop.md "Prior-outcome feedback to the retrying tick": "the exported
  * rule"). Slugifies internally — idempotent on an already-slugified key — so
@@ -98,7 +111,7 @@ export { priorAttemptsDir };
  * has, with no private dispatcher rule to reverse-engineer.
  */
 export function priorAttemptPath(flumeDir: string, tag: string): string {
-  return join(priorAttemptsDir(flumeDir), `${slugify(tag)}.json`);
+  return `${priorAttemptStem(flumeDir, tag)}.json`;
 }
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
@@ -324,9 +337,16 @@ export class PriorAttemptStore {
    * Sibling to the prior-attempt JSON under `<flumeDir>/prior-attempts/`
    * (NOT the per-entry worktree) so it outlives both `git reset --hard` and
    * a fanout worktree teardown — the same durability that record relies on.
+   *
+   * Sibling in the literal sense: same {@link priorAttemptStem}, a different
+   * suffix. Keying this dir by the raw text while the record beside it was
+   * keyed by the slug made the two artifacts of one attempt disagree about
+   * whose attempt they were, and left a traversing key to resolve outside
+   * `priorAttemptsDir` entirely — which `clear` and
+   * {@link snapshotReverted} then `rm -rf`.
    */
   snapshotDir(key: string): string {
-    return join(priorAttemptsDir(this.flumeDir), `${key}.reverted`);
+    return `${priorAttemptStem(this.flumeDir, key)}.reverted`;
   }
 
   /**
