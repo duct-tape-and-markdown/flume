@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "PENDINGTOLERANT-READ-DEGRADE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readPendingTolerant: readFile joins the stat catch's declared degrade"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "stattable-but-unreadable pending.json case, beside the ELOOP one"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "readPendingTolerant's readFile is bare — fold it into the same warn-then-[] degrade its stat and parse branches already declare",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "readPendingTolerant warns and reports an empty pendingAfter when pending.json stats but cannot be read"
+    ],
+    "pins": [],
+    "acceptance": "A tick whose pending.json stats but fails to read still returns its TickResult, with the read error warned.",
+    "notes": "EISDIR (a directory at the path), EACCES on the file's own mode, a delete racing the probe. Both call sites (Dispatcher.ts ~2203, ~3076) are unguarded and run after the tick's work landed, so a throw loses the TickResult the strict twin deliberately cannot lose. The function's doc comment already claims every failure degrades this way."
+  }
+]
