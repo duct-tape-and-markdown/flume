@@ -3985,10 +3985,31 @@ export class Dispatcher {
    * `chain.ts`'s advisory `hasPickable` handoff check, never a rewrite or a
    * work decision (engineering.md "Loud or nothing": the degraded-but-
    * proceeding path, declared and cited at its two call sites).
+   *
+   * Every way this read can fail degrades the same declared way — announced,
+   * then `[]`. It cannot refuse the way `readPending` does: it runs after the
+   * tick's work has already landed, so a throw here would lose the
+   * `TickResult` that describes it. The tolerance is in this reader, never in
+   * the probe: `existsLoud` (src/fsProbe.ts) still splits absent from
+   * unreachable, and the catch below turns that refusal into the warn a
+   * silent `existsSync` `false` would have skipped.
    */
   private async readPendingTolerant(): Promise<PendingEntry[]> {
     // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-    if (!existsSync(namespacedJoin(this.pendingPath))) return [];
+    try {
+      if (!existsLoud(namespacedJoin(this.pendingPath))) return [];
+    } catch (err) {
+      // Present but unreachable — a symlink loop, a permission-denied
+      // parent. `readPending`'s strict twin refuses on exactly this; here it
+      // is announced and treated as empty, so a drained-looking
+      // `pendingAfter` is never the first anyone hears of it.
+      this.log.warn(
+        `[flume] pending.json could not be stat'd (${
+          (err as Error).message
+        }); treating as empty`,
+      );
+      return [];
+    }
     const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
     const r = parsePending(raw, this.entryExtension);
     if (!r.ok) {

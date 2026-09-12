@@ -14063,3 +14063,72 @@ describe("TickVerdict span rows — base beside head", () => {
     expect(await readFile(join(fx.repo, "outside/b.ts"), "utf8")).toBe("b\n");
   }, 20_000);
 });
+
+// `existsSync` collapsed every stat failure to `false`, so a pending.json
+// that is on disk but unstattable read as absent and `pendingAfter` came back
+// looking like a drained queue with nothing said — and a chain hibernates off
+// exactly that (`.flume/chain.ts`: `pickableAfter.length > 0`). The probe now
+// splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts); this reader
+// cannot refuse the way its strict twin does — it runs after the tick's work
+// landed, so a throw would lose the TickResult — so it announces, then
+// degrades, exactly as the parse branch beside it already did.
+describe("Dispatcher — an unstattable queue on the post-tick re-read is loud", () => {
+  it("readPendingTolerant warns naming the stat error when pending.json is present but unstattable", async () => {
+    await writePending(fx.repo, [makeEntry("PTSL-A", ["src/ptsl-a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const warnings: string[] = [];
+
+    // Broken mid-tick, not before it: the strict decide-read resolves the
+    // committed tip rather than the tree (spec/pending.md "Dispatch reads
+    // come from the tip, not the tree"), so the tick still dispatches over a
+    // real queue and only the post-tick disk re-read meets the bad path. The
+    // agent commits nothing, so no cherry-pick range opens over the dirtied
+    // trunk — the re-read is the only thing under test here.
+    const agent: Agent = {
+      name: "breaks-the-queue-path",
+      async invoke() {
+        await rm(pendingPath);
+        // ELOOP — present, unstattable. Not a permission bit: a root-run
+        // test would bypass that.
+        await symlink(basename(pendingPath), pendingPath);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity guard: the queue the re-read failed over is genuinely
+    // non-empty at the tip, so the `[]` below is a degradation and not the
+    // truth about this repo's queue.
+    const tipRaw = await git.readFileAtRef(
+      fx.repo,
+      "HEAD",
+      ".flume/plan/pending.json",
+    );
+    const tipPending = parsePending(tipRaw ?? "");
+    expect(tipPending.ok).toBe(true);
+    if (tipPending.ok) {
+      expect(tipPending.entries.map((e) => e.tag)).toEqual(["PTSL-A"]);
+    }
+
+    expect(warnings).toContainEqual(
+      expect.stringMatching(/pending\.json could not be stat'd \(.*ELOOP/),
+    );
+    // Declared degradation, not a refusal: the TickResult still lands, and
+    // the empty queue it reports is the thing the warn above accounts for.
+    expect(outcome.result).toBeDefined();
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(outcome.result?.pickableAfter).toEqual([]);
+  });
+});
