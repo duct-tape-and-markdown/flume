@@ -11,7 +11,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
-import { worktreesBase } from "../src/paths.ts";
+import { matchesAny, worktreesBase } from "../src/paths.ts";
 
 /**
  * Records are files, one each (`.flume/PROTOCOL.md`, *Records: one file
@@ -324,6 +324,40 @@ const factory: ChainFactory = (api) => {
       };
     },
   };
+
+  /**
+   * The agent's commit is the tick's whole output. A tracked path modified
+   * or deleted and left uncommitted, or an untracked file created inside the
+   * phase's writable paths and never added, is work the worktree's teardown
+   * discards while the verdict reads `merged` (observed: a plan tick that
+   * appended open-questions.md and committed without staging it). Refuse at
+   * the commit, naming the paths, so the prior-attempt record carries them
+   * to the next attempt. `afterCommit` only: `repoRoot` is the worktree
+   * there, and the trunk after merge holds nothing of the agent's to read.
+   * An untracked file outside the fence is not the tick's and is left alone.
+   */
+  const cleanTreeGate = (writablePaths: string[]): Gate => ({
+    name: "clean-tree",
+    when: "afterCommit",
+    async run(ctx) {
+      const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+        cwd: ctx.repoRoot,
+        encoding: "utf8",
+      });
+      const left = out
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => ({ code: l.slice(0, 2), path: l.slice(3) }))
+        .filter(({ code, path }) => code !== "??" || matchesAny(path, writablePaths))
+        .map(({ code, path }) => `${path} (${code.trim()})`);
+      if (left.length === 0) return { ok: true, message: "worktree clean after the commit" };
+      return {
+        ok: false,
+        message: `${left.length} path(s) left uncommitted in the worktree; the commit is the tick's whole output`,
+        details: left.join("\n"),
+      };
+    },
+  });
 
   /**
    * The park shape, read once: a commit whose only path is the entry's own
@@ -692,6 +726,7 @@ const factory: ChainFactory = (api) => {
     // fence pre-check, and its cites resolving.
     gates: [
       recordsGate,
+      cleanTreeGate(planWritablePaths),
       pendingGate({ extension: entryExtension, targetFence: buildFence }),
       perResolvesGate,
     ],
@@ -844,7 +879,7 @@ const factory: ChainFactory = (api) => {
     // clean commits; afterMerge revert is per-entry (§7b). tscGate runs
     // afterCommit — cheap, structural, keeps a non-compiling commit off the
     // trunk — and again on the merged tree, where sibling composition lives.
-    gates: [tscGate, recordsGate, tscOnTrunk, vitestOnCode],
+    gates: [tscGate, recordsGate, cleanTreeGate(buildFence.writablePaths), tscOnTrunk, vitestOnCode],
     setupWorktree: setupBuildWorktree,
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {

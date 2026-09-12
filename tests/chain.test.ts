@@ -726,6 +726,25 @@ describe("records gate and the park predicate — one file each", () => {
     expect(refused.details).toContain(`.flume/plan/notes/OTHER.md: a build tick touches only ${NOTE}`);
   });
 
+  it("clean-tree: a tracked edit or a writable untracked file left uncommitted after the commit is refused by path", async () => {
+    const gate = (p: Phase) => p.gates.find((g) => g.name === "clean-tree")!;
+    for (const p of [build, plan]) expect(gate(p)?.when, p.name).toBe("afterCommit");
+    const entry = makeEntry("OPEN-1", { kind: "open" });
+    const sha = await commitFiles({ "src/a.ts": "export const a = 1;\n" }, "build: code");
+    expect((await gate(build).run(gateCtx(sha, "build", entry))).ok).toBe(true);
+    // The observed shape: a tracked file appended after the commit and never staged.
+    await writeFile(join(repo, ".flume", "plan", "pending.json"), "[]\n\n");
+    // A forgotten new file inside the fence is the tick's; a scratch file outside it is not.
+    await mkdir(join(repo, "tests"), { recursive: true });
+    await writeFile(join(repo, "tests", "new.test.ts"), "// forgotten\n");
+    await writeFile(join(repo, "scratch.txt"), "not judged\n");
+    const refused = await gate(build).run(gateCtx(sha, "build", entry));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain(".flume/plan/pending.json");
+    expect(refused.details).toContain("tests/new.test.ts");
+    expect(refused.details).not.toContain("scratch.txt");
+  });
+
   it("a commit touching no record passes vacuously, and says so", async () => {
     const sha = await commitFiles({ "src/a.ts": "export const a = 1;\n" }, "build: code");
     const r = await gateOf(build).run(gateCtx(sha, "build", makeEntry("OPEN-1", { kind: "open" })));
@@ -1032,6 +1051,7 @@ describe("the plan ladder over a real tick", () => {
        */
       const gatesGreen = (outcome: TickOutcome): void => {
         expect(outcome.result?.gateResults.map((g) => g.gate).sort()).toEqual([
+          "clean-tree",
           "pending-gate",
           "per cites resolve",
           "records",
