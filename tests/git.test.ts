@@ -6,11 +6,12 @@ import {
   mkdtemp,
   readFile,
   rm,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, toNamespacedPath } from "node:path";
+import { basename, dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -705,6 +706,27 @@ describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
       "from-primary\n",
     );
   });
+
+  // `existsSync` collapsed every stat failure to `false`, so a sequencer
+  // path that is on disk but unstattable read as "no sequence started" and
+  // the abort spec/loop.md "Crash equals stop" owes an interrupted pick was
+  // skipped silently, over a checkout still holding the pick's state. The
+  // probe now splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts).
+  it("cherryPickAbort throws when a sequencer-state path is present but unstattable", async () => {
+    const headPath = join(repo, ".git", "CHERRY_PICK_HEAD");
+    // Vacuity guard: the fixture below is the only reason this path is
+    // present, so the checkout starts with no real sequencer state at all.
+    expect(existsSync(headPath)).toBe(false);
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink(basename(headPath), headPath);
+
+    const since = execArgsLog.length;
+    await expect(cherryPickAbort(repo)).rejects.toThrow(/ELOOP/);
+    // The refusal landed at the state probe, not at a blind `--abort` that
+    // would have reset the operator's index and working tree.
+    expect(abortCalls(execArgsLogSince(since))).toHaveLength(0);
+  });
 });
 
 describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged bystander state is checkpointed before a pick range begins')", () => {
@@ -888,6 +910,24 @@ describe("removeWorktree (§7)", () => {
     );
     expect(existsSync(path)).toBe(true);
   });
+
+  // The survival check's own stat: `existsSync` read an unstattable
+  // survivor as gone, so the fallback reported a clean removal and pruned
+  // git's metadata for a directory still standing (`.claude/rules/
+  // engineering.md`, "Loud or nothing").
+  it("removeWorktree throws when the post-removal survival check cannot stat the path", async () => {
+    const path = join(repo, "not-a-registered-worktree-unstattable");
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink(basename(path), path);
+
+    // Same stand-in as the survivor test above: a recursive removal that
+    // resolves without clearing the path, so the survival check is what
+    // this test actually exercises.
+    vi.mocked(rm).mockImplementationOnce(async () => {});
+
+    await expect(removeWorktree(repo, path)).rejects.toThrow(/ELOOP/);
+  });
 });
 
 // win32 total-path limit (v0.4 §6): removeWorktree's fallback rm/existsSync
@@ -1014,6 +1054,37 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     // The stale claim file was never cleared — the rejection came from the
     // unlink itself, not a retried create failing on some other path.
     expect(await readFile(claimPath, "utf8")).toBe(String(deadPid));
+  });
+
+  // The claim file's own stat: `existsSync` read an unstattable claim as no
+  // claim at all, and `acquireTipClaim`'s EEXIST branch then took the
+  // dead-pid path and reclaimed a tip a live writer may still hold — the
+  // one outcome the refusal exists to rule out (`.claude/rules/
+  // engineering.md`, "Loud or nothing").
+  it("liveTipClaimPid throws when the claim path is present but unstattable", async () => {
+    const refPath = await resolveRefPath(repo);
+    const claimPath = tipClaimPath(await gitCommonDir(repo), refPath);
+    await mkdir(dirname(claimPath), { recursive: true });
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink(basename(claimPath), claimPath);
+
+    await expect(liveTipClaimPid(claimPath)).rejects.toThrow(/ELOOP/);
+  });
+
+  it("acquireTipClaim refuses an unstattable claim rather than reclaiming the tip", async () => {
+    const refPath = await resolveRefPath(repo);
+    const claimPath = tipClaimPath(await gitCommonDir(repo), refPath);
+    await mkdir(dirname(claimPath), { recursive: true });
+    await symlink(basename(claimPath), claimPath);
+
+    // The exclusive create sees the symlink and fails EEXIST, so this is the
+    // reclaim branch — the higher-stakes half of the same probe.
+    await expect(acquireTipClaim(repo, refPath)).rejects.toThrow(/ELOOP/);
+    // The claim was never unlinked on the way out: the refusal beat the
+    // reclaim rather than following it.
+    expect(existsSync(dirname(claimPath))).toBe(true);
+    await expect(readFile(claimPath, "utf8")).rejects.toThrow(/ELOOP/);
   });
 
   it("release removes the claim file", async () => {

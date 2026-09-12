@@ -5,10 +5,12 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
+
+import { existsLoud } from "./fsProbe.js";
 
 const exec = promisify(execFile);
 
@@ -289,7 +291,13 @@ export async function removeWorktree(
     maxRetries: FALLBACK_REMOVE_MAX_RETRIES,
     retryDelay: FALLBACK_REMOVE_RETRY_DELAY_MS,
   });
-  if (existsSync(toNamespacedPath(path))) {
+  // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
+  // on anything but ENOENT, so a survivor this process cannot stat — a
+  // permission-denied parent, a symlink loop — reports as a survivor rather
+  // than as a clean removal the caller would then prune and forget
+  // (`.claude/rules/engineering.md`, "Loud or nothing"). `existsSync` read
+  // both as gone.
+  if (existsLoud(toNamespacedPath(path))) {
     throw new Error(`worktree directory survived removal fallback: ${path}`);
   }
   // The directory is gone now — prune the now-stale `.git/worktrees/` entry
@@ -369,8 +377,8 @@ export async function showNameOnly(
  * spec/pending.md "Dispatch reads come from the tip, not the tree": every
  * strict pending.json read resolves the committed tip, never the working
  * tree. Returns `null` when the path is absent from that ref's tree,
- * mirroring `existsSync` for the disk read this replaces rather than a
- * distinct failure mode.
+ * mirroring a plain absence check for the disk read this replaces rather
+ * than a distinct failure mode.
  *
  * Existence is probed with `ls-tree` first — clean exit, empty stdout for
  * "not in this tree" — rather than parsing `git show`'s fatal-error exit
@@ -428,9 +436,14 @@ async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
     gitPath(repoRoot, "CHERRY_PICK_HEAD"),
     gitPath(repoRoot, "sequencer"),
   ]);
+  // Absent is the only silent reading (`existsLoud`, src/fsProbe.ts): an
+  // unstattable `CHERRY_PICK_HEAD`/`sequencer/` would otherwise read as "no
+  // sequence started", and the abort that spec/loop.md "Crash equals stop"
+  // owes an interrupted pick would be skipped over a checkout still holding
+  // the pick's state (`.claude/rules/engineering.md`, "Loud or nothing").
   return (
-    existsSync(toNamespacedPath(headPath)) ||
-    existsSync(toNamespacedPath(sequencerPath))
+    existsLoud(toNamespacedPath(headPath)) ||
+    existsLoud(toNamespacedPath(sequencerPath))
   );
 }
 
@@ -560,9 +573,15 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
  * (`liveLoopPid`, src/job.ts) — a sibling primitive rather than a shared call
  * site, since the two guard different resources (a ref vs. a state root)
  * under different keying.
+ *
+ * Absent is the only silent reading (`existsLoud`, src/fsProbe.ts). A claim
+ * file that is present but unstattable is not an unclaimed tip: read as one,
+ * `acquireTipClaim`'s EEXIST branch would take the dead-pid path and reclaim
+ * a tip another live writer holds — the refusal that branch exists to make
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
  */
 export async function liveTipClaimPid(claimPath: string): Promise<number | null> {
-  if (!existsSync(toNamespacedPath(claimPath))) return null;
+  if (!existsLoud(toNamespacedPath(claimPath))) return null;
   const pid = Number(
     (await readFile(toNamespacedPath(claimPath), "utf8")).trim(),
   );
