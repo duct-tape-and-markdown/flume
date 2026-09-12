@@ -1,1 +1,66 @@
-[]
+[
+  {
+    "tag": "STATEROOT-PROBES-EXISTS-LOUD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cliJobResolution.ts",
+          "description": "resolveRepoRoot's ancestor `.flume` probe (:52) → existsLoud"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the `--job` state-root guard (:287) → existsLoud; the existsSync import drops with it"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "unstattable cases for both probes — this file already carries the unit and real-CLI resolution suites"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Probe the ancestor `.flume` walk and the `--job` state-root guard with existsLoud, so an unstattable bay cannot read as absent",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "resolveRepoRoot throws when an ancestor .flume is present but unstattable",
+      "the --job state-root guard throws when the resolved flumeDir is present but unstattable"
+    ],
+    "pins": [],
+    "acceptance": "Both probes refuse at the stat instead of proceeding: the walk no longer skips past an unstattable `.flume` to an unrelated ancestor, and the guard no longer reports `does not exist` over one.",
+    "notes": "cli.ts already imports existsLoud (:57) and uses it at four sites; :287 is its last existsSync, so the import goes too (`engineering.md`, *The fix lands at the mechanism*: detection a sibling surface already performs). ELOOP via symlink is the fixture idiom here — tests/git.test.ts:714 — not a permission bit, which a root-run test bypasses."
+  },
+  {
+    "tag": "SETUPWORKTREE-LOCKFILE-EXISTS-LOUD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/setupWorktree.ts",
+          "description": "both lockfile probes (:63, :64) → existsLoud"
+        },
+        {
+          "path": "tests/setupWorktree.test.ts",
+          "description": "unstattable case per probe"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Probe both lockfiles with existsLoud in setupWorktree, so an unstattable lock cannot demote the install or raise the wrong refusal",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "setupWorktree throws when pnpm-lock.yaml is present but unstattable",
+      "setupWorktree throws when package-lock.json is present but unstattable"
+    ],
+    "pins": [],
+    "acceptance": "An unstattable lockfile refuses at the probe rather than falling through to `npm ci` or to the no-lockfile error, which the doc comment already promises never guesses.",
+    "notes": "The hook's declared posture is \"neither → rejects instead of guessing a package manager\"; existsSync makes it guess anyway. ELOOP via symlink is the fixture idiom (tests/git.test.ts:714)."
+  }
+]
