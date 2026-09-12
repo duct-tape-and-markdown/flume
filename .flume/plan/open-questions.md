@@ -475,67 +475,56 @@ Recommend the second: the refusal converts data loss into a stalled entry, and
 that is a weaker promise to the operator, not a retracted one. But the choice
 is the spec's author's — plan restating either one would be picking it.
 
-## A worktree torn down with uncommitted tracked edits reads as merged (PARKED)
+## A tick that commits nothing dies with its worktree, seen by nothing (PARKED)
 
-Drained from the inbox (2026-09-11, human via flume-main). Field-observed at
-`2ef648c`: a plan-inbox tick appended `open-questions.md`, then committed
-without `git add`. The commit carried the staged `git rm` alone, gated green,
-cherry-picked, and teardown removed the worktree over a tracked file with
-unstaged modifications. Verdict `merged`; the question the commit body
-described exists nowhere; nothing logged it.
+Was "A worktree torn down with uncommitted tracked edits reads as merged";
+the committing leg is answered and the question narrows to the other one.
 
-**Verified on disk.** Nothing in `src/` reads `git status` in a worktree.
-Both commit-detection legs — singleton (`src/Dispatcher.ts:1941`) and fanout
-(`:3247`) — are `revParse` before vs. after the agent, and nothing else.
-`teardownWorktreeInstance` (`src/worktrees.ts:226`) runs the chain hook,
-harvests, removes. The harvest cannot cover this: its delivery guarantee is
-bounded to files **untracked at the worktree's HEAD** inside the declared
-friction channel (`spec/worktrees.md`, *Teardown harvest*), and that bound is
-load-bearing — it is what stopped one committed note becoming eight stamped
-copies.
+**Answered, chain-side** (`cde9ae2`, interactive session). `cleanTreeGate` in
+`.flume/chain.ts:339` runs `afterCommit` on build and every plan slice: it
+reads `git status --porcelain` at the worktree root and refuses on any tracked
+modification or deletion, or any untracked file inside the phase's fence,
+naming each. Pinned in `tests/chain.test.ts:729`. That covers the observed
+incident (`2ef648c`) exactly and loudly — the tick reverts with the paths in
+its prior-attempt record.
 
-**The spec already ratifies the loss, on one leg.** `spec/loop.md:283` says
-the reset runs "inside the tick's worktree, which teardown removes along with
-any uncommitted work; no snapshot is taken" — stated about a *refused* tick.
-The incident was a green one, where no sentence covers it. Pulling the other
-way, *Crash equals stop* asserts "**No engine mutation destroys uncommitted
-state it did not author**", scoped in its own text to the shared checkout; in
-a worktree the engine authored the tree but not the edit. So the principle and
-the carve-out meet exactly here and the corpus does not say which wins.
+**Unreachable by it.** `afterCommit` gates run only on the committed branch:
+`src/Dispatcher.ts:1965` (singleton) and `:3282` (fanout, comment "No commit,
+no gate"). A tick that edits tracked files and commits nothing runs no gate at
+all; `teardownWorktreeInstance` (`src/worktrees.ts:226`) removes the worktree
+and the edits go with it. No chain surface ever sees that tree — a gate is the
+only hook with `repoRoot`, and it does not fire. The harvest cannot cover it
+either: bounded to files untracked at the worktree's HEAD inside the friction
+channel (`spec/worktrees.md`, *Teardown harvest*), a bound that is load-bearing.
 
-**A chain can already cover half of it, and only half.** At `afterCommit`,
-`GateContext.repoRoot` *is* the worktree root (`src/Gate.ts`), so a gate can
-run `git status --porcelain` itself and refuse — no engine change, and it
-covers the observed incident exactly. It cannot cover the worse leg: when the
-agent commits nothing, no `afterCommit` gate runs at all, and an entire
-uncommitted tick is discarded with no surface that ever saw the tree.
+**Why the corpus doesn't settle it.** `spec/loop.md:283` ratifies the loss for
+a *refused* tick — the reset runs "inside the tick's worktree, which teardown
+removes along with any uncommitted work; no snapshot is taken". A voluntary
+bail is not a refusal, and no sentence covers it. *Crash equals stop* asserts
+"**No engine mutation destroys uncommitted state it did not author**", scoped
+in its own text to the shared checkout; in a worktree the engine authored the
+tree but not the edit. Principle and carve-out meet here.
 
-Options:
+Options, narrowed to this leg:
 
-- **Engine reports the fact** (the inbox's ask): read `git status --porcelain`
-  in the worktree after the agent exits and before teardown; put the modified
-  tracked paths on the tick verdict and on `GateContext` beside
-  `touchedPaths`. The engine states a fact, the chain refuses on it
-  (`engine-boundary.md`, *Routing rule*) — and it is the only option that
-  reaches the no-commit leg. Costs one `git status` per tick per worktree, and
-  `spec/loop.md:283` has to widen: reported is not preserved.
-- **Chain-side only.** An `afterCommit` gate in `.flume/chain.ts` refusing on
-  a dirty worktree. Zero engine change, ships the moment it is ruled — but
-  `.flume/chain.ts` is outside every phase lane, so it is a human edit, and
-  the no-commit leg stays silent.
-- **Widen the harvest** to relay uncommitted tracked modifications out.
-  Recommend against: it breaks the tracked-at-HEAD bound the section earned
-  in the field, and a working-tree diff is not a file to deliver.
-- **Nothing; ratify the silence.** Say in *Teardown harvest* that a modified
-  tracked file dies with the worktree by design. Cheapest, and it leaves a
-  green `merged` verdict standing over work that no longer exists.
+- **Engine reports the fact.** Read `git status --porcelain` in the worktree
+  after the agent exits and before teardown, on every tick — committed or
+  not — and put the modified tracked paths on the tick verdict. The engine
+  states a fact, the chain decides what it means (`engine-boundary.md`,
+  *Routing rule*), and it is the only option that makes this leg observable.
+  Costs one `git status` per tick per worktree. `spec/loop.md:283` has to
+  widen: reported is not preserved.
+- **Nothing; ratify the silence.** Say in *Teardown harvest* that tracked
+  edits left by a non-committing tick die with the worktree by design.
+  Cheapest, and it leaves a clean bail standing over work that no longer
+  exists.
+- **Widen the harvest** to relay uncommitted modifications out. Recommend
+  against, unchanged: it breaks the tracked-at-HEAD bound, and a working-tree
+  diff is not a file to deliver.
 
-Recommend the first with the second riding it: the fact on the verdict is what
-makes the no-commit leg observable at all, and the refusal it feeds is this
-chain's judgment, not the engine's. A `git add` line in the prompt is the
-ladder's bottom rung (`engineering.md`, *Narration is the ladder's bottom
-rung*) — cheap to add alongside, never the answer.
+Recommend the first: the fact on the verdict is what makes the leg visible at
+all, and the refusal it feeds is already built — `cleanTreeGate` would need
+only a fact to read instead of a `git status` to run.
 
-Parked, not filed: an engine entry here would ship against `spec/loop.md:283`
-as it currently reads, and every option above touches a file no phase may
-write (`spec/`, `.flume/chain.ts`, `.flume/prompts/**`).
+Parked, not filed: an entry here ships against `spec/loop.md:283` as it reads,
+and `spec/` is the human's alone.
