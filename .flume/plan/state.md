@@ -20,6 +20,7 @@ remaining helper imports — `src/cliHelp.ts`, `src/cliJobResolution.ts`,
 `tests/bin.test.ts`; `tests/helpers/`'s three modules with
 `tests/subprocessHelper.test.ts`; `tests/loopSupervisor.test.ts` with
 `src/loopSupervisor.ts`; `tests/chain.test.ts` with `.flume/chain.ts` and
-`.flume/vitestJudge.ts`. Frontier remaining: `tests/`'s suite files, less
-`bin.test.ts`, `subprocessHelper.test.ts`, `loopSupervisor.test.ts` and
-`chain.test.ts`.
+`.flume/vitestJudge.ts`; `tests/PendingSchema.test.ts` with
+`src/PendingSchema.ts` and `src/standardSchema.ts`. Frontier remaining:
+`tests/`'s suite files, less `bin.test.ts`, `subprocessHelper.test.ts`,
+`loopSupervisor.test.ts`, `chain.test.ts` and `PendingSchema.test.ts`.
