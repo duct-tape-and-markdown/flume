@@ -528,3 +528,35 @@ only a fact to read instead of a `git status` to run.
 
 Parked, not filed: an entry here ships against `spec/loop.md:283` as it reads,
 and `spec/` is the human's alone.
+
+## `spec/jobs.md` § `flume job status` under-states two shipped readings (NEEDS AMENDMENT)
+
+Drained from `JOB-EXISTSSYNC-NARROW-ENOENT`'s note; both sentences verified on
+disk this tick. That entry (`ad2bb12`) narrowed `src/job.ts`'s existence gates
+to `ENOENT`, and two sentences in this section still describe the pre-narrowing
+readings.
+
+**1. The per-job awake reading has a third value.** Line 173 states "the awake
+phases from that job's baton, or `hibernating`". A job dir that exists but
+cannot be read now reads as neither: `readAwake` (`src/job.ts:561`) returns
+`null`, `JobStatus.awake` is `string[] | null` (`:471`), and
+`src/cliJobVerbs.ts:60` prints `awake: unreadable`. It is per-job contained, so
+one sealed job never hides its siblings. `docs/CLI.md:142` already teaches the
+three readings. The section's very next bullet already spells the absent /
+`unparsable` split for the pending count — same shape, same paragraph.
+
+**2. An unreadable jobs root no longer prints `no jobs`.** Line 175 states "An
+empty or missing jobs dir prints `no jobs`". `jobStatus` (`src/job.ts:600`)
+returns `[]` on `ENOENT` alone and rethrows every other `readdir` failure, so
+the verb fails rather than reporting an empty repo — an unreadable root hides
+every job at once, which `no jobs` would state as a fact.
+`docs/CLI.md:142` already spells "*missing*, never merely unreadable".
+
+**Recommend widening both; no fork.** The code is the deliberate ship, each
+reading is cited to `.claude/rules/engineering.md` *Loud or nothing* at its
+site, and `docs/CLI.md` teaches both already — the spec is the only surface
+still stating the old readings. Nothing is filable: `spec/` is the human's
+alone, and there is no code change behind this.
+
+Sibling, not an amendment, to the `last-tick.json` question above: same file,
+different section, independent edits.
