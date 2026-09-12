@@ -129,24 +129,34 @@ function parseMaxValue(value: string | undefined): number | null {
 }
 
 /**
- * `wake`/`sleep`'s best-effort chain load, mirroring `status`'s pattern: a
- * missing or broken chain must never block the marker mutation — there is
- * nothing to validate the phase name against. Only a chain that loads
- * *successfully* and does not declare `phase` among its `chain.phases`
- * refuses. Reached with `configDir` (repo-resident) — `--job` never retargets
- * it, so a job-dir `chain.ts` is inert here exactly as it is for `status` and
- * `tick`.
+ * `wake`/`sleep`'s best-effort chain load: a missing or broken chain must
+ * never block the marker mutation — there is nothing to validate the phase
+ * name against. Only a chain that loads *successfully* and does not declare
+ * `phase` among its `chain.phases` refuses. Reached with `configDir`
+ * (repo-resident) — `--job` never retargets it, so a job-dir `chain.ts` is
+ * inert here exactly as it is for `status` and `tick`.
+ *
+ * Not merely mirroring `status`'s pattern — taking it: the same shared load
+ * (`loadChainForObservation`, src/cliChainLoad.ts) both observational
+ * surfaces use, so a chain that throws is named on stderr here too rather
+ * than swallowed by a second bare catch beside it
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism"). The
+ * cost `wake`/`sleep` pay is its own — not a rebased pending count, but a
+ * phase name nothing checked.
  */
 async function chainRefusesPhase(
   paths: FlumePaths,
+  surface: string,
   phase: string,
 ): Promise<boolean> {
-  try {
-    const { chain } = await diskChainLoader(paths)();
-    return !chain.phases.some((p) => p.name === phase);
-  } catch {
-    return false;
-  }
+  const chain = await loadChainForObservation(
+    paths,
+    surface,
+    `proceeding without phase validation — '${phase}' is taken on trust, so ` +
+      `a typo lands a marker no phase will ever read.`,
+  );
+  if (!chain) return false;
+  return !chain.phases.some((p) => p.name === phase);
 }
 
 async function main(): Promise<number> {
@@ -441,7 +451,13 @@ async function main(): Promise<number> {
     // (`loadChainForObservation`, src/cliChainLoad.ts) reports the failure and
     // names what it costs, because the pending count below then rebases on the
     // default queue path.
-    const chain = await loadChainForObservation(paths, "status");
+    const chain = await loadChainForObservation(
+      paths,
+      "status",
+      "proceeding over engine defaults — the pending count reads the default " +
+        "queue path, and chain-declared friction and capability lines are " +
+        "withheld.",
+    );
     // The pending entry count, independent of whether the chain loads — `flume
     // job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
@@ -478,7 +494,7 @@ async function main(): Promise<number> {
       console.error("usage: flume wake <phase>");
       return 2;
     }
-    if (await chainRefusesPhase(paths, phase)) {
+    if (await chainRefusesPhase(paths, "wake", phase)) {
       console.error(
         `[flume] wake refuses: '${phase}' is not a phase this chain declares`,
       );
@@ -495,7 +511,7 @@ async function main(): Promise<number> {
       console.error("usage: flume sleep <phase>");
       return 2;
     }
-    if (await chainRefusesPhase(paths, phase)) {
+    if (await chainRefusesPhase(paths, "sleep", phase)) {
       console.error(
         `[flume] sleep refuses: '${phase}' is not a phase this chain declares`,
       );

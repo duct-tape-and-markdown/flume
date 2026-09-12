@@ -1229,6 +1229,76 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
 
 
 /**
+ * WAKE-SLEEP-CHAIN-LOAD-REPORTED — `wake`/`sleep` validate the phase name
+ * against the chain's declared phases, so they take the same best-effort
+ * load `status` does. It used to be a second, bare `catch { return false }`
+ * beside the shared one: a chain that threw meant the marker landed with
+ * nothing said, and the operator could not tell "your chain declares this
+ * phase" from "nothing checked" (`.claude/rules/engineering.md`, "The fix
+ * lands at the mechanism"). Both now route through
+ * `loadChainForObservation` and name the failure they proceeded past. Exit
+ * codes and stdout are unchanged — the marker still lands.
+ */
+describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD-REPORTED)", () => {
+  it(
+    "flume wake reports a chain.ts that fails to load instead of proceeding silently",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+
+        const wake = await runCliStreams(repo.dir, ["wake", "probe"]);
+
+        expect(wake.code).toBe(0);
+        expect(wake.stderr).toContain("wake: chain failed to load");
+        expect(wake.stderr).toContain("chain factory exploded");
+        expect(wake.stderr).toContain("'probe' is taken on trust");
+        expect(wake.stderr).toContain(
+          "`flume tick` and `flume check` refuse on this same load",
+        );
+        // Non-vacuity: the degraded path really did proceed — the marker the
+        // report is about landed, on the same stdout a loading chain prints.
+        expect(wake.stdout).toContain("woke probe");
+        expect(wake.stdout).not.toContain("chain failed to load");
+        expect(existsSync(join(repo.dir, ".flume", "awake", "probe"))).toBe(
+          true,
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "flume sleep reports a chain.ts that fails to load instead of proceeding silently",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const sleep = await runCliStreams(repo.dir, ["sleep", "probe"]);
+
+        expect(sleep.code).toBe(0);
+        expect(sleep.stderr).toContain("sleep: chain failed to load");
+        expect(sleep.stderr).toContain("chain factory exploded");
+        expect(sleep.stderr).toContain("'probe' is taken on trust");
+        // Non-vacuity: the marker this tick cleared was really there first.
+        expect(sleep.stdout).toContain("slept probe");
+        expect(sleep.stdout).not.toContain("chain failed to load");
+        expect(existsSync(join(repo.dir, ".flume", "awake", "probe"))).toBe(
+          false,
+        );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
+});
+
+/**
  * CLI-FLUMEDIR-CROSS-REPO-ROOT-REFUSAL, part 2 — `wake`/`sleep` refuse a
  * phase absent from the loaded chain's declared phases, before the marker
  * is ever written. Best-effort like `status`: a chain that fails to load

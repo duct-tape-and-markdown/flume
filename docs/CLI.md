@@ -54,7 +54,7 @@ flume loop --max 20
 
 ## `flume wake <phase>`
 
-Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. No chain is loaded and the phase name is not validated against the chain — `wake` is a pure filesystem flag operation, so a typo silently creates a stray flag file that no phase claims. Exits `0` on success; exits `2` if the `<phase>` argument is missing.
+Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. The phase name is validated against the repo chain's declared phases behind the same best-effort load `flume status` takes: a chain that loads and does not declare `<phase>` refuses with exit `2` before the flag is written, while a missing or broken chain never blocks the flag — it reports the failure and what it cost (nothing checked the phase name, so a typo lands a marker no phase will ever read) on stderr, never silently. `--job` does not retarget the load; the chain is repo-resident. Exits `0` on success; exits `2` if the `<phase>` argument is missing, if an extra positional follows it, or on an undeclared phase.
 
 ```sh
 flume wake plan
@@ -62,7 +62,7 @@ flume wake plan
 
 ## `flume sleep <phase>`
 
-Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-op if the flag file is already absent; the chain is not consulted. Use this to force-hibernate a phase mid-run, e.g. to pause an autonomous loop while inspecting state. Exits `0` on success (including the no-op case); exits `2` if `<phase>` is missing.
+Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-op if the flag file is already absent. The phase name is validated exactly as `wake` validates it, through the same best-effort chain load and with the same stderr report on a chain that fails to load. Use this to force-hibernate a phase mid-run, e.g. to pause an autonomous loop while inspecting state. Exits `0` on success (including the no-op case); exits `2` if `<phase>` is missing, if an extra positional follows it, or on an undeclared phase.
 
 ```sh
 flume sleep plan

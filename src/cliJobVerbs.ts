@@ -41,7 +41,13 @@ export async function runJobVerb(
       // rebases every job's pending count on the default queue path: the
       // shared load (`loadChainForObservation`, src/cliChainLoad.ts) reports
       // the failure and what it withholds.
-      const chain = await loadChainForObservation(paths, "job status");
+      const chain = await loadChainForObservation(
+        paths,
+        "job status",
+        "proceeding over engine defaults — the pending count reads the " +
+          "default queue path for every job, and the chain-declared friction " +
+          "dir is withheld.",
+      );
 
       const jobs = jobStatus(repoRoot, chain?.friction, chain?.pendingPath);
       if (jobs.length === 0) {

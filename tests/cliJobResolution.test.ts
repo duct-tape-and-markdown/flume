@@ -885,7 +885,7 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "read-only subcommands (status, wake, sleep) resolve state to the job root — a job-dir chain.ts is never consulted by them",
+    "read-only subcommands resolve state to the job root — a job-dir chain.ts is consulted by neither status nor wake nor sleep under --job",
     async () => {
       const repo = await makeJobRepo("main"); // deliberately NOT job/foo
       try {
@@ -909,6 +909,23 @@ describe("§3 job resolution — real CLI", () => {
         const sleep = await runCli(repo.dir, ["--job", "foo", "sleep", "probe"]);
         expect(sleep.code).toBe(0);
         expect(existsSync(join(jobDir, "awake", "probe"))).toBe(false);
+
+        // The trap is only a trap if detonating it shows. All three surfaces
+        // take the same reported best-effort load (`loadChainForObservation`,
+        // `src/cliChainLoad.ts`), so a configDir that had followed --job
+        // would print this chain's throw on stderr — which `runCli` folds
+        // into `out`. Its absence is what makes "never consulted" an
+        // assertion rather than a comment; exit 0 alone never was one.
+        for (const r of [status, wake, sleep]) {
+          expect(r.out).not.toContain("chain failed to load");
+          expect(r.out).not.toContain("job-local chain.ts was loaded");
+        }
+        // Non-vacuity: the repo chain really did load on all three — a
+        // declared-phase wake/sleep that exits 0 over *no* chain would pass
+        // the lines above for the wrong reason.
+        expect(status.out).not.toContain("chain config not found");
+        expect(wake.out).not.toContain("chain config not found");
+        expect(sleep.out).not.toContain("chain config not found");
       } finally {
         await repo.cleanup();
       }
