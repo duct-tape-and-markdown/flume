@@ -339,8 +339,8 @@ export interface Phase {
   /**
    * Globs always writable on an entry-scoped fanout tick, regardless of the
    * assigned entry's declared files — the channel allowance for cross-tick
-   * artifacts an entry never declares (e.g. a build phase that reports
-   * findings into `.flume/plan/open-questions.md`).
+   * artifacts an entry never declares (e.g. a phase that reports findings
+   * into a shared file a later tick reads).
    *
    * Only consulted when `scopeWritesToEntry` is `true`. On such a tick
    * carrying an assignedEntry, the write guard narrows to the entry's
