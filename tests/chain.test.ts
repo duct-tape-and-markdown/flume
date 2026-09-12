@@ -636,7 +636,7 @@ describe("records gate and the park predicate — one file each", () => {
     return git(repo, ["rev-parse", "HEAD"]);
   }
 
-  function gateCtx(sha: string, phaseName: string, entry?: PendingEntry) {
+  function gateCtx(sha: string, phaseName: string, entry?: PendingEntry, baseSha?: string) {
     return {
       cwd: repo,
       repoRoot: repo,
@@ -648,6 +648,7 @@ describe("records gate and the park predicate — one file each", () => {
       commitSha: sha,
       log: () => {},
       ...(entry ? { entry } : {}),
+      ...(baseSha ? { baseSha } : {}),
     };
   }
 
@@ -713,6 +714,16 @@ describe("records gate and the park predicate — one file each", () => {
     const passed = await gateOf(plan).run(gateCtx(drained, "plan-inbox"));
     expect(passed.ok).toBe(true);
     expect(passed.message).toBe("1 record(s) touched, 0 written within 1200 bytes");
+  });
+
+  it("build: the records gate judges the whole span, so a sibling note committed before the code is still refused", async () => {
+    const entry = makeEntry("OPEN-1", { kind: "open" });
+    const base = git(repo, ["rev-parse", "HEAD"]);
+    await commitFiles({ ".flume/plan/notes/OTHER.md": "# theirs\n" }, "build: sibling first");
+    const tip = await commitFiles({ "src/a.ts": "export const a = 1;\n" }, "build: then code");
+    const refused = await gateOf(build).run(gateCtx(tip, "build", entry, base));
+    expect(refused.ok).toBe(false);
+    expect(refused.details).toContain(`.flume/plan/notes/OTHER.md: a build tick touches only ${NOTE}`);
   });
 
   it("a commit touching no record passes vacuously, and says so", async () => {

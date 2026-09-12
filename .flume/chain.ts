@@ -252,6 +252,13 @@ const factory: ChainFactory = (api) => {
    * written record opens with a title line and fits the cap. Read at the
    * commit through the engine's at-sha reader, so the bytes judged are the
    * bytes that landed.
+   *
+   * The touched set is the whole span `baseSha..commitSha`, the same span
+   * every sibling gate and `isPark` read — a tick that commits a record and
+   * then commits code is judged on both. Name-status is re-derived here
+   * because `ctx.touchedPaths` carries paths without their deleted/written
+   * status, which is what this gate keys on; a context without `baseSha`
+   * (a hand-built fixture) falls back to the single commit.
    */
   const recordsGate: Gate = {
     name: "records",
@@ -262,9 +269,10 @@ const factory: ChainFactory = (api) => {
       }
       const sha = ctx.commitSha;
       const dirs = RECORD_DIRS.map((d) => `${STATE_ROOT}/${d}/`);
+      const span = ctx.baseSha ? [ctx.baseSha, sha] : ["--root", sha];
       const touched = execFileSync(
         "git",
-        ["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", sha],
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", ...span],
         { cwd: ctx.repoRoot, encoding: "utf8" },
       )
         .trim()
@@ -492,7 +500,7 @@ const factory: ChainFactory = (api) => {
   // ---------- plan slices (one job per tick; liveness is a fact of disk) ----------
 
   /**
-   * Plan is four singleton slices, each owning one cursor in state.md and one
+   * Plan is three singleton slices, each owning one cursor in state.md and one
    * prompt that carries only that slice's material. Which slice is live is
    * computed here from disk — the inbox, a cursor against git, the queue —
    * never asked of the model: dispatch is the same kind of verdict
