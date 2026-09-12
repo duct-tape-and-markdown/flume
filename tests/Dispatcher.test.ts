@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -2233,6 +2233,80 @@ describe(
     });
   },
 );
+
+/**
+ * The relocated branch of the strict `readPending()` is the one dispatch read
+ * that still probes disk — an out-of-tree state root has no tip to read. Its
+ * existence probe must split absent from unreachable: `existsSync` collapses
+ * every stat failure to `false`, so a ledger that is present but unstattable
+ * dispatched the tick over an empty queue — nothing pickable, a clean
+ * hibernation, and a queue full of work the operator can still see on disk
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+describe("Dispatcher — relocated pendingPath existence probe", () => {
+  it("readPending throws when a relocated pendingPath is present but unstattable", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-unstattable-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      // A self-referential symlink reproduces a non-ENOENT stat failure
+      // (ELOOP) without relying on permission bits a root-run test could
+      // bypass — the shape the CLI's and supervisor's probes are pinned on.
+      await symlink("pending.json", pendingPath);
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        // Registered for no slug: reaching this agent at all is a selection
+        // made over the empty queue the probe must refuse to report.
+        agent: fanoutAgent({}),
+        log: silent,
+      });
+
+      const preHead = await head(fx.repo);
+      await expect(dispatcher.tick()).rejects.toThrow(/ELOOP/);
+      // The refusal landed before any work: trunk is untouched and the
+      // ledger is still exactly the file the operator left there.
+      expect(await head(fx.repo)).toBe(preHead);
+      expect(existsSync(join(dock, "worktrees"))).toBe(false);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("an absent relocated pendingPath still reads as an empty queue, not a refusal", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-absent-"));
+    try {
+      // Nothing written under `dock` at all — ENOENT is the one stat failure
+      // the probe is allowed to read as absence, and the tick must still
+      // reach its ordinary nothing-pickable hibernation.
+      expect(existsSync(join(dock, "plan", "pending.json"))).toBe(false);
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent: fanoutAgent({}),
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.failed).toBeFalsy();
+      expect(outcome.result?.nothingPickable).toBe(true);
+      expect(outcome.result?.pendingAfter).toEqual([]);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
 
 describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
   it("a commitMessage override lands verbatim on the ledger ship commit, receiving the shipped tags", async () => {

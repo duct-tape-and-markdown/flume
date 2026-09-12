@@ -49,6 +49,7 @@ import {
   type FlumePaths,
 } from "./flumeApi.js";
 import { validateFrictionDeclaration } from "./friction.js";
+import { existsLoud } from "./fsProbe.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
   assertStateRootRelative,
@@ -3934,7 +3935,12 @@ export class Dispatcher {
     if (this.isPendingRelocated()) {
       // win32 MAX_PATH: a relocated pendingPath sits under an arbitrary
       // state root. namespacedJoin (src/paths.ts) is the shared idiom.
-      if (!existsSync(namespacedJoin(this.pendingPath))) return [];
+      // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts)
+      // throws on any other stat failure rather than reporting absence, so a
+      // ledger that is present but unreachable — a symlink loop, a
+      // permission-denied parent on the state root — refuses here instead of
+      // dispatching this tick over an empty queue.
+      if (!existsLoud(namespacedJoin(this.pendingPath))) return [];
       const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
       const r = parsePending(raw, this.entryExtension);
       if (!r.ok) throw new PendingParseFailure(r.errors);
