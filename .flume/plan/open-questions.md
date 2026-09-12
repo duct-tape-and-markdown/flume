@@ -418,3 +418,124 @@ file as ordinary entries once the wording is ruled:
   compared against a `readAll` key. Slugging that leg is the one-line fix; it
   is not exported (`src/index.ts` carries `priorAttemptPath` and
   `priorAttemptsDir`, not `priorAttemptRef`), so no consumer sees the change.
+
+## `spec/worktrees.md` still ratifies the blind delete `4d76998` shipped out (NEEDS AMENDMENT)
+
+Re-filed from the inbox; the first filing was written at `2ef648c` and lost
+to an unstaged edit (second question below is that defect). Verified on disk
+this tick.
+
+`createWorktree` (`src/worktrees.ts:183-199`) no longer removes whatever
+occupies its computed path. It probes `git worktree list --porcelain`
+(`readWorktreeRegistry`) and removes **only** a path git registers as a
+worktree of this repo; an unregistered occupant, or a registry it could not
+read, throws naming the path and provisions nothing. `spec/worktrees.md`
+*Placement — the worktree base and the job namespace* still states the
+retired behavior as deliberate, in three sentences:
+
+- "`createWorktree` removes whatever sits at the computed
+  `<base>/[<namespace>/]<dirName>` path if anything does" — now conditional
+  on the registry.
+- "The test is existence of the path alone: nothing checks that the directory
+  is a git worktree, that it belongs to this repo, or that it carries a flume
+  marker" — flatly inverted; that is exactly what is now checked.
+- "An operator who points `FLUME_WORKTREES_DIR` at a directory holding
+  anything else loses that content the first time an entry's bounded
+  directory name matches" — no longer reachable; the tick refuses instead.
+
+The `--force`-then-recursive-delete sentence stays true (`removeWorktree`,
+`src/git.ts:274`), but it is now only ever reached for a registered path.
+
+*Startup sweep* needs a smaller edit on the same commit. Its scope bullet
+says "Every directory under the worktree base … removed", which was already
+wider than the code and is now wider still — `sweepStaleWorktrees`
+(`src/worktrees.ts:355-370`) skips every entry the registry does not name.
+And its "Loud on failure, silent on empty" bullet does not cover the case the
+same ship added: an unreadable registry removes nothing and **warns** saying
+so, precisely so it cannot print the same silence a clean base does
+(`src/worktrees.ts:344-353`).
+
+**The carried fork, undecided.** *Placement* opens its removal paragraph with
+"**The base must be flume-exclusive.**" That sentence was load-bearing when
+existence was the whole test. Now the registry, not the base, bounds what gets
+removed, and the sweep leaves a sibling's container directory untouched by the
+same evidence. Two readings:
+
+- **Exclusivity is retired.** It was a consequence of the blind delete, and
+  the blind delete is gone. Say instead that the base may be shared, and that
+  an occupant flume does not own is refused rather than removed. Against it:
+  a shared base is still a collision surface for *names*, and the namespace
+  argument two paragraphs down assumes sharing is possible anyway.
+- **Exclusivity is still a requirement**, now merely no longer enforced by
+  deletion — the operator is still asked not to point the base at their own
+  content, because an occupant there stalls provisioning instead of being
+  cleared. That is a real cost, just a loud one.
+
+Recommend the second: the refusal converts data loss into a stalled entry, and
+that is a weaker promise to the operator, not a retracted one. But the choice
+is the spec's author's — plan restating either one would be picking it.
+
+## A worktree torn down with uncommitted tracked edits reads as merged (PARKED)
+
+Drained from the inbox (2026-09-11, human via flume-main). Field-observed at
+`2ef648c`: a plan-inbox tick appended `open-questions.md`, then committed
+without `git add`. The commit carried the staged `git rm` alone, gated green,
+cherry-picked, and teardown removed the worktree over a tracked file with
+unstaged modifications. Verdict `merged`; the question the commit body
+described exists nowhere; nothing logged it.
+
+**Verified on disk.** Nothing in `src/` reads `git status` in a worktree.
+Both commit-detection legs — singleton (`src/Dispatcher.ts:1941`) and fanout
+(`:3247`) — are `revParse` before vs. after the agent, and nothing else.
+`teardownWorktreeInstance` (`src/worktrees.ts:226`) runs the chain hook,
+harvests, removes. The harvest cannot cover this: its delivery guarantee is
+bounded to files **untracked at the worktree's HEAD** inside the declared
+friction channel (`spec/worktrees.md`, *Teardown harvest*), and that bound is
+load-bearing — it is what stopped one committed note becoming eight stamped
+copies.
+
+**The spec already ratifies the loss, on one leg.** `spec/loop.md:283` says
+the reset runs "inside the tick's worktree, which teardown removes along with
+any uncommitted work; no snapshot is taken" — stated about a *refused* tick.
+The incident was a green one, where no sentence covers it. Pulling the other
+way, *Crash equals stop* asserts "**No engine mutation destroys uncommitted
+state it did not author**", scoped in its own text to the shared checkout; in
+a worktree the engine authored the tree but not the edit. So the principle and
+the carve-out meet exactly here and the corpus does not say which wins.
+
+**A chain can already cover half of it, and only half.** At `afterCommit`,
+`GateContext.repoRoot` *is* the worktree root (`src/Gate.ts`), so a gate can
+run `git status --porcelain` itself and refuse — no engine change, and it
+covers the observed incident exactly. It cannot cover the worse leg: when the
+agent commits nothing, no `afterCommit` gate runs at all, and an entire
+uncommitted tick is discarded with no surface that ever saw the tree.
+
+Options:
+
+- **Engine reports the fact** (the inbox's ask): read `git status --porcelain`
+  in the worktree after the agent exits and before teardown; put the modified
+  tracked paths on the tick verdict and on `GateContext` beside
+  `touchedPaths`. The engine states a fact, the chain refuses on it
+  (`engine-boundary.md`, *Routing rule*) — and it is the only option that
+  reaches the no-commit leg. Costs one `git status` per tick per worktree, and
+  `spec/loop.md:283` has to widen: reported is not preserved.
+- **Chain-side only.** An `afterCommit` gate in `.flume/chain.ts` refusing on
+  a dirty worktree. Zero engine change, ships the moment it is ruled — but
+  `.flume/chain.ts` is outside every phase lane, so it is a human edit, and
+  the no-commit leg stays silent.
+- **Widen the harvest** to relay uncommitted tracked modifications out.
+  Recommend against: it breaks the tracked-at-HEAD bound the section earned
+  in the field, and a working-tree diff is not a file to deliver.
+- **Nothing; ratify the silence.** Say in *Teardown harvest* that a modified
+  tracked file dies with the worktree by design. Cheapest, and it leaves a
+  green `merged` verdict standing over work that no longer exists.
+
+Recommend the first with the second riding it: the fact on the verdict is what
+makes the no-commit leg observable at all, and the refusal it feeds is this
+chain's judgment, not the engine's. A `git add` line in the prompt is the
+ladder's bottom rung (`engineering.md`, *Narration is the ladder's bottom
+rung*) — cheap to add alongside, never the answer.
+
+Parked, not filed: an engine entry here would ship against `spec/loop.md:283`
+as it currently reads, and every option above touches a file no phase may
+write (`spec/`, `.flume/chain.ts`, `.flume/prompts/**`).
