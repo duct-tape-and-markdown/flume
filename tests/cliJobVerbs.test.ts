@@ -271,6 +271,53 @@ describe("flume status / flume job status — one friction renderer (FRICTION-LI
 });
 
 /**
+ * JOB-EXISTSSYNC-NARROW-ENOENT — the render leg. `jobStatus` reports a job
+ * whose `awake/` dir exists but cannot be read as `awake: null`; the row must
+ * carry that as its own reading. Printing it as `hibernating` is the lie the
+ * null exists to prevent, and letting the read escape would fail the verb for
+ * every sibling job (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * All three readings ride one invocation, so the unreadable row is compared
+ * against a live one and a genuinely hibernating one from the same output
+ * rather than against a remembered format.
+ */
+describe("flume job status — an unreadable baton is its own reading (JOB-EXISTSSYNC-NARROW-ENOENT)", () => {
+  it("flume job status renders a null awake as unreadable, distinct from a hibernating job", async () => {
+    const repo = await makeJobRepo("main");
+    const sealedAwake = join(repo.dir, ".flume", "jobs", "sealed", "awake");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      const jobs = join(repo.dir, ".flume", "jobs");
+      // "live": an ordinary awake baton.
+      await mkdir(join(jobs, "live", "awake"), { recursive: true });
+      await writeFile(join(jobs, "live", "awake", "build"), "");
+      // "quiet": no awake dir at all — hibernating.
+      await mkdir(join(jobs, "quiet"), { recursive: true });
+      // "sealed": an awake dir that exists but cannot be read (EACCES, not
+      // ENOENT).
+      await mkdir(sealedAwake, { recursive: true });
+      await writeFile(join(sealedAwake, "plan"), "");
+      await chmod(sealedAwake, 0o000);
+
+      const r = await runCli(repo.dir, ["job", "status"]);
+      expect(r.code).toBe(0);
+      const row = (name: string): string | undefined =>
+        r.out.split("\n").find((l) => l.startsWith(name));
+      // Non-vacuity (`.claude/rules/engineering.md`, *A green verdict is
+      // proven non-vacuous*): the two readable rows prove the verb enumerated
+      // all three jobs rather than dying on the sealed one.
+      expect(row("live")).toContain("awake: build");
+      expect(row("quiet")).toContain("hibernating");
+      expect(row("sealed")).toContain("awake: unreadable");
+      expect(row("sealed")).not.toContain("hibernating");
+    } finally {
+      await chmod(sealedAwake, 0o755).catch(() => {});
+      await repo.cleanup();
+    }
+  }, 60_000);
+});
+
+/**
  * §3 — `flume job status` and `flume status` share one pending-count probe
  * (`readPendingLoose`, `src/job.ts`): a job's corrupt pending.json reads
  * "pending: unparsable" through the real `job status` CLI path exactly as

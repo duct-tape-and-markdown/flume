@@ -139,14 +139,15 @@ flume job rm docs-refresh
 
 ## `flume job status`
 
-Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`); the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing.
+Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`) — `awake: unreadable` where that dir exists but cannot be read (a permission failure, a path too long for the platform), which is neither a phase list nor a hibernating baton and is never reported as one, and never aborts the enumeration for the sibling jobs; the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing — *missing*, never merely unreadable: a jobs dir that exists but cannot be read fails the verb (exit `1`) rather than reporting an empty repo.
 
 Observational, like `flume status`: nothing on disk changes — no baton dirs materialized — so it is safe to bake into prompts and watch loops. It takes the same best-effort chain load `flume status` does, for the repo chain's declared `Chain.pendingPath` and `Chain.friction` (a job whose friction dir holds notes gets a trailing `friction: N note(s) await routing` column). A missing or broken chain never fails the verb: it withholds the friction column, leaves every job's pending count reading the default queue path, and reports the failure and what it cost on stderr, never silently. Note it reads the working tree's checkout: a job dir's tracked files (chain, prompts, `plan/pending.json`) are branch-scoped and will not appear on a branch that never committed them. Its gitignored subdirs — `awake/`, `loop.pid`, `prior-attempts/`, `rendered-prompts/`, `worktrees/` (`spec/jobs.md`, "Runtime ignores") — are untracked and outlive a branch switch, so a stale baton or `loop.pid` from a job dir seeded elsewhere can still surface after HEAD moves off that branch. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
 
 ```sh
 flume job status
 # docs-refresh  awake: build  pending: 3
-# scratch       hibernating   pending: 0
+# scratch       hibernating  pending: 0
+# sealed        awake: unreadable  pending: 0
 ```
 
 ## `flume log [-n N] [--json]`

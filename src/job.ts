@@ -13,7 +13,8 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -35,6 +36,24 @@ const exec = promisify(execFile);
 
 /** Usage-shaped failure (bad name, missing template): the CLI maps it to exit 2. */
 export class JobUsageError extends Error {}
+
+/**
+ * `true` iff `path` exists, `false` only when it is absent (`ENOENT`). Any
+ * other stat failure (permission denied, a path too long for the platform, …)
+ * throws: `existsSync` collapses every stat error to `false`, so a path that
+ * is present but unreachable reads as absent and the caller proceeds over an
+ * unresolved input (`.claude/rules/engineering.md`, "Loud or nothing"). Same
+ * ENOENT-vs-other split `readPendingLoose` and `countFrictionFiles` below
+ * give a read, held once so each existence gate in this module spells it the
+ * same way (`.claude/rules/engineering.md`, "The fix lands at the
+ * mechanism").
+ *
+ * Callers pass a `namespacedJoin`ed path (`src/paths.ts`) — win32 MAX_PATH is
+ * the caller's join, not this probe's.
+ */
+function existsLoud(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false }) !== undefined;
+}
 
 /**
  * Runtime-owned entries ensured in every job dir's `.gitignore`. The runtime
@@ -113,7 +132,18 @@ export async function ensureRuntimeIgnores(
   // limit even though no single component is long. namespacedJoin
   // (src/paths.ts) is the shared idiom.
   const path = namespacedJoin(jobDir, ".gitignore");
-  const existing = existsSync(path) ? await readFile(path, "utf8") : "";
+  // Absent (`ENOENT`) is the empty file: nothing authored, nothing to merge
+  // into. Any other read failure rethrows rather than reading as empty — an
+  // unreadable `.gitignore` treated as "" would be rewritten with the runtime
+  // set alone, dropping the template-authored lines this function exists to
+  // preserve (`.claude/rules/engineering.md`, "Loud or nothing").
+  let existing: string;
+  try {
+    existing = await readFile(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    existing = "";
+  }
   const have = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
   const missing = [...RUNTIME_IGNORES, ...extra].filter(
     (entry) => !have.has(entry),
@@ -198,7 +228,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   // win32 MAX_PATH (`.claude/rules/platform-facts.md`): configDir can nest
   // deep enough that the total path crosses the limit with no single
   // component long; namespacedJoin (src/paths.ts) is the shared idiom.
-  if (!existsSync(namespacedJoin(chainPath))) {
+  if (!existsLoud(namespacedJoin(chainPath))) {
     throw new JobUsageError(
       `no chain at ${chainPath}; a job that could never \`run\` must not be creatable`,
     );
@@ -210,7 +240,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   let seedPath: string | undefined;
   if (chain.seedDir !== undefined) {
     seedPath = resolve(configDir, chain.seedDir);
-    if (!existsSync(namespacedJoin(seedPath))) {
+    if (!existsLoud(namespacedJoin(seedPath))) {
       throw new JobUsageError(
         `chain declares seedDir '${chain.seedDir}' but ${seedPath} does not exist`,
       );
@@ -323,13 +353,25 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
  * reclaim silently). Same liveness probe as the loop lock. Exported for reuse
  * (`flume status`'s supervisor-liveness probe) rather than a second
  * implementation of the same pid-liveness check.
+ *
+ * Absent (`ENOENT`) is the only no-pidfile reading; any other read failure
+ * (permission denied, a path too long for the platform, …) throws
+ * (`.claude/rules/engineering.md`, "Loud or nothing"). A `null` from an
+ * unreadable pidfile would report a live loop as dead, which is exactly the
+ * reading `jobRm`'s refusal and the `flume loop` lock claim exist to prevent.
  */
 export async function liveLoopPid(dir: string): Promise<number | null> {
   // win32 MAX_PATH: dir is a job/state root that can nest deep; namespacedJoin
   // (src/paths.ts) is the shared idiom.
   const pidPath = namespacedJoin(loopLockPath(dir));
-  if (!existsSync(pidPath)) return null;
-  const pid = Number((await readFile(pidPath, "utf8")).trim());
+  let raw: string;
+  try {
+    raw = await readFile(pidPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  const pid = Number(raw.trim());
   if (!Number.isFinite(pid) || pid <= 0) return null;
   try {
     process.kill(pid, 0);
@@ -373,10 +415,11 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
 
   const jobDir = join(repoRoot, ".flume", "jobs", name);
   const rel = join(".flume", "jobs", name);
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom —
-  // otherwise existsSync silently reads a too-long jobDir as absent, and
-  // `job rm` reports "no job" for one that exists.
-  if (!existsSync(namespacedJoin(jobDir))) {
+  // Absent (`ENOENT`) is the only "no job" reading — an unreachable jobDir
+  // (permission denied, a path too long for the platform) throws rather than
+  // reporting "no job" for one that exists. win32 MAX_PATH: namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  if (!existsLoud(namespacedJoin(jobDir))) {
     throw new JobUsageError(`no job '${name}': ${rel} does not exist`);
   }
 
@@ -418,8 +461,14 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
 export interface JobStatus {
   /** Job name — the directory segment under `.flume/jobs/`. */
   name: string;
-  /** Awake phases from the job's baton, sorted; empty means hibernating. */
-  awake: string[];
+  /**
+   * Awake phases from the job's baton, sorted; empty means hibernating.
+   * `null` when the job has an `awake/` dir that could not be read for a
+   * reason other than absence (permission denied, a path too long for the
+   * platform, …) — an unreadable baton is not a hibernating one, and it must
+   * not read as one (`.claude/rules/engineering.md`, "Loud or nothing").
+   */
+  awake: string[] | null;
   /**
    * Entry count from `<jobdir>/plan/pending.json`: 0 when the file is absent
    * (nothing planned is nothing pending), `null` when it exists but does not
@@ -496,6 +545,31 @@ export function readPendingLoose(pendingPath: string): ParseResult {
 }
 
 /**
+ * One job's awake phases: `[]` when it has no `awake/` dir (`ENOENT` — the
+ * baton is hibernating), `null` when the dir exists but cannot be read for
+ * any other reason (permission denied, an untraversable job dir, a path too
+ * long for the platform, …). That failure is a real unresolved input, so it
+ * reads neither as hibernating nor as an exception out of the enumeration —
+ * one job's unreadable baton must not hide its siblings
+ * (`.claude/rules/engineering.md`, "Loud or nothing"), the same per-job
+ * containment `jobStatus` gives an unreadable `pending.json`.
+ *
+ * The existence probe comes first because the `Baton` constructor mkdirs its
+ * dir and `job status` writes nothing; the read itself is `Baton.awake()`, so
+ * the dotfile filter and the sort stay the baton's own.
+ */
+function readAwake(jobDir: string): string[] | null {
+  try {
+    if (!existsLoud(namespacedJoin(awakeDir(jobDir)))) return [];
+    return new Baton(jobDir).awake();
+  } catch (err) {
+    // A dir removed between the probe and the read is the absent reading
+    // still, not an unreadable one.
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? [] : null;
+  }
+}
+
+/**
  * `flume job status`: enumerate `.flume/jobs/*` in the working tree — awake
  * phases + pending count per job. Observational: reads only what exists and
  * writes nothing. The Baton constructor mkdirs `awake/`, so it is constructed
@@ -517,19 +591,25 @@ export function jobStatus(
   pendingPath?: string,
 ): JobStatus[] {
   const jobsRoot = join(repoRoot, ".flume", "jobs");
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom —
-  // otherwise these existence checks silently misread a too-long path as
-  // absent instead of failing loud.
-  if (!existsSync(namespacedJoin(jobsRoot))) return [];
-  return readdirSync(namespacedJoin(jobsRoot), { withFileTypes: true })
+  // Absent jobs root (`ENOENT`) is no jobs. Any other read failure escapes:
+  // it hides every job at once, which "no jobs" reports as an empty repo
+  // (`.claude/rules/engineering.md`, "Loud or nothing"). win32 MAX_PATH:
+  // namespacedJoin (src/paths.ts) is the shared idiom — otherwise a too-long
+  // path is one more failure misread as absent.
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(namespacedJoin(jobsRoot), { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  return entries
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort()
     .map((name) => {
       const jobDir = join(jobsRoot, name);
-      const awake = existsSync(namespacedJoin(awakeDir(jobDir)))
-        ? new Baton(jobDir).awake()
-        : [];
+      const awake = readAwake(jobDir);
       // readPendingLoose rethrows a non-ENOENT read failure (permission
       // denied, a path too long for the platform, …) — a per-job read error
       // must not abort the enumeration for every sibling job, so it reads

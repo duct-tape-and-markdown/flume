@@ -50,9 +50,17 @@ export async function runJobVerb(
       }
       const width = Math.max(...jobs.map((j) => j.name.length));
       for (const j of jobs) {
-        const state = j.awake.length
-          ? `awake: ${j.awake.join(", ")}`
-          : "hibernating";
+        // Three readings, not two: an `awake/` dir that exists but cannot be
+        // read is neither a phase list nor a hibernating baton, and printing
+        // it as `hibernating` would be the lie the null exists to prevent
+        // (`.claude/rules/engineering.md`, "Loud or nothing"). Worded like
+        // the friction segment's `friction: unreadable` below.
+        const state =
+          j.awake === null
+            ? "awake: unreadable"
+            : j.awake.length
+              ? `awake: ${j.awake.join(", ")}`
+              : "hibernating";
         const pending =
           j.pending === null ? "pending: unparsable" : `pending: ${j.pending}`;
         // The wording is `renderFrictionCount`'s (`src/friction.ts`), the

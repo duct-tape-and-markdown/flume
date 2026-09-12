@@ -39,7 +39,11 @@ import {
   validateJobName,
 } from "../src/job.ts";
 import { Baton } from "../src/Baton.ts";
-import { mergingMarkerPath, STATE_ROOT_NAMES } from "../src/paths.ts";
+import {
+  loopLockPath,
+  mergingMarkerPath,
+  STATE_ROOT_NAMES,
+} from "../src/paths.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { gitOut, runCli } from "./helpers/subprocess.ts";
 
@@ -1504,6 +1508,163 @@ describe("jobStatus — §5d enumeration units", () => {
     },
     120_000,
   );
+});
+
+/**
+ * JOB-EXISTSSYNC-NARROW-ENOENT — `existsSync` collapses every stat error to
+ * `false`, so each gate it guarded in `src/job.ts` read a present-but-
+ * unreachable path as an absent one: a live loop read dead, an unreadable
+ * baton read hibernating (or threw out of the enumeration and took every
+ * sibling job with it), and an unreadable jobs root read "no jobs" — a
+ * correct-looking answer that is a lie about what was there
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * EACCES is the reachable non-ENOENT stat failure on this platform: strip
+ * traversal permission and the path exists but cannot be reached. Same
+ * fixture shape `readPendingLoose` and `countFrictionFiles` are pinned with
+ * above. Each test reads the fixture once *before* sealing it, so the
+ * assertion after the `chmod` is judged against a populated subject rather
+ * than a mistyped path (`.claude/rules/engineering.md`, "A green verdict is
+ * proven non-vacuous").
+ */
+describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NARROW-ENOENT)", () => {
+  it("liveLoopPid rethrows a non-ENOENT stat failure instead of reading the pidfile as absent", async () => {
+    const base = await mkdtemp(join(tmpdir(), "flume-job-pid-"));
+    const root = join(base, "state");
+    try {
+      await mkdir(root, { recursive: true });
+      // The vitest worker plays the live loop — its pid is alive for the
+      // duration of the call, same convention as jobRm's live-loop test.
+      await writeFile(loopLockPath(root), String(process.pid), "utf8");
+      expect(await liveLoopPid(root)).toBe(process.pid);
+
+      // Strip traversal permission on the state root: the pidfile still
+      // records a live pid, but reading it now fails EACCES, not ENOENT.
+      await chmod(root, 0o000);
+
+      let caught: NodeJS.ErrnoException | undefined;
+      try {
+        await liveLoopPid(root);
+      } catch (err) {
+        caught = err as NodeJS.ErrnoException;
+      }
+      expect(caught).toBeDefined();
+      expect(caught?.code).not.toBe("ENOENT");
+    } finally {
+      await chmod(root, 0o755).catch(() => {});
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it("jobStatus reports a job whose awake dir cannot be read as a null awake, not as hibernating", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const jobDir = join(dir, ".flume", "jobs", "sealed");
+    try {
+      await mkdir(join(jobDir, "awake"), { recursive: true });
+      await writeFile(join(jobDir, "awake", "build"), "");
+      expect(jobStatus(dir)).toEqual([
+        { name: "sealed", awake: ["build"], pending: 0 },
+      ]);
+
+      // Strip traversal permission on the job dir itself: awake/ is still
+      // there, still holding a flag, but every read under it fails EACCES.
+      await chmod(jobDir, 0o000);
+
+      expect(jobStatus(dir)).toEqual([
+        { name: "sealed", awake: null, pending: null },
+      ]);
+    } finally {
+      await chmod(jobDir, 0o755).catch(() => {});
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("jobStatus never hides sibling jobs when one job's awake dir cannot be read", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const sealedAwake = join(dir, ".flume", "jobs", "sealed", "awake");
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      // "sealed": awake/ exists and is unreadable (EACCES on the dir itself).
+      await mkdir(sealedAwake, { recursive: true });
+      await writeFile(join(sealedAwake, "plan"), "");
+      // "healthy": an ordinary, readable sibling job.
+      await mkdir(join(jobs, "healthy", "awake"), { recursive: true });
+      await writeFile(join(jobs, "healthy", "awake", "build"), "");
+      expect(jobStatus(dir)).toEqual([
+        { name: "healthy", awake: ["build"], pending: 0 },
+        { name: "sealed", awake: ["plan"], pending: 0 },
+      ]);
+
+      await chmod(sealedAwake, 0o000);
+
+      expect(jobStatus(dir)).toEqual([
+        { name: "healthy", awake: ["build"], pending: 0 },
+        { name: "sealed", awake: null, pending: 0 },
+      ]);
+    } finally {
+      await chmod(sealedAwake, 0o755).catch(() => {});
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("jobStatus rethrows a non-ENOENT read failure on the jobs root instead of reporting no jobs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const flumeDir = join(dir, ".flume");
+    try {
+      await mkdir(join(flumeDir, "jobs", "alpha"), { recursive: true });
+      expect(jobStatus(dir)).toEqual([
+        { name: "alpha", awake: [], pending: 0 },
+      ]);
+
+      // Strip traversal permission on .flume: jobs/ is still there, holding
+      // the job, but reading it fails EACCES rather than ENOENT — "no jobs"
+      // would report an empty repo over a hidden one.
+      await chmod(flumeDir, 0o000);
+
+      let caught: NodeJS.ErrnoException | undefined;
+      try {
+        jobStatus(dir);
+      } catch (err) {
+        caught = err as NodeJS.ErrnoException;
+      }
+      expect(caught).toBeDefined();
+      expect(caught?.code).not.toBe("ENOENT");
+    } finally {
+      await chmod(flumeDir, 0o755).catch(() => {});
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A pin, not a red-on-base test: the pre-fix gate read the file it had
+  // just stat'd, so an unreadable `.gitignore` threw there too. The narrowing
+  // keeps that reading while dropping the redundant stat — this holds it.
+  it("ensureRuntimeIgnores rethrows a non-ENOENT read failure instead of rewriting the .gitignore it could not read", async () => {
+    const base = await mkdtemp(join(tmpdir(), "flume-job-ignores-"));
+    const jobDir = join(base, "job");
+    try {
+      await mkdir(jobDir, { recursive: true });
+      await writeFile(join(jobDir, ".gitignore"), "sessions/\n", "utf8");
+      await chmod(join(jobDir, ".gitignore"), 0o000);
+
+      let caught: NodeJS.ErrnoException | undefined;
+      try {
+        await ensureRuntimeIgnores(jobDir);
+      } catch (err) {
+        caught = err as NodeJS.ErrnoException;
+      }
+      expect(caught).toBeDefined();
+      expect(caught?.code).not.toBe("ENOENT");
+      // The template-authored line survives: an unreadable file read as ""
+      // would have been rewritten with the runtime set alone.
+      await chmod(join(jobDir, ".gitignore"), 0o644);
+      expect(await readFile(join(jobDir, ".gitignore"), "utf8")).toBe(
+        "sessions/\n",
+      );
+    } finally {
+      await chmod(join(jobDir, ".gitignore"), 0o644).catch(() => {});
+      await rm(base, { recursive: true, force: true });
+    }
+  });
 });
 
 // win32 lane (v0.4 §6): the core.longpaths pin only exists on Windows
