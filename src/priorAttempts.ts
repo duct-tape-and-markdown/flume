@@ -528,9 +528,13 @@ export function buildRenderRefused(
 }
 
 /**
- * Build the tip-moved record: the ref this tick found didn't match the tip
- * it recorded at tick start. A sibling to the no-commit builders beside it,
- * never a `NoCommitMode` — see {@link TipMovedAttempt}.
+ * Build the tip-moved record: the base the agent's private `flume/**` branch
+ * started from is no longer an ancestor of the HEAD the agent left, so the
+ * span was soft-reset away on that branch. That ancestry leg is the record's
+ * only writer — a wave refusing to cherry-pick against a live foreign claim
+ * reports `tipMoved` as a tick fact and writes nothing here, because it
+ * discarded nothing. A sibling to the no-commit builders beside it, never a
+ * `NoCommitMode` — see {@link TipMovedAttempt}.
  *
  * `observedTip` is always the observed HEAD itself, never its parent — both
  * legs run the same ancestry check now (spec/worktrees.md "Singleton runs in

@@ -706,6 +706,25 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     expect(bounded).toContain("…and 7 more path(s)");
   });
 
+  it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
+    // Vacuity: the record under test carries two distinct shas to name.
+    expect(tipMoved.expectedTip).not.toEqual(tipMoved.observedTip);
+
+    const out = await renderWithPrior(tipMoved);
+
+    // Both shas the operator needs, under labels that say which is which
+    // (spec/loop.md "Tip verify — one writer per branch, absorption at the
+    // merge": the observed HEAD and the recorded base, never the parent).
+    expect(out).toContain(`Recorded base: ${tipMoved.expectedTip}`);
+    expect(out).toContain(`Observed HEAD: ${tipMoved.observedTip}`);
+
+    // What it must not claim: the leg that writes this record is an ancestry
+    // check on the agent's own branch, not a sha comparison against the tip
+    // the tick recorded on the ref.
+    expect(out).not.toMatch(/tick start/i);
+    expect(out).not.toMatch(/the ref moved/i);
+  });
+
   it("absent priorAttempt renders no block and no anchor line at all", async () => {
     const promptFile = join(dir, "prompt.md");
     await writeFile(promptFile, "task body\n", "utf8");

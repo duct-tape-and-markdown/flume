@@ -1185,9 +1185,15 @@ per record — and the block renders the variant that fired:
 - `render-refused` — one or more inline-exec spans failed to resolve, so the
   agent was never invoked. Carries every failing span's command text and its
   stderr.
-- `tip-moved` — the ref moved between tick start and the point the commit
-  would have landed, so the commit was discarded. Carries the expected and the
-  observed tip. Like `platform-preempt`, not a defect in the work.
+- `tip-moved` — the agent's own commits failed the ancestry check: the base its
+  private `flume/**` branch started from was no longer an ancestor of the HEAD
+  the agent left, so the span was soft-reset away on that branch. Carries both
+  shas — the recorded base and the observed HEAD itself, never the HEAD's
+  parent, so the agent's top commit stays discoverable. Like `platform-preempt`,
+  not a defect in the work. This is the only leg that writes the record: a wave
+  that refuses to cherry-pick because another process holds a live claim on the
+  tip reports `tipMoved` as a tick fact and writes nothing here, because nothing
+  was discarded — the commit is still sitting on its worktree branch.
 - `not-shipped` — the commit landed, passed every gate, and your own `shipped`
   predicate returned `false`. Carries the merged sha and the paths that commit
   touched. No reason vocabulary: the engine records that the chain said no,

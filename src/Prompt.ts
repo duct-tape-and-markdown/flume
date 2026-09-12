@@ -22,8 +22,8 @@
  * `platform-preempt` (the process failed for non-work reasons — not a defect
  * in the work), `render-refused` (the prompt itself never resolved — the agent
  * was never invoked); plus two sibling facts rather than further
- * {@link NoCommitMode} members — `tip-moved`, the tick's commit discarded
- * because the ref moved out from under it, and `not-shipped`, a commit that
+ * {@link NoCommitMode} members — `tip-moved`, the agent's span soft-reset away
+ * because its branch base was rewritten out from under it, and `not-shipped`, a commit that
  * landed and passed every gate which the chain's own `shipped` predicate
  * declined. Neither is a defect the four modes classify. Each renders
  * distinctly so the retry knows what actually happened. Like `<harness>` it is
@@ -178,18 +178,29 @@ export interface RenderRefusedAttempt {
 }
 
 /**
- * The tick's commit was discarded because the ref moved between tick start and
- * the point a commit would land onto it — the dispatcher's own tip-verify
- * backstop, not a {@link NoCommitMode}: the agent's (or harness's) work was
- * not at fault, and no gate ran. A sibling fact beside the four `NoCommitMode`
- * variants, not a fifth member of that type — `mode` here is its own literal,
- * `"tip-moved"`, never assigned to a `NoCommitMode`-typed field.
+ * The agent's span was discarded because the base its private `flume/**` branch
+ * started from is no longer an ancestor of the HEAD it left — something reset or
+ * rewrote that base out from under the one legitimate writer — so the dispatcher
+ * soft-reset the span away on that branch before any gate ran. Not a
+ * {@link NoCommitMode}: the agent's work was not at fault. A sibling fact beside
+ * the four `NoCommitMode` variants, not a fifth member of that type — `mode`
+ * here is its own literal, `"tip-moved"`, never assigned to a
+ * `NoCommitMode`-typed field.
+ *
+ * That ancestry leg is this record's only writer. A wave that refuses to
+ * cherry-pick because another process holds a live claim on the tip reports
+ * `tipMoved` as a tick fact (`TickVerdict.tipMoved`) and writes no record here:
+ * it discarded nothing, and the refused entry's commit is still on its own
+ * worktree branch.
  */
 export interface TipMovedAttempt {
   mode: "tip-moved";
-  /** Tip this tick recorded at tick start. */
+  /** The base the agent's branch was recorded at, which the observed HEAD no longer descends from. */
   expectedTip: string;
-  /** Tip the harness actually found immediately before it would have committed. */
+  /**
+   * The observed HEAD itself — never its parent, which would read the agent's
+   * own top commit as the intruder and leave it undiscoverable.
+   */
   observedTip: string;
   /**
    * Which keyspace this record's key lives in (spec/loop.md "No false
@@ -638,12 +649,13 @@ function modeLines(prior: PriorAttempt): string[] {
       ];
     case "tip-moved":
       return [
-        `A previous attempt's commit was DISCARDED because the ref moved`,
-        `out from under it — NOT a defect in the work. The prior reasoning`,
-        `is not discredited; do not treat this as a wall in the task.`,
-        `Resume the work against the current tip. No commit, no gate.`,
-        `Tip expected at tick start: ${prior.expectedTip}`,
-        `Tip actually found: ${prior.observedTip}`,
+        `A previous attempt's commit was DISCARDED because the base its`,
+        `branch started from was rewritten out from under it — NOT a defect`,
+        `in the work. The prior reasoning is not discredited; do not treat`,
+        `this as a wall in the task. Resume the work against the current`,
+        `tip. No commit, no gate.`,
+        `Recorded base: ${prior.expectedTip}`,
+        `Observed HEAD: ${prior.observedTip}`,
       ];
     case "not-shipped":
       return [

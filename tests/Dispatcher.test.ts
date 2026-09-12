@@ -6833,7 +6833,7 @@ const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
 const CLEAN_EXIT_INTRO = "exited cleanly and committed";
 const PREEMPT_INTRO = "cut short by a PLATFORM failure";
 const RENDER_REFUSED_INTRO = "could not even be rendered";
-const TIP_MOVED_INTRO = "was DISCARDED because the ref moved";
+const TIP_MOVED_INTRO = "was DISCARDED because the base its";
 
 describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   it("gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty", async () => {
