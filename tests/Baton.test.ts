@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,6 +77,43 @@ describe("Baton — idempotency", () => {
   });
 });
 
+/**
+ * One flag class, one disposition on an unresolved read. `awake()` (and so
+ * `hibernating()`) already throws when the awake dir is present but
+ * unreadable; `isAwake` read the same disk through `existsSync`, which
+ * collapses every stat failure to `false` — a phase holding a flag nothing
+ * could stat reported as asleep, and the caller hibernated over it
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+describe("Baton — an unstattable awake flag is loud", () => {
+  it("isAwake throws when a phase's awake flag is present but unstattable", () => {
+    const baton = new Baton(flumeDir);
+    // ELOOP — present on disk, unstattable. Not a permission bit: a root-run
+    // test would bypass that.
+    symlinkSync("plan", join(baton.dir, "plan"));
+
+    // readdir sees the entry, so the flag really is there.
+    expect(baton.awake()).toEqual(["plan"]);
+    expect(() => baton.isAwake("plan")).toThrow(/ELOOP/);
+  });
+
+  it("awake() and isAwake agree on the same unreadable dir: both throw, neither reports asleep", () => {
+    const baton = new Baton(flumeDir);
+    symlinkSync("plan", join(baton.dir, "plan"));
+
+    expect(() => baton.awake()).not.toThrow();
+    expect(baton.hibernating()).toBe(false);
+    expect(() => baton.isAwake("plan")).toThrow();
+  });
+
+  it("absence stays silent — a name with no flag is still plainly asleep", () => {
+    const baton = new Baton(flumeDir);
+    baton.wake("plan");
+
+    expect(baton.isAwake("build")).toBe(false);
+  });
+});
+
 describe("Baton — missing directory", () => {
   it("constructor creates `<flumeDir>/awake` when neither exists", () => {
     const fresh = mkdtempSync(join(tmpdir(), "flume-baton-fresh-"));
@@ -117,8 +154,11 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
     expect(src).toMatch(/import\s*\{[^}]*\bnamespacedJoin\b[^}]*\}\s*from\s*"\.\/paths\.js"/);
   });
 
-  it("routes every fs call (mkdirSync/existsSync/writeFileSync/rmSync/readdirSync) through namespacedJoin, never a bare join", () => {
-    const fsCalls = ["mkdirSync", "existsSync", "writeFileSync", "rmSync", "readdirSync"];
+  it("routes every fs call (mkdirSync/existsLoud/writeFileSync/rmSync/readdirSync) through namespacedJoin, never a bare join", () => {
+    // `existsLoud` (src/fsProbe.ts) stats the path it is handed and declares
+    // the join its caller's, so it belongs in this list exactly as the bare
+    // `node:fs` calls do.
+    const fsCalls = ["mkdirSync", "existsLoud", "writeFileSync", "rmSync", "readdirSync"];
 
     for (const fn of fsCalls) {
       const callSites = [...src.matchAll(new RegExp(`\\b${fn}\\(`, "g"))];

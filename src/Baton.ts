@@ -8,8 +8,9 @@
  * Disk is truth, including the baton.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
+import { existsLoud } from "./fsProbe.js";
 import { awakeDir, namespacedJoin } from "./paths.js";
 
 /**
@@ -38,9 +39,15 @@ export class Baton {
       .sort();
   }
 
-  /** True iff the named phase has an awake flag. */
+  /**
+   * True iff the named phase has an awake flag. Absent is the only silent
+   * reading: `existsLoud` (`src/fsProbe.ts`) throws on a flag that is present
+   * but unstattable, the disposition `awake()`'s `readdirSync` above already
+   * takes on an unreadable awake dir — one flag class, one answer to an
+   * unresolved read (`.claude/rules/engineering.md`, "Loud or nothing").
+   */
   isAwake(name: string): boolean {
-    return existsSync(namespacedJoin(this.dir, name));
+    return existsLoud(namespacedJoin(this.dir, name));
   }
 
   /** Idempotent: create the flag if missing. */
