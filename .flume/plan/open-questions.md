@@ -311,3 +311,53 @@ Options:
 Parked because it is a governance ruling about the harness's own prose, which
 `engineering.md` says this page does not administer — plan picking between
 keeping and deleting a just-shipped test would be filling that gap silently.
+
+## Two fence sentences name internal helpers, and build's extraction just aged both (NEEDS AMENDMENT)
+
+Drained from `QUEUE-FENCE-PRECHECK-ONE-DERIVATION`'s note; verified on disk.
+That entry shipped `queueFenceViolations` (`src/paths.ts`) as the one fence
+pre-check, read by both `pendingGate` and `flume check`. Two spec sentences
+describe the shape it replaced:
+
+- `spec/pending.md`, *The entry-scoped write guard is opt-in, and off by
+  default* — "The union has one home" names `entryWriteScopeUnion`'s consumers
+  as `writablePathsGate` plus `effectiveFenceLines`. Both now reach it through
+  `entryWriteScope`, and the queue pre-check is a third consumer the sentence
+  does not mention.
+- `spec/cli.md`, *The verbs* — `check` is "the same `entryWriteScopeUnion`/
+  `matchesAny` computation the write guard enforces". True, but weaker than the
+  tree: `check` and `pendingGate` now share one named derivation, so the verb
+  and the gate cannot name different offending paths for one queue.
+
+**Neither is false, and patching them is the wrong repair.**
+`entryWriteScopeUnion`, `entryWriteScope`, `queueFenceViolations` and
+`effectiveFenceLines` are all internal — none is on `src/index.ts`, and only
+`matchesAny` (via `FlumeApi`), `writablePathsGate` and `pendingGate` are public
+surface. So both sentences are already against `.claude/rules/spec-writing.md`,
+*A claim names behavior, never location*: an internal helper, and the call order
+between internal functions. Adding a third helper name deepens the violation,
+and the next extraction ages the sentence again — which is exactly what just
+happened, one commit after the first.
+
+**Recommend** restating both as the behavior, naming no helper:
+
+- pending.md — the fence the agent is shown, the fence the write guard
+  enforces, and the fence a queue is pre-checked against are one computation,
+  so they cannot differ. Keep the `matchesAny` semantics sentence; it names
+  public surface.
+- cli.md — `check` refuses on exactly the entries `pendingGate` would refuse,
+  naming the same offending paths.
+
+Two follow-ons the ruling decides, neither filed:
+
+- `declaredPaths` appears in `spec/pending.md` five times, including as a
+  defining equation (line 122). It is not exported either. Defining vocabulary
+  the corpus then reuses is a fair read of why it is there — but if the ruling
+  is that internal names go, it is the larger instance and should go in the
+  same sweep (*A heading is an identifier* — no headings move here, so no cites
+  re-home).
+- With the pending.md sentence restated, `entryWriteScopeUnion` keeps no caller
+  outside `src/paths.ts` but its own test. *An export earns its consumer* is
+  satisfied by that test, so nothing is owed; if the human would rather it were
+  module-private, that files as an ordinary entry — `src/` and `tests/` are both
+  inside build's fence.
