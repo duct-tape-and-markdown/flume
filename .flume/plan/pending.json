@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "WORKTREE-STALE-DIR-DISCLAIMED-BY-GIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/worktrees.ts",
+          "description": "one registry probe, reached by both createWorktree and sweepStaleWorktrees; refuse a disclaimed occupied path"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "the refusal leg, the registered-stale removal leg, the failed-probe report"
+        }
+      ]
+    },
+    "summary": "createWorktree blind-deletes a directory git disclaims; share sweepStaleWorktrees' registry probe and refuse instead",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      "createWorktree leaves a directory git does not know as a worktree of this repo in place",
+      "the startup sweep warns that it removed nothing when the worktree registry cannot be read"
+    ],
+    "pins": [
+      "createWorktree removes a stale worktree directory git still has registered"
+    ],
+    "acceptance": "One registry probe in src/worktrees.ts, reached by both entry points, reporting whether the read succeeded; an occupied path git disclaims survives and provisioning fails.",
+    "notes": "Repro: seed `<wtBase>/build/` with a file, call createWorktree('build', HEAD) — `worktree remove --force` fails ('not a working tree'), removeWorktree's blind rm fallback deletes the tree, provisioning succeeds. sweepStaleWorktrees refuses exactly this, keyed on `git worktree list --porcelain`. Cost: an orphan whose registration was already pruned now needs operator action instead of silent recovery — the trade the sweep already took. Probe success is a reported fact, not an empty set."
+  }
+]
