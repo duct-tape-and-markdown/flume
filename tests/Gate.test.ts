@@ -146,8 +146,10 @@ describe("shellGate — fail path", () => {
 
 // Node refuses to spawn .cmd shims without a shell (CVE-2024-27980
 // hardening), so an extension-less command that resolves only to a .cmd
-// shim ENOENTs on the direct spawn and must go green through execGate's
-// shell retry. Only observable on hosts where .cmd is an executable form.
+// shim ENOENTs on the direct spawn and must go green through the shared
+// shim retry (`src/spawnShim.ts`). Only observable on hosts where .cmd is an
+// executable form — the retry *decision* is judged on every host in
+// tests/spawnShim.test.ts; this is the real-binary proof.
 describe.runIf(process.platform === "win32")(
   "shellGate — win32 .cmd shim fallback",
   () => {

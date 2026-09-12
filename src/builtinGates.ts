@@ -21,6 +21,7 @@ import type { Phase } from "./Phase.js";
 import { loadChainModule } from "./Dispatcher.js";
 import * as git from "./git.js";
 import { matchesAny, queueFenceViolations } from "./paths.js";
+import { execFileWithShimRetry } from "./spawnShim.js";
 import {
   parsePending,
   type EntryExtension,
@@ -28,31 +29,6 @@ import {
 } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
-
-/**
- * execFile with a Windows shim fallback. Package-manager binaries (pnpm,
- * npm) are .cmd shims on Windows, which Node refuses to spawn without a
- * shell (CVE-2024-27980 hardening). A direct spawn is tried first so args
- * keep exact quoting semantics; only a win32 ENOENT — the shim case, where
- * gate args are chain-authored flags — retries through the shell.
- */
-async function execGate(
-  cmd: string,
-  args: string[],
-  opts: { cwd: string; maxBuffer: number; env?: NodeJS.ProcessEnv },
-): Promise<{ stdout: string; stderr: string }> {
-  try {
-    return await exec(cmd, args, opts);
-  } catch (err) {
-    if (
-      process.platform === "win32" &&
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return await exec(cmd, args, { ...opts, shell: true });
-    }
-    throw err;
-  }
-}
 
 /**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
@@ -92,11 +68,18 @@ export function shellGate(opts: ShellGateOptions): Gate {
     command: [opts.cmd, ...opts.args].join(" "),
     async run(ctx: GateContext): Promise<GateResult> {
       try {
-        const { stdout, stderr } = await execGate(opts.cmd, opts.args, {
-          cwd: ctx.cwd,
-          maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,
-          ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
-        });
+        // A gate's cmd is whatever binary the chain named, so the spawn
+        // takes the shared shim retry (`src/spawnShim.ts`) — gate args are
+        // chain-authored flags, which is the quoting tradeoff that buys.
+        const { stdout, stderr } = await execFileWithShimRetry(
+          opts.cmd,
+          opts.args,
+          {
+            cwd: ctx.cwd,
+            maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024,
+            ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
+          },
+        );
         return {
           ok: true,
           message: `${opts.name} green`,

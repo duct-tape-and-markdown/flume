@@ -12,6 +12,7 @@ import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { basename, join } from "node:path";
 import { fsStamp } from "./paths.js";
+import { isWin32ShimSpawnFailure } from "./spawnShim.js";
 
 /**
  * One agent run, parameterized by cwd, prompt, and stream/abort hooks. The
@@ -159,11 +160,9 @@ export interface ClaudeCodeOptions {
  * stderr, returns the exit code. Streaming callbacks fire on each chunk so
  * the dispatcher can surface progress.
  *
- * On Windows, an npm-installed `claude` is a `.cmd` shim, which Node
- * refuses to spawn without a shell (CVE-2024-27980 hardening). The direct
- * spawn is tried first so args keep exact quoting; a win32 ENOENT retries
- * once through the shell — argv is fixed flags plus chain-authored
- * `extraArgs`, the same quoting tradeoff `shellGate` accepts.
+ * A win32 shim spawn failure (`src/spawnShim.ts`) retries once through the
+ * shell: argv is fixed flags plus chain-authored `extraArgs`, the same
+ * quoting tradeoff `shellGate` accepts.
  */
 export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
@@ -219,11 +218,9 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 
           proc.on("error", (err) => {
             if (abandoned) return;
-            if (
-              !useShell &&
-              process.platform === "win32" &&
-              (err as NodeJS.ErrnoException).code === "ENOENT"
-            ) {
+            // Detection is shared; the mechanics stay here — a streaming
+            // proc is abandoned and re-run, not re-awaited.
+            if (!useShell && isWin32ShimSpawnFailure(err)) {
               abandoned = true;
               run(true);
               return;
