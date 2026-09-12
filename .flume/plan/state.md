@@ -35,10 +35,12 @@ with `examples/`'s three chain modules and `tests/helpers/dispatcherFixture.ts`;
 `src/cliVerdict.ts` and `tests/helpers/subprocess.ts`; `tests/job.test.ts`
 with `src/job.ts`, `src/Baton.ts`, `src/paths.ts` and `src/Dispatcher.ts`;
 `tests/cliJobResolution.test.ts` with `src/cliJobResolution.ts`, `src/cli.ts`,
-`src/Baton.ts` and `tests/helpers/subprocess.ts`.
-Frontier remaining: `tests/`'s suite files, less `bin.test.ts`,
-`subprocessHelper.test.ts`, `loopSupervisor.test.ts`, `chain.test.ts`,
-`PendingSchema.test.ts`, `examples.test.ts`, `partition.test.ts`,
-`builtinGates.test.ts`, `git.test.ts`, `Prompt.test.ts`, `Agent.test.ts`,
-`paths.test.ts`, `Gate.test.ts`, `priorAttempts.test.ts`, `worktrees.test.ts`,
-`cliVerdict.test.ts`, `job.test.ts` and `cliJobResolution.test.ts`.
+`src/Baton.ts` and `tests/helpers/subprocess.ts`;
+`tests/setupWorktree.test.ts` with `src/setupWorktree.ts`.
+Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts`,
+`tests/build-changelog.test.ts`, `tests/cli.test.ts`, `tests/cliHelp.test.ts`,
+`tests/cliJobVerbs.test.ts`, `tests/docComments.test.ts`,
+`tests/examples.integration.test.ts`, `tests/friction.test.ts`,
+`tests/job.integration.test.ts`,
+`tests/loop-process-boundary.integration.test.ts` and
+`tests/tip-claim.integration.test.ts`.

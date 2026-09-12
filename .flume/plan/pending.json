@@ -1,1 +1,53 @@
-[]
+[
+  {
+    "tag": "WIN32-SHIM-SPAWN-RETRY-ONE-HOME",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        { "path": "src/spawnShim.ts", "description": "the win32 .cmd-shim spawn-failure predicate and the execFile wrapper built on it" },
+        { "path": "tests/spawnShim.test.ts", "description": "the retry decision, driven on any host via a platform shim" }
+      ],
+      "edit": [
+        { "path": "src/builtinGates.ts", "description": "execGate reads the shared wrapper" },
+        { "path": "src/setupWorktree.ts", "description": "execInstall reads the shared wrapper" },
+        { "path": "src/Agent.ts", "description": "claudeCode's spawn retry reads the shared predicate; its streaming retry stays local" }
+      ],
+      "retire": []
+    },
+    "summary": "Share the win32 .cmd-shim spawn retry across execGate, execInstall and claudeCode — one detection, one home",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [],
+    "pins": [
+      "a win32 ENOENT from the direct spawn retries once through the shell",
+      "a non-ENOENT win32 spawn failure propagates without a shell retry",
+      "an ENOENT on a non-win32 host propagates without a shell retry",
+      "shellGate retries a win32 ENOENT through the shell when the host is not win32"
+    ],
+    "acceptance": "One exported shim predicate/wrapper; the three spawn sites read it rather than respell it; the retry decision runs on every host, not only under describe.runIf(win32).",
+    "notes": "Three verbatim spellings of `platform === win32 && code === ENOENT` → retry with shell: src/builtinGates.ts:48, src/setupWorktree.ts:40, src/Agent.ts:224. execGate's retry is exercised only by tests/Gate.test.ts:151's describe.runIf(win32), which runs in none of this repo's runs; setupWorktree's identical copy is exercised on any host. src/fsProbe.ts is the precedent for the leaf home."
+  },
+  {
+    "tag": "SETUPWORKTREE-SCOPED-TO-BOTH-CONCURRENCIES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "§3's `Fanout only` extraEnv bullet and the `for fanout` scoping around it" },
+        { "path": "src/setupWorktree.ts", "description": "module header's `fanout worktree` scoping" }
+      ],
+      "retire": []
+    },
+    "summary": "Retire the fanout-only scoping of setupWorktree in docs/CHAIN-AUTHORING.md §3 and src/setupWorktree.ts's header — singletons provision too",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "`setupWorktree` and `teardownWorktree` — the chain's provisioning hooks"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "No prose in docs/ or src/ scopes setupWorktree or extraEnv to fanout; the extraEnv scope note states what runSingleton does.",
+    "notes": "docs/CHAIN-AUTHORING.md:807 states `Singleton phases never invoke setupWorktree, so they never carry extraEnv`. src/Dispatcher.ts:1840 invokes it from runSingleton and consumes extraEnv; tests/Dispatcher.test.ts:674 pins that green; docs/MIGRATING-0.12.md:29 announced the change. The spec sentence the docs contradict is the `Both concurrencies carry the hooks and extraEnv` clause."
+  }
+]
