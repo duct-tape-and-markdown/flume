@@ -20,7 +20,7 @@ import type { Phase } from "./Phase.js";
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
 import * as git from "./git.js";
-import { entryWriteScopeUnion, matchesAny } from "./paths.js";
+import { matchesAny } from "./paths.js";
 import {
   parsePending,
   declaredPaths,
@@ -468,29 +468,23 @@ export function pendingGate(opts: PendingGateOptions): Gate {
 }
 
 /**
- * Entry scope for a fanout tick carrying an assignedEntry. When present, the
- * write allowance narrows to `entryPaths ∪ channelPaths`; the phase globs
- * remain the outer ceiling — both checks apply.
- */
-interface EntryWriteScope {
-  /** Literal paths the assigned entry declares (`files.{new,edit,retire}`). */
-  entryPaths: string[];
-  /** `Phase.entryChannelPaths` globs — always in scope on a scoped tick. */
-  channelPaths: string[];
-}
-
-/**
  * Verify the commit's diff stays inside the phase's declared writablePaths —
- * and, when `entryScope` is given (fanout tick with an assignedEntry), also
- * inside the entry's declared files ∪ the phase's channel globs. Constructed
- * at runtime by the dispatcher because it needs the path globs.
+ * and, when `entryScope` is given, also inside that narrower allowance. The
+ * phase globs remain the outer ceiling; both checks apply. Constructed at
+ * runtime by the dispatcher because it needs the path globs.
+ *
+ * `entryScope` is whatever `entryWriteScope` (`src/paths.ts`) returned for
+ * this tick — the same value `effectiveFenceLines` (`src/Prompt.ts`)
+ * rendered to the agent, already resolved to `entry.files ∪
+ * entryChannelPaths`. The gate never re-decides whether a tick is scoped and
+ * never rebuilds the union: `undefined` here *is* an unscoped tick.
  *
  * Implementation note: we don't ship this as a static export because it
  * depends on the phase config. The dispatcher attaches it automatically.
  */
 export function writablePathsGate(
   globs: string[],
-  entryScope?: EntryWriteScope,
+  entryScope?: string[],
 ): Gate {
   return {
     name: "writable-paths",
@@ -505,21 +499,14 @@ export function writablePathsGate(
       const touched = await resolveTouchedPaths(ctx);
       // Ceiling check: phase-wide globs bind on every tick, scoped or not.
       const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));
-      // Entry-scope check: a scoped tick's allowance is the entry's declared
-      // paths ∪ the channel globs, sourced from the same `entryWriteScopeUnion`
-      // helper `effectiveFenceLines` (`src/Prompt.ts`) renders for the agent.
+      // Entry-scope check, against the scope as handed in — the same array
+      // `effectiveFenceLines` (`src/Prompt.ts`) rendered for the agent.
       // Literal paths pass through the same glob matcher (specials are
       // escaped, so a literal matches only itself).
       const outsideScope = entryScope
-        ? (() => {
-            const scope = entryWriteScopeUnion(
-              entryScope.entryPaths,
-              entryScope.channelPaths,
-            );
-            return touched.filter(
-              (p) => matchesAny(p, globs) && !matchesAny(p, scope),
-            );
-          })()
+        ? touched.filter(
+            (p) => matchesAny(p, globs) && !matchesAny(p, entryScope),
+          )
         : [];
       if (outsideCeiling.length === 0 && outsideScope.length === 0) {
         return { ok: true, message: "writable paths respected" };

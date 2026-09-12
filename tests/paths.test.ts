@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RUNTIME_IGNORES } from "../src/job.ts";
+import type { Phase } from "../src/Phase.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
+  entryWriteScope,
   entryWriteScopeUnion,
   matchesAny,
   namespacedJoin,
@@ -92,6 +95,103 @@ describe("entryWriteScopeUnion — entry.files ∪ entryChannelPaths, shared", (
 
   it("both empty: union is empty", () => {
     expect(entryWriteScopeUnion([], [])).toEqual([]);
+  });
+});
+
+// Mechanism pin (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per
+// .claude/rules/engineering.md "The fix lands at the mechanism"):
+// `prependHarnessBlock` (src/Prompt.ts) and `runAfterCommitGates`
+// (src/Dispatcher.ts) each used to spell the `assignedEntry &&
+// phase.scopeWritesToEntry` test and the `declaredPaths(entry)` /
+// `phase.entryChannelPaths ?? []` pair for themselves, sharing only the
+// final union — so a one-sided edit could render a fence the write guard did
+// not enforce. These pin the single decision both now call: the scoped
+// answer, and each way the unscoped answer is reached.
+describe("entryWriteScope — the one scoped-or-not decision", () => {
+  function phase(overrides: Partial<Phase> = {}): Phase {
+    return {
+      name: "build",
+      description: "test phase",
+      promptPath: "prompt.md",
+      concurrency: "fanout",
+      writablePaths: ["src/**", "tests/**", "notes/**"],
+      gates: [],
+      handoff: () => [],
+      ...overrides,
+    };
+  }
+
+  function entry(overrides: Partial<PendingEntry> = {}): PendingEntry {
+    return {
+      tag: "TEST-TAG",
+      summary: "test entry",
+      per: { path: "spec/pending.md", section: "5. Tests" },
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: { new: [], edit: [], retire: [] },
+      acceptance: "green",
+      ...overrides,
+    };
+  }
+
+  const scoped = entry({
+    files: {
+      new: [{ path: "src/New.ts", description: "new" }],
+      edit: [{ path: "tests/New.test.ts", description: "edit" }],
+      retire: ["src/Old.ts"],
+    },
+  });
+
+  it("the shared entry write scope is the assigned entry's declared files union the phase's channel paths when scopeWritesToEntry is declared", () => {
+    const p = phase({
+      scopeWritesToEntry: true,
+      entryChannelPaths: ["notes/**", "src/New.ts"],
+    });
+
+    expect(entryWriteScope(p, scoped)).toEqual([
+      "src/New.ts",
+      "tests/New.test.ts",
+      "src/Old.ts",
+      "notes/**",
+    ]);
+    // All three `files` sub-lists contribute, and the channel path that
+    // repeats a declared file is deduped rather than listed twice — the
+    // union's own shape, reached through this decision.
+    expect(entryWriteScope(p, scoped)).toEqual(
+      entryWriteScopeUnion(
+        ["src/New.ts", "tests/New.test.ts", "src/Old.ts"],
+        ["notes/**", "src/New.ts"],
+      ),
+    );
+    // `observedFiles` is the partition's input, never the write allowance.
+    expect(
+      entryWriteScope(p, { ...scoped, observedFiles: ["src/Observed.ts"] }),
+    ).not.toContain("src/Observed.ts");
+    // Channel paths omitted: the scope is the declaration alone, still scoped.
+    expect(entryWriteScope(phase({ scopeWritesToEntry: true }), scoped)).toEqual([
+      "src/New.ts",
+      "tests/New.test.ts",
+      "src/Old.ts",
+    ]);
+  });
+
+  it("the shared entry write scope is absent when the phase omits scopeWritesToEntry, and when no entry is assigned", () => {
+    // Undeclared flag with an entry in hand: unscoped, so `writablePaths`
+    // alone binds — not an empty allowance that rejects everything.
+    expect(entryWriteScope(phase(), scoped)).toBeUndefined();
+    expect(entryWriteScope(phase({ scopeWritesToEntry: false }), scoped)).toBeUndefined();
+    // Declared flag, no entry (a singleton tick, or a fanout tick that picked
+    // nothing): equally unscoped.
+    expect(
+      entryWriteScope(phase({ scopeWritesToEntry: true }), undefined),
+    ).toBeUndefined();
+    expect(
+      entryWriteScope(
+        phase({ scopeWritesToEntry: true, entryChannelPaths: ["notes/**"] }),
+        undefined,
+      ),
+    ).toBeUndefined();
+    expect(entryWriteScope(phase(), undefined)).toBeUndefined();
   });
 });
 

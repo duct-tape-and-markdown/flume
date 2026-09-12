@@ -36,8 +36,8 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 import type { Phase } from "./Phase.js";
-import { entryWriteScopeUnion } from "./paths.js";
-import { declaredPaths, type PendingEntry } from "./PendingSchema.js";
+import { entryWriteScope } from "./paths.js";
+import type { PendingEntry } from "./PendingSchema.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
@@ -491,12 +491,17 @@ function prependHarnessBlock(
     .map((g) => `  - ${g.name} (${g.when})` + (g.command ? `: ${g.command}` : ""))
     .join("\n");
 
+  // Scoped-or-not is decided once, in `src/paths.ts` — the same call the
+  // dispatcher makes to configure `writablePathsGate`, so the fence this
+  // block renders and the fence that guard enforces are one value.
+  const entryScope = entryWriteScope(phase, assignedEntry);
+
   const harness = [
     `<harness>`,
     `Phase: ${phase.name}`,
     `Concurrency: ${phase.concurrency}`,
-    ...(assignedEntry && phase.scopeWritesToEntry
-      ? effectiveFenceLines(phase, assignedEntry)
+    ...(entryScope
+      ? effectiveFenceLines(phase, entryScope)
       : unscopedFenceLines(phase)),
     `Gates (run automatically after your commit):`,
     gateLines || "  (none)",
@@ -523,13 +528,11 @@ function unscopedFenceLines(phase: Phase): string[] {
  * Scoped rendering: states the fence the write guard actually enforces on this
  * tick — `entry.files ∪ phase.entryChannelPaths` — separately from
  * `phase.writablePaths`, the outer ceiling both this fence and the guard's
- * ceiling check must clear. Sources the union from `entryWriteScopeUnion`
- * (`src/paths.ts`), the same helper the `writablePathsGate` entry-scope check
- * consumes, so the two can never state a different fence.
+ * ceiling check must clear. `fence` arrives already derived from
+ * `entryWriteScope` (`src/paths.ts`); this function renders it and derives
+ * nothing, so it cannot state a scope the guard does not enforce.
  */
-function effectiveFenceLines(phase: Phase, entry: PendingEntry): string[] {
-  const entryPaths = declaredPaths(entry);
-  const fence = entryWriteScopeUnion(entryPaths, phase.entryChannelPaths ?? []);
+function effectiveFenceLines(phase: Phase, fence: string[]): string[] {
   const ceilingLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");
 
   return [

@@ -17,7 +17,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { shellGate, writablePathsGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
-import { declaredPaths, type PendingEntry } from "../src/PendingSchema.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
+import { entryWriteScope } from "../src/paths.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type {
   GateRevertAttempt,
@@ -353,14 +354,16 @@ describe("renderPrompt <harness> gate list renders a declared command (spec/chai
   });
 });
 
-// Agreement case (ENTRYWRITESCOPE-SHARED-UNION, per engineering.md "Derived
-// state is computed, never restated beside its source"): the rendered
-// effective-fence bullets and writablePathsGate's actual accepted scope must
-// agree because both now source `entryPaths ∪ entryChannelPaths` from the
-// same `entryWriteScopeUnion` helper — not because a comment says so. This
-// drives the real renderer's output through the real gate rather than
-// comparing two hand-authored path lists, per "A seam gate reads what the
-// real writer wrote".
+// Agreement case (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per engineering.md "The
+// fix lands at the mechanism"): the rendered effective-fence bullets and
+// writablePathsGate's actual accepted scope must agree because both sides
+// take the scope from the one `entryWriteScope` derivation — not because a
+// comment says so. The gate's half is built by the same call the dispatcher
+// makes, so a one-sided edit to either production site lands here; the
+// earlier version hand-built `{ entryPaths, channelPaths }` and would have
+// shipped such an edit green. This drives the real renderer's output through
+// the real gate rather than comparing two hand-authored path lists, per "A
+// seam gate reads what the real writer wrote".
 describe("renderPrompt effective fence agrees with writablePathsGate's accepted scope", () => {
   function gateCtx(overrides: Partial<GateContext> = {}): GateContext {
     return {
@@ -376,7 +379,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     };
   }
 
-  it("a path the rendered fence names is accepted by the gate; a ceiling-only path it omits is rejected", async () => {
+  it("the rendered effective fence names exactly the paths the write guard accepts for the same phase and entry", async () => {
     const p = phase({
       name: "build",
       concurrency: "fanout",
@@ -412,12 +415,14 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
       (m) => m[1]!,
     );
     expect(renderedFence).toEqual(["src/New.ts", "notes/open-questions.md"]);
+    // Exactly, not merely compatibly: the bullets are the shared derivation's
+    // output verbatim, in order.
+    expect(renderedFence).toEqual(entryWriteScope(p, e));
 
-    const entryScope = {
-      entryPaths: declaredPaths(e),
-      channelPaths: p.entryChannelPaths ?? [],
-    };
-    const gate = writablePathsGate(p.writablePaths, entryScope);
+    // The gate's half comes from the same derivation the dispatcher calls —
+    // never rebuilt here (`.claude/rules/engineering.md`, "A seam gate reads
+    // what the real writer wrote").
+    const gate = writablePathsGate(p.writablePaths, entryWriteScope(p, e));
 
     for (const path of renderedFence) {
       const result = await gate.run(gateCtx({ touchedPaths: [path] }));

@@ -56,6 +56,7 @@ import {
   fsStamp,
   namespacedJoin,
   slugify,
+  entryWriteScope,
   mergingDir,
   mergingMarkerPath,
   renderedPromptsDir,
@@ -75,7 +76,7 @@ import {
   PriorAttemptStore,
   type PriorAttemptRef,
 } from "./priorAttempts.js";
-import { declaredPaths, parsePending } from "./PendingSchema.js";
+import { parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
 /**
@@ -3608,23 +3609,17 @@ export class Dispatcher {
     touchedPaths: string[];
   }> {
     // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
-    // guard is opt-in, and off by default"): narrowing to the assigned
-    // entry's declared files ∪ the phase's channel globs is a chain
-    // declaration (`phase.scopeWritesToEntry`), not automatic on every
-    // scoped tick. Undeclared, a fanout tick's allowance is byte-identical
-    // to a singleton tick's — `writablePaths` alone. `observedFiles` is
-    // deliberately excluded even when scoping is on — it feeds the
-    // partition, not the write allowance.
+    // guard is opt-in, and off by default"). The whole decision — whether
+    // this tick is scoped at all, and to which paths — is `entryWriteScope`
+    // (`src/paths.ts`), the one call `renderPrompt` also makes to state the
+    // fence in the agent's prompt (engineering.md "The fix lands at the
+    // mechanism"). Unscoped, a fanout tick's allowance is byte-identical to
+    // a singleton tick's — `writablePaths` alone.
     const gates: Gate[] = [
       ...phase.gates.filter((g) => g.when === "afterCommit"),
       writablePathsGate(
         phase.writablePaths,
-        assignedEntry && phase.scopeWritesToEntry
-          ? {
-              entryPaths: declaredPaths(assignedEntry),
-              channelPaths: phase.entryChannelPaths ?? [],
-            }
-          : undefined,
+        entryWriteScope(phase, assignedEntry),
       ),
     ];
     // Computed once per commit and shared across every gate this loop runs —

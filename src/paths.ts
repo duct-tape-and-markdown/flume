@@ -9,8 +9,10 @@
  * is the one place that pairs them.
  *
  * The state-root layout (bottom of this file) is here for the same reason
- * and imports nothing beyond `node:path`, so the CLI, the dispatcher, the
- * baton, and the job verbs can all reach it without a cycle.
+ * and needs nothing beyond `node:path`, so the CLI, the dispatcher, the
+ * baton, and the job verbs can all reach it without a cycle. The module's
+ * only other imports keep that property: `Phase` is type-only and erased,
+ * and `PendingSchema` reaches no further than zod.
  */
 
 import {
@@ -21,6 +23,9 @@ import {
   sep,
   toNamespacedPath,
 } from "node:path";
+
+import type { Phase } from "./Phase.js";
+import { declaredPaths, type PendingEntry } from "./PendingSchema.js";
 
 /** `join(...paths)`, then `toNamespacedPath` — the win32 MAX_PATH fix idiom. */
 export function namespacedJoin(...paths: string[]): string {
@@ -105,6 +110,39 @@ export function entryWriteScopeUnion(
   channelPaths: string[],
 ): string[] {
   return [...new Set([...entryPaths, ...channelPaths])];
+}
+
+/**
+ * The write scope a tick actually runs under: `undefined` when the tick is
+ * unscoped — no entry assigned, or a phase that never declared
+ * `scopeWritesToEntry` (spec/pending.md "The entry-scoped write guard is
+ * opt-in, and off by default") — and the entry's declared files ∪ the
+ * phase's channel globs when it is scoped.
+ *
+ * **The one site that decides scoped-or-not, and the one site that names the
+ * two inputs.** Both consumers of the decision take it from here:
+ * `effectiveFenceLines` (`src/Prompt.ts`) renders the scope for the agent,
+ * and `src/Dispatcher.ts` hands the same value to `writablePathsGate`
+ * (`src/builtinGates.ts`), which enforces it against the commit. Each used
+ * to spell the `assignedEntry && phase.scopeWritesToEntry` test and the
+ * `declaredPaths(entry)` / `phase.entryChannelPaths ?? []` pair for itself,
+ * sharing only the final union — so a one-sided edit could render a fence
+ * the guard did not enforce (`.claude/rules/engineering.md`, "The fix lands
+ * at the mechanism").
+ *
+ * `observedFiles` is deliberately not in scope: `declaredPaths` is the
+ * entry's *declaration*, and observed files feed the fanout partition, not
+ * the write allowance.
+ */
+export function entryWriteScope(
+  phase: Pick<Phase, "scopeWritesToEntry" | "entryChannelPaths">,
+  assignedEntry: PendingEntry | undefined,
+): string[] | undefined {
+  if (!assignedEntry || !phase.scopeWritesToEntry) return undefined;
+  return entryWriteScopeUnion(
+    declaredPaths(assignedEntry),
+    phase.entryChannelPaths ?? [],
+  );
 }
 
 /**
