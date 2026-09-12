@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "LOG-FIXTURE-REDERIVES-VERDICT-LOG-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "writeTickVerdictsLog derives its path from the engine's exported tickVerdictsLogPath; the two history-suppression tests assert their fixture was read"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume log's fixture hand-composes .flume/tick-verdicts.jsonl, so two tests pass identically over a log the CLI never read",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [],
+    "pins": [
+      "flume log -n 0 prints nothing over a history the default form does print",
+      "flume log renders the verdict it read without creating an awake flag"
+    ],
+    "acceptance": "tests/cliVerdict.test.ts composes no .flume/tick-verdicts.jsonl literal, and neither history-suppression test can pass over an unread fixture",
+    "notes": "writeTickVerdictsLog (l.298) joins the literal; loopSupervisor.test.ts and Dispatcher.test.ts both use the exported tickVerdictsLogPath. '-n 0 ... not the full history' (l.367) and 'mutates no baton flag' (l.424) assert only absence, so they are indistinguishable from 'no tick-verdicts.jsonl ...' (l.413). Same class requireEntryPoint (tests/helpers/subprocess.ts) cites."
+  }
+]

@@ -31,10 +31,11 @@ with `examples/`'s three chain modules and `tests/helpers/dispatcherFixture.ts`;
 `tests/Gate.test.ts` with `src/builtinGates.ts` and `src/Gate.ts`;
 `tests/priorAttempts.test.ts` with `src/priorAttempts.ts`;
 `tests/worktrees.test.ts` with `src/worktrees.ts`, `src/paths.ts` and
-`tests/helpers/dispatcherFixture.ts`.
+`tests/helpers/dispatcherFixture.ts`; `tests/cliVerdict.test.ts` with
+`src/cliVerdict.ts` and `tests/helpers/subprocess.ts`.
 Frontier remaining: `tests/`'s suite files, less `bin.test.ts`,
 `subprocessHelper.test.ts`, `loopSupervisor.test.ts`, `chain.test.ts`,
 `PendingSchema.test.ts`, `examples.test.ts`, `partition.test.ts`,
 `builtinGates.test.ts`, `git.test.ts`, `Prompt.test.ts`, `Agent.test.ts`,
-`paths.test.ts`, `Gate.test.ts`, `priorAttempts.test.ts` and
-`worktrees.test.ts`.
+`paths.test.ts`, `Gate.test.ts`, `priorAttempts.test.ts`, `worktrees.test.ts`
+and `cliVerdict.test.ts`.
