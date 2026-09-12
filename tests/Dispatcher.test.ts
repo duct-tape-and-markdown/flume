@@ -14072,7 +14072,7 @@ describe("TickVerdict span rows — base beside head", () => {
 // cannot refuse the way its strict twin does — it runs after the tick's work
 // landed, so a throw would lose the TickResult — so it announces, then
 // degrades, exactly as the parse branch beside it already did.
-describe("Dispatcher — an unstattable queue on the post-tick re-read is loud", () => {
+describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", () => {
   it("readPendingTolerant warns naming the stat error when pending.json is present but unstattable", async () => {
     await writePending(fx.repo, [makeEntry("PTSL-A", ["src/ptsl-a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -14124,6 +14124,72 @@ describe("Dispatcher — an unstattable queue on the post-tick re-read is loud",
 
     expect(warnings).toContainEqual(
       expect.stringMatching(/pending\.json could not be stat'd \(.*ELOOP/),
+    );
+    // Declared degradation, not a refusal: the TickResult still lands, and
+    // the empty queue it reports is the thing the warn above accounts for.
+    expect(outcome.result).toBeDefined();
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(outcome.result?.pickableAfter).toEqual([]);
+  });
+
+  // The stat catch above was the first half: past it the `readFile` was
+  // bare, so a path that stats fine but cannot be read — a directory at the
+  // path, a mode denying the file itself, a delete racing the probe — threw
+  // out of a reader that runs after the tick's work landed, losing the
+  // TickResult the strict twin deliberately cannot lose.
+  it("readPendingTolerant warns and reports an empty pendingAfter when pending.json stats but cannot be read", async () => {
+    await writePending(fx.repo, [makeEntry("PTRD-A", ["src/ptrd-a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const warnings: string[] = [];
+
+    // Same mid-tick timing as the ELOOP case: the strict decide-read comes
+    // from the committed tip, so only the post-tick disk re-read meets the
+    // bad path, and the agent commits nothing.
+    const agent: Agent = {
+      name: "breaks-the-queue-file",
+      async invoke() {
+        await rm(pendingPath);
+        // EISDIR — stats fine, reads never. Not a permission bit: a
+        // root-run test would bypass that.
+        await mkdir(pendingPath);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity guard: the queue the re-read failed over really holds an
+    // entry at the tip, so the `[]` below is the degradation and not this
+    // repo's actual queue. And the path really stats — the stat branch
+    // beside this one is not what fired.
+    const tipRaw = await git.readFileAtRef(
+      fx.repo,
+      "HEAD",
+      ".flume/plan/pending.json",
+    );
+    const tipPending = parsePending(tipRaw ?? "");
+    expect(tipPending.ok).toBe(true);
+    if (tipPending.ok) {
+      expect(tipPending.entries.map((e) => e.tag)).toEqual(["PTRD-A"]);
+    }
+    expect(existsSync(pendingPath)).toBe(true);
+    expect(warnings).not.toContainEqual(
+      expect.stringContaining("could not be stat'd"),
+    );
+
+    expect(warnings).toContainEqual(
+      expect.stringMatching(/pending\.json could not be read \(.*EISDIR/),
     );
     // Declared degradation, not a refusal: the TickResult still lands, and
     // the empty queue it reports is the thing the warn above accounts for.

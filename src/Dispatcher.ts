@@ -3991,8 +3991,9 @@ export class Dispatcher {
    * tick's work has already landed, so a throw here would lose the
    * `TickResult` that describes it. The tolerance is in this reader, never in
    * the probe: `existsLoud` (src/fsProbe.ts) still splits absent from
-   * unreachable, and the catch below turns that refusal into the warn a
-   * silent `existsSync` `false` would have skipped.
+   * unreachable, and the catches below turn that refusal — and any failure
+   * of the read past it — into the warn a silent `existsSync` `false` would
+   * have skipped.
    */
   private async readPendingTolerant(): Promise<PendingEntry[]> {
     // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
@@ -4010,7 +4011,21 @@ export class Dispatcher {
       );
       return [];
     }
-    const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
+    let raw: string;
+    try {
+      raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
+    } catch (err) {
+      // Stattable but unreadable — a directory at the path, a mode denying
+      // the file itself, a delete racing the probe above. Same declared
+      // degrade as the stat and parse branches: announced, then `[]`, never
+      // a throw that would take this tick's `TickResult` with it.
+      this.log.warn(
+        `[flume] pending.json could not be read (${
+          (err as Error).message
+        }); treating as empty`,
+      );
+      return [];
+    }
     const r = parsePending(raw, this.entryExtension);
     if (!r.ok) {
       this.log.warn(
