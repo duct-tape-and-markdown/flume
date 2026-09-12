@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "TIP-MOVED-PRIOR-ATTEMPT-BULLET-NAMES-ITS-REAL-PRODUCER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the `tip-moved` bullet in the `<prior-attempt>` variant list (:1188)"
+        },
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "`buildTipMoved`'s opening doc line, which its own next paragraph already contradicts"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rewrite the `tip-moved` prior-attempt bullet to the agent-branch ancestry leg that actually writes the record, and drop the same residue from buildTipMoved's doc",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — one writer per branch, absorption at the merge"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "No prose describing the `tip-moved` record frames it as a tick-start sha comparison on the ref; each names the non-ancestor base on the agent's private branch, the soft reset there, and that the wave's claim refusal reports a tipMoved tick fact without writing this record.",
+    "notes": "Verified: `buildTipMoved` has one caller, `checkTipMovedPerEntry` (Dispatcher.ts:3522) — `expectedTip` is the recorded base, `observedTip` the observed HEAD, discard is a soft reset on the flume/** branch. The claim refusal (Dispatcher.ts:2591) pushes a `tip-moved` merge outcome and writes no record. Docs-only claim fix, so no behavior to pin — matches the two docs entries 054305c shipped."
+  }
+]
