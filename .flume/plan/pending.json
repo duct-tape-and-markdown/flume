@@ -1,1 +1,60 @@
-[]
+[
+  {
+    "tag": "PENDINGTOLERANT-STAT-LOUD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readPendingTolerant's probe (:3991) → existsLoud in a catch that warns before returning `[]`"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "unstattable-queue case for the post-tick re-read"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "readPendingTolerant warns on a stat failure instead of silently reading an empty queue, matching the parse-failure branch in the same function",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "readPendingTolerant warns naming the stat error when pending.json is present but unstattable"
+    ],
+    "pins": [],
+    "acceptance": "An unstattable queue on the post-tick re-read is announced, not swallowed: the degraded-but-proceeding path is declared and its warn fires, instead of `pendingAfter` reading as a drained queue with nothing said.",
+    "notes": "The strict twin (`readPending`, :3949) refuses via existsLoud; this one cannot throw — it runs after the tick's work landed, so a throw loses the TickResult. Warn-then-`[]` is the symmetric fix: the parse branch six lines below already does exactly that. pendingAfter feeds chain.ts's hibernate call (`pickableAfter.length > 0`), so a silent `[]` sleeps the loop over a queue never read. ELOOP via symlink is the fixture idiom (tests/git.test.ts:714)."
+  },
+  {
+    "tag": "REPOROOT-STAT-EXITCODE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the bare resolveRepoRoot call (:155) gains the try/catch → EX_IOERR its sibling probes use"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "real-CLI case: unstattable ancestor `.flume`, beside the existing state-root-guard mapping test"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Map resolveRepoRoot's stat throw to EX_IOERR with a `[flume]` message at its cli.ts callsite, instead of a raw stack and exit 1 via main().catch",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Exit codes come from `sysexits.h`"
+    },
+    "tests": [
+      "flume exits EX_IOERR naming the stat error when an ancestor .flume is present but unstattable"
+    ],
+    "pins": [],
+    "acceptance": "The walk's refusal is classifiable from the exit status like every other stat refusal in the CLI, rather than an unclassified 1 with a stack dump on stderr.",
+    "notes": "Called bare at src/cli.ts:155, ahead of every try/catch in main(). Sibling stat refusals exit 74 with `[flume] ...` (cli.ts:299, 349, 378, 410). EX_IOERR, not EX_UNAVAILABLE: the failing op is the stat, and the EX_IOERR doc at cli.ts:105 already names this exact class. Copy the shape of tests/cliJobResolution.test.ts:726."
+  }
+]
