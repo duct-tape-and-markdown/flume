@@ -58,28 +58,30 @@ whatever entry the amendment files.
 shipped on 2026-09-11.
 
 **A second fork that ship raised — pin the block, or shrink it to a pointer?**
-Drained from that entry's note; verified on disk. `docs/CHAIN-AUTHORING.md`'s copy of
-this same list is equality-pinned to `RUNTIME_IGNORES` (`tests/retired-narration.test.ts`,
-"the chain-authoring doc's job-seed gitignore list names every entry RUNTIME_IGNORES
-carries and no others") and structurally cannot drift. The spec's copy
-(`spec/jobs.md:105-116`) is pinned by nothing — which is why the stale name above sits in
-the spec and not in the doc, and why the `merging/` gap stayed open long enough to need an
-entry. A drift the pinned copy cannot have is evidence about the unpinned one. Two closes,
-both spec edits, so the choice is the human's:
+Drained from that entry's note. The evidence this fork rested on is gone: the equality
+pin on `docs/CHAIN-AUTHORING.md`'s copy of the same list left with the hygiene suite at
+`bd75f27`, and that commit forecloses re-authoring it — prose read against code is
+harness governance, held by its authors, never promoted into the suite
+(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*, last bullet).
+So **pinning is off the table**, and the list now has three unpinned copies:
+`spec/jobs.md:105-116`, `RUNTIME_IGNORES` (`src/job.ts`), and
+`docs/CHAIN-AUTHORING.md:133-135`. The stale name above is what an unpinned copy does,
+and nothing mechanical will catch the next one. The fork is now which copy stops existing:
 
-- **Pin it.** A second equality pin reading the fenced block through `RUNTIME_IGNORES`.
-  Cheapest, and the spec section stays readable standing alone. Red until the name fix
-  above lands, so it ships after that amendment, never with it.
-- **Shrink it to a pointer** at `RUNTIME_IGNORES` (`.claude/rules/engineering.md`,
-  *Derived state is computed, never restated beside its source* — "in artifacts, the same
-  bar"). Removes the drift surface instead of policing it. Against it: in this pipeline
-  the spec is upstream of the code, so a spec section citing `src/` inverts the flow
-  `spec-plan-build.md` rests on, and a reader can no longer evaluate the section without
-  opening the tree.
+- **Shrink the doc's copy to a pointer** at `spec/jobs.md`, *Runtime ignores*. Prose
+  pointing at prose — no pipeline inversion, inside build's fence, files as an ordinary
+  entry. Leaves spec and `RUNTIME_IGNORES` as the two copies the ruling hands to their
+  authors.
+- **Shrink the spec's copy to a pointer** at `RUNTIME_IGNORES`
+  (`.claude/rules/engineering.md`, *Derived state is computed, never restated beside its
+  source* — "in artifacts, the same bar"). Against it: the spec is upstream of the code
+  here, so a spec section citing `src/` inverts the flow `spec-plan-build.md` rests on,
+  and the section stops being readable standing alone.
+- **Accept all three, author-held.** The ruling's own posture; costs the next stale name.
 
-**Recommend the pin** — it buys the drift refusal without inverting the pipeline, and the
-merged set is short enough that carrying it twice costs little. Either way the name fix
-lands first.
+**Recommend the first** — it removes a copy at no cost to the pipeline's direction or the
+section's readability, and leaves exactly the spec↔code pair the human already maintains.
+Either way the name fix above lands first.
 
 ## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
 
