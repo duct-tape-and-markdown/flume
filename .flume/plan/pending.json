@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "tag": "TRUNK-CONTRACT-DOCS-STATE-THE-ABSORB-REFUSE-SPLIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "the Trunk contract's second paragraph, including its closing claim-vs-verify framing"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "`flume tick`'s tip paragraph — same enumeration, already cites the new heading"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rewrite README's trunk-contract refusal paragraph and CLI.md's `flume tick` tip paragraph to state the absorb/refuse split",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — one writer per branch, absorption at the merge"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "No reference page enumerates operator activity as a cause of no-commit, or describes an expected-sha comparison at a harness commit site; each names absorption and scopes refusal to a live foreign claim or a non-ancestor base.",
+    "notes": "Residue of the absorption rewrite. README:289-297 (the paragraph after the one e0f87e4 fixed); docs/CLI.md:39 carries the same enumeration verbatim — the note named only the first. Verified against spec/loop.md:255-278 (absorb/refuse split, operator activity no longer refused) and :326-341 (harness commits carry no expected-tip bookkeeping; the claim is the discriminator)."
+  },
+  {
+    "tag": "SUPERVISOR-POLICY-DOCS-SCOPED-TO-PROVISION-ONLY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "§9's opening paragraph and both knob bullets"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rescope CHAIN-AUTHORING §9 from provisioning-only to the stage-tagged accounting across provision, merge and gate",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Repeated identical failures — quarantine, then abort"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "§9 states both legs over every per-entry failure fact the verdict records — provision, merge and gate — and neither bullet keys its signature to provisioning alone.",
+    "notes": "The note named the `abortThreshold` bullet; all three §9 sites carry the premise, verified this tick — :1405 calls the net a 'pre-tick worktree-provisioning safety net', :1428 keys quarantine on 'a tagged provisioning failure', :1435 keys the abort on 'the same provisioning-failure signature'. src/loopSupervisor.ts:281-345 quarantines every blamed failure whichever stage, and folds `${stage}:${signature}` for the abort."
+  }
+]
