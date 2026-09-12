@@ -24,7 +24,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
@@ -89,6 +89,53 @@ export function worktreeDirName(tag: string): string {
 }
 
 /**
+ * What `git worktree list --porcelain` said, reported as a fact rather than
+ * as a set: `read: false` is "the registry could not be read", which is not
+ * the claim "git registers no worktree at that path" and must never collapse
+ * into it (`.claude/rules/engineering.md`, *Loud or nothing*). A caller about
+ * to destroy a directory on the strength of an absence has to be able to tell
+ * the two apart.
+ */
+type WorktreeRegistry =
+  | { read: true; paths: Set<string> }
+  | { read: false; reason: string };
+
+/**
+ * The one probe of git's worktree registry, reached by both entry points that
+ * need it: {@link createWorktree}'s removal of whatever occupies the path it
+ * is about to provision, and {@link sweepStaleWorktrees}'s choice of which
+ * top-level directories are this job's residue. Both ask the identical
+ * question — *is this path one git calls a worktree of this repo?* — and a
+ * second spelling beside the first is how one of them comes to answer it from
+ * the directory's name instead (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*: detection a sibling surface already performs is
+ * shared, never re-derived).
+ *
+ * Paths are resolved absolute before they enter the set: git prints its own
+ * absolute spelling, which need not match a caller's character for character.
+ */
+async function readWorktreeRegistry(
+  repoRoot: string,
+): Promise<WorktreeRegistry> {
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileP("git", ["worktree", "list", "--porcelain"], {
+      cwd: repoRoot,
+      maxBuffer: 16 * 1024 * 1024,
+    }));
+  } catch (err) {
+    return { read: false, reason: (err as Error).message };
+  }
+  const paths = new Set<string>();
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      paths.add(resolve(line.slice("worktree ".length).trim()));
+    }
+  }
+  return { read: true, paths };
+}
+
+/**
  * Provision one worktree, branched `flume/[<namespace>/]<tag>` from
  * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
  * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md
@@ -129,12 +176,27 @@ export async function createWorktree(
     ? join(wtBase, ctx.namespace, dirName)
     : join(wtBase, dirName);
   if (existsSync(toNamespacedPath(path))) {
-    // Stale from a prior crashed run; clean up.
-    try {
-      await git.removeWorktree(ctx.repoRoot, path);
-    } catch {
-      await rm(toNamespacedPath(path), { recursive: true, force: true });
+    // Occupied. Whether that is this job's own stale worktree from a crashed
+    // run is git's registry to answer, never the path's existence: a
+    // directory git disclaims is as easily a sibling namespaced job's
+    // container directory under a shared FLUME_WORKTREES_DIR, or an
+    // operator's own tree, and removing one of those is the clobber the
+    // startup sweep below already refuses on exactly this evidence. Anything
+    // git does not name is refused loudly and left standing for an operator
+    // to judge — the cost is that residue whose registration was already
+    // pruned needs a hand, which is the trade the sweep took.
+    const registry = await readWorktreeRegistry(ctx.repoRoot);
+    if (!registry.read) {
+      throw new Error(
+        `worktree path is occupied and the git worktree registry could not be read (${registry.reason}); refusing to remove a directory git may not own: ${path}`,
+      );
     }
+    if (!registry.paths.has(resolve(path))) {
+      throw new Error(
+        `worktree path is occupied by a directory git does not register as a worktree of ${ctx.repoRoot}; refusing to remove it — clear it by hand if it is flume residue: ${path}`,
+      );
+    }
+    await git.removeWorktree(ctx.repoRoot, path);
   }
   await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
   // Fanout worktrees nest at least as deep as the job dir they're cloned
@@ -225,8 +287,9 @@ export async function teardownWorktreeInstance(
  * bare `readdir` + blind removal would delete a live sibling's entire
  * worktree tree the first time its container directory sits at this
  * level. The disambiguator is git's own registry, not a naming
- * heuristic (`engine-boundary.md`, "told, not inferred"): `git worktree
- * list --porcelain` names every path git currently considers a
+ * heuristic (`engine-boundary.md`, "told, not inferred"):
+ * {@link readWorktreeRegistry} — the same probe {@link createWorktree}
+ * clears an occupied path on — names every path git currently considers a
  * worktree, and only entries that are literally one of those paths are
  * this job's own residue to remove through `git.removeWorktree` +
  * win32-fallback (the same path teardown uses) — a sibling's container
@@ -239,13 +302,15 @@ export async function teardownWorktreeInstance(
  * non-namespaced case must not sweep a namespaced sibling job's branches
  * sharing the same repo.
  *
- * Never throws: an unreadable or absent base, a surviving worktree
- * directory (locked handle, EBUSY), a prune failure, or a branch that
- * won't delete are each logged and swallowed rather than propagated — a
- * sweep that could abort the run would convert dead residue into a
- * denial of service on the live queue. Silent on an absent or empty
+ * Never throws: an unreadable or absent base, an unreadable registry, a
+ * surviving worktree directory (locked handle, EBUSY), a prune failure, or a
+ * branch that won't delete are each logged and swallowed rather than
+ * propagated — a sweep that could abort the run would convert dead residue
+ * into a denial of service on the live queue. Silent on an absent or empty
  * base, the normal case; a surviving worktree path is warned once for
- * the whole run, not once per directory.
+ * the whole run, not once per directory. A registry the probe could not read
+ * removes nothing and says so: an unreadable registry is not a base with
+ * nothing registered in it, and the two must not print the same silence.
  */
 export async function sweepStaleWorktrees(
   ctx: WorktreeContext,
@@ -276,37 +341,32 @@ export async function sweepStaleWorktrees(
   // not the entry's name. A container directory was never itself `git
   // worktree add`ed, so it never appears here — only the paths nested
   // inside it do.
-  const registeredWorktrees = new Set<string>();
-  try {
-    const { stdout } = await execFileP(
-      "git",
-      ["worktree", "list", "--porcelain"],
-      { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
-    );
-    for (const line of stdout.split("\n")) {
-      if (line.startsWith("worktree ")) {
-        registeredWorktrees.add(resolve(line.slice("worktree ".length).trim()));
-      }
-    }
-  } catch (err) {
+  const registry = await readWorktreeRegistry(repoRoot);
+  if (!registry.read) {
+    // An unreadable registry is not an empty one. With no way to tell this
+    // job's residue from a live sibling's tree, the sweep removes nothing —
+    // and reports that it removed nothing, rather than leaving a silent
+    // no-op that reads exactly like a clean base.
     ctx.log.warn(
-      `[flume] startup sweep: could not list registered worktrees: ${(err as Error).message}`,
+      `[flume] startup sweep: could not read the worktree registry (${registry.reason}); removed no worktree directories`,
     );
   }
 
   const survivingPaths: string[] = [];
-  for (const name of entries) {
-    const path = join(sweepBase, name);
-    if (!registeredWorktrees.has(resolve(path))) {
-      // Not a worktree git knows about — most commonly a sibling
-      // namespaced job's container directory. Not this job's residue;
-      // leave it untouched.
-      continue;
-    }
-    try {
-      await git.removeWorktree(repoRoot, path);
-    } catch {
-      survivingPaths.push(path);
+  if (registry.read) {
+    for (const name of entries) {
+      const path = join(sweepBase, name);
+      if (!registry.paths.has(resolve(path))) {
+        // Not a worktree git knows about — most commonly a sibling
+        // namespaced job's container directory. Not this job's residue;
+        // leave it untouched.
+        continue;
+      }
+      try {
+        await git.removeWorktree(repoRoot, path);
+      } catch {
+        survivingPaths.push(path);
+      }
     }
   }
   try {

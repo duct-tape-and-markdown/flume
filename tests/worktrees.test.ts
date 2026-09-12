@@ -27,10 +27,12 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { Logger } from "../src/Dispatcher.ts";
 import type { Chain, Phase, WorktreeSetupContext } from "../src/Phase.ts";
 import { slugify, worktreesBase } from "../src/paths.ts";
 import {
   createWorktree,
+  sweepStaleWorktrees,
   teardownWorktreeInstance,
   worktreeDirName,
   type WorktreeContext,
@@ -63,6 +65,17 @@ async function flumeBranches(repo: string): Promise<string[]> {
     { cwd: repo },
   );
   return stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/** A logger that keeps every warning, for suites judging what the run reported. */
+function collectingLogger(): Logger & { warnings: string[] } {
+  const warnings: string[] = [];
+  return {
+    warnings,
+    info: () => {},
+    warn: (m: string) => warnings.push(m),
+    error: () => {},
+  };
 }
 
 /** Paths git currently considers a worktree of `repo`. */
@@ -206,4 +219,140 @@ describe("worktrees — the base is resolved in one place", () => {
     // No hand-rolled default survives beside them.
     expect(worktrees).not.toMatch(/join\([^)]*[Ff]lumeDir,\s*"worktrees"\)/);
   });
+});
+
+/**
+ * WORKTREE-STALE-DIR-DISCLAIMED-BY-GIT — what occupies the path a tick is
+ * about to provision is git's registry to judge, never the path's mere
+ * existence. `createWorktree` and `sweepStaleWorktrees` read one probe
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*:
+ * detection a sibling surface already performs is shared, never re-derived).
+ * The sweep already refused to remove a directory git disclaims — most often
+ * a sibling namespaced job's live container directory under a shared
+ * `FLUME_WORKTREES_DIR` — while provisioning deleted exactly that directory
+ * through its rm fallback and then reported success.
+ *
+ * Both legs are driven through the real entry points against a real git
+ * repo: the claim is that one probe decides for both, which a stubbed
+ * registry could not distinguish from two agreeing copies.
+ */
+describe("worktrees — an occupied path is judged by git's registry", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /** An unnamespaced context over the fixture repo, and its worktree base. */
+  function contextFor(log: Logger): { ctx: WorktreeContext; base: string } {
+    const flumeDir = join(fx.repo, ".flume");
+    return {
+      ctx: {
+        repoRoot: fx.repo,
+        flumeDir,
+        stateRootRel: ".flume",
+        namespace: undefined,
+        log,
+      },
+      base: worktreesBase(flumeDir),
+    };
+  }
+
+  /** The fixture repo's current HEAD, the ref every provisioning branches from. */
+  async function head(): Promise<string> {
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: fx.repo,
+    });
+    return stdout.trim();
+  }
+
+  it("createWorktree leaves a directory git does not know as a worktree of this repo in place", async () => {
+    const { ctx, base } = contextFor(silent);
+    // Occupying exactly the path provisioning computes — a sibling job's
+    // container directory, an operator's own tree, or residue git has
+    // already pruned the registration for. Indistinguishable by name.
+    const occupied = join(base, worktreeDirName("build"));
+    await mkdir(occupied, { recursive: true });
+    await writeFile(join(occupied, "keep.txt"), "not flume's to delete\n");
+
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the path really is occupied and git really does
+    // disclaim it — the two facts the refusal below is about.
+    expect(existsSync(join(occupied, "keep.txt"))).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
+
+    await expect(createWorktree("build", await head(), ctx)).rejects.toThrow(
+      /does not register as a worktree/,
+    );
+
+    // Untouched, and provisioning failed rather than succeeding over it.
+    expect(await readFile(join(occupied, "keep.txt"), "utf8")).toBe(
+      "not flume's to delete\n",
+    );
+    expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
+    expect(await flumeBranches(fx.repo)).toEqual([]);
+  }, 30_000);
+
+  it("createWorktree removes a stale worktree directory git still has registered", async () => {
+    const { ctx, base } = contextFor(silent);
+    // What a crashed run actually leaves: a registered worktree at the path
+    // this entry is about to be provisioned into, plus its untracked residue.
+    const stale = join(base, worktreeDirName("build"));
+    await mkdir(dirname(stale), { recursive: true });
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "stale/build", stale, "HEAD"],
+      { cwd: fx.repo },
+    );
+    await writeFile(join(stale, "crashed.txt"), "residue\n");
+    expect(await registeredWorktrees(fx.repo)).toContain(stale);
+
+    const wt = await createWorktree("build", await head(), ctx);
+
+    expect(wt.path).toBe(stale);
+    // Removed and re-provisioned rather than reused: the crashed run's
+    // residue is gone and the path is registered on the branch this call
+    // named, not on the one it displaced.
+    expect(existsSync(join(stale, "crashed.txt"))).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).toContain(stale);
+    expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
+  }, 30_000);
+
+  it("the startup sweep warns that it removed nothing when the worktree registry cannot be read", async () => {
+    const log = collectingLogger();
+    const { ctx, base } = contextFor(log);
+    const residue = join(base, "orphan");
+    await mkdir(dirname(residue), { recursive: true });
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "flume/orphan", residue, "HEAD"],
+      { cwd: fx.repo },
+    );
+
+    // Vacuity pin: the base holds a real registered worktree, so a readable
+    // registry would have removed exactly this one. "Removed nothing" below
+    // is therefore a refusal, not an empty base reporting itself.
+    expect(await readdir(base)).toContain("orphan");
+    expect(await registeredWorktrees(fx.repo)).toContain(residue);
+
+    // A repo root git cannot run in: the probe fails rather than returning
+    // an empty registry, and the failure must not read as "git registers
+    // nothing under this base".
+    const blindCtx: WorktreeContext = {
+      ...ctx,
+      repoRoot: join(fx.repo, "no-such-dir"),
+    };
+
+    await sweepStaleWorktrees(blindCtx);
+
+    expect(log.warnings).toContainEqual(
+      expect.stringContaining("removed no worktree directories"),
+    );
+    expect(existsSync(residue)).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(residue);
+  }, 30_000);
 });
