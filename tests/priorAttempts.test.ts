@@ -16,6 +16,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { lstat, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -123,6 +124,58 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(dirname(priorAttemptPath(flumeDir, "any-key"))).toBe(
       priorAttemptsDir(flumeDir),
     );
+  });
+});
+
+/**
+ * `existsSync` collapsed every stat failure to `false`, so a record that is
+ * on disk but unstattable read as "no prior attempt" — the one answer
+ * spec/loop.md "Repeated identical failures" counts on to *not* be invented.
+ * A false absent there resets the quarantine count on every tick and the
+ * loop retries the same failing entry forever. The probe now splits ENOENT
+ * from the rest (`existsLoud`, src/fsProbe.ts); the reader's other
+ * degradations — garbled JSON, an unknown mode, a missing anchor — still
+ * return "no prior", because those records were read.
+ */
+describe("priorAttempts — an unreachable record is not an absent one", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("PriorAttempts.read throws on a record present but unstattable, never reporting no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const key = "build";
+    const p = priorAttemptPath(flumeDir, key);
+    await mkdir(dirname(p), { recursive: true });
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink(basename(p), p);
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): a record really is at the path the store reads,
+    // and the stat that decides really does fail on it.
+    expect((await lstat(p)).isSymbolicLink()).toBe(true);
+    expect(existsSync(p)).toBe(false);
+
+    await expect(store.read(key)).rejects.toThrow(/ELOOP/);
+  });
+
+  it("PriorAttemptStore.read still reports no prior attempt for a record it read and could not decode", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const key = "build";
+    const p = priorAttemptPath(flumeDir, key);
+    await mkdir(dirname(p), { recursive: true });
+    await writeFile(p, "{not json");
+
+    expect(existsSync(p)).toBe(true);
+    await expect(store.read(key)).resolves.toBeUndefined();
   });
 });
 

@@ -23,13 +23,13 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import type { Logger } from "./Dispatcher.js";
 import { harvestFriction } from "./friction.js";
+import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import { namespacedJoin, slugify, worktreesBase } from "./paths.js";
 import type { Chain, Phase } from "./Phase.js";
@@ -175,7 +175,12 @@ export async function createWorktree(
   const path = ctx.namespace
     ? join(wtBase, ctx.namespace, dirName)
     : join(wtBase, dirName);
-  if (existsSync(toNamespacedPath(path))) {
+  // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
+  // on a path that is present but unstattable, where `existsSync` read it as
+  // free and provisioned straight over it — skipping the registry judgment
+  // below, which is the whole defence against clobbering a directory git
+  // does not own.
+  if (existsLoud(toNamespacedPath(path))) {
     // Occupied. Whether that is this job's own stale worktree from a crashed
     // run is git's registry to answer, never the path's existence: a
     // directory git disclaims is as easily a sibling namespaced job's

@@ -16,7 +16,6 @@
  * never a false signal.
  */
 
-import { existsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -25,6 +24,7 @@ import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import type { Logger } from "./Dispatcher.js";
+import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -205,7 +205,13 @@ export class PriorAttemptStore {
    */
   async read(key: string): Promise<PriorAttempt | undefined> {
     const p = priorAttemptPath(this.flumeDir, key);
-    if (!existsSync(toNamespacedPath(p))) return undefined;
+    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
+    // on a record that is present but unstattable. "No prior attempt" is the
+    // signal spec/loop.md "Repeated identical failures" counts on, so a
+    // record the probe cannot reach must refuse rather than reset that count
+    // — the degradations below are for a record that was *read* and found
+    // garbled, never for one that was never reached.
+    if (!existsLoud(toNamespacedPath(p))) return undefined;
     try {
       const rec = JSON.parse(await readFile(toNamespacedPath(p), "utf8")) as {
         mode?: unknown;

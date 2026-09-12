@@ -20,7 +20,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -293,6 +293,37 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(await readFile(join(occupied, "keep.txt"), "utf8")).toBe(
       "not flume's to delete\n",
     );
+    expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
+    expect(await flumeBranches(fx.repo)).toEqual([]);
+  }, 30_000);
+
+  // `existsSync` collapsed every stat failure to `false`, so a path that is
+  // on disk but unstattable read as free and provisioning ran straight over
+  // it — never reaching the registry judgment above, which is the only thing
+  // standing between a sibling job's live container directory and a blind
+  // `git worktree add`. The probe now splits ENOENT from the rest
+  // (`existsLoud`, src/fsProbe.ts).
+  it("createWorktree refuses when the worktree path is present but unstattable", async () => {
+    const { ctx, base } = contextFor(silent);
+    const occupied = join(base, worktreeDirName("build"));
+    await mkdir(dirname(occupied), { recursive: true });
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink(worktreeDirName("build"), occupied);
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): something really is at the path, and the stat
+    // that decides really does fail on it.
+    expect((await lstat(occupied)).isSymbolicLink()).toBe(true);
+    expect(existsSync(occupied)).toBe(false);
+
+    await expect(createWorktree("build", await head(), ctx)).rejects.toThrow(
+      /ELOOP/,
+    );
+
+    // The refusal landed at the probe: nothing was provisioned over the
+    // occupant, and the symlink is still standing for an operator to judge.
+    expect((await lstat(occupied)).isSymbolicLink()).toBe(true);
     expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
     expect(await flumeBranches(fx.repo)).toEqual([]);
   }, 30_000);
