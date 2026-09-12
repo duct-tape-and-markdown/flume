@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { lstat, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -125,6 +126,47 @@ describe("setupWorktree", () => {
     await expect(setupWorktree(dir)).rejects.toThrow(
       /no pnpm-lock\.yaml or package-lock\.json/,
     );
+    expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  // `existsSync` collapsed every stat failure to `false`, so a lockfile that
+  // is on disk but unstattable read as absent and the hook answered anyway:
+  // a pnpm repo demoted to `npm ci`, or an npm repo told it committed no
+  // lockfile at all. The probes now split ENOENT from the rest
+  // (`existsLoud`, src/fsProbe.ts), so the refusal lands before any install.
+  it("setupWorktree throws when pnpm-lock.yaml is present but unstattable", async () => {
+    const lock = join(dir, "pnpm-lock.yaml");
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink("pnpm-lock.yaml", lock);
+    // The readable npm lockfile beside it is what the demotion needed: with
+    // the pnpm probe reading `false`, the old code ran `npm ci` in a pnpm
+    // repo without ever reporting that it could not read the pnpm lock.
+    await writeFile(join(dir, "package-lock.json"), "{}\n");
+    succeeds();
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): something really is at the path, and the stat
+    // that decides really does fail on it.
+    expect((await lstat(lock)).isSymbolicLink()).toBe(true);
+    expect(existsSync(lock)).toBe(false);
+
+    await expect(setupWorktree(dir)).rejects.toThrow(/ELOOP/);
+    expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  it("setupWorktree throws when package-lock.json is present but unstattable", async () => {
+    const lock = join(dir, "package-lock.json");
+    // ELOOP — present, unstattable. The pnpm probe legitimately reads absent
+    // here, so this is the second probe deciding, and the old code's answer
+    // was the no-lockfile refusal over a repo that committed one.
+    await symlink("package-lock.json", lock);
+    succeeds();
+
+    expect((await lstat(lock)).isSymbolicLink()).toBe(true);
+    expect(existsSync(lock)).toBe(false);
+
+    await expect(setupWorktree(dir)).rejects.toThrow(/ELOOP/);
     expect(execFileMock).not.toHaveBeenCalled();
   });
 

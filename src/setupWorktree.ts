@@ -14,9 +14,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { promisify } from "node:util";
+
+import { existsLoud } from "./fsProbe.js";
+import { namespacedJoin } from "./paths.js";
 
 const execFileP = promisify(execFile);
 
@@ -52,6 +53,14 @@ async function execInstall(
  * → `npm ci`; both present → pnpm wins (flume's own convention); neither →
  * rejects instead of guessing a package manager.
  *
+ * Absent is the only silent reading of either probe: `existsLoud`
+ * (src/fsProbe.ts) throws on a lockfile that is present but unstattable,
+ * where `existsSync` read it as absent and the refusal above became a guess
+ * — a pnpm repo demoted to `npm ci`, or an npm repo told it committed no
+ * lockfile at all. Both answers are confidently wrong about a tree whose
+ * lockfile was never read (`.claude/rules/engineering.md`, "Loud or
+ * nothing").
+ *
  * Drop into a chain's fanout `setupWorktree` hook:
  * ```ts
  * async setupWorktree({ worktreePath }) {
@@ -60,8 +69,8 @@ async function execInstall(
  * ```
  */
 export async function setupWorktree(dir: string): Promise<void> {
-  const hasPnpmLock = existsSync(join(dir, "pnpm-lock.yaml"));
-  const hasNpmLock = existsSync(join(dir, "package-lock.json"));
+  const hasPnpmLock = existsLoud(namespacedJoin(dir, "pnpm-lock.yaml"));
+  const hasNpmLock = existsLoud(namespacedJoin(dir, "package-lock.json"));
 
   if (hasPnpmLock) {
     await execInstall("pnpm", ["install", "--frozen-lockfile"], { cwd: dir });
