@@ -11,6 +11,7 @@ import {
   entryWriteScope,
   entryWriteScopeUnion,
   matchesAny,
+  queueFenceViolations,
   namespacedJoin,
   STATE_ROOT_NAMES,
   tickVerdictPath,
@@ -192,6 +193,115 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
       ),
     ).toBeUndefined();
     expect(entryWriteScope(phase(), undefined)).toBeUndefined();
+  });
+});
+
+// Mechanism pin (QUEUE-FENCE-PRECHECK-ONE-DERIVATION, per
+// .claude/rules/engineering.md "The fix lands at the mechanism"):
+// `pendingGate` (src/builtinGates.ts) and `flume check` (src/cli.ts) each
+// used to spell the `writablePaths ∪ entryChannelPaths` union and the
+// `declaredPaths(e).filter(...)` scan for themselves, so a one-sided edit
+// could make the gate and the verb name different offending paths for one
+// queue. These pin the single derivation both now call; the two real
+// consumers are driven against each other in tests/cli.test.ts.
+describe("queueFenceViolations — the one consumer-phase fence pre-check", () => {
+  function consumer(
+    writablePaths: string[],
+    entryChannelPaths?: string[],
+  ): Pick<Phase, "writablePaths" | "entryChannelPaths"> {
+    return entryChannelPaths === undefined
+      ? { writablePaths }
+      : { writablePaths, entryChannelPaths };
+  }
+
+  function entry(tag: string, overrides: Partial<PendingEntry> = {}): PendingEntry {
+    return {
+      tag,
+      summary: "test entry",
+      per: { path: "spec/pending.md", section: "The pending queue" },
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: { new: [], edit: [], retire: [] },
+      acceptance: "green",
+      ...overrides,
+    };
+  }
+
+  const declaring = (tag: string, paths: string[]): PendingEntry =>
+    entry(tag, {
+      files: {
+        new: [{ path: paths[0]!, description: "new" }],
+        edit: paths.slice(1).map((path) => ({ path, description: "edit" })),
+        retire: [],
+      },
+    });
+
+  it("names only the declared paths no fence glob admits, keyed by tag, in declaration order", () => {
+    const entries = [
+      declaring("CLEAN", ["src/a.ts", "src/deep/b.ts"]),
+      declaring("OUTSIDE", ["src/a.ts", "docs/guide.md", "spec/loop.md"]),
+    ];
+
+    expect(queueFenceViolations(entries, [consumer(["src/**"])])).toEqual([
+      { tag: "OUTSIDE", offending: ["docs/guide.md", "spec/loop.md"] },
+    ]);
+  });
+
+  it("admits a path only the channel globs cover, so the fence is the union and not writablePaths alone", () => {
+    const entries = [declaring("NOTES", ["src/a.ts", "notes/NOTES.md"])];
+
+    expect(queueFenceViolations(entries, [consumer(["src/**"])])).toEqual([
+      { tag: "NOTES", offending: ["notes/NOTES.md"] },
+    ]);
+    expect(
+      queueFenceViolations(entries, [consumer(["src/**"], ["notes/*.md"])]),
+    ).toEqual([]);
+  });
+
+  it("an entry survives the union of every consumer, since any one of them could pick it", () => {
+    const entries = [declaring("SPLIT", ["src/a.ts", "docs/guide.md"])];
+    const build = consumer(["src/**"]);
+    const scribe = consumer(["docs/**"]);
+
+    // Each consumer alone rejects one of the two paths...
+    expect(queueFenceViolations(entries, [build])).toEqual([
+      { tag: "SPLIT", offending: ["docs/guide.md"] },
+    ]);
+    expect(queueFenceViolations(entries, [scribe])).toEqual([
+      { tag: "SPLIT", offending: ["src/a.ts"] },
+    ]);
+    // ...and together they admit the entry whole.
+    expect(queueFenceViolations(entries, [build, scribe])).toEqual([]);
+  });
+
+  it("reads declaredPaths and never observedFiles — retired paths count, a tick's reported touches do not", () => {
+    const retiring = entry("RETIRE", {
+      files: { new: [], edit: [], retire: ["docs/old.md"] },
+      observedFiles: ["spec/loop.md"],
+    });
+
+    expect(queueFenceViolations([retiring], [consumer(["src/**"])])).toEqual([
+      { tag: "RETIRE", offending: ["docs/old.md"] },
+    ]);
+    expect(
+      queueFenceViolations([retiring], [consumer(["src/**", "docs/**"])]),
+    ).toEqual([]);
+  });
+
+  it("an empty consumer list is an empty fence, so every declared path offends — the caller decides whether that case is reachable", () => {
+    // Not vacuous-by-design: `flume check` refuses to call this with zero
+    // consumers precisely because the answer here is "everything offends"
+    // (tests/cli.test.ts, the no-fanout-phase case), and this is the
+    // behavior that refusal exists to avoid.
+    expect(
+      queueFenceViolations([declaring("ANY", ["src/a.ts"])], []),
+    ).toEqual([{ tag: "ANY", offending: ["src/a.ts"] }]);
+    // An entry declaring nothing offends nothing, fence or no fence.
+    expect(queueFenceViolations([entry("BARE")], [])).toEqual([]);
+  });
+
+  it("an empty queue yields no violations against a real fence", () => {
+    expect(queueFenceViolations([], [consumer(["src/**"])])).toEqual([]);
   });
 });
 

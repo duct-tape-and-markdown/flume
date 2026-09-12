@@ -20,10 +20,9 @@ import type { Phase } from "./Phase.js";
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
 import * as git from "./git.js";
-import { matchesAny } from "./paths.js";
+import { matchesAny, queueFenceViolations } from "./paths.js";
 import {
   parsePending,
-  declaredPaths,
   type EntryExtension,
   type PendingEntry,
 } from "./PendingSchema.js";
@@ -370,16 +369,6 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       // no longer check two different files. `displayPath` is only for
       // messages: flumeDir-relative, matching the pre-ctx.pendingPath text.
       const displayPath = relative(ctx.flumeDir, ctx.pendingPath);
-      // Read fresh on every run — not hoisted to construction — so a
-      // declaration-driven fence (e.g. a Phase whose writablePaths/
-      // entryChannelPaths are populated after pendingGate(...) is called,
-      // such as a getter backed by a per-job declaration.json) is
-      // pre-checked against its current value, not a stale snapshot from
-      // module load.
-      const fence = [
-        ...opts.targetFence.writablePaths,
-        ...(opts.targetFence.entryChannelPaths ?? []),
-      ];
       // spec/pending.md "Dispatch reads come from the tip, not the tree":
       // the gate judges the commit it is attached to, not whatever the
       // working tree happens to hold — a disk read here would see trunk's
@@ -436,13 +425,20 @@ export function pendingGate(opts: PendingGateOptions): Gate {
             .join("\n"),
         };
       }
-      const violations = parsed.entries
-        .filter((entry) => fenceWhen(entry))
-        .map((entry) => ({
-          tag: entry.tag,
-          offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
-        }))
-        .filter((v) => v.offending.length > 0);
+      // `fenceWhen` is this gate's alone — which entries are submitted, not
+      // how they are judged. The judgment is the shared derivation
+      // (`queueFenceViolations`, `src/paths.ts`), which `flume check` reads
+      // too, so the gate and the verb can never name different offending
+      // paths for one queue. `opts.targetFence` is dereferenced here rather
+      // than at construction, so a declaration-driven fence (a Phase whose
+      // writablePaths/entryChannelPaths are populated after
+      // `pendingGate(...)` is called, e.g. a getter backed by a per-job
+      // declaration.json) is pre-checked against its current value, not a
+      // stale snapshot from module load.
+      const violations = queueFenceViolations(
+        parsed.entries.filter((entry) => fenceWhen(entry)),
+        [opts.targetFence],
+      );
       if (violations.length > 0) {
         return {
           ok: false,

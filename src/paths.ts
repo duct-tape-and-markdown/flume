@@ -97,13 +97,12 @@ function globToRegex(glob: string): RegExp {
 }
 
 /**
- * A fanout tick's entry-scoped write allowance: the assigned entry's declared
- * files ∪ the phase's channel globs, deduped. Shared home for the two
- * independent consumers that must never state a different fence —
- * `effectiveFenceLines` (`src/Prompt.ts`) renders it for the agent,
- * `writablePathsGate` (`src/builtinGates.ts`) enforces it against the commit
- * (engineering.md "Derived state is computed, never restated beside its
- * source").
+ * `writablePaths ∪ entryChannelPaths`, deduped — the one spelling of the
+ * union every fence in this engine is made of. Both derivations below take
+ * it from here: {@link entryWriteScope} for the allowance one scoped tick
+ * runs under, {@link queueFenceViolations} for the fence a whole queue is
+ * pre-checked against (engineering.md "Derived state is computed, never
+ * restated beside its source").
  */
 export function entryWriteScopeUnion(
   entryPaths: string[],
@@ -143,6 +142,56 @@ export function entryWriteScope(
     declaredPaths(assignedEntry),
     phase.entryChannelPaths ?? [],
   );
+}
+
+/** One queue entry's declared paths that the consumer fence would not admit. */
+export interface QueueFenceViolation {
+  /** The offending entry's `tag`, as the queue spells it. */
+  tag: string;
+  /** Its declared paths that match no glob in the fence, declaration order. */
+  offending: string[];
+}
+
+/**
+ * The consumer-phase fence pre-check: which queue entries declare files the
+ * phase that will build them could never write. Empty means every entry's
+ * declaration survives the fence.
+ *
+ * **The one derivation.** Both surfaces that pre-check a queue read the
+ * fence and the per-entry violation list from here — `pendingGate`
+ * (`src/builtinGates.ts`) refusing a plan commit that queues unshippable
+ * work, and `flume check` (`src/cli.ts`) answering the same question for an
+ * operator off the tick path. Each used to spell the `writablePaths ∪
+ * entryChannelPaths` union and the `declaredPaths(e).filter(...)` scan for
+ * itself, so a one-sided edit could make the gate and the verb name
+ * different offending paths for one queue (`.claude/rules/engineering.md`,
+ * "The fix lands at the mechanism").
+ *
+ * `consumers` is a list because a chain may declare more than one phase that
+ * picks from `pending`: an entry has to survive only the union, since any one
+ * of them could pick it. Callers select the consumers (`pendingGate` is told
+ * its one `targetFence`; `flume check` reads every fanout phase) and callers
+ * choose which entries to submit (`pendingGate.fenceWhen` exempts park-kinds
+ * before this point) — this derivation decides neither.
+ *
+ * Reads `declaredPaths`, never `touchedPaths`: `observedFiles` is what a
+ * tick reported touching, not what the entry declares, and the fence binds
+ * on the declaration.
+ */
+export function queueFenceViolations(
+  entries: readonly PendingEntry[],
+  consumers: readonly Pick<Phase, "writablePaths" | "entryChannelPaths">[],
+): QueueFenceViolation[] {
+  const fence = entryWriteScopeUnion(
+    consumers.flatMap((p) => p.writablePaths),
+    consumers.flatMap((p) => p.entryChannelPaths ?? []),
+  );
+  return entries
+    .map((entry) => ({
+      tag: entry.tag,
+      offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
+    }))
+    .filter((v) => v.offending.length > 0);
 }
 
 /**

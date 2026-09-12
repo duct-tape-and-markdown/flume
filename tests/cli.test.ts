@@ -21,7 +21,9 @@ import { describe, expect, it } from "vitest";
 
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
-import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
+import { computeStateRootRel, EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG, loadChainModule } from "../src/Dispatcher.ts";
+import { pendingGate } from "../src/builtinGates.ts";
+import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { resolvePendingPath } from "../src/paths.ts";
 import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
@@ -1986,6 +1988,130 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       // nothing" reads as "wrote nothing into it" — a stricter claim than
       // the bay's absence, which only ever proved `Baton` never ran.
       expect(readdirSync(join(repo.dir, ".flume"))).toEqual([]);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+});
+
+/**
+ * Agreement gate (`.claude/rules/engineering.md`, "A seam gate reads what
+ * the real writer wrote"): the claim is that the two consumer-phase fence
+ * pre-checks agree, so both real consumers run — the real `flume check`
+ * subprocess and the real `pendingGate` — over one committed queue, with the
+ * fence taken from one chain declaration loaded the way the CLI loads it.
+ * Neither side's answer is re-authored here; the test only compares what
+ * each printed.
+ */
+describe("consumer-phase fence pre-check — `flume check` against `pendingGate` (QUEUE-FENCE-PRECHECK-ONE-DERIVATION)", () => {
+  /** The `  [TAG] a, b` rows both consumers render, keyed by tag. */
+  function offendingByTag(text: string): Record<string, string[]> {
+    const rows: Record<string, string[]> = {};
+    for (const line of text.split("\n")) {
+      // Two leading spaces is the violation row; `[flume] check: ...` has
+      // none, so the verb's own headline never reads as a row.
+      const m = /^ {2}\[([^\]]+)\] (.+?)(?: \(outside targetFence[^)]*\))?$/.exec(
+        line.trimEnd(),
+      );
+      if (m) rows[m[1]!] = m[2]!.split(", ");
+    }
+    return rows;
+  }
+
+  it("flume check and pendingGate name the same offending paths for one queue against one consumer phase", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(
+        repo.dir,
+        fanoutCheckChainSrc(["src/**", "tests/**"], ["notes/*.md"]),
+      );
+      await writeCheckPending(repo.dir, [
+        {
+          tag: "CLEAN",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [
+              { path: "src/a.ts", description: "inside writablePaths" },
+              { path: "notes/CLEAN.md", description: "inside the channel" },
+            ],
+            retire: [],
+          },
+        },
+        {
+          tag: "OUTSIDE-BOTH",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [{ path: "docs/guide.md", description: "outside" }],
+            edit: [{ path: "tests/a.test.ts", description: "inside" }],
+            retire: ["spec/loop.md"],
+          },
+        },
+        {
+          tag: "DEEP-CHANNEL",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            // `notes/*.md` is segment-bound, so this one sits outside the
+            // channel glob that admits CLEAN's note.
+            edit: [{ path: "notes/sub/DEEP.md", description: "outside" }],
+            retire: [],
+          },
+        },
+      ]);
+      // pendingGate judges the queue at the commit it is attached to, so the
+      // queue both consumers read has to be on the tip, not just on disk.
+      await exec("git", ["add", "-A", "-f"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "queue"], { cwd: repo.dir });
+      const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+        cwd: repo.dir,
+      });
+      const commitSha = stdout.trim();
+
+      const cli = await runCli(repo.dir, ["check"]);
+
+      // The fence the gate is handed is the same declaration `flume check`
+      // just read: the chain's sole fanout phase, loaded through the
+      // engine's own loader rather than restated as a literal here.
+      const flumeDir = join(repo.dir, ".flume");
+      const { chain } = await loadChainModule({
+        repoRoot: repo.dir,
+        configDir: flumeDir,
+        flumeDir,
+      });
+      const consumer = chain.phases.find((p) => p.concurrency === "fanout");
+      expect(consumer).toBeDefined();
+      const gateResult = await pendingGate({ targetFence: consumer! }).run({
+        cwd: repo.dir,
+        flumeDir,
+        stateRootRel: computeStateRootRel(repo.dir, flumeDir),
+        pendingPath: resolvePendingPath(flumeDir, chain.pendingPath),
+        configDir: flumeDir,
+        repoRoot: repo.dir,
+        phaseName: "plan",
+        commitSha,
+        log: () => {},
+      } satisfies GateContext);
+
+      // Both refused, and both refused over a populated judged set — a queue
+      // neither could fault would make the comparison below vacuous
+      // (`.claude/rules/engineering.md`, "A green verdict is proven
+      // non-vacuous").
+      expect(cli.code).toBe(EX_DATAERR);
+      expect(gateResult.ok).toBe(false);
+      const fromCli = offendingByTag(cli.out);
+      const fromGate = offendingByTag(gateResult.details ?? "");
+      expect(Object.keys(fromCli).length).toBeGreaterThan(0);
+      expect(fromGate).toEqual(fromCli);
+      // And the shared answer is the real one: the clean entry is absent,
+      // every path outside the union is named, and nothing inside it is.
+      expect(fromCli).toEqual({
+        "OUTSIDE-BOTH": ["docs/guide.md", "spec/loop.md"],
+        "DEEP-CHANNEL": ["notes/sub/DEEP.md"],
+      });
     } finally {
       await repo.cleanup();
     }

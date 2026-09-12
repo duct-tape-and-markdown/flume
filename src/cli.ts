@@ -57,13 +57,12 @@ import { frictionCountLine } from "./friction.js";
 import { superviseLoop } from "./loopSupervisor.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
-import { parsePending, declaredPaths } from "./PendingSchema.js";
+import { parsePending } from "./PendingSchema.js";
 import {
   DEFAULT_PENDING_REL,
-  entryWriteScopeUnion,
   loopLockPath,
-  matchesAny,
   namespacedJoin,
+  queueFenceViolations,
   resolvePendingPath,
   stopFlagPath,
 } from "./paths.js";
@@ -558,16 +557,12 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    const fence = entryWriteScopeUnion(
-      consumerPhases.flatMap((p) => p.writablePaths),
-      consumerPhases.flatMap((p) => p.entryChannelPaths ?? []),
-    );
-    const violations = parsed.entries
-      .map((entry) => ({
-        tag: entry.tag,
-        offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
-      }))
-      .filter((v) => v.offending.length > 0);
+    // The same derivation `pendingGate` (`src/builtinGates.ts`) pre-checks a
+    // plan commit with, so this verb and that gate can never name different
+    // offending paths for one queue — the verb differs only in which
+    // consumers it reads the fence from, and in reporting to an operator
+    // rather than failing a tick.
+    const violations = queueFenceViolations(parsed.entries, consumerPhases);
     if (violations.length > 0) {
       console.error(
         `[flume] check: ${violations.length} pending entr${
