@@ -306,12 +306,14 @@ Parked because it is a governance ruling about the harness's own prose, which
 `engineering.md` says this page does not administer — plan picking between
 keeping and deleting a just-shipped test would be filling that gap silently.
 
-## Two fence sentences name internal helpers, and build's extraction just aged both (NEEDS AMENDMENT)
+## Three spec sentences name internal helpers, and each extraction ages one more (NEEDS AMENDMENT)
 
-Drained from `QUEUE-FENCE-PRECHECK-ONE-DERIVATION`'s note; verified on disk.
-That entry shipped `queueFenceViolations` (`src/paths.ts`) as the one fence
-pre-check, read by both `pendingGate` and `flume check`. Two spec sentences
-describe the shape it replaced:
+One ruling, three instances, drained from two build notes and each verified on
+disk at its draining tick. Every one is a spec sentence describing an internal
+helper that a later extraction then moved or deleted.
+
+From `QUEUE-FENCE-PRECHECK-ONE-DERIVATION`, which shipped `queueFenceViolations`
+as the one fence pre-check read by both `pendingGate` and `flume check`:
 
 - `spec/pending.md`, *The entry-scoped write guard is opt-in, and off by
   default* — "The union has one home" names `entryWriteScopeUnion`'s consumers
@@ -323,17 +325,30 @@ describe the shape it replaced:
   tree: `check` and `pendingGate` now share one named derivation, so the verb
   and the gate cannot name different offending paths for one queue.
 
-**Neither is false, and patching them is the wrong repair.**
-`entryWriteScopeUnion`, `entryWriteScope`, `queueFenceViolations` and
-`effectiveFenceLines` are all internal — none is on `src/index.ts`, and only
-`matchesAny` (via `FlumeApi`), `writablePathsGate` and `pendingGate` are public
-surface. So both sentences are already against `.claude/rules/spec-writing.md`,
-*A claim names behavior, never location*: an internal helper, and the call order
-between internal functions. Adding a third helper name deepens the violation,
-and the next extraction ages the sentence again — which is exactly what just
-happened, one commit after the first.
+From `WIN32-SHIM-SPAWN-RETRY-ONE-HOME`, which collapsed three spellings of the
+win32 shim retry into `src/spawnShim.ts` (`isWin32ShimSpawnFailure` +
+`execFileWithShimRetry`) and deleted both `execGate` and `execInstall`:
 
-**Recommend** restating both as the behavior, naming no helper:
+- `spec/prompt.md`, *No cmd.exe on the inline-exec path* — "`execGate`
+  (module-private) retries through `shell: true` on a win32 ENOENT".
+
+**The third instance escalates the ruling: that sentence is now false.**
+`execGate` exists nowhere in the tree — verified this tick, no hits across
+`src/`, `tests/`, `examples/`, `bin/`, `docs/`, `README.md`. Its *ruling* still
+holds exactly: `runInlineExec` spawns `sh` directly, shares no retry, and a
+missing `sh` is a render failure. Only the name is dead. So the corpus now
+carries a sentence that reads as current and names nothing, which is the decay
+the first two instances only predicted.
+
+All four helpers are internal — none is on `src/index.ts`; only `matchesAny`
+(via `FlumeApi`), `writablePathsGate` and `pendingGate` are public surface. So
+all three sentences are against `.claude/rules/spec-writing.md`, *A claim names
+behavior, never location*: an internal helper, and the call order between
+internal functions. **Patching a name in is the wrong repair** — it deepens the
+violation and the next extraction ages the sentence again, which has now
+happened twice in three commits.
+
+**Recommend** restating all three as the behavior, naming no helper:
 
 - pending.md — the fence the agent is shown, the fence the write guard
   enforces, and the fence a queue is pre-checked against are one computation,
@@ -341,6 +356,10 @@ happened, one commit after the first.
   public surface.
 - cli.md — `check` refuses on exactly the entries `pendingGate` would refuse,
   naming the same offending paths.
+- prompt.md — the gate-binary spawn path retries through a shell on a win32
+  ENOENT, because package-manager `.cmd` shims cannot be spawned directly and
+  the arguments are chain-authored flags. Keep the rest of the section as it
+  stands: the `runInlineExec` leg names public behavior and is still true.
 
 Two follow-ons the ruling decides, neither filed:
 
