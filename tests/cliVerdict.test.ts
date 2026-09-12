@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   EX_TERMINAL_MISCONFIG,
   EX_MOUNT_DEAD,
+  tickVerdictsLogPath,
   type TickOutcome,
   type TickVerdict,
 } from "../src/Dispatcher.ts";
@@ -28,6 +29,7 @@ import {
   loopExitCode,
   loopCompletionSummary,
 } from "../src/cliVerdict.ts";
+import { awakeDir } from "../src/paths.ts";
 import { runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -295,14 +297,21 @@ function makeVerdict(
   };
 }
 
-/** Write `tick-verdicts.jsonl` directly under `<root>/.flume` — the log `readTickVerdicts` (`src/Dispatcher.ts`) reads, oldest first, top to bottom. */
+/**
+ * Write the verdict history `readTickVerdicts` (`src/Dispatcher.ts`) reads,
+ * oldest first, top to bottom. The path comes from the engine's exported
+ * {@link tickVerdictsLogPath}, never a filename spelled here: a fixture that
+ * re-derives the name reads as a log the CLI never opens the moment the
+ * engine renames it.
+ */
 async function writeTickVerdictsLog(
   root: string,
   verdicts: TickVerdict[],
 ): Promise<void> {
-  await mkdir(join(root, ".flume"), { recursive: true });
+  const flumeDir = join(root, ".flume");
+  await mkdir(flumeDir, { recursive: true });
   await writeFile(
-    join(root, ".flume", "tick-verdicts.jsonl"),
+    tickVerdictsLogPath(flumeDir),
     verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n",
     "utf8",
   );
@@ -364,13 +373,22 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
-  it("-n 0 prints nothing and exits 0, not the full history", async () => {
+  // Absence alone is not a verdict here: `flume log -n 0` over a log the CLI
+  // never opened prints the same nothing as one it read and suppressed. The
+  // default form runs first over the same fixture, so the history is proved
+  // printable before `-n 0` is asked to print none of it.
+  it("flume log -n 0 prints nothing over a history the default form does print", async () => {
     const repo = await makeJobRepo("main");
     try {
       const verdicts = Array.from({ length: 5 }, (_, i) =>
         makeVerdict({ phaseName: `phase-${i}` }),
       );
       await writeTickVerdictsLog(repo.dir, verdicts);
+
+      const full = await runCli(repo.dir, ["log"]);
+      expect(full.code).toBe(0);
+      expect(full.out.trim().split("\n")).toHaveLength(verdicts.length);
+      for (const v of verdicts) expect(full.out).toContain(v.phaseName);
 
       const r = await runCli(repo.dir, ["log", "-n", "0"]);
       expect(r.code).toBe(0);
@@ -421,14 +439,21 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     }
   }, 30_000);
 
-  it("mutates no baton flag", async () => {
+  // Same shape: a `flume log` that read nothing also touches no flag. The
+  // rendered verdict is asserted first, so the untouched baton is the
+  // read-only claim rather than a no-op's shadow. The flag's own path comes
+  // from the engine's `awakeDir` — a hand-spelled one is absent either way.
+  it("flume log renders the verdict it read without creating an awake flag", async () => {
     const repo = await makeJobRepo("main");
     try {
       await writeTickVerdictsLog(repo.dir, [makeVerdict({ phaseName: "build" })]);
 
       const r = await runCli(repo.dir, ["log"]);
       expect(r.code).toBe(0);
-      expect(existsSync(join(repo.dir, ".flume", "awake"))).toBe(false);
+      const line = r.out.trim();
+      expect(line).toContain("build");
+      expect(line).toContain("committed=false");
+      expect(existsSync(awakeDir(join(repo.dir, ".flume")))).toBe(false);
     } finally {
       await repo.cleanup();
     }
