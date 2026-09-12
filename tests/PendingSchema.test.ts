@@ -925,8 +925,8 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
-        "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
-        "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
+        "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
+        "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
           "retire": [ "path", ... ]
@@ -938,15 +938,43 @@ describe("renderSchemaForPrompt", () => {
     `);
   });
 
-  it("the rendered pending schema carries no `workshop` phase name", () => {
-    // The gate hint is injected verbatim into every downstream chain's plan
-    // prompt, so a phase name from this repo's chain ships as if the engine
-    // owned it (engine-boundary.md § Capability vs convention). Assert the
-    // parked line is present before asserting the absence — an absence over
-    // a vanished subject is a vacuous green.
+  // The core hints are injected verbatim into every downstream chain's plan
+  // prompt, so vocabulary from *this* repo's chain — a phase name, a
+  // plan-lane artifact, a noun from our stack — ships as if the engine owned
+  // it (engine-boundary.md § Capability vs convention). Each pin below names
+  // the class, not one literal: pinning a single word lets its siblings ship
+  // green. Each asserts its subject line is present before asserting the
+  // absence — an absence over a vanished subject is a vacuous green.
+  const hintLineFor = (rendered: string, field: string): string => {
+    const line = rendered
+      .split("\n")
+      .find((candidate) => candidate.includes(`"${field}":`));
+    expect(line, `no rendered hint line for "${field}"`).toBeDefined();
+    return line as string;
+  };
+
+  it("the rendered pending schema names no phase from this repo's chain", () => {
     const rendered = renderSchemaForPrompt();
     expect(rendered).toContain(`"kind": "parked"`);
-    expect(rendered).not.toMatch(/workshop/i);
+    expect(hintLineFor(rendered, "dependsOnForks")).toBeTruthy();
+    expect(hintLineFor(rendered, "files")).toBeTruthy();
+    expect(rendered).not.toMatch(
+      /\b(plan|build|workshop|sweep|inbox|derive)\b/i,
+    );
+  });
+
+  it("the rendered `files` hint names no language-specific incidental", () => {
+    const line = hintLineFor(renderSchemaForPrompt(), "files");
+    expect(line).toContain("EVERY path");
+    expect(line).not.toMatch(
+      /\b(lockfile|barrel|node_modules|package\.json|tsconfig|pnpm|npm)\b/i,
+    );
+  });
+
+  it("the rendered `dependsOnForks` hint names no open-questions artifact", () => {
+    const line = hintLineFor(renderSchemaForPrompt(), "dependsOnForks");
+    expect(line).toContain("optional");
+    expect(line).not.toMatch(/open[- ]question|\bRESOLVED\b/);
   });
 
   it("the retire hint advertises a path only, never a non-path alternative (engineering.md § A seam gate reads what the real writer wrote)", () => {

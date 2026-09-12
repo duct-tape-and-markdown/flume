@@ -113,8 +113,8 @@ const PendingEntryCore = z.strictObject({
     /** Gate state controlling pickability. */
     gate: Gate,
     /**
-     * Foundations governor. Open-question fork slugs this entry's foundation
-     * rests on. The dispatcher skips the entry while any slug is unresolved —
+     * Foundations governor. Fork slugs this entry's foundation rests on.
+     * The dispatcher skips the entry while any slug is unresolved —
      * a cross-cutting predicate that precedes every gate kind, so an `open`
      * entry sitting on an undecided fork is not built. Empty (the default)
      * means no foundational dependency. The slug is opaque to the runtime: it
@@ -126,9 +126,9 @@ const PendingEntryCore = z.strictObject({
      *
      * Load-bearing on entry-scoped fanout phases: the write guard narrows a
      * scoped tick to exactly these paths ∪ the phase's `entryChannelPaths`, so
-     * plan must declare EVERY path the work legitimately touches — tests,
-     * incidentals (lockfile, barrel export) included. An entry that
-     * under-declares is a plan defect, not a guard defect.
+     * the entry must declare EVERY path the work legitimately touches — tests
+     * and incidentals included. An entry that under-declares is a declaration
+     * defect, not a guard defect.
      */
     files: z.object({
       new: z.array(FileChange).default([]),
@@ -509,8 +509,8 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
         | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
-  "dependsOnForks": [ "open-question-slug", ... ],      // optional; forks this rests on — not built until each is RESOLVED. Omit if none.
-  "files": {                                            // EVERY path the work legitimately touches — tests and incidentals (lockfile, barrel export) included. Enforced on fanout: the build tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry is a plan defect.
+  "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
+  "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
     "retire": [ "path", ... ]
@@ -535,7 +535,7 @@ Empty array is valid (means nothing pending).`;
  * `blockedBy` tags against shipped entries.
  *
  * `isForkResolved` is the foundations governor's injected predicate: it
- * answers "is this open-question fork resolved?" for the consuming project. It
+ * answers "is this fork slug resolved?" for the consuming project. It
  * defaults to always-resolved, so a caller that supplies none — or an entry
  * that declares no `dependsOnForks` — behaves exactly as before.
  *
