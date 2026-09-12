@@ -127,7 +127,7 @@ Throw the harness away, keep the work. Four steps:
 1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
 2. **`git rm -r .flume/jobs/<name>` + cleanup commit on the current HEAD.** The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index. No branch is checked out or touched.
 3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, `rendered-prompts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
-4. **`git worktree prune`** — clears metadata left by the job's fanout worktrees.
+4. **`git worktree prune`** — clears metadata left by the job's worktrees, a tick's own as much as a wave's.
 
 The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.10.md`](MIGRATING-0.10.md) § 5 for the recipe when a job's work needs to move onto a clean branch first.
 

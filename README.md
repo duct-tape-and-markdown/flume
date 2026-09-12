@@ -156,8 +156,9 @@ Harness-managed state — every name here is one the runtime spells itself
   the baton so it outlives the worktree that produced it.
 - `.flume/rendered-prompts/` — each invocation's fully rendered prompt,
   persisted before the agent runs.
-- `.flume/worktrees/<entry-slug>/` — per-entry worktrees during fanout. The
-  base dir is overridable via `FLUME_WORKTREES_DIR` (below).
+- `.flume/worktrees/<slug>/` — one worktree per tick: the entry's slug under
+  fanout, the phase's own under singleton. The base dir is overridable via
+  `FLUME_WORKTREES_DIR` (below).
 - `.flume/merging/<entry-slug>.json` — one marker per entry whose span the
   merge stage is mid-way through putting on trunk, written before the
   cherry-pick and removed once the queue rewrite lands. A survivor is a merge
@@ -278,7 +279,9 @@ supervisor liveness.
 ## Trunk contract: HEAD is truth
 
 Commits land on the checked-out branch of the working tree the loop runs in.
-Singleton ticks commit to HEAD; fanout waves cherry-pick back onto HEAD. The
+Every tick's agent commits on a private `flume/**` branch in its own worktree,
+and the span cherry-picks back onto HEAD — a singleton phase's exactly as a
+fanout wave's (`spec/worktrees.md`, "Singleton runs in a worktree"). The
 runtime never switches branches — there is no trunk configuration to point it
 elsewhere. Checkout is a human act (or a job verb's, below): whatever branch
 is checked out when the loop starts is the branch the run ships to.

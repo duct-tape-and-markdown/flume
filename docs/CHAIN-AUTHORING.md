@@ -571,13 +571,17 @@ the engine already owns goes stale the moment the builtin's does.
 
 ### Don't gate the in-worktree build on host-level integration tests
 
-`vitestGate` runs `pnpm test` (= `vitest run`) **inside the fanout worktree** —
-a freshly `pnpm install`'d tree, under full-suite parallel load. That is the
-wrong place for tests that spawn real subprocesses (`flume tick`/`loop` via
-`tsx`, real `git`) or otherwise need a warm host: their cold start-up costs
-multiply under N-wide contention and can blow the suite's timeout, reverting a
-commit that was never broken. The failure is an execution-environment artifact,
-not a defect in the code under test.
+`vitestGate` runs `pnpm test` (= `vitest run`) **inside the tick's own
+worktree** — a freshly `pnpm install`'d tree. An `afterCommit` gate's `cwd` is
+that ephemeral worktree under both concurrencies (`spec/chain.md`, "What a
+gate receives"), so a singleton phase's gate lands in a cold tree exactly as a
+fanout entry's does; a wave adds full-suite parallel load on top. Either way
+it is the wrong place for tests that spawn real subprocesses (`flume
+tick`/`loop` via `tsx`, real `git`) or otherwise need a warm host: their cold
+start-up costs are paid on every tick, multiply under N-wide contention, and
+can blow the suite's timeout, reverting a commit that was never broken. The
+failure is an execution-environment artifact, not a defect in the code under
+test.
 
 Split the suite into two lanes instead of raising the timeout (a bigger timeout
 masks nothing and leaves the worktree-hostility in place):
@@ -844,7 +848,9 @@ sweep (a TTL, a startup cleanup pass).
 
 ### Where worktrees live: `FLUME_WORKTREES_DIR`
 
-Fanout worktrees are created under `<flumeDir>/worktrees/<entry-slug>/`;
+Every tick's worktree is created under `<flumeDir>/worktrees/<slug>/` — the
+entry's slug under fanout, the phase's own under singleton
+(`spec/worktrees.md`, "Singleton runs in a worktree");
 the `FLUME_WORKTREES_DIR` env var overrides that base
 (`FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`, resolved against the
 cwd when relative).
@@ -907,7 +913,9 @@ Innermost = raw provider; outermost = last transform.
 - `withTerminalRenderer(agent, { tag? })` — parses NDJSON stream events
   and emits a one-line-per-tool-call summary. The wrapped agent must emit
   NDJSON (`outputFormat: "stream-json"`). Default `tag` prefixes each line
-  with the basename of the invocation's cwd — what fanout worktrees want.
+  with the basename of the invocation's cwd — every tick's worktree directory
+  name: the entry slug under fanout, so a wave's interleaved lines stay
+  attributable, and the phase name under singleton.
 
 The canonical composition (disk capture + terminal rendering):
 
@@ -1395,13 +1403,16 @@ other prompt-args decision (§1).
 ## 9. Supervisor policy (`supervisorPolicy`)
 
 `flume loop`'s supervisor runs a pre-tick worktree-provisioning safety net
-around every fanout wave (§3, "Fanout"): a tagged entry whose worktree fails
-to provision is quarantined for the rest of the run so the supervisor stops
-re-attempting a wall it already hit, and a consecutive-identical-failure
-backstop aborts the run outright when the same signature repeats with no
-successful tick in between — the non-entry-scoped class quarantine can't
-isolate (e.g. a repo-level `git worktree prune` failure). Both knobs ship as
-engine defaults; `Chain.supervisorPolicy` lets a chain choose otherwise:
+around every tick, singleton and fanout alike — both provision. The two legs
+reach different failures: a **tagged** entry whose worktree fails to provision
+is quarantined for the rest of the run so the supervisor stops re-attempting a
+wall it already hit (entry-keyed, so fanout's in practice), and a
+consecutive-identical-failure backstop aborts the run outright when the same
+signature repeats with no successful tick in between — the non-entry-scoped
+class quarantine can't isolate, which is a repo-level `git worktree prune`
+failure *and* every singleton provisioning failure, since a singleton tick has
+no entry to blame. Both knobs ship as engine defaults;
+`Chain.supervisorPolicy` lets a chain choose otherwise:
 
 ```ts
 const chain: Chain = {
