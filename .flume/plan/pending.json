@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "SINGLETON-WORKTREE-PREMISE-IN-REMAINING-DOCS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "§2's in-worktree-build section, §3's FLUME_WORKTREES_DIR section, §9's supervisor-net sentence"
+        },
+        {
+          "path": "README.md",
+          "description": "the state-root listing's worktrees line (§226 already reads correctly)"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "`flume job rm` step 4's prune rationale"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Rescope four surviving fanout-only worktree claims in docs/ and README to both concurrencies, per the 0.12 premise",
+    "per": { "path": "spec/worktrees.md", "section": "Singleton runs in a worktree" },
+    "tests": [],
+    "pins": [],
+    "acceptance": "No current-reference page scopes worktree provisioning, in-worktree gating, or worktree cleanup to fanout; each states both concurrencies or says why it is fanout's alone.",
+    "notes": "Residue of 1eaf8a9, which fixed CHAIN-AUTHORING §2's `Respect ctx.cwd` bullet and §3 only. Verified this tick: CHAIN-AUTHORING:574 `inside the fanout worktree` (contradicts spec/chain.md, *What a gate receives*), :847 `Fanout worktrees are created under`, :1398 `around every fanout wave` (the abort backstop takes untagged singleton ProvisionFailures; the quarantine leg is entry-keyed and genuinely fanout's), README:159, CLI.md:130. MIGRATING-*.md are dated records — leave them."
+  }
+]

@@ -619,7 +619,7 @@ Options:
   build's fence.
 - **Accept the drift.** `docs/` is author-held reference prose, which is
   `bd75f27`'s own posture. Costs the next stale claim, and the class has now
-  recurred twice in four days.
+  recurred three times in five days.
 
 **Bound with *A test scans shipped doc-comment prose* above.** That question
 asks whether a test may pin prose at all, and asserts `tests/docComments.test.ts`
@@ -627,6 +627,28 @@ is the sole instance of the shape. `tests/cliHelp.test.ts:157` is the
 distinction that answers both: an expectation derived from a real run is an
 agreement gate; a hand-authored one is the door `bd75f27` closed. Ruling that
 line once disposes of both sections.
+
+**Third instance, and it sharpens the fork.** Drained from
+`SETUPWORKTREE-SCOPED-TO-BOTH-CONCURRENCIES`'s note and verified this tick:
+five more `docs/` sites still scope worktree machinery to fanout — an
+`afterCommit` gate's cwd, the worktree base dir, `flume job rm`'s prune, the
+supervisor's provisioning net, the state-root listing. The residue is
+drainable and is filed as `SINGLETON-WORKTREE-PREMISE-IN-REMAINING-DOCS`; the
+arming gap is what stays open.
+
+What is new is *how* this one drifted. The first two stranded a `docs/` claim
+by a `src/` behavior change with no spec motion at all. This one has spec
+motion — but of the wrong sign: `spec/worktrees.md` **gained** *Singleton runs
+in a worktree*. Nothing was deleted, so the retired-claim lens, which reads
+the spec diff's deleted lines, sees nothing. That adds a fourth option,
+cheaper than re-reading `docs/` every rotation:
+
+- **Read the spec diff's added lines too.** An added spec sentence strands a
+  `docs/` claim the same way a deleted one does — it contradicts the claim
+  instead of abandoning it. Same machinery as the retired-claim lens, same
+  decidable arming, same "no hits closes the delta in one tick" bound. It
+  does **not** reach the exit-code sentences, where `spec/` never moved in
+  either direction, so it narrows this fork rather than closing it.
 
 Parked rather than filed because widening the sweep, pinning, and accepting are
 three answers about how much harness prose the mechanism should hold — a
