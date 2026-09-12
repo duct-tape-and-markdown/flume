@@ -13,7 +13,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
+import { existsLoud } from "./fsProbe.js";
 import { pinLongPaths } from "./git.js";
 import {
   awakeDir,
@@ -36,24 +37,6 @@ const exec = promisify(execFile);
 
 /** Usage-shaped failure (bad name, missing template): the CLI maps it to exit 2. */
 export class JobUsageError extends Error {}
-
-/**
- * `true` iff `path` exists, `false` only when it is absent (`ENOENT`). Any
- * other stat failure (permission denied, a path too long for the platform, …)
- * throws: `existsSync` collapses every stat error to `false`, so a path that
- * is present but unreachable reads as absent and the caller proceeds over an
- * unresolved input (`.claude/rules/engineering.md`, "Loud or nothing"). Same
- * ENOENT-vs-other split `readPendingLoose` and `countFrictionFiles` below
- * give a read, held once so each existence gate in this module spells it the
- * same way (`.claude/rules/engineering.md`, "The fix lands at the
- * mechanism").
- *
- * Callers pass a `namespacedJoin`ed path (`src/paths.ts`) — win32 MAX_PATH is
- * the caller's join, not this probe's.
- */
-function existsLoud(path: string): boolean {
-  return statSync(path, { throwIfNoEntry: false }) !== undefined;
-}
 
 /**
  * Runtime-owned entries ensured in every job dir's `.gitignore`. The runtime

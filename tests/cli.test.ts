@@ -732,6 +732,30 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
     }
   }, 30_000);
 
+  it("flume status exits non-zero when loop.pid exists but cannot be stat'd", async () => {
+    const dir = await mkFixtureRoot("flume-status-unstattable-pid-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      // A self-referential symlink reproduces a non-ENOENT stat failure
+      // (ELOOP) without relying on permission bits a root-run test could
+      // bypass — the same approach the friction/pending read cases take with
+      // EISDIR. `existsSync` collapses it to "absent", which printed no
+      // supervisor line at all over a `loop.pid` that is there
+      // (`.claude/rules/engineering.md`, "Loud or nothing").
+      await symlink("loop.pid", join(flumeDir, "loop.pid"));
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("loop.pid");
+      expect(r.out).toContain("failed to stat");
+      expect(r.out).not.toContain("supervisor pid");
+      expect(r.out).not.toContain("stale");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("is unchanged from today when no pidfile exists", async () => {
     const dir = await mkFixtureRoot("flume-status-nopid-");
     try {
@@ -2444,8 +2468,8 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
   // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("builds the status-check loop-lock path (existsSync) through namespacedJoin", () => {
-    expect(src).toMatch(/existsSync\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
+  it("builds the status-check loop-lock path (existsLoud) through namespacedJoin", () => {
+    expect(src).toMatch(/existsLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
   });
 
   it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {

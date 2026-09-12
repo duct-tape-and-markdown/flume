@@ -54,6 +54,7 @@ import {
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
 import { frictionCountLine } from "./friction.js";
+import { existsLoud } from "./fsProbe.js";
 import { superviseLoop } from "./loopSupervisor.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
@@ -64,6 +65,7 @@ import {
   namespacedJoin,
   queueFenceViolations,
   resolvePendingPath,
+  STATE_ROOT_NAMES,
   stopFlagPath,
 } from "./paths.js";
 import {
@@ -314,8 +316,24 @@ async function main(): Promise<number> {
     // incident's "hibernating" reading left the operator to infer
     // relaunch-safety instead of being told it. No pidfile: silent, leaving
     // the output as it read before this line existed.
+    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) refuses
+    // a `loop.pid` that is present but unstattable (a symlink loop, a
+    // permission-denied parent) rather than reading it as absent and printing
+    // no supervisor line over a possibly-live loop
+    // (`.claude/rules/engineering.md`, "Loud or nothing").
     let supervisorLive = false;
-    if (existsSync(namespacedJoin(loopLockPath(flumeDir)))) {
+    let loopLockPresent: boolean;
+    try {
+      loopLockPresent = existsLoud(namespacedJoin(loopLockPath(flumeDir)));
+    } catch (err) {
+      // The stat error carries the offending path itself; the name here comes
+      // from the accessor's own table, never a second spelling of "loop.pid".
+      console.error(
+        `[flume] status: ${STATE_ROOT_NAMES.loopLock} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
+    if (loopLockPresent) {
       const pid = await liveLoopPid(flumeDir);
       supervisorLive = pid !== null;
       console.log(
