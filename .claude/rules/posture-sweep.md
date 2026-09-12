@@ -10,9 +10,6 @@ Binds on plan's **Sweep** dimension.
 
 The sweep domain is `src/`, `tests/`, `bin/`, `examples/`. The posture pages
 are `.claude/rules/engineering.md` and `.claude/rules/engine-boundary.md`.
-For `spec/` the page is `.claude/rules/spec-writing.md`, and the lens is
-restatement: a sentence naming layout, an internal helper, or a value a
-sibling artifact owns.
 
 Every section of those pages, as written at this tick, is in scope. Nothing
 is swept from a remembered list. A ratified phrase change applies from the

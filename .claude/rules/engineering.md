@@ -31,6 +31,13 @@ Every check lives at the most deterministic layer that can express it — a
   ("for the current line", "until the migration") goes stale the moment the
   window does, and nothing re-reads it. State the condition that would
   change the decision, so a sweep can evaluate it.
+- **The ladder governs the engine's behavior, and stops there.** Prose about
+  the harness itself — a rule page, PROTOCOL, a prompt, `spec/` — is held by
+  its authors and is never promoted into the suite. A check on how the
+  harness's own prose is written is harness governance, which this page does
+  not administer; a suite that reads prose against prose is that governance
+  wearing engine discipline, and every section here becomes a generator
+  against it.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is

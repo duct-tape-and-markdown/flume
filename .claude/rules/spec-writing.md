@@ -79,7 +79,7 @@ names that in the commit body; phases never touch it
 ## What holds this page above prose
 
 - `per cites resolve` — headings resolve, at every plan commit.
-- The spec-lint pin — no `src/` path or line number outside a declared
-  allowlist; every backticked symbol resolves to a declaration in `src/`.
-- The posture sweep reads `spec/` against this page for restatement
-  (`posture-sweep.md`).
+- Everything else here is held by its authors. `spec/` is edited by a human,
+  or by an interactive session under direction, and the editor reads this
+  page. That is harness governance, not engine work: no suite pins it and no
+  sweep reads it (`engineering.md`, *Narration is the ladder's bottom rung*).
