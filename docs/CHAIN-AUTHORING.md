@@ -1402,17 +1402,20 @@ other prompt-args decision (§1).
 
 ## 9. Supervisor policy (`supervisorPolicy`)
 
-`flume loop`'s supervisor runs a pre-tick worktree-provisioning safety net
-around every tick, singleton and fanout alike — both provision. The two legs
-reach different failures: a **tagged** entry whose worktree fails to provision
-is quarantined for the rest of the run so the supervisor stops re-attempting a
-wall it already hit (entry-keyed, so fanout's in practice), and a
-consecutive-identical-failure backstop aborts the run outright when the same
-signature repeats with no successful tick in between — the non-entry-scoped
-class quarantine can't isolate, which is a repo-level `git worktree prune`
-failure *and* every singleton provisioning failure, since a singleton tick has
-no entry to blame. Both knobs ship as engine defaults;
-`Chain.supervisorPolicy` lets a chain choose otherwise:
+`flume loop`'s supervisor runs a deterministic-failure safety net around every
+tick, singleton and fanout alike. It accounts for every per-entry failure fact
+the tick verdict records, keyed by **stage-tagged signature** — `provision` (a
+pre-tick worktree sweep, create, or `setupWorktree` throw), `merge` (a
+cherry-pick conflict or a dirty trunk refusing the pick), and `gate` (a gate
+revert). The two legs reach different failures: an entry a failure can be
+**blamed** on is quarantined for the rest of the run, whichever stage it failed
+at, so the supervisor stops re-attempting a wall it already hit (entry-keyed,
+so fanout's in practice), and a consecutive-identical-failure backstop aborts
+the run outright when the same stage-tagged signature repeats with no clearing
+tick in between — the non-entry-scoped class quarantine can't isolate, which is
+a repo-level failure like `git worktree prune` *and* every singleton failure,
+since a singleton tick has no entry to blame. Both knobs ship as engine
+defaults; `Chain.supervisorPolicy` lets a chain choose otherwise:
 
 ```ts
 const chain: Chain = {
@@ -1425,15 +1428,17 @@ const chain: Chain = {
 };
 ```
 
-- **`quarantineScope`** — `"run"` (default): a tagged provisioning failure
-  quarantines that entry's slug for the rest of the run — later ticks skip
-  it without touching `pending.json`, so a fresh run retries it from
-  scratch. `"none"` disables quarantine outright: every entry stays
-  pickable every tick regardless of an earlier provisioning failure. The
+- **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
+  three stages quarantines that entry for the rest of the run, under the key
+  the failing tick reported — its slug plus a hash of its bytes in
+  `pending.json`, so a re-scope on trunk is a new key and lifts the hold.
+  Later ticks skip it without touching `pending.json`, so a fresh run
+  retries it from scratch. `"none"` disables quarantine outright: every
+  entry stays pickable every tick regardless of an earlier failure. The
   consecutive-failure backstop below still applies either way — `"none"`
   only removes the per-entry isolation, not the run-level safety net.
 - **`abortThreshold`** — the number of consecutive ticks the same
-  provisioning-failure signature must repeat, with no successful tick
+  stage-tagged failure signature must repeat, with no clearing tick
   between them, before the supervisor aborts the run rather than burning
   the remaining `--max` ticks against the same wall. Default 3.
 
