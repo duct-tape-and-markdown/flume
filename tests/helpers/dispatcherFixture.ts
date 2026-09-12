@@ -98,24 +98,36 @@ export async function makeFixture(): Promise<Fixture> {
   };
 }
 
+/** The state-root-relative chain fields {@link writeMinimalChain} can declare. */
+export interface MinimalChainDeclarations {
+  /** `Chain.friction`, verbatim — omitted from the chain when absent. */
+  friction?: string;
+  /** `Chain.pendingPath`, verbatim — omitted from the chain when absent. */
+  pendingPath?: string;
+}
+
 /**
  * Minimal, otherwise-valid chain.ts: one singleton "build" phase, no gates,
- * empty handoff. `frictionExpr`, if given, is a raw TS expression spliced in
- * as the `friction` field's value (e.g. `JSON.stringify("friction")`);
- * omitted entirely when absent.
+ * empty handoff. Each declaration in `declared` is spliced in as that
+ * field's value (JSON-encoded here, so callers pass the path itself); a
+ * field absent from `declared` is absent from the chain.
  */
 export async function writeMinimalChain(
   cfg: string,
-  frictionExpr?: string,
+  declared: MinimalChainDeclarations = {},
 ): Promise<void> {
   await mkdir(cfg, { recursive: true });
   await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+  const fields = (["friction", "pendingPath"] as const)
+    .filter((f) => declared[f] !== undefined)
+    .map((f) => `, ${f}: ${JSON.stringify(declared[f])}`)
+    .join("");
   await writeFile(
     join(cfg, "chain.ts"),
     `export default () => ({ chain: { phases: [{ name: "build", ` +
       `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
       `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-      `humanOnly: []${frictionExpr ? `, friction: ${frictionExpr}` : ""} } });\n`,
+      `humanOnly: []${fields} } });\n`,
     "utf8",
   );
 }

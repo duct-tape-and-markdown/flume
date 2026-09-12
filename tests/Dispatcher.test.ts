@@ -11542,7 +11542,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));
     try {
       const abs = resolve(tmpdir(), "flume-friction-abs-target");
-      await writeMinimalChain(cfg, JSON.stringify(abs));
+      await writeMinimalChain(cfg, { friction: abs });
 
       await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /friction .* as an absolute path/,
@@ -11671,7 +11671,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("rejects a friction declaration that resolves outside the state root", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-escape-"));
     try {
-      await writeMinimalChain(cfg, JSON.stringify("../escaped-friction"));
+      await writeMinimalChain(cfg, { friction: "../escaped-friction" });
 
       await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
         /friction .* resolves outside the state root/,
@@ -11684,7 +11684,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   it("accepts a valid state-root-relative friction declaration", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-valid-"));
     try {
-      await writeMinimalChain(cfg, JSON.stringify("friction"));
+      await writeMinimalChain(cfg, { friction: "friction" });
 
       const mod = await loadChainModule(chainPaths(cfg));
 
@@ -11703,6 +11703,47 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
 
       expect(mod.chain.friction).toBeUndefined();
       expect(mod.chain.phases).toHaveLength(1);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * `Chain.pendingPath` is the second consumer of `assertStateRootRelative`
+ * (`src/paths.ts`), and the refusal it buys is the queue's containment: a
+ * declaration that escapes puts the file every engine read resolves —
+ * fanout selection, the wave-end rewrite, `flume status`, `pendingGate` —
+ * outside the state root the tick owns. Both legs are pinned here, mirroring
+ * the `Chain.friction` block above, so dropping either side of the shared
+ * check goes red rather than silently widening where the queue may live
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md 'The pending queue')", () => {
+  it("the chain load refuses a pendingPath declared as an absolute path", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-pendingpath-abs-"));
+    try {
+      const abs = resolve(tmpdir(), "flume-pendingpath-abs-target", "pending.json");
+      await writeMinimalChain(cfg, { pendingPath: abs });
+
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
+        /pendingPath .* as an absolute path/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("the chain load refuses a pendingPath that resolves outside the state root", async () => {
+    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-pendingpath-escape-"));
+    try {
+      await writeMinimalChain(cfg, {
+        pendingPath: "../escaped/pending.json",
+      });
+
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
+        /pendingPath .* resolves outside the state root/,
+      );
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }

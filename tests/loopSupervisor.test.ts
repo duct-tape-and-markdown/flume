@@ -1230,7 +1230,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
 
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
+    await writeMinimalChain(fx.configDir, { friction: "friction" });
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -1261,7 +1261,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("omits the friction line at hibernation when the declared dir exists but holds no files", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
+    await writeMinimalChain(fx.configDir, { friction: "friction" });
     await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
 
     let calls = 0;
@@ -1288,7 +1288,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("logs 'friction: unreadable' at hibernation instead of silently omitting the line, when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
+    await writeMinimalChain(fx.configDir, { friction: "friction" });
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -1352,7 +1352,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("logs the friction count line at the --max-reached stop when declared and non-empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan"); // never sleeps → never hibernates
-    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
+    await writeMinimalChain(fx.configDir, { friction: "friction" });
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
@@ -1379,7 +1379,7 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
   it("omits the friction line at the --max-reached stop when the declared dir is empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
-    await writeMinimalChain(fx.configDir, JSON.stringify("friction"));
+    await writeMinimalChain(fx.configDir, { friction: "friction" });
     await mkdir(join(fx.repo, ".flume", "friction"), { recursive: true });
 
     const runTick = (): Promise<{ exitCode: number | null }> =>
