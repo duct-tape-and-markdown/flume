@@ -1,7 +1,7 @@
 /**
- * setupWorktree — lockfile-aware fanout worktree provisioning.
+ * setupWorktree — lockfile-aware worktree provisioning.
  *
- * A fresh fanout worktree holds only tracked files; something has to
+ * A fresh worktree holds only tracked files; something has to
  * materialize `node_modules` before gates run, and the install command
  * depends on which lockfile the target repo commits. This is the shared,
  * lockfile-aware default: inspect the target directory, run the install
@@ -31,7 +31,8 @@ import { execFileWithShimRetry } from "./spawnShim.js";
  * lockfile was never read (`.claude/rules/engineering.md`, "Loud or
  * nothing").
  *
- * Drop into a chain's fanout `setupWorktree` hook:
+ * Drop into a chain's `setupWorktree` hook, on a phase of either
+ * concurrency:
  * ```ts
  * async setupWorktree({ worktreePath }) {
  *   await setupWorktree(worktreePath);

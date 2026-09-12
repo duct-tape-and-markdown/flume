@@ -181,8 +181,8 @@ omitted; the rest are required.
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
 | `shouldRun`     | Optional predicate consulted before the agent is invoked. Returning `false` declines the tick — see below.                       |
 | `shipped`       | Optional predicate deciding whether a fanout entry whose commit landed and passed every gate leaves the queue. Reads the facts on `ShipContext`; returning `false` keeps the commit on trunk and the entry in `pending.json`. Undeclared means shipped. |
-| `setupWorktree` | Optional fanout hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. See §3. |
-| `teardownWorktree` | Optional fanout hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. See §3. |
+| `setupWorktree` | Optional hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. Fires under either concurrency. See §3. |
+| `teardownWorktree` | Optional hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. Fires under either concurrency. See §3. |
 
 The `slicePhase` declaration from `examples/cascade-chain.ts` — that chain's
 plan is a ladder of singleton slices sharing one prompt, and this is the one
@@ -515,8 +515,9 @@ The shape to internalize:
   are routed into the next tick's prompt as context. Write `details` for
   the agent to read on retry — concrete file paths and line numbers beat
   narration.
-- **Respect `ctx.cwd`.** For fanout phases, gates run inside the per-entry
-  worktree, not the main repo. `ctx.commitSha` is set if you need to
+- **Respect `ctx.cwd`.** `afterCommit` gates run inside the tick's worktree
+  — per-entry under fanout, the phase's own under singleton — not the
+  operator's checkout. `ctx.commitSha` is set if you need to
   inspect the commit (`git show`, `git diff`).
 - **Read the roots off `ctx`; never re-compose one.** `ctx.pendingPath` is
   the resolved queue, `ctx.flumeDir` the state root, `ctx.configDir` the
@@ -654,8 +655,11 @@ Pick `"singleton"` when the phase derives a shared artifact that can't
 admit concurrent edits — plan derives the whole `pending.json` from disk.
 Two parallel ticks would step on each other.
 
-Singleton phases run in the main repo (not a worktree) and commit directly
-to the trunk. Their `afterCommit` gates run on the trunk.
+A singleton tick runs in its own worktree too — branch
+`flume/[<ns>/]<phase>`, a wave of one — and its span is cherry-picked back
+onto the trunk. `afterCommit` gates run in that worktree; `afterMerge`
+gates run on the trunk after the cherry-pick. The operator's checkout is
+never the tick's working tree.
 
 `backlog-groomer-chain.ts`'s single `groom` phase is singleton for the same
 reason plan is: it derives `BACKLOG.json` from disk each tick. It just
@@ -695,7 +699,12 @@ pending. On the success side, ship bookkeeping auto-opens `blockedBy`
 gates whose blocker shipped in the same wave, so a chained entry becomes
 pickable without waiting for an interim plan tick.
 
-### `setupWorktree` for fanout
+### `setupWorktree`: provisioning a fresh worktree
+
+Both concurrencies provision, so both invoke the hook: a fanout wave calls
+it once per entry, a singleton tick once for the one worktree it runs in
+(`ctx.entryTag` is the entry's tag under fanout, the phase name under
+singleton).
 
 A fresh worktree holds only tracked files; provision the gitignored deps
 the gates need first. **Default:** the `setupWorktree` helper — sibling to
@@ -729,7 +738,7 @@ Copy plain files (`.env`) directly, alongside the helper call.
 **Never symlink `node_modules` in** — pnpm deletes a symlinked
 `node_modules` on install
 ([pnpm/pnpm#9973](https://github.com/pnpm/pnpm/issues/9973)), silently
-breaking the worktree the first time a fanout entry installs.
+breaking the worktree the first time a tick installs.
 
 **Experimental opt-in:** `enableGlobalVirtualStore` in `pnpm-workspace.yaml`
 ([pnpm git-worktrees](https://pnpm.io/git-worktrees)) shares one virtual
@@ -738,13 +747,17 @@ default. Either way, add a strategy-agnostic `afterCommit` `shellGate`
 that fails loud if a sentinel dependency stops resolving from the worktree
 root (`node -e "require.resolve('vitest')"`).
 
-Singleton phases run in the main repo, so the hook is never invoked for
-them.
+A singleton tick pays this cost too — it provisions a worktree like any
+other tick, so budget the install there as well (seconds, via pnpm's
+hardlinked store). A phase too light to justify an install says so in its
+own hook, by returning early.
 
-**Concurrency recipe: repo-owned unit, thin caller, serialized queue.** The
-dispatcher runs a wave's `setupWorktree` calls concurrently — one
-`Promise.all` across every entry in the batch — so N entries provision in
-parallel rather than serially. That's safe for disjoint per-worktree state,
+**Concurrency recipe: repo-owned unit, thin caller, serialized queue.**
+This one is fanout's alone — a singleton tick makes a single setup call,
+with nothing to race against. The dispatcher runs a wave's `setupWorktree`
+calls concurrently — one `Promise.all` across every entry in the batch — so
+N entries provision in parallel rather than serially. That's safe for
+disjoint per-worktree state,
 but an install racing against a **shared cold cache** (the package
 manager's global store, not yet warmed) is not disjoint: two
 `pnpm install --frozen-lockfile` calls hitting an empty store at the same
@@ -804,8 +817,9 @@ Scope notes:
 - **Agent only.** `extraEnv` reaches the agent invocation; gates spawn from
   the dispatcher's own env. A gate that needs the handle should read it from
   disk state the setup hook wrote, not expect the var.
-- **Fanout only.** Singleton phases never invoke `setupWorktree`, so they
-  never carry `extraEnv`.
+- **Either concurrency.** A singleton tick invokes the hook for its own
+  worktree and layers whatever it returns onto that tick's agent
+  invocation, exactly as a fanout entry's does.
 - **Void returns are fine.** An implementation that only provisions deps and
   returns nothing is unaffected.
 
