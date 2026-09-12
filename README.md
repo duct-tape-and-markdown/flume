@@ -286,15 +286,30 @@ runtime never switches branches — there is no trunk configuration to point it
 elsewhere. Checkout is a human act (or a job verb's, below): whatever branch
 is checked out when the loop starts is the branch the run ships to.
 
-Before committing a tick's output, the dispatcher re-reads that tip and
-compares it against the sha recorded at tick start. Unchanged, it commits.
-Moved — a human committed mid-tick, a pull landed, or a claim-less bare
-`tick` collided with another writer — it makes **no commit**: the agent's
-output stays on disk, the entry stays pending, and the tick reports a
-tip-moved outcome instead of a shipped commit. This is the backstop behind
-the claim above: the claim is a signal that can be bypassed (a bare `tick`
-takes none), the verify is what actually refuses to commit onto a tip that
-moved out from under it.
+An operator committing mid-tick is ordinary history, not interference. Before
+each cherry-pick the dispatcher asks one question — does another process hold
+a live claim on this tip? — never whether the tip still matches a sha it
+recorded earlier. No live foreign claim means whatever moved the ref was not
+an engine, so the span picks onto whatever tip is current and the foreign
+commit sits under it, exactly as if it had landed between ticks; git's own
+conflict detection arbitrates content (a conflicting pick aborts, and that
+entry stays pending for a retry against the tip that now carries the foreign
+commit), and the chain's `afterMerge` gates own the merged tree. The
+pending-ledger commit absorbs the same way, which is what keeps a tick from
+ending with the queue behind the tree it describes.
+
+Refusal is reserved for what absorption cannot make safe. A live claim held
+by another process is a second engine interleaving merges onto one ref: the
+wave makes **no commit** for every entry it has not already merged, those
+entries stay pending, and the tick reports a tip-moved fact. On the agent's
+side the check is ancestry rather than equality — a `flume/**` branch has
+exactly one legitimate writer, so an agent that commits twice has produced a
+completed tick, and only a recorded base that is no longer an ancestor of the
+observed HEAD (something rewrote it out from under the agent) refuses, naming
+both shas. That split is what the claim above buys beyond a bypassable
+signal: an engine instance always holds one and an operator never does, so it
+is how the dispatcher tells legal history from a second writer without
+inferring anything from the commits themselves.
 
 ## Jobs
 
