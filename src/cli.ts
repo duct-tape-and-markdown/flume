@@ -13,7 +13,6 @@
 
 import { resolve, join, dirname } from "node:path";
 import {
-  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -284,9 +283,25 @@ async function main(): Promise<number> {
   // bare `--job`/`FLUME_JOB` use of `status`/`tick`/`loop`/`wake`/`sleep` —
   // the flag alone can't carry that distinction, since `job run` reaches
   // this same resolution by construction (above).
-  if (job !== undefined && jobRunName === undefined && !existsSync(flumeDir)) {
-    console.error(`[flume] no job '${job}': ${flumeDir} does not exist`);
-    return 2;
+  // Absent is the only silent reading, as with the `status` probes below:
+  // `existsLoud` (src/fsProbe.ts) refuses a state root that is present but
+  // unstattable (a symlink loop, a permission-denied parent) rather than
+  // reporting `does not exist` over a job the operator can see on disk
+  // (`.claude/rules/engineering.md`, "Loud or nothing").
+  if (job !== undefined && jobRunName === undefined) {
+    let stateRootPresent: boolean;
+    try {
+      stateRootPresent = existsLoud(namespacedJoin(flumeDir));
+    } catch (err) {
+      console.error(
+        `[flume] job '${job}': state root ${flumeDir} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
+    if (!stateRootPresent) {
+      console.error(`[flume] no job '${job}': ${flumeDir} does not exist`);
+      return 2;
+    }
   }
 
   // `job run` preflight: wake the entry phase iff hibernating. Placed after

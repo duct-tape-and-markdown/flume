@@ -8,10 +8,17 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -23,11 +30,13 @@ import {
   resolveStateDirs,
 } from "../src/cliJobResolution.ts";
 import { Baton } from "../src/Baton.ts";
+import { EX_IOERR } from "../src/cli.ts";
 import {
   gitOut,
   hermeticEnv,
   mkFixtureRoot,
   runCli,
+  runCliStreams,
 } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -410,6 +419,35 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  // `existsSync` collapsed every stat failure to `false`, so a `.flume` that
+  // is on disk but unstattable read as "no bay here" and the walk carried on
+  // past the operator's own bay — retargeting `repoRoot`, both state dirs,
+  // and every `job` verb at an unrelated ancestor, with no line saying so.
+  // The probe now splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts).
+  it("resolveRepoRoot throws when an ancestor .flume is present but unstattable", async () => {
+    const outer = await mkFixtureRoot("flume-walkup-eloop-");
+    try {
+      const bay = join(outer, "bay");
+      const nested = join(bay, "src", "deep");
+      await mkdir(nested, { recursive: true });
+      const unstattable = join(bay, ".flume");
+      // Vacuity guard: the symlink below is the only thing at this path, so
+      // the walk really does meet it first.
+      expect(existsSync(unstattable)).toBe(false);
+      // ELOOP — present, unstattable. Not a permission bit: a root-run test
+      // would bypass that.
+      await symlink(basename(unstattable), unstattable);
+      expect(lstatSync(unstattable).isSymbolicLink()).toBe(true);
+      // And the ancestor the old walk silently landed on is really there, so
+      // the refusal replaces a wrong answer rather than a crash.
+      expect(existsSync(join(outer, ".flume"))).toBe(true);
+
+      expect(() => resolveRepoRoot(nested)).toThrow(/ELOOP/);
+    } finally {
+      await rm(outer, { recursive: true, force: true });
+    }
+  });
 });
 
 /**
@@ -671,6 +709,45 @@ describe("§3 job resolution — real CLI", () => {
         const created = await runCli(repo.dir, ["job", "new", "ghost"]);
         expect(created.code).toBe(0);
         expect(existsSync(jobDir)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  // `existsSync` collapsed every stat failure to `false`, so a job state root
+  // that is on disk but unstattable reported `does not exist` — sending the
+  // operator to `job new` over a directory that is already there, and hiding
+  // the mount/permission/symlink fault that is the real cause. The probe now
+  // splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts); the CLI maps
+  // the throw to EX_IOERR at the process boundary, as the `status` probes do.
+  it(
+    "the --job state-root guard throws when the resolved flumeDir is present but unstattable",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        const jobDir = join(repo.dir, ".flume", "jobs", "loopy");
+        await mkdir(dirname(jobDir), { recursive: true });
+        // Vacuity guard: the symlink below is the only thing at this path.
+        expect(existsSync(jobDir)).toBe(false);
+        // ELOOP — present, unstattable. Not a permission bit: a root-run test
+        // would bypass that.
+        await symlink(basename(jobDir), jobDir);
+        expect(lstatSync(jobDir).isSymbolicLink()).toBe(true);
+
+        const status = await runCliStreams(repo.dir, [
+          "--job",
+          "loopy",
+          "status",
+        ]);
+        expect(status.code).toBe(EX_IOERR);
+        expect(status.stderr).toContain("loopy");
+        expect(status.stderr).toMatch(/ELOOP/);
+        // Not the absence verdict: the state root is on disk.
+        expect(status.stderr).not.toContain("does not exist");
+        // And the refusal landed before `status` ran over the bad root.
+        expect(status.stdout).not.toContain("hibernating");
       } finally {
         await repo.cleanup();
       }

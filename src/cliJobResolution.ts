@@ -6,7 +6,9 @@
  */
 
 import { resolve, join, dirname, basename } from "node:path";
-import { existsSync } from "node:fs";
+
+import { existsLoud } from "./fsProbe.js";
+import { namespacedJoin } from "./paths.js";
 
 /**
  * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two resolution
@@ -44,12 +46,20 @@ export class CrossRepoFlumeDirError extends Error {}
  * ancestor has a `.flume`, fall back to `cwd` unchanged so a first `flume job
  * new` in a fresh, undocked repo still creates `.flume` there rather than
  * reaching for an unrelated ancestor.
+ *
+ * Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws on
+ * a `.flume` that is present but unstattable (a symlink loop, a
+ * permission-denied parent) rather than reading it as absent and walking
+ * *past* the operator's own bay to an unrelated ancestor's — or to the
+ * no-dock fallback — which would retarget every state-dir resolution and
+ * every `job` verb that follows (`.claude/rules/engineering.md`, "Loud or
+ * nothing").
  */
 export function resolveRepoRoot(cwd: string): string {
   if (basename(cwd) === ".flume") return dirname(cwd);
   let dir = cwd;
   for (;;) {
-    if (existsSync(join(dir, ".flume"))) return dir;
+    if (existsLoud(namespacedJoin(dir, ".flume"))) return dir;
     const parent = dirname(dir);
     if (parent === dir) return cwd;
     dir = parent;
