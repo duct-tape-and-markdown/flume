@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve, toNamespacedPath } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,52 +12,16 @@ import {
   entryWriteScopeUnion,
   matchesAny,
   queueFenceViolations,
-  namespacedJoin,
   STATE_ROOT_NAMES,
   tickVerdictPath,
   tickVerdictsLogPath,
   worktreesBase,
 } from "../src/paths.ts";
 
-// Mechanism pin (WIN32-NAMESPACEDPATH-JOIN-UNSHARED, per
-// .claude/rules/engineering.md "The fix lands at the mechanism"):
-// writeRevertNote, harvestFriction, frictionCountLine, and
-// countFrictionFiles each used to inline `toNamespacedPath(join(...))`
-// separately. This pins the shared helper against exactly that idiom so a
-// future one-sided edit to one call site's join list can't silently diverge
-// from the others' wrapping. `toNamespacedPath` is a no-op on POSIX and
-// prepends the `\\?\` extended-length prefix on win32 — the assertions hold
-// under whichever the suite runs on.
-describe("namespacedJoin — win32 MAX_PATH idiom, shared", () => {
-  it("matches toNamespacedPath(join(...)) for a multi-segment build", () => {
-    const segments = ["state", "friction", "notes"];
-    expect(namespacedJoin(...segments)).toBe(
-      toNamespacedPath(join(...segments)),
-    );
-  });
-
-  it("matches toNamespacedPath(join(...)) for a single already-joined path", () => {
-    const path = join("state", "friction");
-    expect(namespacedJoin(path)).toBe(toNamespacedPath(join(path)));
-  });
-
-  it("matches toNamespacedPath(join(...)) for a filename appended to a dir", () => {
-    const dir = join("flume", "friction");
-    const name = "2026-08-01T00-00-00-000Z--tag--reverted.md";
-    expect(namespacedJoin(dir, name)).toBe(
-      toNamespacedPath(join(dir, name)),
-    );
-  });
-
-  it("matches toNamespacedPath(join(...)) for a deep join past MAX_PATH-length segments", () => {
-    const segments = Array.from({ length: 6 }, (_, i) =>
-      `seg-${i}-`.padEnd(50, "x"),
-    );
-    expect(namespacedJoin(...segments)).toBe(
-      toNamespacedPath(join(...segments)),
-    );
-  });
-});
+// The win32 MAX_PATH idiom (`toNamespacedPath(join(...))`) is pinned by
+// source scan in tests/Baton.test.ts, not here: `namespacedJoin` *is* that
+// expression, so any test comparing the two asserts the body against itself
+// and cannot go red. See .claude/rules/platform-facts.md, "Windows MAX_PATH".
 
 // Mechanism pin (ENTRYWRITESCOPE-SHARED-UNION, per
 // .claude/rules/engineering.md "Derived state is computed, never restated
