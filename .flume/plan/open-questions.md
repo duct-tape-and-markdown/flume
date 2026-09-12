@@ -361,3 +361,60 @@ Two follow-ons the ruling decides, neither filed:
   satisfied by that test, so nothing is owed; if the human would rather it were
   module-private, that files as an ordinary entry — `src/` and `tests/` are both
   inside build's fence.
+
+## The prior-attempt map keys a singleton by the phase-name *slug*, and three sentences say "phase name" (NEEDS AMENDMENT)
+
+Drained from `SWEEP-PRIORATTEMPTS-SNAPSHOTDIR-UNSLUGGED`'s note; verified on
+disk. That entry made `priorAttemptStem` (`src/priorAttempts.ts`) the one
+`slugify` every prior-attempt artifact hangs off, so the on-disk stem of a
+singleton's record is `slugify(phase.name)` and `readAll` keys
+`TickContext.priorAttempts` by that stem.
+
+Three sentences gloss the key as the phase name itself:
+
+- `spec/chain.md`, *What a hook receives* — "keyed as the files are (tag slug
+  for fanout entries, phase name for singletons)".
+- `spec/loop.md`, *Prior-outcome feedback to the retrying tick* — "phase
+  (singleton, keyed by phase name)".
+- `src/Phase.ts`'s `TickContext.priorAttempts` doc comment — "the phase name
+  for a singleton one", which compiles into the shipped `.d.ts` a chain author
+  hovers.
+
+**The cost.** A chain whose phase name is not already slug-shaped —
+`plan_sweep`, `Plan Derive` — writing `ctx.priorAttempts.get(phase.name)` reads
+"no prior" and the retry loses its predecessor with no signal at all
+(`.claude/rules/engineering.md`, *Loud or nothing*). Not live in this repo:
+`plan-inbox`, `plan-derive`, `build` are slug-shaped already, so the map key
+and the phase name coincide and nothing has caught it.
+
+**Re-keying is off the table.** `slugify` is not invertible, so `readAll`
+cannot recover a raw name it never stored; and the slug is what keeps a
+traversing key inside `priorAttemptsDir`, which `clear` and `snapshotReverted`
+both `rm -rf`. The stem must stay slugged.
+
+Options:
+
+- **Amend the wording** (recommended). Say "phase-name slug" in all three,
+  matching the "tag slug" leg the same sentences already state for fanout.
+  `api.slugify` is exported (`spec/pending.md`, *What the package exports*), so
+  the chain-side rule needs no new surface — only an accurate sentence.
+- **Refuse a non-slug phase name at chain load**, so the engine never silently
+  keys a phase by a name the chain did not write. Against it: the engine
+  already slugs entry tags the same way — `PendingSchema` admits `._()` and
+  shout-case, all of which `slugify` rewrites — so refusing phase names alone
+  makes one leg loud and leaves the other quiet, and it is a new constraint on
+  a value the chain owns.
+
+Two code halves ride whichever ruling lands; both are inside build's fence and
+file as ordinary entries once the wording is ruled:
+
+- `src/Phase.ts`'s doc comment takes the same wording as the spec.
+- `priorAttemptRef`'s phase leg returns `phase.name` raw
+  (`src/priorAttempts.ts:173`) while `PriorAttemptRef`'s own doc calls `key`
+  "the filename stem". Behaviorally a no-op today — `read`, `write` and `clear`
+  all re-slug through `priorAttemptStem`, and `clearStale` filters on the
+  record's `key` keyspace, not the stem's text — so it is pure shape, not a
+  defect. It becomes one the first time a `ref.key` is reported outward or
+  compared against a `readAll` key. Slugging that leg is the one-line fix; it
+  is not exported (`src/index.ts` carries `priorAttemptPath` and
+  `priorAttemptsDir`, not `priorAttemptRef`), so no consumer sees the change.
