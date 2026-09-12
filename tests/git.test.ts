@@ -632,7 +632,17 @@ describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
     });
   }
 
-  it("issues no git command when no sequencer state is present", async () => {
+  /** The relPath of every `rev-parse --git-path <relPath>` in `calls`. */
+  function gitPathProbes(calls: unknown[][]): string[] {
+    return calls.flatMap((c) => {
+      const args = c[1] as string[] | undefined;
+      return args?.[0] === "rev-parse" && args[1] === "--git-path" && args[2]
+        ? [args[2]]
+        : [];
+    });
+  }
+
+  it("cherryPickAbort probes for sequencer state and issues no --abort when none is present", async () => {
     // A totally untouched checkout — no cherry-pick of any kind was ever
     // attempted, so neither CHERRY_PICK_HEAD nor sequencer/ exists.
     expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
@@ -640,7 +650,21 @@ describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
 
     const since = execArgsLog.length;
     await expect(cherryPickAbort(repo)).resolves.toBeUndefined();
-    expect(abortCalls(execArgsLogSince(since))).toHaveLength(0);
+    const calls = execArgsLogSince(since);
+
+    // Vacuity pin before the verdict: "zero `--abort` calls" is a claim
+    // about a log that caught this call's git commands, and the
+    // `promisify.custom` interception it rides on is fragile (top of file).
+    // The guard reads the sequencer state through exactly two `rev-parse
+    // --git-path` probes, so a live log carries both; an interception that
+    // silently stopped recording leaves an empty slice over which the
+    // assertion below is green for the wrong reason. The probes are also
+    // why the verdict is "no `--abort`", not "no git command".
+    expect(gitPathProbes(calls).sort()).toEqual([
+      "CHERRY_PICK_HEAD",
+      "sequencer",
+    ]);
+    expect(abortCalls(calls)).toHaveLength(0);
   });
 
   it("issues --abort when CHERRY_PICK_HEAD/sequencer state is present", async () => {

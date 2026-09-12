@@ -441,7 +441,8 @@ async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
  * sequence that started"). Called with nothing to abort at all — no
  * `cherryPickRange` call preceded it this process, or git never got far
  * enough to write `CHERRY_PICK_HEAD`/`sequencer/` state in the first place
- * — this issues no git command: a blind `--abort` there would reset the
+ * — this issues no `--abort` (only the two `rev-parse --git-path` probes
+ * the state read costs): a blind `--abort` there would reset the
  * operator's index and working tree for no reason. Once a range pick has
  * been attempted, git's own sequencer bookkeeping for that range is on disk
  * even when the very first commit's pre-flight check refuses (e.g. an
