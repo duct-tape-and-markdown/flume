@@ -259,3 +259,55 @@ exposes. The prose clause above stays the right default.
 
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
+
+## A test scans shipped doc-comment prose, on a rung the hygiene-suite ruling closed (PARKED)
+
+Drained from `CORE-DOC-COMMENTS-CHAIN-VOCABULARY`'s note; verified on disk.
+`tests/docComments.test.ts` (shipped `3c2cc24`) reads `src/Dispatcher.ts` and
+`src/Phase.ts` as text and asserts two option doc comments match no
+chain-vocabulary pattern. `bd75f27` — the day before, under explicit operator
+direction — deleted the hygiene suite on exactly that ground: prose read
+against code is harness governance, held by its authors, never promoted into
+the suite (`.claude/rules/engineering.md`, *Narration is the ladder's bottom
+rung*, last bullet). The scan is the same shape re-entering through a
+different door, and plan derived it without noticing.
+
+**The distinction that would save it.** The deleted suite read *harness* prose
+— README, `docs/CHAIN-AUTHORING.md`, `spec/` — files the package never ships.
+This scan reads prose that compiles into a shipped `.d.ts` and is the hover
+text a consumer gets for a chain-facing option, which `engine-boundary.md`
+(*Capability vs convention*) governs as engine surface. The bullet's own
+exclusion list names "a rule page, PROTOCOL, a prompt, `spec/`" — a `.d.ts` is
+on none of them.
+
+**Against it.** The ladder's first paragraph lists "a doc comment" as prose,
+the bottom rung; and "the ladder governs the engine's behavior, and stops
+there". A doc comment narrates behavior, it is not behavior. On that read the
+scan is the wrong rung and no rung is left — the note's own phrasing.
+
+Two facts bound whichever way it goes. The scan is the sole instance: every
+other file `tests/` reads is an agreement gate driving a real producer through
+a real consumer (`tests/examples.test.ts:1045`), which *A seam gate reads what
+the real writer wrote* sanctions outright. And "shipped hover text" is
+narrower than `dist/`: `package.json`'s `exports` map is `./dist/index.d.ts`
+alone, so the surface is what `src/index.ts` re-exports, not every `.d.ts`
+under it.
+
+Options:
+
+- **Ratify the carve-out** (recommended). One clause on that bullet: prose
+  reachable from the package's public `.d.ts` is engine surface and may be
+  pinned; prose about the harness still may not. Keeps the scan and bounds the
+  door — the deleted suite read files no `.d.ts` carries, so it does not
+  re-open. One `chore(rules):`, human-only.
+- **Retire the scan.** Delete `tests/docComments.test.ts`; the property returns
+  to prose held by the same authors who hold the rest. The two doc comments
+  stay fixed, and nothing catches the third. Files as an ordinary entry the
+  moment it is ruled — `tests/` is inside build's fence.
+- **Leave it unruled.** `tests/`'s suite files are still in the open
+  rotation's frontier (state.md), so a later sweep tick reads this file against
+  the ladder and raises the identical fork with no new information.
+
+Parked because it is a governance ruling about the harness's own prose, which
+`engineering.md` says this page does not administer — plan picking between
+keeping and deleting a just-shipped test would be filling that gap silently.
