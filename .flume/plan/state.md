@@ -23,7 +23,9 @@ remaining helper imports — `src/cliHelp.ts`, `src/cliJobResolution.ts`,
 `.flume/vitestJudge.ts`; `tests/PendingSchema.test.ts` with
 `src/PendingSchema.ts` and `src/standardSchema.ts`; `tests/examples.test.ts`
 with `examples/`'s three chain modules and `tests/helpers/dispatcherFixture.ts`;
-`tests/partition.test.ts` with `src/partition.ts` and `src/PendingSchema.ts`.
+`tests/partition.test.ts` with `src/partition.ts` and `src/PendingSchema.ts`;
+`tests/builtinGates.test.ts` with `src/builtinGates.ts` and `src/Gate.ts`.
 Frontier remaining: `tests/`'s suite files, less `bin.test.ts`,
 `subprocessHelper.test.ts`, `loopSupervisor.test.ts`, `chain.test.ts`,
-`PendingSchema.test.ts`, `examples.test.ts` and `partition.test.ts`.
+`PendingSchema.test.ts`, `examples.test.ts`, `partition.test.ts` and
+`builtinGates.test.ts`.

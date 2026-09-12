@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "PENDINGGATE-SEAM-REAL-GATECONTEXT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "the real-afterCommit-shape describe drives a dispatcher-built GateContext, not a hand-built one"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Drive the real pendingGate through a GateContext the dispatcher built; today the producer's side of that seam is the tester's hand",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [],
+    "pins": [
+      "pendingGate reads the gated commit's queue from a GateContext a real Dispatcher tick built, not a hand-authored one"
+    ],
+    "acceptance": "A real pendingGate instance runs as a chain-declared afterCommit gate inside a Dispatcher tick and reports the gated commit's queue; the claim no longer rests on a hand-built ctx.",
+    "notes": "tests/builtinGates.test.ts:475 names this section in its own describe title, then hand-builds every GateContext field at :533. No test anywhere runs pendingGate on a dispatcher-produced context (grep: absent from Dispatcher.test.ts, chain.test.ts). Writer side is pinned alone at Dispatcher.test.ts:11192 with a spy gate."
+  }
+]
