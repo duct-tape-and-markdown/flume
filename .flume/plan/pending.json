@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "SWEEP-PRIORATTEMPTS-SNAPSHOTDIR-UNSLUGGED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "snapshotDir derives from the same slug rule priorAttemptPath uses"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "the two derivations' agreement case, plus the traversal legs"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "snapshotDir keys its dir unslugified while priorAttemptPath slugifies — a non-slug key strands the snapshot, a traversing one escapes priorAttemptsDir",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [
+      "PriorAttemptStore.snapshotDir keys its directory by the same slug priorAttemptPath keys the record JSON by",
+      "PriorAttemptStore.snapshotDir keeps a traversing key inside priorAttemptsDir"
+    ],
+    "pins": [
+      "priorAttemptPath keeps a traversing key inside priorAttemptsDir"
+    ],
+    "acceptance": "snapshotDir and priorAttemptPath resolve from one slug derivation; both named tests are red on the pre-fix tree.",
+    "notes": "Verified: priorAttemptPath('/fd','plan_sweep') -> prior-attempts/plan-sweep.json vs snapshotDir('plan_sweep') -> prior-attempts/plan_sweep.reverted; '../../escape' -> -escape.json vs /escape.reverted, which clear() and snapshotReverted() both rm -rf unwrapped. snapshotDir's doc calls it a sibling under prior-attempts/. Only the singleton keyspace is live: priorAttemptRef's phase leg passes phase.name raw, its entry leg slugifies already."
+  }
+]
