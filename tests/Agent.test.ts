@@ -654,37 +654,58 @@ describe("parseNdjsonLine / contentBlocksOfType — shared NDJSON parse", () => 
     ]);
   });
 
-  it("feeds both withTerminalRenderer's tool_use rendering and a Dispatcher-shaped text extractor off the same parsed event — a one-sided change to either consumer's block-type filter doesn't touch the shared parse", async () => {
-    const line = JSON.stringify({
+  it("concatenates an assistant turn's text blocks and drops tool_use/thinking", () => {
+    const event = {
       type: "assistant",
       message: {
         content: [
-          { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
-          { type: "text", text: "final prose" },
+          { type: "thinking", thinking: "deliberating" },
+          { type: "tool_use", name: "Bash", input: { command: "ls" } },
+          { type: "text", text: "  hello  " },
+          { type: "text", text: "world" },
         ],
       },
-    });
-
-    const fake: Agent = {
-      name: "fake",
-      async invoke(inv) {
-        inv.onStdout?.(line + "\n");
-        return { exitCode: 0, stdout: "", stderr: "" };
-      },
     };
+    expect(assistantTurnText(event)).toBe("hello\n\nworld");
+  });
+
+  it("withTerminalRenderer's tool_use render and extractFinalMessage's closing prose agree on one assistant transcript", async () => {
+    // Agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what
+    // the real writer wrote*): one transcript, both real readers, no stand-in.
+    // The renderer consumes it line by line off the stream; `claudeCode` hands
+    // the very same bytes to `extractFinalMessage` and reports that verdict as
+    // `finalMessage`. Each reader keeps exactly what the other drops, so a
+    // one-sided change to either block-type filter turns one half red.
+    const transcript =
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
+            { type: "text", text: "final prose" },
+          ],
+        },
+      }) + "\n";
+
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
     const rendered: string[] = [];
-    await withTerminalRenderer(fake).invoke({
+    const pending = withTerminalRenderer(
+      claudeCode({ outputFormat: "stream-json" }),
+    ).invoke({
       cwd: "/work/foo",
-      prompt: "",
+      prompt: "p",
       onStdout: (chunk) => rendered.push(chunk),
     });
+    proc.stdout.emit("data", transcript);
+    proc.emit("close", 0);
+    const result = await pending;
+
     const out = rendered.join("");
     expect(out).toContain("Bash(ls -la)");
     expect(out).not.toContain("final prose");
-
-    const parsed = parseNdjsonLine(line);
-    if (parsed.kind !== "event") throw new Error("expected an event line");
-    expect(assistantTurnText(parsed.event)).toBe("final prose");
+    expect(result.finalMessage).toBe("final prose");
+    expect(result.finalMessage).not.toContain("Bash");
   });
 });
 
@@ -707,35 +728,43 @@ describe("isAssistantEvent / isResultEvent / isErrorResult — shared event-type
     );
   });
 
-  it("drives withTerminalRenderer's ERROR head and a Dispatcher-shaped result reader off the same isResultEvent/isErrorResult verdict — a one-sided change to either literal comparison would desync them", async () => {
-    const errorLine = JSON.stringify({
-      type: "result",
-      subtype: "error_max_turns",
-      num_turns: 1,
-      usage: {},
-    });
+  it("withTerminalRenderer's ERROR head and extractFinalMessage's result text agree on one error result transcript", async () => {
+    // The renderer reaches `formatResult`'s ERROR head only by classifying
+    // this line as a result event, and `extractFinalMessage` lifts its
+    // `result` text only by classifying it the same way — one transcript,
+    // both real readers (`.claude/rules/engineering.md`, *A seam gate reads
+    // what the real writer wrote*). Should either side's `"result"` literal
+    // move alone, that side stops recognizing the event: the render loses its
+    // head line, or the extraction falls back to the raw transcript.
+    const transcript =
+      JSON.stringify({
+        type: "result",
+        subtype: "error_max_turns",
+        is_error: true,
+        result: "stopped at the turn limit",
+        num_turns: 1,
+        usage: {},
+      }) + "\n";
 
-    const fake: Agent = {
-      name: "fake",
-      async invoke(inv) {
-        inv.onStdout?.(errorLine + "\n");
-        return { exitCode: 0, stdout: errorLine + "\n", stderr: "" };
-      },
-    };
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
     const rendered: string[] = [];
-    await withTerminalRenderer(fake).invoke({
+    const pending = withTerminalRenderer(
+      claudeCode({ outputFormat: "stream-json" }),
+    ).invoke({
       cwd: "/work/foo",
-      prompt: "",
+      prompt: "p",
       onStdout: (chunk) => rendered.push(chunk),
     });
-    expect(rendered.join("")).toContain("ERROR");
+    proc.stdout.emit("data", transcript);
+    proc.emit("close", 0);
+    const result = await pending;
 
-    // Stand-in for extractFinalMessage's result-event branch: same shared
-    // isResultEvent/isErrorResult, independent of the renderer.
-    const parsed = parseNdjsonLine(errorLine);
-    if (parsed.kind !== "event") throw new Error("expected an event line");
-    expect(isResultEvent(parsed.event)).toBe(true);
-    expect(isErrorResult(parsed.event)).toBe(true);
+    expect(rendered.join("")).toContain("ERROR");
+    expect(result.finalMessage).toBe("stopped at the turn limit");
+    // Not the raw NDJSON line: the fallback a reader that missed the event
+    // would have produced.
+    expect(result.finalMessage).not.toContain("error_max_turns");
   });
 });
 
