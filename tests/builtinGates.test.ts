@@ -22,7 +22,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -38,7 +38,15 @@ import {
   vitestGate,
   writablePathsGate,
 } from "../src/builtinGates.ts";
-import { computeStateRootRel } from "../src/Dispatcher.ts";
+import { computeStateRootRel, Dispatcher } from "../src/Dispatcher.ts";
+import type { Agent } from "../src/Agent.ts";
+import { Baton } from "../src/Baton.ts";
+import type { Chain, Phase } from "../src/Phase.ts";
+import {
+  makeFixture,
+  silent,
+  type Fixture,
+} from "./helpers/dispatcherFixture.ts";
 import type { GateContext } from "../src/Gate.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer",
 // CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call shellGate/tscGate/
@@ -473,78 +481,124 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
 });
 
 describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, engineering.md 'A seam gate reads what the real writer wrote')", () => {
-  // Every other pendingGate test in this file builds its GateContext with
-  // flumeDir *nested under* repoRoot (`ctx()`'s default) — the afterMerge/
-  // no-worktree shape. That is not the shape `runAfterCommitGates` actually
-  // builds: there, flumeDir is the *primary* checkout's state root and
-  // repoRoot is a fanout worktree living *inside* it
-  // (`<flumeDir>/worktrees/<slug>`), the reverse nesting. Pre-fix,
+  // Every other pendingGate test in this file builds its GateContext by
+  // hand, with flumeDir *nested under* repoRoot (`ctx()`'s default) — the
+  // afterMerge/no-worktree shape. That is not the shape
+  // `runAfterCommitGates` actually builds: there, flumeDir is the *primary*
+  // checkout's state root and repoRoot is a fanout worktree living *inside*
+  // it (`<flumeDir>/worktrees/<slug>`), the reverse nesting. Pre-fix,
   // pendingGate derived its own relative offset from `ctx.repoRoot` and
   // `ctx.flumeDir` — correct only under the inverted fixture shape, and
   // misreading a real worktree's offset as a relocated state root, silently
   // falling back to the primary checkout's on-disk (pre-cherry-pick) copy.
-  // This reproduces the real shape with an actual `git worktree add` so the
-  // gate reads the *gated commit's* content through `stateRootRel`, not a
-  // hand-authored fixture that never exercises the bug.
-  let repo: string;
-  let flumeDir: string;
-  let worktreePath: string;
+  //
+  // Both sides of that seam run for real here: a `Dispatcher` tick builds
+  // the GateContext (the producer) and a chain-declared `pendingGate`
+  // instance decodes it (the consumer). A hand-authored ctx re-authors the
+  // producer's vocabulary by the tester's hand, so a one-sided change to
+  // what the dispatcher passes would ship green.
+  let fx: Fixture;
 
   beforeEach(async () => {
-    repo = await createBootstrappedRepo("flume-pendinggate-realshape-");
-    flumeDir = join(repo, ".flume");
-    await commitFiles(repo, {
-      ".flume/plan/pending.json": JSON.stringify([validEntry]),
-    });
-    worktreePath = join(flumeDir, "worktrees", "srr");
-    await exec(
-      "git",
-      ["worktree", "add", "-b", "srr-work", worktreePath, "HEAD"],
-      { cwd: repo },
-    );
+    fx = await makeFixture();
   });
 
   afterEach(async () => {
-    await exec("git", ["worktree", "remove", "--force", worktreePath], {
-      cwd: repo,
-    }).catch(() => {});
-    await rm(repo, { recursive: true, force: true });
+    await fx.cleanup();
   });
 
-  it("reads the gated commit's tracked pending.json via stateRootRel, not the stale primary-checkout disk copy", async () => {
-    const offFenceEntry = {
-      ...validEntry,
-      files: {
-        new: [],
-        edit: [{ path: "spec/loop.md", description: "off-fence" }],
-        retire: [],
+  it("pendingGate reads the gated commit's queue from a GateContext a real Dispatcher tick built, not a hand-authored one", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const pendingRel = ".flume/plan/pending.json";
+    await commitFiles(
+      fx.repo,
+      {
+        [pendingRel]:
+          JSON.stringify([{ ...validEntry, tag: "SRR-SEAM" }], null, 2) + "\n",
+      },
+      "test: pending.json",
+    );
+    new Baton(flumeDir).wake("build");
+
+    const phase: Phase = {
+      name: "build",
+      description: "test phase",
+      promptPath: "prompt.md",
+      concurrency: "fanout",
+      writablePaths: ["**"],
+      // The chain declares the real gate — no test double stands in for
+      // either side of the seam.
+      gates: [pendingGate({ targetFence: { writablePaths: ["src/**"] } })],
+      handoff: () => [],
+    };
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent: Agent = {
+      name: "fake-fanout",
+      async invoke(inv) {
+        // Committed inside the entry's worktree only: the primary
+        // checkout's own disk copy of pending.json (under `flumeDir`, the
+        // path a stale read resolves) still holds the on-fence entry
+        // asserted below, so an off-fence verdict can only have come from
+        // the gated commit.
+        const pj = join(inv.cwd, pendingRel);
+        await mkdir(dirname(pj), { recursive: true });
+        await writeFile(
+          pj,
+          JSON.stringify(
+            [
+              {
+                ...validEntry,
+                tag: "SRR-SEAM",
+                files: {
+                  new: [],
+                  edit: [{ path: "spec/loop.md", description: "off-fence" }],
+                  retire: [],
+                },
+              },
+            ],
+            null,
+            2,
+          ) + "\n",
+        );
+        await exec("git", ["add", "--", pendingRel], { cwd: inv.cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(SRR-SEAM): off-fence queue"],
+          { cwd: inv.cwd },
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
       },
     };
-    // Committed on the worktree branch — the primary checkout's own disk
-    // copy of `.flume/plan/pending.json` (under `flumeDir`) is untouched by
-    // this and still holds the clean `validEntry` written above.
-    const violatingSha = await commitFiles(
-      worktreePath,
-      { ".flume/plan/pending.json": JSON.stringify([offFenceEntry]) },
-      "worktree: off-fence",
-    );
 
-    const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
-    const result = await gate.run({
-      cwd: worktreePath,
-      repoRoot: worktreePath,
-      flumeDir,
-      stateRootRel: computeStateRootRel(repo, flumeDir),
-      pendingPath: join(flumeDir, "plan", "pending.json"),
-      configDir: flumeDir,
-      phaseName: "build",
-      commitSha: violatingSha,
-      log: () => {},
+    const beforeTick = JSON.parse(
+      await readFile(join(flumeDir, "plan", "pending.json"), "utf8"),
+    ) as (typeof validEntry)[];
+    expect(beforeTick[0]?.files.edit[0]?.path).toBe("src/foo.ts");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: () => Promise.resolve({ chain }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/outside the target fence/);
-  });
+    const outcome = await dispatcher.tick();
+
+    const pendingResults = (outcome.verdict?.gateResults ?? []).filter(
+      (g) => g.gate === "pending-gate",
+    );
+    // Vacuity pin (engineering.md "A green verdict is proven non-vacuous"):
+    // the dispatcher really ran the declared gate — without this, every
+    // assertion below passes over an empty filter.
+    expect(pendingResults).toHaveLength(1);
+    expect(pendingResults[0]?.ok).toBe(false);
+    expect(pendingResults[0]?.message).toMatch(/outside the target fence/);
+    expect(pendingResults[0]?.details ?? "").toContain("spec/loop.md");
+    // The gate's verdict is the tick's: the entry never shipped.
+    expect(outcome.result?.shippedTags).toEqual([]);
+  }, 20_000);
 });
 
 describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE)", () => {
