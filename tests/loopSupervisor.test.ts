@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -101,6 +101,90 @@ describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", ()
     expect(res.ticks).toBe(1);
     expect(res.erroredTicks).toHaveLength(1);
     expect(res.erroredTicks[0]).toContain("tip-moved");
+  });
+});
+
+/**
+ * spec/loop.md "Graceful stop — the stop flag": the per-iteration check reads
+ * the flag's *presence*, and `existsSync` read every stat failure as absence
+ * — so a flag that is on disk but unstattable let the run tick on past the
+ * operator's stop. The check now throws on anything but ENOENT
+ * (`existsLoud`, src/fsProbe.ts), the disposition `baton.hibernating()`'s
+ * `readdirSync` one line below already takes.
+ */
+describe("superviseLoop — an unstattable stop flag is loud (engineering.md \"Loud or nothing\")", () => {
+  it("the supervisor's per-iteration stop check throws on a non-ENOENT stop-flag stat instead of ticking on", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await mkdir(flumeDir, { recursive: true });
+    // Never slept: hibernation can never be what ends this run, so ticking
+    // on would burn every one of the --max iterations below.
+    new Baton(flumeDir).wake("plan");
+    // ELOOP — present, unstattable. Not a permission bit: a root-run test
+    // would bypass that.
+    await symlink("stop", join(flumeDir, "stop"));
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    await expect(
+      superviseLoop({ repoRoot: fx.repo, maxTicks: 3, runTick, log: silent }),
+    ).rejects.toThrow(/ELOOP|stop/);
+
+    // The in-flight tick still completed; the throw lands at the very next
+    // boundary rather than after --max.
+    expect(calls).toBe(1);
+  });
+
+  it("an absent stop flag stays silent — the run ends at hibernation exactly as before", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    baton.wake("plan");
+    expect(existsSync(join(flumeDir, "stop"))).toBe(false);
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(1);
+    expect(res.hibernated).toBe(true);
+    expect(res.stoppedByFlag).toBeUndefined();
+  });
+
+  it("a present, stattable stop flag ends the run after the in-flight tick, unchanged", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await mkdir(flumeDir, { recursive: true });
+    new Baton(flumeDir).wake("plan"); // never slept — the stop must end it
+    await writeFile(join(flumeDir, "stop"), "", "utf8");
+
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 3,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
+    expect(res.stoppedByFlag).toBe(true);
   });
 });
 

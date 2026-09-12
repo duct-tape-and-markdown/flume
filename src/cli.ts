@@ -346,8 +346,23 @@ async function main(): Promise<number> {
     // status` owes exactly this" line 3: named right after supervisor
     // liveness, before the tip claim — the ack ritual only works if the
     // operator who forgot the flag finds it where they look first.
+    // Absent is the only silent reading, as with `loop.pid` above: a stop
+    // flag that is present but unstattable must never print as no stop line,
+    // because that is exactly the reading spec/loop.md "Graceful stop — the
+    // stop flag" promises can never happen — the operator would relaunch over
+    // an unacknowledged stop (`.claude/rules/engineering.md`, "Loud or
+    // nothing").
     const statusStopPath = stopFlagPath(flumeDir);
-    if (existsSync(namespacedJoin(statusStopPath))) {
+    let stopFlagPresent: boolean;
+    try {
+      stopFlagPresent = existsLoud(namespacedJoin(statusStopPath));
+    } catch (err) {
+      console.error(
+        `[flume] status: ${STATE_ROOT_NAMES.stopFlag} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
+    if (stopFlagPresent) {
       console.log(
         supervisorLive
           ? `${statusStopPath} present: the running supervisor will finish ` +
@@ -359,14 +374,27 @@ async function main(): Promise<number> {
     // Report the current tip's claim alongside supervisor liveness,
     // observational and best-effort — a detached HEAD (no ref to key the claim
     // on), a non-repository cwd, or a git invocation failure all read as
-    // silence, the same precedent as the no-pidfile case above.
+    // silence, the same precedent as the no-pidfile case above. That
+    // declaration covers the *git* side and stops there: the claim file's own
+    // existence probe splits absent (silent) from unstattable (refuse), so a
+    // claim that is present but unreadable never prints as an unclaimed tip
+    // (`.claude/rules/engineering.md`, "Loud or nothing").
     const headRefForStatus = await currentRefPath(repoRoot);
     if (headRefForStatus.kind === "ref") {
       const claimPath = tipClaimPath(
         await gitCommonDir(repoRoot),
         headRefForStatus.path,
       );
-      if (existsSync(claimPath)) {
+      let claimPresent: boolean;
+      try {
+        claimPresent = existsLoud(namespacedJoin(claimPath));
+      } catch (err) {
+        console.error(
+          `[flume] status: tip claim at ${claimPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return EX_IOERR;
+      }
+      if (claimPresent) {
         const holder = await liveTipClaimPid(claimPath);
         console.log(
           holder !== null
@@ -815,8 +843,22 @@ async function main(): Promise<number> {
     // refuses the run before any tick — a stale flag must never silently
     // swallow a scheduled run. `job run` reaches this same branch via its
     // `cmd = "loop"` rewrite above, so it refuses identically.
+    // Absent is the only silent reading: a flag that is present but
+    // unstattable would otherwise start the run, which is the one outcome
+    // this guard exists to rule out (`.claude/rules/engineering.md`, "Loud or
+    // nothing"). The refusal names the underlying error — the operator must
+    // resolve the flag either way before a run starts.
     const loopStopPath = stopFlagPath(flumeDir);
-    if (existsSync(namespacedJoin(loopStopPath))) {
+    let loopStopPresent: boolean;
+    try {
+      loopStopPresent = existsLoud(namespacedJoin(loopStopPath));
+    } catch (err) {
+      console.error(
+        `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
+    if (loopStopPresent) {
       console.error(
         `[flume] loop refuses: stop flag present at ${loopStopPath} — ` +
           "remove it to acknowledge the stop before starting a new run",

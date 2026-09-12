@@ -9,7 +9,6 @@
  * there.
  */
 
-import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 
@@ -26,6 +25,7 @@ import {
   type TickVerdict,
 } from "./Dispatcher.js";
 import { frictionCountLine } from "./friction.js";
+import { existsLoud } from "./fsProbe.js";
 import { namespacedJoin, stopFlagPath } from "./paths.js";
 
 /** Options for {@link superviseLoop}. */
@@ -436,7 +436,16 @@ export async function superviseLoop(
     // the run even though the baton may still carry awake flags — the
     // hibernation check below never gets a chance to end it on its own
     // terms. The flag itself is left on disk; there is no unstop verb.
-    if (existsSync(namespacedJoin(stopFlagPath(flumeDir)))) {
+    //
+    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
+    // on a stop flag that is present but unstattable (a symlink loop, a
+    // permission-denied parent) rather than reading it as absent and ticking
+    // on over an operator's unacknowledged stop
+    // (`.claude/rules/engineering.md`, "Loud or nothing"). Throwing is the
+    // disposition this boundary already takes for the same failure class —
+    // `baton.hibernating()`'s `readdirSync` one check below throws too — and
+    // it surfaces as `flume loop`'s harness-error exit (1), naming the path.
+    if (existsLoud(namespacedJoin(stopFlagPath(flumeDir)))) {
       log.info(`[flume] stop flag present; ending run after ${ticks} tick(s)`);
       await logFrictionSummary();
       return {

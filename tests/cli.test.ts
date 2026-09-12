@@ -26,6 +26,7 @@ import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { resolvePendingPath } from "../src/paths.ts";
+import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -1408,6 +1409,30 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
     30_000,
   );
 
+  it("`flume status` exits EX_IOERR on a non-ENOENT stop-flag stat, instead of printing no stop line", async () => {
+    const dir = await mkFixtureRoot("flume-status-stop-unstattable-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      // A self-referential symlink reproduces a non-ENOENT stat failure
+      // (ELOOP) without relying on permission bits a root-run test could
+      // bypass — the same shape the loop.pid case above uses. `existsSync`
+      // collapses it to "absent", which printed no stop line at all over a
+      // flag that is there, telling the operator there is no pending stop
+      // (`.claude/rules/engineering.md`, "Loud or nothing").
+      await symlink("stop", join(flumeDir, "stop"));
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain(join(flumeDir, "stop"));
+      expect(r.out).toContain("failed to stat");
+      expect(r.out).not.toContain("the next `loop`/`job run` refuses");
+      expect(r.out).not.toContain("will finish its in-flight tick");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it(
     "names the path and that the next loop/job run refuses, when no supervisor is live",
     async () => {
@@ -1429,6 +1454,51 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
     },
     30_000,
   );
+});
+
+describe("flume status — tip claim line (spec/cli.md \"flume status owes exactly this\", line 4)", () => {
+  it("`flume status` exits EX_IOERR on a non-ENOENT tip-claim stat, instead of printing no claim line", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      // The claim path comes from the engine accessor, never a second
+      // spelling of the tip-claims layout here.
+      const claimPath = tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main");
+      await mkdir(dirname(claimPath), { recursive: true });
+      // ELOOP: present on disk, unstattable. `existsSync` reads it as absent,
+      // which printed no claim line at all — the operator reads an unclaimed
+      // tip and starts a second writer against it
+      // (`.claude/rules/engineering.md`, "Loud or nothing").
+      await symlink("main", claimPath);
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain(claimPath);
+      expect(r.out).toContain("failed to stat");
+      expect(r.out).not.toContain("tip claimed by pid");
+      expect(r.out).not.toContain("tip claim present, process dead");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
+
+  it("a git-side failure stays silent, as declared: a detached HEAD prints no claim line and exits 0", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const sha = (
+        await exec("git", ["rev-parse", "HEAD"], { cwd: repo.dir })
+      ).stdout.trim();
+      await exec("git", ["checkout", "-q", "--detach", sha], { cwd: repo.dir });
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).not.toContain("tip claim");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 30_000);
 });
 
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
@@ -1458,6 +1528,34 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
     },
     30_000,
   );
+
+  it("`flume loop` refuses naming the error when the stop flag is present but unstattable, instead of starting a run over it", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const flumeDir = join(repo.dir, ".flume");
+      const stopPath = join(flumeDir, "stop");
+      await mkdir(flumeDir, { recursive: true });
+      // ELOOP, the non-ENOENT stat failure `existsSync` reads as absent —
+      // which starts a run over an unacknowledged stop, the one outcome this
+      // guard exists to rule out (spec/loop.md "Graceful stop — the stop
+      // flag").
+      await symlink("stop", stopPath);
+
+      const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("loop refuses");
+      expect(r.out).toContain(stopPath);
+      expect(r.out).toContain("failed to stat");
+      // No run started: the refusal fires before the loop lock is taken,
+      // and no tick ever ran.
+      expect(existsSync(join(flumeDir, "loop.pid"))).toBe(false);
+      expect(r.out).not.toContain("reached --max");
+      expect(r.out).not.toMatch(/tick \u2192/);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
 
   it(
     "flume tick ignores the flag and runs normally",

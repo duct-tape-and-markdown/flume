@@ -87,7 +87,14 @@ pending entry gated on a capability the chain hasn't asserted. Observational
 — no side effects, no agent invocation.
 
 Exit codes:
-  0   Always.
+  0   Every observation above succeeded — including "nothing to report" for
+      each optional line.
+  74  I/O error (EX_IOERR): loop.pid, the stop flag, or the tip claim file
+      exists but could not be stat'd (permission denied, a symlink loop, a
+      path too long for the platform, ...). Refused rather than printed as
+      absent — that reading would tell the operator there is no live
+      supervisor, no pending stop, or no claim holder when there may be one.
+      Naming the file and the underlying error.
 `,
   tick: `Usage: flume tick
 
@@ -137,6 +144,10 @@ Exit codes:
       A graceful stop mid-run (\`.flume/stop\` written while the loop is
       already going) ends iteration after the in-flight tick finishes, but
       never changes this exit code — it stays decided by the run's totals.
+  74  I/O error (EX_IOERR): at start, the stop flag (\`.flume/stop\`)
+      exists but could not be stat'd (permission denied, a symlink
+      loop, ...). Refused rather than started — an unreadable flag is
+      not an absent one. Naming the path and the underlying error.
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same
