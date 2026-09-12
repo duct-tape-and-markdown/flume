@@ -118,12 +118,6 @@ nothing*) — is a behavior change, and a plausible one: a `pending: N` read off
 the wrong file is a confident wrong answer where `pending: unknown` would not
 be. If that is the ruling, say so and this becomes an entry instead.
 
-**The sweep-lens half of this finding** — `docs/CLI.md`'s `flume job status`
-paragraph asserting "no chain load" while the code takes one — closed with the
-spec-writing ruling (`7367b79`): the sweep now reads `spec/` against
-`.claude/rules/spec-writing.md` for restatement, and the generator the doc copy
-was downstream of is gone. The amendment above is what remains.
-
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
 Drained from `INTENT-DOC-RECONCILED`'s note; verified on disk. The
@@ -560,3 +554,64 @@ alone, and there is no code change behind this.
 
 Sibling, not an amendment, to the `last-tick.json` question above: same file,
 different section, independent edits.
+
+## Nothing arms on a `docs/` claim that drifted out of `src/` (PARKED)
+
+Drained from `WAKE-SLEEP-CHAIN-LOAD-REPORTED`'s note; verified on disk.
+`docs/CLI.md` § `flume wake` / § `flume sleep` read "No chain is loaded and the
+phase name is not validated against the chain" / "the chain is not consulted"
+— false since `chainRefusesPhase` landed, and the doc never followed. Build
+corrected it in the same commit.
+
+**This is the second instance of one class, and the first one's closure is
+void.** The identical sentence, one subcommand over — `docs/CLI.md`'s `flume
+job status` paragraph asserting no chain load while the code took one — was
+dismissed under *The degraded chain load also rebases the pending count* above
+on the ground that `7367b79`'s spec-restatement lens had removed the
+generator. `bd75f27` then deleted that lens ("the `spec/` lens leaves
+posture-sweep.md"). I have removed the dead paragraph; this section replaces
+it.
+
+**The gap, stated mechanically.** `posture-sweep.md`, *The frontier is
+decidable; the neighborhood is judged*: a code delta puts touched modules in a
+frontier whose domain is `src/`, `tests/`, `bin/`, `examples/`. `docs/` widens
+in for the **retired-claim delta alone**, which fires on a `spec/` deletion.
+Both instances drifted out of `src/`, never out of `spec/`. So a behavior
+change in `src/` that strands a `docs/` claim arms nothing, in either
+direction, forever. The exit-code and side-effect sentences are the exposed
+surface — eleven subcommand sections of them, each a restatement of behavior
+`spec/cli.md` and `src/cli.ts` own between them.
+
+Options:
+
+- **Widen the sweep's arming.** A code delta touching `src/` also puts
+  `docs/`'s current-reference pages in the frontier. Simplest, and reuses
+  machinery that exists. Costs: `docs/` read on nearly every rotation, for a
+  lens that is judged rather than decidable — the opposite of what makes the
+  frontier cheap.
+- **Pin the exit codes, bounded by the real run** (recommended). Extend the
+  shape already standing at `tests/cliHelp.test.ts:157`: it derives its
+  expected clause from a real `flume` invocation and asserts `docs/CLI.md`'s
+  section names it. That is an agreement gate driving the real producer
+  (`engineering.md`, *A seam gate reads what the real writer wrote*), not
+  prose read against prose, which is why it survived `bd75f27`. Scoped to
+  observed exit codes only — nothing about the prose sentences. Ships as an
+  ordinary entry the moment it is ruled; `tests/` and `docs/` are both inside
+  build's fence.
+- **Accept the drift.** `docs/` is author-held reference prose, which is
+  `bd75f27`'s own posture. Costs the next stale claim, and the class has now
+  recurred twice in four days.
+
+**Bound with *A test scans shipped doc-comment prose* above.** That question
+asks whether a test may pin prose at all, and asserts `tests/docComments.test.ts`
+is the sole instance of the shape. `tests/cliHelp.test.ts:157` is the
+distinction that answers both: an expectation derived from a real run is an
+agreement gate; a hand-authored one is the door `bd75f27` closed. Ruling that
+line once disposes of both sections.
+
+Parked rather than filed because widening the sweep, pinning, and accepting are
+three answers about how much harness prose the mechanism should hold — a
+governance ruling `engineering.md` says the ladder does not administer, and
+`bd75f27` was taken under explicit operator direction. Plan picking one would
+re-open it silently, which is how the first instance got closed on a premise
+that no longer held.
