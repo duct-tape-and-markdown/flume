@@ -13462,7 +13462,8 @@ describe.runIf(process.platform === "win32")(
 
 // Same deep-nesting shape as the win32 lane above, applied to the two
 // remaining bare-join fs-call sites this file carried: loadChainModule's
-// existsSync (the single fix point every chain-load caller reaches through)
+// existence probe (the single fix point every chain-load caller reaches
+// through)
 // and the pendingPath reads/writes readPending, readPendingTolerant, and
 // commitPendingUpdate share. Pre-fix, each silently misread a genuinely
 // existing/writable path as absent past win32's ~260-char total-path limit
@@ -13483,7 +13484,7 @@ describe.runIf(process.platform === "win32")(
         const chainPath = join(cfg, "chain.ts");
         expect(chainPath.length).toBeGreaterThan(260);
 
-        // Pre-fix, the bare-join existsSync check here silently read this
+        // Pre-fix, the bare-join existence probe here silently read this
         // chain.ts as absent and threw "chain config not found" even though
         // it genuinely exists.
         const mod = await loadChainModule(chainPaths(cfg));

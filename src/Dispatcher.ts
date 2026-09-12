@@ -1019,7 +1019,13 @@ export async function loadChainModule(
   // (job.ts's jobNew/jobRun, builtinGates.ts's chainLoadGate, this file's
   // own default loader) reaches an existing chain.ts through here.
   // namespacedJoin (src/paths.ts) is the shared idiom.
-  if (!existsSync(namespacedJoin(path))) {
+  // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
+  // on any other stat failure rather than reporting absence, so a chain.ts
+  // that is present but unreachable — a symlink loop, a permission-denied
+  // configDir — names that failure instead of telling the operator to create
+  // a file they are looking at. Same split the sibling probe one line ahead
+  // of this call in `jobNew` (src/job.ts) already gives the very same path.
+  if (!existsLoud(namespacedJoin(path))) {
     throw new Error(
       `chain config not found at ${path}; create .flume/chain.ts that ` +
         `default-exports a chain factory: (api) => ({ chain }).`,

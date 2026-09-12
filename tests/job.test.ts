@@ -18,6 +18,7 @@ import {
   readdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -590,6 +591,88 @@ describe("flume job new — real CLI on a scratch repo", () => {
     },
     120_000,
   );
+});
+
+/**
+ * `loadChainModule` (src/Dispatcher.ts) is the one chain.ts existence check
+ * every load caller reaches through, and `jobNew` probes that same path one
+ * line ahead of its own call into it. The two disagreed: jobNew's
+ * `existsLoud` (src/fsProbe.ts) splits ENOENT from every other stat failure,
+ * while the loader's `existsSync` collapsed them all to "absent" — so a
+ * chain.ts that is present but unstattable (a symlink loop, a
+ * permission-denied configDir) read to the loader as a repo with no chain,
+ * and it told the operator to create the file they are looking at
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+describe("chain.ts existence probe — jobNew and loadChainModule agree", () => {
+  it("loadChainModule surfaces the stat failure when chain.ts is present but unstattable, not 'chain config not found'", async () => {
+    const repo = await makeRepo();
+    try {
+      const configDir = join(repo.dir, ".flume");
+      await mkdir(configDir, { recursive: true });
+      // ELOOP — present, unstattable. Not a permission bit: a root-run test
+      // bypasses those, while a self-referential symlink fails for every uid.
+      await symlink("chain.ts", join(configDir, "chain.ts"));
+      // The entry really is on disk: absence would be a misreport, not a race.
+      expect(await readdir(configDir)).toEqual(["chain.ts"]);
+
+      const err = await loadChainModule({
+        repoRoot: repo.dir,
+        configDir,
+        flumeDir: configDir,
+      }).then(
+        () => undefined,
+        (e: unknown) => e as Error,
+      );
+
+      expect(err?.message).toMatch(/ELOOP/);
+      expect(err?.message).not.toMatch(/chain config not found/);
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
+
+  it("jobNew and loadChainModule report the same unstattable chain.ts the same way, and no job is created over it", async () => {
+    const repo = await makeRepo();
+    try {
+      const configDir = join(repo.dir, ".flume");
+      await mkdir(configDir, { recursive: true });
+      await symlink("chain.ts", join(configDir, "chain.ts"));
+
+      // Both real probes run over the one file — the agreement claim is
+      // between the producers, not between either and a fixture.
+      const viaJob = await jobNew({
+        repoRoot: repo.dir,
+        name: "agree",
+        log: () => {},
+      }).then(
+        () => undefined,
+        (e: unknown) => e as Error,
+      );
+      const viaLoad = await loadChainModule({
+        repoRoot: repo.dir,
+        configDir,
+        flumeDir: configDir,
+      }).then(
+        () => undefined,
+        (e: unknown) => e as Error,
+      );
+
+      expect(viaJob?.message).toMatch(/ELOOP/);
+      expect(viaLoad?.message).toMatch(/ELOOP/);
+      // Neither side reports absence for a file that is there.
+      expect(viaJob?.message).not.toMatch(/no chain at/);
+      expect(viaLoad?.message).not.toMatch(/chain config not found/);
+
+      // The refusal landed before any state: no job dir, still on `main`.
+      expect(existsSync(join(repo.dir, ".flume", "jobs", "agree"))).toBe(false);
+      expect(
+        await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"]),
+      ).toBe("main");
+    } finally {
+      await repo.cleanup();
+    }
+  }, 60_000);
 });
 
 describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
