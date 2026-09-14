@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "EXAMPLES-GROOMER-CAPTURE-ROOTS-AT-FLUMEDIR",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "examples/backlog-groomer-chain.ts",
+          "description": "root `groom.agent`'s session capture at `api.paths.flumeDir`, per the cited section"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "the placement's two behaviors, driven through a real groom tick"
+        }
+      ]
+    },
+    "summary": "Teach the backlog-groomer example to root a per-run artifact at `api.paths.flumeDir`; the cited section says `examples/` shows it and no example reads `api.paths` at all.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Per-run artifacts belong under `FLUME_DIR`"
+    },
+    "tests": [
+      "the backlog groomer example writes its session capture under the flumeDir the engine handed its factory",
+      "a relocated flumeDir moves the backlog groomer's session capture with it"
+    ],
+    "pins": [],
+    "acceptance": "The groomer resolves its capture dir off `api.paths.flumeDir`, both lines are green, and the section's `examples/` claim resolves on disk.",
+    "notes": "`withSessionCapture` tees `onStdout` only and `groomAgent` never fires it, so a straight wrap ships an empty capture file — emit the groom line through `inv.onStdout` too. The decorator is on `api`; the example imports `join`, not `resolve`. Captures land untracked in the fixture repo, outside the phase fence the engine judges on the commit."
+  }
+]
