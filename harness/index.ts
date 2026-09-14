@@ -49,6 +49,7 @@ export {
   DeclarationSchema,
   parseDeclaration,
   type Declaration,
+  type DeclarationInput,
   type HarnessPhase,
   type PlanSlice,
 } from "./declaration.js";

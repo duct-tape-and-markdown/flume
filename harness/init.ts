@@ -149,6 +149,12 @@ export function protocolTemplatePath(): string {
  * to CJS interop by the chain loader's `tsImport` — a namespace shape a
  * consumer's `chain.ts` would then have to unwrap.
  *
+ * It annotates itself with `DeclarationInput`, so the shape the schema
+ * refuses at load is the shape a consumer's editor completes and their
+ * typecheck refuses first. `satisfies` rather than a declared type: the
+ * literal keeps its own narrow type for anything else in the module that
+ * reads it, and excess fields are still caught.
+ *
  * What it does **not** carry: a plan slice enabled without the inputs that
  * slice needs, a gate, an agent model, or a supervisor knob. Each is the
  * package's opinion until a consumer states otherwise, and a skeleton that
@@ -163,10 +169,12 @@ function declarationSkeleton(packageName: string): string {
  *
  * The package's schema validates this at chain load: an unknown field, or a
  * required one missing, refuses the load naming the field rather than
- * falling through to a default nobody chose.
+ * falling through to a default nobody chose. The \`satisfies\` clause below
+ * is that same shape a rung earlier — your editor completes the fields, and
+ * \`tsc\` refuses a typo before a tick ever runs.
  */
 
-import { vitestRunner } from "${packageName}/harness";
+import { vitestRunner, type DeclarationInput } from "${packageName}/harness";
 
 export const declaration = {
   /**
@@ -198,7 +206,7 @@ export const declaration = {
   slices: {
     enabled: ["plan-inbox", "plan-derive"],
   },
-};
+} satisfies DeclarationInput;
 
 export default declaration;
 `;

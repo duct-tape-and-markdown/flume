@@ -6,16 +6,18 @@
  * gate reads what the real writer wrote*): the real writer is `harnessInit`
  * over a real temporary repository, and the readers are the real ones — the
  * package's own `DeclarationSchema` over the skeleton it wrote, `tsx`'s
- * module loader over that skeleton as a consumer's chain would load it, and
+ * module loader over that skeleton as a consumer's chain would load it,
+ * `tsc` over that skeleton against the package's exported input type, and
  * `consumerIgnores` over the `.gitignore` lines it merged. A hand-authored
- * expectation of any of the three would re-author the writer's output by the
+ * expectation of any of the four would re-author the writer's output by the
  * tester's hand and let a one-sided change ship green.
  *
  * The one thing simulated is the install: a temporary repository has no
  * `node_modules`, so the package specifier the skeleton imports is satisfied
- * by a shim that re-exports this checkout's `harness/index.ts`. The bytes
- * being judged are still the writer's, and the schema judging them is still
- * the package's.
+ * by a shim that re-exports this checkout's `harness/index.ts` at runtime,
+ * and by a `paths` entry pointing at the same file at typecheck. The bytes
+ * being judged are still the writer's, and the schema and the type judging
+ * them are still the package's.
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -257,3 +259,94 @@ it("the engine's flume bin exposes no harness verb", async () => {
   expect(code).toContain("cli.js");
   expect(code).not.toMatch(/harness/);
 });
+
+/**
+ * The declaration's shape one rung up the ladder (`.claude/rules/engineering.md`,
+ * *Narration is the ladder's bottom rung*): the schema refuses a bad
+ * declaration at chain load, and `DeclarationInput` is that same refusal at
+ * typecheck, where a consumer's editor can complete into it.
+ *
+ * An agreement gate like the parse case above, with the reader swapped: the
+ * writer is still `harnessInit` over a real repository, and the reader is
+ * the real `tsc` over the real exported type, resolving the package
+ * specifier the skeleton imports to this checkout's entry point. A
+ * hand-written literal here would re-author the skeleton by the tester's
+ * hand, and a skeleton that dropped the annotation would still pass.
+ */
+const TSC_BIN = fileURLToPath(
+  new URL("../node_modules/typescript/bin/tsc", import.meta.url),
+);
+
+/** This checkout's compiler options — the consumer's typecheck, not a looser one. */
+const BASE_TSCONFIG = fileURLToPath(new URL("../tsconfig.json", import.meta.url));
+
+/**
+ * Where the ambient types live. `typeRoots` defaults to a walk up from the
+ * *config's* directory, and the config below sits in a temporary repository
+ * with no `node_modules` of its own — so without this, `@types/node` is out
+ * of the program and every `node:` import under `src/` reds for a reason
+ * that has nothing to do with the declaration being judged. A real consumer
+ * has its own; the fixture borrows this checkout's.
+ */
+const TYPE_ROOTS = fileURLToPath(
+  new URL("../node_modules/@types", import.meta.url),
+);
+
+/**
+ * Typecheck the declaration `result` wrote, and nothing else: `files` names
+ * the one module, `include: []` clears the base config's own roots, and
+ * `paths` answers the bare specifier the skeleton imports without an
+ * install. Everything the skeleton reaches — the package's entry point, its
+ * exported type, the engine beneath both — is this checkout's real source.
+ */
+async function typecheckDeclaration(
+  root: string,
+  result: HarnessInitResult,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const config = join(root, "tsconfig.declaration.json");
+  await writeFile(
+    config,
+    JSON.stringify({
+      extends: BASE_TSCONFIG,
+      compilerOptions: {
+        paths: { [`${result.packageName}/harness`]: [HARNESS_INDEX] },
+        typeRoots: [TYPE_ROOTS],
+      },
+      files: [`${result.stateRoot}/declaration.ts`],
+      include: [],
+    }),
+    "utf8",
+  );
+  return runNodeStreams(root, [TSC_BIN, "-p", config]);
+}
+
+it("the declaration skeleton init writes typechecks against the package's exported input type", async () => {
+  const result = await harnessInit({ repoRoot });
+  const declarationPath = join(repoRoot, result.stateRoot, "declaration.ts");
+  const source = await readFile(declarationPath, "utf8");
+
+  // Non-vacuity: the bytes about to be typechecked are annotated ones. A
+  // skeleton carrying no `satisfies` would compile below while checking
+  // nothing, and a skeleton importing the type as a value would resolve
+  // differently under a consumer's `verbatimModuleSyntax`.
+  expect(source).toContain(
+    `import { vitestRunner, type DeclarationInput } from "${result.packageName}/harness"`,
+  );
+  expect(source).toContain("} satisfies DeclarationInput;");
+
+  const clean = await typecheckDeclaration(repoRoot, result);
+  expect({ code: clean.code, out: clean.stdout }).toEqual({ code: 0, out: "" });
+
+  // And the annotation bears weight. The typo below is exactly what the
+  // schema refuses at chain load today — a slice name the package does not
+  // ship — so this is the load refusal arriving a rung earlier, naming the
+  // field and the valid set the same way.
+  const typo = source.replace(`"plan-inbox"`, `"plan-inbx"`);
+  expect(typo).not.toBe(source);
+  await writeFile(declarationPath, typo, "utf8");
+
+  const broken = await typecheckDeclaration(repoRoot, result);
+  expect(broken.code).not.toBe(0);
+  expect(broken.stdout).toContain("plan-inbx");
+  expect(broken.stdout).toContain("plan-inbox");
+}, 180_000);

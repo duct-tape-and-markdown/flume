@@ -331,6 +331,29 @@ export const DeclarationSchema = strict({
 export type Declaration = z.infer<typeof DeclarationSchema>;
 
 /**
+ * A declaration as a consumer writes one — the schema's **input** side, and
+ * the type a `declaration.ts` literal annotates itself with.
+ *
+ * Not {@link Declaration}: that is the parse's output, where a defaulted
+ * field is present because the parse put it there. `scopeWritesToEntry`
+ * carries a default, so it is required on the output side and
+ * `satisfies Declaration` does not compile over a literal that omits it —
+ * the one field the package explicitly takes no side on would become the one
+ * field every consumer has to spell. The input side accepts the literal a
+ * consumer actually writes.
+ *
+ * Exported so the load refusal stops being the first thing that catches a
+ * typo. A misspelled slice name, a fence keyed by a phase the package does
+ * not ship, a supervisor knob that no longer exists: each is a refusal the
+ * schema raises at chain load, and each is the same fact one rung up the
+ * ladder — a typecheck a consumer's editor completes into and `tsc` refuses
+ * before a tick runs (`.claude/rules/engineering.md`, *Narration is the
+ * ladder's bottom rung*). The schema stays the authority at load; this is
+ * the same shape read earlier.
+ */
+export type DeclarationInput = z.input<typeof DeclarationSchema>;
+
+/**
  * Validate a declaration, or refuse the load naming every field at fault.
  *
  * Refuses rather than returns a verdict: this runs at chain load, where a
