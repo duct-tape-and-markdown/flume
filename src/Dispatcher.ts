@@ -1475,6 +1475,25 @@ export interface TickOutcome {
 }
 
 /**
+ * Rank of each no-commit mode in a wave's representative-cause fold — lowest
+ * rank wins. `gate-revert` means work was produced and lost (highest signal);
+ * `render-refused` is a real defect in the prompt/config, ranked above the
+ * non-defect classes; `platform-preempt` outranks `clean-exit` so a
+ * rate-limited wave is not misread as the agents exiting on their own — the
+ * "platform failures masquerade as agent failures" harm.
+ *
+ * Keyed by {@link NoCommitMode} rather than re-spelling the taxonomy, so a
+ * mode added to `NO_COMMIT_MODES` (`src/Prompt.ts`) is a type error here
+ * rather than a cause that silently folds to nothing.
+ */
+const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
+  "gate-revert": 0,
+  "render-refused": 1,
+  "platform-preempt": 2,
+  "clean-exit": 3,
+};
+
+/**
  * Runtime that wires baton + chain + agent + gates into one tick. Stateless
  * across ticks (everything it needs comes from disk). `tick()` runs exactly
  * one phase × one invocation (or N for fanout); `superviseLoop`
@@ -2258,13 +2277,8 @@ export class Dispatcher {
    * nothing usable — shared by the wave's normal-completion verdict and by
    * `WaveLedgerParseFailure`'s partial verdict (engineering.md "Derived
    * state is computed, never restated beside its source"), so a ledger
-   * refusal reports the same cause a clean completion would have. Precedence
-   * gate-revert > render-refused > platform-preempt > clean-exit:
-   * gate-revert means work was produced and lost (highest signal);
-   * render-refused is a real defect in the prompt/config, ranked above
-   * the non-defect classes; platform-preempt outranks clean-exit so a
-   * rate-limited wave is not misread as the agents exiting on their own —
-   * the "platform failures masquerade as agent failures" harm.
+   * refusal reports the same cause a clean completion would have. The
+   * precedence is {@link WAVE_NO_COMMIT_RANK}.
    */
   private waveNoCommitCause(
     committedWave: boolean,
@@ -2272,21 +2286,18 @@ export class Dispatcher {
     mergeReverted: readonly unknown[],
   ): NoCommitMode | undefined {
     if (committedWave) return undefined;
-    const modes = new Set<NoCommitMode>(
-      perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : [])),
-    );
+    const modes = perEntry.flatMap((r) => (r.noCommit ? [r.noCommit] : []));
     // Per-entry afterMerge isolation wrote a gate-revert prior-attempt
     // record for each merge-reverted entry; reflect that in the wave-level cause.
-    if (mergeReverted.length > 0) modes.add("gate-revert");
-    return modes.has("gate-revert")
-      ? "gate-revert"
-      : modes.has("render-refused")
-        ? "render-refused"
-        : modes.has("platform-preempt")
-          ? "platform-preempt"
-          : modes.has("clean-exit")
-            ? "clean-exit"
-            : undefined;
+    if (mergeReverted.length > 0) modes.push("gate-revert");
+    return modes.reduce<NoCommitMode | undefined>(
+      (best, mode) =>
+        best === undefined ||
+        WAVE_NO_COMMIT_RANK[mode] < WAVE_NO_COMMIT_RANK[best]
+          ? mode
+          : best,
+      undefined,
+    );
   }
 
   // ---------- fanout tick ----------

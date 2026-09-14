@@ -16,13 +16,9 @@
  *
  * A `<prior-attempt>` block follows it whenever the dispatcher hands in a
  * persisted {@link PriorAttempt} — the bounded record of a previous no-commit
- * attempt, tagged with exactly one of the four causally-distinct modes of the
- * no-commit taxonomy: `gate-revert` (committed then a gate reverted it),
- * `clean-exit` (the agent exited cleanly without committing),
- * `platform-preempt` (the process failed for non-work reasons — not a defect
- * in the work), `render-refused` (the prompt itself never resolved — the agent
- * was never invoked); plus two sibling facts rather than further
- * {@link NoCommitMode} members — `tip-moved`, the agent's span soft-reset away
+ * attempt, tagged with exactly one member of {@link NO_COMMIT_MODES} — the
+ * taxonomy's one home, below — plus two sibling facts rather than further
+ * {@link NoCommitMode} members: `tip-moved`, the agent's span soft-reset away
  * because its branch base was rewritten out from under it, and `not-shipped`, a commit that
  * landed and passed every gate which the chain's own `shipped` predicate
  * declined. Neither is a defect the four modes classify. Each renders
@@ -50,15 +46,36 @@ const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
 
 /**
- * The four causally-distinct ways a tick produces no usable commit. The
- * discriminant of {@link PriorAttempt} and the value carried on
+ * The four causally-distinct ways a tick produces no usable commit:
+ *
+ *  - `gate-revert`      a commit was made and a gate reverted it,
+ *  - `clean-exit`       the agent exited cleanly without committing — what
+ *                       that meant is the chain's reading of the recorded
+ *                       final message, never an engine label,
+ *  - `platform-preempt` the agent process failed for non-work reasons
+ *                       (rate-limit, auth, dispatcher-killed, timeout) —
+ *                       NOT a defect in the work,
+ *  - `render-refused`   the prompt itself never resolved, so the agent was
+ *                       never invoked at all.
+ *
+ * The taxonomy's one home, and a runtime value rather than a type alone so a
+ * prompt or a chain names the modes from the engine instead of from a copy
+ * that an engine rename would strand. `tipMoved` and `declined` sit beside
+ * these four and are never folded in: neither is a cause they classify.
+ */
+export const NO_COMMIT_MODES = [
+  "gate-revert",
+  "clean-exit",
+  "platform-preempt",
+  "render-refused",
+] as const;
+
+/**
+ * One member of {@link NO_COMMIT_MODES}, derived from it so the two cannot
+ * disagree. The discriminant of {@link PriorAttempt} and the value carried on
  * `TickOutcome.noCommit`; exactly one per no-commit tick.
  */
-export type NoCommitMode =
-  | "gate-revert"
-  | "clean-exit"
-  | "platform-preempt"
-  | "render-refused";
+export type NoCommitMode = (typeof NO_COMMIT_MODES)[number];
 
 /**
  * Which keyspace a persisted record's key belongs to: `"entry"` for a fanout

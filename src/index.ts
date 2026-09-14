@@ -75,6 +75,7 @@ export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 
 export {
   renderPrompt,
+  NO_COMMIT_MODES,
   type NoCommitMode,
   type PriorAttempt,
   type PriorAttemptKeyspace,

@@ -19,6 +19,8 @@ import { shellGate, writablePathsGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { entryWriteScope } from "../src/paths.ts";
+import { NO_COMMIT_MODES } from "../src/index.ts";
+import type { NoCommitMode } from "../src/index.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type {
   GateRevertAttempt,
@@ -506,9 +508,7 @@ describe("renderPrompt — inline-exec reaches sh through stdin (RELEASE-v0.10 �
 
     expect(out).toContain("value=(no prior plan: commit - bootstrap tick)");
   });
-
 });
-
 describe("renderPrompt — an unresolved inline-exec span aborts the render (RELEASE-v0.10 §3)", () => {
   it("a non-zero exit throws InlineExecRenderError naming the command text and stderr — no <exec-failed> marker, no agent-bound output", async () => {
     let caught: unknown;
@@ -667,6 +667,22 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     ["not-shipped", notShipped],
   ];
 
+  it("every NO_COMMIT_MODES member is one of the variants rendered below", async () => {
+    // Agreement between the taxonomy value and this block's coverage: the
+    // modes are enumerated from the engine's own list, not retyped here, so
+    // a mode added to NO_COMMIT_MODES with no fixture fails here rather than
+    // reaching a tick's prompt unrendered.
+    expect(NO_COMMIT_MODES.length).toBeGreaterThan(0);
+
+    for (const mode of NO_COMMIT_MODES) {
+      const match = variants.find(([, prior]) => prior.mode === mode);
+      expect(match, `no <prior-attempt> fixture for mode '${mode}'`).toBeDefined();
+
+      const out = await renderWithPrior(match![1]);
+      expect(out).toContain("<prior-attempt>");
+    }
+  });
+
   it.each(variants)(
     "%s: the rendered block carries the anchor (headSha + at) alongside the mode's own fields",
     async (_mode, prior) => {
@@ -751,5 +767,26 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
 
     expect(out).not.toContain("<prior-attempt>");
     expect(out).not.toContain("Recorded ");
+  });
+});
+
+describe("src/index.ts — the no-commit taxonomy as a value (NO-COMMIT-MODES-VALUE)", () => {
+  it("the engine exports NO_COMMIT_MODES carrying the four no-commit modes", () => {
+    // Imported from src/index.ts rather than src/Prompt.ts: the package root
+    // is where a prompt renderer or a chain reaches for the taxonomy, which
+    // is the whole reason it is a runtime value and not a type alone.
+    expect(NO_COMMIT_MODES).toEqual([
+      "gate-revert",
+      "clean-exit",
+      "platform-preempt",
+      "render-refused",
+    ]);
+
+    // Derived, not restated beside: assignability both ways proves
+    // `NoCommitMode` is the value's member type rather than a parallel union
+    // a rename on either side could strand.
+    const fromValue: NoCommitMode[] = [...NO_COMMIT_MODES];
+    const fromType: (typeof NO_COMMIT_MODES)[number][] = fromValue;
+    expect(fromType).toEqual([...NO_COMMIT_MODES]);
   });
 });
