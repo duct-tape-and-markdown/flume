@@ -1571,6 +1571,56 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
   }, 30_000);
 });
 
+/**
+ * The release half of the claim's lifecycle, through the real CLI. The
+ * acquire/refuse/reclaim mechanics and the mid-tick/signal wiring live in
+ * `tests/tip-claim.integration.test.ts`; this one case stays in the fast
+ * lane because it is what the claim's release guarantee is *judged* by —
+ * `--max 0` runs no tick, loads no chain, and spawns nothing but the CLI
+ * itself, so the lane stays fast (spec/worktrees.md, "The default test lane
+ * must stay fast").
+ */
+describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the tip claim\")", () => {
+  it(
+    "flume loop --max 0 reclaims a stale tip claim at the derived path and leaves none behind",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        // The claim path comes from the engine accessor, never a second
+        // spelling of the tip-claims layout here.
+        const claimPath = tipClaimPath(
+          await gitCommonDir(repo.dir),
+          "refs/heads/main",
+        );
+        await mkdir(dirname(claimPath), { recursive: true });
+        // Harvest a genuinely dead pid: spawn a no-op node child and wait for
+        // it to exit before recording its pid as the stale holder.
+        const probe = exec(process.execPath, ["-e", ""]);
+        const deadPid = probe.child.pid;
+        await probe;
+        await writeFile(claimPath, String(deadPid), "utf8");
+        // The claim is on disk *before* the loop runs. Without this the
+        // absence below is an absence over an empty directory — green
+        // whether the engine releases the claim, never takes one, or writes
+        // it somewhere else entirely (`.claude/rules/engineering.md`, "A
+        // green verdict is proven non-vacuous").
+        expect(existsSync(claimPath)).toBe(true);
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+        // Reclaimed over the dead holder on the way in, released on the
+        // clean exit on the way out.
+        expect(existsSync(claimPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+});
+
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
   it(
     "refuses before any tick, exit 1, naming the flag path — no lock taken, no tick runs",

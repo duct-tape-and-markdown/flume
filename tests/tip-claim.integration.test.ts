@@ -15,13 +15,14 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
-import { CLI, TSX_CLI, gitOut, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { CLI, TSX_CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -45,6 +46,31 @@ async function makeJobRepo(branch: string): Promise<{
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * The claim path the engine itself would key on for the ref `dir`'s HEAD is
+ * on — `currentRefPath` + `tipClaimPath` (src/git.ts), never a second
+ * spelling of the tip-claims layout here. Every assertion below that reads
+ * "no claim was left behind" is an absence over this path, so a hand-copied
+ * layout that drifted from the accessor would leave those tests permanently
+ * green over a path nothing ever writes (`.claude/rules/engineering.md`, "A
+ * green verdict is proven non-vacuous").
+ *
+ * A HEAD that names no ref throws rather than returning a path: a fixture
+ * that detached before deriving has no claim path to assert against, and
+ * silently substituting one is the same false green a hand copy is
+ * ("Loud or nothing").
+ */
+async function headClaimPath(dir: string): Promise<string> {
+  const ref = await currentRefPath(dir);
+  if (ref.kind !== "ref") {
+    throw new Error(
+      `fixture: HEAD in ${dir} names no ref (${ref.kind}) — derive the ` +
+        `claim path while it still does`,
+    );
+  }
+  return tipClaimPath(await gitCommonDir(dir), ref.path);
 }
 
 /**
@@ -125,18 +151,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
     async () => {
       const repo = await makeJobRepo("main");
       try {
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimPath = join(
-          commonDir,
-          "flume",
-          "tip-claims",
-          "refs",
-          "heads",
-          "main",
-        );
+        const claimPath = await headClaimPath(repo.dir);
         await mkdir(dirname(claimPath), { recursive: true });
         // The vitest worker itself plays the live first loop's holder.
         await writeFile(claimPath, String(process.pid), "utf8");
@@ -200,34 +215,6 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
-    "claim file is gone after a clean exit",
-    async () => {
-      const repo = await makeJobRepo("main");
-      try {
-        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
-        expect(r.code).toBe(0);
-
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimPath = join(
-          commonDir,
-          "flume",
-          "tip-claims",
-          "refs",
-          "heads",
-          "main",
-        );
-        expect(existsSync(claimPath)).toBe(false);
-      } finally {
-        await repo.cleanup();
-      }
-    },
-    30_000,
-  );
-
-  it(
     "a bare flume tick with no other live claim-holder acquires and releases a claim around its single tick",
     async () => {
       const repo = await makeJobRepo("main");
@@ -245,18 +232,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
         // startup.
         await new Promise((r) => setTimeout(r, 1500));
 
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimPath = join(
-          commonDir,
-          "flume",
-          "tip-claims",
-          "refs",
-          "heads",
-          "main",
-        );
+        const claimPath = await headClaimPath(repo.dir);
         expect(existsSync(claimPath)).toBe(true);
 
         const exitCode = await new Promise<number | null>((resolveExit) => {
@@ -279,21 +255,17 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
 
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimDir = join(commonDir, "flume", "tip-claims", "refs", "heads");
-        await mkdir(claimDir, { recursive: true });
+        const claimPath = await headClaimPath(repo.dir);
+        await mkdir(dirname(claimPath), { recursive: true });
         // The vitest worker itself plays the live holder.
-        await writeFile(join(claimDir, "main"), String(process.pid), "utf8");
+        await writeFile(claimPath, String(process.pid), "utf8");
 
         const r = await runCli(repo.dir, ["tick"]);
 
         expect(r.code).toBe(1);
         expect(r.out).toContain(`refs/heads/main claimed by pid ${process.pid}`);
         // A refused bare tick released nothing — it never held the claim.
-        expect(await readFile(join(claimDir, "main"), "utf8")).toBe(
+        expect(await readFile(claimPath, "utf8")).toBe(
           String(process.pid),
         );
       } finally {
@@ -322,18 +294,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
         // inside the process's lifetime rather than racing its startup.
         await new Promise((r) => setTimeout(r, 1500));
 
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimPath = join(
-          commonDir,
-          "flume",
-          "tip-claims",
-          "refs",
-          "heads",
-          "main",
-        );
+        const claimPath = await headClaimPath(repo.dir);
         const pidPath = join(repo.dir, ".flume", "loop.pid");
         expect(existsSync(claimPath)).toBe(true);
         expect(existsSync(pidPath)).toBe(true);
@@ -386,6 +347,10 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
     async () => {
       const repo = await makeJobRepo("main");
       try {
+        // Derived while HEAD still names a ref: once detached there is no
+        // ref to key a claim on, so the path this loop *would* have claimed
+        // is only readable from here.
+        const claimPath = await headClaimPath(repo.dir);
         await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
         await writeRepoConfig(repo.dir, minimalChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -400,19 +365,6 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
           true,
         );
         expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
-
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimPath = join(
-          commonDir,
-          "flume",
-          "tip-claims",
-          "refs",
-          "heads",
-          "main",
-        );
         expect(existsSync(claimPath)).toBe(false);
       } finally {
         await repo.cleanup();
@@ -512,14 +464,10 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
     async () => {
       const repo = await makeJobRepo("main");
       try {
-        const commonDir = resolve(
-          repo.dir,
-          await gitOut(repo.dir, ["rev-parse", "--git-common-dir"]),
-        );
-        const claimDir = join(commonDir, "flume", "tip-claims", "refs", "heads");
-        await mkdir(claimDir, { recursive: true });
+        const claimPath = await headClaimPath(repo.dir);
+        await mkdir(dirname(claimPath), { recursive: true });
         // The vitest worker itself plays the live holder.
-        await writeFile(join(claimDir, "main"), String(process.pid), "utf8");
+        await writeFile(claimPath, String(process.pid), "utf8");
 
         const live = await runCli(repo.dir, ["status"]);
         expect(live.code).toBe(0);
@@ -530,7 +478,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
         const probe = exec(process.execPath, ["-e", ""]);
         const deadPid = probe.child.pid;
         await probe;
-        await writeFile(join(claimDir, "main"), String(deadPid), "utf8");
+        await writeFile(claimPath, String(deadPid), "utf8");
 
         const stale = await runCli(repo.dir, ["status"]);
         expect(stale.code).toBe(0);
