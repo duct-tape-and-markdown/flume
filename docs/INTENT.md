@@ -50,6 +50,71 @@ Built-in from v0 via git worktree fanout for phases declared `concurrency: "fano
 
 Docker is a v1 layer for AFK / env reproducibility / capability isolation, behind the same `SandboxProvider` seam.
 
+## Decided, not yet executed — the consumable chain
+
+Ruled 2026-09-14 on the consumer chain survey
+(`docs/surveys/consumer-chains/`, five consumers read against 0.15.0). The
+engine ships as a package; the harness that runs it does not, so every
+consumer re-authors it and every breaking engine change is one hand
+migration per consumer. The survey found the same blocks written by hand in
+two or more chains — a per-job declaration record, the entry extension, a
+`per` gate, a plan cursor and a continuation marker regexed out of prose,
+the no-commit taxonomy restated in prompts, hand-rolled pickability, an
+ignore list against engine-owned paths — and five chains that declare
+`tests[]` while none runs it. The goal is one interface a consumer adopts,
+so that drift and scatter between consumers stop being the normal state.
+
+### Three layers, one dependency direction
+
+- **Kernel** (`src/`) — mechanism only: ticks, worktrees, gates, verdicts,
+  pickability, reported facts. Imports nothing. `engine-boundary.md` governs
+  it and this section does not loosen that.
+- **Chain package** — flume's opinion as a consumable, versioned package
+  with typed environment config. Imports the kernel. A consumer declares its
+  environment and pins one version; a breaking kernel change is one bump
+  plus the package's migration note, not a hand migration.
+- **Temper** (a separate project) — types every document in the arena:
+  spec, rules, records, prompts, state. Sits beside flume, governs the
+  harness's own prose, imports nothing of flume. Only the chain package
+  knows both exist, and it knows temper's outputs as files on disk.
+
+Disk is the contract between layers. No tick-time library call into temper
+is planned; the persisted rendered prompt is a projection temper can check.
+
+### The chain package's surface
+
+| The package owns | The consumer declares |
+| --- | --- |
+| The plan slices (inbox, derive, sweep) and build, with their prompts and discipline | Which slices run; the spec locus and how a cite resolves |
+| The entry extension — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`, `notes` — and its hints | Extra fields and caps |
+| The `tests[]` / `pins[]` judge, behind a runner interface | The test runner: vitest, cargo, dotnet, a script |
+| The `per` gate (path **and** section resolve), the records gate, the clean-tree gate, the pending-gate wiring | The gate set per phase and its `when`; extra gates by registry name, inline shell, or script |
+| Records as one file each; the plan cursor and continuation marker as declared, typed state, never regexed prose | Writable paths per phase; channel paths; whether writes scope to the entry (the survey argues it both ways, so the package defaults off and documents the tradeoff) |
+| A default `handoff` off `pickableAfter` and the reported no-commit facts | Models per phase, extra agent args, tick timeout, parallelism |
+| Prompt text that names the engine's no-commit vocabulary once, sourced from the engine | Prompt slots: an autonomy dial, domain context |
+| The runtime ignore list, derived from the engine's path record | Nothing |
+
+The per-job declaration record two consumers share — fence, plan fence,
+gates, setup dirs, agents per phase, timeout — is the seed of the config
+schema.
+
+### Kernel work that precedes it
+
+The package should not carry a workaround the kernel can retire first. Each
+is filed as an inbox record: a cost field on agent usage; the entry tag on
+the agent invocation; a worktree base that is not an import-time env read;
+a base-tree checkout for differential gates; a live-worktree inventory on
+the API; the MCP-inheritance question on the agent seam. Already shipped and
+awaiting adoption downstream: `pickableAfter`, `readFileAtRef`, and the
+latest verdict per phase.
+
+### Adoption
+
+A consumer adds the package, writes one declaration file, and seeds prompts,
+protocol, and the state root from it. Upgrading is a version bump plus the
+package's migration note. The survey's 0.15.0 column is the last migration
+done by hand.
+
 ## Decided, not yet executed — quality lenses in the loop
 
 Encode the /simplify review's four angles (reuse, simplification,
