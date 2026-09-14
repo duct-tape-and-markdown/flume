@@ -99,6 +99,13 @@ export interface GateRevertAttempt {
   gate: string;
   /** Gate's one-line verdict (`GateResult.message`). */
   message: string;
+  /**
+   * The gate's own chain-authored discriminant (`GateResult.verdict`),
+   * copied verbatim beside {@link message} and interpreted no further
+   * (spec/chain.md "What a gate returns"). A retry keying on *why* the gate
+   * refused reads this rather than pattern-matching the prose above.
+   */
+  verdict?: string;
   /** Gate's full captured output (`GateResult.details`), bounded. */
   details?: string;
   /** `git show --stat` digest of the reverted commit, bounded. */

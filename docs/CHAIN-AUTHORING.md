@@ -344,6 +344,7 @@ interface GateResult {
   ok: boolean;
   message: string; // one-line verdict for dispatcher + agent
   details?: string; // captured output, fed into next tick's prompt as context
+  verdict?: string; // your own discriminant for *why* this gate ruled as it did
   skipped?: string; // the judge never ran, and why — `ok` is still the verdict
   failingFiles?: string[]; // paths the runner blamed, when it can name them
 }
@@ -355,9 +356,17 @@ lands; failure reverts **only the offending entry's commit** — its clean
 siblings stay shipped and that one entry returns to pending. Singleton
 phases never run `afterMerge` (they commit straight to the trunk).
 
-`skipped` and `failingFiles` are **facts about the run, not verdicts**: the
-dispatcher copies both onto the tick verdict and interprets them no further.
+`verdict`, `skipped` and `failingFiles` are **facts about the run, not
+engine judgments**: the dispatcher copies them onto the tick verdict and
+interprets them no further.
 
+- Set `verdict` when the *reason* your gate ruled as it did is something a
+  later tick keys on — `"stale-input"` vs `"assertion-failed"`,
+  `"cite-unresolved"` vs `"cite-missing"`. It rides the tick verdict's gate
+  row and, on a failure that reverts the commit, the `gate-revert`
+  prior-attempt record beside `message`. That's the whole trip: the engine
+  never reads it, and nothing downstream copies it further. Without it a
+  `shouldRun` ends up re-parsing the prose its own gate wrote.
 - Set `skipped` whenever the gate returns `ok: true` **without running its
   judge** — no touched path its runner covers, a runner the chain scopes out
   by design. A bare `ok: true` claims the check was earned; spelling the skip
@@ -1294,6 +1303,13 @@ trunk tip when the record was written — and `at`, an ISO timestamp, rendered
 as the block's last line. A chain deciding "it bailed, and nothing has changed
 since" compares `headSha` against the current tip, never the record file's
 mtime against a commit time.
+
+**A gate that authored a `verdict` keeps it on the record.** A `gate-revert`
+record carries the failing gate's `verdict` (above, §2) verbatim beside its
+`message`, absent when the gate authored none. A `shouldRun` deciding whether
+to retry reads that field off `TickContext.priorAttempts` rather than
+pattern-matching the rendered prose. The block above renders `message` and
+`details` only — `verdict` is for the hook, not the agent.
 
 **A gate that names its failing files earns a flake marker.** When a
 `gate-revert` record's gate returned `failingFiles` (above, §2) and every file

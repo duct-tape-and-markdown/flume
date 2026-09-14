@@ -126,6 +126,60 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       priorAttemptsDir(flumeDir),
     );
   });
+
+  // spec/chain.md "What a gate returns": the gate's chain-authored `verdict`
+  // is persisted onto the gate-revert record beside `message`. Same agreement
+  // discipline as the round-trip above — real builder, real `write`, real
+  // `read` — because a retry's `shouldRun` reaches this field through exactly
+  // that path.
+  it("a gate-revert prior-attempt record carries the failing gate's verdict beside its message", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+
+    const authored = await buildGateRevert(
+      "afterCommit",
+      {
+        gate: "cite-resolves",
+        message: "2 of 3 cites unresolved: §Fences, §Baton",
+        verdict: "cite-unresolved",
+        details: "spec/chain.md: no section named 'Fences'",
+      },
+      fx.repo,
+      head,
+      ["src/seed.ts"],
+    );
+    const withVerdict = priorAttemptRef({ name: "authored" } as Phase);
+    await store.write(withVerdict, authored);
+    const back = await store.read(withVerdict.key);
+
+    // Vacuity pin: the record really came back, as the mode under judgement.
+    expect(back?.mode).toBe("gate-revert");
+    expect(back).toMatchObject({
+      gate: "cite-resolves",
+      message: "2 of 3 cites unresolved: §Fences, §Baton",
+      verdict: "cite-unresolved",
+    });
+    // Verbatim, not paraphrased out of the prose beside it, and not bounded
+    // like the captured `details` is.
+    expect((back as { verdict?: string }).verdict).toBe("cite-unresolved");
+
+    // A gate that authored none leaves the key off entirely — absence is the
+    // fact "this gate named no reason", never an empty string standing in.
+    const silentGate = await buildGateRevert(
+      "afterCommit",
+      { gate: "tsc", message: "type error" },
+      fx.repo,
+      head,
+      ["src/seed.ts"],
+    );
+    expect(silentGate).not.toHaveProperty("verdict");
+    const noVerdict = priorAttemptRef({ name: "unauthored" } as Phase);
+    await store.write(noVerdict, silentGate);
+    const plain = await store.read(noVerdict.key);
+    expect(plain?.mode).toBe("gate-revert");
+    expect(plain).not.toHaveProperty("verdict");
+  });
 });
 
 /**

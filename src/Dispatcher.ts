@@ -92,6 +92,7 @@ type GateResultEntry = {
   ok: boolean;
   message: string;
   details?: string;
+  verdict?: string;
   skipped?: string;
 };
 import type {
@@ -203,6 +204,14 @@ export interface TickVerdictGateResult {
   ok: boolean;
   message: string;
   details?: string;
+  /**
+   * The gate's own `GateResult.verdict` (`./Gate.js`), copied verbatim — the
+   * chain-authored discriminant for *why* the gate ruled as it did. Absent
+   * when the gate authored none. Copied, never interpreted: a chain reading
+   * a persisted verdict keys on this field instead of pattern-matching its
+   * own prose back out of `message` (spec/chain.md "What a gate returns").
+   */
+  verdict?: string;
   /**
    * The gate's own `GateResult.skipped` (`./Gate.js`), copied verbatim: `ok`
    * was not earned by running a judge, and the gate said why. Absent means
@@ -2098,6 +2107,7 @@ export class Dispatcher {
             | {
                 gate: string;
                 message: string;
+                verdict?: string;
                 details?: string;
                 failingFiles?: string[];
               }
@@ -2125,12 +2135,14 @@ export class Dispatcher {
               ok: gr.ok,
               message: gr.message,
               ...(gr.details ? { details: gr.details } : {}),
+              ...(gr.verdict ? { verdict: gr.verdict } : {}),
               ...(gr.skipped ? { skipped: gr.skipped } : {}),
             });
             if (!gr.ok) {
               entryFailure = {
                 gate: gate.name,
                 message: gr.message,
+                ...(gr.verdict ? { verdict: gr.verdict } : {}),
                 ...(gr.details ? { details: gr.details } : {}),
                 ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
               };
@@ -2712,6 +2724,7 @@ export class Dispatcher {
         | {
             gate: string;
             message: string;
+            verdict?: string;
             details?: string;
             failingFiles?: string[];
           }
@@ -2749,12 +2762,14 @@ export class Dispatcher {
           ok: gr.ok,
           message: gr.message,
           ...(gr.details ? { details: gr.details } : {}),
+          ...(gr.verdict ? { verdict: gr.verdict } : {}),
           ...(gr.skipped ? { skipped: gr.skipped } : {}),
         });
         if (!gr.ok) {
           entryFailure = {
             gate: gate.name,
             message: gr.message,
+            ...(gr.verdict ? { verdict: gr.verdict } : {}),
             ...(gr.details ? { details: gr.details } : {}),
             ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
           };
@@ -3659,6 +3674,7 @@ export class Dispatcher {
     failure?: {
       gate: string;
       message: string;
+      verdict?: string;
       details?: string;
       failingFiles?: string[];
     };
@@ -3729,6 +3745,7 @@ export class Dispatcher {
         ok: r.ok,
         message: r.message,
         ...(r.details ? { details: r.details } : {}),
+        ...(r.verdict ? { verdict: r.verdict } : {}),
         ...(r.skipped ? { skipped: r.skipped } : {}),
       });
       if (!r.ok) {
@@ -3738,6 +3755,7 @@ export class Dispatcher {
           failure: {
             gate: gate.name,
             message: r.message,
+            ...(r.verdict ? { verdict: r.verdict } : {}),
             ...(r.details ? { details: r.details } : {}),
             ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
           },
@@ -3777,6 +3795,7 @@ export class Dispatcher {
     failure: {
       gate: string;
       message: string;
+      verdict?: string;
       details?: string;
       failingFiles?: string[];
     },

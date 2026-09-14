@@ -164,6 +164,15 @@ export interface GateResult {
   /** Optional captured output (e.g. tsc stderr) for context injection. */
   details?: string;
   /**
+   * A chain-authored discriminant for *why* this gate ruled as it did. The
+   * dispatcher persists it verbatim onto the tick verdict's gate result and
+   * onto a `gate-revert` prior-attempt record beside `message`, and
+   * interprets it no further — as with {@link skipped} (spec/chain.md "What
+   * a gate returns"). A chain whose next tick keys on the reason reads this
+   * field rather than re-reading its own prose out of `message`.
+   */
+  verdict?: string;
+  /**
    * The gate did not run its judge, and why: no code path among the touched
    * paths, a runner the chain scopes out by design. `ok` stays required and
    * stays the verdict the engine acts on; this is the fact that the verdict

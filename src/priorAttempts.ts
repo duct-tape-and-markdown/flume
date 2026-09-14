@@ -476,6 +476,7 @@ export async function buildGateRevert(
   failure: {
     gate: string;
     message: string;
+    verdict?: string;
     details?: string;
     failingFiles?: string[];
   },
@@ -493,6 +494,9 @@ export async function buildGateRevert(
     when,
     gate: failure.gate,
     message: failure.message,
+    // Verbatim, unbounded like `message` beside it: a discriminant the chain
+    // authored, not captured output (spec/chain.md "What a gate returns").
+    ...(failure.verdict ? { verdict: failure.verdict } : {}),
     ...(failure.details
       ? {
           details: headTailBound(

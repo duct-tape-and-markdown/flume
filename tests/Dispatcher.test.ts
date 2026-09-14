@@ -890,6 +890,140 @@ describe("TickVerdictGateResult.skipped — a verdict row states a green no judg
   });
 });
 
+// ---------- GateResult.verdict → TickVerdictGateResult.verdict + the
+// gate-revert record (GATE-VERDICT-FIELD, spec/chain.md "What a gate
+// returns") ----------
+
+describe("TickVerdictGateResult.verdict — a chain's own reason, carried not re-parsed", () => {
+  it("a gate's verdict lands on the tick verdict's gate row verbatim", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const greenVerdict = "every-cite-resolved";
+    const redVerdict = "cite-unresolved";
+    const prose = "2 of 3 cites unresolved: §Fences, §Baton";
+
+    // Two gates, both authoring a verdict: the passing one proves the field
+    // is not a failure-only channel, the failing one is the acceptance case
+    // (a chain reading *why* a gate refused). Order matters — the loop stops
+    // at the first refusal.
+    const gates: Gate[] = [
+      {
+        name: "cites-parse",
+        when: "afterCommit",
+        async run() {
+          return { ok: true, message: "3 cites parsed", verdict: greenVerdict };
+        },
+      },
+      {
+        name: "cites-resolve",
+        when: "afterCommit",
+        async run() {
+          return {
+            ok: false,
+            message: prose,
+            verdict: redVerdict,
+            details: "spec/chain.md: no section named 'Fences'",
+          };
+        },
+      },
+    ];
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton", gates });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    const rows = outcome.verdict?.gateResults ?? [];
+    // Vacuity pin: the gate loop really ran and really produced both rows.
+    expect(rows.map((g) => g.gate)).toEqual(["cites-parse", "cites-resolve"]);
+    expect(rows.find((g) => g.gate === "cites-parse")).toEqual({
+      gate: "cites-parse",
+      ok: true,
+      message: "3 cites parsed",
+      verdict: greenVerdict,
+    });
+    expect(rows.find((g) => g.gate === "cites-resolve")).toEqual({
+      gate: "cites-resolve",
+      ok: false,
+      message: prose,
+      details: "spec/chain.md: no section named 'Fences'",
+      verdict: redVerdict,
+    });
+
+    // Persisted, not merely in-memory: the real writer's output through the
+    // real artifact (`.claude/rules/engineering.md`, "A seam gate reads what
+    // the real writer wrote") — this is the surface a later tick reads.
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(flumeDir, outcome.verdict!);
+    const onDisk = JSON.parse(
+      await readFile(tickVerdictPath(flumeDir), "utf8"),
+    ) as TickVerdict;
+    expect(
+      onDisk.gateResults.map((g) => [g.gate, g.verdict]),
+    ).toEqual([
+      ["cites-parse", greenVerdict],
+      ["cites-resolve", redVerdict],
+    ]);
+
+    // The acceptance's second half: the same reason reaches the retry through
+    // the gate-revert record, beside `message` rather than inside it.
+    const record = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+    ) as PriorAttempt;
+    expect(record.mode).toBe("gate-revert");
+    expect(record).toMatchObject({
+      gate: "cites-resolve",
+      message: prose,
+      verdict: redVerdict,
+    });
+  });
+
+  it("a gate that returned no verdict leaves no verdict on its tick verdict row", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const quietGate: Gate = {
+      name: "states-no-reason",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [quietGate],
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    const rows = outcome.verdict?.gateResults ?? [];
+    expect(rows.length).toBeGreaterThan(0);
+    // Absence is a fact, not an empty string standing in for one — on the
+    // chain's own gate and on the auto-attached builtin alike.
+    for (const row of rows) expect(row).not.toHaveProperty("verdict");
+  });
+});
+
 describe("Dispatcher singleton — handoff wakes the successor", () => {
   it("sleeps the running phase and wakes only the named successor", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
