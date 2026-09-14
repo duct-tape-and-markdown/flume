@@ -52,5 +52,6 @@ with `src/cli.ts`, `src/Baton.ts`, `src/Dispatcher.ts`, `src/builtinGates.ts`,
 `tests/helpers/subprocess.ts`; `tests/job.integration.test.ts` with
 `tests/helpers/subprocess.ts`; `tests/cliHelp.test.ts` with `src/cliHelp.ts`
 and `tests/helpers/subprocess.ts`; `tests/Baton.test.ts` with `src/Baton.ts`,
-`src/fsProbe.ts` and `src/paths.ts`.
-Frontier remaining: `tests/Dispatcher.test.ts` and `tests/docComments.test.ts`.
+`src/fsProbe.ts` and `src/paths.ts`; `tests/Dispatcher.test.ts` with its
+immediate imports.
+Frontier remaining: `tests/docComments.test.ts`.

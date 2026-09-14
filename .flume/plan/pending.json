@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "tag": "TICKVERDICT-FACTFIELDS-JUDGED-OVER-A-FIXTURE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "re-drive the fact-fields key-set claim off a real dispatcher tick"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Drive the \"no interpretation field on TickVerdict\" key-set claim through a real dispatcher tick — today it judges a hand-authored verdictFixture",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [],
+    "pins": [
+      "a dispatcher-produced tick verdict carries only declared fact fields, never an interpretation field"
+    ],
+    "acceptance": "The key-set assertion runs over a TickVerdict the Dispatcher produced and wrote, not over verdictFixture; a fact field the engine emits is in the allowlist and an interpretation field would fail it.",
+    "notes": "tests/Dispatcher.test.ts:8382 is the only key-set assertion on a TickVerdict in tests/, and its subject is the literal at tests/helpers/dispatcherFixture.ts:37 — so the engine could grow the `errored` field the title refuses and stay green. A real verdict conditionally adds tipMoved/declined/provisionFailures/mergeFailures/gateFailures/clearedPriorAttempts/bystanderCheckpointSha, so the allowlist widens rather than the 11-name list being reused verbatim."
+  },
+  {
+    "tag": "WAVE-LEDGER-REFUSAL-NOCOMMIT-UNPINNED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "ledger-refusal wave that ships nothing and carries a gate-revert cause"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin the wave no-commit cause on the verdict a ledger-rewrite refusal carries — all three existing refusal tests ship an entry, so the leg never runs",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "tests": [],
+    "pins": [
+      "a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict"
+    ],
+    "acceptance": "A fanout wave whose only entry is afterCommit-gate-reverted (footprint recorded, nothing shipped) and whose commitPendingUpdate rewrite read hits a corrupt ledger refuses with a verdict carrying noCommit \"gate-revert\".",
+    "notes": "src/Dispatcher.ts:2949 is the refusal-site call. Every existing exercise of it (tests/Dispatcher.test.ts:5906, :5954, tests/cli.test.ts:490) ships an entry, so waveNoCommitCause short-circuits on committedWave and the precedence never evaluates. Reach the leg with shipped=0 plus a non-empty footprint (:2586 pushes afterCommit-reverted). The block comment at tests/Dispatcher.test.ts:7421 still cites Dispatcher.ts:1836-1853 for that precedence; it lives at waveNoCommitCause."
+  }
+]
