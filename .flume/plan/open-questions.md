@@ -1105,3 +1105,67 @@ takes it in place under a `### Breaking` line
 
 **Recommend:** amend both spec sentences, then the entry ships the rename
 across `src/`, `tests/`, `docs/CHAIN-AUTHORING.md` and `.flume/chain.ts`.
+
+## A test title can contradict its body, and the title is what a `pins[]` line buys (PARKED)
+
+Drained from `BATON-LOUD-AGREEMENT-PINNED-AT-THE-DIR`'s note; every claim below
+re-verified on disk this tick.
+
+**The mechanics.** `judgeVitestReport` matches a `tests[]`/`pins[]` line with
+`a.fullName.includes(line)` (`.flume/vitestJudge.ts:82`, and `judgeRedOnBase`
+at `:160` the same way). vitest judges the body. Nothing reads the two against
+each other. So the whole named-line mechanism — plan declares a property, build
+titles a test with it verbatim, the gate proves a passing test carries that
+title — rests on title↔body agreement that no rung holds. A title is the one
+claim in the suite nothing checks, and a title is exactly what a `pins[]` line
+buys.
+
+**The instance.** Before `c3f7977`, `tests/Baton.test.ts` carried "awake() and
+isAwake agree on the same unreadable dir: both throw" over a body asserting
+`expect(() => baton.awake()).not.toThrow()` — its setup loops a flag *inside* a
+readable dir, so only the stat fails. Green, and standing as the pin for a
+loudness property it never exercised.
+
+**How common, measured this tick.** Scanning all 919 `it(...)` titles under
+`tests/` for a throw/refuse-shaped title over a `not.toThrow`-only body yields
+two candidates, both false positives on read. One confirmed instance in the
+tree — the class is real and rare.
+
+**No mechanical rung is available, and that is a ruling rather than an
+omission.** `bd75f27` deleted the hygiene suite because a suite reading prose
+against code is harness governance wearing engine discipline; `engineering.md`,
+*Narration is the ladder's bottom rung* now states it. Its one carve-out is
+prose compiled into the package's public `.d.ts` — which is why
+`tests/docComments.test.ts` survives, and why a test title, which the package
+never ships, sits outside it. Any title-vs-body check would be exactly the
+shape that was removed.
+
+Four homes, none of them fileable — `.claude/rules/**` and `.flume/prompts/**`
+are both outside every phase lane:
+
+- **A standing sweep lens** (the note's proposal). `posture-sweep.md`,
+  *A violation counts only when verified on disk this tick*, already carries
+  judged lenses, and `tests/` is in the sweep domain, so a neighborhood whose
+  frontier module is a test file has the file open already. Costs no
+  machinery — but a lens that hits once in 919 titles is read every rotation.
+- **A clause in `engineering.md`, *A green verdict is proven non-vacuous***
+  (recommended). That section already governs "a test that passes over zero of
+  its subject". A title naming a subject the body never exercises in the
+  asserted direction is the same failure with `n > 0`: the pin fired, the
+  subject was wrong. One sentence, no new per-rotation read, and it makes the
+  shape citable in a `per` the moment a sweep or a build tick sees one.
+- **A sentence in `prompts/build.md`** at the actor that writes the body. Line
+  29 already tells build a line is matched on full name; it does not say the
+  body must assert the title in the stated direction. Cheapest of the three,
+  and it reaches the only agent in a position to prevent the mismatch rather
+  than find it later. Weakest too: a prompt paragraph is the ladder's bottom
+  rung, which is where this already lives.
+- **Accept it.** One instance in the tree, caught by a build agent reading
+  closely. Costs the next mislabelled pin, which reads as covering a property
+  it never touched — and a pin is the artifact plan trusts when deciding a
+  property is already held.
+
+**Recommend** the `engineering.md` clause, with the `prompts/build.md` sentence
+alongside it if a second rung is wanted: the two say one thing at the two
+surfaces, and neither is paid per rotation. Held here rather than filed because
+both files are human-held.
