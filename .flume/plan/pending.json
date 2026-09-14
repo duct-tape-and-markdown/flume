@@ -1,5 +1,84 @@
 [
   {
+    "tag": "PROMPT-PATH-RESOLVE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "both render sites resolve promptPath instead of joining it"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "the promptPath doc: relative beneath configDir, absolute as given"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "RenderOptions.promptFile doc — resolved, not joined"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the absolute address at both render sites"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Resolve phase.promptPath against configDir at both dispatcher render sites, so an absolute path from a package is an address rather than a path beneath the chain.",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "The render pipeline"
+    },
+    "tests": [
+      "a singleton tick reads an absolute promptPath as the prompt file's address",
+      "a fanout tick reads an absolute promptPath as the prompt file's address"
+    ],
+    "pins": [
+      "a relative promptPath resolves beneath the chain's config directory"
+    ],
+    "acceptance": "A phase whose promptPath is absolute renders from that file at both the singleton and the fanout render site.",
+    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. This is what gives a package-shipped prompt an address — HARNESS-PROMPTS and the factory both wait on it."
+  },
+  {
+    "tag": "NO-COMMIT-MODES-VALUE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "NO_COMMIT_MODES as the declared value; the type derives from it"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "export the value beside the type"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the exported value"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Declare the no-commit taxonomy once as an exported runtime value, NO_COMMIT_MODES, and derive the NoCommitMode type from it.",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The no-commit taxonomy"
+    },
+    "tests": [
+      "the engine exports NO_COMMIT_MODES carrying the four no-commit modes"
+    ],
+    "pins": [],
+    "acceptance": "NO_COMMIT_MODES is exported from the package root, NoCommitMode is derived from it, and src/ holds no second list.",
+    "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
+  },
+  {
     "tag": "HARNESS-RECORDS",
     "gate": {
       "kind": "open"
@@ -203,6 +282,98 @@
     "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*)."
   },
   {
+    "tag": "HARNESS-DECLARED-SUPERVISOR",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "the fifth knob on the supervisor Pick and its shape"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the accepted knob and its refused value"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pass the engine's supervisor policy through the declaration whole: quarantineScope beside the four knobs already declared.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "tests": [
+      "a declaration naming quarantineScope on supervisor parses",
+      "a quarantineScope value outside the engine's two is refused"
+    ],
+    "pins": [
+      "the declaration's supervisor refuses a knob the engine's policy does not name"
+    ],
+    "acceptance": "harness/declaration.ts's supervisor accepts every knob of the engine's policy, quarantineScope included, and refuses anything else.",
+    "notes": "The Pick against Chain[\"supervisorPolicy\"] already ties the key set to the engine; this widens it to the fifth knob, typed \"run\" | \"none\" (src/Phase.ts:576). The factory's own pass-through is HARNESS-PHASES' test, not this one."
+  },
+  {
+    "tag": "HARNESS-PROMPTS",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "NO-COMMIT-MODES-VALUE"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/prompts.ts",
+          "description": "each phase's prompt address, resolved from the package's own location, and the shared args"
+        },
+        {
+          "path": "harness/prompts/build.md",
+          "description": "the build prompt, package-owned"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the inbox slice's prompt"
+        },
+        {
+          "path": "harness/prompts/plan-derive.md",
+          "description": "the derive slice's prompt"
+        },
+        {
+          "path": "harness/prompts/plan-sweep.md",
+          "description": "the sweep slice's prompt"
+        },
+        {
+          "path": "harness/prompts/plan-discipline.md",
+          "description": "the discipline the slices point at"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the addresses, the modes arg, the orphan check"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Ship the package's five prompts under harness/prompts/, addressed absolutely from the package's own location and naming the no-commit modes from the engine's exported value.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The prompts and their discipline"
+    },
+    "tests": [
+      "the package addresses each phase's prompt absolutely from its own location",
+      "the package's prompt args name the no-commit modes from the engine's exported value",
+      "every prompt address the package names is a file it ships"
+    ],
+    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
+    "pins": [],
+    "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; the packing route is HARNESS-PROMPT-PACKING. Not harness/index.ts: the factory exposes it."
+  },
+  {
     "tag": "HARNESS-GATES",
     "gate": {
       "kind": "blockedBy",
@@ -284,6 +455,48 @@
     "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. Twins at .flume/chain.ts:686 and :920."
   },
   {
+    "tag": "HARNESS-PROMPT-PACKING",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-PROMPTS"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "scripts/pack-harness-prompts.mjs",
+          "description": "the copy step, callable by the build and by the packaging test"
+        }
+      ],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "the build script runs the copy step"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "the emitted prompts, off the real build"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Copy the package's prompts beside the emitted dist/harness/ at build, and assert the emitted set from the real build output.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Where it lives"
+    },
+    "tests": [
+      "the build emits every prompt the package addresses beside dist/harness"
+    ],
+    "pins": [
+      "the package's files allowlist covers the emitted harness prompts"
+    ],
+    "acceptance": "The packaging suite drives the real build and finds every addressed prompt under the emitted dist/harness.",
+    "notes": "tsc emits no .md, and tests/harnessPackaging.test.ts drives tsc directly rather than `pnpm build`, so the copy step needs one home both can call — that file is the agreement gate's real writer. files: [\"dist\"] already covers the destination, which is why the allowlist line is a pin."
+  },
+  {
     "tag": "HARNESS-INIT-BIN",
     "gate": {
       "kind": "blockedBy",
@@ -325,7 +538,7 @@
       "section": "Adoption and upgrade"
     },
     "tests": [
-      "flume-harness init writes a declaration skeleton the package's schema parses",
+      "flume-harness init writes a declaration.ts skeleton the package's schema parses",
       "flume-harness init writes the state root and its derived ignore lines",
       "flume-harness init writes PROTOCOL.md from the package's own template",
       "flume-harness init refuses a state root that already exists rather than overwriting it"
@@ -334,6 +547,55 @@
       "the engine's flume bin exposes no harness verb"
     ],
     "acceptance": "node bin/flume-harness.js init in an empty repo writes a declaration the package's schema parses, the state root, the ignore set and PROTOCOL.md.",
-    "notes": "The shim is bin/flume.js's shape — argv through, stdio inherited, exit code out, no options of its own (spec/cli.md, *Distribution*). The files allowlist must cover the template: tsc emits no .md into dist/, and CI asserts the packed set both ways. The dependency add shells the consumer's package manager. The engine's verb set stays closed — that is why the verb lives here."
+    "notes": "The shim is bin/flume.js's shape — argv through, stdio inherited, exit code out, no options of its own (spec/cli.md, *Distribution*). The files allowlist must cover the template: tsc emits no .md into dist/, and CI asserts the packed set both ways. The skeleton is a TypeScript module (*What a consumer declares*), so it cannot sit under harness/ as a .ts file — tsc would compile it. The engine's verb set stays closed; that is why the verb lives here."
+  },
+  {
+    "tag": "HARNESS-PHASES",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "PROMPT-PATH-RESOLVE",
+        "HARNESS-DECLARED-SUPERVISOR",
+        "HARNESS-PROMPTS",
+        "HARNESS-JUDGES",
+        "HARNESS-GATES",
+        "HARNESS-HANDOFF"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/chain.ts",
+          "description": "the factory: a complete Chain from one declaration"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the phase set, the disabled slice, build's shape, the prompts, the policy"
+        }
+      ],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "export the factory and its options type"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Add the package's chain factory: a complete Chain from one declaration — three plan slices and the fanout build phase, each with its prompt, gates and handoff.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The phases"
+    },
+    "tests": [
+      "the factory returns the three plan slices and the build phase from a declaration",
+      "a plan slice the declaration does not enable is absent from the returned chain",
+      "the returned build phase is fanout and carries the declaration's fence",
+      "each returned phase names its prompt by an absolute path the package ships",
+      "the factory passes the declared supervisor policy to the chain whole"
+    ],
+    "pins": [],
+    "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
+    "notes": "The assembly point: it wires the gates, the judge, the handoff, the entry extension and the prompt addresses, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8)."
   }
 ]
