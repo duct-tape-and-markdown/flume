@@ -1,0 +1,5 @@
+# A gate that throws takes the tick process down with no verdict written (interactive session)
+
+Observed at 3447751, loop 18 tick 2: the afterMerge judge's runner threw (`vitestRunner: vitest does not resolve from <base checkout>`) and the log shows `tick process exited with code 1` and `no verdict written to disk`. The cherry-picked commit was already on trunk; the queue rewrite never ran; `merging/harness-decl-input-type.json` survived, so the next `loop` refused until an operator inspected. The supervisor's summary counted it only as an errored tick.
+
+Why it matters: a gate's throw is a gate failure the engine can report — `{ ok: false, message: <error> }` with the verdict and merge bookkeeping completed — not a crash that strands a merge and hides behind the crash-equals-stop marker. `engineering.md`, *Loud or nothing*: the refusal exists, but here the failure was louder than the mechanism and lost the tick's facts. Fork: catch at each gate-run site (afterCommit and afterMerge, singleton and fanout) and fold into the failure accounting, or rule a throwing gate a chain defect and say so in spec/chain.md *What a gate returns*.
