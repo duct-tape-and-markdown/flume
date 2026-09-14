@@ -11,6 +11,154 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-14
+
+The reporting release: **what the engine holds, the chain reads.** Two
+consumers were surveyed against the 0.14.0 engine and each still rebuilt
+facts the dispatcher had in hand — the span a gate judged, the prompt a tick
+was given, why a gate passed without running, which entry a wave dropped.
+This tag puts those on the surfaces a chain already reads, closes an
+existence-check class where a present-but-unreachable path read as an absent
+one, and removes the last inference the engine made on a chain's behalf.
+One hundred twenty-three entries.
+
+### Breaking
+
+- **The no-commit mode `voluntary-bail` is `clean-exit`.** The engine saw one
+  fact — the agent exited 0 and committed nothing — and named a reason. The
+  mode now states the fact; `VoluntaryBailAttempt` is `CleanExitAttempt`, and
+  the record's `constraint` field is `finalMessage`, the same bounded tail of
+  the agent's closing prose under a name that quotes rather than classifies.
+  A chain predicate keyed on the old string (`rec.mode === "voluntary-bail"`,
+  a `noCommit` comparison in `handoff` or `shouldRun`) takes the new one; no
+  alias is shipped.
+- **`writablePathsGate`'s entry-scope parameter is the resolved path list.**
+  The gate took `{ entryPaths, channelPaths }` and unioned them itself; the
+  renderer decided scoped-or-not separately. One derivation now decides both
+  and hands the gate a `string[]`. A chain that calls the gate directly with
+  the struct passes the resolved list; a chain that lets the dispatcher wire
+  the builtin changes nothing.
+- **A prior-attempt record states its keyspace.** Every record carries
+  `key: "entry" | "phase"` beside its `headSha`/`at` anchor, and a record
+  missing either reads as absent. Records are gitignored runtime state, so a
+  root written by an older engine simply starts clean; a chain that wrote its
+  own records through the store's path helpers needs no change.
+- **`JobStatus.awake` is `string[] | null`.** An unreadable baton directory is
+  reported per job instead of throwing out of every sibling's row.
+
+### Added
+
+- **The rendered prompt is persisted before the agent runs.** The exact bytes
+  handed to `agent.invoke` land under `<flumeDir>/rendered-prompts/`, keyed
+  like the prior-attempt record, and the verdict's invocation row names the
+  file as `promptPath`. A tick's input is on disk beside its output.
+- **The span base is reported.** `GateContext.baseSha`, `TickResult.baseSha`
+  and `ShipContext.baseSha` name the commit the span was provisioned from, at
+  both concurrencies, and the verdict's span row records it. An `afterMerge`
+  gate can now tell a trunk commit the tick ignored from one that landed
+  after it branched. `GateContext.entry` names the fanout entry the span was
+  provisioned for, at both stages.
+- **`GateResult.skipped?: string`** — a gate that passed without running says
+  so as a field, copied verbatim onto the verdict. `chainLoadGate`'s
+  untouched-chain green is the standing instance. `ok` remains the verdict.
+- **`api.git.readFileAtRef`** — the engine's own bytes-at-a-sha reader,
+  beside `showNameOnly`: an absent path is `null`, an unresolvable ref
+  rejects, and the 16 MB buffer is the engine's. Two chains had hand-rolled
+  `git show` and read every failure as an absent file.
+- **`TickResult.provisionFailures`** and **`FanoutEntryOutcome.mergeOutcome`**
+  — an entry whose worktree or `setupWorktree` failed is named once, on its
+  own field; a park and a cherry-pick conflict, which read identically on the
+  flag triple, are told apart by the wave's own merge record.
+- **A declined ship is a prior attempt.** `shipped: false` writes a
+  `not-shipped` record under the entry's key, rendered into the retry's
+  `<prior-attempt>` block and served on `TickContext.priorAttempts`; two chains
+  had rebuilt "was the last attempt declined" from the verdict log.
+- **Stale prior-attempt records are cleared at the wave's queue read.** A
+  record whose entry left the queue unshipped no longer stands forever, and
+  `PriorAttemptKeyspace` and `QuarantinedTag` are exported.
+- **The run-scoped quarantine keys `slug@hash`.** Re-scoping a held entry on
+  trunk mints a new key and lifts the hold inside the same run;
+  `TickResult.quarantinedTags` reports the key beside each tag.
+- **A merge a crash interrupted is refused at the next start.** The merge
+  stage stakes `<flumeDir>/merging/<slug>.json` before each cherry-pick and
+  retires it after the queue rewrite; a survivor refuses `loop` and `job run`
+  with EX_CONFIG (78), naming the entry and branch, and touches nothing.
+- **The builtin gates take `when`.** `tscGate({ when: "afterMerge" })` is the
+  same check at the trunk point; omitted, `afterCommit` as before.
+- **A singleton's `shouldRun` is consulted before provisioning.** A decline
+  costs a `rev-parse` and the pending read, not a worktree and an install.
+- **Chain-load failure is reported, never swallowed.** `status`, `job status`,
+  `wake` and `sleep` share one observational load that names the thrown
+  message on stderr and what proceeding costs; exit codes and stdout are
+  unchanged.
+- **Runtime ignores are merged at loop start** for the default state root and
+  now name the stop flag, both verdict artifacts, the friction dir, the
+  merge-stage marker dir and the rendered-prompt dir. An adopter upgrading by
+  hand adds `.flume/rendered-prompts/` and `.flume/merging/` to their ignore
+  file.
+- `noUnusedLocals` is on: a dead import is refused at the type rung.
+- Docs: `docs/CHAIN-AUTHORING.md` tabulates every `TickContext` field, teaches
+  all six prior-attempt modes, rescopes the worktree hooks to both
+  concurrencies, and is pinned to the engine types it quotes; `docs/CLI.md`
+  documents `check`'s no-consumer route and the observational load's report;
+  `.flume/chain.ts` is named as the walkthrough's living reference.
+
+### Fixed
+
+- **A present-but-unreachable path no longer reads as absent.** `existsSync`
+  collapsed every stat error to `false`, so a stripped traversal bit made a
+  live `loop.pid` read as no supervisor, an unreadable `awake/` read as
+  hibernating, and an unreadable `.flume` printed "no jobs". Twelve sites
+  now distinguish ENOENT from everything else through one probe: the stop
+  flag, the tip claim, the loop lockfile, `loop.pid`, the awake flag, the
+  relocated and post-tick `pending.json`, `chain.ts` at load, the `.flume`
+  ancestor walk and job state root, the worktree path, the prior-attempt
+  record, and bay discovery (which maps its refusal to EX_IOERR).
+- **Provisioning removes only a path git registers as this repo's worktree.**
+  The occupied-path fallback was a blind recursive delete reachable by a
+  sibling job's live worktree under a shared `FLUME_WORKTREES_DIR`; one
+  registry probe now answers for provisioning and the startup sweep alike,
+  and an unreadable registry removes nothing and says so.
+- **A singleton's worktree-prune throw enters the failure accounting** instead
+  of a warning, so the supervisor's consecutive-failure backstop can see a
+  deterministic prune wall.
+- **An unreadable `pending.json` on the post-tick re-read degrades** — warn
+  with the errno, report an empty `pendingAfter` — instead of throwing away
+  the `TickResult` for work that already landed.
+- **`flume check` on a chain with no fanout phase passes its fence step
+  explicitly** instead of reporting every declared path as a violation
+  against an empty fence.
+- **The prior-attempt snapshot dir and record share one slug**, so
+  `plan_sweep` no longer writes two differently-named artifacts, and a key
+  carrying path separators cannot resolve the `rm -rf`'d snapshot dir outside
+  `prior-attempts/`.
+- **The win32 `.cmd`-shim spawn retry has one home** (`src/spawnShim.ts`)
+  across the gate, install and agent spawn sites.
+- **The worktree base is resolved in one place**, and the docs' claims about
+  it are pinned to the resolver.
+- **The fence has one derivation.** The harness block's stated fence, the
+  write guard's enforced fence, and the queue pre-check `flume check` and
+  `pendingGate` share are one computation, so none can disagree.
+- Test infrastructure: a leaked `.flume` above the fixtures is refused at
+  both ends instead of silently retargeting every CLI verdict; every spawned
+  child's exit status is read through one mechanism, so a CLI that never
+  started cannot read as one that ran and failed; every judge leg pins its
+  judged set populated.
+
+### Changed
+
+- Modules extracted from the dispatcher and CLI: `loopSupervisor`,
+  `priorAttempts`, `friction`, `worktrees`, `spawnShim`, `cliChainLoad`.
+- The cascade example runs its suite at `afterMerge`, judges its `tests[]`
+  through a trunk gate the chain ships, splits plan into an ordered slice
+  ladder driven off a real `TickResult`, and drops its spec phase.
+- Release-line cites are cut from `src/`, `examples/` and `docs/`, and the
+  grammar is pinned shut; `spec/` is pinned against path locators and
+  internal-member cites.
+- The rendered core hints and two shipped option doc comments no longer
+  carry this repo's vocabulary.
+
+
 ## [0.14.0] - 2026-09-08
 
 The roots release: **the chain is handed what the engine resolved.** Every
