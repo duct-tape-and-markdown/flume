@@ -17,6 +17,7 @@ import {
   type PendingEntry,
 } from "../src/PendingSchema.ts";
 import type { StandardSchemaV1 } from "../src/standardSchema.ts";
+import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 
 const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
 
@@ -941,10 +942,12 @@ describe("renderSchemaForPrompt", () => {
   // The core hints are injected verbatim into every downstream chain's plan
   // prompt, so vocabulary from *this* repo's chain — a phase name, a
   // plan-lane artifact, a noun from our stack — ships as if the engine owned
-  // it (engine-boundary.md § Capability vs convention). Each pin below names
-  // the class, not one literal: pinning a single word lets its siblings ship
-  // green. Each asserts its subject line is present before asserting the
-  // absence — an absence over a vanished subject is a vacuous green.
+  // it (engine-boundary.md § Capability vs convention). That class is the
+  // shared list in tests/helpers/chainVocabulary.ts, asserted over the whole
+  // rendering below and over the shipped doc comments by the same checker;
+  // only vocabulary specific to one hint is spelled here. Each pin asserts
+  // its subject line is present before asserting the absence — an absence
+  // over a vanished subject is a vacuous green.
   const hintLineFor = (rendered: string, field: string): string => {
     const line = rendered
       .split("\n")
@@ -953,14 +956,12 @@ describe("renderSchemaForPrompt", () => {
     return line as string;
   };
 
-  it("the rendered pending schema names no phase from this repo's chain", () => {
+  it("the rendered pending schema names no term in the shared chain-vocabulary list", () => {
     const rendered = renderSchemaForPrompt();
     expect(rendered).toContain(`"kind": "parked"`);
     expect(hintLineFor(rendered, "dependsOnForks")).toBeTruthy();
     expect(hintLineFor(rendered, "files")).toBeTruthy();
-    expect(rendered).not.toMatch(
-      /\b(plan|build|workshop|sweep|inbox|derive)\b/i,
-    );
+    expectNoChainVocabulary(rendered, "the rendered core schema");
   });
 
   it("the rendered `files` hint names no language-specific incidental", () => {
@@ -971,10 +972,12 @@ describe("renderSchemaForPrompt", () => {
     );
   });
 
-  it("the rendered `dependsOnForks` hint names no open-questions artifact", () => {
+  // open-questions rides the shared list, asserted over the whole rendering
+  // above; RESOLVED is this hint's own vocabulary and stays here.
+  it("the rendered `dependsOnForks` hint names no fork-resolution marker", () => {
     const line = hintLineFor(renderSchemaForPrompt(), "dependsOnForks");
     expect(line).toContain("optional");
-    expect(line).not.toMatch(/open[- ]question|\bRESOLVED\b/);
+    expect(line).not.toMatch(/\bRESOLVED\b/);
   });
 
   it("the retire hint advertises a path only, never a non-path alternative (engineering.md § A seam gate reads what the real writer wrote)", () => {

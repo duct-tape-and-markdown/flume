@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
+import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
+
 // Declarations ship (tsconfig.build.json), so a doc comment on a chain-facing
 // option is the hover text every consumer reads — engine surface, injected
 // into no prompt and caught by no other pin. Vocabulary from *this* repo's
@@ -31,15 +33,7 @@ const docCommentFor = (source: string, field: string): string => {
   return body;
 };
 
-// Name the class, not a literal: pinning one phrase lets its siblings ship
-// green (the lesson of the rendered-hint pins in tests/PendingSchema.test.ts).
-const CHAIN_VOCABULARY: readonly RegExp[] = [
-  /open[-\s]questions?/i,
-  /\.flume\//,
-  /\b(plan|build|sweep|inbox|derive)\b/i,
-];
-
-it("the shipped doc comments for `forkResolver` and `entryChannelPaths` name no plan-lane artifact from this repo's chain", () => {
+it("the shipped `forkResolver` and `entryChannelPaths` doc comments name no term in the shared chain-vocabulary list", () => {
   const docs = {
     forkResolver: docCommentFor(srcText("Dispatcher.ts"), "forkResolver"),
     entryChannelPaths: docCommentFor(srcText("Phase.ts"), "entryChannelPaths"),
@@ -51,8 +45,6 @@ it("the shipped doc comments for `forkResolver` and `entryChannelPaths` name no 
   expect(docs.entryChannelPaths).toContain("entry-scoped fanout tick");
 
   for (const [field, doc] of Object.entries(docs)) {
-    for (const pattern of CHAIN_VOCABULARY) {
-      expect(doc, `\`${field}\` doc matches ${pattern}`).not.toMatch(pattern);
-    }
+    expectNoChainVocabulary(doc, `\`${field}\` doc`);
   }
 });
