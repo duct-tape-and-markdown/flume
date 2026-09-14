@@ -1225,3 +1225,32 @@ spec home. Whether the replacement is the general rule above or a
 
 **Not fileable as an entry** — `spec/` is outside every phase lane
 (`.claude/rules/spec-plan-build.md`).
+
+## `spec/loop.md`'s abort sentence under-states the summary it describes (NEEDS AMENDMENT)
+
+Drained from `ABORT-SIGNATURE-NAMES-ITS-STAGE`'s note; verified on disk this
+tick.
+
+`spec/loop.md:745` states, under *Repeated identical failures — quarantine,
+then abort*:
+
+> If the same stage-tagged signature repeats three consecutive ticks with no
+> clearing tick between them, the run aborts non-zero with a summary naming
+> the repeated signature.
+
+True but narrower than what shipped. `578513c` put `stage` on
+`SuperviseResult.repeatedFailure` (`src/loopSupervisor.ts:151`) beside
+`signature` and `count`, and `loopCompletionSummary` renders all three
+(`src/cliVerdict.ts:88-94`): "aborted: identical merge-stage failure repeated
+3 consecutive ticks — <signature>". The quarantine leg one paragraph up
+already spells its triple ("logged distinctly (tag, stage, failure
+signature)"); the abort leg names one of three.
+
+**Recommend** matching the leg above it — "a summary naming the aborting
+stage and the repeated signature" — so the two legs of one section describe
+their reported shape at the same grain. Naming `count` too is the fork: it is
+rendered, but it is also the threshold restated, and that number is
+`abortThreshold`'s, not the section's to fix.
+
+**Not fileable as an entry** — `spec/` is outside every phase lane
+(`.claude/rules/spec-plan-build.md`).

@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "HELP-ABORT-THRESHOLD-IS-OVERRIDABLE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/cliHelp.ts",
+          "description": "loop and job exit-1 prose name the knob instead of a fixed count"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "both help surfaces against the hardcoded count"
+        }
+      ]
+    },
+    "summary": "flume loop --help and flume job --help state the backstop as a fixed \"3 consecutive ticks\"; supervisorPolicy.abortThreshold makes that wrong for any chain that overrides it",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Repeated identical failures — quarantine, then abort"
+    },
+    "tests": [
+      "flume loop --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count",
+      "flume job --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count"
+    ],
+    "acceptance": "Neither help surface states the backstop threshold as a fixed number; both name the overridable knob and its default.",
+    "notes": "Sites: src/cliHelp.ts:139-140 (loop exit 1) and :327-329 (job exit 1) — ABORT-SIGNATURE-NAMES-ITS-STAGE generalized the stage in both and left the count. Help prints without a chain, so the knob is named, not rendered. Same shape tests/cliVerdict.test.ts:211 already pins for the completion summary."
+  }
+]
