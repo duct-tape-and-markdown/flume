@@ -1,56 +1,5 @@
 [
   {
-    "tag": "HARNESS-DECLARATION-SCHEMA",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "the strict declaration schema and its refusal"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "one acceptance case, two refusals"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the schema and its type"
-        },
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "the ./harness surface assertion derives from harness/index.ts instead of restating it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add the package's strict declaration schema — the eleven fields a consumer declares — refusing an unknown or a missing required field at load, naming the field and the valid set.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "tests": [
-      "the declaration schema parses a declaration naming every field",
-      "an unknown declaration field is refused, naming the field and the valid set",
-      "a missing required declaration field is refused, naming the field"
-    ],
-    "pins": [
-      "the package exports map resolves ./harness to the built harness entry point"
-    ],
-    "acceptance": "harness/declaration.ts parses a full declaration and refuses both an unknown field and a missing required one, each refusal naming the field.",
-    "notes": "runner types against harness/runner.ts. No field names an engine artifact path, a verdict field, or a prior-attempt mode. Shape alone; consumers are the cite resolver and the chain factory, later entries. 396b90e reverted on the hand-restated export list in harnessPackaging.test.ts — make it derive from the module (engineering.md, *A seam gate reads what the real writer wrote*). Leaves no chain-side twin.",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-DECLARATION-SCHEMA.md",
-      "harness/declaration.ts",
-      "harness/index.ts",
-      "tests/harnessDeclaration.test.ts"
-    ]
-  },
-  {
     "tag": "HARNESS-ENTRY-EXTENSION",
     "gate": {
       "kind": "open"
@@ -83,7 +32,14 @@
     ],
     "pins": [],
     "acceptance": "harness/entryExtension.ts renders the six fields into a prompt schema and refuses a consumer extension that removes one.",
-    "notes": "Chain-side twin at .flume/chain.ts:117 until the cutover. Consumed by the judges, the gates and the factory. Renders through the engine's renderSchemaForPrompt — one declaration per field, never a second hint copy in a prompt."
+    "notes": "Chain-side twin at .flume/chain.ts:117 until the cutover. Consumed by the judges, the gates and the factory. Renders through the engine's renderSchemaForPrompt — one declaration per field, never a second hint copy in a prompt.",
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-ENTRY-EXTENSION.md",
+      "harness/entryExtension.ts",
+      "harness/index.ts",
+      "tests/harnessEntryExtension.test.ts",
+      "tests/harnessPackaging.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-RECORDS",
@@ -117,7 +73,14 @@
     ],
     "pins": [],
     "acceptance": "harness/records.ts names the record dirs, the per-tag note path and the byte cap under a declared state root, and reports whether any record is pending.",
-    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's."
+    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's.",
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-RECORDS.md",
+      "harness/index.ts",
+      "harness/records.ts",
+      "tests/harnessPackaging.test.ts",
+      "tests/harnessRecords.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-PLAN-STATE",
@@ -152,7 +115,14 @@
     ],
     "pins": [],
     "acceptance": "harness/planState.ts reads and writes both cursors and the continuation signal as typed fields and refuses a malformed artifact by name.",
-    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563."
+    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563.",
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-PLAN-STATE.md",
+      "harness/index.ts",
+      "harness/planState.ts",
+      "tests/harnessPackaging.test.ts",
+      "tests/harnessPlanState.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-RUNTIME-IGNORES",
@@ -196,10 +166,7 @@
   {
     "tag": "HARNESS-CITE-RESOLVER",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-DECLARATION-SCHEMA"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -360,7 +327,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-DECLARATION-SCHEMA",
         "HARNESS-RUNTIME-IGNORES"
       ]
     },
