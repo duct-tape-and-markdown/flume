@@ -29,8 +29,8 @@
     },
     "summary": "Resolve phase.promptPath against configDir at both dispatcher render sites, so an absolute path from a package is an address rather than a path beneath the chain.",
     "per": {
-      "path": "spec/prompt.md",
-      "section": "The render pipeline"
+      "path": "spec/chain.md",
+      "section": "Chain residency — one chain per `.flume`"
     },
     "tests": [
       "a singleton tick reads an absolute promptPath as the prompt file's address",
@@ -40,7 +40,7 @@
       "a relative promptPath resolves beneath the chain's config directory"
     ],
     "acceptance": "A phase whose promptPath is absolute renders from that file at both the singleton and the fanout render site.",
-    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. This is what gives a package-shipped prompt an address — HARNESS-PROMPTS and the factory both wait on it."
+    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. Re-cited off spec/prompt.md *The render pipeline*: that section carries a live !`cmd` span that aborts the build render (open-questions.md, *A `promptArgs` value is prompt syntax*). spec/cli.md:152 and spec/jobs.md:94 still say joins — the human's. HARNESS-PROMPTS and the factory wait on this."
   },
   {
     "tag": "NO-COMMIT-MODES-VALUE",
@@ -335,13 +335,15 @@
     "tests": [
       "the per gate refuses a commit whose cited file is not in it, naming the tag",
       "the records gate refuses a record written outside the tick's own tag",
+      "the records gate refuses a record whose first line is not a title",
+      "the records gate refuses a record a plan slice wrote",
       "the records gate refuses a record past the byte cap",
       "the clean-tree gate refuses a leftover path the phase may not write",
       "the package's gates precede a consumer's declared gates for the same phase"
     ],
     "pins": [],
     "acceptance": "harness/gates.ts returns the four gates for a phase ahead of a consumer's declared ones, each refusing on its own case.",
-    "notes": "The per gate wraps HARNESS-CITE-RESOLVER's verdict rather than re-resolving it; the pending gate takes the declaration's fence as targetFence and the package's entry extension. Twins at .flume/chain.ts:264, :340, :386."
+    "notes": "Composes the record dirs, notePath and RECORD_MAX_BYTES from harness/records.ts rather than re-spelling them, and carries the two rules that are not layout: the title line and plan-drains-never-writes. The per gate wraps HARNESS-CITE-RESOLVER's verdict; the pending gate takes the declaration's fence as targetFence and the package's entry extension. Twins at .flume/chain.ts:264, :340, :386."
   },
   {
     "tag": "HARNESS-HANDOFF",

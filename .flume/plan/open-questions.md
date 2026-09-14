@@ -822,3 +822,89 @@ Actionable now rather than on a trigger — the spec already ratifies the second
 bin; the bullet is the one place that has not caught up. Spec is the human's
 lane (`.claude/rules/spec-plan-build.md`), and nothing in the queue blocks:
 `HARNESS-INIT-BIN` ships the bin either way.
+
+## A `promptArgs` value is prompt syntax, and two `spec/prompt.md` sections detonate the build render (PARKED)
+
+Drained from a standing `render-refused` prior-attempt record keyed
+`prompt-path-resolve` (headSha `e137674`): *prompt render aborted: 1
+inline-exec span(s) failed to resolve — cmd: cmd — stderr: sh: 1: cmd: not
+found*. Reproduced on disk this tick by running `INLINE_EXEC_RE`
+(`src/Prompt.ts:43`) over the corpus.
+
+**The mechanics, and the engine is behaving as specified.** `spec/prompt.md`
+*The render pipeline* states the four stages are a pipeline, stage 2 scanning
+stage 1's output: "an inline-exec span carried in by a `promptArgs` value is
+executed… The engine neither delimits nor escapes what it substitutes."
+`.flume/chain.ts`'s build `promptArgs` (`:885`) substitutes `PER_SECTION_TEXT`
+— the entry's cited spec section, verbatim — and `PROMPT-PATH-RESOLVE` cited
+`spec/prompt.md` *The render pipeline*, whose line 21 documents the span
+grammar by writing one. The substituted section therefore carries a live span,
+`cmd` is not a program, the render aborts, no agent is invoked, and the entry
+walls identically on every retry. Deterministic, not flaky.
+
+Exactly two sections in `spec/**` and `.claude/rules/**` carry span-shaped
+text, both in `spec/prompt.md`: *The render pipeline* (`:21`, command text
+`cmd`) and *Inline-exec spans reach `sh` through stdin, never argv* (`:191`,
+where the code span around the bang opens a match that closes on the next
+backtick, so the command text is a sentence fragment). So no entry may cite
+either section while the chain substitutes section text — the queue cannot
+express that constraint and nothing warns at derive time. `ENTRY_JSON` carries
+the same exposure one layer up: `JSON.stringify` escapes quotes and
+backslashes, not backticks, so a plan-authored `notes` field quoting the
+grammar detonates every build tick on that entry.
+
+**Unblocked, not fixed.** This tick re-cites `PROMPT-PATH-RESOLVE` at
+`spec/chain.md` *Chain residency — one chain per `.flume`*, which states the
+same rule ("it resolves against `configDir` — a relative path keeps its
+meaning beneath it, an absolute one is taken as given"). That is a dodge with a
+one-entry lifetime.
+
+The fork is about a missing injection point, not a bug:
+
+- **A declared data-substitution on the engine's side.** The chain names which
+  `promptArgs` keys are data rather than syntax; the engine neutralizes spans
+  in those values before stage 2. The chain supplies the value, the engine
+  supplies the enforcement — a capability, not a convention
+  (`.claude/rules/engine-boundary.md`, *Capability vs convention*). Costs a
+  `spec/prompt.md` *The render pipeline* amendment; the pass-through stays the
+  default, so the ratified "a span whose command contains a placeholder
+  resolves" behavior is untouched.
+- **Chain-side neutralization.** `.flume/chain.ts` defuses `PER_SECTION_TEXT`
+  and `ENTRY_JSON` by hand. No spec edit, one line, inside build's fence.
+  Every consumer chain that substitutes file content into a prompt writes the
+  same block, which is the detector for a missing surface
+  (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+- **Rule it the citer's problem and close.** Two landmined sections today; a
+  derive tick avoids them. Leaves a trap nothing checks, re-armed by any future
+  spec sentence that quotes the grammar.
+
+Recommend the first. Parked because it amends a spec sentence whose rationale
+is stated as measured, and because the second option is a one-line chain change
+a human may simply prefer to the engine surface.
+
+## Two spec sections say `promptPath` *joins* `configDir`, two say it *resolves* (NEEDS AMENDMENT)
+
+Found while re-citing `PROMPT-PATH-RESOLVE` above; every line re-read on disk
+this tick. The corpus disagrees with itself about the rule that entry ships:
+
+- **resolves** — `spec/chain.md` *Chain residency — one chain per `.flume`*
+  ("a relative path keeps its meaning beneath it, an absolute one is taken as
+  given, which is how a package-shipped prompt gets an address"), and
+  `spec/prompt.md` *The render pipeline* ("`phase.promptPath` resolved against
+  `configDir`, a relative path beneath it and an absolute one as given").
+- **joins** — `spec/cli.md` *Two independent roots* ("`phase.promptPath` joins
+  it") and `spec/jobs.md`'s job-residency paragraph
+  (`join(configDir, phase.promptPath)`, cited there to prove nothing resolves
+  from inside a job dir).
+
+`src/` joins today, so the two "joins" lines match the tree and the two
+"resolves" lines are the ship target. `PROMPT-PATH-RESOLVE` flips the tree,
+which leaves the "joins" pair stale rather than merely early. The answer looks
+decided — *resolves* is what two sections state as intent and what the
+harness package's absolute prompt addresses need — so this is an amendment,
+not a fork: reword both lines to resolution. `spec/jobs.md`'s claim survives
+the reword unchanged, because a job-dir prompt path is relative and still
+resolves beneath `configDir`.
+
+`spec/` is the human's; plan cannot make the edit. Naming it so the pair does
+not sit contradicting the shipped tree unnoticed.
