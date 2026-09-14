@@ -44,7 +44,98 @@
       "build's per-tick args refuse a state root outside the repo rather than naming a note path no commit holds"
     ],
     "acceptance": "buildPromptArgs takes only the declaration and the tick context, and computeStateRootRel has no caller under harness/.",
-    "notes": "GateContext already carries this fact (*What a gate receives*); TickContext does not, so harness/prompts.ts takes repoRoot and re-runs computeStateRootRel. A fanout tick's cwd is the worktree and flumeDir is not nested under repoRoot, so no hook can derive it. Blocks HARNESS-PHASES: the factory has no repoRoot to pass. The section's TickContext bullet gains a row — spec is the human's."
+    "notes": "GateContext already carries this fact (*What a gate receives*); TickContext does not, so harness/prompts.ts takes repoRoot and re-runs computeStateRootRel. A fanout tick's cwd is the worktree and flumeDir is not nested under repoRoot, so no hook can derive it. Blocks HARNESS-PHASES: the factory has no repoRoot to pass. The section's TickContext bullet gains a row \u2014 spec is the human's."
+  },
+  {
+    "tag": "GATE-VERDICT-FIELD",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "the field on GateResult, spelled as `skipped` is"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "the field on GateRevertAttempt, beside `message`"
+        },
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "buildGateRevert carries it off the failure"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the accumulator and TickVerdictGateResult; both gate-revert sites"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the verdict row, beside the two `skipped` cases"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "the gate-revert record's row"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Carry a gate's chain-authored `verdict` onto the tick verdict's gate result and onto the gate-revert record, beside `message` and copied no further.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate returns"
+    },
+    "tests": [
+      "a gate's verdict lands on the tick verdict's gate row verbatim",
+      "a gate-revert prior-attempt record carries the failing gate's verdict beside its message"
+    ],
+    "pins": [
+      "a gate that returned no verdict leaves no verdict on its tick verdict row"
+    ],
+    "acceptance": "a chain reads a failing gate's own reason off the persisted verdict and off the gate-revert record without parsing `message`.",
+    "notes": "`skipped` is the shape to copy: the dispatcher spreads it conditionally at each gate-result site, and tests/Dispatcher.test.ts already pairs a present case with an absent one. The section names those two persistence sites only \u2014 `TickResult.gateResults` erases `details` and `skipped` today and stays as it is. The declared-fact-fields verdict test enumerates the allowed keys."
+  },
+  {
+    "tag": "PROMPT-DATA-KEYS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "`promptDataKeys` beside `promptArgs`"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "neutralize the declared keys' values between stage 1 and stage 2"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the declared key, the undeclared key, the unresolvable span"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Let a phase declare which promptArgs keys are data, and neutralize every inline-exec span in those values before stage 2 scans the substituted text.",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "The render pipeline"
+    },
+    "tests": [
+      "a declared data key's value carries an inline-exec span into the prompt without executing it",
+      "a declared data key's neutralized span still shows the agent the command text",
+      "a declared data key carrying an unresolvable span renders instead of refusing the tick"
+    ],
+    "pins": [
+      "an undeclared key's value carrying an inline-exec span is still evaluated"
+    ],
+    "acceptance": "a phase naming a key in `promptDataKeys` renders content it did not author with no span executable, every undeclared key unchanged.",
+    "notes": "The neutralizing transform itself is spec-silent. Keep the command text visible and the sigil inert: dropping the span would be the silent degradation `engineering.md` *Loud or nothing* names, over content the prompt exists to show. `renderPrompt` already takes `phase`, so nothing new threads through, and the reserved `FLUME_DIR` is engine-authored \u2014 it needs no declaration."
   },
   {
     "tag": "HARNESS-INIT-BIN",
@@ -79,6 +170,10 @@
         {
           "path": "harness/index.ts",
           "description": "export the init verb"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "the second bin entry's shebang, beside bin/flume.js's"
         }
       ],
       "retire": []
@@ -92,13 +187,14 @@
       "flume-harness init writes a declaration.ts skeleton the package's schema parses",
       "flume-harness init writes the state root and its derived ignore lines",
       "flume-harness init writes PROTOCOL.md from the package's own template",
-      "flume-harness init refuses a state root that already exists rather than overwriting it"
+      "flume-harness init refuses a state root that already exists rather than overwriting it",
+      "the flume-harness bin is a Node script whose first line is the env-node shebang"
     ],
     "pins": [
       "the engine's flume bin exposes no harness verb"
     ],
     "acceptance": "node bin/flume-harness.js init in an empty repo writes a declaration the package's schema parses, the state root, the ignore set and PROTOCOL.md.",
-    "notes": "The shim is bin/flume.js's shape — argv through, stdio inherited, exit code out, no options of its own (spec/cli.md, *Distribution*). The files allowlist must cover the template: tsc emits no .md into dist/, and CI asserts the packed set both ways. The skeleton is a TypeScript module (*What a consumer declares*), so it cannot sit under harness/ as a .ts file — tsc would compile it. The engine's verb set stays closed; that is why the verb lives here."
+    "notes": "The shim is bin/flume.js's shape \u2014 argv through, stdio inherited, exit code out, no options of its own (spec/cli.md, *Distribution*). The files allowlist must cover the template: tsc emits no .md into dist/, and CI asserts the packed set both ways. The skeleton is a TypeScript module (*What a consumer declares*), so it cannot sit under harness/ as a .ts file \u2014 tsc would compile it. The engine's verb set stays closed; that is why the verb lives here."
   },
   {
     "tag": "HARNESS-PHASES",
@@ -128,7 +224,7 @@
       ],
       "retire": []
     },
-    "summary": "Add the package's chain factory: a complete Chain from one declaration — three plan slices and the fanout build phase, each with its prompt, gates and handoff.",
+    "summary": "Add the package's chain factory: a complete Chain from one declaration \u2014 three plan slices and the fanout build phase, each with its prompt, gates and handoff.",
     "per": {
       "path": "spec/harness.md",
       "section": "The phases"
@@ -144,6 +240,6 @@
     ],
     "pins": [],
     "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
-    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). Declared data keys and the gate verdict field are ratified (3572fe5) and land before that cutover, not here."
+    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover \u2014 an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). Declared data keys and the gate verdict field are ratified (3572fe5) and land before that cutover, not here."
   }
 ]
