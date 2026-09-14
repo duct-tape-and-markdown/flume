@@ -194,7 +194,9 @@ job-local chain.
   written back into the environment when the state roots resolve, before the
   tick's chain load, so one repo chain can dispatch on it. Operator-run
   worktrees give concurrent divergence, each checkout resolving its own chain.
-- `promptPath` mechanics follow for free: it joins `configDir`, and
+- `promptPath` mechanics follow for free: it resolves against `configDir` — a
+  relative path keeps its meaning beneath it, an absolute one is taken as given,
+  which is how a package-shipped prompt gets an address — and
   `configDir` is always the directory the chain actually lives in — a shared
   chain finds its sibling `prompts/` from any job, with no chain-dir token
   and no dynamic path computation.
@@ -669,7 +671,8 @@ Durable packaging policy:
   is the expected shape, not a defect — but it runs non-blocking in CI while
   the upstream crash stands; the binding declaration-shape check is the
   consumer-install smoke.
-- **A strict, single-entry `exports` map.** `"."` only — no subpath patterns,
+- **A strict, enumerated `exports` map.** `"."` and `"./harness"`
+  (`spec/harness.md`, *Where it lives*) — no subpath patterns,
   no `./internal/*` escape hatch; a consumer needing an internal export files
   for promotion. The conditions are `types` then **`default`** — *not* `import`.
   This is load-bearing: flume's own chain loader resolves the bare package
@@ -678,7 +681,7 @@ Durable packaging policy:
   the prescribed consumer pattern (`import … from "@dtmd/flume"` inside
   `.flume/chain.ts`) while remaining invisible to tsc, vitest, and attw. Only a
   consumer-install smoke catches it. `default` is the catch-all condition,
-  still one `"."` entry resolving to the one ESM build.
+  each entry resolving to one ESM build.
 - `"main"` and `"types"` are duplicated outside `"exports"` because npm only
   shows the TS-package icon when top-level `"types"` is set.
 

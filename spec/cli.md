@@ -318,14 +318,14 @@ unrelated package.
   `#!/usr/bin/env node` shebang, so npm generates working shims on every
   platform — including the Windows `.cmd` / `.ps1` shims, which invoke it with
   `node.exe` directly and never hunt for `sh.exe`. It reaches the same entry
-  (`dist/cli.js`) with argv preserved, stdio inherited, and the child's exit
+  (`dist/src/cli.js`) with argv preserved, stdio inherited, and the child's exit
   code — or terminating signal — propagated. It parses no options, holds no
   environment opinion, and prints nothing of its own. The POSIX `bin/flume`
   shell script stays in the package for direct callers; it walks its own
   symlink chain before computing the package dir, which the Node entry does not
   need because Node resolves its own module path.
 - **`tsx` is a runtime dependency, not a dev tool.** Every consumer's
-  `.flume/chain.ts` is TypeScript, and `dist/cli.js` loads it via `tsImport`
+  `.flume/chain.ts` is TypeScript, and `dist/src/cli.js` loads it via `tsImport`
   from `tsx/esm/api` because plain Node refuses `.ts` from anything under
   `node_modules`. The loader contract lives in the CLI, not the bin shim, so
   the shims stay trivial.

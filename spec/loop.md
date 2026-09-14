@@ -437,7 +437,10 @@ gates run after the commit; nothing was consulted before the invocation.
 
 A tick that produces no usable commit is classified as exactly one **`NoCommitMode`**
 — four causally-distinct modes, so retries can tell what happened and
-platform failures stop masquerading as agent failures:
+platform failures stop masquerading as agent failures. The four are declared
+once as a runtime value the engine exports, `NO_COMMIT_MODES`, from which the
+`NoCommitMode` type derives, so a prompt or a chain names the modes from the
+engine and never from a copy:
 
 | mode | meaning |
 | --- | --- |

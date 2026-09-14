@@ -86,8 +86,10 @@ record — a consumer never hand-maintains a list against engine-owned paths.
 
 ## What a consumer declares
 
-One declaration file beside the consumer's state root, validated by the
-package's strict schema at chain load; an unknown field or a missing required
+One declaration module beside the consumer's state root — `declaration.ts`,
+a TypeScript module, because two of its fields are values with behavior (the
+runner and the resolver) — validated by the package's strict schema at chain
+load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
 | Field | What it decides |
@@ -99,7 +101,7 @@ one refuses the load naming the field and the valid set.
 | `runner` | The test runner the judge drives — see *The runner interface*. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script; the package's own gates are always present and always first. |
 | `agents` | Model per phase and extra agent arguments; absent means the package's default. |
-| `supervisor` | `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `partitionIgnore` — the engine's supervisor policy, declared here so one file holds the environment. |
+| `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
@@ -158,12 +160,15 @@ that absorbs it cannot drift apart and the existing install acceptance covers
 both. `harness/` imports `src/`; `src/` never imports `harness/`, and the
 second-implementation test (`.claude/rules/engine-boundary.md`) governs `src/`
 alone. Its tests live under `tests/` in the same suite, and it is inside the
-posture sweep's domain.
+posture sweep's domain. The package's prompts are markdown files under
+`harness/prompts/`, copied beside the emitted `dist/harness/` at build and
+covered by the package's `files` allowlist; each phase the package constructs
+names its prompt by the absolute path resolved from the package's own location.
 
 ## What this repo is
 
 This repo's own `.flume/` is the package's reference consumer: `chain.ts` is the
-harness factory applied to `.flume/declaration.json`, and nothing else. A
+harness factory applied to `.flume/declaration.ts`, and nothing else. A
 prompt, a judge, or a gate this repo wants lives in `harness/`, where every
 consumer gets it, never in `.flume/` alone — a chain-side block that only this
 repo carries is the same drift the package exists to end (CLAUDE.md, *Source
