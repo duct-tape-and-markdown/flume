@@ -28,7 +28,8 @@
  * Breaking marker: a commit body line starting with `BREAKING:` routes the
  * entry under `### Breaking` instead of the flat list (spec/cli.md
  * "Versioning policy": "Each public-API breaking change lands under a
- * `### Breaking` subheading").
+ * `### Breaking` subheading"). The subsection renders last, so the flat list
+ * stays outside it.
  */
 
 import { execFileSync } from "node:child_process";
@@ -192,13 +193,18 @@ export function renderSection(entries) {
   const breaking = entries.filter((e) => e.breaking);
   const rest = entries.filter((e) => !e.breaking);
 
+  // The flat list leads and `### Breaking` closes the section: a markdown
+  // subheading owns every line down to the next heading, and spec/cli.md
+  // names `### Breaking` with no sibling heading to close it. Rendering the
+  // non-breaking entries ahead of the subsection is what keeps them out of
+  // it without inventing a heading the spec does not declare.
   const blocks = ["## [Unreleased]"];
+  if (rest.length > 0) {
+    blocks.push(rest.map((e) => e.text).join("\n\n"));
+  }
   if (breaking.length > 0) {
     blocks.push("### Breaking");
     blocks.push(breaking.map((e) => e.text).join("\n\n"));
-  }
-  if (rest.length > 0) {
-    blocks.push(rest.map((e) => e.text).join("\n\n"));
   }
   return blocks.join("\n\n") + "\n";
 }

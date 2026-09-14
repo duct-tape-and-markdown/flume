@@ -45,6 +45,19 @@ async function runChangelog(
   return { out: stdout, err: stderr, code };
 }
 
+/**
+ * The slice of a rendered draft the `### Breaking` subheading owns: from the
+ * heading down to the next heading of any level, or to the end. Entry bodies
+ * are indented two spaces, so a `#` inside one never reads as a heading.
+ */
+function breakingSubsection(out: string): string {
+  const start = out.indexOf("### Breaking");
+  if (start === -1) return "";
+  const rest = out.slice(start + "### Breaking".length);
+  const next = rest.search(/^#{1,6} /m);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
 let repo: string;
 
 beforeEach(async () => {
@@ -155,14 +168,63 @@ describe("build-changelog", () => {
 
     expect(code).toBe(0);
     const breakingIdx = out.indexOf("### Breaking");
-    const legacyIdx = out.indexOf("LEGACY-EXPORT-DROP");
-    const normalIdx = out.indexOf("NORMAL-FEATURE");
-
     expect(breakingIdx).toBeGreaterThan(-1);
-    expect(legacyIdx).toBeGreaterThan(breakingIdx);
-    // The non-breaking entry must not itself fall under ### Breaking.
-    expect(normalIdx).toBeGreaterThan(-1);
+    expect(breakingSubsection(out)).toContain("LEGACY-EXPORT-DROP");
     expect(out.indexOf("### Breaking", breakingIdx + 1)).toBe(-1);
+  });
+
+  it("a non-breaking entry renders outside the ### Breaking subsection when a breaking entry is present", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/normal.ts",
+      "export const normal = 1;\n",
+      "build: add a normal feature (NORMAL-FEATURE)\n\nJust an ordinary addition.",
+    );
+    await commit(
+      repo,
+      "src/removed.ts",
+      "// api surface changed\n",
+      "build: drop the legacy export (LEGACY-EXPORT-DROP)\n\nBREAKING: `legacyExport` is removed; use `newExport` instead.",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    const breaking = breakingSubsection(out);
+    // Vacuity: the subsection judged below must be the one holding the break.
+    expect(breaking).toContain("LEGACY-EXPORT-DROP");
+    expect(out).toContain("- add a normal feature (NORMAL-FEATURE)");
+    expect(breaking).not.toContain("NORMAL-FEATURE");
+    expect(breaking).not.toContain("Just an ordinary addition.");
+  });
+
+  it("a draft whose entries are all breaking still renders the ### Breaking subheading", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/first.ts",
+      "// api surface changed\n",
+      "build: rename the first export (FIRST-BREAK)\n\nBREAKING: `first` is now `firstThing`.",
+    );
+    await commit(
+      repo,
+      "src/second.ts",
+      "// api surface changed\n",
+      "build: drop the second export (SECOND-BREAK)\n\nBREAKING: `second` is removed.",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    expect(out).toContain("### Breaking");
+    const breaking = breakingSubsection(out);
+    expect(breaking).toContain("FIRST-BREAK");
+    expect(breaking).toContain("SECOND-BREAK");
   });
 
   it("strips Co-Authored-By trailers from the mined body", async () => {
