@@ -132,5 +132,81 @@
     "pins": [],
     "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
     "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). Declared data keys and the gate verdict field are ratified (3572fe5) and land before that cutover, not here."
+  },
+  {
+    "tag": "HARNESS-DECL-INPUT-TYPE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "the schema's input type, beside `Declaration`"
+        },
+        {
+          "path": "harness/index.ts",
+          "description": "export it"
+        },
+        {
+          "path": "harness/init.ts",
+          "description": "the skeleton annotates its literal with it"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "the skeleton typechecks against it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Export the declaration schema's input type, and annotate the skeleton init writes with it, so a consumer's literal is authorable.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "tests": [
+      "the declaration skeleton init writes typechecks against the package's exported input type"
+    ],
+    "pins": [],
+    "acceptance": "a consumer annotating declaration.ts gets tsc refusal and completion, not load refusal alone.",
+    "notes": "`Declaration` is `z.infer`, so a defaulted field (`scopeWritesToEntry`) is required on the output side and `satisfies Declaration` will not compile over a literal. The input side is the authorable one, and the skeleton's own annotation is the export's consumer. tsc-in-test precedent: tests/cliJobVerbs.test.ts."
+  },
+  {
+    "tag": "HARNESS-INIT-CHAIN-HOP",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-PHASES"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/init.ts",
+          "description": "the chain.ts skeleton, and the written list"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "the written chain.ts loads as a Chain"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Have `flume-harness init` write the chain.ts hop — the factory over the declaration beside it — so an adopted repo can tick.",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Surface, not prescription"
+    },
+    "tests": [
+      "init writes a chain.ts applying the package factory to the declaration beside it",
+      "the chain.ts init writes loads through the engine's chain loader as a valid Chain"
+    ],
+    "pins": [],
+    "acceptance": "a repo flume-harness init adopted resolves a chain at <stateRoot>/chain.ts with no hand-written file.",
+    "notes": "The engine refuses a load with no `<configDir>/chain.ts`, so init leaves a repo one file short of a tick. The hop is three lines identical in every consumer — *Verbatim copying is the detector*. `spec/harness.md` *Adoption and upgrade* lists four artifacts; the fifth row is the human's. The existing skeleton test's tsx-over-shim probe drives the written file through the real loader."
   }
 ]
