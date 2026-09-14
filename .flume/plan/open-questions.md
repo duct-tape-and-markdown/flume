@@ -853,11 +853,22 @@ the same exposure one layer up: `JSON.stringify` escapes quotes and
 backslashes, not backticks, so a plan-authored `notes` field quoting the
 grammar detonates every build tick on that entry.
 
-**Unblocked, not fixed.** This tick re-cites `PROMPT-PATH-RESOLVE` at
-`spec/chain.md` *Chain residency — one chain per `.flume`*, which states the
-same rule ("it resolves against `configDir` — a relative path keeps its
-meaning beneath it, an absolute one is taken as given"). That is a dodge with a
-one-entry lifetime.
+**Unblocked twice, not fixed.** The re-cite alone did not hold.
+`PROMPT-PATH-RESOLVE` now cites `spec/chain.md` *Chain residency — one chain
+per `.flume`*, which states the same rule ("it resolves against `configDir` —
+a relative path keeps its meaning beneath it, an absolute one is taken as
+given"), and the entry still walled at `a072413`: its own `notes` field named
+the grammar it was dodging, and `ENTRY_JSON` is a stage-1 substitution exactly
+as `PER_SECTION_TEXT` is. So the exposure predicted one layer up is field-
+observed, not hypothetical. Reworded span-free this tick; `pending.json` now
+carries no span-shaped byte at all. Two dodges, one entry, nothing fixed.
+
+That second wall also names why nothing warns. Plan reads `pending.json`
+through a stage-2 span of its own (`.flume/prompts/plan-inbox.md:12`), and
+stage 2 never rescans its own stdout — so the same bytes are inert in a plan
+render and live in a build one. Plan cannot see at write time what only
+build's stage-1 path detonates, which leaves "keep the queue span-free by
+hand" as the only defence, one forgetful tick from being none.
 
 The fork is about a missing injection point, not a bug:
 
@@ -908,3 +919,29 @@ resolves beneath `configDir`.
 
 `spec/` is the human's; plan cannot make the edit. Naming it so the pair does
 not sit contradicting the shipped tree unnoticed.
+
+## `spec/harness.md`'s declaration table has no `resolver` row (NEEDS AMENDMENT)
+
+Drained from `HARNESS-CITE-RESOLVER`'s note; both sides re-read on disk this
+tick. The package ships `resolver` as a declared field
+(`harness/declaration.ts`, a `z.custom` over `SectionResolver` refusing a
+non-function by name), and without it nothing could supply one — the package's
+own `per` gate is the sole caller of `resolveCite`, so the type would be
+unreachable surface and "a consumer may declare a resolver" would be unshipped.
+
+`spec/harness.md` ratifies the capability twice in prose: *What a consumer
+declares* opens "two of its fields are values with behavior (the runner and the
+resolver)", and *The cite resolver* gives it a section of its own. But that
+first section's table lists eleven rows and `resolver` is not one of them —
+and the table is the enumerated declaration surface, since an unknown field
+refuses the load naming the valid set. A field the table omits reads as one the
+schema is supposed to reject.
+
+The answer looks decided — prose and section both state the field as intended,
+and the shipped schema matches them — so this is a row to add, not a fork: one
+line beside `runner`, pointing at *The cite resolver*. The live alternative is
+that the field is the human's to reject, which retires the schema entry, the
+section, and `harness/citeResolver.ts`'s injection point together.
+
+`spec/` is the human's lane. Naming it so the table and the shipped schema do
+not sit disagreeing about what a declaration may carry.

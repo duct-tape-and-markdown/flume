@@ -40,7 +40,7 @@
       "a relative promptPath resolves beneath the chain's config directory"
     ],
     "acceptance": "A phase whose promptPath is absolute renders from that file at both the singleton and the fanout render site.",
-    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. Re-cited off spec/prompt.md *The render pipeline*: that section carries a live !`cmd` span that aborts the build render (open-questions.md, *A `promptArgs` value is prompt syntax*). spec/cli.md:152 and spec/jobs.md:94 still say joins — the human's. HARNESS-PROMPTS and the factory wait on this."
+    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. Cited at spec/chain.md, never spec/prompt.md *The render pipeline*: that section documents the inline-exec grammar by writing a live span, so PER_SECTION_TEXT walls the render (open-questions.md, *A promptArgs value is prompt syntax*). spec/cli.md:152 and spec/jobs.md:94 still say joins, the human's. HARNESS-PROMPTS and the factory wait on this."
   },
   {
     "tag": "NO-COMMIT-MODES-VALUE",
