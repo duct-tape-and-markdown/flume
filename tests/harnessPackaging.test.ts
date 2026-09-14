@@ -25,6 +25,7 @@ import { promisify } from "node:util";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import * as harnessSource from "../harness/index.ts";
 import { resolvePackageJson } from "../src/cli.ts";
 import { hermeticEnv, runCli, runNodeStreams } from "./helpers/subprocess.ts";
 
@@ -124,8 +125,11 @@ afterAll(async () => {
  * Node's own resolver over the real map, in a consumer that knows only the
  * package name — the only reader whose verdict matters, since tsc, vitest
  * and a relative import all resolve `harness/index.ts` without the map
- * existing at all. The deep-path arm holds `spec/chain.md`'s standing
- * acceptance: adding a subpath must not open the emit to arbitrary reach.
+ * existing at all. Both sides are the real thing: the surface asked for is
+ * the source module's own, so the case judges what the map reaches rather
+ * than which exports the harness happens to have today. The deep-path arm
+ * holds `spec/chain.md`'s standing acceptance: adding a subpath must not
+ * open the emit to arbitrary reach.
  */
 it("the package exports map resolves ./harness to the built harness entry point", async () => {
   const probe = join(consumerDir, "probe.mjs");
@@ -140,11 +144,14 @@ it("the package exports map resolves ./harness to the built harness entry point"
   expect(resolved.code).toBe(0);
 
   // The value surface of harness/index.ts — types erase, so this is the
-  // whole of it. Non-empty first: a map that resolved to an empty module
-  // would otherwise pass the equality below by accident.
+  // whole of it — read off the module itself rather than restated here: a
+  // list by the tester's hand makes every harness export a packaging
+  // failure, and says nothing about the map either way. Non-empty first: a
+  // map that resolved to an empty module would otherwise pass the equality
+  // below by accident.
   const names = JSON.parse(resolved.stdout) as string[];
   expect(names.length).toBeGreaterThan(0);
-  expect(names).toEqual(["resolveVitest", "vitestRunner"]);
+  expect(names).toEqual(Object.keys(harnessSource).sort());
 
   const deep = join(consumerDir, "deep.mjs");
   await writeFile(deep, `import "@dtmd/flume/dist/harness/index.js";\n`);

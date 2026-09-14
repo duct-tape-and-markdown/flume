@@ -18,3 +18,9 @@ export {
   type VitestInvocation,
   type VitestRunnerOptions,
 } from "./vitestRunner.js";
+
+export {
+  DeclarationSchema,
+  parseDeclaration,
+  type Declaration,
+} from "./declaration.js";
