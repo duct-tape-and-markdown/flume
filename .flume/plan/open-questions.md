@@ -684,3 +684,44 @@ are both outside every phase lane:
 alongside it if a second rung is wanted: the two say one thing at the two
 surfaces, and neither is paid per rotation. Held here rather than filed because
 both files are human-held.
+
+## Two `entryTag` spellings the amendment leaves, one of them unshippable (PARKED)
+
+Derived from `1ebf971`; both legs verified on disk this tick.
+
+**Leg A — `WorktreeSetupContext.entryTag` → `worktreeKey` is ratified but
+outside every phase lane.** `spec/worktrees.md`, *`setupWorktree` and
+`teardownWorktree` — the chain's provisioning hooks* now names `worktreeKey`;
+`src/Phase.ts` still spells it `entryTag`, with call sites in `src/worktrees.ts`,
+`src/Dispatcher.ts` (both concurrencies), a cross-reference in `src/Agent.ts`,
+four `tests/` files and `docs/CHAIN-AUTHORING.md` — all inside build's fence.
+The blocker is `.flume/chain.ts`: it imports `WorktreeSetupContext`, types
+`setupBuildWorktree` by it, and constructs one as a literal with `entryTag:` for
+the red-on-base gate. `.flume/chain.ts` is in `tsconfig.json`'s `include` and
+outside every phase lane, so a build tick's `tsc` gate reverts the rename however
+complete the rest of it is — the entry would cost a wave to discover that, which
+is why it is here and not in the queue.
+
+No fork on the rename itself. What is needed is one interactive commit spanning
+`src/`, `tests/`, `docs/` and the chain (CLAUDE.md, *Source of truth*: breaking
+runtime changes update chain.ts in the same commit) — or a `chore(flume):`
+landing the chain side first, after which the rest files as an ordinary entry.
+
+**Leg B — the usage row's identity field, where the spec and the type now
+disagree.** `spec/loop.md`, *The tick verdict — one facts artifact* changed "the
+entry `tag`" to "the entry's `entryTag`". The row's field is
+`TickVerdictInvocation.tag`, and `TickVerdictMergeOutcome.tag` spells the same
+fact the same way with a doc cross-reference between them. `1ebf971`'s body lists
+`costUsd` and `worktreeKey` as the sentence-level contract changes and does not
+name this one, so derive shipped only `costUsd` from that sentence.
+
+- **Ratified rename, both arrays.** `tag` → `entryTag` on the invocation row and
+  the merge-outcome row together, so the verdict artifact keeps one spelling. A
+  breaking change to the verdict JSON every consumer reads.
+- **The invocation row alone**, matching the sentence literally — leaves the two
+  verdict arrays disagreeing about one fact's name.
+- **Prose, following leg A vacating the name** — the sentence restores `tag`.
+
+Recommend the third, or the first if the alignment with `AgentInvocation.entryTag`
+is the point; the second buys the inconsistency the cross-reference exists to
+prevent. Parked because all three answers are a human's spec or public-API call.
