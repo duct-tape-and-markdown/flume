@@ -886,3 +886,71 @@ Options:
 convention, and it leaves `promptPath`'s existing meaning untouched for every
 chain that keeps its prompts beside `chain.ts`. A ruling unblocks both
 subsections at once; nothing else in the queue blocks on it.
+
+## The declaration carries live values, so it cannot be the `.json` file the spec names (NEEDS AMENDMENT)
+
+`spec/harness.md`, *What this repo is* says `chain.ts` is "the harness factory
+applied to `.flume/declaration.json`". Two declared fields are not JSON-able,
+by the spec's own words:
+
+- `runner` is "a declared value with three operations" whose consumer
+  "declares its own" (*The runner interface*); the shipped schema parses it
+  structurally (`harness/declaration.ts`, `RunnerValue`).
+- *The cite resolver* says a consumer "may declare a resolver that resolves a
+  section by key" — a function too.
+
+`.json` is the only place the format is stated; *What a consumer declares* says
+"one declaration file" with no extension, and *What the package owns* says a
+consumer "imports the package, writes one declaration".
+
+Options:
+
+- **A TS module.** `.flume/declaration.ts` default-exports the object;
+  `chain.ts` is the factory applied to it. One file, live values direct, and
+  `chain.ts` is already TypeScript loaded under tsx — nothing new enters the
+  load path. Costs one word in *What this repo is*, and `flume-harness init`
+  writes a `.ts` skeleton (HARNESS-INIT-BIN's first test names "a declaration
+  skeleton the package's schema parses", which holds either way).
+- **JSON plus a TS sidecar.** The data stays in `.flume/declaration.json` and
+  the live values arrive as a second argument from `chain.ts`. Against it: the
+  seam falls on "which fields happen to be functions", which is no seam a
+  consumer can predict, and *What a consumer declares* would stop describing
+  one file.
+- **Keep JSON and retract the live values.** `runner` by registry name, the
+  cite resolver by script path. Against it: it contradicts *The runner
+  interface* directly — a consumer running cargo or dotnet supplies the three
+  operations, not a name the package already knows.
+
+**Recommend the first.** It is the smallest amendment, it keeps the spec's
+"one declaration file", and it leaves the strict-schema refusal (the load-time
+guarantee the section actually buys) untouched. The chain-factory entry cannot
+be derived until this is ruled.
+
+## `supervisor` exposes four of the engine's five policy knobs (NEEDS AMENDMENT)
+
+*What a consumer declares* names `maxParallel`, `tickTimeoutMs`,
+`abortThreshold`, `partitionIgnore`. The engine's `Chain.supervisorPolicy` has
+a fifth, `quarantineScope` (`src/Phase.ts:576`). The shipped schema ties itself
+to the engine's type by `Pick` over exactly the four named
+(`harness/declaration.ts`, `DeclaredSupervisor`), so a harness consumer cannot
+declare it — and the factory is a consumer's only route to a `Chain`, so for
+them the override does not exist.
+
+The fork is whether that is the package's discipline or an omission:
+
+- **An omission.** `spec/loop.md`, *Repeated identical failures —
+  quarantine, then abort* calls both knobs "engine defaults, chain-overridable",
+  and `.claude/rules/engine-boundary.md`, *Routing rule* says policy constants
+  enter the engine "only as chain-overridable defaults, never as fixed
+  behavior". A factory that drops one converts an overridable default back into
+  fixed behavior for every consumer that adopts the package. Fix: name it in
+  the table, widen the `Pick`.
+- **Deliberate.** Quarantine is what stops a failing entry from re-walling a
+  run, and the package's discipline may be that no consumer turns it off — the
+  same call the records byte cap takes ("the package's value, not a declaration
+  knob"). Fix: say so in the section, so the gap reads as a decision rather
+  than a dropped row.
+
+**No recommendation** — this is the package's opinion about its own floor,
+which is the human's to set. Either ruling is one sentence plus (for the first)
+one key in `supervisorShape`.
