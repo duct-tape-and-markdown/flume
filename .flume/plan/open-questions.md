@@ -512,3 +512,50 @@ governance ruling `engineering.md` says the ladder does not administer, and
 `bd75f27` was taken under explicit operator direction. Plan picking one would
 re-open it silently, which is how the first instance got closed on a premise
 that no longer held.
+
+## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
+
+Derived from the spec window; both sentences verified against `src/paths.ts`,
+`src/builtinGates.ts` and `src/cli.ts` on disk this tick. The helper-naming
+defect that ruling fixed is fixed. What replaced it asserts an equality the
+shared derivation does not support.
+
+- **`spec/cli.md` § *Subcommand surface*** — "`check` refuses exactly the
+  entries the pending gate would refuse". The two share the *judgment*
+  (`queueFenceViolations`, `src/paths.ts:181`) but not the *selection*: the
+  gate submits `entries.filter(fenceWhen)` against its one `targetFence`
+  (`src/builtinGates.ts:421`), the verb submits every entry against every
+  fanout phase's union (`src/cli.ts:640,660`). A chain declaring the
+  `fenceWhen` `spec/pending.md:422` sanctions — exempt parked entries — gets
+  `flume check` exiting 65 over an entry the tick path's gate passes, which is
+  precisely not "the same refusal the next tick would have bought with an
+  invocation". `src/cli.ts:655` states the divergence in its own words.
+- **`spec/pending.md` § *The entry-scoped write guard is opt-in, and off by
+  default*** — "The fence the tick's `<harness>` block states, the fence the
+  write guard enforces, and the fence a queue is pre-checked against ... are
+  one computation, so none of them can differ from another." The first two are
+  one computation (`entryWriteScope`) and cannot differ; that much the
+  superseded sentence had right. The third is a different set over different
+  operands — `declaredPaths(entry) ∪ channel` for a scoped tick,
+  `phase.writablePaths ∪ channel` for the queue pre-check. They share the
+  union's one *spelling* (`entryWriteScopeUnion`), not the fence.
+
+Options:
+
+- **Narrow both to the property that holds** (recommended). cli.md: the two
+  name the same offending paths for any entry both judge, because one
+  derivation decides — which entries each submits, and how many consumers each
+  reads, is the caller's. pending.md: the stated fence and the enforced fence
+  are one computation; the queue pre-check shares the union's one spelling. No
+  headings move, so no `per` cite re-homes.
+- **Make `src/` conform to cli.md's sentence.** `flume check` would have to
+  read the attached `pendingGate`'s `fenceWhen` and `targetFence` — the engine
+  introspecting a chain-attached gate's options, which `engine-boundary.md`
+  (*Told, not inferred*) fences — or hardcode a park-kind exemption in the
+  verb, the convention that same page forbids. Against on both counts.
+- **Accept as debt.** Costs the chain author who reads either sentence as a
+  guarantee. The `fenceWhen` instance is operator-visible: `flume check` red
+  over a queue the plan gate passed green.
+
+Needs an amendment because closing it edits `spec/`, which no autonomous phase
+may write.
