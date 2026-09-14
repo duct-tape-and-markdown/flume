@@ -13,9 +13,9 @@ Flume ticks run autonomously via `claude -p`. Each iteration is a fresh process.
 | Project posture, non-negotiables, pointers      | `CLAUDE.md`                 |
 | Operational rules (collaboration, memory, ...)  | `.claude/rules/*.md`        |
 | Inter-phase project conventions                 | `.flume/PROTOCOL.md`        |
-| Flume chain config (writable paths, gates, ...) | `.flume/chain.ts`           |
-| Per-phase prompts                               | `.flume/prompts/*.md`       |
-| Active plan + scratch state                     | `.flume/plan/*`             |
+| This repo's harness declaration (fence, runner, gates, agents) | `.flume/declaration.ts` |
+| The harness package (slices, prompts, judges, gates, records) | `harness/`, `spec/harness.md` |
+| Active plan + declared plan state               | `.flume/plan/*`             |
 | Findings inbox (transient queue, one file each) | `.flume/inbox/`             |
 | Build notes to plan (one file per entry tag)    | `.flume/plan/notes/`        |
 | Engine contract, by topic                       | `spec/*.md`                 |

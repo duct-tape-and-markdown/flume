@@ -35,7 +35,7 @@ Three delta kinds arm the sweep. The first two are read off `git log
 
 Each tick sweeps at most **one neighborhood**: one frontier module read
 together with its immediate imports. That is the context bound. Every
-frontier module the neighborhood read is recorded **covered** in state.md.
+frontier module the neighborhood read is recorded **covered** in the plan state.
 
 Covered is settled for the window. A later tick never re-sweeps or re-draws
 it, even where fresh judgment would cut the boundary differently — the cursor
@@ -45,7 +45,7 @@ decides coverage, never re-derivation.
 
 An open rotation never holds the baton. While `<pending-now>` carries a
 pickable entry, plan hands off to build and sweeps nothing — the frontier
-and cursor persist untouched in state.md, and coverage is deferred, never
+and cursor persist untouched in the plan state, and coverage is deferred, never
 lost. A neighborhood is swept only on a tick where nothing is pickable.
 
 **Why:** the sweep is insurance; shipped entries are the product. Insurance
@@ -58,7 +58,7 @@ tick, never one tick per skip. **Quiet-on-clean is the normal verdict**,
 recorded by advancing the stamp alone.
 
 An armed or open rotation is a live plan job: the chain keeps the sweep
-slice live while state.md carries a `Rotation open` paragraph or commits
+slice live while the plan state's rotation is open or commits
 past the stamp touch the domain, and lets it run only when the queue is
 drained (above). Hibernation is the empty frontier's verdict alone.
 
@@ -110,7 +110,7 @@ Never file against a divergence the site declares and cites as deliberate.
 
 ## The stamp
 
-State.md carries `Posture swept through: <sha>` — the sha the frontier was
+The plan state carries the sweep cursor — the sha the frontier was
 derived from, never a HEAD that moved mid-rotation. It is **copied forward
 verbatim** on every plan tick and advanced only when a rotation closes.
 

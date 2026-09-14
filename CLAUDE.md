@@ -8,7 +8,7 @@
 
 **Read the spec corpus first** — `spec/*.md`. One file per topic (`loop`, `chain`, `prompt`, `pending`, `cli`, `jobs`, `worktrees`, `harness`), each describing what flume *is*, present tense. Not release targets: the corpus states current truth and the ship target together, so a section that no longer matches `src/` is a defect in one of them. What a spec sentence may name is governed by **.claude/rules/spec-writing.md**: behavior and public surface, never `src/` paths, line numbers, or internal helpers. Plan derives against whatever changed in `spec/` since its derive stamp. `docs/INTENT.md` carries the longer-range design intent; historical material lives in `docs/`.
 
-This is flume operating on flume: `.flume/chain.ts` imports the runtime from `../src/` (this repo), not from `flume/` (a published dep). Breaking runtime changes must update chain.ts in the same commit.
+This is flume operating on flume: `.flume/chain.ts` is the harness package's factory (`../harness/`, `spec/harness.md`) applied to this repo's `.flume/declaration.ts`, and both import the runtime from `../src/` (this repo), never the published package. A breaking runtime change updates `harness/` in the same commit; a behavior this repo wants lives in `harness/`, where every consumer gets it, never in `.flume/` alone.
 
 ## Tech Stack
 
@@ -21,7 +21,7 @@ Stack-specific conventions belong in `.claude/rules/<area>.md` and should be pat
 
 ## Workflow: Flume
 
-Four autonomous phases — three plan slices (`plan-inbox`, `plan-derive`, `plan-sweep`, one job each) and build — sharing one TypeScript dispatcher. Chain config in `.flume/chain.ts`; per-phase prompts in `.flume/prompts/*.md`. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm flume` (a script that runs `src/cli.ts` under tsx; the `bin/` entries exec the published `dist/` build and are not for this repo) (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`). Plan output is structured JSON at `.flume/plan/pending.json`; prose at `.flume/plan/{state,open-questions}.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
+Four autonomous phases — three plan slices (`plan-inbox`, `plan-derive`, `plan-sweep`, one job each) and build — all from the harness package (`harness/`): its prompts, judges, gates, records and plan state. This repo declares its environment in `.flume/declaration.ts`; `.flume/chain.ts` applies the factory to it. Runtime is local (`src/`, not a pnpm dep). Run via `pnpm flume` (a script that runs `src/cli.ts` under tsx; the `bin/` entries exec the published `dist/` build and are not for this repo) (subcommands: `tick`, `loop`, `status`, `wake`, `sleep`). Plan output is structured JSON at `.flume/plan/pending.json`; plan state at `.flume/plan/state.json`; prose at `.flume/plan/open-questions.md`. State on disk; each tick is a fresh `claude -p`. Loops are autonomous — no slash command invokes them.
 
 Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
