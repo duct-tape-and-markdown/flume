@@ -725,3 +725,63 @@ name this one, so derive shipped only `costUsd` from that sentence.
 Recommend the third, or the first if the alignment with `AgentInvocation.entryTag`
 is the point; the second buys the inconsistency the cross-reference exists to
 prevent. Parked because all three answers are a human's spec or public-API call.
+
+## The mined draft's empty-bucket shape is convention, not spec (NEEDS AMENDMENT)
+
+Drained from `CHANGELOG-DRAFT-UNCATEGORIZED-SUBHEADING`'s note; verified on
+disk. `spec/cli.md`, *Versioning policy* states the draft "closes `###
+Breaking` with a `### Uncategorized` subheading over every non-breaking entry"
+and is silent on what either heading does when its bucket is empty. The entry
+shipped the renderer's standing convention — a heading renders iff its bucket
+is non-empty — and `tests/build-changelog.test.ts` now pins both directions:
+an all-breaking draft renders no `### Uncategorized`, a no-breaking draft
+renders `### Uncategorized` alone with no `### Breaking`.
+
+So the shape moved from prose-silence to two pinned cases without ever being
+ratified. Either ruling needs a human: `spec/` is the human's alone, and an
+entry against a sentence that does not exist carries no `per`.
+
+- **Ratify the convention** (recommended). One sentence in *Versioning policy*:
+  a subheading renders only over a non-empty bucket. It follows the section's
+  own rationale — the second heading exists as "the curating human's cue for
+  what is still unsorted", and an empty bucket has no cue to give. Zero code
+  motion; the two pinned cases become the spec's.
+- **Always emit both headings.** An empty `### Breaking` is an affirmative
+  "the miner found none", where silence reads the same as a categorizer that
+  never ran. Costs a spec sentence, a renderer change, and both pinned cases
+  inverted.
+- **Leave it unstated.** The tests hold the shape either way; the cost is that
+  whoever next changes the renderer must notice that two test cases pin a
+  convention nothing declares.
+
+## Four dead absence guards in `.flume/chain.ts`, outside every phase lane (NEEDS AMENDMENT)
+
+Drained from `GATECONTEXT-COMMITSHA-AND-BASESHA-REQUIRED`'s note; verified on
+disk. `GateContext.commitSha` and `.baseSha` are both required now
+(`src/Gate.ts:114`, `:140`), and the entry removed every absence guard in
+`src/` and `examples/`. Four remain in `.flume/chain.ts`, which no phase can
+write:
+
+- `:269` `records gate requires commitSha`
+- `:391` `per gate requires commitSha`
+- `:787` `red-on-base needs baseSha and commitSha`
+- `:273` `ctx.baseSha ? [ctx.baseSha, sha] : ["--root", sha]`, plus the
+  `:256-262` paragraph naming the hand-built-fixture case that fallback
+  existed for
+
+All four are unconstructable: no cast escapes the type (no `as GateContext`
+anywhere under `tests/` or `.flume/`), and both `tests/chain.test.ts` fixtures
+supply a base (`:414` `EMPTY_TREE`, `:653` `${sha}^`), so the `--root` arm is
+unexercised as well as unreachable. Dead plumbing and expired narration, the
+two standing sweep lenses that name `.flume/chain.ts` as their domain
+(`posture-sweep.md`, *A violation counts only when verified on disk this
+tick*) — and the file sits outside `buildFence` and outside every plan slice's
+lane, so no entry can reach it.
+
+No fork on the fix: drop the three refusals, collapse the span to `[ctx.baseSha,
+sha]`, and delete the fixture-fallback sentence. One `chore(flume):` from an
+interactive session, or folded into the next chain-touching commit.
+
+Not covered here, and correct as it stands: `TickResult.commitSha`/`baseSha`
+(`src/Phase.ts:193`, `:228`) stay optional, because a no-commit tick has
+neither. Only the gate surface changed.
