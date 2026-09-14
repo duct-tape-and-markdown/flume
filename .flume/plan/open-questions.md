@@ -1209,10 +1209,19 @@ same optionality. The entry then follows the amendment, making `commitSha` and
 `baseSha` required across `src/Gate.ts` and the hand-built contexts under
 `tests/`.
 
-**`stateRootRel` is not this question.** Its absence is real — a state root
-relocated outside the repo — so it keeps `string | undefined` and only changes
-from an optional key to a required one, which no spec sentence names. That
-ships now as `GATECONTEXT-STATEROOTREL-REQUIRED-KEY`.
+**`commitSha?` and `baseSha?` are now the last two.** `stateRootRel` was never
+this question — its absence is real (a relocated state root), so it kept
+`string | undefined` and only became a required key; that shipped at `188c72e`,
+and its doc comment (`src/Gate.ts:59`) now names relocation rather than fixture
+compat. `baseSha`'s still reads "Optional for the same hand-built-fixture reason
+as `commitSha` above" (`src/Gate.ts:131`), so both surviving optionals are keyed
+to this one spec sentence: amending it is what unblocks them, and nothing else
+in `spec/` states the rationale.
+
+**Split the bullet, don't delete it.** `commitSha` is still optional in the
+type, so striking the sentence outright would leave a shipped shape with no
+spec home. Whether the replacement is the general rule above or a
+`commitSha`-only restatement is the fork for the human.
 
 **Not fileable as an entry** — `spec/` is outside every phase lane
 (`.claude/rules/spec-plan-build.md`).
