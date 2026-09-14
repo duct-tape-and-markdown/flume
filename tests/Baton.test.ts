@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -84,9 +84,24 @@ describe("Baton — idempotency", () => {
  * collapses every stat failure to `false` — a phase holding a flag nothing
  * could stat reported as asleep, and the caller hibernated over it
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ *
+ * Two depths, and they are not the same case. An unstattable *flag* sits
+ * inside a dir `readdirSync` still reads, so only the stat is hit; an
+ * unstattable *awake dir* fails the listing too, and that is where the two
+ * readers have to agree.
  */
 describe("Baton — an unstattable awake flag is loud", () => {
-  it("isAwake throws when a phase's awake flag is present but unstattable", () => {
+  /**
+   * Replace the constructed awake dir with a symlink to itself: `readdirSync`
+   * on the dir and `statSync` on any path under it both raise ELOOP. Not a
+   * permission bit — a root-run test would bypass chmod.
+   */
+  const loopAwakeDir = (baton: Baton): void => {
+    rmSync(baton.dir, { recursive: true });
+    symlinkSync(basename(baton.dir), baton.dir);
+  };
+
+  it("an unstattable flag inside a readable dir leaves awake() listing it while isAwake throws", () => {
     const baton = new Baton(flumeDir);
     // ELOOP — present on disk, unstattable. Not a permission bit: a root-run
     // test would bypass that.
@@ -94,16 +109,25 @@ describe("Baton — an unstattable awake flag is loud", () => {
 
     // readdir sees the entry, so the flag really is there.
     expect(baton.awake()).toEqual(["plan"]);
+    expect(baton.hibernating()).toBe(false);
     expect(() => baton.isAwake("plan")).toThrow(/ELOOP/);
   });
 
-  it("awake() and isAwake agree on the same unreadable dir: both throw, neither reports asleep", () => {
+  it("awake() throws when the awake dir itself is unstattable", () => {
     const baton = new Baton(flumeDir);
-    symlinkSync("plan", join(baton.dir, "plan"));
+    loopAwakeDir(baton);
 
-    expect(() => baton.awake()).not.toThrow();
-    expect(baton.hibernating()).toBe(false);
-    expect(() => baton.isAwake("plan")).toThrow();
+    expect(() => baton.awake()).toThrow(/ELOOP/);
+    // hibernating() reads through awake(), so it cannot answer "asleep" either.
+    expect(() => baton.hibernating()).toThrow(/ELOOP/);
+  });
+
+  it("awake() and isAwake both throw on one unstattable awake dir", () => {
+    const baton = new Baton(flumeDir);
+    loopAwakeDir(baton);
+
+    expect(() => baton.awake()).toThrow(/ELOOP/);
+    expect(() => baton.isAwake("plan")).toThrow(/ELOOP/);
   });
 
   it("absence stays silent — a name with no flag is still plainly asleep", () => {

@@ -41,10 +41,9 @@ export class Baton {
 
   /**
    * True iff the named phase has an awake flag. Absent is the only silent
-   * reading: `existsLoud` (`src/fsProbe.ts`) throws on a flag that is present
-   * but unstattable, the disposition `awake()`'s `readdirSync` above already
-   * takes on an unreadable awake dir — one flag class, one answer to an
-   * unresolved read (`.claude/rules/engineering.md`, "Loud or nothing").
+   * reading; every other stat failure throws, the same disposition `awake()`
+   * takes. Pinned by "Baton — an unstattable awake flag is loud"
+   * (`tests/Baton.test.ts`).
    */
   isAwake(name: string): boolean {
     return existsLoud(namespacedJoin(this.dir, name));
