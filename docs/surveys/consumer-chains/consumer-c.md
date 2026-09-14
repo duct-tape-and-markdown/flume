@@ -49,7 +49,7 @@ under the state root — but the chain and prompts reach **outside** it to
 | `tsc` | `afterCommit` | `shellGate` (`:314`) | |
 | `bundle builds` | `afterCommit` | `shellGate` (`:386`) | Ordered **before** vitest (`:552-554`): tests that drive the bundled CLI need a fresh bundle matching the just-merged tree |
 | `vitest` | `afterCommit` | `shellGate` (`:342`) | |
-| `cartograph audit (zero drift)` | `afterCommit` | `shellGate` (`:400`) | Domain audit must report zero drift |
+| `<domain> audit (zero drift)` | `afterCommit` | `shellGate` (`:400`) | Domain audit must report zero drift |
 | `dotnet build` | `afterCommit` | `shellGate` (`:357`) | |
 | `bundle runs without node_modules` | `afterCommit` | **chain-authored** (`:162`) | Copies the bundle + WASM into a fresh `tmpdir` with no ancestor `node_modules` and runs `help`; an un-inlined runtime require surfaces as a hard error |
 

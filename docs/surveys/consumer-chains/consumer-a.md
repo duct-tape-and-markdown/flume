@@ -15,7 +15,7 @@ consumer repository root. Read-only: nothing in the consumer was modified.
 | Lockfile resolved | `0.14.0` (`.flume/pnpm-lock.yaml`, `specifier: 0.14.0` / `version: 0.14.0`) — manifest and lock agree |
 | Install shape | Installed from the registry, not vendored or path-linked. The engine is a devDependency of a **nested** manifest at `.flume/package.json`, not of the repo root, so the state root is its own pnpm project (`.flume/pnpm-workspace.yaml`, `.flume/tsconfig.json`) |
 | State root | `.flume/` for the chain and prompts; **job mode** — live state roots are `.flume/jobs/<name>/` |
-| Jobs | `flume job` is the operating mode, not the default root. One job present at read time: `.flume/jobs/dev-9261-phone-pvo/`. A job seed template lives at `.flume/job-seed/` (`brief.md`, `inbox.md`, `plan/{pending.json,state.md,open-questions.md}`, `friction/`, `pending-query.mjs`), declared to the engine as `seedDir: "job-seed"` (`.flume/chain.ts:906`) |
+| Jobs | `flume job` is the operating mode, not the default root. One job present at read time, under `.flume/jobs/<job>/`. A job seed template lives at `.flume/job-seed/` (`brief.md`, `inbox.md`, `plan/{pending.json,state.md,open-questions.md}`, `friction/`, `pending-query.mjs`), declared to the engine as `seedDir: "job-seed"` (`.flume/chain.ts:906`) |
 
 Note on the read: the one live job's directory carried only engine-written
 material (`awake/`, `friction/`, `metrics.jsonl`, `sessions/`,
@@ -72,7 +72,7 @@ cold build against no build inputs.
 | `humanOnly` | `[]` (`:904`) |
 | `entryExtension` | **6 fields** (`:160`): `summary` (≤300), `per` (`{path, section}` strict), `acceptance` (≤1600), `tests[]` (`{path, asserts}`), `notes` (≤800), `channelOnly` (optional boolean) |
 | `supervisorPolicy.maxParallel` | `4` (`:912`) |
-| `supervisorPolicy.partitionIgnore` | `[".temper/lock.toml"]` (`:919`) — a universally re-pinned file excluded from the collision set so the partition does not serialize every wave to one entry |
+| `supervisorPolicy.partitionIgnore` | one entry, a shared tool's `lock.toml` (`:919`) — a universally re-pinned file excluded from the collision set so the partition does not serialize every wave to one entry |
 | `supervisorPolicy.tickTimeoutMs` | getter (`:927`): declared `tickTimeoutMinutes` else **55 min**, derived from 374 measured invocations across seven jobs (max 21.3 min, median 4.0, p90 12.2) |
 | Agent assignment | Per phase, from the job declaration's `agents.{plan,build}` selecting a name out of a registry `{sonnet, opus, haiku}` (`:449`); absent means `sonnet` (`:456`). An unknown name **refuses the tick** rather than falling back (`:651`) |
 | Agent extra args | `["--strict-mcp-config"]` on every agent (`:434`) — tick agents boot no user-level MCP servers; comment cites a wedged MCP child that held a finished agent open and stalled a wave |

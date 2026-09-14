@@ -51,7 +51,7 @@ under the state root.
 | `tscGate` | `afterCommit` | builtin (`:872`) | |
 | `biome check` | `afterCommit` | **chain-authored** (`:615`) | Changed files formatted + lint-error-free |
 | `ds:lint` | `afterCommit` | **chain-authored** (`:666`) | Design-system adherence, via `ast-grep` |
-| `bin/runner runs without node_modules` | `afterCommit` | **chain-authored** (`:135`) | Bundle self-containment — the same gate consumer-c carries |
+| `bin/<cli> runs without node_modules` | `afterCommit` | **chain-authored** (`:135`) | Bundle self-containment — the same gate consumer-c carries |
 | `worktree node_modules resolves vitest` | `afterCommit` | **chain-authored** (`:481`) | A **sentinel gate**: fails loud when a dependency stops resolving from the worktree root |
 | `vitest` | **`afterMerge`** (`:877`, `{...vitestGate, when: "afterMerge"}`) | builtin, `when` overridden | |
 | `client: tsc + vitest` | `afterCommit` | **chain-authored** (`:529`) | The client package's own typecheck and suite |
@@ -93,7 +93,7 @@ purpose, with a four-line comment (`:975-979`) explaining that the one
 capability *"would only make it a failing pick"* because the entry also needs
 credentials the loop lacks. No `supervisorPolicy`, no `seedDir`, no `friction`.
 
-Factory returns `{ chain: runnerChain, agent: planAgent }` (`:985`) — the same
+Factory returns `{ chain, agent: planAgent }` (`:985`) — the same
 chain-level backstop idiom as consumer-c.
 
 ### `handoff` shape

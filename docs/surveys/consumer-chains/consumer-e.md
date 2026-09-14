@@ -4,7 +4,7 @@ Read 2026-09-14. Every claim verified on disk at that read; `path:line` is
 relative to the consumer repository root. Read-only: nothing modified.
 
 **consumer-e is archived and does not run.** Its last commit is
-`interim/centercode: strip to the minimal runtime — brief, chain, phase
+`interim/<org>: strip to the minimal runtime — brief, chain, phase
 prompts`; its `awake/` marker dates to June and its state root has not been
 written since July. It is included in the survey for three reasons, all of
 which are about the *engine* rather than about this consumer:
