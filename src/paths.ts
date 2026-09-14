@@ -469,3 +469,17 @@ export const CHAIN_MODULE_NAME = "chain.ts";
 export function chainModulePath(configDir: string): string {
   return resolve(configDir, CHAIN_MODULE_NAME);
 }
+
+/**
+ * The file a phase's `promptPath` names, absolute (spec/chain.md "Chain
+ * residency"). Resolved, never joined: a relative `promptPath` keeps its
+ * meaning beneath the config dir, and an absolute one is taken as given —
+ * which is how a prompt shipped inside a package gets an address rather than
+ * a path the chain is assumed to hold beneath itself.
+ *
+ * Both dispatcher render sites — singleton and fanout — read the prompt from
+ * here, so neither can address a phase's prompt differently from the other.
+ */
+export function phasePromptPath(configDir: string, promptPath: string): string {
+  return resolve(configDir, promptPath);
+}

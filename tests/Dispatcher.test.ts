@@ -14620,3 +14620,138 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
     expect(outcome.result?.pickableAfter).toEqual([]);
   });
 });
+
+// ---------- promptPath is an address, not a path beneath the chain ----------
+
+describe('phase.promptPath resolves against configDir (spec/chain.md "Chain residency")', () => {
+  let fx: Fixture;
+  /** A package-shaped directory outside the chain, holding a shipped prompt. */
+  let pkg: string;
+  /** Absolute path of the prompt that package ships. */
+  let shipped: string;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+    pkg = await mkdtemp(join(tmpdir(), "flume-prompt-pkg-"));
+    shipped = join(pkg, "prompts", "shipped.md");
+    await mkdir(dirname(shipped), { recursive: true });
+    await writeFile(shipped, "shipped-by-the-package\n", "utf8");
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+    await rm(pkg, { recursive: true, force: true });
+  });
+
+  it("a singleton tick reads an absolute promptPath as the prompt file's address", async () => {
+    // Vacuity guard: the address really is outside the chain, so joining it
+    // beneath configDir could only miss.
+    expect(relative(fx.configDir, shipped).startsWith("..")).toBe(true);
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const chain: Chain = {
+      phases: [
+        makePhase({ name: "plan", concurrency: "singleton", promptPath: shipped }),
+      ],
+      humanOnly: [],
+    };
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "captures-prompt",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.declined).toBeFalsy();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("shipped-by-the-package");
+  }, 20_000);
+
+  it("a fanout tick reads an absolute promptPath as the prompt file's address", async () => {
+    expect(relative(fx.configDir, shipped).startsWith("..")).toBe(true);
+
+    await writePending(fx.repo, [makeEntry("ADDR-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const chain: Chain = {
+      phases: [
+        makePhase({ name: "build", concurrency: "fanout", promptPath: shipped }),
+      ],
+      humanOnly: [],
+    };
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "captures-prompt-per-entry",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          await writeAndCommit(inv.cwd, "src/a.ts", "a\n", "build: a");
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.shippedTags).toEqual(["ADDR-A"]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("shipped-by-the-package");
+  }, 30_000);
+
+  it("a relative promptPath resolves beneath the chain's config directory", async () => {
+    // The same basename exists inside the chain and inside the package; a
+    // relative promptPath must find the chain's copy, never the address.
+    await mkdir(join(fx.configDir, "prompts"), { recursive: true });
+    await writeFile(
+      join(fx.configDir, "prompts", "shipped.md"),
+      "authored-beside-the-chain\n",
+      "utf8",
+    );
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          promptPath: join("prompts", "shipped.md"),
+        }),
+      ],
+      humanOnly: [],
+    };
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "captures-prompt",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    await dispatcher.tick();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("authored-beside-the-chain");
+    expect(prompts[0]).not.toContain("shipped-by-the-package");
+  }, 20_000);
+});

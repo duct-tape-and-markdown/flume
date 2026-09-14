@@ -329,13 +329,18 @@ export type PriorAttempt =
   | NotShippedAttempt;
 
 /**
- * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` from the
- * chain's config directory plus `phase.promptPath`; `args` and `cwd` come
- * from the per-tick `TickContext` and the phase's `promptArgs` builder.
+ * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` by
+ * resolving `phase.promptPath` against the chain's config directory; `args`
+ * and `cwd` come from the per-tick `TickContext` and the phase's
+ * `promptArgs` builder.
  */
 export interface RenderOptions {
   phase: Phase;
-  /** Resolved path of the prompt file (already joined with chain config dir). */
+  /**
+   * The prompt file to read, already resolved against the chain's config
+   * directory — absolute when `phase.promptPath` was, beneath the config dir
+   * when it was relative.
+   */
   promptFile: string;
   /** Working directory for inline-exec evaluation. */
   cwd: string;

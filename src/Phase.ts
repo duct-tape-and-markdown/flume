@@ -309,7 +309,10 @@ export interface Phase {
   description: string;
 
   /**
-   * Path (relative to the chain's config directory) to the agent prompt file.
+   * The agent prompt file, resolved against the chain's config directory: a
+   * relative path is read beneath that directory, an absolute one is taken
+   * as given — so a prompt shipped inside a package can be addressed
+   * directly rather than copied beside the chain.
    * `{{KEY}}` placeholders are substituted from promptArgs at tick time.
    * `!`shell command`` inline-exec blocks are evaluated before send.
    */

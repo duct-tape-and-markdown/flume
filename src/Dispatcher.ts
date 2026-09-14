@@ -56,6 +56,7 @@ import {
   matchesAny,
   fsStamp,
   namespacedJoin,
+  phasePromptPath,
   slugify,
   entryWriteScope,
   mergingDir,
@@ -1931,7 +1932,7 @@ export class Dispatcher {
       prompt = await renderPrompt({
         phase,
         flumeDir: this.flumeDir,
-        promptFile: join(this.opts.configDir, phase.promptPath),
+        promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
         cwd: wt.path,
         args,
         ...(prior ? { priorAttempt: prior } : {}),
@@ -3256,7 +3257,7 @@ export class Dispatcher {
       prompt = await renderPrompt({
         phase,
         flumeDir: this.flumeDir,
-        promptFile: join(this.opts.configDir, phase.promptPath),
+        promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
         cwd: wt.path,
         args,
         assignedEntry: entry,
