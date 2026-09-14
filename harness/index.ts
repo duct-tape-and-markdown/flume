@@ -32,6 +32,14 @@ export {
 } from "./entryExtension.js";
 
 export {
+  PlanStateSchema,
+  planStatePath,
+  readPlanState,
+  writePlanState,
+  type PlanState,
+} from "./planState.js";
+
+export {
   RECORD_MAX_BYTES,
   notePath,
   notesDir,

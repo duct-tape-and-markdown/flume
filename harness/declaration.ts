@@ -26,26 +26,8 @@ import { z } from "zod";
 import type { GatePhase } from "../src/Gate.js";
 import type { Chain } from "../src/Phase.js";
 
+import { parseOrThrow, strict } from "./refusal.js";
 import type { Runner } from "./runner.js";
-
-/**
- * Builds a strict object whose unrecognized-key refusal carries its own
- * valid set. One home for the refusal's vocabulary, so a nested object
- * names its own fields rather than the outermost one's — zod consults the
- * innermost schema's error first, and the issue's path locates it.
- *
- * Every other issue falls through to zod's own message; only the valid set
- * is knowledge this helper holds.
- */
-const strict = <T extends z.ZodRawShape>(shape: T) => {
-  const valid = Object.keys(shape).join(", ");
-  return z.strictObject(shape, {
-    error: (issue) =>
-      issue.code === "unrecognized_keys"
-        ? `valid fields are: ${valid}`
-        : undefined,
-  });
-};
 
 /** A non-empty list of path globs, in the engine's `matchesAny` dialect. */
 const globs = z.array(z.string().min(1)).min(1);
@@ -254,63 +236,12 @@ export const DeclarationSchema = strict({
 /** A validated declaration, as the chain factory reads it. */
 export type Declaration = z.infer<typeof DeclarationSchema>;
 
-/** The value at `path` in `root`, or `undefined` if any step is absent. */
-const valueAt = (root: unknown, path: readonly PropertyKey[]): unknown =>
-  path.reduce<unknown>(
-    (node, key) =>
-      node === null || node === undefined
-        ? undefined
-        : (node as Record<PropertyKey, unknown>)[key],
-    root,
-  );
-
-/**
- * One line per issue, each opening with the dotted path of the field it is
- * about — the field name is the part a consumer acts on, so it leads.
- *
- * An unrecognized key is reported at the key itself rather than at the
- * object holding it, and a missing field is told apart from a malformed one
- * by reading the input at the issue's path, never by matching zod's prose.
- */
-const fieldLines = (
-  input: unknown,
-  issues: readonly z.core.$ZodIssue[],
-): string[] =>
-  issues.flatMap((issue) => {
-    if (issue.code === "unrecognized_keys") {
-      return issue.keys.map(
-        (key) =>
-          `${[...issue.path, key].join(".")}: unknown field — ${issue.message}`,
-      );
-    }
-    const path = issue.path.join(".");
-    if (valueAt(input, issue.path) !== undefined) {
-      return [`${path}: ${issue.message}`];
-    }
-    // Absent, so absence leads. A refinement that fired on the absence
-    // already said why it mattered; zod's own "expected X, received
-    // undefined" adds nothing the path has not.
-    return [
-      issue.code === "custom"
-        ? `${path}: required field is missing — ${issue.message}`
-        : `${path}: required field is missing`,
-    ];
-  });
-
 /**
  * Validate a declaration, or refuse the load naming every field at fault.
  *
- * Throws rather than returning a verdict: this runs at chain load, where a
- * declaration that does not parse leaves nothing to run a tick against, and
- * a caller holding a half-read environment is the degraded-but-proceeding
- * path the posture refuses.
+ * Refuses rather than returns a verdict: this runs at chain load, where a
+ * declaration that does not parse leaves nothing to run a tick against.
  */
 export function parseDeclaration(value: unknown): Declaration {
-  const result = DeclarationSchema.safeParse(value);
-  if (result.success) return result.data;
-
-  const lines = fieldLines(value, result.error.issues);
-  throw new Error(
-    `invalid harness declaration:\n${lines.map((line) => `  ${line}`).join("\n")}`,
-  );
+  return parseOrThrow(DeclarationSchema, value, "harness declaration");
 }
