@@ -369,6 +369,9 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     return {
       cwd: dir,
       flumeDir: "/state-root",
+      // Relocated state root: the offset a dispatcher would hand this
+      // fixture is genuinely absent, stated rather than omitted.
+      stateRootRel: undefined,
       pendingPath: "/state-root/plan/pending.json",
       configDir: join(dir, ".flume"),
       repoRoot: dir,

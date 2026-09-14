@@ -177,6 +177,7 @@ function ctx(cwd: string): GateContext {
   return {
     cwd,
     flumeDir: `${cwd}/.flume`,
+    stateRootRel: ".flume",
     pendingPath: `${cwd}/.flume/plan/pending.json`,
     configDir: `${cwd}/.flume`,
     repoRoot: cwd,

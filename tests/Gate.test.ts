@@ -10,6 +10,7 @@ import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { diffNameOnly } from "../src/git.ts";
 
 import {
@@ -26,13 +27,17 @@ import type { Gate, GateContext } from "../src/Gate.ts";
 const exec = promisify(execFile);
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
+  const repoRoot = overrides.repoRoot ?? cwd;
   const flumeDir = overrides.flumeDir ?? join(cwd, ".flume");
   return {
     cwd,
     flumeDir,
+    // The offset the dispatcher would hand these roots, from the same
+    // function it computes it with — never a hand-typed ".flume".
+    stateRootRel: computeStateRootRel(repoRoot, flumeDir),
     pendingPath: join(flumeDir, "plan", "pending.json"),
     configDir: join(cwd, ".flume"),
-    repoRoot: cwd,
+    repoRoot,
     phaseName: "test-phase",
     // The dispatcher states the span's diff on every context it builds; a
     // fixture with no particular list states the empty one rather than
@@ -612,22 +617,31 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
   });
 });
 
-// ---------- GateContext.touchedPaths is required
-// (GATECONTEXT-TOUCHEDPATHS-REQUIRED, engineering.md "A seam gate reads what
-// the real writer wrote") ----------
+// ---------- the GateContext keys every context states
+// (GATECONTEXT-TOUCHEDPATHS-REQUIRED / GATECONTEXT-STATEROOTREL-REQUIRED-KEY,
+// engineering.md "A seam gate reads what the real writer wrote" and
+// "Narration is the ladder's bottom rung") ----------
 
-// The claim is a type-level one, so the judge is the type-checker itself: a
-// `GateContext` literal that omits `touchedPaths` is compiled for real and
-// its diagnostics read back. While the field was optional, every hand-built
-// fixture in this suite was free to leave it off and drive the gates through
-// a private `git show --name-only` instead of the list a tick actually hands
-// them — which is how the fence gate's real seam went unexercised.
-describe("GateContext.touchedPaths — the field every gate context states", () => {
+// Both claims are type-level, so the judge is the type-checker itself: a
+// `GateContext` literal that omits the field is compiled for real and its
+// diagnostics read back.
+//
+// While `touchedPaths` was optional, every hand-built fixture in this suite
+// was free to leave it off and drive the gates through a private `git show
+// --name-only` instead of the list a tick actually hands them — which is how
+// the fence gate's real seam went unexercised. `stateRootRel` carries the
+// opposite hazard: its *value* may legitimately be `undefined` (a state root
+// relocated outside the repo), so an omitted key and a relocated state root
+// were indistinguishable. Required-as-a-key, `undefined` means relocated and
+// nothing else.
+describe("GateContext — the fields every gate context states", () => {
   const GATE_SRC = fileURLToPath(new URL("../src/Gate.ts", import.meta.url));
-  // Everything a GateContext needs except the field under test.
+  // Everything a GateContext needs except the fields under test.
   const REST =
     'cwd: "", flumeDir: "", configDir: "", pendingPath: "", ' +
     'repoRoot: "", phaseName: "", log: () => {}';
+  const TOUCHED = "touchedPaths: []";
+  const STATE_ROOT = "stateRootRel: undefined";
 
   /** Type-check one `GateContext` literal against the real `src/Gate.ts`. */
   async function diagnose(fields: string): Promise<string> {
@@ -665,9 +679,18 @@ describe("GateContext.touchedPaths — the field every gate context states", () 
     // Control first, so the refusal below is the field's and not the
     // fixture's: the same literal *with* the field compiles clean
     // (engineering.md "A green verdict is proven non-vacuous").
-    expect(await diagnose(`${REST}, touchedPaths: []`)).toBe("");
+    expect(await diagnose(`${REST}, ${TOUCHED}, ${STATE_ROOT}`)).toBe("");
 
-    expect(await diagnose(REST)).toContain("touchedPaths");
+    expect(await diagnose(`${REST}, ${STATE_ROOT}`)).toContain("touchedPaths");
+  }, 60_000);
+
+  it("GateContext.stateRootRel is required, so a gate context omitting it is a type error", async () => {
+    // Same control, and it doubles as the proof that stating the relocated
+    // case explicitly — `stateRootRel: undefined` under
+    // `exactOptionalPropertyTypes` — is still legal.
+    expect(await diagnose(`${REST}, ${TOUCHED}, ${STATE_ROOT}`)).toBe("");
+
+    expect(await diagnose(`${REST}, ${TOUCHED}`)).toContain("stateRootRel");
   }, 60_000);
 });
 

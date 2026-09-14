@@ -65,12 +65,12 @@ export interface GateContext {
    * without hardcoding `.flume` or re-deriving the offset itself. Computed
    * once by the dispatcher and shared with its own friction-harvest use of
    * the same offset (`.claude/rules/engineering.md` "The fix lands at the
-   * mechanism"). Optional so hand-built `GateContext` fixtures that predate
-   * this field keep compiling; every dispatcher-constructed context sets it
-   * (to a string, or explicitly to `undefined` when the state root is
-   * relocated).
+   * mechanism"). The key is required and its `undefined` is stated, never
+   * omitted: absence of a value carries the relocation meaning gates branch
+   * on, so a context that leaves the field off is a forgotten offset wearing
+   * a relocated state root's clothes.
    */
-  stateRootRel?: string | undefined;
+  stateRootRel: string | undefined;
   /**
    * Absolute path of the chain/prompts dir (`<configDir>/chain.ts`, default
    * `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md
