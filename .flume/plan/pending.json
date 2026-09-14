@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "CLI-TEST-QUEUE-PATH-RESTATED",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "queue fixtures resolve through resolvePendingPath/DEFAULT_PENDING_REL"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/cli.test.ts restates the default queue location as a literal in nine fixtures; take each from resolvePendingPath/DEFAULT_PENDING_REL instead",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [],
+    "pins": [],
+    "acceptance": "No hand-spelled default-queue path remains in tests/cli.test.ts (literals at ~445, 454, 498, 533, 973, 1004, 1048, 1093, 1955, 2077, 2104, 2133); each comes from the src/paths.ts accessor, as lines 189 and 2333 already do. Suite green.",
+    "notes": "src/paths.ts owns the undeclared-queue default; this file already imports resolvePendingPath and uses it twice, each time declaring the reason. The exposure is the two CHAIN-PENDINGPATH negative controls (status decoy ~1048, check absence ~2077): if the default moves they stop controlling and stay green. No tests[]/pins[] — re-deriving a fixture path introduces no behavior and the suite gate still holds the wave."
+  }
+]
