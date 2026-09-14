@@ -99,6 +99,10 @@
         {
           "path": ".gitignore",
           "description": "drop the retired .flume/last-tick.json line the derived set does not name"
+        },
+        {
+          "path": "harness/index.ts",
+          "description": "export the derived ignore set"
         }
       ],
       "retire": []
@@ -180,7 +184,12 @@
           "description": "the refusal, the green-on-base fact, the pins lane, the empty case"
         }
       ],
-      "edit": [],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "export the judge and its verdict type"
+        }
+      ],
       "retire": []
     },
     "observedFiles": [
@@ -245,7 +254,12 @@
           "description": "the addresses, the modes arg, the orphan check"
         }
       ],
-      "edit": [],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "export the prompt addresses and the shared args"
+        }
+      ],
       "retire": []
     },
     "summary": "Ship the package's five prompts under harness/prompts/, addressed absolutely from the package's own location and naming the no-commit modes from the engine's exported value.",
@@ -260,7 +274,7 @@
     ],
     "pins": [],
     "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
-    "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; the packing route is HARNESS-PROMPT-PACKING. Not harness/index.ts: the factory exposes it."
+    "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; packing is HARNESS-PROMPT-PACKING. plan-discipline and plan-sweep describe harness/planState.ts's typed artifact, not state.md's cursor lines and `Rotation open` paragraph: the typed form refuses a present artifact missing a cursor."
   },
   {
     "tag": "HARNESS-GATES",
@@ -282,7 +296,12 @@
           "description": "one refusal per gate, plus the ordering"
         }
       ],
-      "edit": [],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "export the gate set"
+        }
+      ],
       "retire": []
     },
     "summary": "Extract the four gates the discipline needs — per, records, clean-tree, and the pending gate wired to the consumer's fence — as the package's always-first gate set per phase.",
@@ -320,7 +339,12 @@
           "description": "each rung, the refusal route, the no-self-rewake case, the override"
         }
       ],
-      "edit": [],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "export the default handoff"
+        }
+      ],
       "retire": []
     },
     "summary": "Extract the package's default handoff — first live slice, else build while the engine reports anything pickable, else hibernate — with a build refusal routing to the inbox slice.",
@@ -334,11 +358,12 @@
       "the default handoff hibernates when no slice is live and nothing is pickable",
       "a build tick the chain declined routes to the inbox slice whatever is pickable",
       "a slice that committed nothing is not named by its own handoff",
-      "a declared handoff replaces the package's default"
+      "a declared handoff replaces the package's default",
+      "a build tick whose prompt never rendered routes to the inbox slice"
     ],
     "pins": [],
     "acceptance": "harness/handoff.ts maps the engine's reported pickable set and no-commit facts onto the next phase, and a consumer's declaration replaces it.",
-    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. Twins at .flume/chain.ts:686 and :920."
+    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. The render-refused leg is new: .flume/chain.ts:929 names clean-exit and not-shipped only, so a walled render re-picks forever. Twins at .flume/chain.ts:686 and :920."
   },
   {
     "tag": "HARNESS-PROMPT-PACKING",
@@ -414,6 +439,10 @@
         {
           "path": "package.json",
           "description": "the second bin entry, and the files allowlist covering the template"
+        },
+        {
+          "path": "harness/index.ts",
+          "description": "export the init verb"
         }
       ],
       "retire": []
