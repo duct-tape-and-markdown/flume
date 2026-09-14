@@ -639,6 +639,24 @@ governance ruling `engineering.md` says the ladder does not administer, and
 re-open it silently, which is how the first instance got closed on a premise
 that no longer held.
 
+**Fourth instance, and the exit-code sentences are confirmed stale.** Drained
+from `CLIHELP-TICK-EXITCODES-HAND-COPIED`'s note; verified on disk this tick.
+`docs/CLI.md` § `flume tick` names `0`, `69` and `1`, and names neither `2`
+(a stray trailing positional, or the CJS-context refusal) nor `78` (terminal
+misconfiguration) — both of which `flume tick --help` documents and
+`tests/cliHelp.test.ts` now pins against a real `tickExitCode` range. So the
+surface this question called exposed is no longer hypothetical: one of the
+eleven sections is already wrong, in the direction that reads as complete.
+The recommended option is unchanged, and its cost is now one section's diff.
+
+**One condition on whichever pin ships.** That entry's first cut was green
+over the same defect in a new costume: its candidate table left several
+`TickOutcome` fields `ABSENT`-only, so a `tickExitCode` that grew a branch on
+one of them still agreed with the help text. The shipped test gives every
+field a present candidate and says so at the site. A pin that drives the real
+writer is not done until it has been shown red on a one-sided change —
+verified, not assumed.
+
 ## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
 
 Derived from the spec window; both sentences verified against `src/paths.ts`,
@@ -824,3 +842,154 @@ because closing it edits `spec/`, which no autonomous phase may write.
 
 **Rule this beside the other open question on the same section** — "The
 release publish is hand-run" proposes wording in *Versioning policy* too.
+
+## `AgentUsage` drops the cost the engine decoded, and the usage-row list excludes it (NEEDS AMENDMENT)
+
+Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
+this tick. `src/Agent.ts:662` reads `total_cost_usd` off the `result` event to
+render the terminal line and keeps it nowhere else; `AgentUsage`
+(`src/Agent.ts:64-76`) carries model, turns, duration and four token counts.
+`TickVerdictInvocation extends AgentUsage`, so the verdict row has no cost
+either.
+
+**The spec promises what the field list withholds.** `spec/loop.md`, *Every
+agent invocation leaves a usage row*, enumerates those fields "because cost is
+unrecoverable without the cache split", then closes: "a chain wanting cost
+telemetry reads the verdict rather than re-parsing the agent's stream in a
+decorator beside it." Two of five surveyed consumers
+(`docs/surveys/consumer-chains/consumer-a.md` §3 #6, `consumer-b.md` §3 #3)
+re-scan raw stdout for exactly that number, each commenting that it is the
+only reason they still look at raw output. The engine parsed it and dropped it
+(`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+rediscovered*).
+
+Options:
+
+- **Carry the number** (recommended). `AgentUsage` gains `costUsd`, lifted at
+  the same decode as the rest, under the same optionality rule — absent when
+  the event did not report it, never coerced to zero — and it reaches the
+  verdict row for free through the `extends`. The amendment adds it to the
+  enumerated list; the cache-split clause stays, since a chain re-pricing
+  against its own rates still needs the split. One spec bullet, one field, one
+  lift.
+- **Rule the omission deliberate.** Cost is a provider's billing view, not a
+  usage fact, and a chain prices from tokens. Then the closing clause is the
+  half that moves: it promises the verdict covers cost telemetry, and it does
+  not.
+- **Accept as debt.** Costs those two consumers their raw-stdout scan, and the
+  next one the same discovery.
+
+Needs an amendment because the enumerated list is the contract and `spec/` is
+human-only. Filed as a question rather than an entry for that reason alone —
+the rule page above already authorizes the work.
+
+## Whether the engine's agent passes `--strict-mcp-config` (PARKED)
+
+Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
+this tick. `claudeCode` (`src/Agent.ts:175`) spawns `claude -p` with fixed
+flags plus the chain's `extraArgs`; nothing passes `--strict-mcp-config`, so
+an autonomous tick boots every MCP server the operator's own configuration
+names. One consumer (`docs/surveys/consumer-chains/consumer-a.md` §2, §7) adds
+the flag to every agent after a wedged MCP child held a finished agent's
+process open and stalled a whole fanout wave.
+
+`.claude/rules/platform-facts.md`, *A headless `claude -p` inherits the user's
+MCP servers*, records the fact and the interim — "until it does, a chain
+passes it in `extraArgs`" — and defers the engine question to here.
+
+**Both sides have a precedent in the adapter.** `spec/chain.md`, *Per-phase
+agent assignment*: "`extraArgs` remains the passthrough for every other flag;
+the engine types the one knob every consumer varies per phase and declines to
+mirror the rest of the CLI" — which argues the engine stays silent. Against
+it, the same adapter already emits one opinionated flag by default
+(`dangerouslySkipPermissions: true`), and by-user runtime state under
+`~/.claude/` is precisely what a stateless tick exiles
+(`.claude/rules/memory.md`).
+
+Options:
+
+- **Pass it by default**, with an opt-out on `ClaudeCodeOptions` — "a tick
+  loads only the MCP configuration the chain hands it", as mechanism. Changes
+  behavior for every consumer on upgrade, including any deliberately relying
+  on an inherited server.
+- **Type it as an option, default off.** No behavior change; one more flag
+  mirrored, which the spec sentence declines.
+- **Engine stays silent** (cheapest; ships as an ordinary entry the moment it
+  is ruled): the `claudeCode(opts)` recipe at `docs/CHAIN-AUTHORING.md:892`
+  carries `extraArgs: ["--strict-mcp-config"]` and says why, so the opinion
+  ships by name (`.claude/rules/engine-boundary.md`, *Surface, not
+  prescription*).
+
+Parked because the first option changes a shipped default's behavior, and the
+third pre-empts it by teaching the workaround as the answer.
+
+## A differential gate has no base tree, so it provisions its own (PARKED)
+
+Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
+this tick. `GateContext.baseSha` names the span's base; nothing hands a gate a
+tree at that sha, and `FlumeApi`'s git helpers are `showNameOnly` and
+`readFileAtRef` alone (`src/flumeApi.ts:184`). One consumer's `afterMerge`
+drift gate (`docs/surveys/consumer-chains/consumer-b.md` §2, §3 #12) runs `git
+worktree add --detach <tmpdir> <commitSha>^`, reports both sides, subtracts
+the inherited set, and carries its own `finally` cleanup that swallows
+failure. The engine owns worktree provisioning and naming; the gate rebuilt a
+copy in `tmpdir()`.
+
+**The shape is a real gate shape** — "what drift did *this* entry introduce"
+is an agreement claim measured against the base, not against a fixture
+(`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+wrote*). What forks is whether the engine carries it.
+
+Options:
+
+- **A checkout-at-sha helper on the API**, with engine-owned cleanup and
+  engine-owned placement under the worktree base. Passes the
+  second-implementation test — any chain wanting a differential gate wants
+  exactly this. Against: one observed consumer, and
+  `.claude/rules/engineering.md`, *An export earns its consumer*, asks for
+  more than a survey before public surface grows.
+- **Rule that gates own it**, with a `spec/worktrees.md` sentence saying so.
+  Makes the `tmpdir()` block the sanctioned idiom, and invites four more
+  copies of its swallowed cleanup.
+- **Accept as debt.** Costs the next chain wanting a differential gate the
+  same block, written fresh.
+
+Parked because the first option is new public surface carrying a lifecycle
+contract — who removes the tree, and what happens when the gate throws — that
+no section of the corpus decides.
+
+## The worktree base is reachable only as an env read at chain import (PARKED)
+
+Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
+this tick. `worktreesBase` (`src/paths.ts:346`) resolves
+`FLUME_WORKTREES_DIR` else `<flumeDir>/worktrees`, and `:342-345` declares the
+omission deliberate — "there is deliberately no `Chain.worktreesDir`, since a
+committed chain file is the wrong home for it" — beside the measured vector
+the override exists for: an agent whose `pwd` carries the root checkout's path
+as a prefix can derive the root and write there.
+
+**Two consumers carry the identical block** (`consumer-a.md` §3 #3,
+`consumer-b.md` §3 #2): shell `git rev-parse --git-common-dir` at module scope
+and export `FLUME_WORKTREES_DIR` before the factory runs, because the default
+places a tick's cwd inside the checkout and env is the only knob. Verbatim
+copying across consumers is the detector for a missing surface
+(`.claude/rules/engine-boundary.md`, *Surface, not prescription*), and that
+module-scope requirement is also why every surveyed chain resolves its roots
+before the factory instead of reading `api.paths`.
+
+Options:
+
+- **Default outside the checkout** — a sibling of the git common dir rather
+  than a child of `flumeDir`. Removes the path prefix for everyone, and with
+  it the reason the block exists; costs the one-`rm` teardown promise, which
+  holds today because the base tracks the relocatable state root.
+- **Take a function, not a value.** `Chain.worktreesBase?: (paths) => string`
+  — computed per host at load, never committed, which is the objection the
+  site raises against `Chain.worktreesDir`. The chain still chooses; what it
+  stops needing is an env var set before the engine's own module loads.
+- **Keep, and document the module-scope idiom** in `docs/CHAIN-AUTHORING.md`,
+  so the block is written once correctly rather than copied.
+
+Parked because closing it overturns a decision the site declares deliberate,
+which plan does not re-open on its own
+(`.claude/rules/posture-sweep.md`, *Routing*).

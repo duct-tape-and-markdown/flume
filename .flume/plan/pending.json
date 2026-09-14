@@ -1,1 +1,48 @@
-[]
+[
+  {
+    "tag": "AGENT-INVOCATION-CARRIES-ENTRY-TAG",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Agent.ts", "description": "optional entry tag on AgentInvocation" },
+        { "path": "src/Dispatcher.ts", "description": "set it at the invoke site the verdict row's tag is set from" },
+        { "path": "tests/Dispatcher.test.ts", "description": "what the invocation carries under each concurrency" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the decorator's fact source" }
+      ],
+      "retire": []
+    },
+    "summary": "Report the provisioned entry's tag on `AgentInvocation`, so a decorator reads it instead of regexing the rendered prompt",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "tests": ["a fanout agent invocation carries the provisioned entry's tag"],
+    "pins": ["a singleton agent invocation carries no entry tag"],
+    "acceptance": "The invocation carries the tag under fanout and carries none under singleton, the same rule `TickVerdictInvocation.tag` already follows; tsc and vitest green.",
+    "notes": "Survey: a metrics decorator recovers the tag by regexing `opts.prompt`, because the tag is first-class on `TickContext.assignedEntry` and unreachable from a decorator composed in a phase getter (consumer-b.md §3 #4). `invokeAgent` already takes `ref.key`; the fanout call site has `entry.tag` in scope."
+  },
+  {
+    "tag": "FLUMEAPI-REPORTS-THE-WORKTREE-REGISTRY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/worktrees.ts", "description": "widen the registry read and its result type" },
+        { "path": "src/flumeApi.ts", "description": "hand it to chains beside the git helpers" },
+        { "path": "src/index.ts", "description": "the result type, by the types-are-index-only rule" },
+        { "path": "tests/worktrees.test.ts", "description": "the read, and its unreadable case, off the API" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "what a teardown reaper reads instead of the directory" }
+      ],
+      "retire": []
+    },
+    "summary": "Hand chains git's worktree registry on `FlumeApi`, so a teardown reaper reads the engine's list instead of walking `.flume/worktrees/`",
+    "per": { "path": ".claude/rules/engine-boundary.md", "section": "Surface, not prescription" },
+    "tests": [
+      "FlumeApi reports the worktrees git registers for the repo",
+      "an unreadable worktree registry reports the failure rather than an empty set"
+    ],
+    "acceptance": "A chain can answer \"which worktrees does git still register\" off the API, absence and unreadability distinguishable; tsc and vitest green.",
+    "notes": "`readWorktreeRegistry` (`src/worktrees.ts:119`) is module-private and already returns the loud union — `{ read: false, reason }` never collapses into an empty set. Survey: a consumer allocates a DB per fanout arm and reaps orphans by enumerating `.flume/worktrees/`, the only instance of a chain reading an engine-owned directory (consumer-d.md §3 #4, §7)."
+  }
+]
