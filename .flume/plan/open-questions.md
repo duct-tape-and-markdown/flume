@@ -657,6 +657,29 @@ field a present candidate and says so at the site. A pin that drives the real
 writer is not done until it has been shown red on a one-sided change —
 verified, not assumed.
 
+**Fifth instance, and one arm of the fork is now demonstrably cheap.** Drained
+from `HELP-ABORT-THRESHOLD-IS-OVERRIDABLE`'s note; verified on disk this tick.
+`docs/CHAIN-AUTHORING.md`'s `abortThreshold` bullet closes "Default 3." It is
+*true* — so no arming lens would have fired on it in either direction, and it
+is not a fifth stale claim but a live copy nothing holds.
+
+What it changes is the cost estimate. Every instance above restates behavior
+whose source is a run's output, which is why the recommended option needs a
+real invocation and a candidate table kept honest. This one's source is a
+constant: `DEFAULT_ABORT_THRESHOLD` (`src/loopSupervisor.ts`), which
+`src/cliHelp.ts` interpolates and `tests/cliHelp.test.ts` already imports. The
+pin is one assertion that the bullet's number is that constant — the same
+agreement shape at a fraction of the exit-code pin's weight, with nothing to
+drive and nothing to keep sensitive. It is still a test reading `docs/` prose,
+which is the door `bd75f27` closed outside the `.d.ts` carve-out, so the
+ruling is unchanged; only the price of one option moved.
+
+The census, for whoever rules: three prose copies of this number remain.
+`src/Phase.ts`'s is `.d.ts`-reachable, inside the carve-out, and is filed as
+`PHASE-ABORTTHRESHOLD-DOC-DROPS-THE-LITERAL`. `spec/loop.md` and
+`spec/chain.md` carry it as the human's own surface, which the ladder does not
+administer. `docs/CHAIN-AUTHORING.md` is the only one this question governs.
+
 ## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
 
 Derived from the spec window; both sentences verified against `src/paths.ts`,

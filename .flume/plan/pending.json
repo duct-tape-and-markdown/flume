@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "PHASE-ABORTTHRESHOLD-DOC-DROPS-THE-LITERAL",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "supervisorPolicy.abortThreshold doc: drop the restated default; the enclosing block already names the home"
+        },
+        {
+          "path": "tests/docComments.test.ts",
+          "description": "pin the absence against the imported constant, with the block's vacuity guard"
+        }
+      ]
+    },
+    "summary": "Drop the restated default from the shipped `supervisorPolicy.abortThreshold` doc — DEFAULT_ABORT_THRESHOLD is its one home",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "the shipped `abortThreshold` doc comment restates no DEFAULT_ABORT_THRESHOLD literal"
+    ],
+    "pins": [],
+    "acceptance": "`src/Phase.ts`'s abortThreshold doc states no default value; `tests/docComments.test.ts` reads that absence against the real constant.",
+    "notes": "`.d.ts`-reachable hover text, so engine surface under engineering.md's ladder carve-out. Deletion, not a `{@link}`: Phase.ts cannot import the value (Phase -> loopSupervisor -> Dispatcher -> Phase), and the enclosing supervisorPolicy doc already points at loopSupervisor's docs for both defaults. Sibling copy in docs/CHAIN-AUTHORING.md is held open, not filed."
+  }
+]
