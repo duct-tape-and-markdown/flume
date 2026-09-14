@@ -6,7 +6,7 @@ wake. No `render`. Removed in 0.10 with no replacement.
 New evidence: prompt verification is a need every consumer meets differently,
 and one met it well enough to catch a real defect.
 
-- Cartograph pins the exact wording of the engine's rendered `files` clause
+- One consumer pins the exact wording of the engine's rendered `files` clause
   and throws at render if it changes (`.flume/chain.ts:275-291`). 0.15.0
   reworded that sentence, so the assert now fires on every plan tick. It is
   the only mechanism in five surveyed consumers that turned an engine change
