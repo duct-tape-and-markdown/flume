@@ -1,76 +1,8 @@
 [
   {
-    "tag": "NO-COMMIT-MODES-VALUE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Prompt.ts",
-          "description": "NO_COMMIT_MODES as the declared value; the type derives from it"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "export the value beside the type"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "the exported value"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Declare the no-commit taxonomy once as an exported runtime value, NO_COMMIT_MODES, and derive the NoCommitMode type from it.",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The no-commit taxonomy"
-    },
-    "tests": [
-      "the engine exports NO_COMMIT_MODES carrying the four no-commit modes"
-    ],
-    "pins": [],
-    "acceptance": "NO_COMMIT_MODES is exported from the package root, NoCommitMode is derived from it, and src/ holds no second list.",
-    "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
-  },
-  {
-    "tag": "HARNESS-JUDGE-RUNNER-SEAM",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "the judge driven over the real runner, on the fixture already built there"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Drive judgeNamedLines through the real vitestRunner end to end — the two sides of the runner interface are each pinned alone and nothing composes them.",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [],
-    "pins": [
-      "the judge proves a named line over the real vitest runner's merged-tree and base reports",
-      "the judge reports green-on-base for a line the real vitest runner already carries at the base"
-    ],
-    "acceptance": "One case runs judgeNamedLines against vitestRunner over the real fixture repo, with both verdicts decided by the runner's own reports.",
-    "notes": "Drained from HARNESS-JUDGES's note. tests/harnessJudge.test.ts drives a stand-in runner, tests/harnessRunner.test.ts drives real vitest; neither composes them, so a one-sided shape change ships green. The fixture's base/merged disagreement already separates both verdicts. pins[], not tests[]: a tests-only diff is red-on-base-proof by construction (open question, *Two shapes of named line*)."
-  },
-  {
     "tag": "HARNESS-PROMPTS",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "NO-COMMIT-MODES-VALUE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -125,49 +57,6 @@
     "pins": [],
     "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
     "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; packing is HARNESS-PROMPT-PACKING. plan-discipline and plan-sweep describe harness/planState.ts's typed artifact, not state.md's cursor lines and `Rotation open` paragraph: the typed form refuses a present artifact missing a cursor."
-  },
-  {
-    "tag": "HARNESS-GATES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/gates.ts",
-          "description": "the per, records, clean-tree and pending gates as one set per phase"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "one refusal per gate, plus the ordering"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the gate set"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Extract the four gates the discipline needs — per, records, clean-tree, and the pending gate wired to the consumer's fence — as the package's always-first gate set per phase.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The gates the discipline needs"
-    },
-    "tests": [
-      "the per gate refuses a commit whose cited file is not in it, naming the tag",
-      "the records gate refuses a record written outside the tick's own tag",
-      "the records gate refuses a record whose first line is not a title",
-      "the records gate refuses a record a plan slice wrote",
-      "the records gate refuses a record past the byte cap",
-      "the clean-tree gate refuses a leftover path the phase may not write",
-      "the package's gates precede a consumer's declared gates for the same phase"
-    ],
-    "pins": [],
-    "acceptance": "harness/gates.ts returns the four gates for a phase ahead of a consumer's declared ones, each refusing on its own case.",
-    "notes": "Composes the record dirs, notePath and RECORD_MAX_BYTES from harness/records.ts rather than re-spelling them, and carries the two rules that are not layout: the title line and plan-drains-never-writes. The per gate wraps HARNESS-CITE-RESOLVER's verdict; the pending gate takes the declaration's fence as targetFence and the package's entry extension. Twins at .flume/chain.ts:264, :340, :386."
   },
   {
     "tag": "HARNESS-HANDOFF",
@@ -314,7 +203,6 @@
       "kind": "blockedBy",
       "tags": [
         "HARNESS-PROMPTS",
-        "HARNESS-GATES",
         "HARNESS-HANDOFF"
       ]
     },
