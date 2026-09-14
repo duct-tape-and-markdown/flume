@@ -13,6 +13,13 @@
  * disagreement is what makes `runAtBase`'s two claims separable: the base's
  * bytes decided the failure, and the merged bytes decided which tests ran.
  *
+ * The same fixture drives the judge (`harness/judge.ts`) over this runner,
+ * end to end. The two sides of the runner interface are pinned apart
+ * elsewhere — `harnessJudge.test.ts` rules over a stand-in runner, the cases
+ * above read vitest's own reporter — and a seam whose halves are only ever
+ * checked alone ships a one-sided change green. Here the judge's ruling is
+ * decided by reports vitest actually wrote.
+ *
  * `node_modules` reaches the fixture and the base checkout by symlink, never
  * by install — the fixture never runs one, which is the condition
  * `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked
@@ -29,7 +36,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { vitestRunner, type Lane } from "../harness/index.ts";
+import { judgeNamedLines, vitestRunner, type Lane } from "../harness/index.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -171,6 +178,62 @@ describe("the vitest runner", () => {
     // temp directory and removes it.
     expect(git(fixture, ["worktree", "list"]).split("\n")).toHaveLength(1);
   }, 180_000);
+
+  it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
+    const test = "carries the merged widget";
+    const pin = "runs wherever it is laid down";
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [test],
+      pins: [pin],
+      baseSha,
+      cwd: fixture,
+    });
+
+    // Vacuity: the merged-tree suite the ruling is read off ran tests and was
+    // green, so "proven" is a verdict over evidence rather than over nothing.
+    expect(verdict.passed).toBeGreaterThan(0);
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.failingFiles).toEqual([]);
+
+    // Both halves of the seam decided this: vitest's merged-tree report
+    // carried each line, and vitest's base report — over the base's own
+    // source, with the test file laid down — did not carry the `tests[]` one.
+    expect(verdict.outcome).toBe("proven");
+    expect(verdict.lines).toEqual([
+      { line: test, lane: "tests", state: "proven", files: ["tests/widget.test.ts"] },
+      { line: pin, lane: "pins", state: "proven", files: ["tests/widget.test.ts"] },
+    ]);
+
+    // The base checkout is gone with the ruling, as it is with a bare run.
+    expect(git(fixture, ["worktree", "list"]).split("\n")).toHaveLength(1);
+  }, 240_000);
+
+  it("the judge reports green-on-base for a line the real vitest runner already carries at the base", async () => {
+    // The fixture's second name passes wherever its file is laid down, so the
+    // base run carries it — the shape of a `tests[]` line that pins nothing
+    // the change introduced.
+    const line = "runs wherever it is laid down";
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [line],
+      pins: [],
+      baseSha,
+      cwd: fixture,
+    });
+
+    // Vacuity: the merged tree was green and carried the line, so the base
+    // report is what separated this verdict from `proven`.
+    expect(verdict.passed).toBeGreaterThan(0);
+    expect(verdict.failures).toEqual([]);
+
+    expect(verdict.outcome).toBe("green-on-base");
+    expect(verdict.lines).toEqual([
+      { line, lane: "tests", state: "green-on-base", files: ["tests/widget.test.ts"] },
+    ]);
+    expect(verdict.message).toContain(line);
+    expect(verdict.message).toContain(baseSha.slice(0, 7));
+  }, 240_000);
 
   it("reports its lanes and the files each excludes", () => {
     const declared: Lane[] = [

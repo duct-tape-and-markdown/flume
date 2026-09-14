@@ -5,10 +5,11 @@
  * The runner here is a stand-in, and deliberately so. The seam between a
  * runner and a real test tool is an agreement claim, and it is pinned where
  * the real writer runs: `harnessRunner.test.ts` drives vitest's own reporter
- * through the real reader (`.claude/rules/engineering.md`, *A seam gate reads
- * what the real writer wrote*). What this file judges is the ruling — which
- * line is refused, which lane reaches the base, what an empty entry costs —
- * and a ruling's input is the typed `RunResult`, not a tool's output. The
+ * through the real reader, and drives this judge over that runner end to end
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). What this file judges is the ruling — which line is refused, which
+ * lane reaches the base, what an empty entry costs — and a ruling's input is
+ * the typed `RunResult`, not a tool's output. The
  * stand-in matches a line to a passing test by the same containment rule the
  * interface states, so the judge sees the vocabulary it will see in
  * production.
