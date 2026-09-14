@@ -254,183 +254,39 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, so the queue does not re-hit this wall while the wording is ruled.
 
-## A test scans shipped doc-comment prose, on a rung the hygiene-suite ruling closed (PARKED)
+## Two spec sentences still name unexported helpers, after the ruling that removed three (NEEDS AMENDMENT)
 
-Drained from `CORE-DOC-COMMENTS-CHAIN-VOCABULARY`'s note; verified on disk.
-`tests/docComments.test.ts` (shipped `3c2cc24`) reads `src/Dispatcher.ts` and
-`src/Phase.ts` as text and asserts two option doc comments match no
-chain-vocabulary pattern. `bd75f27` — the day before, under explicit operator
-direction — deleted the hygiene suite on exactly that ground: prose read
-against code is harness governance, held by its authors, never promoted into
-the suite (`.claude/rules/engineering.md`, *Narration is the ladder's bottom
-rung*, last bullet). The scan is the same shape re-entering through a
-different door, and plan derived it without noticing.
+The two follow-ons `07b550c` left unruled, drained from the inbox and verified
+on disk this tick. Both are the shape that ruling closed: a `spec/*.md`
+sentence naming a symbol `src/index.ts` does not export, against
+`.claude/rules/spec-writing.md`, *A claim names behavior, never location*.
 
-**The distinction that would save it.** The deleted suite read *harness* prose
-— README, `docs/CHAIN-AUTHORING.md`, `spec/` — files the package never ships.
-This scan reads prose that compiles into a shipped `.d.ts` and is the hover
-text a consumer gets for a chain-facing option, which `engine-boundary.md`
-(*Capability vs convention*) governs as engine surface. The bullet's own
-exclusion list names "a rule page, PROTOCOL, a prompt, `spec/`" — a `.d.ts` is
-on none of them.
-
-**Against it.** The ladder's first paragraph lists "a doc comment" as prose,
-the bottom rung; and "the ladder governs the engine's behavior, and stops
-there". A doc comment narrates behavior, it is not behavior. On that read the
-scan is the wrong rung and no rung is left — the note's own phrasing.
-
-Two facts bound whichever way it goes. The scan is the sole instance: every
-other file `tests/` reads is an agreement gate driving a real producer through
-a real consumer (`tests/examples.test.ts:1045`), which *A seam gate reads what
-the real writer wrote* sanctions outright. And "shipped hover text" is
-narrower than `dist/`: `package.json`'s `exports` map is `./dist/index.d.ts`
-alone, so the surface is what `src/index.ts` re-exports, not every `.d.ts`
-under it.
+- **`declaredPaths`** — `spec/pending.md` six times (:122, :240, :243, :254,
+  :291, :406), including the defining equation and two equations built on top
+  of it. Exported from `src/PendingSchema.ts`, absent from `src/index.ts`.
+  This is the larger instance the ruling named: the corpus treats it as
+  defining vocabulary, not as a location cite.
+- **`runInlineExec`** — `spec/prompt.md` twice (:177, :220), in the same
+  section whose third sentence `07b550c` restated. Module-private in
+  `src/Prompt.ts`; nothing exports it.
 
 Options:
 
-- **Ratify the carve-out** (recommended). One clause on that bullet: prose
-  reachable from the package's public `.d.ts` is engine surface and may be
-  pinned; prose about the harness still may not. Keeps the scan and bounds the
-  door — the deleted suite read files no `.d.ts` carries, so it does not
-  re-open. One `chore(rules):`, human-only.
-- **Retire the scan.** Delete `tests/docComments.test.ts`; the property returns
-  to prose held by the same authors who hold the rest. The two doc comments
-  stay fixed, and nothing catches the third. Files as an ordinary entry the
-  moment it is ruled — `tests/` is inside build's fence.
-- **Leave it unruled.** `tests/`'s suite files are still in the open
-  rotation's frontier (state.md), so a later sweep tick reads this file against
-  the ladder and raises the identical fork with no new information.
+- **Restate both as behavior** (recommended, and what the ruling implies).
+  pending.md gives the equation a spec-owned left side — "an entry's declared
+  paths" — so the corpus keeps its vocabulary without borrowing a symbol's
+  spelling; prompt.md names the inline-exec span's own spawn in place of the
+  helper. No headings move, so no `per` cite re-homes.
+- **Carve out defining vocabulary.** Amend `spec-writing.md` to permit a name
+  the corpus defines and then reuses, whatever its visibility; `runInlineExec`
+  then goes and `declaredPaths` stays. Against it: the rule's bar is whether a
+  reader needs `src/` open to follow the sentence, which a defined term
+  already clears without the symbol's spelling.
+- **Accept as debt.** Both age exactly as the ruled three did — the question
+  re-opens on the next extraction that moves either.
 
-Parked because it is a governance ruling about the harness's own prose, which
-`engineering.md` says this page does not administer — plan picking between
-keeping and deleting a just-shipped test would be filling that gap silently.
-
-## Three spec sentences name internal helpers, and each extraction ages one more (NEEDS AMENDMENT)
-
-One ruling, three instances, drained from two build notes and each verified on
-disk at its draining tick. Every one is a spec sentence describing an internal
-helper that a later extraction then moved or deleted.
-
-From `QUEUE-FENCE-PRECHECK-ONE-DERIVATION`, which shipped `queueFenceViolations`
-as the one fence pre-check read by both `pendingGate` and `flume check`:
-
-- `spec/pending.md`, *The entry-scoped write guard is opt-in, and off by
-  default* — "The union has one home" names `entryWriteScopeUnion`'s consumers
-  as `writablePathsGate` plus `effectiveFenceLines`. Both now reach it through
-  `entryWriteScope`, and the queue pre-check is a third consumer the sentence
-  does not mention.
-- `spec/cli.md`, *The verbs* — `check` is "the same `entryWriteScopeUnion`/
-  `matchesAny` computation the write guard enforces". True, but weaker than the
-  tree: `check` and `pendingGate` now share one named derivation, so the verb
-  and the gate cannot name different offending paths for one queue.
-
-From `WIN32-SHIM-SPAWN-RETRY-ONE-HOME`, which collapsed three spellings of the
-win32 shim retry into `src/spawnShim.ts` (`isWin32ShimSpawnFailure` +
-`execFileWithShimRetry`) and deleted both `execGate` and `execInstall`:
-
-- `spec/prompt.md`, *No cmd.exe on the inline-exec path* — "`execGate`
-  (module-private) retries through `shell: true` on a win32 ENOENT".
-
-**The third instance escalates the ruling: that sentence is now false.**
-`execGate` exists nowhere in the tree — verified this tick, no hits across
-`src/`, `tests/`, `examples/`, `bin/`, `docs/`, `README.md`. Its *ruling* still
-holds exactly: `runInlineExec` spawns `sh` directly, shares no retry, and a
-missing `sh` is a render failure. Only the name is dead. So the corpus now
-carries a sentence that reads as current and names nothing, which is the decay
-the first two instances only predicted.
-
-All four helpers are internal — none is on `src/index.ts`; only `matchesAny`
-(via `FlumeApi`), `writablePathsGate` and `pendingGate` are public surface. So
-all three sentences are against `.claude/rules/spec-writing.md`, *A claim names
-behavior, never location*: an internal helper, and the call order between
-internal functions. **Patching a name in is the wrong repair** — it deepens the
-violation and the next extraction ages the sentence again, which has now
-happened twice in three commits.
-
-**Recommend** restating all three as the behavior, naming no helper:
-
-- pending.md — the fence the agent is shown, the fence the write guard
-  enforces, and the fence a queue is pre-checked against are one computation,
-  so they cannot differ. Keep the `matchesAny` semantics sentence; it names
-  public surface.
-- cli.md — `check` refuses on exactly the entries `pendingGate` would refuse,
-  naming the same offending paths.
-- prompt.md — the gate-binary spawn path retries through a shell on a win32
-  ENOENT, because package-manager `.cmd` shims cannot be spawned directly and
-  the arguments are chain-authored flags. Keep the rest of the section as it
-  stands: the `runInlineExec` leg names public behavior and is still true.
-
-Two follow-ons the ruling decides, neither filed:
-
-- `declaredPaths` appears in `spec/pending.md` five times, including as a
-  defining equation (line 122). It is not exported either. Defining vocabulary
-  the corpus then reuses is a fair read of why it is there — but if the ruling
-  is that internal names go, it is the larger instance and should go in the
-  same sweep (*A heading is an identifier* — no headings move here, so no cites
-  re-home).
-- With the pending.md sentence restated, `entryWriteScopeUnion` keeps no caller
-  outside `src/paths.ts` but its own test. *An export earns its consumer* is
-  satisfied by that test, so nothing is owed; if the human would rather it were
-  module-private, that files as an ordinary entry — `src/` and `tests/` are both
-  inside build's fence.
-
-## The prior-attempt map keys a singleton by the phase-name *slug*, and three sentences say "phase name" (NEEDS AMENDMENT)
-
-Drained from `SWEEP-PRIORATTEMPTS-SNAPSHOTDIR-UNSLUGGED`'s note; verified on
-disk. That entry made `priorAttemptStem` (`src/priorAttempts.ts`) the one
-`slugify` every prior-attempt artifact hangs off, so the on-disk stem of a
-singleton's record is `slugify(phase.name)` and `readAll` keys
-`TickContext.priorAttempts` by that stem.
-
-Three sentences gloss the key as the phase name itself:
-
-- `spec/chain.md`, *What a hook receives* — "keyed as the files are (tag slug
-  for fanout entries, phase name for singletons)".
-- `spec/loop.md`, *Prior-outcome feedback to the retrying tick* — "phase
-  (singleton, keyed by phase name)".
-- `src/Phase.ts`'s `TickContext.priorAttempts` doc comment — "the phase name
-  for a singleton one", which compiles into the shipped `.d.ts` a chain author
-  hovers.
-
-**The cost.** A chain whose phase name is not already slug-shaped —
-`plan_sweep`, `Plan Derive` — writing `ctx.priorAttempts.get(phase.name)` reads
-"no prior" and the retry loses its predecessor with no signal at all
-(`.claude/rules/engineering.md`, *Loud or nothing*). Not live in this repo:
-`plan-inbox`, `plan-derive`, `build` are slug-shaped already, so the map key
-and the phase name coincide and nothing has caught it.
-
-**Re-keying is off the table.** `slugify` is not invertible, so `readAll`
-cannot recover a raw name it never stored; and the slug is what keeps a
-traversing key inside `priorAttemptsDir`, which `clear` and `snapshotReverted`
-both `rm -rf`. The stem must stay slugged.
-
-Options:
-
-- **Amend the wording** (recommended). Say "phase-name slug" in all three,
-  matching the "tag slug" leg the same sentences already state for fanout.
-  `api.slugify` is exported (`spec/pending.md`, *What the package exports*), so
-  the chain-side rule needs no new surface — only an accurate sentence.
-- **Refuse a non-slug phase name at chain load**, so the engine never silently
-  keys a phase by a name the chain did not write. Against it: the engine
-  already slugs entry tags the same way — `PendingSchema` admits `._()` and
-  shout-case, all of which `slugify` rewrites — so refusing phase names alone
-  makes one leg loud and leaves the other quiet, and it is a new constraint on
-  a value the chain owns.
-
-Two code halves ride whichever ruling lands; both are inside build's fence and
-file as ordinary entries once the wording is ruled:
-
-- `src/Phase.ts`'s doc comment takes the same wording as the spec.
-- `priorAttemptRef`'s phase leg returns `phase.name` raw
-  (`src/priorAttempts.ts:173`) while `PriorAttemptRef`'s own doc calls `key`
-  "the filename stem". Behaviorally a no-op today — `read`, `write` and `clear`
-  all re-slug through `priorAttemptStem`, and `clearStale` filters on the
-  record's `key` keyspace, not the stem's text — so it is pure shape, not a
-  defect. It becomes one the first time a `ref.key` is reported outward or
-  compared against a `readAll` key. Slugging that leg is the one-line fix; it
-  is not exported (`src/index.ts` carries `priorAttemptPath` and
-  `priorAttemptsDir`, not `priorAttemptRef`), so no consumer sees the change.
+Needs an amendment because closing it edits `spec/` (and on the second option
+`.claude/rules/spec-writing.md`), which no autonomous phase may write.
 
 ## `spec/worktrees.md` still ratifies the blind delete `4d76998` shipped out (NEEDS AMENDMENT)
 
