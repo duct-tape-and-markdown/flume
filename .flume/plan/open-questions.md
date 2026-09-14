@@ -802,119 +802,32 @@ Not covered here, and correct as it stands: `TickResult.commitSha`/`baseSha`
 (`src/Phase.ts:193`, `:228`) stay optional, because a no-commit tick has
 neither. Only the gate surface changed.
 
-## `spec/harness.md`'s *What the package owns* is an inventory, and its nine bullets cannot be cited apart (NEEDS AMENDMENT)
+## `spec/chain.md` still declares a single-entry `exports` map, and `spec/cli.md` names the pre-move bin target (NEEDS AMENDMENT)
 
-Raised deriving `767e298`. The section lists nine things the package owns —
-the phases, the prompts and their discipline, the entry extension, the judges,
-the gates, records-as-one-file-each, plan state as declared state, the default
-`handoff`, the runtime ignore set. Each is its own extraction entry; the
-phases bullet alone is all 949 lines of `.flume/chain.ts`. Compressing them
-into one entry is not on the table (`.flume/PROTOCOL.md`, *What makes an entry
-good*, 1), so nine entries would carry one identical `per` — and `per` is the
-field that tells a fresh build tick *on whose authority* it is acting. A cite
-that resolves to a nine-item list does not discriminate.
+Raised draining `HARNESS-SUBPATH-EXPORT`'s note; verified on disk at `4be375c`.
+The layout move landed `./harness` as a second `exports` entry and moved the
+CLI's emit to `dist/src/cli.js`. Four spec sentences no longer match the tree:
 
-The rest of the file does not have this problem: *What a consumer declares*,
-*The runner interface*, *The cite resolver* and *Where it lives* each state one
-thing, and each is filed as an entry this tick.
+- `spec/chain.md`, *The package a chain loads through*: "A strict,
+  single-entry `exports` map. `"."` only — no subpath patterns" (`:672`), and
+  "still one `"."` entry resolving to the one ESM build" (`:681`).
+  `spec/harness.md`, *Where it lives* mandates `./harness` as a second entry —
+  not a pattern. The two pages disagree; the tree follows `harness.md`.
+- `spec/cli.md`, *Distribution*: the bin "reaches the same entry
+  (`dist/cli.js`)" (`:321`) and "`dist/cli.js` loads it via `tsImport`"
+  (`:328`). Both are `dist/src/cli.js` from `4462982`. The same section's "one
+  strict `"."` export" (`:332`) carries `chain.md`'s claim by reference.
 
-**The cheap fix.** `sectionOf` (`.flume/chain.ts`) matches a heading at any
-depth, and so will the package's own resolver (*The cite resolver*), so `###`
-subheadings are citable today with no mechanism change. Promoting each bullet
-to a `###` heading under the existing `##` leaves the section readable as an
-inventory and makes each owned thing a `per` target.
+What the bullet was buying still holds and now has a check: no subpath
+patterns, no escape hatch, and `@dtmd/flume/dist/harness/index.js` refused with
+`ERR_PACKAGE_PATH_NOT_EXPORTED` (`tests/harnessPackaging.test.ts`). The
+standing acceptance needs no change.
 
-- **Promote all nine.** Every extraction entry gets a discriminating cite.
-  Costs nine short headings.
-- **Promote the four that are large extractions** (phases, prompts, judges,
-  gates) and leave the small ones inline. Against it: the line between large
-  and small moves, and the next entry re-opens the question.
-- **Leave it.** Nine entries share one cite; build re-derives which bullet it
-  is under from `summary` — which is the restatement `per` exists to avoid.
+**Recommend** amending `chain.md`'s bullet to a strict *enumerated* map — `.`
+and `./harness`, no patterns, no escape hatch — and correcting `cli.md`'s two
+path spellings. The alternative, retracting `./harness` and shipping the
+harness as its own package, re-opens *Where it lives*'s one-package-one-version
+argument and is not what the tree did.
 
-**Recommend the first.** Until it lands, *What the package owns* derives
-nothing, and the extraction proceeds through the four sections that already
-state one thing each.
-
-## `flume init` is a verb of the package, and the engine's verb set is closed (PARKED)
-
-Raised deriving `767e298`. *Adoption and upgrade* states "`flume init` (a verb
-of the package, not the engine) writes the declaration skeleton, the state
-root, the ignore set, and `PROTOCOL.md`". Verified on disk: `src/cli.ts`
-dispatches a fixed set of subcommands and `spec/cli.md` *Subcommand surface*
-enumerates it; there is no registration surface a package could add a verb
-through, and `init` is not among them.
-
-The fork is where the verb lives:
-
-- **The engine gains a verb-registration surface** the chain or package
-  supplies. Matches the spec's wording. Against it: the engine would dispatch
-  a name it does not own, and `flume --help` — which `spec/cli.md` makes the
-  authority for the surface — becomes chain-dependent. Whether that is
-  mechanism or convention is exactly the second-implementation question
-  (`.claude/rules/engine-boundary.md`).
-- **The package ships its own bin.** `npx @dtmd/flume/harness init`, or a
-  second `bin` entry. No engine change, no boundary risk; costs the
-  single-verb-namespace reading of "`flume init`".
-- **`init` is an engine verb that takes a scaffolder value** the loaded chain
-  exports. Keeps one binary and keeps the content the package's. Against it:
-  `init` runs *before* a chain exists, so there is nothing to load.
-
-**Recommend the second** — it is the only one that needs no engine change and
-no pre-chain bootstrap. It asks the spec sentence to name the invocation
-rather than the binary. The section's other half (upgrading is one bump plus a
-migration note; a breaking declaration change refused at load with the field
-named) is already covered — by `spec/cli.md` *Versioning policy* and by the
-`HARNESS-DECLARATION-SCHEMA` entry respectively.
-
-## The harness cutover's surfaces are outside every phase lane (PARKED)
-
-Raised deriving `767e298`, and the third question this file carries that ends
-on this same sentence. *What this repo is* states that `.flume/chain.ts` is
-"the harness factory applied to `.flume/declaration.json`, and nothing else",
-and *What the package owns* puts the prompts in the package. Verified on disk:
-`.flume/chain.ts` and `.flume/prompts/**` are outside every phase lane
-(`.flume/chain.ts` `buildFence`, closing NOTE; `.claude/rules/spec-plan-build.md`).
-
-So no entry can perform the cutover, and every extraction entry that lands in
-`harness/` leaves **two copies of one truth** — the package's and the live
-chain-side one — with nothing in the queue able to delete the second
-(`.claude/rules/engineering.md`, *Derived state is computed, never restated
-beside its source*). That is a bounded, deliberate window, but it needs an
-owner and a trigger named, not a silent accumulation.
-
-- **One `chore(flume):` per extraction.** The operator cuts chain.ts over to
-  each module as it lands; the duplication window is one entry wide, and each
-  harness module's header cites this decision and names the commit that
-  retires its chain-side copy. Costs one hand commit per entry.
-- **One cutover at the end.** The duplication runs the length of the
-  extraction — nine-plus entries — and every chain.ts edit in that span must
-  be mirrored by hand into `harness/`. Cheapest in commits, worst in drift.
-- **Widen build's fence to `.flume/chain.ts` and `.flume/prompts/**` for the
-  extraction.** Contradicts `spec-plan-build.md`'s lanes, and the same widening
-  would close two other questions in this file — which is either the point or
-  the tell.
-
-**Recommend the first**, and note that the third is the one the other two
-parked questions (the vitest-lane hints, the `pins[]`/`tests[]` clause) are
-also waiting on. If the lane is going to move, it is worth moving once, on
-purpose, rather than three times by accident.
-
-**The vitestJudge leg of the cutover carries a shape change, not just a move**
-(`HARNESS-VITEST-RUNNER`'s note, 2026-09-14 build wave; verified on disk).
-`.flume/vitestJudge.ts` `materializeBase` takes a `mergedSha` and pulls the
-merged bytes through the engine's at-ref reader (`:117`, `:132`). The package's
-operation has no such parameter — `spec/harness.md`, *The runner interface*
-declares `runAtBase(names, files, baseSha, cwd)`, and `harness/vitestRunner.ts`
-copies the named files off `cwd`'s working tree (`:264`), refusing loud on one
-that is not there. That is sound exactly where the gate runs — `when:
-"afterMerge"` on a clean trunk, so the working tree *is* the merged commit — and
-wrong anywhere else. The precondition has no parameter to live in, so the
-cutover `chore(flume):` that retires the chain-side judge is where it gets
-stated; handing the runner a `mergedSha` later re-opens the spec sentence.
-
-The same commit closes a consumer restatement the sweep would otherwise file:
-`materializeBase` spawns `git worktree add --detach` by hand (`:126`) beside the
-engine's own verb, which now takes an optional `branch` and does exactly this
-when it is omitted (`src/git.ts:245`). `harness/vitestRunner.ts:263` already
-goes through the verb; the chain-side copy is the one left.
+Plan cannot edit `spec/` (`.claude/rules/spec-plan-build.md`), so the amendment
+is the human's; nothing in the queue blocks on it.

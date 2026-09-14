@@ -20,6 +20,10 @@
         {
           "path": "harness/index.ts",
           "description": "export the schema and its type"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "the ./harness surface assertion derives from harness/index.ts instead of restating it"
         }
       ],
       "retire": []
@@ -34,9 +38,11 @@
       "an unknown declaration field is refused, naming the field and the valid set",
       "a missing required declaration field is refused, naming the field"
     ],
-    "pins": [],
+    "pins": [
+      "the package exports map resolves ./harness to the built harness entry point"
+    ],
     "acceptance": "harness/declaration.ts parses a full declaration and refuses both an unknown field and a missing required one, each refusal naming the field.",
-    "notes": "runner types against harness/runner.ts. No field names an engine artifact path, a verdict field, or a prior-attempt mode — those are the engine's to report. This entry is the shape alone; its consumers are the cite resolver and the chain factory, later entries.",
+    "notes": "runner types against harness/runner.ts. No field names an engine artifact path, a verdict field, or a prior-attempt mode. Shape alone; consumers are the cite resolver and the chain factory, later entries. 396b90e reverted on the hand-restated export list in harnessPackaging.test.ts — make it derive from the module (engineering.md, *A seam gate reads what the real writer wrote*). Leaves no chain-side twin.",
     "observedFiles": [
       ".flume/plan/notes/HARNESS-DECLARATION-SCHEMA.md",
       "harness/declaration.ts",
