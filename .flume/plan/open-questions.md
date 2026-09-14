@@ -993,3 +993,92 @@ Options:
 Parked because closing it overturns a decision the site declares deliberate,
 which plan does not re-open on its own
 (`.claude/rules/posture-sweep.md`, *Routing*).
+
+## Nothing renders a prompt without spending an agent, and five consumers hand-built it (PARKED)
+
+Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
+this tick. The verb list in `spec/cli.md` *Subcommand surface* is `status`,
+`tick`, `loop`, `wake`/`sleep`, `stop`, `job`, `log`, `check`, `friction`.
+No `render` — removed in 0.10 with no replacement.
+
+**The precedent is `check`,** whose whole rationale is stated in that section:
+it "validates the working tree's `pending.json` **without spending an agent**",
+read-only, invoking nothing. Prompt rendering is the other half of what a tick
+is handed, and it has no such verb.
+
+What ships today covers the *after*, not the *before*: `rendered-prompts/` plus
+the verdict row's `promptPath` (`spec/prompt.md`, *The rendered prompt is
+persisted before the agent runs*) answer "what was this tick told" once a tick
+has run. Comparing renders across an upgrade needs the answer before.
+
+**Field evidence.** One consumer pins the wording of the engine's rendered
+`files` clause and throws at render if it changes (`consumer-c.md` §4) — the
+only mechanism in five surveyed chains that turned an engine change into a loud
+failure rather than a silent one, and 0.15.0's rewording fires it on every plan
+tick. Two migration seats separately drove `loadChainModule` + `renderPrompt`
+from scratch hosts to diff before/after renders. `renderPrompt` is exported;
+`loadChainModule` is not, so the host is rebuilt each time — verbatim copying
+across consumers is the detector for a missing surface
+(`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
+Options:
+
+- **A `render` verb, sibling of `check`.** Renders what the named phase (and
+  `--entry`) would be handed, prints or writes it, invokes nothing. The
+  rationale transfers verbatim from `check`'s own spec sentence. Costs a
+  `spec/cli.md` *Subcommand surface* amendment, and a decision on whether an
+  unresolved span exits `EX_DATAERR` like `check`'s refusal or renders the
+  partial for inspection.
+- **Export `loadChainModule` from the barrel.** Smaller; no verb, no spec
+  amendment to the verb list. Leaves every consumer writing the same host, and
+  hands out the dispatcher's load path as public API for one use-case.
+- **Rule it covered and close.** A consumer wanting a render diff runs a tick
+  in a scratch worktree — paying exactly the agent invocation `check` exists to
+  avoid.
+
+Recommend the first. Parked because it is new CLI surface, and `spec/cli.md` is
+the human's.
+
+## `entryTag` names two rules two hops apart on the chain surface (NEEDS AMENDMENT)
+
+Drained from `AGENT-INVOCATION-CARRIES-ENTRY-TAG`'s note; verified on disk this
+tick. Three fields carry one adjacent fact under three spellings:
+
+- `AgentInvocation.entryTag?` (`src/Agent.ts:39`) — the provisioned entry's
+  tag, **absent under singleton**.
+- `TickVerdictInvocation.tag?` (`src/Dispatcher.ts:334`) — same rule, different
+  name, and the only one of the three carrying no doc comment.
+- `WorktreeSetupContext.entryTag` (`src/Phase.ts:476`) — same *name* as the
+  first, **different rule**: it is the worktree key, so it falls back to the
+  phase name under singleton rather than going absent.
+
+The last pair is the hazard. A chain author who reads `ctx.entryTag` in
+`setupWorktree`/`teardownWorktree` with the `AgentInvocation` rule in mind
+writes `ctx.entryTag ? perEntryResource(ctx.entryTag) : skip` and gets the
+phase name, silently keying a per-entry resource to a phase — a reaper shape
+the queue already carries an entry for
+(`FLUMEAPI-REPORTS-THE-WORKTREE-REGISTRY`). Both doc comments now state the
+divergence; that is the prose rung, and a name is the rung up
+(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+
+**One name per rule** closes it: `entryTag` means "the provisioned entry's tag,
+absent under singleton" on both the invocation and the verdict row;
+`WorktreeSetupContext.entryTag` becomes `worktreeKey`, which is the first word
+of its own doc comment already.
+
+**Not fileable as an entry — two spec sentences name the fields.**
+
+- `spec/worktrees.md:144` — `WorktreeSetupContext` — `{ worktreePath, repoRoot,
+  entryTag }`.
+- `spec/loop.md:600` — the usage row carries "the entry `tag` (absent for a
+  singleton)".
+
+Both are outside build's fence. `.flume/chain.ts:796` passes the field by name
+too, so the rename also rides a `chore(flume):` chain update in the same commit
+(CLAUDE.md, *Source of truth*). The verdict row's rename is a breaking on-disk
+shape change to `tick-verdicts.jsonl` and `flume log --json`; pre-1.0 posture
+takes it in place under a `### Breaking` line
+(`.claude/rules/spec-plan-build.md`, *Pre-1.0 clean-slate posture*).
+
+**Recommend:** amend both spec sentences, then the entry ships the rename
+across `src/`, `tests/`, `docs/CHAIN-AUTHORING.md` and `.flume/chain.ts`.
