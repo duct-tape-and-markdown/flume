@@ -112,7 +112,7 @@ describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", ()
  * (`existsLoud`, src/fsProbe.ts), the disposition `baton.hibernating()`'s
  * `readdirSync` one line below already takes.
  */
-describe("superviseLoop — an unstattable stop flag is loud (engineering.md \"Loud or nothing\")", () => {
+describe('superviseLoop — an unstattable stop flag is loud (engineering.md "Loud or nothing")', () => {
   it("the supervisor's per-iteration stop check throws on a non-ENOENT stop-flag stat instead of ticking on", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await mkdir(flumeDir, { recursive: true });
@@ -434,7 +434,9 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.hibernated).toBe(false);
     expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
     expect(
-      errors.some((e) => /terminal misconfiguration/.test(e) && /ghost/.test(e)),
+      errors.some(
+        (e) => /terminal misconfiguration/.test(e) && /ghost/.test(e),
+      ),
     ).toBe(true);
     // The supervisor never clears the flag either — diagnosability over tidiness.
     expect(baton.isAwake("ghost")).toBe(true);
@@ -470,7 +472,8 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
               {
                 ...blamedOnFixture("CONFLICT-A"),
                 signature: "cherry-pick conflict in src/shared.ts",
-                message: "error: could not apply ...: conflict in src/shared.ts",
+                message:
+                  "error: could not apply ...: conflict in src/shared.ts",
               },
             ],
           }),
@@ -556,7 +559,8 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
               {
                 ...blamedOnFixture("CONFLICT-B"),
                 signature: "cherry-pick conflict in src/shared.ts",
-                message: "error: could not apply ...: conflict in src/shared.ts",
+                message:
+                  "error: could not apply ...: conflict in src/shared.ts",
               },
             ],
           }),
@@ -659,9 +663,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(receivedSlugs[0]).toEqual([]);
     expect(receivedSlugs[1]).toEqual(["held-entry@00112233aa"]);
     expect(
-      warnings.some(
-        (w) => w.includes("HELD-ENTRY") && w.includes("EBUSY"),
-      ),
+      warnings.some((w) => w.includes("HELD-ENTRY") && w.includes("EBUSY")),
     ).toBe(true);
   });
 
@@ -705,7 +707,11 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    expect(res.repeatedFailure).toEqual({
+      stage: "provision",
+      signature: SIGNATURE,
+      count: 3,
+    });
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
@@ -713,7 +719,8 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build"); // never hibernates — the abort must come from the backstop alone
 
-    const REPEATED_SIGNATURE = "git worktree prune: fatal: not a git repository";
+    const REPEATED_SIGNATURE =
+      "git worktree prune: fatal: not a git repository";
     let calls = 0;
     const runTick = async (): Promise<{ exitCode: number | null }> => {
       calls++;
@@ -762,6 +769,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
     expect(res.repeatedFailure).toEqual({
+      stage: "provision",
       signature: REPEATED_SIGNATURE,
       count: 3,
     });
@@ -853,7 +861,8 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
                 {
                   ...blamedOnFixture("CONFLICT-B"),
                   signature: "cherry-pick conflict in src/shared.ts",
-                  message: "error: could not apply ...: conflict in src/shared.ts",
+                  message:
+                    "error: could not apply ...: conflict in src/shared.ts",
                 },
               ],
             }),
@@ -891,7 +900,9 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(receivedSlugs[0]).toEqual([]);
     expect(receivedSlugs[1]).toEqual(["conflict-b@00112233aa"]);
     expect(
-      warnings.some((w) => w.includes("CONFLICT-B") && w.includes("merge-stage")),
+      warnings.some(
+        (w) => w.includes("CONFLICT-B") && w.includes("merge-stage"),
+      ),
     ).toBe(true);
   });
 
@@ -1002,9 +1013,13 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
-    // The exposed shape carries the raw signature only — never prefixed with
-    // the stage that tagged it internally.
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    // The exposed shape carries the raw signature and its stage as separate
+    // fields — the streak key's `${stage}:` prefix never reaches `signature`.
+    expect(res.repeatedFailure).toEqual({
+      stage: "merge",
+      signature: SIGNATURE,
+      count: 3,
+    });
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
@@ -1048,7 +1063,11 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    expect(res.repeatedFailure).toEqual({
+      stage: "gate",
+      signature: SIGNATURE,
+      count: 3,
+    });
     expect(errors.some((e) => e.includes(SIGNATURE))).toBe(true);
   });
 
@@ -1152,7 +1171,11 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
     expect(calls).toBe(4);
     expect(res.ticks).toBe(4);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SHARED_TEXT, count: 3 });
+    expect(res.repeatedFailure).toEqual({
+      stage: "gate",
+      signature: SHARED_TEXT,
+      count: 3,
+    });
   });
 });
 
@@ -1201,10 +1224,14 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     expect(calls).toBe(2);
     expect(res.ticks).toBe(2);
     expect(res.hibernated).toBe(false);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 2 });
+    expect(res.repeatedFailure).toEqual({
+      stage: "provision",
+      signature: SIGNATURE,
+      count: 2,
+    });
   });
 
-  it("quarantineScope: \"none\" never quarantines a tagged failure — later ticks still see the empty set", async () => {
+  it('quarantineScope: "none" never quarantines a tagged failure — later ticks still see the empty set', async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
@@ -1293,7 +1320,11 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     // the v0.7 §16 default, not the 2 the suite above overrides to.
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
-    expect(res.repeatedFailure).toEqual({ signature: SIGNATURE, count: 3 });
+    expect(res.repeatedFailure).toEqual({
+      stage: "provision",
+      signature: SIGNATURE,
+      count: 3,
+    });
   });
 });
 
@@ -1481,5 +1512,100 @@ describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing
     expect(res.hibernated).toBe(false);
     expect(infos.some((l) => l.includes("reached --max 2"))).toBe(true);
     expect(infos.some((l) => l.includes("friction:"))).toBe(false);
+  });
+});
+
+/**
+ * ABORT-SIGNATURE-NAMES-ITS-STAGE — the abort site holds the aborting
+ * streak's stage (`failureStreaks` is keyed `${stage}:${signature}`), so
+ * `repeatedFailure` reports it rather than leaving a consumer to read it
+ * back out of the signature's wording (`.claude/rules/engineering.md`, *A
+ * fact the engine holds is reported, never rediscovered*). The stage rides
+ * its own field: the reported `signature` stays the raw comparison key the
+ * tick wrote.
+ */
+describe("superviseLoop — the aborting streak's stage is reported, not inferred (ABORT-SIGNATURE-NAMES-ITS-STAGE)", () => {
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
+
+  /**
+   * Drive `abortThreshold` consecutive ticks whose verdict carries exactly
+   * one failure, in `stage`'s list, with `signature`. Returns the run's
+   * result plus the error lines the supervisor logged.
+   */
+  async function abortOn(
+    stage: "provision" | "merge" | "gate",
+    signature: string,
+  ): Promise<{
+    res: Awaited<ReturnType<typeof superviseLoop>>;
+    errors: string[];
+    calls: number;
+  }> {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort comes from the backstop alone
+
+    const record = { signature, message: signature };
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            ...(stage === "provision"
+              ? { provisionFailures: [record] }
+              : stage === "merge"
+                ? {
+                    mergeFailures: [
+                      { ...blamedOnFixture("STAGED"), ...record },
+                    ],
+                  }
+                : { noCommit: "gate-revert" as const, gateFailures: [record] }),
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 10,
+      runTick,
+      log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
+    });
+    return { res, errors, calls };
+  }
+
+  it("superviseLoop reports the aborting streak's stage on repeatedFailure", async () => {
+    // Every stage the supervisor folds into a streak, each driven through
+    // the real abort path — not one of the three standing in for the rest.
+    const stages = ["provision", "merge", "gate"] as const;
+    expect(stages.length).toBe(3);
+    for (const stage of stages) {
+      const { res, calls, errors } = await abortOn(
+        stage,
+        `${stage} wall: EBUSY`,
+      );
+      expect(calls).toBe(3);
+      expect(res.repeatedFailure).toEqual({
+        stage,
+        signature: `${stage} wall: EBUSY`,
+        count: 3,
+      });
+      // The log line the operator reads names it too, never "provisioning".
+      expect(errors.some((e) => e.includes(`${stage}-stage`))).toBe(true);
+    }
+  });
+
+  it("repeatedFailure.signature carries the raw comparison key with no stage prefix", async () => {
+    // A signature that itself contains a colon — the internal streak key is
+    // `${stage}:${signature}`, and none of that prefix may reach the field.
+    const SIGNATURE = "error: could not apply 4b825dc: conflict in src/a.ts";
+    const { res } = await abortOn("merge", SIGNATURE);
+    expect(res.repeatedFailure?.count).toBe(3);
+    expect(res.repeatedFailure?.signature).toBe(SIGNATURE);
+    expect(res.repeatedFailure?.signature.startsWith("merge:")).toBe(false);
   });
 });

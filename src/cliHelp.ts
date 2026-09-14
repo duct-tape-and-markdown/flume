@@ -136,11 +136,13 @@ Exit codes:
       is detached (checkout a branch first — the tip claim below keys on the
       ref); also, another process holds the tip claim (the refusal names the
       holder pid and claim path); also, at least one tick errored and the
-      run shipped nothing; also, an identical pre-tick worktree provisioning
-      failure repeated 3 consecutive ticks with no successful tick between
-      them — the completion summary names the repeated signature. A single
-      entry's provisioning failure alone does not abort: it quarantines
-      that entry for the rest of the run while the others keep dispatching.
+      run shipped nothing; also, an identical failure signature repeated 3
+      consecutive ticks with no successful tick between them — a
+      provision-stage, merge-stage or gate-stage wall alike, with the
+      completion summary naming the aborting stage and the repeated
+      signature. A single entry's failure alone does not abort: it
+      quarantines that entry for the rest of the run while the others keep
+      dispatching.
       A graceful stop mid-run (\`.flume/stop\` written while the loop is
       already going) ends iteration after the in-flight tick finishes, but
       never changes this exit code — it stays decided by the run's totals.
@@ -321,9 +323,9 @@ Exit codes:
       always, including no jobs).
   1   Git or filesystem failure (provisioning, commit); for run also:
       harness error, another live loop holds the job's lock, at least one
-      tick errored and the run shipped nothing, or an identical pre-tick
-      worktree provisioning failure repeated 3 consecutive ticks; for rm
-      also: the job's loop is still live.
+      tick errored and the run shipped nothing, or an identical
+      provision-stage, merge-stage or gate-stage failure repeated 3
+      consecutive ticks; for rm also: the job's loop is still live.
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, rm on a <name> whose job dir does

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { tickExitCode } from "../src/cliVerdict.ts";
+import { loopCompletionSummary, tickExitCode } from "../src/cliVerdict.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
@@ -311,5 +311,42 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
     const next = doc.indexOf("\n## ", start + 1);
     const section = next === -1 ? doc.slice(start) : doc.slice(start, next);
     expect(section.replace(/\s+/g, " ")).toContain(clause);
+  });
+});
+
+/**
+ * ABORT-SIGNATURE-NAMES-ITS-STAGE — `flume loop --help`'s exit-1 prose
+ * describes the consecutive-failure backstop, which fires on a provision,
+ * merge or gate wall alike. The stage vocabulary is not hand-copied here:
+ * it is read off `loopCompletionSummary` (`src/cliVerdict.ts`), the real
+ * writer of the line an operator sees when the backstop trips, and the help
+ * text must name every phrase that writer can emit (`.claude/rules/
+ * engineering.md`, "A seam gate reads what the real writer wrote").
+ */
+describe("flume loop --help — the abort backstop's stage vocabulary against loopCompletionSummary's (ABORT-SIGNATURE-NAMES-ITS-STAGE)", () => {
+  const STAGES = ["provision", "merge", "gate"] as const;
+
+  it("flume loop --help names all three abort stages, not provisioning alone", async () => {
+    const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
+    expect(code).toBe(0);
+    const clause = out.slice(out.indexOf("\n  1 "), out.indexOf("\n  74 "));
+    expect(clause.length).toBeGreaterThan(0);
+    // Wrapped across help-text lines, so collapse whitespace before matching.
+    const prose = clause.replace(/\s+/g, " ");
+    expect(STAGES.length).toBe(3);
+    for (const stage of STAGES) {
+      const summary = loopCompletionSummary({
+        ticks: 3,
+        hibernated: false,
+        repeatedFailure: { stage, signature: "SIG", count: 3 },
+        shippedTags: [],
+        erroredTicks: [],
+      });
+      // The phrase the real writer emits for this stage...
+      expect(summary).toContain(`${stage}-stage`);
+      // ...is the phrase the help text owes the operator.
+      expect(prose).toContain(`${stage}-stage`);
+    }
+    expect(prose).not.toContain("worktree provisioning");
   });
 });

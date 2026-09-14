@@ -136,9 +136,7 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
       ],
     };
     expect(loopExitCode(result)).toBe(1);
-    expect(loopCompletionSummary(result)).toContain(
-      "3 tick(s) errored",
-    );
+    expect(loopCompletionSummary(result)).toContain("3 tick(s) errored");
   });
 
   it("settled with nothing to do (no errors, nothing shipped) → 0, no completion summary", () => {
@@ -181,7 +179,11 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     const result: SuperviseResult = {
       ticks: 3,
       hibernated: false,
-      repeatedFailure: { signature: "EBUSY: resource busy or locked", count: 3 },
+      repeatedFailure: {
+        stage: "provision",
+        signature: "EBUSY: resource busy or locked",
+        count: 3,
+      },
       shippedTags: ["SHIPPED-BEFORE-THE-WALL"],
       erroredTicks: [],
     };
@@ -197,12 +199,37 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     const result: SuperviseResult = {
       ticks: 2,
       hibernated: false,
-      repeatedFailure: { signature: "EBUSY: resource busy or locked", count: 2 },
+      repeatedFailure: {
+        stage: "provision",
+        signature: "EBUSY: resource busy or locked",
+        count: 2,
+      },
       shippedTags: [],
       erroredTicks: [],
     };
     expect(loopCompletionSummary(result)).toContain("2 consecutive ticks");
     expect(loopCompletionSummary(result)).not.toContain("3 consecutive ticks");
+  });
+
+  // ABORT-SIGNATURE-NAMES-ITS-STAGE — the backstop fires on a provision,
+  // merge or gate wall alike, and `superviseLoop` reports which. The summary
+  // renders the reported stage; calling every abort a worktree-provisioning
+  // failure sent an operator to the wrong stage entirely.
+  it("loopCompletionSummary names the aborting stage rather than worktree provisioning", () => {
+    const stages = ["provision", "merge", "gate"] as const;
+    expect(stages.length).toBe(3);
+    for (const stage of stages) {
+      const summary = loopCompletionSummary({
+        ticks: 3,
+        hibernated: false,
+        repeatedFailure: { stage, signature: "SIG-" + stage, count: 3 },
+        shippedTags: [],
+        erroredTicks: [],
+      });
+      expect(summary).toContain(`${stage}-stage failure`);
+      expect(summary).toContain("SIG-" + stage);
+      expect(summary).not.toContain("worktree provisioning");
+    }
   });
 
   // spec/loop.md "Graceful stop — the stop flag": stop ends iteration, it
@@ -272,7 +299,6 @@ async function makeJobRepo(branch: string): Promise<{
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
-
 /**
  * A minimal, otherwise-valid `TickVerdict` — `writeTickVerdict`'s own shape
  * (`src/Dispatcher.ts`), constructed by hand here since `flume log` reads
@@ -316,7 +342,6 @@ async function writeTickVerdictsLog(
     "utf8",
   );
 }
-
 
 describe("flume log (spec/cli.md §Subcommand surface)", () => {
   it("default prints the last 10 verdicts oldest-first as fixed-format lines", async () => {
@@ -446,7 +471,9 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
   it("flume log renders the verdict it read without creating an awake flag", async () => {
     const repo = await makeJobRepo("main");
     try {
-      await writeTickVerdictsLog(repo.dir, [makeVerdict({ phaseName: "build" })]);
+      await writeTickVerdictsLog(repo.dir, [
+        makeVerdict({ phaseName: "build" }),
+      ]);
 
       const r = await runCli(repo.dir, ["log"]);
       expect(r.code).toBe(0);

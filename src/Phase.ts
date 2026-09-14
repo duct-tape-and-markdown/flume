@@ -549,10 +549,12 @@ export interface Chain {
    */
   capabilities?: string[];
   /**
-   * Override for the `flume loop` supervisor's provisioning-failure policy —
+   * Override for the `flume loop` supervisor's repeated-failure policy —
    * the run-scoped quarantine and the consecutive-identical-failure abort
    * threshold ship as engine defaults; this block lets a chain choose
-   * otherwise. Undeclared or omitted fields fall through to the defaults in
+   * otherwise. Both legs read every failure a tick reported, whichever
+   * stage it came from (provision, merge or gate), never provisioning
+   * alone. Undeclared or omitted fields fall through to the defaults in
    * `src/loopSupervisor.ts`'s
    * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
    * byte shape is pinned by the chain-declares-neither-knob case in
@@ -560,18 +562,19 @@ export interface Chain {
    */
   supervisorPolicy?: {
     /**
-     * `"run"` (default): a tagged pre-tick worktree-provisioning failure
-     * quarantines that entry's slug for the rest of the run. `"none"`:
-     * quarantine never engages — every entry stays pickable every tick
-     * regardless of an earlier provisioning failure. The
+     * `"run"` (default): a failure a tick blamed on one entry — at the
+     * provision, merge or gate stage alike — quarantines that entry's slug
+     * for the rest of the run. `"none"`: quarantine never engages — every
+     * entry stays pickable every tick regardless of an earlier failure. The
      * consecutive-identical-failure backstop (`abortThreshold`) applies
      * either way.
      */
     quarantineScope?: "run" | "none";
     /**
-     * Number of consecutive ticks the same provisioning-failure signature
+     * Number of consecutive ticks the same stage-tagged failure signature
      * must repeat, with no successful tick between them, before the
-     * supervisor aborts the run. Default 3.
+     * supervisor aborts the run — a provision-, merge- or gate-stage wall
+     * alike, each streak counted separately. Default 3.
      */
     abortThreshold?: number;
     /**

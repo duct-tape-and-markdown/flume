@@ -69,7 +69,9 @@ export function describeRefFailure(
 
 /**
  * `flume loop` / `job run`'s completion summary line naming surfaced tick
- * errors, an abort on the consecutive-failure backstop, and (spec/loop.md
+ * errors, an abort on the consecutive-failure backstop (named by the stage
+ * `superviseLoop` reported it against — provision, merge or gate — never
+ * fixed to one of the three), and (spec/loop.md
  * "Graceful stop") a stop-flag-ended run — undefined when the run had none of
  * these. Printed even on a 0 exit (partial success, or a graceful stop): none
  * of these facts may vanish into a green exit silently.
@@ -85,8 +87,8 @@ export function loopCompletionSummary(
   }
   if (result.repeatedFailure) {
     parts.push(
-      `aborted: identical worktree provisioning failure repeated ` +
-        `${result.repeatedFailure.count} consecutive ticks — ` +
+      `aborted: identical ${result.repeatedFailure.stage}-stage failure ` +
+        `repeated ${result.repeatedFailure.count} consecutive ticks — ` +
         `${result.repeatedFailure.signature}`,
     );
   }

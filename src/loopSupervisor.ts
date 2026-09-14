@@ -88,6 +88,15 @@ export interface SuperviseLoopOptions {
   ) => Promise<{ exitCode: number | null }>;
 }
 
+/**
+ * The stage a per-entry failure record came from — the three the tick
+ * verdict carries in separate lists (`provisionFailures`, `mergeFailures`,
+ * `gateFailures`). Rides {@link SuperviseResult.repeatedFailure} so a
+ * consumer reads the aborting streak's stage instead of re-deriving it from
+ * the signature's wording.
+ */
+export type FailureStage = "provision" | "merge" | "gate";
+
 /** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
 export interface SuperviseResult {
   ticks: number;
@@ -130,13 +139,16 @@ export interface SuperviseResult {
    * successful tick between them (spec/loop.md "Repeated identical
    * failures") — the consecutive-failure backstop for non-entry-scoped
    * walls the run-scoped quarantine can't isolate, and a wider abort than
-   * the mount-dead one, which keeps its own semantics. `signature` is the raw comparison key, never prefixed
-   * with the stage it came from — the stage only disambiguates the internal
-   * streak, never the reported shape. Distinct from `mountDead` — the chain
-   * resolved and ran fine; only a provision, merge, or gate wall kept
+   * the mount-dead one, which keeps its own semantics. `stage` names which
+   * of the three walls the aborting streak came from — the supervisor holds
+   * it at the abort site, so it is reported rather than left for a consumer
+   * to infer from the signature's wording. `signature` is the raw comparison
+   * key, never prefixed with the stage it came from — the stage rides the
+   * sibling field, never the signature text. Distinct from `mountDead` — the
+   * chain resolved and ran fine; only a provision, merge, or gate wall kept
    * hitting the identical failure.
    */
-  repeatedFailure?: { signature: string; count: number };
+  repeatedFailure?: { stage: FailureStage; signature: string; count: number };
   /**
    * spec/loop.md "Graceful stop — the stop flag": set when `<flumeDir>/stop`
    * was found present at the per-iteration boundary after a child tick
@@ -283,7 +295,7 @@ export async function superviseLoop(
     // record at all.
     const failures: Array<
       StageFailureEntry & {
-        stage: "provision" | "merge" | "gate";
+        stage: FailureStage;
         signature: string;
         message: string;
       }
@@ -331,35 +343,38 @@ export async function superviseLoop(
     // tick with no failure of a given stage-tagged signature clears that
     // signature's streak — only an unbroken run of the identical wall
     // counts.
-    const thisSignatures = new Map(
-      failures.map((f) => [`${f.stage}:${f.signature}`, f.signature]),
+    // Keyed by the stage-tagged streak key, valued by the failure record
+    // itself: the stage is a fact this loop already holds, and the abort
+    // below reports it rather than leaving a consumer to read it back out of
+    // the signature's wording (`.claude/rules/engineering.md`, *A fact the
+    // engine holds is reported, never rediscovered*).
+    const thisFailures = new Map(
+      failures.map((f) => [`${f.stage}:${f.signature}`, f]),
     );
     for (const key of [...failureStreaks.keys()]) {
-      if (!thisSignatures.has(key)) failureStreaks.delete(key);
+      if (!thisFailures.has(key)) failureStreaks.delete(key);
     }
-    let abortSignature: string | undefined;
-    let abortCount = 0;
-    for (const [key, signature] of thisSignatures) {
+    let abort: SuperviseResult["repeatedFailure"];
+    for (const [key, failure] of thisFailures) {
       const count = (failureStreaks.get(key) ?? 0) + 1;
       failureStreaks.set(key, count);
-      if (count >= abortThreshold && count > abortCount) {
-        abortSignature = signature;
-        abortCount = count;
+      if (count >= abortThreshold && count > (abort?.count ?? 0)) {
+        // The raw signature, never the streak key — the stage rides its own
+        // field, so the reported comparison key stays what the tick wrote.
+        abort = { stage: failure.stage, signature: failure.signature, count };
       }
     }
-    if (abortSignature) {
+    if (abort) {
       log.error(
-        `[flume] the same failure signature repeated on ${abortCount} ` +
-          `consecutive ticks (${abortSignature}); aborting after ${ticks} ` +
-          `tick(s) instead of burning the remaining ticks against the same wall.`,
+        `[flume] the same ${abort.stage}-stage failure signature repeated on ` +
+          `${abort.count} consecutive ticks (${abort.signature}); aborting ` +
+          `after ${ticks} tick(s) instead of burning the remaining ticks ` +
+          `against the same wall.`,
       );
       return {
         ticks,
         hibernated: false,
-        repeatedFailure: {
-          signature: abortSignature,
-          count: abortCount,
-        },
+        repeatedFailure: abort,
         shippedTags: [...shippedTags],
         erroredTicks,
       };
