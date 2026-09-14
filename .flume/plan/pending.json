@@ -1,56 +1,5 @@
 [
   {
-    "tag": "GATE-VERDICT-FIELD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "the field on GateResult, spelled as `skipped` is"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "the field on GateRevertAttempt, beside `message`"
-        },
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "buildGateRevert carries it off the failure"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the accumulator and TickVerdictGateResult; both gate-revert sites"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the verdict row, beside the two `skipped` cases"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "the gate-revert record's row"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Carry a gate's chain-authored `verdict` onto the tick verdict's gate result and onto the gate-revert record, beside `message` and copied no further.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate returns"
-    },
-    "tests": [
-      "a gate's verdict lands on the tick verdict's gate row verbatim",
-      "a gate-revert prior-attempt record carries the failing gate's verdict beside its message"
-    ],
-    "pins": [
-      "a gate that returned no verdict leaves no verdict on its tick verdict row"
-    ],
-    "acceptance": "a chain reads a failing gate's own reason off the persisted verdict and off the gate-revert record without parsing `message`.",
-    "notes": "`skipped` is the shape to copy: the dispatcher spreads it conditionally at each gate-result site, and tests/Dispatcher.test.ts already pairs a present case with an absent one. The section names those two persistence sites only — `TickResult.gateResults` erases `details` and `skipped` today and stays as it is. The declared-fact-fields verdict test enumerates the allowed keys."
-  },
-  {
     "tag": "PROMPT-DATA-KEYS",
     "gate": {
       "kind": "open"
@@ -89,49 +38,6 @@
     ],
     "acceptance": "a phase naming a key in `promptDataKeys` renders content it did not author with no span executable, every undeclared key unchanged.",
     "notes": "The neutralizing transform itself is spec-silent. Keep the command text visible and the sigil inert: dropping the span would be the silent degradation `engineering.md` *Loud or nothing* names, over content the prompt exists to show. `renderPrompt` already takes `phase`, so nothing new threads through, and the reserved `FLUME_DIR` is engine-authored — it needs no declaration."
-  },
-  {
-    "tag": "HARNESS-PHASES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/chain.ts",
-          "description": "the factory: a complete Chain from one declaration"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the phase set, the disabled slice, build's shape, the prompts, the policy"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the factory and its options type"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add the package's chain factory: a complete Chain from one declaration — three plan slices and the fanout build phase, each with its prompt, gates and handoff.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "tests": [
-      "the factory returns the three plan slices and the build phase from a declaration",
-      "a plan slice the declaration does not enable is absent from the returned chain",
-      "the returned build phase is fanout and carries the declaration's fence",
-      "each returned phase names its prompt by an absolute path the package ships",
-      "the factory passes the declared supervisor policy to the chain whole",
-      "every placeholder the package's prompts name is supplied by the phase the factory returns for it",
-      "each returned phase runs the handoff the declaration names for it, else the package's default"
-    ],
-    "pins": [],
-    "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
-    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). Declared data keys and the gate verdict field are ratified (3572fe5) and land before that cutover, not here."
   },
   {
     "tag": "HARNESS-DECL-INPUT-TYPE",
@@ -176,10 +82,7 @@
   {
     "tag": "HARNESS-INIT-CHAIN-HOP",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-PHASES"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
