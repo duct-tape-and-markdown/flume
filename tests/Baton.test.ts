@@ -171,6 +171,33 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   // this kind of platform fact.
   const src = readFileSync(BATON_SRC_PATH, "utf8");
 
+  /**
+   * The symbols Baton.ts takes by name from `moduleSpecifier`, `as`-aliases
+   * resolved to the local binding and type-only clauses dropped (a type is
+   * never a call site). Absent module: throw, so a moved import shrinks the
+   * scan loudly instead of silently.
+   */
+  const namedImports = (moduleSpecifier: string): string[] => {
+    const quoted = moduleSpecifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const clause = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*"${quoted}"`).exec(src);
+    if (!clause) throw new Error(`src/Baton.ts has no named import from "${moduleSpecifier}"`);
+    return (clause[1] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0 && !/^type\s/.test(name))
+      .map((name) => name.split(/\s+as\s+/).pop()!.trim());
+  };
+
+  // The scan's subjects are Baton.ts's own fs imports, never a list restated
+  // here (`.claude/rules/engineering.md`, *Derived state is computed, never
+  // restated beside its source*): a sixth fs import joins the scan by being
+  // written, so a bare join at its call site cannot ship green.
+  // `existsLoud` (src/fsProbe.ts) stats the path it is handed and declares
+  // the join its caller's, so it is a subject exactly as `node:fs` calls are.
+  const nodeFsImports = namedImports("node:fs");
+  const fsProbeImports = namedImports("./fsProbe.js");
+  const fsCalls = [...nodeFsImports, ...fsProbeImports];
+
   it("imports namespacedJoin from ./paths.js", () => {
     // Named alongside whatever else Baton takes from paths.js (the state-root
     // layout accessors) — the pin is that namespacedJoin comes from the shared
@@ -178,19 +205,22 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
     expect(src).toMatch(/import\s*\{[^}]*\bnamespacedJoin\b[^}]*\}\s*from\s*"\.\/paths\.js"/);
   });
 
-  it("routes every fs call (mkdirSync/existsLoud/writeFileSync/rmSync/readdirSync) through namespacedJoin, never a bare join", () => {
-    // `existsLoud` (src/fsProbe.ts) stats the path it is handed and declares
-    // the join its caller's, so it belongs in this list exactly as the bare
-    // `node:fs` calls do.
-    const fsCalls = ["mkdirSync", "existsLoud", "writeFileSync", "rmSync", "readdirSync"];
+  it("the scanned fs-symbol set is non-empty and covers Baton.ts's node:fs and ./fsProbe.js imports", () => {
+    // Vacuity pin for the scan below: an import clause the regex stopped
+    // matching would leave it green over zero subjects.
+    expect(fsCalls.length).toBeGreaterThan(0);
+    expect(nodeFsImports.length).toBeGreaterThan(0);
+    expect(fsProbeImports.length).toBeGreaterThan(0);
+  });
 
+  it("every fs symbol src/Baton.ts imports is called on a namespacedJoin argument", () => {
     for (const fn of fsCalls) {
       const callSites = [...src.matchAll(new RegExp(`\\b${fn}\\(`, "g"))];
-      expect(callSites.length).toBeGreaterThan(0);
+      expect(callSites.length, `${fn} is imported but never called`).toBeGreaterThan(0);
 
       for (const call of callSites) {
-        const rest = src.slice(call.index! + call[0].length);
-        expect(rest.startsWith("namespacedJoin(")).toBe(true);
+        const rest = src.slice((call.index ?? 0) + call[0].length);
+        expect(rest.startsWith("namespacedJoin("), `${fn} is called on a bare join`).toBe(true);
       }
     }
   });
