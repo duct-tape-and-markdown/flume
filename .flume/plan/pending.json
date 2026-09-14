@@ -36,6 +36,35 @@
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
   },
   {
+    "tag": "HARNESS-JUDGE-RUNNER-SEAM",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "the judge driven over the real runner, on the fixture already built there"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Drive judgeNamedLines through the real vitestRunner end to end — the two sides of the runner interface are each pinned alone and nothing composes them.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [],
+    "pins": [
+      "the judge proves a named line over the real vitest runner's merged-tree and base reports",
+      "the judge reports green-on-base for a line the real vitest runner already carries at the base"
+    ],
+    "acceptance": "One case runs judgeNamedLines against vitestRunner over the real fixture repo, with both verdicts decided by the runner's own reports.",
+    "notes": "Drained from HARNESS-JUDGES's note. tests/harnessJudge.test.ts drives a stand-in runner, tests/harnessRunner.test.ts drives real vitest; neither composes them, so a one-sided shape change ships green. The fixture's base/merged disagreement already separates both verdicts. pins[], not tests[]: a tests-only diff is red-on-base-proof by construction (open question, *Two shapes of named line*)."
+  },
+  {
     "tag": "HARNESS-PROMPTS",
     "gate": {
       "kind": "blockedBy",

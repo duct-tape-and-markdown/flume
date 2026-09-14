@@ -908,9 +908,11 @@ this tick. The corpus disagrees with itself about the rule that entry ships:
   (`join(configDir, phase.promptPath)`, cited there to prove nothing resolves
   from inside a job dir).
 
-`src/` joins today, so the two "joins" lines match the tree and the two
-"resolves" lines are the ship target. `PROMPT-PATH-RESOLVE` flips the tree,
-which leaves the "joins" pair stale rather than merely early. The answer looks
+**`PROMPT-PATH-RESOLVE` has landed (`7a18d5b`), so the pair is now stale on
+disk, not merely early.** Both render sites read
+`phasePromptPath(configDir, promptPath)` (`src/paths.ts:483`, called from
+`src/Dispatcher.ts:1935` and `:3260`); the two "resolves" lines describe the
+tree and the two "joins" lines contradict it. The answer looks
 decided — *resolves* is what two sections state as intent and what the
 harness package's absolute prompt addresses need — so this is an amendment,
 not a fork: reword both lines to resolution. `spec/jobs.md`'s claim survives
@@ -945,3 +947,57 @@ section, and `harness/citeResolver.ts`'s injection point together.
 
 `spec/` is the human's lane. Naming it so the table and the shipped schema do
 not sit disagreeing about what a declaration may carry.
+
+## The judge's green-on-base fact is flattened to prose at the record hop (PARKED)
+
+Drained from `HARNESS-JUDGES`'s note (2026-09-14 build wave); every line
+re-read on disk this tick. The entry's own `notes` claimed the shipped judge
+"retires `.flume/chain.ts:632`'s regex". It does not, and the reason is a
+missing hop, not a missing judge.
+
+`harness/judge.ts` reports green-on-base structurally — a `JudgeOutcome`
+(`:77`) and a per-line `LineState` (`:45`). The chain recovers the same fact
+by regex over `rec.message` from `TickContext.priorAttempts`
+(`.flume/chain.ts:632`, `misdeclaredLine`), because `buildGateRevert`
+(`src/priorAttempts.ts:474`) copies only `gate`/`message`/`details` onto the
+record and `GateResult` (`src/Gate.ts:160`) has no structured verdict field to
+copy. The judge's outcome is prose before the next plan tick ever sees it.
+
+**This breaks silently at the cutover, which is what makes it urgent.**
+`.flume/vitestJudge.ts:164` writes "already pass on the base"; the package's
+judge writes "already pass at `<sha>`" (`harness/judge.ts:243`). The chain's
+constant is `/already pass on the base/`. When `HARNESS-PHASES` swaps the
+package judge in, the regex stops matching, `parkStanding`'s mis-declared-line
+leg goes dead with no error, and a mis-declared `tests[]` line re-picks its
+entry into the same wall forever — the four-attempt failure that leg's own doc
+comment cites (`.claude/rules/engineering.md`, *Loud or nothing*).
+
+The fork, which nobody has ruled:
+
+- **A — the engine carries the fact.** `GateResult` gains an optional
+  chain-authored discriminant, persisted verbatim onto the `gate-revert`
+  record beside `message`/`details`. The precedent is `skipped`: supplied by
+  the chain, copied onto the verdict, interpreted no further — so it passes the
+  second-implementation test (any chain wanting its next tick to key on *why*
+  its gate refused, rather than re-read its own prose, wants this). Costs a
+  spec amendment in two places: `spec/chain.md`, *What a gate returns*
+  enumerates `{ ok, message, details?, failingFiles?, skipped? }` as a closed
+  set, and `spec/loop.md`, *Prior-outcome feedback* lists what a `gate-revert`
+  record carries.
+- **B — the package owns both sides of the string.** The harness exports the
+  classifier beside the judge (or the default `shouldRun` reads it), so the
+  hand that writes the message is the hand that reads it back and no consumer
+  regexes anything. No engine change and no spec amendment —
+  `spec/harness.md`, *What a consumer declares* already rules prior-attempt
+  modes "the engine's to report and the package's to read". Against it: it is
+  still prose matched by pattern, one rung below the typed field
+  (`engineering.md`, *Narration is the ladder's bottom rung*).
+- **C — leave it.** Rejected on its face: the leg dies at the cutover with no
+  signal.
+
+**Recommend A**, with B as the stopgap if the amendment is unwanted — the two
+compose, since B's classifier would read A's field once it exists. Either way
+the ruling is needed **before `HARNESS-PHASES` lands**: the cutover is the
+commit where the wording diverges. Parked because A amends `spec/`, the
+human's lane, and because the boundary call between them is the decision plan
+must not make silently.
