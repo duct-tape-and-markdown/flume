@@ -1,5 +1,52 @@
 [
   {
+    "tag": "TICKCONTEXT-STATE-ROOT-REL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "the field on TickContext, spelled as the sibling fixture-optional fields are"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "populate it from the value the dispatcher already computed for gates"
+        },
+        {
+          "path": "harness/prompts.ts",
+          "description": "drop the repoRoot input and the local recomputation; keep the refusal"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the dispatcher-built context carries it"
+        },
+        {
+          "path": "tests/harnessBuildArgs.test.ts",
+          "description": "the callers lose repoRoot; the relocated-root refusal gains its check"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Report the state root's repo-relative path on TickContext, so a promptArgs hook reads it instead of recomputing it from a repoRoot it was never given.",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a hook receives"
+    },
+    "tests": [
+      "a dispatcher-built TickContext carries the state root's path relative to the repo root",
+      "build's per-tick args name the entry's note path from the tick context alone"
+    ],
+    "pins": [
+      "build's per-tick args refuse a state root outside the repo rather than naming a note path no commit holds"
+    ],
+    "acceptance": "buildPromptArgs takes only the declaration and the tick context, and computeStateRootRel has no caller under harness/.",
+    "notes": "GateContext already carries this fact (*What a gate receives*); TickContext does not, so harness/prompts.ts takes repoRoot and re-runs computeStateRootRel. A fanout tick's cwd is the worktree and flumeDir is not nested under repoRoot, so no hook can derive it. Blocks HARNESS-PHASES: the factory has no repoRoot to pass. The section's TickContext bullet gains a row — spec is the human's."
+  },
+  {
     "tag": "HARNESS-INIT-BIN",
     "gate": {
       "kind": "open"
@@ -56,7 +103,10 @@
   {
     "tag": "HARNESS-PHASES",
     "gate": {
-      "kind": "open"
+      "kind": "blockedBy",
+      "tags": [
+        "TICKCONTEXT-STATE-ROOT-REL"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -94,6 +144,6 @@
     ],
     "pins": [],
     "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
-    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). The span-neutralization question binds at that cutover, not at this entry."
+    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). Declared data keys and the gate verdict field are ratified (3572fe5) and land before that cutover, not here."
   }
 ]
