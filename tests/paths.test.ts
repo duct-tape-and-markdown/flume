@@ -292,6 +292,76 @@ describe("matchesAny — single-`*` is segment-bound, unlike `**`", () => {
   });
 });
 
+// MATCHESANY-QUESTION-MARK-UNESCAPED, per spec/pending.md "The entry-scoped
+// write guard is opt-in, and off by default": "regex specials escaped, `*`
+// and `**` the only wildcards, so a declared literal path matches only
+// itself". `?` was missing from `globToRegex`'s escape class, so it kept its
+// regex meaning — its preceding character went optional — and one fence both
+// refused its own declared path and admitted an undeclared neighbor. The
+// class is hand-kept, so the pin below drives every ASCII punctuation
+// character except the wildcard through the real matcher rather than
+// re-listing the class the fix edited: a member silently dropped from it
+// fails here whichever member it is.
+describe("matchesAny — a declared literal path matches only itself", () => {
+  it("a declared literal path containing `?` matches itself", () => {
+    expect(matchesAny("docs/faq?.md", ["docs/faq?.md"])).toBe(true);
+    expect(matchesAny("src/a?b.ts", ["src/a?b.ts"])).toBe(true);
+  });
+
+  it("a declared literal path containing `?` does not admit the path its preceding character dropped", () => {
+    expect(matchesAny("docs/fa.md", ["docs/faq?.md"])).toBe(false);
+    expect(matchesAny("src/ab.ts", ["src/a?b.ts"])).toBe(false);
+  });
+
+  // The reach: the same matcher decides the queue pre-check, the write
+  // guard, and ship detection. An entry declaring a `?` path used to be
+  // reported as offending against a fence that names that very path.
+  it("the queue fence admits an entry whose declared path carries a `?`", () => {
+    const withQuestion: PendingEntry = {
+      tag: "QUESTION",
+      summary: "test entry",
+      per: { path: "spec/pending.md", section: "The pending queue" },
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: {
+        new: [],
+        edit: [{ path: "docs/faq?.md", description: "edit" }],
+        retire: [],
+      },
+      acceptance: "green",
+    };
+
+    expect(
+      queueFenceViolations([withQuestion], [{ writablePaths: ["docs/faq?.md"] }]),
+    ).toEqual([]);
+    expect(
+      queueFenceViolations([withQuestion], [{ writablePaths: ["docs/fa.md"] }]),
+    ).toEqual([{ tag: "QUESTION", offending: ["docs/faq?.md"] }]);
+  });
+
+  it("every regex metacharacter globToRegex escapes leaves a declared literal path matching only itself", () => {
+    // Every ASCII punctuation character except `*`, the one wildcard. A
+    // superset of the escape class by construction, so the class cannot lose
+    // a member without this going red.
+    const specials = [...`!"#$%&'()+,-./:;<=>?@[\\]^_\`{|}~`];
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
+    // empty character set would assert nothing and still pass.
+    expect(specials).toHaveLength(31);
+    expect(specials).not.toContain("*");
+
+    for (const c of specials) {
+      const declared = `src/a${c}b.ts`;
+      expect(matchesAny(declared, [declared]), `'${c}' in a declared path no longer matches itself`).toBe(true);
+      // The near misses each metacharacter would admit if it kept its regex
+      // meaning: `?` drops the preceding character, `+`/`*` repeat it, `.`
+      // and a character class stand in for any other.
+      for (const other of ["src/ab.ts", "src/b.ts", "src/aab.ts", "src/aXb.ts", "src/aXXb.ts"]) {
+        expect(matchesAny(other, [declared]), `'${c}' in a declared path admits '${other}'`).toBe(false);
+      }
+    }
+  });
+});
+
 // Mechanism pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
 // "Placement — the worktree base and the job namespace"): the worktree base
 // used to be resolved at two independent call sites, which agreed only

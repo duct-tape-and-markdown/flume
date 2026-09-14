@@ -90,8 +90,15 @@ export function matchesAny(path: string, globs: string[]): boolean {
 
 function globToRegex(glob: string): RegExp {
   // Order matters: replace `**` before `*` to avoid overlap.
+  //
+  // `?` is escaped, not implemented: `*` and `**` are the only wildcards this
+  // matcher has (spec/pending.md, "The entry-scoped write guard is opt-in,
+  // and off by default"), so `?` is a regex special like any other and a
+  // declared path carrying one matches only itself. Left unescaped it made
+  // its preceding character optional, so the fence both refused its own
+  // declared path and admitted an undeclared neighbor.
   const re = glob
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex specials
+    .replace(/[.+^${}()|[\]\\?]/g, "\\$&") // escape regex specials
     .replace(/\*\*/g, "::DOUBLESTAR::")
     .replace(/\*/g, "[^/]*")
     .replace(/::DOUBLESTAR::/g, ".*");
