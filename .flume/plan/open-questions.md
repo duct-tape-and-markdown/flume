@@ -603,12 +603,15 @@ Options:
   `bd75f27`'s own posture. Costs the next stale claim, and the class has now
   recurred three times in five days.
 
-**Bound with *A test scans shipped doc-comment prose* above.** That question
-asks whether a test may pin prose at all, and asserts `tests/docComments.test.ts`
-is the sole instance of the shape. `tests/cliHelp.test.ts:157` is the
-distinction that answers both: an expectation derived from a real run is an
-agreement gate; a hand-authored one is the door `bd75f27` closed. Ruling that
-line once disposes of both sections.
+**Half of this is ruled already.** `862e94b` carved shipped `.d.ts` prose out
+of the ladder's harness exclusion, so a scan over a doc comment the package's
+`exports` map reaches is settled engine surface (`engineering.md`, *Narration
+is the ladder's bottom rung*); that leg's question closed under `09a08ae`, and
+`tests/docComments.test.ts` grows under the carve-out. `docs/` is what stays
+unruled — the package ships it, no `.d.ts` reaches it, so the carve-out does
+not cover these pages. `tests/cliHelp.test.ts:157` is the distinction that
+would answer it: an expectation derived from a real run is an agreement gate;
+a hand-authored one is the door `bd75f27` closed.
 
 **Third instance, and it sharpens the fork.** Drained from
 `SETUPWORKTREE-SCOPED-TO-BOTH-CONCURRENCIES`'s note and verified this tick:
