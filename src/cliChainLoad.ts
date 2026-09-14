@@ -1,10 +1,21 @@
 /**
- * The one best-effort chain load the read-only surfaces take — `flume
- * status` and `flume wake`/`flume sleep` (`src/cli.ts`), `flume job status`
- * (`src/cliJobVerbs.ts`). Each reads chain-declared values (`Chain.pendingPath`,
- * `Chain.friction`, `Chain.capabilities`, `Chain.phases`) to describe or
- * validate against state it will report either way; none may fail on a chain
- * that does not load, because none of them runs an agent.
+ * The two arms every chain-loading CLI surface shares.
+ *
+ * `refuseCjsContextHost` is the refusal: the one home for the
+ * `CjsContextLoadError` -> headline + exit 2 contract (spec/cli.md, "A
+ * CJS-context host is refused, never relayed"), reached by `flume check`,
+ * `flume friction`, `flume job new` and `flume job run` alike rather than
+ * re-typed in each catch (`.claude/rules/engineering.md`, "The fix lands at
+ * the mechanism"). `flume tick` holds the same contract one layer down, where
+ * the refusal is a `TickOutcome.usageError` rather than an exit code.
+ *
+ * `loadChainForObservation` is the best-effort load the read-only surfaces
+ * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`), `flume
+ * job status` (`src/cliJobVerbs.ts`). Each reads chain-declared values
+ * (`Chain.pendingPath`, `Chain.friction`, `Chain.capabilities`,
+ * `Chain.phases`) to describe or validate against state it will report either
+ * way; none may fail on a chain that does not load, because none of them runs
+ * an agent.
  *
  * Best-effort is not silent. A chain that fails to load leaves each surface
  * proceeding over engine defaults, and what that costs differs per surface —
@@ -17,9 +28,26 @@
  * rather than proceeding.
  */
 
-import { diskChainLoader } from "./Dispatcher.js";
+import { CjsContextLoadError, diskChainLoader } from "./Dispatcher.js";
 import type { Chain } from "./Phase.js";
 import type { FlumePaths } from "./flumeApi.js";
+
+/**
+ * The shared CJS-context arm, for a `catch` that owns an exit code: prints
+ * the refusal as the headline and returns `2` when `err` is the refusal,
+ * `undefined` otherwise so the caller's own arms run on everything else.
+ *
+ * Exit 2 is the usage code, consistent with the rest of the CLI's usage
+ * refusals — this is a nameable fix on the host repo, not a dead mount.
+ * Detection stays `loadChainModule`'s (`src/Dispatcher.ts`): a load failure
+ * that is not that signature is never shadowed here, it falls through to the
+ * caller unchanged.
+ */
+export function refuseCjsContextHost(err: unknown): number | undefined {
+  if (!(err instanceof CjsContextLoadError)) return undefined;
+  console.error(`[flume] ${err.message}`);
+  return 2;
+}
 
 /**
  * Load the repo-resident chain for a read-only verb. Returns the chain, or

@@ -48,7 +48,6 @@ import {
   writeTickVerdict,
   readTickVerdicts,
   readMergingMarkers,
-  CjsContextLoadError,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
@@ -81,7 +80,10 @@ import {
   formatTickVerdictLine,
 } from "./cliVerdict.js";
 import { HELP_TOP, HELP_SUB, HELP_JOB, isSubcommand, wantsHelp } from "./cliHelp.js";
-import { loadChainForObservation } from "./cliChainLoad.js";
+import {
+  loadChainForObservation,
+  refuseCjsContextHost,
+} from "./cliChainLoad.js";
 import { runJobVerb } from "./cliJobVerbs.js";
 import type { FlumePaths } from "./flumeApi.js";
 
@@ -340,6 +342,13 @@ async function main(): Promise<number> {
     try {
       await jobRun({ name: jobRunName, repoRoot, flumeDir, configDir });
     } catch (err) {
+      // `jobRun` loads the chain to name the entry phase whenever the baton
+      // is hibernating, so this catch sees the same CJS-context refusal
+      // `check`, `friction` and `job new` do — through the same arm, so no
+      // surface can drift into relaying it at exit 1 behind a
+      // `job run failed:` prefix.
+      const cjs = refuseCjsContextHost(err);
+      if (cjs !== undefined) return cjs;
       if (err instanceof JobUsageError) {
         console.error(`[flume] ${err.message}`);
         return 2;
@@ -589,10 +598,8 @@ async function main(): Promise<number> {
     try {
       ({ chain } = await diskChainLoader(paths)());
     } catch (err) {
-      if (err instanceof CjsContextLoadError) {
-        console.error(`[flume] ${err.message}`);
-        return 2;
-      }
+      const cjs = refuseCjsContextHost(err);
+      if (cjs !== undefined) return cjs;
       console.error(
         `[flume] check: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -687,10 +694,8 @@ async function main(): Promise<number> {
     try {
       ({ chain } = await diskChainLoader(paths)());
     } catch (err) {
-      if (err instanceof CjsContextLoadError) {
-        console.error(`[flume] ${err.message}`);
-        return 2;
-      }
+      const cjs = refuseCjsContextHost(err);
+      if (cjs !== undefined) return cjs;
       console.error(
         `[flume] friction: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
       );

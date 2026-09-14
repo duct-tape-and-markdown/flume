@@ -5,8 +5,10 @@
  */
 
 import { jobNew, jobRm, jobStatus, JobUsageError } from "./job.js";
-import { CjsContextLoadError } from "./Dispatcher.js";
-import { loadChainForObservation } from "./cliChainLoad.js";
+import {
+  loadChainForObservation,
+  refuseCjsContextHost,
+} from "./cliChainLoad.js";
 import { renderFrictionCount } from "./friction.js";
 import type { FlumePaths } from "./flumeApi.js";
 
@@ -128,10 +130,8 @@ export async function runJobVerb(
     await jobNew({ repoRoot, name, configDir, flumeDir });
     return 0;
   } catch (err) {
-    if (err instanceof CjsContextLoadError) {
-      console.error(`[flume] ${err.message}`);
-      return 2;
-    }
+    const cjs = refuseCjsContextHost(err);
+    if (cjs !== undefined) return cjs;
     if (err instanceof JobUsageError) {
       console.error(`[flume] ${err.message}`);
       return 2;

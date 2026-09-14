@@ -22,16 +22,19 @@ import {
 const exec = promisify(execFile);
 
 /**
- * CLI-JOBNEW-CJS-EXIT-CODE — `job new` is the outlier in the exit-code
- * contract cluster (spec/cli.md, "A CJS-context host is refused, never
- * relayed"): `runJobVerb`'s `new` catch checked only `JobUsageError`, so a
- * `CjsContextLoadError` thrown by `jobNew`'s own `loadChainModule` call fell
- * through to the operational branch — exit 1, refusal buried behind
- * `[flume] job new failed:`. `tick` already headlines the same error at exit
- * 2 (`CJS-context usage error` test above); this asserts `job new` now
- * matches.
+ * JOBRUN-CJS-EXIT-CODE — every CLI surface that loads a chain refuses a
+ * CJS-context host identically (spec/cli.md, "A CJS-context host is refused,
+ * never relayed"): the refusal is the headline and the exit code is 2, never
+ * an operational relay at exit 1 behind a `<verb> failed:` prefix. `job new`
+ * was the first outlier (CLI-JOBNEW-CJS-EXIT-CODE); `job run`'s preflight
+ * catch was the second, and the arm now has one home
+ * (`refuseCjsContextHost`, src/cliChainLoad.ts) that all four reach.
+ *
+ * Driven through the real `dist/cli.js` rather than a unit call: the
+ * refusal only exists because tsx's ESM loader fails on a CJS-context host,
+ * which no in-process fake reproduces.
  */
-describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNEW-CJS-EXIT-CODE)", () => {
+describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN-CJS-EXIT-CODE)", () => {
   const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
   const TSC_BIN = fileURLToPath(
     new URL("../node_modules/typescript/bin/tsc", import.meta.url),
@@ -44,48 +47,92 @@ describe("flume job new — CJS-context host refusal via the real CLI (CLI-JOBNE
     });
   }, 60_000);
 
-  async function runDistCli(
-    cwd: string,
-    args: string[],
-  ): Promise<{ out: string; code: number }> {
-    const { stdout, stderr, code } = await runNodeStreams(
-      cwd,
-      [DIST_CLI, ...args],
-      hermeticEnv(),
-    );
-    return { out: stdout + stderr, code };
+  /**
+   * A host repo whose own package.json declares `type: commonjs`, carrying a
+   * chain.ts with a real `import` statement — the tsx 4.21 signature
+   * (`src/Dispatcher.ts`, `CjsContextLoadError`).
+   */
+  async function withCjsHost(
+    run: (dir: string) => Promise<void>,
+  ): Promise<void> {
+    const dir = await mkdtemp(join(tmpdir(), "flume-cjs-host-"));
+    try {
+      await writeFile(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "cjs-host", type: "commonjs" }),
+        "utf8",
+      );
+      await mkdir(join(dir, ".flume"), { recursive: true });
+      await writeFile(
+        join(dir, ".flume", "chain.ts"),
+        `import { join as pathJoin } from "node:path";\n` +
+          `export default { phases: [], humanOnly: [], _j: pathJoin };\n`,
+        "utf8",
+      );
+      await run(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }
 
-  it(
-    'a CJS-context host (package.json missing "type": "module") refuses `job new`\'s chain load, headlining the fix, and exits 2',
-    async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-cjs-jobnew-"));
-      try {
-        await writeFile(
-          join(dir, "package.json"),
-          JSON.stringify({ name: "cjs-host", type: "commonjs" }),
-          "utf8",
-        );
-        await mkdir(join(dir, ".flume"), { recursive: true });
-        await writeFile(
-          join(dir, ".flume", "chain.ts"),
-          `import { join as pathJoin } from "node:path";\n` +
-            `export default { phases: [], humanOnly: [], _j: pathJoin };\n`,
-          "utf8",
-        );
-
-        const result = await runDistCli(dir, ["job", "new", "probe"]);
-
-        expect(result.code).toBe(2);
-        expect(result.out).toContain("[flume]");
-        expect(result.out).toContain('"type": "module"');
-        expect(result.out).not.toContain("job new failed");
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
+  /**
+   * One surface's case: the argv that reaches a chain load, and the relay
+   * prefix that surface would have printed had it fallen through to its
+   * operational branch — the exact string the refusal must displace.
+   */
+  const SURFACES: readonly {
+    title: string;
+    argv: readonly string[];
+    relayPrefix: string;
+  }[] = [
+    {
+      // `job run`'s preflight (`src/cli.ts`) loads the chain to name the
+      // entry phase whenever the baton is hibernating, which a bare state
+      // root always is.
+      title: "flume job run refuses a CJS-context host as the headline and exits 2",
+      argv: ["job", "run", "probe"],
+      relayPrefix: "job run failed",
     },
-    30_000,
-  );
+    {
+      title: "flume check refuses a CJS-context host as the headline and exits 2",
+      argv: ["check"],
+      relayPrefix: "check: chain failed to load",
+    },
+    {
+      title: "flume friction refuses a CJS-context host as the headline and exits 2",
+      argv: ["friction"],
+      relayPrefix: "friction: chain failed to load",
+    },
+    {
+      title: "flume job new refuses a CJS-context host as the headline and exits 2",
+      argv: ["job", "new", "probe"],
+      relayPrefix: "job new failed",
+    },
+  ];
+
+  for (const surface of SURFACES) {
+    it(
+      surface.title,
+      async () => {
+        await withCjsHost(async (dir) => {
+          const { stdout, stderr, code } = await runNodeStreams(
+            dir,
+            [DIST_CLI, ...surface.argv],
+            hermeticEnv(),
+          );
+          const out = stdout + stderr;
+
+          expect(out).toContain("[flume]");
+          // The fix, named — not a raw loader stack.
+          expect(out).toContain('"type": "module"');
+          // Headline, not relay: the refusal carries no operational prefix.
+          expect(out).not.toContain(surface.relayPrefix);
+          expect(code).toBe(2);
+        });
+      },
+      30_000,
+    );
+  }
 });
 
 async function makeJobRepo(branch: string): Promise<{
