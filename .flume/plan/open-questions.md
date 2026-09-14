@@ -1169,3 +1169,50 @@ are both outside every phase lane:
 alongside it if a second rung is wanted: the two say one thing at the two
 surfaces, and neither is paid per rotation. Held here rather than filed because
 both files are human-held.
+
+## `spec/chain.md` ratifies a fixture-only optionality `touchedPaths` no longer has (NEEDS AMENDMENT)
+
+Drained from `GATECONTEXT-TOUCHEDPATHS-REQUIRED`'s note; every claim below
+verified on disk this tick.
+
+`spec/chain.md:468` states, under *What a gate receives*:
+
+> **`commitSha` and `touchedPaths` are optional in the type and always set on
+> a dispatcher-built context.** The optionality exists for hand-built
+> fixtures; a builtin that falls back to its own `git show --name-only` is
+> covering the fixture case, never a real tick.
+
+Both halves are false at HEAD. `66e25dd` made `touchedPaths` required
+(`src/Gate.ts:119`) and deleted the fallback the second half describes
+(`src/builtinGates.ts` no longer shells `--name-only` at all). The sentence is
+the only place in `spec/` still describing either.
+
+**The half that survives is the defect, not the drift.** `commitSha?`
+(`src/Gate.ts:108`) and `baseSha?` (`:132`, whose doc cites "the same
+hand-built-fixture reason as `commitSha` above") are set by all three
+dispatcher-built contexts (`src/Dispatcher.ts:2085`, `:2714`, `:3699`); the
+only contexts omitting them are this suite's fixtures. That is a shape kept
+for the tester's convenience — the back-compat posture
+`.claude/rules/spec-plan-build.md` (*Pre-1.0 clean-slate posture*) forbids,
+and the fixture seam `.claude/rules/engineering.md` (*A seam gate reads what
+the real writer wrote*) names: a gate driven over a context the tester
+assembled is not a gate driven over the one a tick hands it. Requiring
+`touchedPaths` is what let `writablePathsGate` gain its agreement pin; the
+same move is available for both remaining fields, and neither has a real
+absent case to express.
+
+**Recommend** replacing the bullet with the rule rather than the enumeration:
+a `GateContext` field the dispatcher always sets is **required in the type**,
+and no builtin carries a second derivation to fall back to. Stating the rule
+rather than a field list keeps the next always-set field from re-acquiring the
+same optionality. The entry then follows the amendment, making `commitSha` and
+`baseSha` required across `src/Gate.ts` and the hand-built contexts under
+`tests/`.
+
+**`stateRootRel` is not this question.** Its absence is real — a state root
+relocated outside the repo — so it keeps `string | undefined` and only changes
+from an optional key to a required one, which no spec sentence names. That
+ships now as `GATECONTEXT-STATEROOTREL-REQUIRED-KEY`.
+
+**Not fileable as an entry** — `spec/` is outside every phase lane
+(`.claude/rules/spec-plan-build.md`).
