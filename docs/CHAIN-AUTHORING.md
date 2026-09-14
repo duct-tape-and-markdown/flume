@@ -846,6 +846,49 @@ removal. Don't put anything correctness-critical here — a crashed tick can
 skip it, so acquired resources should also be reclaimable by an external
 sweep (a TTL, a startup cleanup pass).
 
+### Reaping what a killed tick never released
+
+That sweep asks **git**, not the filesystem. `flume.git.readWorktreeRegistry`
+hands back every path git currently registers as a worktree of the repo — the
+same probe the harness itself judges an occupied worktree path on:
+
+```ts
+// setupWorktree filed each handle under the absolute `worktreePath` it was
+// given; a reaper that outlives the process persists this map to disk.
+const allocated = new Map<string, ScratchDb>();
+
+async function reapOrphans(repoRoot: string): Promise<void> {
+  const registry = await flume.git.readWorktreeRegistry(repoRoot);
+  if (!registry.read) {
+    // "Could not ask" is not "nothing is registered". Reap nothing.
+    console.warn(`[chain] worktree registry unreadable: ${registry.reason}`);
+    return;
+  }
+  for (const [worktreePath, db] of allocated) {
+    if (registry.paths.has(resolve(worktreePath))) continue; // still live
+    await dropScratchDb(db);
+    allocated.delete(worktreePath);
+  }
+}
+```
+
+Two properties the return type carries, and the reason to take this over a
+`readdir` of the worktree base:
+
+- **Unreadable is not empty.** The result is
+  `{ read: true, paths }` or `{ read: false, reason }`, never an empty set
+  standing in for a failed `git` call — so a reaper cannot free a live arm's
+  handle because git happened not to answer.
+- **A directory listing answers a different question.** The base moves
+  (`FLUME_WORKTREES_DIR`, below), a shared base also holds sibling jobs'
+  container directories, and residue whose registration git has already pruned
+  still has a directory. None of those are distinguishable by name; all of them
+  are by the registry.
+
+`paths` holds absolute, resolved spellings, and it is git's own list — the
+**primary checkout is in it** too. Which of those paths are yours to reap is
+your chain's to decide; the engine reports the fact and stops there.
+
 ### Where worktrees live: `FLUME_WORKTREES_DIR`
 
 Every tick's worktree is created under `<flumeDir>/worktrees/<slug>/` — the

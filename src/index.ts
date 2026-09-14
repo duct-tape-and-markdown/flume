@@ -46,6 +46,10 @@ export {
 
 export { setupWorktree } from "./setupWorktree.js";
 
+// The value rides `FlumeApi.git.readWorktreeRegistry`; only the result
+// type is named here, for a chain that holds one in a variable.
+export { type WorktreeRegistry } from "./worktrees.js";
+
 export { type StandardSchemaV1 } from "./standardSchema.js";
 
 export {

@@ -98,25 +98,36 @@ export function worktreeDirName(tag: string): string {
  * to destroy a directory on the strength of an absence has to be able to tell
  * the two apart.
  */
-type WorktreeRegistry =
+export type WorktreeRegistry =
   | { read: true; paths: Set<string> }
   | { read: false; reason: string };
 
 /**
- * The one probe of git's worktree registry, reached by both entry points that
- * need it: {@link createWorktree}'s removal of whatever occupies the path it
- * is about to provision, and {@link sweepStaleWorktrees}'s choice of which
- * top-level directories are this job's residue. Both ask the identical
- * question — *is this path one git calls a worktree of this repo?* — and a
- * second spelling beside the first is how one of them comes to answer it from
- * the directory's name instead (`.claude/rules/engineering.md`, *The fix
- * lands at the mechanism*: detection a sibling surface already performs is
- * shared, never re-derived).
+ * The one probe of git's worktree registry, reached by every caller that
+ * needs it: {@link createWorktree}'s removal of whatever occupies the path it
+ * is about to provision, {@link sweepStaleWorktrees}'s choice of which
+ * top-level directories are this job's residue, and — handed out as
+ * `FlumeApi.git.readWorktreeRegistry` — a chain reclaiming whatever it
+ * allocated per worktree. All ask the identical question — *is this path one
+ * git calls a worktree of this repo?* — and a second spelling beside the
+ * first is how one of them comes to answer it from the directory's name
+ * instead (`.claude/rules/engineering.md`, *The fix lands at the mechanism*:
+ * detection a sibling surface already performs is shared, never re-derived).
+ * A chain listing the worktree base for the same answer is that second
+ * spelling one package boundary out (`.claude/rules/engine-boundary.md`,
+ * *Surface, not prescription*: a hook receives facts, never re-derives them),
+ * and the directory cannot answer it — a relocated base, a sibling job's
+ * container directory and residue whose registration git already pruned all
+ * read the same there.
+ *
+ * Every path git names is reported, the primary checkout included: this is
+ * git's list, not a list of the engine's own residue. Which of those paths a
+ * caller owns is the caller's to decide.
  *
  * Paths are resolved absolute before they enter the set: git prints its own
  * absolute spelling, which need not match a caller's character for character.
  */
-async function readWorktreeRegistry(
+export async function readWorktreeRegistry(
   repoRoot: string,
 ): Promise<WorktreeRegistry> {
   let stdout: string;

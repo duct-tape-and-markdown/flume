@@ -28,10 +28,12 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Logger } from "../src/Dispatcher.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
 import type { Chain, Phase, WorktreeSetupContext } from "../src/Phase.ts";
 import { slugify, worktreesBase } from "../src/paths.ts";
 import {
   createWorktree,
+  readWorktreeRegistry,
   sweepStaleWorktrees,
   teardownWorktreeInstance,
   worktreeDirName,
@@ -385,5 +387,130 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     );
     expect(existsSync(residue)).toBe(true);
     expect(await registeredWorktrees(fx.repo)).toContain(residue);
+  }, 30_000);
+});
+
+/**
+ * FLUMEAPI-REPORTS-THE-WORKTREE-REGISTRY — the registry is a fact the engine
+ * already decodes for its own provisioning and sweep judgments
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*), so a chain reclaiming what it allocated per worktree
+ * asks the API rather than listing the worktree base
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*: a hook
+ * receives facts, never re-derives them).
+ *
+ * Driven off the real `buildFlumeApi()` against a real repo, with the real
+ * `createWorktree` as the writer whose output the read has to name: a stubbed
+ * registry would agree with a hand-authored path set and prove nothing about
+ * what git actually registers (`engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+describe("worktrees — git's registry on the API a chain factory receives", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /** The API a chain factory would receive for the fixture repo. */
+  function apiFor(): ReturnType<typeof buildFlumeApi> {
+    const flumeDir = join(fx.repo, ".flume");
+    return buildFlumeApi({
+      repoRoot: fx.repo,
+      configDir: flumeDir,
+      flumeDir,
+    });
+  }
+
+  /** An unnamespaced worktree context over the fixture repo. */
+  function contextFor(): WorktreeContext {
+    return {
+      repoRoot: fx.repo,
+      flumeDir: join(fx.repo, ".flume"),
+      stateRootRel: ".flume",
+      namespace: undefined,
+      log: silent,
+    };
+  }
+
+  /** The fixture repo's current HEAD, the ref every provisioning branches from. */
+  async function head(): Promise<string> {
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: fx.repo,
+    });
+    return stdout.trim();
+  }
+
+  it("FlumeApi reports the worktrees git registers for the repo", async () => {
+    const api = apiFor();
+    // The same probe the harness judges an occupied path on, not a second
+    // spelling handed out beside it.
+    expect(api.git.readWorktreeRegistry).toBe(readWorktreeRegistry);
+
+    const ctx = contextFor();
+    const one = await createWorktree("REAP-ONE", await head(), ctx);
+    const two = await createWorktree("REAP-TWO", await head(), ctx);
+
+    const registry = await api.git.readWorktreeRegistry(fx.repo);
+
+    expect(registry.read).toBe(true);
+    if (!registry.read) throw new Error("unreachable: asserted above");
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+    // non-vacuous"): the set below is judged against every path git names,
+    // read independently of the API, so a registry that collapsed to one
+    // entry — or to none — could not report green here.
+    const registered = await registeredWorktrees(fx.repo);
+    expect(registered.length).toBe(3);
+    expect(registry.paths.size).toBe(registered.length);
+
+    // Both provisioned arms, by the paths the real writer returned — and the
+    // primary checkout, which git names and the engine does not filter out.
+    expect(registry.paths.has(resolve(one.path))).toBe(true);
+    expect(registry.paths.has(resolve(two.path))).toBe(true);
+    expect(registry.paths.has(resolve(fx.repo))).toBe(true);
+
+    // A torn-down arm leaves the list, so a reaper that deletes what the
+    // registry no longer names frees exactly the dead one's handle.
+    const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+    const phase: Phase = phaseWithTeardown(async () => {});
+    expect(
+      await teardownWorktreeInstance(phase, chain, one, "REAP-ONE", ctx),
+    ).toBe(true);
+
+    const after = await api.git.readWorktreeRegistry(fx.repo);
+    expect(after.read).toBe(true);
+    if (!after.read) throw new Error("unreachable: asserted above");
+    expect(after.paths.has(resolve(one.path))).toBe(false);
+    expect(after.paths.has(resolve(two.path))).toBe(true);
+  }, 30_000);
+
+  it("an unreadable worktree registry reports the failure rather than an empty set", async () => {
+    const api = apiFor();
+    const wt = await createWorktree("REAP-LIVE", await head(), contextFor());
+
+    // Vacuity pin: over the real repo the same call reads a populated
+    // registry, so the failure below is this probe refusing — not a read that
+    // never works.
+    const readable = await api.git.readWorktreeRegistry(fx.repo);
+    expect(readable.read).toBe(true);
+    if (!readable.read) throw new Error("unreachable: asserted above");
+    expect(readable.paths.has(resolve(wt.path))).toBe(true);
+
+    // A repo root git cannot run in. An absent worktree is the claim a reaper
+    // frees a handle on, so "could not ask" must not wear that claim's shape.
+    const blind = await api.git.readWorktreeRegistry(
+      join(fx.repo, "no-such-dir"),
+    );
+
+    expect(blind.read).toBe(false);
+    if (blind.read) throw new Error("unreachable: asserted above");
+    expect(blind.reason.length).toBeGreaterThan(0);
+    // The failing branch carries no path set at all, so a consumer cannot
+    // reach for one and read absence out of a failure.
+    expect(blind).not.toHaveProperty("paths");
   }, 30_000);
 });

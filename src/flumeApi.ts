@@ -50,6 +50,7 @@ import {
 } from "./PendingSchema.js";
 import { InlineExecRenderError, renderPrompt } from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
+import { readWorktreeRegistry } from "./worktrees.js";
 
 /**
  * The three roots the runtime resolved for this run, handed to the chain
@@ -134,6 +135,25 @@ export interface FlumeApi {
      * commit", so a bad ref reads as a missing path instead of failing loud.
      */
     readFileAtRef: typeof readFileAtRef;
+    /**
+     * Every path git currently registers as a worktree of `repoRoot`, or the
+     * reason the registry could not be read — the same probe the harness
+     * judges an occupied worktree path on.
+     *
+     * What a chain reclaiming per-worktree resources reads instead of listing
+     * the worktree base itself: a scratch database, a lease, an issued
+     * credential allocated in `setupWorktree` outlives a killed tick whose
+     * `teardownWorktree` never ran, and the directory listing cannot say
+     * which of those directories git still calls a worktree — a relocated
+     * base, a sibling job's container directory, and residue whose
+     * registration git already pruned all look alike there. An unreadable
+     * registry stays distinguishable from an empty one, so a reaper never
+     * frees a live arm's handle on the strength of a failed `git` call.
+     *
+     * The list is git's, so it names the primary checkout too; which paths
+     * are the chain's to reap is the chain's to decide.
+     */
+    readWorktreeRegistry: typeof readWorktreeRegistry;
   };
   /** The error classes chains branch on with `instanceof`, no value import. */
   CjsContextLoadError: typeof CjsContextLoadError;
@@ -181,7 +201,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     slugify,
     priorAttemptPath,
     priorAttemptsDir,
-    git: { showNameOnly, readFileAtRef },
+    git: { showNameOnly, readFileAtRef, readWorktreeRegistry },
     CjsContextLoadError,
     PendingParseFailure,
     InlineExecRenderError,
