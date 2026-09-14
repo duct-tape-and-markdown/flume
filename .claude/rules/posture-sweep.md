@@ -8,7 +8,7 @@ Binds on plan's **Sweep** dimension.
 
 ## The pages are the authority as they read this tick
 
-The sweep domain is `src/`, `tests/`, `bin/`, `examples/`. The posture pages
+The sweep domain is `src/`, `harness/`, `tests/`, `bin/`, `examples/`. The posture pages
 are `.claude/rules/engineering.md` and `.claude/rules/engine-boundary.md`.
 
 Every section of those pages, as written at this tick, is in scope. Nothing

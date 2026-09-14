@@ -9,6 +9,13 @@ exactly this behavior, or would it want to choose? If it would choose,
 the behavior belongs on the chain surface (config, declared schema,
 policy knobs), not in the engine.
 
+`harness/` is where that choice lives when flume itself makes it: the
+harness package (`spec/harness.md`), flume's opinion shipped beside the
+engine and opted into by a consumer's declaration. It imports `src/`; `src/`
+never imports it. The second-implementation test governs `src/` alone — a
+behavior `harness/` wants that would not pass it belongs in `harness/`, never
+promoted into `src/` because the harness happened to need it.
+
 ## Capability vs convention
 
 - A **capability** is machinery with an injection point: the chain

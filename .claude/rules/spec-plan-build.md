@@ -4,11 +4,11 @@ The writing pipeline flows forward. Each layer has one author and one artifact h
 
 | Layer | Artifact | Author | Phase | Commit prefix |
 | ----- | -------- | ------ | ----- | ------------- |
-| spec  | `spec/**` (topic files: loop, chain, prompt, pending, cli, jobs, worktrees), `.claude/rules/*.md` | human | — | (any) |
+| spec  | `spec/**` (topic files: loop, chain, prompt, pending, cli, jobs, worktrees, harness), `.claude/rules/*.md` | human | — | (any) |
 | plan  | `.flume/plan/{pending.json,state.md,open-questions.md}`; drains `.flume/inbox/`, `.flume/plan/notes/` | plan tick | `plan:` | `plan:` |
 | inbox | `.flume/inbox/<date>-<slug>.md` — transient findings queue, one file each | external reviewers (humans; future review skills) | (any session) | (any) |
 | notes | `.flume/plan/notes/<TAG>.md` — one file per entry, build's only cross-tick channel | build tick | `build:` | `build:` |
-| code  | `src/`, `tests/`, `bin/`, `examples/`, `docs/`, `vitest.config.ts`, `.env.example`, `.gitignore`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` | build tick | `build:` | `build:` |
+| code  | `src/`, `harness/`, `tests/`, `bin/`, `examples/`, `docs/`, `vitest.config.ts`, `.env.example`, `.gitignore`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` | build tick | `build:` | `build:` |
 
 Harness commits use `chore(flume):`.
 
