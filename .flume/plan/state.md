@@ -12,5 +12,5 @@ Rotation open (phrase delta off `bd75f27` and `862e94b`, both
 `.claude/rules/engineering.md` — the frontier is every module across the sweep
 domain; the window's retired-claim delta is read and closed, no hits). Covered:
 `src/priorAttempts.ts`, `src/Gate.ts`, `src/loopSupervisor.ts`,
-`src/cliVerdict.ts`, `src/friction.ts`, `src/paths.ts`, each with its
-immediate imports.
+`src/cliVerdict.ts`, `src/friction.ts`, `src/paths.ts`,
+`src/builtinGates.ts`, each with its immediate imports.

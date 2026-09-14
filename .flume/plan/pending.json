@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "CHAIN-MODULE-PATH-ONE-DERIVATION",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "home for the shared chain-module path derivation" },
+        { "path": "src/Dispatcher.ts", "description": "loadChainModule reads it instead of spelling the filename" },
+        { "path": "src/job.ts", "description": "jobNew's precondition reads it" },
+        { "path": "src/builtinGates.ts", "description": "chainLoadGate's touched-path key reads it" },
+        { "path": "tests/paths.test.ts", "description": "the two agreement pins" }
+      ],
+      "retire": []
+    },
+    "summary": "Give the chain module's path one derivation — Dispatcher's loader, jobNew's precondition and chainLoadGate's touched-path key each spell `chain.ts` themselves",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "tests": [],
+    "pins": [
+      "chainLoadGate's touched-path key names the file loadChainModule resolves from the same configDir",
+      "jobNew's chain precondition probes the file loadChainModule resolves from the same configDir"
+    ],
+    "acceptance": "One exported derivation of `<configDir>`'s chain-module path, read by loadChainModule, jobNew's precondition, and chainLoadGate's touched-path key.",
+    "notes": "Verified on disk: src/Dispatcher.ts:1029, src/job.ts:210, src/builtinGates.ts:229. The gate's copy is the silent one — a divergence makes chainLoadGate return ok:true with `skipped: \"… untouched by this commit\"` over the very commit that broke the chain. jobNew's duplicate *existence* probe is declared deliberate at Dispatcher.ts:1038; only the path spelling is in scope."
+  }
+]
