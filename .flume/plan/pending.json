@@ -1,45 +1,5 @@
 [
   {
-    "tag": "HARNESS-BUILD-PROMPT-ARGS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "tests/harnessBuildArgs.test.ts",
-          "description": "the five args over a real entry, and the refusal on a cite that names no section"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/prompts.ts",
-          "description": "build's per-tick args beside the shared ones"
-        },
-        {
-          "path": "harness/index.ts",
-          "description": "export them"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Supply build's per-tick prompt args — the assigned entry, its cite's path, section and section text, and its note path — which the shipped build prompt names and nothing renders.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The prompts and their discipline"
-    },
-    "tests": [
-      "build's per-tick args carry the assigned entry as JSON and its tag",
-      "build's per-tick args render the cited section's text through the declaration's resolver",
-      "build's per-tick args refuse an assigned entry whose cite names no section in the tick's tree",
-      "build's per-tick args name the entry's note path under the tick's state root"
-    ],
-    "pins": [],
-    "acceptance": "Rendering the package's build prompt over a TickContext with an assigned entry leaves no placeholder unsubstituted.",
-    "notes": "The section text goes through resolveCite, not a second section reader — the gate that queued the cite and the render that quotes it are one resolver. The note path is repo-relative: the build prompt's park warning reads it as a path the agent writes. Shape reference: .flume/chain.ts's build promptArgs."
-  },
-  {
     "tag": "HARNESS-INIT-BIN",
     "gate": {
       "kind": "open"
@@ -96,10 +56,7 @@
   {
     "tag": "HARNESS-PHASES",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-BUILD-PROMPT-ARGS"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
