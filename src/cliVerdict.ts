@@ -123,7 +123,7 @@ export function formatTickVerdictLine(v: TickVerdict): string {
     // tag`), so it renders as the bare outcome. Not the phase name in its
     // place: the line's first field already states it (engineering.md,
     // "Derived state is computed, never restated beside its source").
-    .map((m) => (m.tag === undefined ? m.outcome : `${m.tag}:${m.outcome}`))
+    .map((m) => (m.entryTag === undefined ? m.outcome : `${m.entryTag}:${m.outcome}`))
     .join(",");
   return (
     `${v.phaseName}  committed=${v.committed}  gates=[${gates}]  ` +

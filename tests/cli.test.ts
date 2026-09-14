@@ -572,7 +572,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         expect(verdict.declined).toBe(true);
         expect(verdict.mergeOutcomes).toEqual([
           {
-            tag: "SHIP-A",
+            entryTag: "SHIP-A",
             outcome: "merged",
             baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
             headSha: expect.stringMatching(/^[0-9a-f]{40}$/),

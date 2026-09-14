@@ -3829,17 +3829,17 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     expect(outcome.verdict?.tags.sort()).toEqual(["CONFLICT-A", "CONFLICT-B"]);
     expect(
       [...(outcome.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
-        (a.tag ?? "").localeCompare(b.tag ?? ""),
+        (a.entryTag ?? "").localeCompare(b.entryTag ?? ""),
       ),
     ).toEqual([
       {
-        tag: "CONFLICT-A",
+        entryTag: "CONFLICT-A",
         outcome: "merged",
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
       {
-        tag: "CONFLICT-B",
+        entryTag: "CONFLICT-B",
         outcome: "cherry-pick-conflict",
         footprint: ["src/decoy-b.ts", "src/shared.ts"],
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -3961,7 +3961,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     // the probe), A and C picked clean (so the probe ran exactly twice).
     expect(outcome.result?.shippedTags).toEqual(["MARK-A", "MARK-C"]);
     expect(
-      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "MARK-B")?.outcome,
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "MARK-B")?.outcome,
     ).toBe("cherry-pick-conflict");
     // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
     // probe that never ran would leave every assertion below reading an
@@ -4162,18 +4162,18 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     // (the fact behind the revert) rides along verbatim.
     expect(
       [...(first.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
-        (a.tag ?? "").localeCompare(b.tag ?? ""),
+        (a.entryTag ?? "").localeCompare(b.entryTag ?? ""),
       ),
     ).toEqual([
       {
-        tag: "ISO-FAIL",
+        entryTag: "ISO-FAIL",
         outcome: "afterMerge-reverted",
         footprint: ["src/iso-fail.ts"],
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       },
       {
-        tag: "ISO-PASS",
+        entryTag: "ISO-PASS",
         outcome: "merged",
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -4524,7 +4524,7 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
     );
 
     const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.tag === "COLLIDE-BAD",
+      (m) => m.entryTag === "COLLIDE-BAD",
     );
     expect(mo?.outcome).toBe("afterMerge-revert-refused");
     expect(mo?.footprint).toEqual(["src/collide.ts"]);
@@ -4666,7 +4666,7 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
     expect(onDisk.map((e) => e.tag)).toEqual(["TIP-DRIFT"]);
 
     const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.tag === "TIP-DRIFT",
+      (m) => m.entryTag === "TIP-DRIFT",
     );
     expect(mo?.outcome).toBe("afterMerge-revert-refused");
 
@@ -5063,7 +5063,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     // build the footprint commit above.
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "FOOT-STRAY",
+        entryTag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -5131,7 +5131,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "FOOT-STRAY",
+        entryTag: "FOOT-STRAY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -6101,7 +6101,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     //      and so the only reason the rewrite read refused;
     expect(verdict?.mergeOutcomes).toEqual([
       {
-        tag: "REVERT-ONLY",
+        entryTag: "REVERT-ONLY",
         outcome: "afterCommit-reverted",
         footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -7928,7 +7928,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(outcome.verdict?.noCommit).toBeUndefined();
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "TEST-A",
+        entryTag: "TEST-A",
         outcome: "merged",
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -8001,7 +8001,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     // human could still recover before gc.
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "TEST-A",
+        entryTag: "TEST-A",
         outcome: "dropped-work",
         baseSha: recordedBase,
         headSha: observedHead,
@@ -8015,7 +8015,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     // resolves by `find`, so a second record would have it report the first
     // of two while the verdict carried both.
     const forTag = (outcome.verdict?.mergeOutcomes ?? []).filter(
-      (m) => m.tag === "TEST-A",
+      (m) => m.entryTag === "TEST-A",
     );
     expect(forTag.length).toBe(1);
     const entry = outcome.result?.entries?.find((e) => e.tag === "TEST-A");
@@ -8083,7 +8083,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     expect(outcome.verdict?.tipMoved).toBeUndefined();
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "TEST-A",
+        entryTag: "TEST-A",
         outcome: "merged",
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -8214,7 +8214,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
       expect(outcome.verdict?.tipMoved).toBe(true);
       expect(outcome.verdict?.mergeOutcomes).toEqual([
         {
-          tag: "TEST-A",
+          entryTag: "TEST-A",
           outcome: "tip-moved",
           baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
           headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -10026,7 +10026,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     });
     // Reported, not re-derived: the same record the verdict persists.
     expect(
-      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "PICKS-DIRTY")
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "PICKS-DIRTY")
         ?.outcome,
     ).toBe("cherry-pick-conflict");
   }, 20_000);
@@ -10070,7 +10070,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       { tag: "PARKED", ...COLLAPSED, mergeOutcome: "not-shipped" },
     ]);
     expect(
-      outcome.verdict?.mergeOutcomes.find((m) => m.tag === "PARKED")?.outcome,
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "PARKED")?.outcome,
     ).toBe("not-shipped");
   }, 20_000);
 });
@@ -14148,7 +14148,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
-        tag: "DECLINED-ONCE",
+        entryTag: "DECLINED-ONCE",
         outcome: "not-shipped",
         baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
         headSha: trunkTip,
@@ -14404,7 +14404,7 @@ describe("TickVerdict span rows — base beside head", () => {
     const rows = outcome.verdict?.mergeOutcomes ?? [];
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
-    expect(row.tag).toBe("SPAN-BASE");
+    expect(row.entryTag).toBe("SPAN-BASE");
     expect(row.outcome).toBe("afterCommit-reverted");
     // The base is the tip the worktree branched from — trunk as it stood
     // when the entry was provisioned, not the head's parent.
@@ -14469,7 +14469,7 @@ describe("TickVerdict span rows — base beside head", () => {
     const row = rows[0]!;
     // No entry to name — the verdict's own `phaseName` already says which
     // phase this span belongs to.
-    expect(row.tag).toBeUndefined();
+    expect(row.entryTag).toBeUndefined();
     expect(outcome.verdict?.phaseName).toBe("plan");
     expect(row.outcome).toBe("afterCommit-reverted");
     expect(row.footprint?.sort()).toEqual(["outside/b.ts", "src/plan-a.ts"]);

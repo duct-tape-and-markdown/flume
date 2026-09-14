@@ -293,9 +293,9 @@ export interface TickVerdictMergeOutcome {
    * The fanout entry this span belongs to. Absent on a singleton phase's own
    * span, which has no entry to tag — the verdict's `phaseName` already names
    * it, and restating it here would invent a tag naming no queue entry (same
-   * shape as {@link TickVerdictInvocation.entryTag}).
+   * shape as {@link TickVerdictInvocation.entryTag}, and the same name).
    */
-  tag?: string;
+  entryTag?: string;
   outcome: MergeOutcome;
   footprint?: string[];
   /**
@@ -2586,7 +2586,7 @@ export class Dispatcher {
         // `tip-moved` outcome pushed below, which is the shared trunk racing
         // during this wave's own merge step.
         mergeOutcomes.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           outcome: "dropped-work",
           ...(r.spanBase ? { baseSha: r.spanBase } : {}),
           ...(r.headSha ? { headSha: r.headSha } : {}),
@@ -2601,7 +2601,7 @@ export class Dispatcher {
         // record.
         if (r.footprint && r.footprint.length > 0) {
           mergeOutcomes.push({
-            tag: r.entry.tag,
+            entryTag: r.entry.tag,
             outcome: "afterCommit-reverted",
             footprint: r.footprint,
             ...(r.spanBase ? { baseSha: r.spanBase } : {}),
@@ -2626,7 +2626,7 @@ export class Dispatcher {
         );
         waveTipMoved = true;
         mergeOutcomes.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           outcome: "tip-moved",
           baseSha: r.spanBase,
           headSha: r.commitSha,
@@ -2675,7 +2675,7 @@ export class Dispatcher {
         // dirty trunk) and require manual `git restore` intervention.
         await git.cherryPickAbort(repoRoot);
         mergeOutcomes.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           outcome: "cherry-pick-conflict",
           ...(footprint ? { footprint } : {}),
           baseSha: r.spanBase,
@@ -2803,7 +2803,7 @@ export class Dispatcher {
           );
           revertRefused.push(r.entry);
           mergeOutcomes.push({
-            tag: r.entry.tag,
+            entryTag: r.entry.tag,
             outcome: "afterMerge-revert-refused",
             footprint: commitTouchedPaths,
             baseSha: preCherry,
@@ -2826,7 +2826,7 @@ export class Dispatcher {
           );
           revertRefused.push(r.entry);
           mergeOutcomes.push({
-            tag: r.entry.tag,
+            entryTag: r.entry.tag,
             outcome: "afterMerge-revert-refused",
             footprint: commitTouchedPaths,
             baseSha: preCherry,
@@ -2841,7 +2841,7 @@ export class Dispatcher {
         }
         mergeReverted.push(r.entry);
         mergeOutcomes.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           outcome: "afterMerge-reverted",
           footprint: commitTouchedPaths,
           baseSha: preCherry,
@@ -2888,7 +2888,7 @@ export class Dispatcher {
           buildNotShipped(mergedSha, commitTouchedPaths),
         );
         mergeOutcomes.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           outcome: "not-shipped",
           baseSha: preCherry,
           headSha: mergedSha,
@@ -2898,7 +2898,7 @@ export class Dispatcher {
 
       shipped.push(r.entry);
       mergeOutcomes.push({
-        tag: r.entry.tag,
+        entryTag: r.entry.tag,
         outcome: "merged",
         baseSha: preCherry,
         headSha: mergedSha,
@@ -2920,7 +2920,7 @@ export class Dispatcher {
     // footprints straight off `mergeOutcomes`, the same records this wave's
     // TickVerdict carries — no separate observed-files bookkeeping here.
     const footprintTags = mergeOutcomes.flatMap((m) =>
-      m.tag && m.footprint && m.footprint.length > 0 ? [m.tag] : [],
+      m.entryTag && m.footprint && m.footprint.length > 0 ? [m.entryTag] : [],
     );
     let chorSha: string | undefined;
     if (shipped.length > 0 || footprintTags.length > 0) {
@@ -3093,7 +3093,7 @@ export class Dispatcher {
     // pinned by "records exactly one mergeOutcomes entry for that tag"
     // (tests/Dispatcher.test.ts).
     const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
-      const merge = mergeOutcomes.find((m) => m.tag === r.entry.tag);
+      const merge = mergeOutcomes.find((m) => m.entryTag === r.entry.tag);
       return {
         tag: r.entry.tag,
         committed: r.committed,
@@ -4114,10 +4114,10 @@ export class Dispatcher {
     // that skips a footprintless row.
     const observed = new Map(
       mergeOutcomes.flatMap((m) =>
-        m.tag && m.footprint && m.footprint.length > 0
+        m.entryTag && m.footprint && m.footprint.length > 0
           ? [
               [
-                m.tag,
+                m.entryTag,
                 m.footprint.filter((p) => !matchesAny(p, partitionIgnore)),
               ] as [string, string[]],
             ]

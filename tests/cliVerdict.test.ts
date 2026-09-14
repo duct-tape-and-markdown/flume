@@ -353,7 +353,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
           committed: true,
           gateResults: [{ gate: "tsc", ok: true, message: "" }],
           shippedTags: [`tag-${i}`],
-          mergeOutcomes: [{ tag: `tag-${i}`, outcome: "merged" }],
+          mergeOutcomes: [{ entryTag: `tag-${i}`, outcome: "merged" }],
         }),
       );
       await writeTickVerdictsLog(repo.dir, verdicts);
@@ -432,7 +432,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
           committed: true,
           gateResults: [{ gate: "tsc", ok: true, message: "clean" }],
           shippedTags: ["TAG-A"],
-          mergeOutcomes: [{ tag: "TAG-A", outcome: "merged" }],
+          mergeOutcomes: [{ entryTag: "TAG-A", outcome: "merged" }],
         }),
         makeVerdict({
           phaseName: "plan",
@@ -524,8 +524,8 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
           committed: true,
           shippedTags: ["TAG-A"],
           mergeOutcomes: [
-            { tag: "TAG-A", outcome: "merged" },
-            { tag: "TAG-B", outcome: "not-shipped" },
+            { entryTag: "TAG-A", outcome: "merged" },
+            { entryTag: "TAG-B", outcome: "not-shipped" },
           ],
         }),
       ]);
