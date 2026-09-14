@@ -33,6 +33,7 @@ import {
   type ChainModule,
   type DispatcherOptions,
   type Logger,
+  type TickVerdict,
 } from "../src/Dispatcher.ts";
 import { frictionCountLine } from "../src/friction.ts";
 import { worktreeDirName } from "../src/worktrees.ts";
@@ -8346,7 +8347,12 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
  * directly, the way a real `flume tick` child process would). This suite
  * proves the primitives' own round-trip, clear behavior, and bounded
  * history — and that the shape carries no interpretation field (no
- * `errored`; §5 derives that at the read site instead).
+ * `errored`; §5 derives that at the read site instead). That last claim is
+ * an agreement claim, so it alone drives real dispatcher ticks and persists
+ * what they built through `writeTickVerdict`, standing in for the CLI
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote"); the round-trip and history tests keep `verdictFixture`, whose
+ * shape they are not the judge of.
  */
 describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact (v0.8 §5)", () => {
   const latestPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
@@ -8363,41 +8369,176 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     expect(await readTickVerdicts(join(fx.repo, ".flume"))).toEqual([v]);
   });
 
-  it("carries only fact fields — no `errored`/interpretation field on the shape", async () => {
-    const v = verdictFixture({
-      committed: false,
-      noCommit: "gate-revert",
-      gateResults: [
-        {
-          gate: "writable-paths",
-          ok: false,
-          message: "commit touched 1 path(s) outside writablePaths",
-          details: "  - src/Phase.ts (outside phase writablePaths)",
-        },
-      ],
-    });
-    await writeTickVerdict(join(fx.repo, ".flume"), v);
-    const onDisk = JSON.parse(await readFile(latestPath(), "utf8"));
+  it("a dispatcher-produced tick verdict carries only declared fact fields, never an interpretation field", async () => {
+    const flumeDir = join(fx.repo, ".flume");
 
-    expect(Object.keys(onDisk).sort()).toEqual(
-      [
-        "phaseName",
-        "tags",
-        "committed",
-        "noCommit",
-        "gateResults",
-        "shippedTags",
-        "mergeOutcomes",
-        "invocations",
-        "summary",
-        "headSha",
-        "at",
-      ].sort(),
+    // Every field name `TickVerdict` declares — the refusal list this claim
+    // is judged against. A field the engine grows is either a fact that
+    // belongs on this list or the interpretation the shape's own doc refuses
+    // (`src/Dispatcher.ts`, "No interpretation fields"); until someone
+    // decides which, a real tick emitting it fails below.
+    const FACT_FIELDS = [
+      "phaseName",
+      "tags",
+      "committed",
+      "noCommit",
+      "tipMoved",
+      "declined",
+      "bystanderCheckpointSha",
+      "gateResults",
+      "shippedTags",
+      "mergeOutcomes",
+      "invocations",
+      "provisionFailures",
+      "mergeFailures",
+      "gateFailures",
+      "clearedPriorAttempts",
+      "summary",
+      "headSha",
+      "at",
+    ];
+
+    /**
+     * Persist a verdict the dispatcher built exactly the way the CLI's
+     * `tick` command does, and read back the keys that landed — the real
+     * writer's output through the real artifact, never a hand-authored
+     * literal (`.claude/rules/engineering.md`, "A seam gate reads what the
+     * real writer wrote").
+     */
+    const persistedKeys = async (
+      v: TickVerdict | undefined,
+    ): Promise<string[]> => {
+      expect(v).toBeDefined();
+      await writeTickVerdict(flumeDir, v!);
+      const onDisk = JSON.parse(
+        await readFile(latestPath(), "utf8"),
+      ) as Record<string, unknown>;
+      return Object.keys(onDisk);
+    };
+
+    const fanoutBuild = (phase: Partial<Phase>, agent: Agent): Dispatcher =>
+      new Dispatcher({
+        chainLoader: staticLoader({
+          phases: [
+            makePhase({
+              name: "build",
+              concurrency: "fanout",
+              writablePaths: ["src/**"],
+              ...phase,
+            }),
+          ],
+          humanOnly: [],
+        }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+        maxParallel: 4,
+      });
+
+    // A prior attempt filed under a tag the judged wave's queue no longer
+    // carries, so that wave retires it and says which (`clearedPriorAttempts`).
+    await writePending(fx.repo, [makeEntry("STALE-ONE", ["src/stale-one.ts"])]);
+    new Baton(flumeDir).wake("build");
+    await fanoutBuild(
+      {},
+      fanoutAgent({
+        "stale-one": async (cwd) => {
+          await writeAndCommit(cwd, "stale.txt", "x\n", "build: STALE-ONE");
+        },
+      }),
+    ).tick();
+    expect(existsSync(priorAttemptPath(flumeDir, "STALE-ONE"))).toBe(true);
+
+    // The judged wave, shaped to reach past the always-present fields: one
+    // entry ships, one trips the real writable-paths gate, one is declined
+    // by `shouldRun`, STALE-ONE has left the queue, and an unstaged
+    // bystander edit on the primary checkout forces the pre-merge checkpoint.
+    await writePending(fx.repo, [
+      makeEntry("SHIP-IT", ["src/ship-it.ts"]),
+      makeEntry("GATE-FAIL", ["src/gate-fail.ts"]),
+      makeEntry("DECLINE-ME", ["src/decline-me.ts"]),
+    ]);
+    await writeFile(join(fx.repo, "README.md"), "operator's own edit\n");
+    new Baton(flumeDir).wake("build");
+    const wave = await fanoutBuild(
+      { shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-ME" },
+      // No action registered for `decline-me`: `fanoutAgent` throws if the
+      // declined entry ever reaches the agent.
+      fanoutAgent({
+        "ship-it": async (cwd) => {
+          await writeAndCommit(cwd, "src/ship-it.ts", "ok\n", "build: SHIP-IT");
+        },
+        "gate-fail": async (cwd) => {
+          await writeAndCommit(cwd, "outside.txt", "no\n", "build: GATE-FAIL");
+        },
+      }),
+    ).tick();
+
+    expect(wave.verdict?.shippedTags).toEqual(["SHIP-IT"]);
+    const waveKeys = await persistedKeys(wave.verdict);
+
+    // A second, quiet tick: `noCommit` classifies a tick that produced no
+    // usable commit, so the shipping wave above can never carry it.
+    new Baton(flumeDir).wake("plan");
+    const quiet = await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    }).tick();
+    expect(quiet.verdict?.committed).toBe(false);
+    const quietKeys = await persistedKeys(quiet.verdict);
+
+    const emitted = [...new Set([...waveKeys, ...quietKeys])];
+
+    // Non-vacuity (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the judged set is a real writer's, and it
+    // reaches the conditional fields. A subset check over the eleven
+    // always-present names alone would pass over an engine that emits an
+    // undeclared field only on the paths this test never drove.
+    for (const always of [
+      "phaseName",
+      "tags",
+      "committed",
+      "gateResults",
+      "shippedTags",
+      "mergeOutcomes",
+      "invocations",
+      "summary",
+      "headSha",
+      "at",
+    ]) {
+      expect(emitted).toContain(always);
+    }
+    for (const conditional of [
+      "noCommit",
+      "declined",
+      "bystanderCheckpointSha",
+      "gateFailures",
+      "clearedPriorAttempts",
+    ]) {
+      expect(emitted).toContain(conditional);
+    }
+
+    // The claim: every key the engine actually wrote is a declared fact …
+    expect(emitted.filter((k) => !FACT_FIELDS.includes(k)).sort()).toEqual([]);
+    // … and the name the shape's own doc refuses stays off the list above,
+    // so widening the allowlist can never be how `errored` gets in.
+    expect(FACT_FIELDS).not.toContain("errored");
+
+    // The violating path is a fact in the real gate's own captured
+    // `details`, not a re-derived summary — a chain reading history sees
+    // what the gate said, verbatim.
+    const violation = wave.verdict?.gateResults.find(
+      (g) => g.gate === "writable-paths" && !g.ok,
     );
-    // The violating path is a fact in the gate's own captured `details`, not
-    // a re-derived summary — a chain reading history sees it verbatim.
-    expect(onDisk.gateResults[0].details).toContain("src/Phase.ts");
-  });
+    expect(violation?.details).toContain("outside.txt");
+  }, 60_000);
 
   it("clearTickVerdict removes the latest record without touching history; no-ops when absent", async () => {
     await writeTickVerdict(join(fx.repo, ".flume"), verdictFixture());
