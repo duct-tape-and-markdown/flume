@@ -889,6 +889,30 @@ The fork is about a missing injection point, not a bug:
   derive tick avoids them. Leaves a trap nothing checks, re-armed by any future
   spec sentence that quotes the grammar.
 
+**The harness package widens this from two landmined sections to every byte of
+a plan window.** Drained from `HARNESS-PROMPTS`' note and re-read on disk this
+tick. `.flume/`'s plan prompts pull their material through stage-2 spans —
+`.flume/prompts/plan-derive.md:4` runs `.flume/delta-window.mjs`, and stage 2
+never rescans its own stdout, so a spec diff carrying span-shaped text is inert
+today by construction, not by care. The package's prompts cannot spell that
+command: the consumer's state root is declared, and the package ships no
+script into a consumer's tree. So `harness/prompts/plan-derive.md:4` names
+`{{SPEC_WINDOW}}`, `plan-sweep.md` `{{SWEEP_WINDOW}}`, and `plan-inbox.md`
+`{{RECORDS}}` and `{{BUILD_RECORDS}}` — four stage-1 substitutions whose values
+are a git diff, a record file's bytes, and a gate's message.
+
+`spec/prompt.md:21` is inside the derive window's own corpus. The first derive
+tick whose window spans a commit touching that file detonates its own render,
+and `{{RECORDS}}` means any external reviewer who quotes the grammar in an
+inbox file walls the inbox slice. This is no longer "the citer's problem" — the
+third option above dies here, because no author of a spec commit or an inbox
+note is choosing a cite.
+
+Nothing about the fork changes; what changes is who it binds. It is plan's
+render as well as build's, the exposure is uncheckable by hand rather than two
+known sections, and the ruling is needed **before `HARNESS-SLICE-WINDOWS`
+supplies the four args** — that entry is what arms it.
+
 Recommend the first. Parked because it amends a spec sentence whose rationale
 is stated as measured, and because the second option is a one-line chain change
 a human may simply prefer to the engine surface.
@@ -922,28 +946,40 @@ resolves beneath `configDir`.
 `spec/` is the human's; plan cannot make the edit. Naming it so the pair does
 not sit contradicting the shipped tree unnoticed.
 
-## `spec/harness.md`'s declaration table has no `resolver` row (NEEDS AMENDMENT)
+## `spec/harness.md`'s declaration table omits two shipped fields (NEEDS AMENDMENT)
 
-Drained from `HARNESS-CITE-RESOLVER`'s note; both sides re-read on disk this
-tick. The package ships `resolver` as a declared field
-(`harness/declaration.ts`, a `z.custom` over `SectionResolver` refusing a
-non-function by name), and without it nothing could supply one — the package's
-own `per` gate is the sole caller of `resolveCite`, so the type would be
-unreachable surface and "a consumer may declare a resolver" would be unshipped.
+Drained from `HARNESS-CITE-RESOLVER`'s note, then widened by
+`HARNESS-HANDOFF`'s; every line re-read on disk this tick. `DeclarationSchema`
+(`harness/declaration.ts:249`) now carries **thirteen** fields. *What a
+consumer declares*' table lists eleven, and the table is the enumerated
+declaration surface — an unknown key refuses the load naming the valid set, so
+a field the table omits reads as one the schema is supposed to reject.
 
-`spec/harness.md` ratifies the capability twice in prose: *What a consumer
-declares* opens "two of its fields are values with behavior (the runner and the
-resolver)", and *The cite resolver* gives it a section of its own. But that
-first section's table lists eleven rows and `resolver` is not one of them —
-and the table is the enumerated declaration surface, since an unknown field
-refuses the load naming the valid set. A field the table omits reads as one the
-schema is supposed to reject.
+Both omissions are values with behavior, and both are the override that stops a
+consumer copying package internals:
 
-The answer looks decided — prose and section both state the field as intended,
-and the shipped schema matches them — so this is a row to add, not a fork: one
-line beside `runner`, pointing at *The cite resolver*. The live alternative is
-that the field is the human's to reject, which retires the schema entry, the
-section, and `harness/citeResolver.ts`'s injection point together.
+- **`resolver`** (`:273`) — `z.custom` over `SectionResolver`, refusing a
+  non-function by name. Without it nothing could supply one: the package's own
+  `per` gate is the sole caller of `resolveCite`, so the type would be
+  unreachable surface and "a consumer may declare a resolver" would be
+  unshipped. *The cite resolver* already gives it a section.
+- **`handoff`** (`:280`) — `byPhase(HandoffValue).optional()`, per phase rather
+  than wholesale so overriding build's routing does not force a copy of the
+  slice ladder (`harness/handoff.ts:235`, `resolveHandoff`). *The default
+  `handoff`* already states the capability: "A consumer overrides it by
+  declaration, not by copying it." Nothing says where the declaration goes.
+
+The count in prose moves with them. *What a consumer declares* opens "two of
+its fields are values with behavior (the runner and the resolver)"; with
+`handoff` the number is **three**, and the doc comment at `:244` already reads
+that way.
+
+The answer looks decided — each field's own section states it as intended and
+the shipped schema matches — so this is two rows and a numeral, not a fork: one
+row beside `runner` pointing at *The cite resolver*, one pointing at *The
+default `handoff`*. The live alternative is that either field is the human's to
+reject, which retires its schema entry, its section, and its injection point
+together.
 
 `spec/` is the human's lane. Naming it so the table and the shipped schema do
 not sit disagreeing about what a declaration may carry.
@@ -995,9 +1031,58 @@ The fork, which nobody has ruled:
 - **C — leave it.** Rejected on its face: the leg dies at the cutover with no
   signal.
 
+**Where it is read narrows B.** From `HARNESS-HANDOFF`'s note, re-read on disk
+this tick: the chain consumes this fact at `shouldRun`, not at `handoff`
+(`.flume/chain.ts:636`, `parkStanding`, called from `:735`) — a mis-declared
+line is a reason to *wake* the inbox slice on a later tick, never a routing
+decision a finished tick makes. `harness/handoff.ts`'s `defaultHandoff`
+therefore cannot carry it and correctly does not; the package's slice
+`shouldRun` predicates are the only home, and they do not exist yet.
+`HARNESS-SLICE-WINDOWS` builds them, and ships the two modes that need no
+ruling (`clean-exit`, `not-shipped` under a key the queue still carries). The
+mis-declared-line leg is the one line of `parkStanding` it must leave out until
+this is answered, and its absence is silent in exactly the way described above.
+
 **Recommend A**, with B as the stopgap if the amendment is unwanted — the two
 compose, since B's classifier would read A's field once it exists. Either way
 the ruling is needed **before `HARNESS-PHASES` lands**: the cutover is the
 commit where the wording diverges. Parked because A amends `spec/`, the
 human's lane, and because the boundary call between them is the decision plan
 must not make silently.
+
+## `scripts/` is load-bearing build surface that no typecheck and no sweep reads (PARKED)
+
+Drained from `HARNESS-PROMPT-PACKING`'s note; every claim re-verified on disk
+this tick. `package.json`'s `build` is `tsc -p tsconfig.build.json && node
+scripts/pack-harness-prompts.mjs`, and `prepack`/`prepublishOnly` both run it —
+so half of what lands in the published tarball is produced by a file that is:
+
+- outside `tsconfig.json`'s `include` (`src/**/*`, `harness/**/*`, `tests/**/*`,
+  `examples/**/*`, `.flume/chain.ts`), so `pnpm tsc --noEmit` never reads it;
+- outside the sweep domain (`.claude/rules/posture-sweep.md`, *The pages are
+  the authority*: `src/`, `harness/`, `tests/`, `bin/`, `examples/`), so no
+  posture lens ever reaches it.
+
+Three files sit there now — `build-changelog.mjs` (the release cut's mining
+step), `smoke-install.mjs` (the packed-tarball acceptance), `pack-harness-
+prompts.mjs` (half the build). Each is `.mjs`, so widening `include` alone does
+nothing without `allowJs`/`checkJs` or a rewrite to `.ts`. The fork:
+
+- **Widen the sweep domain to `scripts/`** — one glob in `posture-sweep.md` and
+  in `.flume/declaration.ts`'s `slices.sweep.domain` at the cutover. Cheapest,
+  and it is the lens that would have caught an embedded provider fact or an
+  expired marker. Does not typecheck anything.
+- **Rewrite the three to `.ts` and add `scripts/**` to `include`.** They run
+  under `node` today with no loader; `tsc` typechecking them means either
+  `tsx` at every call site or an emit step the release cut does not have.
+  Buys real checking, costs the release path's simplicity.
+- **Say out loud that `scripts/` is judged by its tests alone**, in a line the
+  sweep can read. `tests/harnessPackaging.test.ts` does exercise the pack
+  script; nothing covers the other two. This is the honest status quo, and it
+  is only defensible if the missing coverage is filed.
+
+Parked on two counts plan may not decide: the sweep domain lives in a rule page
+and in the declaration a human writes, and whether the release path may grow a
+loader is a toolchain call. Recommend the first as the floor — it is one glob
+and costs the release nothing — with the third as its companion line, and the
+second only if a script ever grows logic worth a type.
