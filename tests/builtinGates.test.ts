@@ -79,9 +79,12 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
-    // The dispatcher states the span's diff on every context it builds; a
-    // fixture with no particular list states the empty one rather than
-    // leaving the field off. Cases that turn on the list override it.
+    // The dispatcher states the span's endpoints and its diff on every
+    // context it builds; a fixture with no particular span states a
+    // placeholder pair and the empty list rather than leaving the fields
+    // off. Cases that resolve either sha, or turn on the list, override.
+    commitSha: "c".repeat(40),
+    baseSha: "b".repeat(40),
     touchedPaths: [],
     log: () => {},
     ...overrides,

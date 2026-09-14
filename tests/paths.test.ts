@@ -500,6 +500,8 @@ describe("the chain module's path has one derivation", () => {
     configDir,
     repoRoot: repo,
     phaseName: "paths-pin",
+    commitSha: "0".repeat(40),
+    baseSha: "b".repeat(40),
     touchedPaths: [],
     log: () => {},
     ...over,

@@ -39,14 +39,25 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
-    // The dispatcher states the span's diff on every context it builds; a
-    // fixture with no particular list states the empty one rather than
-    // leaving the field off. Cases that turn on the list override it.
+    // The dispatcher states the span's endpoints and its diff on every
+    // context it builds; a fixture with no particular span states a
+    // placeholder pair and the empty list rather than leaving the fields
+    // off. Cases that resolve either sha, or turn on the list, override.
+    commitSha: PLACEHOLDER_TIP,
+    baseSha: PLACEHOLDER_BASE,
     touchedPaths: [],
     log: () => {},
     ...overrides,
   };
 }
+
+/**
+ * Span endpoints for a fixture whose gate never resolves them. Distinct, so
+ * a fixture never reads as an empty span, and shaped like real shas so a
+ * gate that did resolve one fails on the ref rather than on the syntax.
+ */
+const PLACEHOLDER_BASE = "b".repeat(40);
+const PLACEHOLDER_TIP = "c".repeat(40);
 
 describe("shellGate — ok path", () => {
   it("returns ok=true on exit 0 and surfaces stdout in details", async () => {
@@ -328,13 +339,6 @@ describe("writablePathsGate — git-backed checks", () => {
     expect(result.details ?? "").toContain("src/nested/deep.ts");
     expect(result.details ?? "").not.toContain("src/foo.ts");
   });
-
-  it("fails fast when commitSha is missing from the context", async () => {
-    const gate = writablePathsGate(["src/**"]);
-    const result = await gate.run(ctx(repo));
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/requires commitSha/);
-  });
 });
 
 describe("afterCommit vs afterMerge wiring", () => {
@@ -518,12 +522,6 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     expect(result.details ?? "").toMatch(/default-export a chain factory/);
   });
 
-  it("fails fast when commitSha is missing from the context", async () => {
-    const result = await chainLoadGate.run(ctx(repo));
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/requires commitSha/);
-  });
-
   it("loads and validates chain.ts under a relocated configDir instead of skipping on the cwd-relative default path", async () => {
     const sha = await commitFiles(
       repo,
@@ -618,11 +616,12 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
 });
 
 // ---------- the GateContext keys every context states
-// (GATECONTEXT-TOUCHEDPATHS-REQUIRED / GATECONTEXT-STATEROOTREL-REQUIRED-KEY,
-// engineering.md "A seam gate reads what the real writer wrote" and
-// "Narration is the ladder's bottom rung") ----------
+// (GATECONTEXT-TOUCHEDPATHS-REQUIRED / GATECONTEXT-STATEROOTREL-REQUIRED-KEY /
+// GATECONTEXT-COMMITSHA-AND-BASESHA-REQUIRED, engineering.md "A seam gate
+// reads what the real writer wrote" and "Narration is the ladder's bottom
+// rung") ----------
 
-// Both claims are type-level, so the judge is the type-checker itself: a
+// Every claim here is type-level, so the judge is the type-checker itself: a
 // `GateContext` literal that omits the field is compiled for real and its
 // diagnostics read back.
 //
@@ -633,7 +632,10 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
 // opposite hazard: its *value* may legitimately be `undefined` (a state root
 // relocated outside the repo), so an omitted key and a relocated state root
 // were indistinguishable. Required-as-a-key, `undefined` means relocated and
-// nothing else.
+// nothing else. `commitSha` and `baseSha` are the span's two endpoints: the
+// dispatcher sets both on every context it builds, so an optional one bought
+// a fixture's convenience with a runtime refusal in every gate that needed
+// the value — three builtins and a shipped example carried one.
 describe("GateContext — the fields every gate context states", () => {
   const GATE_SRC = fileURLToPath(new URL("../src/Gate.ts", import.meta.url));
   // Everything a GateContext needs except the fields under test.
@@ -642,6 +644,14 @@ describe("GateContext — the fields every gate context states", () => {
     'repoRoot: "", phaseName: "", log: () => {}';
   const TOUCHED = "touchedPaths: []";
   const STATE_ROOT = "stateRootRel: undefined";
+  const COMMIT_SHA = 'commitSha: ""';
+  const BASE_SHA = 'baseSha: ""';
+  /** Every field the judge is not omitting on a given case. */
+  const ALL = [REST, TOUCHED, STATE_ROOT, COMMIT_SHA, BASE_SHA].join(", ");
+  const allBut = (field: string): string =>
+    [REST, TOUCHED, STATE_ROOT, COMMIT_SHA, BASE_SHA]
+      .filter((f) => f !== field)
+      .join(", ");
 
   /** Type-check one `GateContext` literal against the real `src/Gate.ts`. */
   async function diagnose(fields: string): Promise<string> {
@@ -679,18 +689,30 @@ describe("GateContext — the fields every gate context states", () => {
     // Control first, so the refusal below is the field's and not the
     // fixture's: the same literal *with* the field compiles clean
     // (engineering.md "A green verdict is proven non-vacuous").
-    expect(await diagnose(`${REST}, ${TOUCHED}, ${STATE_ROOT}`)).toBe("");
+    expect(await diagnose(ALL)).toBe("");
 
-    expect(await diagnose(`${REST}, ${STATE_ROOT}`)).toContain("touchedPaths");
+    expect(await diagnose(allBut(TOUCHED))).toContain("touchedPaths");
   }, 60_000);
 
   it("GateContext.stateRootRel is required, so a gate context omitting it is a type error", async () => {
     // Same control, and it doubles as the proof that stating the relocated
     // case explicitly — `stateRootRel: undefined` under
     // `exactOptionalPropertyTypes` — is still legal.
-    expect(await diagnose(`${REST}, ${TOUCHED}, ${STATE_ROOT}`)).toBe("");
+    expect(await diagnose(ALL)).toBe("");
 
-    expect(await diagnose(`${REST}, ${TOUCHED}`)).toContain("stateRootRel");
+    expect(await diagnose(allBut(STATE_ROOT))).toContain("stateRootRel");
+  }, 60_000);
+
+  it("GateContext.commitSha is required, so a gate context omitting it is a type error", async () => {
+    expect(await diagnose(ALL)).toBe("");
+
+    expect(await diagnose(allBut(COMMIT_SHA))).toContain("commitSha");
+  }, 60_000);
+
+  it("GateContext.baseSha is required, so a gate context omitting it is a type error", async () => {
+    expect(await diagnose(ALL)).toBe("");
+
+    expect(await diagnose(allBut(BASE_SHA))).toContain("baseSha");
   }, 60_000);
 });
 

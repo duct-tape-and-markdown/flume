@@ -225,9 +225,6 @@ export const chainLoadGate: Gate = {
   name: "chain-load",
   when: "afterCommit",
   async run(ctx: GateContext): Promise<GateResult> {
-    if (!ctx.commitSha) {
-      return { ok: false, message: "chain-load gate requires commitSha" };
-    }
     const touched = ctx.touchedPaths;
     // The touched-path key is the file `loadChainModule` will resolve from
     // this same `configDir`, made repo-relative and posix-slashed to match
@@ -329,9 +326,6 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     name: "pending-gate",
     when: "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
-      if (!ctx.commitSha) {
-        return { ok: false, message: "pending gate requires commitSha" };
-      }
       // spec/pending.md "The pending queue": `ctx.pendingPath` is the one
       // resolved value (`Chain.pendingPath ?? "plan/pending.json"`,
       // absolute, under `ctx.flumeDir`) — the gate and the dispatcher can
@@ -455,12 +449,6 @@ export function writablePathsGate(
     name: "writable-paths",
     when: "afterCommit",
     async run(ctx) {
-      if (!ctx.commitSha) {
-        return {
-          ok: false,
-          message: "writable-paths gate requires commitSha",
-        };
-      }
       const touched = ctx.touchedPaths;
       // Ceiling check: phase-wide globs bind on every tick, scoped or not.
       const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));

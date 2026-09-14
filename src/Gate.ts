@@ -104,8 +104,14 @@ export interface GateContext {
   repoRoot: string;
   /** Phase the gate is running for. */
   phaseName: string;
-  /** SHA of the commit under inspection. */
-  commitSha?: string;
+  /**
+   * SHA of the commit under inspection — the tip of the gated span. Set on
+   * every dispatcher-built context at both stages, so it is required: no
+   * builtin carries a second derivation to fall back to, and a hand-built
+   * fixture states what a tick hands a gate rather than leaving the field
+   * off (spec/chain.md "What a gate receives").
+   */
+  commitSha: string;
   /**
    * The gated span's changed paths (relative to repo root, forward-slash) —
    * the cumulative `baseSha..commitSha` diff, computed once per commit by
@@ -127,11 +133,11 @@ export interface GateContext {
    * <inputs>` names what landed after the tick branched, and
    * `git show <baseSha>:<path>` is the input as the tick read it
    * (spec/chain.md "What a gate receives"). Without it a chain rebuilds the
-   * base from a worktree path convention the engine never promised. Optional
-   * for the same hand-built-fixture reason as `commitSha` above; every
-   * dispatcher-constructed context sets it.
+   * base from a worktree path convention the engine never promised. Required
+   * for the same reason as `commitSha` above: every dispatcher-built context
+   * sets it.
    */
-  baseSha?: string;
+  baseSha: string;
   /**
    * The pending entry this span was provisioned for, as the wave selected it
    * — set at both stages under fanout, absent on a singleton tick, which

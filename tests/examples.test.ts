@@ -797,6 +797,8 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
     configDir: "/repo/.flume",
     pendingPath: "/repo/.flume/plan/pending.json",
     phaseName: "build",
+    commitSha: "c".repeat(40),
+    baseSha: "b".repeat(40),
     touchedPaths: [],
     entry: {
       tag: "NAMED-BEHAVIOR",
@@ -1004,25 +1006,15 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     expect(editedNothing.details).toContain("src/born.ts: declared edit");
   });
 
-  it("the cascade example's gate refuses a context missing the span it is asked to judge, and spells its vacuous cases", async () => {
+  it("the cascade example's gate spells its vacuous cases", async () => {
     const reader = readerOver({ [BASE]: ["src/kept.ts"], [TIP]: ["src/kept.ts"] });
     const gate = declaredFilesGate(reader.read);
-    const entry = entryDeclaring({
-      edit: [{ path: "src/kept.ts", description: "the tick rewrites it" }],
-    });
 
-    // Loud or nothing (engineering.md): a context without the span cannot be
-    // judged, and passing it would be a green earned by nothing.
-    // `touchedPaths` is not among them: the engine states it on every gate
-    // context by type, so an absent list is unconstructable rather than
-    // refusable. An *empty* one is judged below, not here.
-    for (const missing of ["baseSha", "commitSha"] as const) {
-      const partial = ctxFor(entry, ["src/kept.ts"]);
-      delete partial[missing];
-      const blind = await gate.run(partial);
-      expect(blind.ok, `missing ${missing}`).toBe(false);
-      expect(blind.message).toContain(TAG);
-    }
+    // The span itself is no longer among the cases: `baseSha`, `commitSha`
+    // and `touchedPaths` are all stated on every gate context by type, so a
+    // context missing any of them is unconstructable rather than refusable,
+    // and the gate carries no guard for one. An *empty* touched list is
+    // judged below, not here.
 
     // A singleton tick carries no entry: nothing entry-scoped to judge, said
     // out loud rather than inherited as a pass.

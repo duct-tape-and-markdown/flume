@@ -2339,6 +2339,7 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
         repoRoot: repo.dir,
         phaseName: "plan",
         commitSha,
+        baseSha: `${commitSha}^`,
         touchedPaths: [relative(repo.dir, queuePath).split(/[\\/]/).join("/")],
         log: () => {},
       } satisfies GateContext);

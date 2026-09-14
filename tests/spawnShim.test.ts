@@ -182,6 +182,8 @@ function ctx(cwd: string): GateContext {
     configDir: `${cwd}/.flume`,
     repoRoot: cwd,
     phaseName: "test-phase",
+    commitSha: "c".repeat(40),
+    baseSha: "b".repeat(40),
     touchedPaths: [],
     log: () => {},
   };

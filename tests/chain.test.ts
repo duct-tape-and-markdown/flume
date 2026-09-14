@@ -94,6 +94,9 @@ function git(repo: string, args: string[]): string {
 }
 
 /** A fresh temp repo with commit identity pinned, for the gate fixtures below. */
+/** Git's empty-tree object — the base of a span that starts from nothing. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 async function initRepo(prefix: string): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), prefix));
   git(repo, ["init", "-q"]);
@@ -405,6 +408,10 @@ describe("per cites resolve (plan gate) and build's PER_SECTION_TEXT read one re
       pendingPath: join(repo, ".flume", "plan", "pending.json"),
       phaseName: "plan",
       commitSha: sha,
+      // Each queue commit here is the repo's root commit and the `per` gate
+      // reads the queue at the tip, never the span — so the span that
+      // produced it genuinely starts from the empty tree.
+      baseSha: EMPTY_TREE,
       touchedPaths: [],
       log: () => {},
     };
@@ -636,7 +643,15 @@ describe("records gate and the park predicate — one file each", () => {
     return git(repo, ["rev-parse", "HEAD"]);
   }
 
-  function gateCtx(sha: string, phaseName: string, entry?: PendingEntry, baseSha?: string) {
+  function gateCtx(
+    sha: string,
+    phaseName: string,
+    entry?: PendingEntry,
+    // The dispatcher always states the span's base; a fixture judging one
+    // commit states that commit's own parent rather than leaving the field
+    // off. Multi-commit spans pass the real base.
+    baseSha = `${sha}^`,
+  ) {
     return {
       cwd: repo,
       repoRoot: repo,
@@ -646,13 +661,13 @@ describe("records gate and the park predicate — one file each", () => {
       pendingPath: join(repo, ".flume", "plan", "pending.json"),
       phaseName,
       commitSha: sha,
+      baseSha,
       // The dispatcher always states the span's diff; a fixture that has no
       // particular list states the empty one rather than leaving the field
       // off. Cases that turn on the list override it.
       touchedPaths: [],
       log: () => {},
       ...(entry ? { entry } : {}),
-      ...(baseSha ? { baseSha } : {}),
     };
   }
 
