@@ -236,6 +236,22 @@ recommended above; the two surfaces say one thing in the two places plan reads.
 Held here rather than filed because `.flume/chain.ts` is outside every phase
 lane.
 
+**The plan-time half now has its mechanism, and it is in the package**
+(`HARNESS-VITEST-RUNNER`'s note, 2026-09-14 build wave; verified on disk).
+`Runner.lanes` shipped with the runner interface (`harness/runner.ts:102`);
+`spec/harness.md`, *The runner interface* says outright why it exists — "so the
+judge can refuse at plan time a line homed in a lane it will not run, instead of
+at build time after a wave". Nothing reads it yet: `tests/harnessRunner.test.ts:175`
+is its only consumer, because the judge that would read it is unfiled.
+
+So the recommendation above splits, and only one half is still parked. The
+**lane** half is no longer a chain-side hint waiting on a fence widening — it is
+a package judge this queue can file, once `HARNESS-DECLARATION-SCHEMA` lands and
+a declared `runner` is reachable from the chain factory. The **overlap** half
+(a tests-only diff is red-on-base-proof by construction, whatever the lane) has
+no lane to read and stays a `plan-discipline.md` clause, outside every phase
+lane.
+
 ## A tick that commits nothing dies with its worktree, seen by nothing (PARKED)
 
 Was "A worktree torn down with uncommitted tracked edits reads as merged";
@@ -883,3 +899,22 @@ owner and a trigger named, not a silent accumulation.
 parked questions (the vitest-lane hints, the `pins[]`/`tests[]` clause) are
 also waiting on. If the lane is going to move, it is worth moving once, on
 purpose, rather than three times by accident.
+
+**The vitestJudge leg of the cutover carries a shape change, not just a move**
+(`HARNESS-VITEST-RUNNER`'s note, 2026-09-14 build wave; verified on disk).
+`.flume/vitestJudge.ts` `materializeBase` takes a `mergedSha` and pulls the
+merged bytes through the engine's at-ref reader (`:117`, `:132`). The package's
+operation has no such parameter — `spec/harness.md`, *The runner interface*
+declares `runAtBase(names, files, baseSha, cwd)`, and `harness/vitestRunner.ts`
+copies the named files off `cwd`'s working tree (`:264`), refusing loud on one
+that is not there. That is sound exactly where the gate runs — `when:
+"afterMerge"` on a clean trunk, so the working tree *is* the merged commit — and
+wrong anywhere else. The precondition has no parameter to live in, so the
+cutover `chore(flume):` that retires the chain-side judge is where it gets
+stated; handing the runner a `mergedSha` later re-opens the spec sentence.
+
+The same commit closes a consumer restatement the sweep would otherwise file:
+`materializeBase` spawns `git worktree add --detach` by hand (`:126`) beside the
+engine's own verb, which now takes an optional `branch` and does exactly this
+when it is omitted (`src/git.ts:245`). `harness/vitestRunner.ts:263` already
+goes through the verb; the chain-side copy is the one left.

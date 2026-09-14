@@ -9,17 +9,37 @@
       "new": [
         {
           "path": "tests/harnessPackaging.test.ts",
-          "description": "the exports map and the build include name the subpath"
+          "description": "the subpath export and every shipped entry path against the emitted layout"
         }
       ],
       "edit": [
         {
-          "path": "package.json",
-          "description": "exports ./harness"
-        },
-        {
           "path": "tsconfig.build.json",
           "description": "include harness/**"
+        },
+        {
+          "path": "package.json",
+          "description": "exports ./harness; main, types and exports . follow the layout"
+        },
+        {
+          "path": "bin/flume",
+          "description": "cli path follows the layout"
+        },
+        {
+          "path": "bin/flume.js",
+          "description": "cli path follows the layout"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "readPackageVersion resolves under both layouts"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "fixture dist tree follows"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "DIST_CLI follows"
         },
         {
           "path": "scripts/smoke-install.mjs",
@@ -28,18 +48,20 @@
       ],
       "retire": []
     },
-    "summary": "Ship harness/ as the ./harness subpath of @dtmd/flume — one package, one version, one exports map — and extend the install acceptance to resolve it.",
+    "summary": "Ship harness/ as the ./harness subpath of @dtmd/flume \u2014 one package, one version, one exports map \u2014 carrying the dist-layout move onto every shipped entry path.",
     "per": {
       "path": "spec/harness.md",
       "section": "Where it lives"
     },
     "tests": [
       "the package exports map resolves ./harness to the built harness entry point",
-      "the build tsconfig emits harness/ beside src/"
+      "the cli resolves its own package.json under both the checkout and the published layout"
     ],
-    "pins": [],
-    "acceptance": "pnpm build emits dist/harness/index.js, the exports map resolves @dtmd/flume/harness to it, and pnpm run smoke:install resolves the subpath from the installed tarball.",
-    "notes": "The fence, the typecheck include, and the sweep domain already name harness/ (0c93bd4); the published surface is what is missing. smoke-install runs outside the fast lane, so the two named behaviors read the manifests and the smoke step rides acceptance."
+    "pins": [
+      "every shipped entry path resolves inside the layout the build tsconfig emits"
+    ],
+    "acceptance": "pnpm build emits dist/harness/index.js beside the engine's own entry, @dtmd/flume/harness resolves to it, flume --version still answers, and pnpm run smoke:install resolves the subpath from the installed tarball.",
+    "notes": "Measured: tsconfig.build.json declares no rootDir, so adding harness/** moves the inferred root to the repo root and the emit becomes dist/src/ + dist/harness/. main, types, exports '.', both bin shims and src/cli.ts's '../package.json' hop all follow in the same commit \u2014 this is a layout change, not a one-line add. Fence, typecheck include and sweep domain already name harness/ (0c93bd4). smoke-install is outside the fast lane, so it rides acceptance."
   },
   {
     "tag": "HARNESS-DECLARATION-SCHEMA",
@@ -66,7 +88,7 @@
       ],
       "retire": []
     },
-    "summary": "Add the package's strict declaration schema — the eleven fields a consumer declares — refusing an unknown or a missing required field at load, naming the field and the valid set.",
+    "summary": "Add the package's strict declaration schema \u2014 the eleven fields a consumer declares \u2014 refusing an unknown or a missing required field at load, naming the field and the valid set.",
     "per": {
       "path": "spec/harness.md",
       "section": "What a consumer declares"
@@ -78,7 +100,7 @@
     ],
     "pins": [],
     "acceptance": "harness/declaration.ts parses a full declaration and refuses both an unknown field and a missing required one, each refusal naming the field.",
-    "notes": "runner types against harness/runner.ts. No field names an engine artifact path, a verdict field, or a prior-attempt mode — those are the engine's to report. This entry is the shape alone; its consumers are the cite resolver and the chain factory, later entries."
+    "notes": "runner types against harness/runner.ts. No field names an engine artifact path, a verdict field, or a prior-attempt mode \u2014 those are the engine's to report. This entry is the shape alone; its consumers are the cite resolver and the chain factory, later entries."
   },
   {
     "tag": "HARNESS-CITE-RESOLVER",
