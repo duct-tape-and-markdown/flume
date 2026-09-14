@@ -35,7 +35,18 @@ export {
   DeclarationSchema,
   parseDeclaration,
   type Declaration,
+  type HarnessPhase,
+  type PlanSlice,
 } from "./declaration.js";
+
+export {
+  defaultHandoff,
+  resolveHandoff,
+  type Handoff,
+  type HandoffSlice,
+  type ResolveHandoffOptions,
+  type SliceWindow,
+} from "./handoff.js";
 
 export {
   ENTRY_CAPS,

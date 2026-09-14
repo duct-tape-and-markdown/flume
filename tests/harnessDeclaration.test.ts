@@ -21,7 +21,12 @@ import {
   parseDeclaration,
   type Declaration,
 } from "../harness/index.ts";
-import type { RunResult, Runner, SectionResolver } from "../harness/index.ts";
+import type {
+  Handoff,
+  RunResult,
+  Runner,
+  SectionResolver,
+} from "../harness/index.ts";
 
 /** The empty result a stub runner reports; no test here runs a suite. */
 const EMPTY_RUN: RunResult = {
@@ -52,6 +57,13 @@ const stubRunner: Runner = {
  */
 const stubResolver: SectionResolver = (cite) => cite.section;
 
+/**
+ * A handoff, the third declared value with behavior: the phases to wake,
+ * named from a tick's result. Declared per phase, so this one replaces the
+ * package's default for `build` and leaves the plan slices on it.
+ */
+const stubHandoff: Handoff = () => ["plan-inbox"];
+
 /** The fields `spec/harness.md` names, every one of them populated. */
 const fullDeclaration = (): Record<string, unknown> => ({
   specLocus: ["spec/**", ".claude/rules/**"],
@@ -65,6 +77,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   scopeWritesToEntry: true,
   runner: stubRunner,
   resolver: stubResolver,
+  handoff: { build: stubHandoff },
   gates: {
     build: [
       { kind: "registry", name: "tsc", when: "afterCommit" },
@@ -115,7 +128,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(12);
+    expect(Object.keys(declared)).toHaveLength(13);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -129,6 +142,8 @@ describe("the harness declaration schema", () => {
     expect(parsed.runner).toBe(stubRunner);
     // Same for the resolver: the cite resolver calls it.
     expect(parsed.resolver).toBe(stubResolver);
+    // And the handoff: the phase it is installed on calls it.
+    expect(parsed.handoff?.build).toBe(stubHandoff);
     expect(parsed.gates?.build?.[0]).toEqual({
       kind: "registry",
       name: "tsc",

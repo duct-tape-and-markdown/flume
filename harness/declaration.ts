@@ -27,14 +27,27 @@ import type { GatePhase } from "../src/Gate.js";
 import type { Chain } from "../src/Phase.js";
 
 import type { SectionResolver } from "./citeResolver.js";
+import type { Handoff } from "./handoff.js";
 import { parseOrThrow, strict } from "./refusal.js";
 import type { Runner } from "./runner.js";
 
 /** A non-empty list of path globs, in the engine's `matchesAny` dialect. */
 const globs = z.array(z.string().min(1)).min(1);
 
+/**
+ * The plan slice that drains the records (`spec/harness.md`, *Records as one
+ * file each*). Named here for the same reason {@link BUILD_PHASE} is: the
+ * slice list below and the default handoff's refusal leg — which routes a
+ * build refusal to whichever slice drains records — are the same fact, and a
+ * rename moving only one would route refusals at a phase nothing runs.
+ */
+export const INBOX_PHASE = "plan-inbox" as const;
+
 /** The plan slices the package ships (`spec/harness.md`, *The phases*). */
-const PLAN_SLICES = ["plan-inbox", "plan-derive", "plan-sweep"] as const;
+const PLAN_SLICES = [INBOX_PHASE, "plan-derive", "plan-sweep"] as const;
+
+/** One plan slice — every phase the package ships except {@link BUILD_PHASE}. */
+export type PlanSlice = (typeof PLAN_SLICES)[number];
 
 /**
  * The one fanout phase the package ships. Named here rather than spelled at
@@ -130,8 +143,8 @@ const RunnerValue = z.custom<Runner>(
 
 /**
  * The consumer's own section resolver (`spec/harness.md`, *The cite
- * resolver*) — the second of the two declared values with behavior, beside
- * the runner, and the reason this declaration is a module rather than JSON.
+ * resolver*) — a declared value with behavior, beside the runner, and part
+ * of why this declaration is a module rather than JSON.
  *
  * Checked as a function and nothing more: what it returns for a cite is the
  * cite resolver's contract, and a schema re-asserting it here would be the
@@ -144,6 +157,25 @@ const ResolverValue = z.custom<SectionResolver>(
     error:
       "must be a function resolving a cite's section from the cited file's " +
       "text (spec/harness.md, The cite resolver)",
+  },
+);
+
+/**
+ * A consumer's own handoff for one phase (`spec/harness.md`, *The default
+ * `handoff`*) — the third declared value with behavior, and the override
+ * that means no consumer copies the package's ladder to change one leg of
+ * it.
+ *
+ * Checked as a function and nothing more, for the resolver's reason: what a
+ * handoff may return is the engine's contract, already typed at the phase it
+ * is installed on, and re-asserting it here would be the same check twice.
+ */
+const HandoffValue = z.custom<Handoff>(
+  (value): boolean => typeof value === "function",
+  {
+    error:
+      "must be a function naming the phases to wake from a tick's result " +
+      "(spec/harness.md, The default handoff)",
   },
 );
 
@@ -207,11 +239,12 @@ const Slices = strict({
 });
 
 /**
- * The fields `spec/harness.md`, *What a consumer declares* names: its
- * table's eleven, plus the `resolver` that section names in prose as one of
- * the two values with behavior. Four are required — the three a tick cannot
- * run without and the one that says which slices run; the rest are the
- * package's opinion until a consumer states otherwise.
+ * The fields `spec/harness.md` names a consumer: the eleven in *What a
+ * consumer declares*' table, plus the two that section and *The default
+ * `handoff`* name in prose — the `resolver` and the `handoff`, the values
+ * with behavior beside the runner. Four are required — the three a tick
+ * cannot run without and the one that says which slices run; the rest are
+ * the package's opinion until a consumer states otherwise.
  */
 export const DeclarationSchema = strict({
   /**
@@ -238,6 +271,13 @@ export const DeclarationSchema = strict({
    * heading text; declared, by whatever key a typed spec is read with.
    */
   resolver: ResolverValue.optional(),
+  /**
+   * The handoff each phase runs with, where the package's default is not
+   * what this consumer wants. Declared per phase and replacing outright:
+   * overriding build's routing leaves the plan slices on the package's
+   * ladder rather than forcing a copy of it.
+   */
+  handoff: byPhase(HandoffValue).optional(),
   /**
    * Extra gates per phase. The package's own gates are always present and
    * always first, so nothing here can displace one.
