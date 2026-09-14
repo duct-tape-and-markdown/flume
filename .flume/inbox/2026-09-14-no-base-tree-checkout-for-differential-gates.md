@@ -1,0 +1,5 @@
+# A differential gate provisions its own base-tree worktree (consumer survey)
+
+Observed at 71dd757. `GateContext.baseSha` (0.15.0) names the span's base, but nothing hands a gate a tree at that sha. One consumer's `afterMerge` drift gate (`docs/surveys/consumer-chains/consumer-b.md` §2, §3 #12) runs `git worktree add --detach <tmpdir> <commitSha>^`, reports both sides, subtracts the inherited set, and carries its own `finally` cleanup that swallows failure. The engine owns worktree provisioning and naming; the gate rebuilt a copy in `tmpdir()` because the API offers no checkout-at-sha.
+
+Why it matters: a gate that judges "fresh drift this entry introduced" is a real gate shape (`engineering.md`, *A seam gate reads what the real writer wrote*), and every chain that wants one will copy this block. Fork: a helper on `api.git` that materializes a detached tree at a sha with engine-owned cleanup, or a spec sentence saying gates own it. The former passes the second-implementation test; the survey shows the demand.

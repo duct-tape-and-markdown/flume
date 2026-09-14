@@ -1,0 +1,5 @@
+# The worktree base is reachable only as an env read at chain import (consumer survey)
+
+Observed at 71dd757. `src/paths.ts:346` resolves the base from `FLUME_WORKTREES_DIR` else `<flumeDir>/worktrees`, and `:342-345` declares there is deliberately no `Chain.worktreesDir` because placement is per host. Two consumers (`consumer-a.md` §3 #3, `consumer-b.md` §3 #2) carry the identical block: shell `git rev-parse --git-common-dir` at module scope and export the env var, because the default places a tick's cwd inside the checkout — "the stray-write vector it documents" — and env is the only knob. That module-scope requirement is also why every surveyed chain resolves its roots before the factory runs instead of reading `api.paths`.
+
+Fork, for a human: (a) a default outside the checkout (a sibling of the git common dir); (b) a chain-supplied function of `paths`, so the value is computed, not committed; (c) keep, and document the module-scope idiom. Verbatim copying across consumers is the detector for a missing surface (`engine-boundary.md`, *Surface, not prescription*).
