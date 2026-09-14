@@ -128,21 +128,27 @@ const RunnerValue = z.custom<Runner>(
 );
 
 /**
- * The four supervisor knobs the declaration exposes, named as the engine
- * names them. `Pick` is the tie: a knob the engine renames or retires stops
- * being a key of its policy and fails typecheck here, rather than leaving a
- * consumer declaring a value nothing reads
+ * The engine's supervisor policy entire — not a subset of it. The alias is
+ * the tie in both directions: `satisfies Record<keyof …>` below refuses a
+ * shape missing a knob the engine names, and the object literal's excess
+ * check refuses one the engine does not, so a knob the engine adds, renames
+ * or retires fails typecheck here rather than leaving a consumer declaring a
+ * value nothing reads — or unable to declare one the engine reads
  * (`.claude/rules/engineering.md`, *Derived state is computed*).
  */
-type DeclaredSupervisor = Pick<
-  NonNullable<Chain["supervisorPolicy"]>,
-  "maxParallel" | "tickTimeoutMs" | "abortThreshold" | "partitionIgnore"
->;
+type DeclaredSupervisor = NonNullable<Chain["supervisorPolicy"]>;
 
+/**
+ * `quarantineScope` names its two values rather than taking any string: the
+ * engine's policy types it as a closed pair, so a third spelling is a
+ * consumer's typo that would otherwise fall through to the engine's default
+ * silently. `z.enum` over the pair puts both in the refusal message.
+ */
 const supervisorShape = {
   maxParallel: z.number().int().positive().optional(),
   tickTimeoutMs: z.number().int().positive().optional(),
   abortThreshold: z.number().int().positive().optional(),
+  quarantineScope: z.enum(["run", "none"]).optional(),
   partitionIgnore: z.array(z.string().min(1)).optional(),
 } satisfies Record<keyof DeclaredSupervisor, z.ZodTypeAny>;
 

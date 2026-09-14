@@ -74,6 +74,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     maxParallel: 4,
     tickTimeoutMs: 1_800_000,
     abortThreshold: 3,
+    quarantineScope: "none",
     partitionIgnore: ["pnpm-lock.yaml"],
   },
   setup: { directories: ["."], restore: "cp ../.env .env" },
@@ -129,6 +130,59 @@ describe("the harness declaration schema", () => {
     expect(parsed.slices.enabled).toContain("plan-sweep");
     expect(parsed.slices.sweep?.domain).toEqual(["src/**", "harness/**"]);
     expect(parsed.slots?.autonomy).toBe("ship without asking");
+  });
+
+  it("a declaration naming quarantineScope on supervisor parses", () => {
+    const declared = fullDeclaration();
+    const supervisor = declared["supervisor"] as Record<string, unknown>;
+
+    // Vacuity guard on "the policy whole": the declared knobs are read off
+    // the schema, so a knob the engine adds and this case never names fails
+    // here rather than passing over four of five.
+    expect(Object.keys(supervisor).sort()).toEqual(
+      Object.keys(DeclarationSchema.shape.supervisor.unwrap().shape).sort(),
+    );
+
+    const parsed = parseDeclaration(declared);
+
+    expect(parsed.supervisor?.quarantineScope).toBe("none");
+    // The other knobs survive the widening rather than being displaced by it.
+    expect(parsed.supervisor?.maxParallel).toBe(4);
+    expect(parsed.supervisor?.partitionIgnore).toEqual(["pnpm-lock.yaml"]);
+  });
+
+  it("a quarantineScope value outside the engine's two is refused", () => {
+    const declared = fullDeclaration();
+    declared["supervisor"] = {
+      ...(declared["supervisor"] as Record<string, unknown>),
+      quarantineScope: "entry",
+    };
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("supervisor.quarantineScope");
+    // Both engine values are named, so a typo reads as a wrong value rather
+    // than an unknown knob.
+    expect(message).toContain('"run"');
+    expect(message).toContain('"none"');
+  });
+
+  it("the declaration's supervisor refuses a knob the engine's policy does not name", () => {
+    const declared = fullDeclaration();
+    declared["supervisor"] = {
+      ...(declared["supervisor"] as Record<string, unknown>),
+      retryCount: 2,
+    };
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("supervisor.retryCount");
+    expect(message).toContain("unknown field");
+    for (const knob of Object.keys(
+      DeclarationSchema.shape.supervisor.unwrap().shape,
+    )) {
+      expect(message).toContain(knob);
+    }
   });
 
   it("an unknown declaration field is refused, naming the field and the valid set", () => {
