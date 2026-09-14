@@ -1,34 +1,19 @@
 [
   {
-    "tag": "BATON-LOUD-AGREEMENT-PINNED-AT-THE-DIR",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "tests/Baton.test.ts", "description": "retitle the mislabelled flag-level case; add the dir-level agreement pin" },
-        { "path": "src/Baton.ts", "description": "shrink isAwake's doc to a pointer at the pin" }
-      ]
-    },
-    "summary": "Pin awake()/isAwake's shared loud disposition on an unstattable awake dir; retitle the case whose title claims it and whose body denies it",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "tests": [],
-    "pins": [
-      "awake() throws when the awake dir itself is unstattable",
-      "awake() and isAwake both throw on one unstattable awake dir",
-      "an unstattable flag inside a readable dir leaves awake() listing it while isAwake throws"
-    ],
-    "acceptance": "Each pins[] line has a passing test in tests/Baton.test.ts, and src/Baton.ts's isAwake doc points at that pin instead of restating the agreement.",
-    "notes": "tests/Baton.test.ts:100 is titled 'both throw' but asserts awake() does not: its setup symlinks a flag *inside* a readable dir (readdir green, stat ELOOP). For the dir-level case construct the Baton first, then replace <flumeDir>/awake with a self-symlink — readdir and stat then both ELOOP, and no permission bit is involved (a root-run test bypasses chmod). src/Baton.ts:44-47 narrates the agreement; nothing pins it."
-  },
-  {
     "tag": "BATON-FS-SCAN-DERIVES-ITS-SUBJECTS",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "tests/Baton.test.ts", "description": "derive the namespacedJoin scan's subject list from Baton.ts's own imports" }
-      ]
+        {
+          "path": "tests/Baton.test.ts",
+          "description": "derive the namespacedJoin scan's subject list from Baton.ts's own imports"
+        }
+      ],
+      "retire": []
     },
     "summary": "Derive the namespacedJoin scan's fs-call list from src/Baton.ts's own imports instead of restating it as a literal array",
     "per": {
