@@ -1145,3 +1145,130 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
     expect(schemaBlock).toContain(`"tests": ${hint}`);
   });
 });
+
+/**
+ * spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`* — "`examples/`
+ * shows it". The backlog groomer is the example that does, so the placement
+ * is driven rather than read: a real `groom` tick runs, and the transcript
+ * the chain opted into capturing is looked for under the state root the
+ * engine handed the factory.
+ *
+ * In this lane deliberately, alongside the ladder drive above: git plumbing
+ * over a fixture is not a lane trigger, and the chain's agent is its own
+ * deterministic groomer, so no `claude` starts. The gate that decides every
+ * build runs this lane, which is where a placement claim has to be pinned to
+ * guard anything.
+ */
+describe("backlog-groomer-chain.ts — where the session capture lands", () => {
+  /** One shippable backlog item, seeded and committed — a groom tick needs work to have stdout. */
+  async function seedBacklog(repo: string): Promise<void> {
+    const backlog = [
+      {
+        tag: "trim-notes-intro",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: { edit: [{ path: "README.md", description: "trim the intro" }] },
+        reason: "intro paragraph restates the title",
+      },
+    ];
+    writeFileSync(join(repo, "BACKLOG.json"), `${JSON.stringify(backlog, null, 2)}\n`);
+    await exec("git", ["add", "BACKLOG.json"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed backlog"], { cwd: repo });
+  }
+
+  /**
+   * One real groom tick over `fx.repo` with state at `flumeDir`. The chain is
+   * built from the same `FlumePaths` object the `Dispatcher` is spread from,
+   * so `api.paths.flumeDir` is the root the engine resolved, by identity —
+   * neither half can agree with itself (`engineering.md`, *A seam gate reads
+   * what the real writer wrote*). `configDir` is the shipped `examples/`, so
+   * `Phase.promptPath` finds the committed prompt rather than a copy.
+   */
+  async function groomTick(fx: Fixture, flumeDir: string): Promise<TickOutcome> {
+    const paths: FlumePaths = {
+      repoRoot: fx.repo,
+      configDir: EXAMPLE_PATHS.configDir,
+      flumeDir,
+    };
+    const { chain } = backlogGroomerFactory(buildFlumeApi(paths));
+    new Baton(flumeDir).wake("groom");
+    const outcome = await new Dispatcher({
+      ...paths,
+      // Stands in for the dispatcher default so a resolution regression
+      // fails loudly here rather than spawning a real `claude`: the chain's
+      // own `Phase.agent` must win.
+      agent: {
+        name: "never",
+        async invoke() {
+          throw new Error("Phase.agent should have taken precedence");
+        },
+      },
+      chainLoader: async () => ({ chain }),
+      log: silent,
+    }).tick();
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a declined or failed tick produced no stdout at all, and every capture
+    // assertion below would be judging the absence of a tick, not a
+    // placement.
+    expect(outcome.failed, outcome.summary).toBeUndefined();
+    expect(outcome.declined, outcome.summary).toBeUndefined();
+    expect(outcome.result?.committed, outcome.summary).toBe(true);
+    return outcome;
+  }
+
+  /** Files under `<flumeDir>/sessions/`, or `undefined` when the chain never created it. */
+  function captures(flumeDir: string): { name: string; text: string }[] | undefined {
+    const dir = join(flumeDir, "sessions");
+    if (!existsSync(dir)) return undefined;
+    return readdirSync(dir).map((name) => ({
+      name,
+      text: readFileSync(join(dir, name), "utf8"),
+    }));
+  }
+
+  it("the backlog groomer example writes its session capture under the flumeDir the engine handed its factory", async () => {
+    const fx = await makeFixture();
+    try {
+      await seedBacklog(fx.repo);
+      const flumeDir = join(fx.repo, ".flume");
+
+      await groomTick(fx, flumeDir);
+
+      const written = captures(flumeDir);
+      // The capture set itself pinned non-vacuous before its content is
+      // read: no sessions dir, or an empty one, is the pre-fix tree.
+      expect(written ?? []).toHaveLength(1);
+      // Non-empty, and carrying this tick's work. `withSessionCapture` tees
+      // the stdout *stream*, never the returned `AgentResult`, so an agent
+      // that only returns its line leaves a zero-byte file behind.
+      expect(written![0]!.text).toContain("shipped trim-notes-intro");
+      // Under the state root, not under the worktree the singleton ticked in
+      // — `<flumeDir>/worktrees/` is git's to remove.
+      expect(existsSync(join(flumeDir, "worktrees", "sessions"))).toBe(false);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it("a relocated flumeDir moves the backlog groomer's session capture with it", async () => {
+    const fx = await makeFixture();
+    // A relocated state root is expected to live outside the working tree
+    // (spec/chain.md, same section), so this one is a sibling temp dir.
+    const relocated = mkdtempSync(join(tmpdir(), "flume-relocated-"));
+    try {
+      await seedBacklog(fx.repo);
+
+      await groomTick(fx, relocated);
+
+      const moved = captures(relocated);
+      expect(moved ?? []).toHaveLength(1);
+      expect(moved![0]!.text).toContain("shipped trim-notes-intro");
+      // Not a copy in both places, and no `?? CHAIN_DIR`-shaped fallback to
+      // the default root: `<repoRoot>/.flume` holds no capture at all.
+      expect(captures(join(fx.repo, ".flume"))).toBeUndefined();
+    } finally {
+      rmSync(relocated, { recursive: true, force: true });
+      await fx.cleanup();
+    }
+  }, 30_000);
+});

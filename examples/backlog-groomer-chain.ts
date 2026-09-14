@@ -17,9 +17,10 @@
  * also keeps this example runnable end-to-end with zero external
  * dependencies — `pnpm exec flume tick` works with no API key, which is
  * what lets `tests/examples.integration.test.ts` drive it in CI on the
- * unpatched engine. The `Agent` interface doesn't care either way: point
- * `groom.agent` at `claudeCode()` to hand grooming judgment to an LLM
- * instead — everything else on this phase stays the same.
+ * unpatched engine. The `Agent` interface doesn't care either way: swap
+ * `claudeCode()` in for `groomAgent` below to hand grooming judgment to an
+ * LLM instead — everything else on this phase, session capture included,
+ * stays the same.
  *
  * Imports come from `../src/index.ts` — the same public surface a consumer
  * sees as `import { ... } from "flume"`. See cascade-chain.ts's trailing
@@ -28,7 +29,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { z } from "zod";
 import type {
@@ -79,7 +80,7 @@ const entryExtension = {
  * engine import, so the chain resolves no engine copy of its own.
  */
 const factory: ChainFactory = (api) => {
-  const { isPickableNow, parsePending, renderSchemaForPrompt } = api;
+  const { isPickableNow, parsePending, renderSchemaForPrompt, withSessionCapture } = api;
   // ---------- the groom agent ----------
 
   /** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
@@ -107,14 +108,26 @@ const factory: ChainFactory = (api) => {
    */
   const groomAgent: Agent = {
     name: "backlog-groomer",
-    async invoke({ cwd }) {
+    async invoke(inv) {
+      const { cwd } = inv;
+      /**
+       * Tee this tick's line to `onStdout` as well as returning it. A
+       * capture decorator sees the *stream*, never the returned
+       * `AgentResult`, so an agent that only returns its line captures an
+       * empty file — an LLM-backed agent streams as it goes and gets this
+       * for free.
+       */
+      const say = (line: string): string => {
+        inv.onStdout?.(`${line}\n`);
+        return line;
+      };
       const backlogPath = join(cwd, BACKLOG_PATH);
       let raw: string;
       try {
         raw = readFileSync(backlogPath, "utf8");
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        return { exitCode: 0, stdout: "no BACKLOG.json; nothing to groom", stderr: "" };
+        return { exitCode: 0, stdout: say("no BACKLOG.json; nothing to groom"), stderr: "" };
       }
 
       const parsed = parsePending(raw, entryExtension);
@@ -130,7 +143,7 @@ const factory: ChainFactory = (api) => {
         isPickableNow(entry, shippedTags, undefined, new Set()),
       );
       if (!pick) {
-        return { exitCode: 0, stdout: "no pickable backlog item", stderr: "" };
+        return { exitCode: 0, stdout: say("no pickable backlog item"), stderr: "" };
       }
 
       const remaining = parsed.entries.filter((entry) => entry !== pick);
@@ -144,9 +157,24 @@ const factory: ChainFactory = (api) => {
       execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
       execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
 
-      return { exitCode: 0, stdout: `shipped ${pick.tag}`, stderr: "" };
+      return { exitCode: 0, stdout: say(`shipped ${pick.tag}`), stderr: "" };
     },
   };
+
+  /**
+   * Whether to keep transcripts is this chain's call; where they land is
+   * not. `api.paths.flumeDir` is the state root the runtime resolved and
+   * handed this factory — absolute, and the one directory a teardown `rm`
+   * removes. A singleton groom tick runs inside its own worktree
+   * (`<flumeDir>/worktrees/groom/`), so a relative `"sessions"` would file
+   * the transcript into a checkout git later deletes; resolving against the
+   * handed root writes up into the state dir instead. The chain never reads
+   * `process.env.FLUME_DIR` and carries no `?? __dirname` fallback — the
+   * engine already resolved this.
+   */
+  const capturingGroomAgent = withSessionCapture(groomAgent, {
+    dir: resolve(api.paths.flumeDir, "sessions"),
+  });
 
   // ---------- gate ----------
 
@@ -197,7 +225,7 @@ const factory: ChainFactory = (api) => {
     description: "Read BACKLOG.json, ship the top pickable item, commit.",
     promptPath: "prompts/backlog-groomer.md",
     concurrency: "singleton",
-    agent: groomAgent,
+    agent: capturingGroomAgent,
     writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
     gates: [backlogParseGate],
     promptArgs() {
