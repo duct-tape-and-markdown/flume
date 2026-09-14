@@ -18,6 +18,6 @@
     "verbatimModuleSyntax": true,
     "noUnusedLocals": true
   },
-  "include": ["src/**/*", "tests/**/*", "examples/**/*", ".flume/chain.ts"],
+  "include": ["src/**/*", "harness/**/*", "tests/**/*", "examples/**/*", ".flume/chain.ts"],
   "exclude": ["node_modules"]
 }

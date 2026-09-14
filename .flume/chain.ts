@@ -190,8 +190,9 @@ const factory: ChainFactory = (api) => {
    */
   const buildFence = {
     writablePaths: [
-      // Source, bin, examples, docs, ad-hoc scripts
+      // Source, the harness package, bin, examples, docs, ad-hoc scripts
       "src/**",
+      "harness/**",
       "bin/**",
       "examples/**",
       "docs/**",
@@ -602,7 +603,7 @@ const factory: ChainFactory = (api) => {
 
   /** Same domain `.flume/delta-window.mjs sweep` renders, plus spec/ for the retired-claim delta. */
   const SWEEP_DOMAIN = [
-    "src", "tests", "bin", "examples",
+    "src", "harness", "tests", "bin", "examples",
     ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
     "spec",
   ];

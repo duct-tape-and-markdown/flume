@@ -19,7 +19,7 @@ const [mode, budgetArg] = process.argv.slice(2);
 const BUDGET = Number(budgetArg ?? 1200);
 const STATE = ".flume/plan/state.md";
 const SWEEP_DOMAIN = [
-  "src", "tests", "bin", "examples",
+  "src", "harness", "tests", "bin", "examples",
   ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
 ];
 
