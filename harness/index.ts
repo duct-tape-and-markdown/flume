@@ -30,3 +30,11 @@ export {
   EntryFieldRemovalError,
   entryExtension,
 } from "./entryExtension.js";
+
+export {
+  RECORD_MAX_BYTES,
+  notePath,
+  notesDir,
+  recordDirs,
+  recordsPending,
+} from "./records.js";
