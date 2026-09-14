@@ -1,0 +1,16 @@
+{
+  "derivedThrough": "3572fe5f9d5e8ff31bf2973331864d9ec02a8a2d",
+  "sweptThrough": "b7972ec41f41adfeaecaf947a4cafe2b9970dee1",
+  "rotation": {
+    "kind": "open",
+    "covered": [
+      "src/priorAttempts.ts",
+      "src/Gate.ts",
+      "src/loopSupervisor.ts",
+      "src/cliVerdict.ts",
+      "src/friction.ts",
+      "src/paths.ts",
+      "src/builtinGates.ts"
+    ]
+  }
+}
