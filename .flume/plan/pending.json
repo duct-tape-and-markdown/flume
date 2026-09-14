@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "GATECONTEXT-TOUCHEDPATHS-REQUIRED",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/Gate.ts", "description": "touchedPaths required; drop the fixture-compat narration" },
+        { "path": "src/builtinGates.ts", "description": "delete resolveTouchedPaths' git-show fallback and the commitSha non-null assertion" },
+        { "path": "tests/builtinGates.test.ts", "description": "gate fixtures supply the dispatcher's list; the writable-paths agreement pin" },
+        { "path": "tests/Gate.test.ts", "description": "type-level required-ness" },
+        { "path": "tests/Dispatcher.test.ts", "description": "GateContext literals" },
+        { "path": "tests/Prompt.test.ts", "description": "gateCtx helper" },
+        { "path": "tests/cli.test.ts", "description": "GateContext literal" },
+        { "path": "tests/spawnShim.test.ts", "description": "ctx helper" },
+        { "path": "tests/examples.test.ts", "description": "ctxNaming helper" },
+        { "path": "tests/examples.integration.test.ts", "description": "GateContext literal" }
+      ]
+    },
+    "summary": "Require GateContext.touchedPaths and delete resolveTouchedPaths' git-show fallback, so builtin gates are driven over the dispatcher's real list",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "GateContext.touchedPaths is required, so a gate context omitting it is a type error",
+      "src/builtinGates.ts carries no git show --name-only fallback for a commit's touched paths"
+    ],
+    "pins": [
+      "writablePathsGate judges exactly the touched-path list a real dispatcher tick hands its gates"
+    ],
+    "acceptance": "tsc and vitest green with touchedPaths required, the fallback exec deleted, and every gate fixture supplying the dispatcher's list",
+    "notes": "Fallback (src/builtinGates.ts:211) is dispatcher-unreachable: all three GateContext literals (src/Dispatcher.ts:2088, :2717, :3702) set touchedPaths. tests/builtinGates.test.ts drives writablePathsGate and chainLoadGate through the fallback, so the fence gate's real seam ships unexercised and a one-sided change to the writer's path format stays green. ctx.commitSha! goes with it. .flume/chain.ts:819's `?? []` is outside build's fence."
+  }
+]
