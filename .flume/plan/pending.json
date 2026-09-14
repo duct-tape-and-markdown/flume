@@ -1,87 +1,5 @@
 [
   {
-    "tag": "HARNESS-HANDOFF",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/handoff.ts",
-          "description": "the default next-phase ladder and the refusal leg"
-        },
-        {
-          "path": "tests/harnessHandoff.test.ts",
-          "description": "each rung, the refusal route, the no-self-rewake case, the override"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the default handoff"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Extract the package's default handoff — first live slice, else build while the engine reports anything pickable, else hibernate — with a build refusal routing to the inbox slice.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The default `handoff`"
-    },
-    "tests": [
-      "the default handoff names the first live slice ahead of build",
-      "the default handoff names build when no slice is live and the engine reports a pickable entry",
-      "the default handoff hibernates when no slice is live and nothing is pickable",
-      "a build tick the chain declined routes to the inbox slice whatever is pickable",
-      "a slice that committed nothing is not named by its own handoff",
-      "a declared handoff replaces the package's default",
-      "a build tick whose prompt never rendered routes to the inbox slice"
-    ],
-    "pins": [],
-    "acceptance": "harness/handoff.ts maps the engine's reported pickable set and no-commit facts onto the next phase, and a consumer's declaration replaces it.",
-    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. Mode names key off NO_COMMIT_MODES as a type, never string literals: .flume/chain.ts:624's ReadonlySet<string> is unchecked. The render-refused leg is new — :929 names clean-exit and not-shipped only, so a walled render re-picks forever. Twins at :686, :920."
-  },
-  {
-    "tag": "HARNESS-PROMPT-PACKING",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "scripts/pack-harness-prompts.mjs",
-          "description": "the copy step, callable by the build and by the packaging test"
-        }
-      ],
-      "edit": [
-        {
-          "path": "package.json",
-          "description": "the build script runs the copy step"
-        },
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "the emitted prompts, off the real build"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Copy the package's prompts beside the emitted dist/harness/ at build, and assert the emitted set from the real build output.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Where it lives"
-    },
-    "tests": [
-      "the build emits every prompt the package addresses beside dist/harness"
-    ],
-    "pins": [
-      "the package's files allowlist covers the emitted harness prompts"
-    ],
-    "acceptance": "The packaging suite drives the real build and finds every addressed prompt under the emitted dist/harness.",
-    "notes": "tsc emits no .md, and tests/harnessPackaging.test.ts drives tsc directly rather than `pnpm build`, so the copy step needs one home both can call — that file is the agreement gate's real writer. files: [\"dist\"] already covers the destination, which is why the allowlist line is a pin."
-  },
-  {
     "tag": "HARNESS-INIT-BIN",
     "gate": {
       "kind": "open"
@@ -138,10 +56,7 @@
   {
     "tag": "HARNESS-PHASES",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-HANDOFF"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
