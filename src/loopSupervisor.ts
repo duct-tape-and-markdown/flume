@@ -29,6 +29,16 @@ import { existsLoud } from "./fsProbe.js";
 import { namespacedJoin, stopFlagPath } from "./paths.js";
 
 /**
+ * Engine default for the run-scoped quarantine — the scope `superviseLoop`
+ * applies to a failure a tick blamed on one entry, absent a chain's
+ * `supervisorPolicy.quarantineScope` (`src/Phase.ts`): withhold that entry's
+ * quarantine key for the rest of the run. One home: the option below reads
+ * this rather than restating the member beside it, and the chain-facing
+ * option's hover text points here.
+ */
+export const DEFAULT_QUARANTINE_SCOPE = "run" as const;
+
+/**
  * Engine default for the consecutive-identical-failure abort backstop — the
  * number of consecutive ticks one stage-tagged signature must repeat before
  * `superviseLoop` aborts the run, absent a chain's
@@ -60,17 +70,16 @@ export interface SuperviseLoopOptions {
   log?: Logger;
   /**
    * Chain-declared override for the run-scoped quarantine (spec/loop.md
-   * "Repeated identical failures", which covers the provision, merge and
-   * gate stages alike). `"none"`
-   * disables per-entry quarantine outright — a tagged provision/merge/gate
-   * failure is never withheld from later ticks this run — while the
-   * consecutive-identical-failure backstop (`abortThreshold` below) still
-   * applies. Default `"run"`: quarantine a tagged failure's slug for the
-   * rest of the run — exact default byte shape pinned by
-   * tests/loopSupervisor.test.ts's "a chain declaring neither knob gets the
-   * supervisor-policy defaults, byte-identical" case. The CLI forwards this from the
-   * resolved chain's `supervisorPolicy.quarantineScope` (`src/Phase.ts`);
-   * undeclared falls through to the default here.
+   * "Repeated identical failures", which covers the provision, merge and gate
+   * stages alike). `"none"` disables per-entry quarantine outright — a tagged
+   * provision/merge/gate failure is never withheld from later ticks this run —
+   * while the consecutive-identical-failure backstop (`abortThreshold` below)
+   * still applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose exact
+   * byte shape is pinned by tests/loopSupervisor.test.ts's "a chain declaring
+   * neither knob gets the supervisor-policy defaults, byte-identical" case.
+   * The CLI forwards this from the resolved chain's
+   * `supervisorPolicy.quarantineScope` (`src/Phase.ts`); undeclared falls
+   * through to the default here.
    */
   quarantineScope?: "run" | "none";
   /**
@@ -218,7 +227,7 @@ export async function superviseLoop(
   };
 
   // Engine defaults, overridable per opts above.
-  const quarantineScope = opts.quarantineScope ?? "run";
+  const quarantineScope = opts.quarantineScope ?? DEFAULT_QUARANTINE_SCOPE;
   const abortThreshold = opts.abortThreshold ?? DEFAULT_ABORT_THRESHOLD;
 
   let ticks = 0;

@@ -562,12 +562,12 @@ export interface Chain {
    */
   supervisorPolicy?: {
     /**
-     * `"run"` (default): a failure a tick blamed on one entry — at the
-     * provision, merge or gate stage alike — quarantines that entry's slug
-     * for the rest of the run. `"none"`: quarantine never engages — every
-     * entry stays pickable every tick regardless of an earlier failure. The
-     * consecutive-identical-failure backstop (`abortThreshold`) applies
-     * either way.
+     * `"run"`: a failure a tick blamed on one entry — at the provision, merge
+     * or gate stage alike — quarantines that entry's slug for the rest of the
+     * run. `"none"`: quarantine never engages — every entry stays pickable
+     * every tick regardless of an earlier failure. The
+     * consecutive-identical-failure backstop (`abortThreshold`) applies either
+     * way.
      */
     quarantineScope?: "run" | "none";
     /**
