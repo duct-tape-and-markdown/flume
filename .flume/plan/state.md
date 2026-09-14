@@ -50,6 +50,7 @@ with `src/job.ts`, `src/Baton.ts`, `src/paths.ts` and `src/Dispatcher.ts`;
 with `src/cli.ts`, `src/Baton.ts`, `src/Dispatcher.ts`, `src/builtinGates.ts`,
 `src/Gate.ts`, `src/job.ts`, `src/paths.ts`, `src/git.ts` and
 `tests/helpers/subprocess.ts`; `tests/job.integration.test.ts` with
-`tests/helpers/subprocess.ts`.
-Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts`,
-`tests/cliHelp.test.ts` and `tests/docComments.test.ts`.
+`tests/helpers/subprocess.ts`; `tests/cliHelp.test.ts` with `src/cliHelp.ts`
+and `tests/helpers/subprocess.ts`.
+Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts` and
+`tests/docComments.test.ts`.
