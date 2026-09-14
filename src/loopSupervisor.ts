@@ -97,7 +97,7 @@ export interface SuperviseLoopOptions {
    * Run one `flume tick` as a fresh child process; resolves with its exit
    * code when it exits. Defaults to re-execing the running flume entrypoint
    * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
-   * the built `dist/cli.js` or `tsx src/cli.ts`). Injected by tests — the
+   * the built `dist/src/cli.js` or `tsx src/cli.ts`). Injected by tests — the
    * stubbed-spawn seam. `quarantinedSlugs` is this run's
    * accumulated run-scoped quarantine so far — the default runner carries it
    * to the child via the `FLUME_QUARANTINED_SLUGS` env var; a test stub may
@@ -521,7 +521,7 @@ export async function superviseLoop(
  * Default {@link SuperviseLoopOptions.runTick}: spawn `flume tick` as a fresh
  * process mirroring however the supervisor itself was launched. `execArgv`
  * carries node flags (e.g. `--import tsx` when run from source); `argv[1]` is
- * the cli entrypoint (`dist/cli.js` built, `src/cli.ts` from source).
+ * the cli entrypoint (`dist/src/cli.js` built, `src/cli.ts` from source).
  * `quarantinedSlugs` crosses the process boundary via the
  * `FLUME_QUARANTINED_SLUGS` env var — comma-joined `quarantineKey`
  * (`src/Dispatcher.ts`) values, which the CLI's `tick` command reads back into

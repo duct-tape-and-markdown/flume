@@ -6,15 +6,15 @@
  * spec/cli.md, "Distribution" — bin/flume "walks its own symlink chain
  * before computing the package dir". That walk was added by c336ead to fix
  * a real bug (dirname($0) resolved the *symlink's* directory, not the real
- * script's, so the computed dist/cli.js path pointed at a nonexistent
- * node_modules/dist/cli.js) but has carried zero coverage since — the only
+ * script's, so the computed dist/src/cli.js path pointed at a nonexistent
+ * node_modules/dist/src/cli.js) but has carried zero coverage since — the only
  * install-shaped exercise, scripts/smoke-install.mjs, drives npm's generated
  * shim, which wraps bin/flume.js (the Node counterpart) per package.json's
  * `bin` field, never bin/flume itself.
  *
  * Both cases here exec bin/flume through a real symlink (or chain of them),
  * matching npm's (single-hop) and pnpm's (multi-hop, through .pnpm/<hash>/)
- * install shapes. A fake dist/cli.js records argv and cwd; if the walk
+ * install shapes. A fake dist/src/cli.js records argv and cwd; if the walk
  * regresses to the pre-c336ead dirname-only computation, the resolved path
  * points at a nonexistent file and the exec itself fails (ENOENT) before
  * either assertion runs.
@@ -55,21 +55,21 @@ describe("bin/flume symlink walk", () => {
   async function makePackage(): Promise<string> {
     const pkgDir = join(root, "pkg");
     await mkdir(join(pkgDir, "bin"), { recursive: true });
-    await mkdir(join(pkgDir, "dist"), { recursive: true });
+    await mkdir(join(pkgDir, "dist", "src"), { recursive: true });
 
     const realBin = await readFile(BIN_FLUME);
     const binPath = join(pkgDir, "bin", "flume");
     await writeFile(binPath, realBin);
     await chmod(binPath, 0o755);
 
-    const cliPath = join(pkgDir, "dist", "cli.js");
+    const cliPath = join(pkgDir, "dist", "src", "cli.js");
     await writeFile(cliPath, FAKE_CLI_JS);
     await chmod(cliPath, 0o755);
 
     return pkgDir;
   }
 
-  it("resolves through a single-hop symlink (npm-style) to the real script and execs dist/cli.js relative to it", async () => {
+  it("resolves through a single-hop symlink (npm-style) to the real script and execs dist/src/cli.js relative to it", async () => {
     const pkgDir = await makePackage();
 
     // npm's real shape: node_modules/.bin/flume is a single relative
@@ -85,7 +85,7 @@ describe("bin/flume symlink walk", () => {
     expect(JSON.parse(stdout)).toEqual({ argv: ["status", "--foo"], cwd });
   });
 
-  it("resolves through a multi-hop symlink chain (pnpm .pnpm/<hash>/-style) to the real script and execs dist/cli.js relative to it", async () => {
+  it("resolves through a multi-hop symlink chain (pnpm .pnpm/<hash>/-style) to the real script and execs dist/src/cli.js relative to it", async () => {
     const pkgDir = await makePackage();
 
     // pnpm's real shape chains two hops before the real script:
@@ -130,7 +130,7 @@ describe("bin/flume symlink walk", () => {
  * propagated, stdio inherited on all three fds, and no environment opinion.
  *
  * Each case lays the real shim into a package-shaped temp dir beside a fake
- * dist/cli.js that does exactly the one thing the case is about, and spawns
+ * dist/src/cli.js that does exactly the one thing the case is about, and spawns
  * the shim as node would.
  */
 describe("bin/flume.js — the published bin.flume entry", () => {
@@ -146,7 +146,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
 
   /**
    * The real shim's bytes at `<pkg>/bin/flume.js`, with `cli` as the body of
-   * the `<pkg>/dist/cli.js` it resolves. The package.json is the published
+   * the `<pkg>/dist/src/cli.js` it resolves. The package.json is the published
    * package's `"type": "module"`, without which node reads the shim's ESM
    * imports as CJS and the case fails on syntax rather than on its property.
    * Returns the shim path.
@@ -154,13 +154,13 @@ describe("bin/flume.js — the published bin.flume entry", () => {
   async function makePackage(cli: string): Promise<string> {
     const pkgDir = join(root, "pkg");
     await mkdir(join(pkgDir, "bin"), { recursive: true });
-    await mkdir(join(pkgDir, "dist"), { recursive: true });
+    await mkdir(join(pkgDir, "dist", "src"), { recursive: true });
     await writeFile(join(pkgDir, "package.json"), JSON.stringify({ type: "module" }));
 
     const shim = join(pkgDir, "bin", "flume.js");
     await writeFile(shim, await readFile(BIN_FLUME_JS));
     await chmod(shim, 0o755);
-    await writeFile(join(pkgDir, "dist", "cli.js"), cli);
+    await writeFile(join(pkgDir, "dist", "src", "cli.js"), cli);
 
     return shim;
   }
@@ -174,11 +174,11 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     opts: { input?: string; env?: NodeJS.ProcessEnv } = {},
   ) => spawnSync(process.execPath, [shim, ...args], { encoding: "utf8", ...opts });
 
-  it("bin/flume.js execs dist/cli.js with argv preserved", async () => {
+  it("bin/flume.js execs dist/src/cli.js with argv preserved", async () => {
     // Identifies itself, so a shim that resolved some *other* file (or
     // failed to resolve one and exited non-zero) cannot pass this.
     const shim = await makePackage(
-      `process.stdout.write(JSON.stringify({ entry: "dist/cli.js", argv: process.argv.slice(2) }));\n`,
+      `process.stdout.write(JSON.stringify({ entry: "dist/src/cli.js", argv: process.argv.slice(2) }));\n`,
     );
 
     // Flags, a subcommand, and a `--` passthrough: anything the shim parsed
@@ -188,7 +188,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({ entry: "dist/cli.js", argv });
+    expect(JSON.parse(result.stdout)).toEqual({ entry: "dist/src/cli.js", argv });
   });
 
   /**
@@ -201,7 +201,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
    */
   it("bin/flume.js passes the child's stdout and stderr through unmixed and adds no bytes of its own", async () => {
     const shim = await makePackage(
-      `process.stdout.write("OUT:dist/cli.js");\nprocess.stderr.write("ERR:dist/cli.js");\nprocess.exitCode = 3;\n`,
+      `process.stdout.write("OUT:dist/src/cli.js");\nprocess.stderr.write("ERR:dist/src/cli.js");\nprocess.exitCode = 3;\n`,
     );
 
     const result = runShim(shim, ["status"]);
@@ -209,8 +209,8 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     // The child ran and ran to completion, so the stream assertions below
     // are judging something.
     expect(result.status).toBe(3);
-    expect(result.stdout).toBe("OUT:dist/cli.js");
-    expect(result.stderr).toBe("ERR:dist/cli.js");
+    expect(result.stdout).toBe("OUT:dist/src/cli.js");
+    expect(result.stderr).toBe("ERR:dist/src/cli.js");
   });
 
   /**

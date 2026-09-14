@@ -30,7 +30,7 @@ const exec = promisify(execFile);
  * catch was the second, and the arm now has one home
  * (`refuseCjsContextHost`, src/cliChainLoad.ts) that all four reach.
  *
- * Driven through the real `dist/cli.js` rather than a unit call: the
+ * Driven through the real `dist/src/cli.js` rather than a unit call: the
  * refusal only exists because tsx's ESM loader fails on a CJS-context host,
  * which no in-process fake reproduces.
  */
@@ -39,7 +39,7 @@ describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN
   const TSC_BIN = fileURLToPath(
     new URL("../node_modules/typescript/bin/tsc", import.meta.url),
   );
-  const DIST_CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+  const DIST_CLI = fileURLToPath(new URL("../dist/src/cli.js", import.meta.url));
 
   beforeAll(async () => {
     await exec(process.execPath, [TSC_BIN, "-p", "tsconfig.build.json"], {

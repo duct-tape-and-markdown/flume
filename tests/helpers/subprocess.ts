@@ -292,7 +292,7 @@ export function exitStatusOf(err: unknown): number {
  * the exit status read through `exitStatusOf`.
  *
  * The shape under every suite that runs a real process — the source CLI
- * (`runCliStreams` below), the built `dist/cli.js`, a `scripts/*.mjs`, a
+ * (`runCliStreams` below), the built `dist/src/cli.js`, a `scripts/*.mjs`, a
  * `flume tick` spawned for the process boundary. Each of those hand-rolled
  * its own spawn-and-catch, and every copy read the status itself, so every
  * copy turned a child that never ran into an ordinary exit 1

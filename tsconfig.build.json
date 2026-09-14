@@ -7,7 +7,12 @@
     "declarationMap": true,
     "sourceMap": true,
     "allowImportingTsExtensions": false,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    // Explicit, because the emit layout is load-bearing: package.json's
+    // exports map, both bin shims, and the CLI's own package.json hop all
+    // resolve against it. Left inferred, adding a second include root
+    // (harness/**) would move it silently.
+    "rootDir": "."
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "harness/**/*"]
 }

@@ -13,4 +13,4 @@ while [ -L "$SELF" ]; do
   esac
 done
 DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
-exec node "$DIR/../dist/cli.js" "$@"
+exec node "$DIR/../dist/src/cli.js" "$@"

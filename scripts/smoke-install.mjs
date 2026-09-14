@@ -10,9 +10,16 @@
  * shim before this existed.
  *
  * Steps: npm pack the repo -> npm install the tarball into a scratch dir ->
- * run the shim `--version` -> scaffold a minimal chain-load fixture -> run
- * the shim `status`. Each step prints what it ran; the first failing step
- * aborts the run and is named in the error.
+ * run the shim `--version` -> resolve both `exports` subpaths from the
+ * installed package -> scaffold a minimal chain-load fixture -> run the shim
+ * `status`. Each step prints what it ran; the first failing step aborts the
+ * run and is named in the error.
+ *
+ * The subpath step is here rather than in the suite because it is the only
+ * place `@dtmd/flume/harness` is resolved by a real installer's node_modules
+ * layout against the packed `files` allowlist (`spec/harness.md`, *Where it
+ * lives*): in-repo, `harness/` resolves relatively whether the map names it
+ * or not.
  */
 
 import { spawnSync } from "node:child_process";
@@ -85,6 +92,23 @@ export default factory;
 
 const PROMPT_FIXTURE = "Append a dated line to notes/journal.md.\n";
 
+// Both entries of the exports map, by bare specifier, exactly as a consumer
+// writes them. Values rather than types: a type-only import would erase and
+// prove nothing about the emitted .js the map points at.
+const SUBPATH_PROBE = `import { Dispatcher } from "@dtmd/flume";
+import { vitestRunner } from "@dtmd/flume/harness";
+
+for (const [specifier, value] of [
+  ["@dtmd/flume", Dispatcher],
+  ["@dtmd/flume/harness", vitestRunner],
+]) {
+  if (typeof value !== "function") {
+    throw new Error(\`\${specifier} resolved, but its entry point exported \${typeof value}\`);
+  }
+}
+console.log("both exports subpaths resolved from the installed package");
+`;
+
 let scratch;
 try {
   scratch = mkdtempSync(join(tmpdir(), "flume-smoke-"));
@@ -132,6 +156,11 @@ try {
     cwd: consumerDir,
   });
 
+  writeFileSync(join(consumerDir, "subpaths.mjs"), SUBPATH_PROBE);
+  run("exports subpaths", process.execPath, ["subpaths.mjs"], {
+    cwd: consumerDir,
+  });
+
   console.log("[smoke-install] scaffold chain-load fixture");
   run("git init", "git", ["init"], { cwd: consumerDir });
   mkdirSync(join(consumerDir, ".flume", "prompts"), { recursive: true });
@@ -146,7 +175,7 @@ try {
   });
 
   console.log(
-    "[smoke-install] OK — pack, install, shim --version, and shim status all passed",
+    "[smoke-install] OK — pack, install, shim --version, exports subpaths, and shim status all passed",
   );
 } catch (err) {
   if (err instanceof SmokeStepError) {

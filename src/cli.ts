@@ -107,11 +107,36 @@ export const EX_DATAERR = 65;
 export const EX_IOERR = 74;
 
 /**
- * Resolve flume's own package.json (sibling of src/ in checkout, sibling of
- * dist/ in the published tarball — both layouts put it at `../package.json`).
+ * The hops from the directory holding this module to flume's own
+ * package.json, one per shipped layout: a checkout runs `src/cli.ts`, and
+ * `tsconfig.build.json` (rootDir `.`) emits the published entry at
+ * `dist/src/cli.js`. Ordered checkout-first; the first that exists wins.
  */
+const PACKAGE_JSON_HOPS = ["..", "../.."] as const;
+
+/**
+ * Flume's own package.json, resolved from the directory holding the running
+ * CLI module. No layout is guessed from what happens to be on disk above
+ * `fromDir`: only the declared hops are tried, and none existing throws
+ * naming every path tried rather than reporting a placeholder version
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+export function resolvePackageJson(fromDir: string): string {
+  const tried = PACKAGE_JSON_HOPS.map((hop) =>
+    resolve(fromDir, hop, "package.json"),
+  );
+  const found = tried.find((candidate) => existsLoud(candidate));
+  if (found === undefined) {
+    throw new Error(
+      `flume: no package.json at any of ${tried.join(", ")} — ` +
+        `the CLI cannot report its own version`,
+    );
+  }
+  return found;
+}
+
 function readPackageVersion(): string {
-  const pkgPath = resolve(HERE, "..", "package.json");
+  const pkgPath = resolvePackageJson(HERE);
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
   if (typeof pkg.version !== "string") {
     throw new Error(`package.json at ${pkgPath} has no string "version"`);

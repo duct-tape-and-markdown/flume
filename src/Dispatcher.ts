@@ -1008,7 +1008,7 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * gate and is reverted before the next tick's process resolves it.
  *
  * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
- * dist/cli.js can resolve consumer chain.ts files without a node loader flag
+ * dist/src/cli.js can resolve consumer chain.ts files without a node loader flag
  * (plain `await import()` would fail: node refuses .ts under node_modules,
  * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
  *
