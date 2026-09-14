@@ -435,3 +435,37 @@ export const DEFAULT_PENDING_REL = join("plan", "pending.json");
 export function resolvePendingPath(stateRoot: string, declared?: string): string {
   return join(stateRoot, declared ?? DEFAULT_PENDING_REL);
 }
+
+// ---------- the config dir's layout ----------
+
+/**
+ * The chain module's filename under a config dir. Spelled here and nowhere
+ * else in `src/`: the loader that imports it, the `job new` precondition
+ * that refuses without it, and the gate that decides whether a commit
+ * touched it all read {@link chainModulePath}, so the three cannot disagree
+ * about which file the chain is.
+ */
+export const CHAIN_MODULE_NAME = "chain.ts";
+
+/**
+ * The chain a config dir carries — `<configDir>/chain.ts`, absolute
+ * (spec/chain.md "Chain residency").
+ *
+ * **The one derivation.** `loadChainModule` (`src/Dispatcher.ts`) resolves
+ * the file it imports from here; `jobNew`'s chain precondition (`src/job.ts`)
+ * probes the same path before it creates a job that could never `run`; and
+ * `chainLoadGate` (`src/builtinGates.ts`) keys its touched-path check on
+ * this path made repo-relative. Each used to spell the filename itself, and
+ * the gate's copy was the silent one: a divergence leaves it reporting
+ * `skipped` over the very commit that broke the chain the loader then
+ * refuses (`.claude/rules/engineering.md`, "The fix lands at the
+ * mechanism").
+ *
+ * Absolute, `resolve`d rather than `join`ed, because a relative `configDir`
+ * reaches fs calls and `pathToFileURL` from here. Callers wanting the win32
+ * MAX_PATH form wrap the result in `namespacedJoin`; callers wanting a
+ * repo-relative key take `relative(repoRoot, …)` of it.
+ */
+export function chainModulePath(configDir: string): string {
+  return resolve(configDir, CHAIN_MODULE_NAME);
+}

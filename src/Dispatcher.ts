@@ -26,7 +26,6 @@ import { createHash } from "node:crypto";
 import {
   join,
   dirname,
-  resolve,
   relative,
   isAbsolute,
   sep,
@@ -53,6 +52,7 @@ import { existsLoud } from "./fsProbe.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
   assertStateRootRelative,
+  chainModulePath,
   matchesAny,
   fsStamp,
   namespacedJoin,
@@ -1025,8 +1025,11 @@ export async function loadChainModule(
   // The chain lives at `<configDir>/chain.ts` and nowhere else (spec/chain.md
   // "Chain residency"), so the file to load is computed from the roots the
   // factory will receive rather than passed beside them — a second parameter
-  // could only disagree with `paths.configDir`.
-  const path = resolve(paths.configDir, "chain.ts");
+  // could only disagree with `paths.configDir`. `chainModulePath`
+  // (src/paths.ts) is that computation, shared with the two sibling surfaces
+  // that name the same file: `jobNew`'s precondition and `chainLoadGate`'s
+  // touched-path key.
+  const path = chainModulePath(paths.configDir);
   // win32 MAX_PATH: the single fix point for this check — every caller
   // (job.ts's jobNew/jobRun, builtinGates.ts's chainLoadGate, this file's
   // own default loader) reaches an existing chain.ts through here.

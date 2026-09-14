@@ -18,7 +18,11 @@ import type { Phase } from "./Phase.js";
 // verdict can never disagree with what the next tick's resolution would do.
 import { loadChainModule } from "./Dispatcher.js";
 import * as git from "./git.js";
-import { matchesAny, queueFenceViolations } from "./paths.js";
+import {
+  chainModulePath,
+  matchesAny,
+  queueFenceViolations,
+} from "./paths.js";
 import { execFileWithShimRetry } from "./spawnShim.js";
 import {
   parsePending,
@@ -225,8 +229,13 @@ export const chainLoadGate: Gate = {
       return { ok: false, message: "chain-load gate requires commitSha" };
     }
     const touched = ctx.touchedPaths;
-    const configDirRel = relative(ctx.repoRoot, ctx.configDir);
-    const chainRelPath = join(configDirRel, "chain.ts")
+    // The touched-path key is the file `loadChainModule` will resolve from
+    // this same `configDir`, made repo-relative and posix-slashed to match
+    // the commit's own path list. Shared derivation (`chainModulePath`,
+    // src/paths.ts): a key spelled here could diverge from what the loader
+    // reads, and this gate's divergence is the silent one — it would report
+    // `skipped` over the very commit that broke the chain.
+    const chainRelPath = relative(ctx.repoRoot, chainModulePath(ctx.configDir))
       .split(/[\\/]/)
       .join("/");
     if (!touched.includes(chainRelPath)) {

@@ -1,13 +1,20 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { RUNTIME_IGNORES } from "../src/job.ts";
+import { chainLoadGate } from "../src/builtinGates.ts";
+import { loadChainModule } from "../src/Dispatcher.ts";
+import type { GateContext } from "../src/Gate.ts";
+import { JobUsageError, jobNew, RUNTIME_IGNORES } from "../src/job.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
+  CHAIN_MODULE_NAME,
+  chainModulePath,
   entryWriteScope,
   entryWriteScopeUnion,
   matchesAny,
@@ -451,5 +458,131 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
     expect(tickVerdictsLogPath(root)).toBe(
       join(root, STATE_ROOT_NAMES.tickVerdictsLog),
     );
+  });
+});
+
+// Mechanism pin (CHAIN-MODULE-PATH-ONE-DERIVATION, per
+// .claude/rules/engineering.md "The fix lands at the mechanism"): the loader
+// that imports the chain, the `job new` precondition that refuses without it,
+// and the gate that decides whether a commit touched it each spelled
+// `chain.ts` themselves. The gate's copy was the silent one — a divergence
+// leaves `chainLoadGate` reporting `skipped` over the very commit that broke
+// the chain.
+//
+// Both pins below are agreement gates (engineering.md, "A seam gate reads
+// what the real writer wrote"): the real gate / the real verb names the path,
+// and the real loader is then driven over the file that name points at. No
+// chain filename is authored by this test's hand on either side.
+describe("the chain module's path has one derivation", () => {
+  const PIN_CHAIN =
+    `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
+    `promptPath: "p.md", concurrency: "singleton", writablePaths: ["**"], ` +
+    `gates: [], handoff: () => [] }], humanOnly: [] } });\n`;
+
+  let repo: string;
+  let configDir: string;
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "flume-chain-module-path-"));
+    configDir = join(repo, ".flume");
+    await mkdir(configDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  const gateCtx = (over: Partial<GateContext>): GateContext => ({
+    cwd: repo,
+    flumeDir: configDir,
+    stateRootRel: ".flume",
+    pendingPath: join(configDir, "plan", "pending.json"),
+    configDir,
+    repoRoot: repo,
+    phaseName: "paths-pin",
+    touchedPaths: [],
+    log: () => {},
+    ...over,
+  });
+
+  it("chainLoadGate's touched-path key names the file loadChainModule resolves from the same configDir", async () => {
+    // The gate is the writer: its `skipped` reason is `<key> untouched by
+    // this commit`, the only account it gives of the key it judged against.
+    const skipped = await chainLoadGate.run(
+      gateCtx({ commitSha: "0".repeat(40), touchedPaths: ["src/unrelated.ts"] }),
+    );
+    expect(skipped.ok).toBe(true);
+    const key = String(skipped.skipped ?? "").split(" ")[0] ?? "";
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // key the gate never stated would make every assertion below vacuous.
+    expect(key).not.toBe("");
+    expect(resolve(repo, key)).toBe(chainModulePath(configDir));
+
+    // The real consumer over the file the real writer named: put a chain
+    // where the gate's key points and the loader finds it there.
+    await writeFile(resolve(repo, key), PIN_CHAIN, "utf8");
+    const { chain } = await loadChainModule({
+      repoRoot: repo,
+      configDir,
+      flumeDir: configDir,
+    });
+    expect(chain.phases.map((p) => p.name)).toEqual(["a"]);
+
+    // And the key is the gate's trigger, not decoration: named in the
+    // touched list, the gate loads instead of skipping.
+    const ran = await chainLoadGate.run(
+      gateCtx({ commitSha: "0".repeat(40), touchedPaths: [key] }),
+    );
+    expect(ran.ok).toBe(true);
+    expect(ran.skipped).toBeUndefined();
+  });
+
+  it("jobNew's chain precondition probes the file loadChainModule resolves from the same configDir", async () => {
+    // `jobNew` is the writer: over a chainless configDir its refusal names
+    // the path it probed, the only account it gives of that path.
+    const refusal = await jobNew({
+      repoRoot: repo,
+      name: "probe",
+      configDir,
+      flumeDir: configDir,
+      log: () => {},
+    }).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(refusal).toBeInstanceOf(JobUsageError);
+    const probed = /no chain at (.+?);/.exec((refusal as Error).message)?.[1];
+    // Vacuity: a refusal that named no path would leave the load below
+    // proving only that some chain somewhere loads.
+    expect(probed).toBeTruthy();
+    expect(probed).toBe(chainModulePath(configDir));
+
+    // The real consumer over the file the real precondition named.
+    await writeFile(probed!, PIN_CHAIN, "utf8");
+    const { chain } = await loadChainModule({
+      repoRoot: repo,
+      configDir,
+      flumeDir: configDir,
+    });
+    expect(chain.phases.map((p) => p.name)).toEqual(["a"]);
+  });
+
+  it("the chain module's filename is spelled once, in paths.ts", () => {
+    expect(CHAIN_MODULE_NAME).toBe("chain.ts");
+
+    const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+    const modules = readdirSync(SRC).filter((n) => n.endsWith(".ts"));
+    // Vacuity: a scan over no modules reports one speller for every name.
+    expect(modules.length).toBeGreaterThan(1);
+
+    const spellers = modules.filter((m) =>
+      readFileSync(join(SRC, m), "utf8").includes(`"${CHAIN_MODULE_NAME}"`),
+    );
+    expect(
+      spellers,
+      `src/: '${CHAIN_MODULE_NAME}' is spelled as a string literal outside ` +
+        "paths.ts — a fourth spelling is how the loader, the precondition " +
+        "and the gate come to name different files",
+    ).toEqual(["paths.ts"]);
   });
 });

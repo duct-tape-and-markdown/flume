@@ -25,6 +25,7 @@ import { existsLoud } from "./fsProbe.js";
 import { pinLongPaths } from "./git.js";
 import {
   awakeDir,
+  chainModulePath,
   loopLockPath,
   namespacedJoin,
   resolvePendingPath,
@@ -207,7 +208,10 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
 
   // 1. Load the repo chain. The residency invariant guarantees a chain exists
   // before any job does; a chainless repo cannot run the job it would create.
-  const chainPath = resolve(configDir, "chain.ts");
+  // `chainModulePath` (src/paths.ts) is the one derivation of this path, the
+  // same one `loadChainModule` resolves from the `configDir` handed to it two
+  // lines below — the probe and the load cannot name different files.
+  const chainPath = chainModulePath(configDir);
   // win32 MAX_PATH (`.claude/rules/platform-facts.md`): configDir can nest
   // deep enough that the total path crosses the limit with no single
   // component long; namespacedJoin (src/paths.ts) is the shared idiom.
