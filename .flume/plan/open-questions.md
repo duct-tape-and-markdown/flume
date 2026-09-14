@@ -785,3 +785,101 @@ interactive session, or folded into the next chain-touching commit.
 Not covered here, and correct as it stands: `TickResult.commitSha`/`baseSha`
 (`src/Phase.ts:193`, `:228`) stay optional, because a no-commit tick has
 neither. Only the gate surface changed.
+
+## `spec/harness.md`'s *What the package owns* is an inventory, and its nine bullets cannot be cited apart (NEEDS AMENDMENT)
+
+Raised deriving `767e298`. The section lists nine things the package owns —
+the phases, the prompts and their discipline, the entry extension, the judges,
+the gates, records-as-one-file-each, plan state as declared state, the default
+`handoff`, the runtime ignore set. Each is its own extraction entry; the
+phases bullet alone is all 949 lines of `.flume/chain.ts`. Compressing them
+into one entry is not on the table (`.flume/PROTOCOL.md`, *What makes an entry
+good*, 1), so nine entries would carry one identical `per` — and `per` is the
+field that tells a fresh build tick *on whose authority* it is acting. A cite
+that resolves to a nine-item list does not discriminate.
+
+The rest of the file does not have this problem: *What a consumer declares*,
+*The runner interface*, *The cite resolver* and *Where it lives* each state one
+thing, and each is filed as an entry this tick.
+
+**The cheap fix.** `sectionOf` (`.flume/chain.ts`) matches a heading at any
+depth, and so will the package's own resolver (*The cite resolver*), so `###`
+subheadings are citable today with no mechanism change. Promoting each bullet
+to a `###` heading under the existing `##` leaves the section readable as an
+inventory and makes each owned thing a `per` target.
+
+- **Promote all nine.** Every extraction entry gets a discriminating cite.
+  Costs nine short headings.
+- **Promote the four that are large extractions** (phases, prompts, judges,
+  gates) and leave the small ones inline. Against it: the line between large
+  and small moves, and the next entry re-opens the question.
+- **Leave it.** Nine entries share one cite; build re-derives which bullet it
+  is under from `summary` — which is the restatement `per` exists to avoid.
+
+**Recommend the first.** Until it lands, *What the package owns* derives
+nothing, and the extraction proceeds through the four sections that already
+state one thing each.
+
+## `flume init` is a verb of the package, and the engine's verb set is closed (PARKED)
+
+Raised deriving `767e298`. *Adoption and upgrade* states "`flume init` (a verb
+of the package, not the engine) writes the declaration skeleton, the state
+root, the ignore set, and `PROTOCOL.md`". Verified on disk: `src/cli.ts`
+dispatches a fixed set of subcommands and `spec/cli.md` *Subcommand surface*
+enumerates it; there is no registration surface a package could add a verb
+through, and `init` is not among them.
+
+The fork is where the verb lives:
+
+- **The engine gains a verb-registration surface** the chain or package
+  supplies. Matches the spec's wording. Against it: the engine would dispatch
+  a name it does not own, and `flume --help` — which `spec/cli.md` makes the
+  authority for the surface — becomes chain-dependent. Whether that is
+  mechanism or convention is exactly the second-implementation question
+  (`.claude/rules/engine-boundary.md`).
+- **The package ships its own bin.** `npx @dtmd/flume/harness init`, or a
+  second `bin` entry. No engine change, no boundary risk; costs the
+  single-verb-namespace reading of "`flume init`".
+- **`init` is an engine verb that takes a scaffolder value** the loaded chain
+  exports. Keeps one binary and keeps the content the package's. Against it:
+  `init` runs *before* a chain exists, so there is nothing to load.
+
+**Recommend the second** — it is the only one that needs no engine change and
+no pre-chain bootstrap. It asks the spec sentence to name the invocation
+rather than the binary. The section's other half (upgrading is one bump plus a
+migration note; a breaking declaration change refused at load with the field
+named) is already covered — by `spec/cli.md` *Versioning policy* and by the
+`HARNESS-DECLARATION-SCHEMA` entry respectively.
+
+## The harness cutover's surfaces are outside every phase lane (PARKED)
+
+Raised deriving `767e298`, and the third question this file carries that ends
+on this same sentence. *What this repo is* states that `.flume/chain.ts` is
+"the harness factory applied to `.flume/declaration.json`, and nothing else",
+and *What the package owns* puts the prompts in the package. Verified on disk:
+`.flume/chain.ts` and `.flume/prompts/**` are outside every phase lane
+(`.flume/chain.ts` `buildFence`, closing NOTE; `.claude/rules/spec-plan-build.md`).
+
+So no entry can perform the cutover, and every extraction entry that lands in
+`harness/` leaves **two copies of one truth** — the package's and the live
+chain-side one — with nothing in the queue able to delete the second
+(`.claude/rules/engineering.md`, *Derived state is computed, never restated
+beside its source*). That is a bounded, deliberate window, but it needs an
+owner and a trigger named, not a silent accumulation.
+
+- **One `chore(flume):` per extraction.** The operator cuts chain.ts over to
+  each module as it lands; the duplication window is one entry wide, and each
+  harness module's header cites this decision and names the commit that
+  retires its chain-side copy. Costs one hand commit per entry.
+- **One cutover at the end.** The duplication runs the length of the
+  extraction — nine-plus entries — and every chain.ts edit in that span must
+  be mirrored by hand into `harness/`. Cheapest in commits, worst in drift.
+- **Widen build's fence to `.flume/chain.ts` and `.flume/prompts/**` for the
+  extraction.** Contradicts `spec-plan-build.md`'s lanes, and the same widening
+  would close two other questions in this file — which is either the point or
+  the tell.
+
+**Recommend the first**, and note that the third is the one the other two
+parked questions (the vitest-lane hints, the `pins[]`/`tests[]` clause) are
+also waiting on. If the lane is going to move, it is worth moving once, on
+purpose, rather than three times by accident.
