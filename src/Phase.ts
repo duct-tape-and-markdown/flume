@@ -398,6 +398,25 @@ export interface Phase {
   promptArgs?: (ctx: TickContext) => Record<string, string>;
 
   /**
+   * `promptArgs` keys whose values are **data** — content this phase did not
+   * author and is only showing the agent: a cited spec section, a queue
+   * entry, a diff. The render pipeline substitutes values and then scans the
+   * substituted text for inline-exec spans (`spec/prompt.md`, *The render
+   * pipeline*), so by default a value that merely quotes the span grammar
+   * runs as a command. Naming its key here makes the engine neutralize every
+   * span in that value before the scan: the command text still reaches the
+   * agent, the sigil no longer fires, and an unresolvable span in the quoted
+   * content can no longer refuse the tick.
+   *
+   * The pass-through stays the default for every undeclared key — the chain
+   * says which values are data and the engine enforces it, rather than the
+   * engine guessing from a value's shape. The reserved `FLUME_DIR` key is
+   * engine-authored and needs no declaration. A declared key the tick's
+   * `promptArgs` never returns is simply unused.
+   */
+  promptDataKeys?: readonly string[];
+
+  /**
    * Decides which sibling phases to wake based on this tick's result.
    * Returning an empty array means "no wake" (system may hibernate if all
    * baton flags are absent).

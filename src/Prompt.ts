@@ -39,6 +39,18 @@ const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
 
 /**
+ * What a declared data key's inline-exec span is broken with: a zero-width
+ * space (U+200B) wedged between the bang and the whitespace-then-backtick the
+ * grammar admits. U+200B is outside `INLINE_EXEC_RE`'s `\s` class, so the span
+ * stops matching, and it renders as nothing, so the command text the value
+ * quotes reaches the agent exactly as its author wrote it. Deliberately not a
+ * deletion or a placeholder: the value is content the prompt exists to show,
+ * and dropping it would be the silent degradation `.claude/rules/engineering.md`
+ * *Loud or nothing* names.
+ */
+const SPAN_BREAK = "​";
+
+/**
  * Output cap for one inline-exec span. `spawn` has no `maxBuffer` (unlike
  * `execFile`), so the cap is enforced by hand: overrun kills the child and
  * rejects rather than truncating silently.
@@ -401,8 +413,9 @@ export interface RenderOptions {
 
 /**
  * Resolve a phase's prompt file for one tick: substitute `{{KEY}}`
- * placeholders from `args`, evaluate `` !`cmd` `` inline-exec blocks in
- * `cwd`, prepend the optional `<prior-attempt>` block, then prepend the
+ * placeholders from `args` — with the spans in every key the phase declared
+ * in {@link Phase.promptDataKeys} neutralized first — evaluate `` !`cmd` ``
+ * inline-exec blocks in `cwd`, prepend the optional `<prior-attempt>` block, then prepend the
  * `<harness>` block describing writable paths and gates. Returns the
  * fully-rendered prompt ready to feed an Agent. Block order in the result:
  * `<harness>` first, then `<prior-attempt>` (if any), then the task body —
@@ -412,7 +425,10 @@ export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const raw = await readFile(opts.promptFile, "utf8");
   // FLUME_DIR is reserved and dispatcher-authoritative: merge it last so a
   // chain-supplied arg of the same name cannot shadow the resolved root.
-  const args = { ...opts.args, FLUME_DIR: opts.flumeDir };
+  const args = {
+    ...neutralizeDataArgs(opts.args, opts.phase.promptDataKeys),
+    FLUME_DIR: opts.flumeDir,
+  };
   const withArgs = substitutePlaceholders(raw, args);
   const withExec = await evaluateInlineExec(withArgs, opts.cwd);
   const withPrior = prependPriorAttemptBlock(opts.priorAttempt, withExec);
@@ -437,6 +453,35 @@ function substitutePlaceholders(
     );
   }
   return result;
+}
+
+/**
+ * Every value whose key the phase declared in {@link Phase.promptDataKeys},
+ * with its inline-exec spans made inert; every other value is passed through
+ * untouched. Applied to the values rather than to stage 1's output, which is
+ * the same text either way — `substitutePlaceholders` never rescans what it
+ * substituted, so a span can only reach stage 2 through the value it was
+ * carried in.
+ */
+function neutralizeDataArgs(
+  args: Record<string, string>,
+  dataKeys: readonly string[] | undefined,
+): Record<string, string> {
+  if (dataKeys === undefined || dataKeys.length === 0) return args;
+  const declared = new Set(dataKeys);
+  const out: Record<string, string> = { ...args };
+  for (const key of Object.keys(out)) {
+    if (declared.has(key)) out[key] = neutralizeInlineExec(out[key]!);
+  }
+  return out;
+}
+
+/** One value's spans, each opener broken by {@link SPAN_BREAK}. */
+function neutralizeInlineExec(value: string): string {
+  return value.replace(
+    INLINE_EXEC_RE,
+    (match) => `!${SPAN_BREAK}${match.slice(1)}`,
+  );
 }
 
 /** One inline-exec span that failed to resolve — its command text and stderr. */

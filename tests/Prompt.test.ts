@@ -790,3 +790,106 @@ describe("src/index.ts — the no-commit taxonomy as a value (NO-COMMIT-MODES-VA
     expect(fromType).toEqual([...NO_COMMIT_MODES]);
   });
 });
+
+describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (PROMPT-DATA-KEYS)", () => {
+  // Spans are assembled rather than written literally so this file can itself
+  // be substituted into a prompt without arming them.
+  const BANG = "!";
+  const BREAK = "​";
+  const span = (cmd: string) => BANG + "`" + cmd + "`";
+  const inert = (cmd: string) => BANG + BREAK + "`" + cmd + "`";
+  const spans = (text: string) => [...text.matchAll(/!\s*`([^`]+)`/g)];
+
+  async function renderWith(opts: {
+    body: string;
+    args: Record<string, string>;
+    dataKeys?: readonly string[];
+  }): Promise<string> {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, opts.body, "utf8");
+    return renderPrompt({
+      phase: phase(opts.dataKeys ? { promptDataKeys: opts.dataKeys } : {}),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      args: opts.args,
+    });
+  }
+
+  it("a declared data key's value carries an inline-exec span into the prompt without executing it", async () => {
+    const value = `a cited section says ${span("echo pwned")} here.`;
+    // Non-vacuity: the value really does carry a span the engine's own
+    // grammar matches, so the assertions below judge something.
+    expect(spans(value)).toHaveLength(1);
+
+    const out = await renderWith({
+      body: "cited:\n{{SECTION}}\n",
+      args: { SECTION: value },
+      dataKeys: ["SECTION"],
+    });
+
+    expect(out).toContain("echo pwned");
+    expect(spawnMock).not.toHaveBeenCalled();
+    // The substituted text no longer matches the grammar stage 2 scans with.
+    expect(spans(out.slice(out.indexOf("cited:")))).toHaveLength(0);
+  });
+
+  it("a declared data key's neutralized span still shows the agent the command text", async () => {
+    const out = await renderWith({
+      body: "{{SECTION}}\n",
+      args: { SECTION: `run ${span("pnpm tsc --noEmit")} first` },
+      dataKeys: ["SECTION"],
+    });
+
+    expect(out).toContain(`run ${inert("pnpm tsc --noEmit")} first`);
+    // Only the break was added: strip it and the value is byte-identical.
+    expect(out.replaceAll(BREAK, "")).toContain(
+      `run ${span("pnpm tsc --noEmit")} first`,
+    );
+  });
+
+  it("a declared data key carrying an unresolvable span renders instead of refusing the tick", async () => {
+    const out = await renderWith({
+      body: "{{SECTION}}\n",
+      args: { SECTION: `the repro was ${span("no-such-command-xyz")}` },
+      dataKeys: ["SECTION"],
+    });
+
+    expect(out).toContain(inert("no-such-command-xyz"));
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("an undeclared key's value carrying an inline-exec span is still evaluated", async () => {
+    const out = await renderWith({
+      body: "{{OTHER}}\n",
+      args: { OTHER: `live ${span("echo from-other")}` },
+      dataKeys: ["SECTION"],
+    });
+
+    expect(out).toContain("live from-other");
+  });
+
+  it("neutralizing is per-key: a declared value goes inert beside an undeclared one in the same render", async () => {
+    const out = await renderWith({
+      body: "{{SECTION}}\n{{OTHER}}\n",
+      args: {
+        SECTION: `data ${span("echo from-data")}`,
+        OTHER: `live ${span("echo from-other")}`,
+      },
+      dataKeys: ["SECTION"],
+    });
+
+    expect(out).toContain(`data ${inert("echo from-data")}`);
+    expect(out).toContain("live from-other");
+    expect(spawnMock).toHaveBeenCalledOnce();
+  });
+
+  it("a phase declaring no data keys evaluates every substituted span, as before", async () => {
+    const out = await renderWith({
+      body: "{{SECTION}}\n",
+      args: { SECTION: `live ${span("echo still-live")}` },
+    });
+
+    expect(out).toContain("live still-live");
+  });
+});
