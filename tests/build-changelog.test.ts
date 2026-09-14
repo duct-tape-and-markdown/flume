@@ -46,17 +46,21 @@ async function runChangelog(
 }
 
 /**
- * The slice of a rendered draft the `### Breaking` subheading owns: from the
- * heading down to the next heading of any level, or to the end. Entry bodies
- * are indented two spaces, so a `#` inside one never reads as a heading.
+ * The slice of a rendered draft the named subheading owns: from the heading
+ * down to the next heading of any level, or to the end. Entry bodies are
+ * indented two spaces, so a `#` inside one never reads as a heading.
  */
-function breakingSubsection(out: string): string {
-  const start = out.indexOf("### Breaking");
+function subsection(out: string, heading: string): string {
+  const start = out.indexOf(heading);
   if (start === -1) return "";
-  const rest = out.slice(start + "### Breaking".length);
+  const rest = out.slice(start + heading.length);
   const next = rest.search(/^#{1,6} /m);
   return next === -1 ? rest : rest.slice(0, next);
 }
+
+const breakingSubsection = (out: string) => subsection(out, "### Breaking");
+const uncategorizedSubsection = (out: string) =>
+  subsection(out, "### Uncategorized");
 
 let repo: string;
 
@@ -201,6 +205,93 @@ describe("build-changelog", () => {
     expect(breaking).not.toContain("Just an ordinary addition.");
   });
 
+  it("the mined draft renders every non-breaking entry under an ### Uncategorized subheading", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/normal.ts",
+      "export const normal = 1;\n",
+      "build: add a normal feature (NORMAL-FEATURE)\n\nJust an ordinary addition.",
+    );
+    await commit(
+      repo,
+      "src/removed.ts",
+      "// api surface changed\n",
+      "build: drop the legacy export (LEGACY-EXPORT-DROP)\n\nBREAKING: `legacyExport` is removed; use `newExport` instead.",
+    );
+    await commit(
+      repo,
+      "src/other.ts",
+      "export const other = 1;\n",
+      "build: add another feature (ANOTHER-FEATURE)\n\nA second ordinary addition.",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    const uncategorized = uncategorizedSubsection(out);
+    // Vacuity: the draft judged below holds both kinds, so an empty
+    // non-breaking bucket cannot pass this as "every entry".
+    expect(out).toContain("LEGACY-EXPORT-DROP");
+    const nonBreaking = ["NORMAL-FEATURE", "ANOTHER-FEATURE"];
+    expect(nonBreaking.length).toBeGreaterThan(0);
+    for (const tag of nonBreaking) {
+      expect(out).toContain(tag);
+      expect(uncategorized).toContain(tag);
+    }
+    expect(uncategorized).not.toContain("LEGACY-EXPORT-DROP");
+  });
+
+  it("the mined draft renders ### Breaking ahead of ### Uncategorized", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    // Committed non-breaking-first: the draft's order is the renderer's
+    // choice, not the history's.
+    await commit(
+      repo,
+      "src/normal.ts",
+      "export const normal = 1;\n",
+      "build: add a normal feature (NORMAL-FEATURE)\n\nJust an ordinary addition.",
+    );
+    await commit(
+      repo,
+      "src/removed.ts",
+      "// api surface changed\n",
+      "build: drop the legacy export (LEGACY-EXPORT-DROP)\n\nBREAKING: `legacyExport` is removed; use `newExport` instead.",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    const breakingIdx = out.indexOf("### Breaking");
+    const uncategorizedIdx = out.indexOf("### Uncategorized");
+    expect(breakingIdx).toBeGreaterThan(-1);
+    expect(uncategorizedIdx).toBeGreaterThan(-1);
+    expect(breakingIdx).toBeLessThan(uncategorizedIdx);
+    expect(out.indexOf("## [Unreleased]")).toBeLessThan(breakingIdx);
+  });
+
+  it("a draft with no breaking entry renders ### Uncategorized and no ### Breaking heading", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    await commit(
+      repo,
+      "src/normal.ts",
+      "export const normal = 1;\n",
+      "build: add a normal feature (NORMAL-FEATURE)\n\nJust an ordinary addition.",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    expect(uncategorizedSubsection(out)).toContain("NORMAL-FEATURE");
+    expect(out).not.toContain("### Breaking");
+  });
+
   it("a draft whose entries are all breaking still renders the ### Breaking subheading", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
     await git(repo, ["tag", "v1.0.0"]);
@@ -225,6 +316,9 @@ describe("build-changelog", () => {
     const breaking = breakingSubsection(out);
     expect(breaking).toContain("FIRST-BREAK");
     expect(breaking).toContain("SECOND-BREAK");
+    // The empty bucket is spelled, not inherited: no entry is uncategorized,
+    // so the second subheading does not render.
+    expect(out).not.toContain("### Uncategorized");
   });
 
   it("strips Co-Authored-By trailers from the mined body", async () => {

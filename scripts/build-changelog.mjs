@@ -26,10 +26,10 @@
  * not user-facing change.
  *
  * Breaking marker: a commit body line starting with `BREAKING:` routes the
- * entry under `### Breaking` instead of the flat list (spec/cli.md
- * "Versioning policy": "Each public-API breaking change lands under a
- * `### Breaking` subheading"). The subsection renders last, so the flat list
- * stays outside it.
+ * entry under `### Breaking`; everything else lands under `### Uncategorized`
+ * (spec/cli.md "Versioning policy"). `### Breaking` leads so the draft is
+ * ordered as the curated changelog is, and `### Uncategorized` is the
+ * curating human's cue for what is still unsorted.
  */
 
 import { execFileSync } from "node:child_process";
@@ -193,18 +193,18 @@ export function renderSection(entries) {
   const breaking = entries.filter((e) => e.breaking);
   const rest = entries.filter((e) => !e.breaking);
 
-  // The flat list leads and `### Breaking` closes the section: a markdown
-  // subheading owns every line down to the next heading, and spec/cli.md
-  // names `### Breaking` with no sibling heading to close it. Rendering the
-  // non-breaking entries ahead of the subsection is what keeps them out of
-  // it without inventing a heading the spec does not declare.
+  // `### Breaking` leads and `### Uncategorized` closes it: a markdown
+  // subheading owns every line down to the next heading, so the second
+  // heading is what bounds the first. A heading renders iff its bucket is
+  // non-empty — a draft with one kind of entry carries one subheading.
   const blocks = ["## [Unreleased]"];
-  if (rest.length > 0) {
-    blocks.push(rest.map((e) => e.text).join("\n\n"));
-  }
   if (breaking.length > 0) {
     blocks.push("### Breaking");
     blocks.push(breaking.map((e) => e.text).join("\n\n"));
+  }
+  if (rest.length > 0) {
+    blocks.push("### Uncategorized");
+    blocks.push(rest.map((e) => e.text).join("\n\n"));
   }
   return blocks.join("\n\n") + "\n";
 }
