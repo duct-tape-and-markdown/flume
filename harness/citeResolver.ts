@@ -14,9 +14,10 @@
  *
  * **The reader is injected, never imported.** A gate binds the engine's
  * at-ref reader to the commit it is judging; a tick reading its own tree
- * binds a disk read; a test binds a map. The resolution is the same either
- * way, and nothing here decides which commit a cite is read at — that is the
- * caller's fact to supply, not this module's to infer
+ * binds a disk read; a test binds a map. Whether that reader answers now or
+ * later is all that separates the two entry points below; the resolution is
+ * the same either way, and nothing here decides which commit a cite is read
+ * at — that is the caller's fact to supply, not this module's to infer
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
  * **Memoizing is the caller's.** A queue cites a handful of files many times
@@ -144,25 +145,35 @@ const refuse = (cite: Cite, message: string): CiteVerdict => ({
 });
 
 /**
- * Resolve `cite` against `locus`, reading the cited file through `read`.
+ * Whether `cite.path` is somewhere a cite may point at all: the refusal when
+ * it is not, `undefined` when it is.
  *
- * Three questions in the order a plan tick can act on them: whether the path
- * is somewhere a cite may point at all, whether it is in the commit, and
- * whether the section is in it. A path outside the locus is wrong wherever it
- * is read, so it is answered before any read happens.
+ * Asked before any read, by both entry points below — a path outside the
+ * locus is wrong at every commit and in every tree, so no reader is driven to
+ * learn it.
  */
-export async function resolveCite(
+function outsideLocus(cite: Cite, locus: CiteLocus): CiteVerdict | undefined {
+  if (matchesAny(cite.path, [...locus.specLocus])) return undefined;
+  return refuse(
+    cite,
+    `${cite.path} is outside the declared spec locus (${locus.specLocus.join(", ")})`,
+  );
+}
+
+/**
+ * The cited section in the bytes a reader answered with — `null` being the
+ * path the reader did not find — or the refusal naming the part at fault.
+ *
+ * The grammar lives here and nowhere else: both entry points below differ in
+ * the read hop alone, so a cite the gate resolved is a cite the prompt
+ * renders identically (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ */
+function sectionIn(
   cite: Cite,
   locus: CiteLocus,
-  read: AtRefReader,
-): Promise<CiteVerdict> {
-  if (!matchesAny(cite.path, [...locus.specLocus])) {
-    return refuse(
-      cite,
-      `${cite.path} is outside the declared spec locus (${locus.specLocus.join(", ")})`,
-    );
-  }
-  const text = await read(cite.path);
+  text: string | null,
+): CiteVerdict {
   if (text === null) {
     return refuse(cite, `${cite.path} is not in the commit`);
   }
@@ -176,4 +187,39 @@ export async function resolveCite(
     );
   }
   return { ok: true, cite, text: section };
+}
+
+/**
+ * Resolve `cite` against `locus`, reading the cited file through `read`.
+ *
+ * Three questions in the order a plan tick can act on them: whether the path
+ * is somewhere a cite may point at all, whether it is in the commit, and
+ * whether the section is in it.
+ */
+export async function resolveCite(
+  cite: Cite,
+  locus: CiteLocus,
+  read: AtRefReader,
+): Promise<CiteVerdict> {
+  return (
+    outsideLocus(cite, locus) ?? sectionIn(cite, locus, await read(cite.path))
+  );
+}
+
+/**
+ * The same resolution over a reader that answers from bytes already at hand —
+ * what a tick reading its own working tree binds.
+ *
+ * It exists for the reader's shape, not for a second grammar: a phase's
+ * `promptArgs` is a synchronous surface, so a caller there has no way to
+ * unwrap {@link resolveCite}'s promise, and the alternative to this
+ * three-line entry point is a second section reader beside the one the gate
+ * drives — which is precisely the drift this module exists to prevent.
+ */
+export function resolveCiteSync(
+  cite: Cite,
+  locus: CiteLocus,
+  read: (path: string) => string | null,
+): CiteVerdict {
+  return outsideLocus(cite, locus) ?? sectionIn(cite, locus, read(cite.path));
 }

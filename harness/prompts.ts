@@ -24,24 +24,33 @@
  * the agent is invoked, so an arg this module stops supplying is a loud
  * render refusal rather than a `{{TOKEN}}` an agent reads as prose.
  *
- * Per-tick arguments — the assigned entry, the cited section, the windows a
- * slice opens over — are not here: they need a `TickContext` and belong to
- * the phase that has one. This module is the addresses and the per-tick-
- * invariant facts alone.
+ * **Build's per-tick arguments are here too, and a slice's are not.** Build's
+ * five — the entry, its cite's path, section and section text, and the note
+ * it may write — are the shipped build prompt's own placeholders, composed
+ * from the tick's `TickContext` and read from the surfaces that own them: the
+ * cite through the resolver the `per` gate drives, the note path through
+ * `records.ts`. A slice's window is a scan with a liveness predicate on the
+ * other end of it, which is `windows.ts`'s subject, not this module's.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { computeStateRootRel } from "../src/Dispatcher.js";
 import {
   renderSchemaForPrompt,
   type EntryExtension,
+  type PendingEntry,
 } from "../src/PendingSchema.js";
 import { resolvePendingPath } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
+import { resolveCiteSync } from "./citeResolver.js";
 import { PHASES, type Declaration } from "./declaration.js";
+import { PerSchema } from "./entryExtension.js";
 import { planStatePath } from "./planState.js";
-import { RECORD_MAX_BYTES, recordDirs } from "./records.js";
+import { RECORD_MAX_BYTES, notePath, recordDirs } from "./records.js";
 
 /**
  * The discipline page the plan slices point at. Not a phase's prompt: no
@@ -174,4 +183,132 @@ function hintOf(extension: EntryExtension, field: string): string {
     );
   }
   return declared.hint;
+}
+
+// ------------------------------------------------- build's per-tick args
+
+/**
+ * The `TickContext` fields build's per-tick arguments read.
+ *
+ * Shaped so a `TickContext` satisfies it as given — the phase hands `ctx`
+ * straight through rather than unpacking it into a second vocabulary
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ */
+export interface BuildTickContext {
+  /** The tick's provisioned worktree — `TickContext.cwd`. */
+  readonly cwd: string;
+  /** The tick's resolved state root — `TickContext.flumeDir`. */
+  readonly flumeDir: string;
+  /** The entry this tick was handed — `TickContext.assignedEntry`. */
+  readonly assignedEntry?: PendingEntry | undefined;
+}
+
+/** What build's per-tick arguments are composed from. */
+export interface BuildPromptArgsInput {
+  /** The consumer's validated declaration — the locus a `per` resolves in. */
+  readonly declaration: Declaration;
+  /**
+   * The repo the run was invoked from — `FlumeApi.paths.repoRoot`.
+   *
+   * A parameter because `TickContext` carries the worktree, not the root, and
+   * the note path is addressed from the root. The offset between the two is
+   * the engine's own `computeStateRootRel`, called rather than re-derived
+   * here (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+   */
+  readonly repoRoot: string;
+  /** The tick itself. */
+  readonly ctx: BuildTickContext;
+}
+
+/**
+ * The arguments build's prompt is rendered with for one tick, beside the
+ * shared ones: the entry as the queue holds it, the section its `per` cites
+ * as this tick's tree holds it, and the one note the tick may write.
+ *
+ * **The cite is resolved, never re-read.** The section text comes back from
+ * the same resolver the `per` gate drove over the queue that carried this
+ * entry, so a cite plan was held to is a cite this render quotes verbatim
+ * (`citeResolver.ts`). A cite that no longer resolves throws rather than
+ * rendering a stand-in section: the entry was derived from prose that has
+ * since moved, and handing build the nearest paragraph is a tick spent
+ * against the wrong contract (`.claude/rules/engineering.md`, *Loud or
+ * nothing*). The throw reaches the dispatcher before the agent is invoked,
+ * which is where a mis-cited entry is cheapest to see.
+ *
+ * **The note path is repo-relative**, as the records gate keys it: the prompt
+ * tells the agent which path to write, and the agent writes inside its own
+ * worktree, where an absolute path resolved from the state root would target
+ * the trunk checkout's copy instead.
+ */
+export function buildPromptArgs(
+  input: BuildPromptArgsInput,
+): Record<string, string> {
+  const { declaration, repoRoot, ctx } = input;
+  const entry = ctx.assignedEntry;
+  if (entry === undefined) {
+    throw new Error(
+      `prompt args: build is a fanout phase and its prompt states the ` +
+        `entry it was handed, so a tick with no assigned entry has nothing ` +
+        `to render (spec/harness.md, The phases)`,
+    );
+  }
+  // Through the package's own `per` schema — the shape a plan tick was
+  // validated against, never a second reading of the same two fields.
+  const cite = PerSchema.parse(entry.per);
+  const verdict = resolveCiteSync(cite, declaration, inTree(ctx.cwd));
+  if (!verdict.ok) {
+    throw new Error(
+      `prompt args: ${entry.tag}'s per cite does not resolve in this tick's ` +
+        `tree — ${verdict.message}`,
+    );
+  }
+  return {
+    ENTRY_JSON: JSON.stringify(entry, null, 2),
+    PER_PATH: cite.path,
+    PER_SECTION: cite.section,
+    PER_SECTION_TEXT: verdict.text,
+    NOTE_PATH: notePath(stateRootRel(repoRoot, ctx.flumeDir), entry.tag),
+  };
+}
+
+/**
+ * The tick's own working tree as a cite reader: bytes under `cwd`, and
+ * `null` for a path the tree does not hold — the two answers the engine's
+ * at-ref reader gives a gate, so one resolver serves both.
+ *
+ * Every other read failure travels out: a cited path that is a directory, or
+ * one this process may not read, is a fault at the reader rather than a cite
+ * to be refused for a reason it did not commit (*Loud or nothing*).
+ */
+function inTree(cwd: string): (path: string) => string | null {
+  return (path) => {
+    try {
+      return readFileSync(join(cwd, path), "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  };
+}
+
+/**
+ * The state root as the repository addresses it, or a refusal.
+ *
+ * A state root outside the repo tree has no path in any commit, so the note
+ * the prompt would name is one the records gate cannot admit and the park
+ * shape cannot be read back from — the channel build's prompt promises is not
+ * there. Refused here rather than rendered as a path that silently writes
+ * nowhere the tick's commit reaches (*Loud or nothing*).
+ */
+function stateRootRel(repoRoot: string, flumeDir: string): string {
+  const rel = computeStateRootRel(repoRoot, flumeDir);
+  if (rel === undefined) {
+    throw new Error(
+      `prompt args: the state root ${flumeDir} is outside ${repoRoot}, so ` +
+        `build's note is no path in the tick's commit and the park it ` +
+        `carries could not be read back (spec/harness.md, Records as one ` +
+        `file each)`,
+    );
+  }
+  return rel;
 }

@@ -56,6 +56,7 @@ export {
 
 export {
   resolveCite,
+  resolveCiteSync,
   type AtRefReader,
   type Cite,
   type CiteLocus,
@@ -79,8 +80,11 @@ export {
 
 export {
   PROMPT_NAMES,
+  buildPromptArgs,
   promptPath,
   sharedPromptArgs,
+  type BuildPromptArgsInput,
+  type BuildTickContext,
   type PromptName,
   type SharedPromptArgsInput,
 } from "./prompts.js";
