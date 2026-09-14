@@ -11,21 +11,167 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { tickExitCode } from "../src/cliVerdict.ts";
+import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
+import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
 
 /**
- * CLI-HELP-TICK-MISSING-EXIT2 — `flume tick --help`'s documented exit-code
- * list must cover `tickExitCode`'s actual range (0/1/2/69/78), so the 2 the
- * CJS-context refusal returns (tested above) isn't a silent gap in the
- * runtime help text.
+ * CLI-HELP-TICK-MISSING-EXIT2 — `flume tick --help`'s exit-code list is the
+ * prose copy of two facts with different owners: the range `tickExitCode`
+ * (`src/cliVerdict.ts`) returns from a `TickOutcome`, and the codes the
+ * `flume tick` process returns without ever reaching one. Neither is
+ * hand-copied here. The first is derived by driving the real function over
+ * the outcome space below; the second is {@link PROCESS_LEVEL_EXIT_CODES},
+ * named with the refusal sites that produce it and asserted to hold nothing
+ * `tickExitCode` can return. A code added to or dropped from either side
+ * turns this red instead of shipping one-sided (`.claude/rules/
+ * engineering.md`, "A seam gate reads what the real writer wrote").
  */
-describe("flume tick --help — exit-code list matches tickExitCode's range (CLI-HELP-TICK-MISSING-EXIT2)", () => {
-  it("lists 0, 1, 2, 69, and 78", async () => {
+describe("flume tick --help — the exit-code list against tickExitCode's derived range (CLI-HELP-TICK-MISSING-EXIT2)", () => {
+  /**
+   * Exit codes the `flume tick` process returns that `tickExitCode` cannot:
+   * cli.ts's own refusals, taken before a dispatcher outcome exists (the
+   * detached-HEAD refusal, the held-tip-claim refusal) or in place of one
+   * (main's harness-error exit). Named rather than derived — each is a
+   * `return`/`process.exit` literal on a control path with no outcome value
+   * to drive.
+   */
+  const PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
+    [1, "detached HEAD or held tip claim refusal, or a harness error"],
+  ]);
+
+  /** Candidate standing for "this field is not set on the outcome". */
+  const ABSENT = Symbol("absent");
+
+  const A_TICK_RESULT: TickResult = {
+    phaseName: "plan",
+    committed: true,
+    gateResults: [],
+    pendingAfter: [],
+    pickableAfter: [],
+    shippedTags: [],
+    revertedTags: [],
+    flumeDir: ".flume",
+    configDir: ".flume",
+  };
+
+  const A_TICK_VERDICT: TickVerdict = {
+    phaseName: "plan",
+    tags: [],
+    committed: true,
+    gateResults: [],
+    shippedTags: [],
+    mergeOutcomes: [],
+    invocations: [],
+    summary: "plan committed 0000000",
+    headSha: "0".repeat(40),
+    at: "2026-01-01T00:00:00.000Z",
+  };
+
+  const A_STAGE_FAILURE = { signature: "boom", message: "boom" };
+
+  /**
+   * One candidate list per `TickOutcome` field, keyed with the optionality
+   * stripped so a field added to the outcome is a compile error here — the
+   * point at which someone supplies its candidates. Every field carries a
+   * present value as well as `ABSENT`, because a branch `tickExitCode` grows
+   * on a field it ignores today is exactly the change this gate exists to
+   * catch; a field left absent everywhere would let that branch ship green.
+   * The values themselves are representative, not exhaustive: what varies
+   * per field is presence, and per boolean, which of the two it holds.
+   */
+  const TICK_OUTCOME_SPACE: {
+    [K in keyof TickOutcome]-?: readonly (TickOutcome[K] | typeof ABSENT)[];
+  } = {
+    hibernated: [false, true],
+    failed: [ABSENT, false, true],
+    usageError: [ABSENT, false, true],
+    tipMoved: [ABSENT, false, true],
+    declined: [ABSENT, false, true],
+    terminal: [ABSENT, { kind: "orphaned-awake", phases: ["ghost"] }],
+    phaseName: [ABSENT, "plan"],
+    result: [ABSENT, A_TICK_RESULT],
+    noCommit: [ABSENT, "clean-exit"],
+    provisionFailures: [ABSENT, [A_STAGE_FAILURE]],
+    mergeFailures: [ABSENT, [A_STAGE_FAILURE]],
+    gateFailures: [ABSENT, [A_STAGE_FAILURE]],
+    verdict: [ABSENT, A_TICK_VERDICT],
+    awakeAfter: [[], ["plan"]],
+    summary: ["no phases awake; hibernating"],
+  };
+
+  /**
+   * Every outcome the table spans, `ABSENT` fields left unset. A generator,
+   * not an array: the product runs to tens of thousands of outcomes, and
+   * only the code each one maps to is worth keeping.
+   */
+  function* tickOutcomeSpace(
+    fields: readonly (readonly [string, readonly unknown[]])[],
+    partial: Record<string, unknown> = {},
+  ): Generator<TickOutcome> {
+    const [head, ...rest] = fields;
+    if (!head) {
+      yield partial as unknown as TickOutcome;
+      return;
+    }
+    const [field, candidates] = head;
+    for (const value of candidates) {
+      yield* tickOutcomeSpace(
+        rest,
+        value === ABSENT ? partial : { ...partial, [field]: value },
+      );
+    }
+  }
+
+  /** The codes the help text's own "Exit codes:" block lists. */
+  function documentedExitCodes(help: string): Set<number> {
+    const start = help.indexOf("Exit codes:\n");
+    expect(start).toBeGreaterThan(-1);
+    const codes = new Set<number>();
+    for (const line of help.slice(start).split("\n").slice(1)) {
+      if (line.trim() === "") continue;
+      // A continuation line is indented past its code; anything unindented
+      // ended the block.
+      if (!line.startsWith("  ")) break;
+      const listed = /^ {2}(\d+) {2,}\S/.exec(line);
+      if (listed) codes.add(Number(listed[1]));
+    }
+    return codes;
+  }
+
+  const ascending = (codes: Iterable<number>): number[] =>
+    [...new Set(codes)].sort((a, b) => a - b);
+
+  it("flume tick --help documents every exit code tickExitCode returns, beside a named process-level set", async () => {
+    const returned = new Set<number>();
+    let spanned = 0;
+    for (const outcome of tickOutcomeSpace(
+      Object.entries(TICK_OUTCOME_SPACE) as [string, readonly unknown[]][],
+    )) {
+      spanned++;
+      returned.add(tickExitCode(outcome));
+    }
+    // Non-vacuity: an outcome space that collapsed, or a range that did,
+    // would agree with almost any help text.
+    expect(spanned).toBeGreaterThan(1);
+    expect(returned.size).toBeGreaterThan(1);
+
+    // The named set holds only what the function cannot return — the defect
+    // this suite carried was a process-level code read as part of the
+    // function's range, which let a real range change ship green.
+    for (const [exitCode, site] of PROCESS_LEVEL_EXIT_CODES) {
+      expect(
+        returned.has(exitCode),
+        `${exitCode} (${site}) is in tickExitCode's own range`,
+      ).toBe(false);
+    }
+
     const { out, code } = await runCli(process.cwd(), ["tick", "--help"]);
     expect(code).toBe(0);
-    for (const exitCode of ["0 ", "1 ", "2 ", "69 ", "78 "]) {
-      expect(out).toContain(`\n  ${exitCode}`);
-    }
+    expect(ascending(documentedExitCodes(out))).toEqual(
+      ascending([...returned, ...PROCESS_LEVEL_EXIT_CODES.keys()]),
+    );
   });
 });
 

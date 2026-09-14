@@ -863,8 +863,10 @@ async function main(): Promise<number> {
         await writeTickVerdict(flumeDir, outcome.verdict);
       }
       // Fail loudly on the classifying exits so the supervisor — and any human
-      // watching exit codes — classifies the failure without reading logs: 78
-      // terminal misconfiguration, 1 resolution failure, 0 otherwise.
+      // watching exit codes — classifies the failure without reading logs.
+      // Which outcome maps to which code is `tickExitCode`'s to state
+      // (`src/cliVerdict.ts`); a second copy here is one more thing to go
+      // stale against it.
       return tickExitCode(outcome);
     } finally {
       bareTipClaim?.release();
