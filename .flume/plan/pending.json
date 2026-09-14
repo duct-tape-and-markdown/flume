@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "EXAMPLES-INTEGRATION-API-PATHS-ARE-THE-TICKS",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "edit": [
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "build the chain per-test from the fixture repo's roots; drop the api.paths disclaimer"
+        }
+      ]
+    },
+    "summary": "Build the backlog-groomer chain under test from the roots its Dispatcher ticks against, not from this repo's",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "tests": [
+      "the backlog-groomer chain under test is built with the roots the dispatcher ticks against"
+    ],
+    "pins": [],
+    "acceptance": "The factory call moves out of module scope: repoRoot/flumeDir come from the fixture repo each test makes, configDir stays examples/. The EXAMPLE_PATHS constant and its 'does not read api.paths yet' disclaimer are gone.",
+    "notes": "Module-scope EXAMPLE_PATHS hands the chain this repo's repoRoot/.flume while all three ticks run in a tmpdir fixture. FlumeApi.paths declares them 'by reference — the identity-same values the dispatcher was constructed with'; the file's own header claims it builds the chain 'the same way a real tick builds it'. Neither holds, and the gap is held by a prose 'yet' with no named trigger."
+  }
+]
