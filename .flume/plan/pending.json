@@ -1,47 +1,5 @@
 [
   {
-    "tag": "HARNESS-SLICE-WINDOWS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/windows.ts",
-          "description": "each plan slice's live predicate and the window arg it renders"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "liveness per cursor, the budget prefix, the unresolvable-cursor refusal"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the windows and their input type"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Ship the plan slices' windows: the live predicate that selects a slice and the rendered SPEC_WINDOW, SWEEP_WINDOW, RECORDS and BUILD_RECORDS the package's prompts name.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "tests": [
-      "the derive window is live exactly while commits past the derive cursor touch the declared spec locus",
-      "the sweep window is live while the plan state's rotation is open",
-      "the sweep window is not live while the queue carries a pickable entry",
-      "the inbox window is live while a standing build refusal is keyed to an entry the queue still carries",
-      "a rendered window names the sha its cursor may advance to and defers the commits past its budget",
-      "a window refuses a cursor sha that does not resolve in the tick's tree"
-    ],
-    "pins": [],
-    "acceptance": "Each plan slice has a live predicate and a rendered window arg the package supplies, read off the plan state's cursors and the declaration.",
-    "notes": "Cursors through readPlanState, never a regex over prose (spec/harness.md, Plan state as declared state). Derive reads specLocus: the one declared list of where the contract lives, and the slices row names only the sweep's inputs. The inbox leg carries clean-exit and not-shipped only; the mis-declared-line mode waits on the green-on-base question. Shape reference, not a copy: .flume/delta-window.mjs."
-  },
-  {
     "tag": "HARNESS-BUILD-PROMPT-ARGS",
     "gate": {
       "kind": "open"
@@ -140,7 +98,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-SLICE-WINDOWS",
         "HARNESS-BUILD-PROMPT-ARGS"
       ]
     },
