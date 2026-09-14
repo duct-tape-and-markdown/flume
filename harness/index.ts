@@ -61,6 +61,12 @@ export {
 } from "./planState.js";
 
 export {
+  harnessGates,
+  type GateEngine,
+  type HarnessGatesOptions,
+} from "./gates.js";
+
+export {
   RECORD_MAX_BYTES,
   notePath,
   notesDir,

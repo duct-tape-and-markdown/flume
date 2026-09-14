@@ -36,8 +36,16 @@ const globs = z.array(z.string().min(1)).min(1);
 /** The plan slices the package ships (`spec/harness.md`, *The phases*). */
 const PLAN_SLICES = ["plan-inbox", "plan-derive", "plan-sweep"] as const;
 
+/**
+ * The one fanout phase the package ships. Named here rather than spelled at
+ * each reader: the phase list below and the records gate's build-versus-plan
+ * branch are the same fact, and a rename that moved only one of them would
+ * leave a gate judging a phase nothing runs.
+ */
+export const BUILD_PHASE = "build" as const;
+
 /** Those three plus the one fanout phase. */
-const PHASES = [...PLAN_SLICES, "build"] as const;
+const PHASES = [...PLAN_SLICES, BUILD_PHASE] as const;
 
 /**
  * `{ [key]: value.optional() }` over a fixed key list — the shape `fence`,
