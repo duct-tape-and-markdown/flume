@@ -79,45 +79,6 @@
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
   },
   {
-    "tag": "HARNESS-CITE-RESOLVER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/citeResolver.ts",
-          "description": "per resolution against specLocus, resolver declarable"
-        },
-        {
-          "path": "tests/harnessCiteResolver.test.ts",
-          "description": "the two refusals and the declared resolver"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the resolver and its verdict type"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Add the package's per resolver: the path matches a specLocus glob and is in the gated commit, the section is a heading in it, and a consumer may declare a resolver that keys sections instead.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The cite resolver"
-    },
-    "tests": [
-      "a per cite whose path matches no specLocus glob is refused, naming the path",
-      "a per cite whose section is no heading at the gated commit is refused, naming the section",
-      "a declared resolver keys a section without changing the verdict shape"
-    ],
-    "pins": [],
-    "acceptance": "harness/citeResolver.ts resolves a per against a declared specLocus at a commit and yields one verdict shape whether the section is found by heading or by a declared resolver.",
-    "notes": "The at-ref reader is injected, not imported, so every case stays in the fast lane. .flume/chain.ts's perResolvesGate and sectionOf are the chain-side copy this retires at the cutover."
-  },
-  {
     "tag": "HARNESS-JUDGES",
     "gate": {
       "kind": "open"
@@ -229,10 +190,7 @@
   {
     "tag": "HARNESS-GATES",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-CITE-RESOLVER"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
