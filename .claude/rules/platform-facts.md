@@ -136,3 +136,33 @@ Reuse the conventional numbers rather than inventing a scheme: `EX_CONFIG`
 (78) for a declared-world inconsistency, `EX_UNAVAILABLE` (69) for a mount or
 resolution failure. A caller must be able to classify a failure from the exit
 status without reading logs, which is the whole reason the codes are distinct.
+
+## `tsx` decorates `import.meta.url` with a namespace query
+
+A chain module loads under `tsx`, and `import.meta.url` can then arrive as
+`file:///…/chain.ts?tsx-namespace=…`. Handing that URL to `createRequire`
+fails on every call, because the specifier is no longer a plain file URL —
+measured as a worktree hook failing on every tick in a consumer chain.
+
+Strip the query first: `createRequire(import.meta.url.split("?")[0])`.
+
+## A package-manager shim carries the manager's state into a gate
+
+`pnpm exec tsc` runs under pnpm's own configuration — build-approval state,
+workspace resolution — which is not the gate's subject and can differ between
+a fresh worktree and the primary checkout. Two consumer chains independently
+moved their gates to the binary itself for this reason.
+
+Invoke the tool, not the manager, where the verdict must not depend on manager
+state: `node node_modules/typescript/bin/tsc --noEmit`.
+
+## A headless `claude -p` inherits the user's MCP servers
+
+The agent binary boots every MCP server the user's own configuration names
+unless told otherwise, so an autonomous tick inherits by-user runtime state
+through the binary. A wedged MCP child has held a finished agent's process
+open and stalled a whole fanout wave.
+
+Pass `--strict-mcp-config` so a tick loads only the MCP configuration the
+chain hands it. Whether the engine passes it by default is an open engine
+question; until it does, a chain passes it in `extraArgs`.
