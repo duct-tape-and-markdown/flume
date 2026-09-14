@@ -26,6 +26,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { frictionCountLine, harvestFriction } from "../src/friction.ts";
+import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 
@@ -154,6 +155,152 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
       expect(await frictionCountLine(stateRoot, chain)).toBeUndefined();
     } finally {
       await rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The destination filename harvest composes is `<tag>--<stamp>--<source
+ * filename>` — two variable-length parts, so `TAG_MAX_LENGTH` (which sizes
+ * the raw tag against the revert note's *fixed* scaffolding) cannot bound
+ * the sum. These drive the real `harvestFriction` at the schema's own
+ * ceiling (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*): the tag comes from `parsePending` accepting it, and the
+ * verdict is what landed on the real filesystem, whose NAME_MAX is the thing
+ * actually being cleared.
+ */
+describe("friction harvest — the destination filename clears NAME_MAX at the schema's longest tag", () => {
+  let fx: Fixture;
+
+  /** Vitest's own `.flume/friction` mirror path inside the fixture repo. */
+  const MIRROR_REL = [".flume", "friction"] as const;
+
+  /** An engine-core entry, tag supplied by the caller. */
+  const entryWithTag = (tag: string) => ({
+    tag,
+    gate: { kind: "open" },
+    files: { new: [], edit: [], retire: [] },
+  });
+
+  /**
+   * The longest tag the real parser admits — asserted against `parsePending`
+   * itself, and against its refusal one character further, so the cases
+   * below cannot quietly drift off the ceiling they claim to sit on.
+   */
+  const longestTag = "A".repeat(TAG_MAX_LENGTH);
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+    expect(parsePending(JSON.stringify([entryWithTag(longestTag)])).ok).toBe(
+      true,
+    );
+    expect(
+      parsePending(JSON.stringify([entryWithTag(`${longestTag}A`)])).ok,
+    ).toBe(false);
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /** Write one untracked note into the worktree-local mirror. */
+  async function mirrorNote(name: string, content: string): Promise<string> {
+    const mirrorDir = join(fx.repo, ...MIRROR_REL);
+    await mkdir(mirrorDir, { recursive: true });
+    await writeFile(join(mirrorDir, name), content);
+    return mirrorDir;
+  }
+
+  it("harvestFriction delivers a note whose source filename is 13 chars under the longest tag parsePending accepts, within NAME_MAX", async () => {
+    // 13 chars is past the wall, not at it: tag (216) + "--" + the
+    // 24-character fsStamp + "--" is 244 already, so anything from 12 up
+    // composes a basename the filesystem refuses with ENAMETOOLONG.
+    const sourceName = "friction-1.md";
+    expect(sourceName).toHaveLength(13);
+    expect(TAG_MAX_LENGTH + 2 + 24 + 2 + sourceName.length).toBeGreaterThan(
+      255,
+    );
+
+    const content = "the loop wants owner input\n";
+    const mirrorDir = await mirrorNote(sourceName, content);
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): harvest is judged over a mirror that really
+    // holds the note, so a delivery below is a move and not an empty dir.
+    expect(await readdir(mirrorDir)).toEqual([sourceName]);
+
+    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-namemax-"));
+    try {
+      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+      await harvestFriction(chain, fx.repo, longestTag, {
+        flumeDir: primaryRoot,
+        stateRootRel: ".flume",
+        log: silent,
+      });
+
+      const primaryDir = join(primaryRoot, "friction");
+      const landed = await readdir(primaryDir);
+      expect(landed).toHaveLength(1);
+      // The real ceiling, read off the real filesystem entry.
+      expect(landed[0]!.length).toBeLessThanOrEqual(255);
+      // Provenance survives the cut — the bound trims the tail, never the
+      // tag that says which entry filed the note.
+      expect(landed[0]!.startsWith(`${longestTag}--`)).toBe(true);
+      // Content delivered whole: only the name was ever abbreviated.
+      expect(await readFile(join(primaryDir, landed[0]!), "utf8")).toBe(content);
+      // Moved, not copied: the mirror is drained.
+      expect(await readdir(mirrorDir)).toEqual([]);
+      expect(await frictionCountLine(primaryRoot, chain)).toBe(
+        "friction: 1 note(s) await routing",
+      );
+    } finally {
+      await rm(primaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("two harvests of one source filename under the longest tag parsePending accepts land as two distinct files, neither overwriting the other", async () => {
+    const sourceName = "friction-1.md";
+    const first = "attempt one: the gate is unreachable\n";
+    const second = "attempt two: still unreachable\n";
+    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-retry-"));
+    try {
+      const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+      const ctx = {
+        flumeDir: primaryRoot,
+        stateRootRel: ".flume",
+        log: silent,
+      };
+
+      const mirrorDir = await mirrorNote(sourceName, first);
+      expect(await readdir(mirrorDir)).toEqual([sourceName]);
+      await harvestFriction(chain, fx.repo, longestTag, ctx);
+
+      // `fsStamp` resolves to the millisecond, and the retry's note is the
+      // same filename under the same tag — so the second harvest has to
+      // start in a later millisecond for the two to compose different
+      // names. Two calls this cheap can otherwise land inside one tick of
+      // the clock, which is the collision a real retry (minutes later)
+      // never has.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      await mirrorNote(sourceName, second);
+      expect(await readdir(mirrorDir)).toEqual([sourceName]);
+      await harvestFriction(chain, fx.repo, longestTag, ctx);
+
+      const primaryDir = join(primaryRoot, "friction");
+      const landed = (await readdir(primaryDir)).sort();
+      expect(landed).toHaveLength(2);
+      expect(new Set(landed).size).toBe(2);
+      for (const name of landed) {
+        expect(name.length).toBeLessThanOrEqual(255);
+        expect(name.startsWith(`${longestTag}--`)).toBe(true);
+      }
+      // Both notes readable, neither clobbered by the other.
+      const contents = await Promise.all(
+        landed.map((name) => readFile(join(primaryDir, name), "utf8")),
+      );
+      expect(new Set(contents)).toEqual(new Set([first, second]));
+    } finally {
+      await rm(primaryRoot, { recursive: true, force: true });
     }
   });
 });

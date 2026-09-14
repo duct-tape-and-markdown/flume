@@ -22,7 +22,6 @@
  */
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
@@ -31,7 +30,12 @@ import type { Logger } from "./Dispatcher.js";
 import { harvestFriction } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
-import { namespacedJoin, slugify, worktreesBase } from "./paths.js";
+import {
+  boundedName,
+  namespacedJoin,
+  slugify,
+  worktreesBase,
+} from "./paths.js";
 import type { Chain, Phase } from "./Phase.js";
 
 const execFileP = promisify(execFile);
@@ -73,19 +77,17 @@ export interface WorktreeContext {
 const WORKTREE_DIRNAME_MAX = 48;
 
 /**
- * `createWorktree`'s fs directory name for an entry's tag — truncated to
- * `WORKTREE_DIRNAME_MAX` with a hash of the *full* tag appended so two tags
- * sharing a long common prefix still land on distinct directories. Only the
+ * `createWorktree`'s fs directory name for an entry's tag — `boundedName`
+ * (`src/paths.ts`) against `WORKTREE_DIRNAME_MAX`, keyed on the *full* tag
+ * so two tags sharing a long common prefix (or differing only where
+ * `slugify` is lossy) still land on distinct directories. Only the
  * filesystem component is bounded: the branch name and the prior-attempt
  * key keep the untruncated `slugify(entry.tag)`, since neither is a git-
  * constructed worktree path and both are already bounded by the schema's
  * own `TAG_MAX_LENGTH`.
  */
 export function worktreeDirName(tag: string): string {
-  const slug = slugify(tag);
-  if (slug.length <= WORKTREE_DIRNAME_MAX) return slug;
-  const hash = createHash("sha1").update(tag).digest("hex").slice(0, 10);
-  return `${slug.slice(0, WORKTREE_DIRNAME_MAX - hash.length - 1)}-${hash}`;
+  return boundedName(slugify(tag), WORKTREE_DIRNAME_MAX, tag);
 }
 
 /**

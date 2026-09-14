@@ -70,18 +70,33 @@ const Gate = z.discriminatedUnion("kind", [
 
 /**
  * Filesystem NAME_MAX (Linux ext4/APFS/NTFS, conservatively shared across
- * platforms): the ceiling any single path component must clear. The
- * tightest raw-tag consumer is the revert-note filename (Dispatcher.ts
- * `writeRevertNote`, `<stamp>--<tag>--reverted.md`) — every other consumer
- * (worktree/branch slug, commit-message token) is looser, so this bound
- * covers them too. The subtracted overhead is `writeRevertNote`'s fixed
- * filename scaffolding around the raw tag; that arithmetic lives at the
- * writer (Dispatcher.ts), not restated here. Pinned against the real writer
- * by tests/Dispatcher.test.ts, "revert note to the friction channel (§5)":
- * a gate-revert on the longest tag this module accepts asserts the real
- * filename lands on disk within NAME_MAX.
+ * platforms): the ceiling any single path component must clear. Here rather
+ * than at a consumer because both sides of the bound reach it — the schema's
+ * own {@link TAG_MAX_LENGTH} below, and `boundedName` (`src/paths.ts`), the
+ * truncation every name composed around a tag passes through.
  */
-export const TAG_MAX_LENGTH = 255 - 39;
+export const NAME_MAX = 255;
+
+/**
+ * The raw-tag length the schema admits: {@link NAME_MAX} less the fixed
+ * filename scaffolding of the revert note (Dispatcher.ts `writeRevertNote`,
+ * `<stamp>--<tag>--reverted.md`), which is the tightest consumer that
+ * composes a name from a raw tag and *nothing else variable* — so the bound
+ * can hold it by construction. That arithmetic lives at the writer
+ * (Dispatcher.ts), not restated here. Pinned against the real writer by
+ * tests/Dispatcher.test.ts, "revert note to the friction channel (§5)": a
+ * gate-revert on the longest tag this module accepts asserts the real
+ * filename lands on disk within NAME_MAX.
+ *
+ * It bounds *this* tag, never every name built from one. A consumer that
+ * composes a tag with a second variable-length part — `harvestFriction`'s
+ * `<tag>--<stamp>--<source filename>` (`src/friction.ts`) — can exceed
+ * NAME_MAX at any tag length this pattern accepts, and takes `boundedName`
+ * (`src/paths.ts`) rather than inheriting a ceiling that was never sized for
+ * it. The worktree/branch slug and the commit-message token do not compose,
+ * and are covered here.
+ */
+export const TAG_MAX_LENGTH = NAME_MAX - 39;
 
 /**
  * Tag grammar reduces to mechanical safety only: the engine requires of a tag

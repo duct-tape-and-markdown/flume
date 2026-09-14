@@ -25,7 +25,13 @@ import { join } from "node:path";
 import type { Logger } from "./Dispatcher.js";
 import * as git from "./git.js";
 import { countFrictionFiles } from "./job.js";
-import { assertStateRootRelative, fsStamp, namespacedJoin } from "./paths.js";
+import {
+  assertStateRootRelative,
+  boundedName,
+  fsStamp,
+  namespacedJoin,
+} from "./paths.js";
+import { NAME_MAX } from "./PendingSchema.js";
 import type { Chain } from "./Phase.js";
 
 /**
@@ -113,15 +119,44 @@ export interface FrictionHarvestContext {
 }
 
 /**
+ * The destination filename one harvested file lands under:
+ * `<tag>--<stamp>--<source filename>`, put through `boundedName`
+ * (`src/paths.ts`) against {@link NAME_MAX}.
+ *
+ * The bound is load-bearing, not belt-and-braces. Two of the three parts are
+ * variable-length, so the tag's own schema ceiling cannot hold the sum:
+ * `TAG_MAX_LENGTH` (216) plus two separator pairs and the 24-character stamp
+ * is already 244, so a source filename of 12 characters overruns 255.
+ * Unbounded, `rename` throws `ENAMETOOLONG`, the per-file catch below logs
+ * and continues, and the dispatcher removes the worktree moments later —
+ * the note dies with it. That is the silent loss `.claude/rules/
+ * engineering.md`, "Loud or nothing" names: the harvest's "left for the
+ * removal-fallback sweep to surface" bound covers a worktree still standing
+ * afterwards, never a file whose destination could not be written at all.
+ *
+ * Only the *name* is abbreviated — the note's content is delivered whole —
+ * and truncating the finished name with a hash keyed on it keeps every
+ * distinctness the unbounded spelling had: a retry writing the same source
+ * filename under the same tag still lands beside the earlier note instead of
+ * over it (spec/worktrees.md "Teardown harvest — the delivery guarantee"),
+ * and two siblings harvested in one call stay two files. Neither `rename`
+ * nor the `EXDEV` fallback's `copyFile` refuses an existing destination, so
+ * that is the property doing the work.
+ */
+function harvestedName(tag: string, stamp: string, name: string): string {
+  return boundedName(`${tag}--${stamp}--${name}`, NAME_MAX);
+}
+
+/**
  * Before a fanout worktree is torn down, move every
  * file its declared friction channel holds *that is untracked at the
  * worktree's own HEAD* into the primary friction dir, prefixed
  * `<tag>--<stamp>--` for provenance and collision-freedom — the stamp
  * (same `Date.toISOString()`-minus-punctuation idiom as `writeRevertNote`)
  * means a retried entry whose agent reuses the same source filename lands
- * beside the earlier note instead of silently replacing it, since neither
- * `rename` nor the `EXDEV` fallback's `copyFile` refuse an existing
- * destination. Harvest is harness code crossing the worktree boundary (the
+ * beside the earlier note instead of silently replacing it. See
+ * {@link harvestedName} for that composition and the NAME_MAX bound it
+ * carries. Harvest is harness code crossing the worktree boundary (the
  * sessions precedent), not an agent write — worktree agents still only
  * ever write under their own `$PWD`.
  *
@@ -218,7 +253,7 @@ export async function harvestFriction(
   const stamp = fsStamp();
   for (const file of files) {
     const src = join(mirrorDir, file.name);
-    const dest = join(primaryDir, `${tag}--${stamp}--${file.name}`);
+    const dest = join(primaryDir, harvestedName(tag, stamp, file.name));
     try {
       await rename(namespacedJoin(src), namespacedJoin(dest));
     } catch (err) {

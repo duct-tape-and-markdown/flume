@@ -1,7 +1,8 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
- * glob matcher, the filesystem-safe tag slug, and the layout of the flume
- * state root itself.
+ * glob matcher, the filesystem-safe tag slug, the length bound every
+ * composed path component passes through, and the layout of the flume state
+ * root itself.
  *
  * For the MAX_PATH idiom see `.claude/rules/platform-facts.md`, "Windows
  * MAX_PATH (~260 chars) breaks fs calls with no long component"; every call
@@ -15,6 +16,7 @@
  * and `PendingSchema` reaches no further than zod.
  */
 
+import { createHash } from "node:crypto";
 import {
   isAbsolute,
   join,
@@ -207,17 +209,46 @@ export function queueFenceViolations(
  * `tag` itself is length-bounded at the schema gate (`PendingSchema.ts`
  * `TAG_MAX_LENGTH`), derived from the dispatcher's own
  * tightest raw-tag consumer, `writeRevertNote`'s
- * `` `${stamp}--${entry.tag}--reverted.md` `` — every tag-derived path
- * component built from this slug (`createWorktree`'s worktree-dir and
- * branch-name, `src/friction.ts`'s `harvestFriction`
- * `` `${tag}--${stamp}--${file.name}` ``)
- * is looser and stays within filesystem NAME_MAX (255) by construction as a
- * result.
+ * `` `${stamp}--${entry.tag}--reverted.md` `` — so the branch name and the
+ * prior-attempt key, which are this slug and nothing else, are bounded by
+ * construction. A component that composes the slug (or the raw tag) with a
+ * second variable-length part is not, and takes {@link boundedName}.
  * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
  * "revert note to the friction channel (§5)", not asserted here.
  */
 export function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+}
+
+/**
+ * The one truncation any composed path component passes through: `name`
+ * unchanged when it already fits `max`, else cut to leave room for a
+ * separator plus a 10-hex-character SHA-1, so the finished component is
+ * exactly `max` characters and two inputs sharing a long common prefix still
+ * land on distinct names. The bound is on the *finished* name, never on a
+ * part before the suffix.
+ *
+ * `identity` is what the hash keys — the full value whose distinctness the
+ * caller is preserving, which need not be the string being cut: the worktree
+ * directory bounds `slugify(tag)` but keys off the raw `tag`, since
+ * `slugify` is lossy and two tags differing only in case would otherwise
+ * hash alike. Defaults to `name`, the case where nothing was lost upstream.
+ *
+ * Shared rather than spelled beside each caller (`.claude/rules/
+ * engineering.md`, "The fix lands at the mechanism"): `createWorktree`'s
+ * directory name bounds against git's win32 worktree-path wall, and
+ * `harvestFriction`'s destination filename against filesystem NAME_MAX. Two
+ * ceilings, one rule — and a second spelling is how one of them comes to
+ * truncate without a hash and start silently overwriting.
+ */
+export function boundedName(
+  name: string,
+  max: number,
+  identity: string = name,
+): string {
+  if (name.length <= max) return name;
+  const hash = createHash("sha1").update(identity).digest("hex").slice(0, 10);
+  return `${name.slice(0, max - hash.length - 1)}-${hash}`;
 }
 
 // ---------- the state root's layout ----------
