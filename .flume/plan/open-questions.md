@@ -804,153 +804,21 @@ Not covered here, and correct as it stands: `TickResult.commitSha`/`baseSha`
 (`src/Phase.ts:193`, `:228`) stay optional, because a no-commit tick has
 neither. Only the gate surface changed.
 
-## `spec/chain.md` still declares a single-entry `exports` map, and `spec/cli.md` names the pre-move bin target (NEEDS AMENDMENT)
+## `spec/cli.md`'s **Bin.** bullet describes one bin, and `HARNESS-INIT-BIN` ships a second (NEEDS AMENDMENT)
 
-Raised draining `HARNESS-SUBPATH-EXPORT`'s note; verified on disk at `4be375c`.
-The layout move landed `./harness` as a second `exports` entry and moved the
-CLI's emit to `dist/src/cli.js`. Four spec sentences no longer match the tree:
+Residue of the subpath-note question `4758d60` otherwise closed. That commit
+enumerated the `exports` map and corrected both `dist/src/cli.js` spellings,
+but *Distribution*'s **Bin.** bullet still describes `bin.flume` alone
+(`spec/cli.md:317`), while `spec/harness.md`, *Adoption and upgrade* ratifies
+`flume-harness` on the package's own bin and `HARNESS-INIT-BIN` ships it.
 
-- `spec/chain.md`, *The package a chain loads through*: "A strict,
-  single-entry `exports` map. `"."` only — no subpath patterns" (`:672`), and
-  "still one `"."` entry resolving to the one ESM build" (`:681`).
-  `spec/harness.md`, *Where it lives* mandates `./harness` as a second entry —
-  not a pattern. The two pages disagree; the tree follows `harness.md`.
-- `spec/cli.md`, *Distribution*: the bin "reaches the same entry
-  (`dist/cli.js`)" (`:321`) and "`dist/cli.js` loads it via `tsImport`"
-  (`:328`). Both are `dist/src/cli.js` from `4462982`. The same section's "one
-  strict `"."` export" (`:332`) carries `chain.md`'s claim by reference.
+**Recommend** one additive sentence in that bullet: `bin.flume-harness` points
+at `bin/flume-harness.js`, the same shim shape — argv through, stdio
+inherited, exit code out, no options of its own. The `files` allowlist and the
+both-directions packed-set check in the same section already cover it, so
+nothing else in *Distribution* moves.
 
-What the bullet was buying still holds and now has a check: no subpath
-patterns, no escape hatch, and `@dtmd/flume/dist/harness/index.js` refused with
-`ERR_PACKAGE_PATH_NOT_EXPORTED` (`tests/harnessPackaging.test.ts`). The
-standing acceptance needs no change.
-
-**Recommend** amending `chain.md`'s bullet to a strict *enumerated* map — `.`
-and `./harness`, no patterns, no escape hatch — and correcting `cli.md`'s two
-path spellings. The alternative, retracting `./harness` and shipping the
-harness as its own package, re-opens *Where it lives*'s one-package-one-version
-argument and is not what the tree did.
-
-Plan cannot edit `spec/` (`.claude/rules/spec-plan-build.md`), so the amendment
-is the human's; nothing in the queue blocks on it.
-
-The same section will want a `flume-harness` sentence once `HARNESS-INIT-BIN`
-lands the second bin: the **Bin.** bullet describes `bin.flume` alone, and
-`spec/harness.md`, *Adoption and upgrade* now ratifies a second one. Additive,
-same amendment pass.
-
-## A package-shipped prompt has no address, and two harness subsections wait on it (NEEDS AMENDMENT)
-
-`spec/harness.md`, *The prompts and their discipline* makes the prompts the
-package's, and *The phases* makes the phases the package's. A `Phase` cannot be
-constructed without a `promptPath`, and `spec/chain.md`, *The chain is a plugin*
-fixes what one means: "it joins `configDir`" — the directory the consumer's
-chain lives in. A prompt inside `node_modules/@dtmd/flume` is not under that
-directory, so neither subsection derives until the address is ruled. Verified on
-disk: `src/Dispatcher.ts:1934` and `:3259` both `join(this.opts.configDir,
-phase.promptPath)`.
-
-Two further facts the ruling should carry, both verified:
-
-- **The bytes do not ship today.** `tsc -p tsconfig.build.json` emits no `.md`
-  into `dist/`, and `package.json`'s `files` allowlist has no `harness` entry —
-  CI asserts that allowlist in both directions (`spec/cli.md`, *Distribution*).
-  Whatever the address, the prompts need a packing route.
-- **The vocabulary half is blocked by the same thing.** "Names the engine's
-  no-commit vocabulary from the engine's own declaration" needs the engine to
-  declare `NoCommitMode` as a *value*, not only a type — `src/Prompt.ts:57` is a
-  type union, unreadable at runtime, and `.flume/prompts/plan-inbox.md:33`
-  spells `gate-revert` and `not-shipped` in prose as a result. That export earns
-  no consumer until a package-owned prompt exists to name it, so it rides the
-  same entry rather than landing alone.
-
-Options:
-
-- **Resolve, don't join.** `resolve(configDir, phase.promptPath)` — a relative
-  `promptPath` keeps today's meaning exactly, an absolute one wins. One word in
-  the engine, pure mechanism, and any second implementation shipping prompts
-  from a dependency wants it. Costs one amended sentence in `spec/chain.md`,
-  *The chain is a plugin*.
-- **Compute a relative path.** The package derives `relative(flumeDir,
-  ownPromptsDir)` from `import.meta.url` and hands the engine a `..`-prefixed
-  relative path. No spec change, no engine change. Against it: it breaks on
-  Windows when the consumer and its `node_modules` sit on different drives
-  (`path.relative` returns an absolute path there, which `join` then mangles),
-  and it makes every consumer's phase carry a path computed from where its
-  dependency happened to install.
-- **Copy the prompts in at `init`.** Rejected on the spec's own words — *Adoption
-  and upgrade* says a consumer never copies a prompt — and it re-creates the
-  drift the package exists to end.
-
-**Recommend the first.** It is the smallest change, it is mechanism rather than
-convention, and it leaves `promptPath`'s existing meaning untouched for every
-chain that keeps its prompts beside `chain.ts`. A ruling unblocks both
-subsections at once; nothing else in the queue blocks on it.
-
-## The declaration carries live values, so it cannot be the `.json` file the spec names (NEEDS AMENDMENT)
-
-`spec/harness.md`, *What this repo is* says `chain.ts` is "the harness factory
-applied to `.flume/declaration.json`". Two declared fields are not JSON-able,
-by the spec's own words:
-
-- `runner` is "a declared value with three operations" whose consumer
-  "declares its own" (*The runner interface*); the shipped schema parses it
-  structurally (`harness/declaration.ts`, `RunnerValue`).
-- *The cite resolver* says a consumer "may declare a resolver that resolves a
-  section by key" — a function too.
-
-`.json` is the only place the format is stated; *What a consumer declares* says
-"one declaration file" with no extension, and *What the package owns* says a
-consumer "imports the package, writes one declaration".
-
-Options:
-
-- **A TS module.** `.flume/declaration.ts` default-exports the object;
-  `chain.ts` is the factory applied to it. One file, live values direct, and
-  `chain.ts` is already TypeScript loaded under tsx — nothing new enters the
-  load path. Costs one word in *What this repo is*, and `flume-harness init`
-  writes a `.ts` skeleton (HARNESS-INIT-BIN's first test names "a declaration
-  skeleton the package's schema parses", which holds either way).
-- **JSON plus a TS sidecar.** The data stays in `.flume/declaration.json` and
-  the live values arrive as a second argument from `chain.ts`. Against it: the
-  seam falls on "which fields happen to be functions", which is no seam a
-  consumer can predict, and *What a consumer declares* would stop describing
-  one file.
-- **Keep JSON and retract the live values.** `runner` by registry name, the
-  cite resolver by script path. Against it: it contradicts *The runner
-  interface* directly — a consumer running cargo or dotnet supplies the three
-  operations, not a name the package already knows.
-
-**Recommend the first.** It is the smallest amendment, it keeps the spec's
-"one declaration file", and it leaves the strict-schema refusal (the load-time
-guarantee the section actually buys) untouched. The chain-factory entry cannot
-be derived until this is ruled.
-
-## `supervisor` exposes four of the engine's five policy knobs (NEEDS AMENDMENT)
-
-*What a consumer declares* names `maxParallel`, `tickTimeoutMs`,
-`abortThreshold`, `partitionIgnore`. The engine's `Chain.supervisorPolicy` has
-a fifth, `quarantineScope` (`src/Phase.ts:576`). The shipped schema ties itself
-to the engine's type by `Pick` over exactly the four named
-(`harness/declaration.ts`, `DeclaredSupervisor`), so a harness consumer cannot
-declare it — and the factory is a consumer's only route to a `Chain`, so for
-them the override does not exist.
-
-The fork is whether that is the package's discipline or an omission:
-
-- **An omission.** `spec/loop.md`, *Repeated identical failures —
-  quarantine, then abort* calls both knobs "engine defaults, chain-overridable",
-  and `.claude/rules/engine-boundary.md`, *Routing rule* says policy constants
-  enter the engine "only as chain-overridable defaults, never as fixed
-  behavior". A factory that drops one converts an overridable default back into
-  fixed behavior for every consumer that adopts the package. Fix: name it in
-  the table, widen the `Pick`.
-- **Deliberate.** Quarantine is what stops a failing entry from re-walling a
-  run, and the package's discipline may be that no consumer turns it off — the
-  same call the records byte cap takes ("the package's value, not a declaration
-  knob"). Fix: say so in the section, so the gap reads as a decision rather
-  than a dropped row.
-
-**No recommendation** — this is the package's opinion about its own floor,
-which is the human's to set. Either ruling is one sentence plus (for the first)
-one key in `supervisorShape`.
+Actionable now rather than on a trigger — the spec already ratifies the second
+bin; the bullet is the one place that has not caught up. Spec is the human's
+lane (`.claude/rules/spec-plan-build.md`), and nothing in the queue blocks:
+`HARNESS-INIT-BIN` ships the bin either way.
