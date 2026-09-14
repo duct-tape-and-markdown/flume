@@ -82,7 +82,8 @@ no-commit facts. A consumer overrides it by declaration, not by copying it.
 ### The runtime ignore set
 
 The ignore lines for the consumer's state root, derived from the engine's path
-record — a consumer never hand-maintains a list against engine-owned paths.
+record plus the package's own per-run artifacts (its session captures) — a
+consumer never hand-maintains a list against paths it does not own.
 
 ## What a consumer declares
 
@@ -143,8 +144,9 @@ is the same either way.
 `flume-harness init` — a verb on the bin the package ships beside the engine's
 `flume`, so the engine's verb set stays closed and never imports the harness —
 writes the declaration
-skeleton, the state root, the ignore set, and `PROTOCOL.md`, and adds the
-package as the consumer's dependency. A consumer never copies a prompt, a slice,
+skeleton, a `chain.ts` that applies the factory to it (the engine refuses a
+load without one), the state root, the ignore set, and `PROTOCOL.md`, and adds
+the package as the consumer's dependency. A consumer never copies a prompt, a slice,
 or a judge from another consumer; what it wants to change it declares.
 
 Upgrading is one version bump plus the release's migration note. A harness

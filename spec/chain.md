@@ -534,6 +534,11 @@ missing field, and the field is added rather than the chain excused.
 
 - **`TickContext`** (`shouldRun`, `promptArgs`) —
   `cwd`, `flumeDir`, `assignedEntry` (fanout), `pending` (singleton), plus:
+  - **`stateRootRel`** — the state root's path relative to the repository
+    root, as the dispatcher resolved it; absent only when the root is
+    relocated outside the repository. A chain naming a repo-relative artifact
+    (a build note, a queue path in a prompt) reads this rather than deriving
+    it from `flumeDir` and `repoRoot` a second time.
   - **`pickable`** — the entries the dispatcher would select right now: the
     strict-read queue with `blockedBy` resolved, every declared fork checked
     through the chain's `forkResolver`, `requiresCapability` checked against
