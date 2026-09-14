@@ -1,32 +1,10 @@
 [
   {
-    "tag": "TICKVERDICT-FACTFIELDS-JUDGED-OVER-A-FIXTURE",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "re-drive the fact-fields key-set claim off a real dispatcher tick"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Drive the \"no interpretation field on TickVerdict\" key-set claim through a real dispatcher tick — today it judges a hand-authored verdictFixture",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "tests": [],
-    "pins": [
-      "a dispatcher-produced tick verdict carries only declared fact fields, never an interpretation field"
-    ],
-    "acceptance": "The key-set assertion runs over a TickVerdict the Dispatcher produced and wrote, not over verdictFixture; a fact field the engine emits is in the allowlist and an interpretation field would fail it.",
-    "notes": "tests/Dispatcher.test.ts:8382 is the only key-set assertion on a TickVerdict in tests/, and its subject is the literal at tests/helpers/dispatcherFixture.ts:37 — so the engine could grow the `errored` field the title refuses and stay green. A real verdict conditionally adds tipMoved/declined/provisionFailures/mergeFailures/gateFailures/clearedPriorAttempts/bystanderCheckpointSha, so the allowlist widens rather than the 11-name list being reused verbatim."
-  },
-  {
     "tag": "WAVE-LEDGER-REFUSAL-NOCOMMIT-UNPINNED",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
