@@ -310,12 +310,15 @@ recommended above; the two surfaces say one thing in the two places plan reads.
 Held here rather than filed because `.flume/chain.ts` is outside every phase
 lane.
 
-## Two spec sentences still name unexported helpers, after the ruling that removed three (NEEDS AMENDMENT)
+## Four spec symbols name package-unreachable helpers, after the ruling that removed three (NEEDS AMENDMENT)
 
-The two follow-ons `07b550c` left unruled, drained from the inbox and verified
-on disk this tick. Both are the shape that ruling closed: a `spec/*.md`
-sentence naming a symbol `src/index.ts` does not export, against
-`.claude/rules/spec-writing.md`, *A claim names behavior, never location*.
+**Amended: the enumeration was two, and is four.** A ruling on the two below
+would leave the two new ones standing. All four are the shape `07b550c`
+closed: a `spec/*.md` sentence naming a symbol unreachable from the package's
+`exports` map, against `.claude/rules/spec-writing.md`, *A claim names
+behavior, never location*. Every site re-verified on disk this tick.
+
+The two `07b550c` left unruled:
 
 - **`declaredPaths`** — `spec/pending.md` six times (:122, :240, :243, :254,
   :291, :406), including the defining equation and two equations built on top
@@ -326,23 +329,90 @@ sentence naming a symbol `src/index.ts` does not export, against
   section whose third sentence `07b550c` restated. Module-private in
   `src/Prompt.ts`; nothing exports it.
 
+The two that sweep missed, both in the CJS/exit-code area:
+
+- **`tickExitCode`** — `spec/cli.md` (:262), `spec/loop.md` (:32),
+  `spec/chain.md` (:159). Exported from `src/cliVerdict.ts`, absent from
+  `src/index.ts` and from `FlumeApi`. Each of the three sentences already
+  states the exit code itself, so the symbol adds only the call site.
+  `TickOutcome`, named beside it at cli.md:262, *is* exported and stays.
+- **`runJobVerb`** — `spec/cli.md` (:262), as "`runJobVerb`'s `new` catch
+  tests `CjsContextLoadError` ahead of its operational branch". Exported from
+  `src/cliJobVerbs.ts`, absent from `src/index.ts`. This one names call order
+  between internal functions as well as the symbol — the rule's second and
+  third prohibited forms at once. `CjsContextLoadError` is legal vocabulary:
+  it is a `FlumeApi` field.
+
 Options:
 
-- **Restate both as behavior** (recommended, and what the ruling implies).
+- **Restate all four as behavior** (recommended, and what the ruling implies).
   pending.md gives the equation a spec-owned left side — "an entry's declared
   paths" — so the corpus keeps its vocabulary without borrowing a symbol's
   spelling; prompt.md names the inline-exec span's own spawn in place of the
-  helper. No headings move, so no `per` cite re-homes.
+  helper; the three `tickExitCode` sites drop the symbol and keep the exit
+  code they already state; cli.md's `runJobVerb` clause is subsumed by the
+  roll-call rewrite the next question proposes. No headings move, so no `per`
+  cite re-homes.
 - **Carve out defining vocabulary.** Amend `spec-writing.md` to permit a name
-  the corpus defines and then reuses, whatever its visibility; `runInlineExec`
-  then goes and `declaredPaths` stays. Against it: the rule's bar is whether a
+  the corpus defines and then reuses, whatever its visibility; `declaredPaths`
+  then stays and the other three go. Against it: the rule's bar is whether a
   reader needs `src/` open to follow the sentence, which a defined term
-  already clears without the symbol's spelling.
-- **Accept as debt.** Both age exactly as the ruled three did — the question
-  re-opens on the next extraction that moves either.
+  already clears without the symbol's spelling — and only `declaredPaths` is
+  defined by the corpus at all.
+- **Accept as debt.** All four age exactly as the ruled three did — the
+  question re-opens on the next extraction that moves any of them, and the
+  count has now grown once unobserved.
+
+**`spec/cli.md`:262 is also the subject of the next question**, which finds a
+second defect in the same paragraph; the rewrite it proposes closes the
+`runJobVerb` instance as a side effect. Rule the two together.
 
 Needs an amendment because closing it edits `spec/` (and on the second option
 `.claude/rules/spec-writing.md`), which no autonomous phase may write.
+
+## `spec/cli.md`'s CJS refusal names two surfaces; five hold the rule (NEEDS AMENDMENT)
+
+Surfaced while re-verifying `JOBRUN-CJS-EXIT-CODE`'s note; every site read on
+disk this tick. `spec/cli.md` *A CJS-context host is refused, never relayed*
+closes with a roll-call written when two surfaces loaded a chain:
+
+> Every surface that loads a chain holds the rule: `tick` routes the refusal
+> through `TickOutcome.usageError` → `tickExitCode`, and `runJobVerb`'s `new`
+> catch tests `CjsContextLoadError` ahead of its operational branch. Both
+> print it as the headline and exit 2.
+
+The lead clause is still true. The illustration is not: **four** surfaces now
+own an exit code and reach one shared arm — `check`, `friction`, `job new`,
+`job run` — with `tick` holding the same contract one layer down as a usage
+*outcome* rather than a code. "Both" reads as a closed pair over a set of
+five, and a reader checking the spec against the tree finds three surfaces the
+corpus never mentions.
+
+The paragraph also drops the one reading a chain author would want: on this
+load failure `check` and `friction` exit **2**, where every *other* chain-load
+failure on those two verbs exits the mount-dead constant. That divergence is
+the shipped behavior and the spec states it nowhere.
+
+Options:
+
+- **Restate the roll-call as the property, naming no surface list**
+  (recommended). One sentence: every chain-loading verb that owns an exit code
+  refuses a CJS-context host at exit 2 — ahead of its own operational
+  branches, and ahead of the mount-dead code it would otherwise return — and
+  `flume tick` reports the same refusal as a usage outcome. Nothing to
+  re-amend when the sixth surface lands, it states the check/friction reading
+  the current text drops, and it closes the `runJobVerb` instance in the
+  question above without a second edit.
+- **Enumerate all five.** Truer today, stale on the next chain-loading verb,
+  and it re-commits the spec to naming internal call sites to stay accurate.
+- **Accept as debt.** Costs a reader who audits the spec against the tree and
+  concludes two surfaces relay what four refuse — the exact confusion the
+  section exists to prevent.
+
+Not a defect in `src/`: the four surfaces share one arm (*The fix lands at the
+mechanism*), and `tick`'s divergence is declared and cited at both sites.
+Needs an amendment because closing it edits `spec/`, which no autonomous phase
+may write.
 
 ## `spec/worktrees.md` still ratifies the blind delete `4d76998` shipped out (NEEDS AMENDMENT)
 
