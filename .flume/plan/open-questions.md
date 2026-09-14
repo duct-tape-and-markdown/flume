@@ -559,3 +559,46 @@ Options:
 
 Needs an amendment because closing it edits `spec/`, which no autonomous phase
 may write.
+
+## `spec/chain.md`'s `priorAttempts` lead-in, "keyed as the files are", is false for a singleton (NEEDS AMENDMENT)
+
+Drained from `PRIOR-ATTEMPT-MAP-KEYS-A-SINGLETON-BY-ITS-PHASE-NAME`'s note;
+verified on disk this tick. That entry shipped `keyedAs` — the record carries
+the ref's key verbatim, `readAll` keys its map by it, `read` refuses a record
+without it. `spec/chain.md:534` § *What a hook receives* still reads
+"`<flumeDir>/prior-attempts/`, keyed as the files are (tag slug for fanout
+entries, phase name for singletons)".
+
+The **parenthetical is exactly what the engine does**; the **lead-in is the
+half that drifted**. `priorAttemptRef` keys a fanout record `slugify(tag)` and
+a singleton record `phase.name` raw (`src/priorAttempts.ts:176-177`), while
+every file stem is `slugify(key)` (`:104`). `slugify` lowercases and rewrites
+anything outside `[a-z0-9-]`, so for any phase name carrying an underscore,
+a dot, or a capital, the map key and the filename differ — a phase `plan_sweep`
+is keyed `plan_sweep` and filed at `plan-sweep.json`. This repo's own phase
+names are already slug-shaped, so nothing here diverges today; a downstream
+chain's would.
+
+The prior ruling said the sentences stay and the engine conforms. It conforms
+to the parenthetical — the raw phase name is deliberate, so a chain's
+`shouldRun` looks a record up under the name it already spells, with no private
+slug rule to reverse-engineer.
+
+Options:
+
+- **Adopt the wording the docs already carry** (recommended). `docs/CHAIN-AUTHORING.md:282`
+  and `:1246`, `src/Phase.ts:110` were reworded in the same commit to "keyed by
+  the identity it was written under"; `:282` adds the disambiguator "(the file
+  on disk sits at a slugged stem; the map key does not)". Dropping four words
+  from the lead-in and borrowing that clause closes it. No heading moves, no
+  `per` cite re-homes, no code changes.
+- **Make `src/` conform to the lead-in** — key `readAll`'s map by the slugged
+  stem. Against: it re-imposes the engine's naming rule on every consumer, which
+  is the defect `keyedAs` shipped to remove, and it would need the docs and
+  `src/Phase.ts` reworded back.
+- **Accept as debt.** Costs the chain author who reads the lead-in as the rule
+  and looks up a slugged key that is not there — a silent `undefined`, read as
+  "no prior attempt".
+
+Needs an amendment because closing it edits `spec/`, which no autonomous phase
+may write.
