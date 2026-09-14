@@ -580,6 +580,8 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render (REL
 describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (spec/loop.md 'Every record is anchored')", () => {
   const HEAD_SHA = "a".repeat(40);
   const AT = "2024-06-01T12:00:00.000Z";
+  /** The identity every fixture below was written under; the block renders the anchor, not this. */
+  const KEYED_AS = "rendered-entry";
 
   async function renderWithPrior(prior: PriorAttempt): Promise<string> {
     const promptFile = join(dir, "prompt.md");
@@ -602,6 +604,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     details: "GATE-DETAIL",
     diffStat: "1 file changed",
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -610,6 +613,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     finalMessage:
       "Stopping here: the entry's declared paths sit outside writablePaths.",
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -617,6 +621,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     mode: "platform-preempt",
     failureClass: "exited with code 137",
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -624,6 +629,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     mode: "render-refused",
     failures: "cmd: exit 3\nstderr: boom",
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -632,6 +638,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     expectedTip: "b".repeat(40),
     observedTip: "c".repeat(40),
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -641,6 +648,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     mergedSha: "d".repeat(40),
     touchedPaths: ["src/one.ts", "src/two.ts"],
     key: "entry",
+    keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
     at: AT,
   };

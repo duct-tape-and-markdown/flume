@@ -242,6 +242,7 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
     mode: "clean-exit",
     finalMessage: "parked: the entry needs a wider fence",
     key: "entry",
+    keyedAs: "PARKED-ENTRY",
     headSha: "0".repeat(40),
     at: "2026-09-11T00:00:00.000Z",
   };

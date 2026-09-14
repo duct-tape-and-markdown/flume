@@ -279,7 +279,7 @@ declares is below, in declaration order.
 | `assignedEntry` | The pending entry this tick was handed. Fanout phases only.                                                                       |
 | `pending`       | The full pending list, for a singleton phase reasoning about queue state.                                                         |
 | `pickable`      | The entries the dispatcher would select right now — `blockedBy` resolved, declared forks checked through the chain's `forkResolver`, capabilities checked, this run's quarantine drop applied. A fact the dispatcher already computed, carried so a hook reads it instead of rebuilding it. Optional in the type only so a hand-built fixture may omit it; a dispatcher-built context always sets it. |
-| `priorAttempts` | Every persisted prior-attempt record, keyed as the files under `<flumeDir>/prior-attempts/` are — the entry tag slug for a fanout record, the phase name for a singleton one. Optional in the type for the same fixture reason as `pickable`. |
+| `priorAttempts` | Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`, keyed by the identity it was written under — the entry tag slug for a fanout record, the phase name for a singleton one, spelled exactly as your chain spells it (the file on disk sits at a slugged stem; the map key does not). Optional in the type for the same fixture reason as `pickable`. |
 
 ### `shouldRun`: decline a tick before the invocation
 
@@ -1243,10 +1243,11 @@ An absent field is never a claim of flakiness.
 The carry is cross-process by construction — the record is persisted under
 `.flume/prior-attempts/` (gitignored, beside the baton) and read back by the
 next `flume tick`'s fresh process. That same read hands every record to your
-hooks as `TickContext.priorAttempts`, keyed the way the files are (entry tag
-slug for a fanout record, phase name for a singleton one), so a `shouldRun` or
-`promptArgs` reading one — the `suspectFlake` marker included — never opens the
-directory itself.
+hooks as `TickContext.priorAttempts`, keyed by the identity each record was
+written under (entry tag slug for a fanout record, phase name for a singleton
+one — your spelling of that name, not the slugged stem the file sits at), so a
+`shouldRun` or `promptArgs` reading one — the `suspectFlake` marker included —
+never opens the directory itself.
 
 The block is **absent on a first attempt** (no false signal), and a record
 clears two ways: an attempt that **ships clean** retires its own, and a

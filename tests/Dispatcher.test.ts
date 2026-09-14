@@ -8181,15 +8181,21 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
           .split(observedTip)
           .join("<OBSERVED>")
           .replace(/"at": "[^"]*"/, '"at": "<AT>"')
-          // The keyspace is the one field that legitimately differs between
-          // the legs (spec/loop.md "No false signal") — normalized out of
-          // the byte pin and asserted on its own below.
-          .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"');
+          // The keyspace and the written identity are the fields that
+          // legitimately differ between the legs (spec/loop.md "No false
+          // signal") — normalized out of the byte pin and asserted on their
+          // own below.
+          .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"')
+          .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"');
       expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
         normalize(singletonRecord, singletonPreHead, singletonObservedHead),
       );
       expect(JSON.parse(singletonRecord).key).toBe("phase");
       expect(JSON.parse(fanoutRecord).key).toBe("entry");
+      // …and each leg's identity is the one its own keyspace names: the
+      // phase's name as the chain spells it, the entry's tag slug.
+      expect(JSON.parse(singletonRecord).keyedAs).toBe("plan");
+      expect(JSON.parse(fanoutRecord).keyedAs).toBe(slugify("FANOUT-TWIN"));
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
 
@@ -9264,6 +9270,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       mode: "clean-exit",
       finalMessage: "off-writablePaths edit",
       key: "entry",
+      keyedAs: slugify("SHIPS"),
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
@@ -9353,8 +9360,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
   it("a record carrying a recognized `mode` but no `headSha` is absent from `TickContext.priorAttempts`, the degrade an unrecognized `mode` already earns", async () => {
     const captured = await priorAttemptsSeenBy({
-      "un-anchored": { mode: "clean-exit", finalMessage: "no anchor", key: "phase", at: "2024-01-01T00:00:00.000Z" },
-      "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), key: "phase", at: "2024-01-01T00:00:00.000Z" },
+      "un-anchored": { mode: "clean-exit", finalMessage: "no anchor", key: "phase", keyedAs: "un-anchored", at: "2024-01-01T00:00:00.000Z" },
+      "bad-mode": { mode: "who-knows", headSha: "0".repeat(40), key: "phase", keyedAs: "bad-mode", at: "2024-01-01T00:00:00.000Z" },
     });
 
     // The un-anchored record is refused exactly as the unrecognized-mode one
@@ -9367,7 +9374,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
   it("a record missing only `at` is refused too — the anchor is both fields", async () => {
     const captured = await priorAttemptsSeenBy({
-      "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), key: "phase", headSha: "0".repeat(40) },
+      "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), key: "phase", keyedAs: "no-at", headSha: "0".repeat(40) },
     });
 
     expect(captured.has("no-at")).toBe(false);
@@ -9386,14 +9393,15 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     } as const;
     // One record per arm of the union, so a refusal that over-fired on any
     // single variant's own fields shows up as a missing key rather than
-    // hiding behind a sibling that happened to survive.
+    // hiding behind a sibling that happened to survive. Each `keyedAs` is
+    // the record's own stem — the map key a hook then looks it up by.
     const anchored: Record<string, PriorAttempt> = {
-      "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", ...anchor },
-      "clean-exit": { mode: "clean-exit", finalMessage: "off-writablePaths edit", ...anchor },
-      "platform-preempt": { mode: "platform-preempt", failureClass: "rate-limit", ...anchor },
-      "render-refused": { mode: "render-refused", failures: "! `git log`: exit 128", ...anchor },
-      "tip-moved": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), ...anchor },
-      "not-shipped": { mode: "not-shipped", mergedSha: "c".repeat(40), touchedPaths: ["src/a.ts"], ...anchor },
+      "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", keyedAs: "gate-revert", ...anchor },
+      "clean-exit": { mode: "clean-exit", finalMessage: "off-writablePaths edit", keyedAs: "clean-exit", ...anchor },
+      "platform-preempt": { mode: "platform-preempt", failureClass: "rate-limit", keyedAs: "platform-preempt", ...anchor },
+      "render-refused": { mode: "render-refused", failures: "! `git log`: exit 128", keyedAs: "render-refused", ...anchor },
+      "tip-moved": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), keyedAs: "tip-moved", ...anchor },
+      "not-shipped": { mode: "not-shipped", mergedSha: "c".repeat(40), touchedPaths: ["src/a.ts"], keyedAs: "not-shipped", ...anchor },
     };
 
     const captured = await priorAttemptsSeenBy(anchored);
@@ -9909,11 +9917,15 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
         .replace(/"at": "[^"]*"/, '"at": "<AT>"')
         // The keyspace legitimately differs — singleton records are
         // phase-keyed, fanout records entry-keyed (spec/loop.md "No false
-        // signal") — so it is normalized out here and asserted directly.
-        .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"');
+        // signal") — as does the identity written under it, so both are
+        // normalized out here and asserted directly.
+        .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"')
+        .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"');
     expect(normalizeAnchor(fanoutRecord)).toBe(normalizeAnchor(singletonRecord));
     expect(JSON.parse(singletonRecord).key).toBe("phase");
     expect(JSON.parse(fanoutRecord).key).toBe("entry");
+    expect(JSON.parse(singletonRecord).keyedAs).toBe("plan");
+    expect(JSON.parse(fanoutRecord).keyedAs).toBe(slugify("FANOUT-TWIN"));
 
     // Both callsites log through the same template —
     // "[flume] <label>: render-refused (no commit): <message>" — with only
@@ -13753,11 +13765,13 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       "at",
       "headSha",
       "key",
+      "keyedAs",
       "mergedSha",
       "mode",
       "touchedPaths",
     ]);
     expect(record.key).toBe("entry");
+    expect(record.keyedAs).toBe(slugify("DECLINED-ONCE"));
     expect(record.headSha).toBe(trunkTip);
   }, 20_000);
 
@@ -13826,6 +13840,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       mergedSha: declinedSha,
       touchedPaths: ["src/twice.ts"],
       key: "entry",
+      keyedAs: slugify("DECLINED-THEN-SHIPS"),
       headSha: declinedSha,
       at: expect.any(String),
     });

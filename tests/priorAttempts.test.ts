@@ -22,6 +22,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { slugify } from "../src/paths.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Phase } from "../src/Phase.ts";
 import { InlineExecRenderError } from "../src/Prompt.ts";
 import {
@@ -116,8 +117,8 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       expect(back).toMatchObject(draft as Record<string, unknown>);
     }
 
-    // `readAll` is keyed by the same filename stem `write` used, so a tick's
-    // `TickContext.priorAttempts` carries all six.
+    // `readAll` is keyed by the identity `write` stamped — here one mode name
+    // per record — so a tick's `TickContext.priorAttempts` carries all six.
     const all = await store.readAll();
     expect([...all.keys()].sort()).toEqual([...ALL_MODES].sort());
 
@@ -247,5 +248,122 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
       expect(rel.startsWith("..") || isAbsolute(rel), key).toBe(false);
       expect(dirname(p), key).toBe(priorAttemptsDir(flumeDir));
     }
+  });
+});
+
+/**
+ * The record's own written identity, and the map key that reads off it.
+ *
+ * A record's filename stem is slugged — it has to be, or a raw tag would walk
+ * out of `prior-attempts/`. The map a chain reads is not a filesystem, and
+ * keying it by that stem handed a singleton phase a key it does not hold: a
+ * chain whose phase is named `plan_sweep` looks itself up by `plan_sweep` and
+ * found nothing, because the file sat at `plan-sweep.json`. `write` now stamps
+ * the ref's key onto the record and `readAll` keys by that, so the two
+ * keyspaces spec/chain.md ("What a hook receives") names — tag slug for
+ * fanout, phase name for singletons — are both the identity the caller
+ * already holds.
+ *
+ * Driven end to end through the real writer and the real reader
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*); only the refusal case below is hand-authored, which is the
+ * sanctioned exception — no writer mints a record missing the field.
+ */
+describe("priorAttempts — a record is keyed by the identity it was written under", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("readAll keys a singleton's record by the raw phase name, not its slugged stem", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // Phase names a chain plausibly spells and `slugify` actually rewrites —
+    // a name already in slug form would make the whole test vacuous.
+    const phaseNames = ["plan_sweep", "Plan Derive"];
+    expect(phaseNames.every((n) => slugify(n) !== n)).toBe(true);
+
+    for (const name of phaseNames) {
+      const ref = priorAttemptRef({ name } as Phase);
+      expect(ref).toEqual({ key: name, keyspace: "phase" });
+      await store.write(ref, buildCleanExit(`parked: ${name}`));
+    }
+
+    const all = await store.readAll();
+    expect(all.size).toBe(phaseNames.length);
+
+    for (const name of phaseNames) {
+      // The key a `shouldRun` holds is `phase.name` itself.
+      expect(all.get(name)?.mode, name).toBe("clean-exit");
+      expect(all.get(name)?.key, name).toBe("phase");
+      // …and the slugged stem is not a second key for the same record.
+      expect(all.has(slugify(name)), name).toBe(false);
+      // The on-disk artifact is unmoved: still the slugged stem, so nothing
+      // a raw key could do to a path is reintroduced here.
+      expect(
+        existsSync(join(priorAttemptsDir(flumeDir), `${slugify(name)}.json`)),
+        name,
+      ).toBe(true);
+    }
+  });
+
+  it("readAll keys a fanout entry's record by its tag slug", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const tag = "SHOUTY-TAG";
+    expect(slugify(tag)).not.toBe(tag);
+    const entry: PendingEntry = {
+      tag,
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: { new: [], edit: [], retire: [] },
+    };
+
+    const ref = priorAttemptRef({ name: "build" } as Phase, entry);
+    expect(ref).toEqual({ key: slugify(tag), keyspace: "entry" });
+    await store.write(ref, buildCleanExit("parked: needs a wider fence"));
+
+    const all = await store.readAll();
+    expect(all.size).toBe(1);
+    // The entry keyspace is unchanged by the singleton fix: the ref already
+    // slugged the tag, so the written identity and the stem are one text —
+    // which is what `clearStale` compares the queue's tags against.
+    expect(all.get(slugify(tag))?.key).toBe("entry");
+    expect(all.has(tag)).toBe(false);
+    expect(await store.clearStale([entry])).toEqual([]);
+    expect(await store.clearStale([])).toEqual([slugify(tag)]);
+  });
+
+  it("a prior-attempt record carrying no written identity reads as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const p = priorAttemptPath(flumeDir, "plan");
+    await mkdir(dirname(p), { recursive: true });
+
+    // Everything the reader asked for before the identity existed — a record
+    // left by an older line, or by anything that is not this store. Without
+    // it `readAll` has nothing to key by and would file the record under
+    // `undefined`, which is a key no chain can ask for and a value every
+    // `ReadonlyMap<string, …>` consumer believes cannot be there.
+    await writeFile(
+      p,
+      JSON.stringify({
+        mode: "clean-exit",
+        finalMessage: "parked: the entry needs a wider fence",
+        key: "phase",
+        headSha: "0".repeat(40),
+        at: "2024-01-01T00:00:00.000Z",
+      }),
+    );
+    expect(existsSync(p)).toBe(true);
+
+    await expect(store.read("plan")).resolves.toBeUndefined();
+    expect((await store.readAll()).size).toBe(0);
   });
 });

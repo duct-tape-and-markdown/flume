@@ -107,14 +107,16 @@ export interface TickContext {
   pickable?: readonly PendingEntry[];
   /**
    * Every persisted {@link PriorAttempt} record under
-   * `<flumeDir>/prior-attempts/`, keyed exactly as the files on disk are —
-   * the entry tag slug for a fanout record, the phase name for a singleton
-   * one (`src/priorAttempts.ts:priorAttemptRef`) — read with the dispatcher's
-   * own reader and its own tolerance: a corrupt or unrecognized-mode record
-   * is absent from the map rather than surfaced malformed. A `shouldRun`
-   * deciding "does some other phase have a standing record to reconcile"
-   * reads this instead of scanning the directory itself. Optional in the
-   * type for the same hand-built-fixture reason as `pickable` above.
+   * `<flumeDir>/prior-attempts/`, keyed by the identity each record was
+   * written under — the entry tag slug for a fanout record, the phase name
+   * for a singleton one, exactly as this chain spells that name. A phase the
+   * chain calls `plan_sweep` finds its own record at `plan_sweep`, whatever
+   * stem the file sits at. Read with the dispatcher's own reader and its own
+   * tolerance: a corrupt or unrecognized-mode record is absent from the map
+   * rather than surfaced malformed. A `shouldRun` deciding "does some other
+   * phase have a standing record to reconcile" reads this instead of
+   * scanning the directory itself. Optional in the type for the same
+   * hand-built-fixture reason as `pickable` above.
    */
   priorAttempts?: ReadonlyMap<string, PriorAttempt>;
 }

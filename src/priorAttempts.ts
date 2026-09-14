@@ -45,25 +45,28 @@ const execFileP = promisify(execFile);
 
 /**
  * A `PriorAttempt` variant before {@link PriorAttemptStore.write} stamps
- * the `headSha`/`at` anchor and the `key` keyspace — what each mode-specific
- * builder below actually produces. Kept as an explicit union (rather than a
+ * the `headSha`/`at` anchor, the `key` keyspace and the `keyedAs` written
+ * identity — what each mode-specific builder below actually produces. Kept as an explicit union (rather than a
  * distributed `Omit` over `PriorAttempt`) so each arm still carries its own
  * mode-specific fields rather than collapsing to their shared `mode` key.
  */
 export type PriorAttemptDraft =
-  | Omit<GateRevertAttempt, "headSha" | "at" | "key">
-  | Omit<CleanExitAttempt, "headSha" | "at" | "key">
-  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key">
-  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key">
-  | Omit<TipMovedAttempt, "headSha" | "at" | "key">
-  | Omit<NotShippedAttempt, "headSha" | "at" | "key">;
+  | Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs">
+  | Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs">
+  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs">
+  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs">
+  | Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs">
+  | Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs">;
 
 /**
  * Where one prior-attempt record lives and which keyspace that place belongs
- * to: `key` is the filename stem under `priorAttemptsDir` (an entry tag slug
- * or a phase name), `keyspace` the {@link PriorAttempt.key} value stamped
- * into the record written there. Produced only by
- * {@link priorAttemptRef}, so the two halves cannot disagree.
+ * to: `key` is the identity the record is written under — an entry tag slug
+ * or a phase name exactly as the chain spells it, which
+ * {@link priorAttemptStem} slugifies into the filename stem and
+ * {@link PriorAttemptStore.write} stamps verbatim onto the record's
+ * {@link PriorAttempt.keyedAs}; `keyspace` is the {@link PriorAttempt.key}
+ * value stamped alongside it. Produced only by {@link priorAttemptRef}, so
+ * the halves cannot disagree.
  */
 export interface PriorAttemptRef {
   key: string;
@@ -196,12 +199,14 @@ export class PriorAttemptStore {
    * Read a persisted prior-attempt record, if any. Corrupt, carrying an
    * unrecognized `mode` discriminant, missing the `headSha`/`at` anchor
    * every record carries (spec/loop.md "Every record is anchored"), or
-   * missing the `key` keyspace every record states (spec/loop.md "No false
-   * signal") → treated as absent. `mode` alone does not make a
+   * missing the `key` keyspace / `keyedAs` written identity every record
+   * states (spec/loop.md "No false signal") → treated as absent. `mode` alone does not make a
    * `PriorAttempt`: the renderer is exhaustive over the known modes and must
    * never be fed an unknown shape, and a chain comparing a record's `headSha` to the tip
    * reads a field the type promises is there. A record predating the anchor
-   * is a stale slot, and a stale slot must never become a false signal.
+   * is a stale slot, and a stale slot must never become a false signal —
+   * and one predating `keyedAs` has no identity to key {@link readAll}'s map
+   * by, which would put it in a chain's hands under `undefined`.
    */
   async read(key: string): Promise<PriorAttempt | undefined> {
     const p = priorAttemptPath(this.flumeDir, key);
@@ -218,6 +223,7 @@ export class PriorAttemptStore {
         headSha?: unknown;
         at?: unknown;
         key?: unknown;
+        keyedAs?: unknown;
       };
       if (
         rec &&
@@ -229,7 +235,9 @@ export class PriorAttemptStore {
           rec.mode === "not-shipped") &&
         typeof rec.headSha === "string" &&
         typeof rec.at === "string" &&
-        (rec.key === "entry" || rec.key === "phase")
+        (rec.key === "entry" || rec.key === "phase") &&
+        typeof rec.keyedAs === "string" &&
+        rec.keyedAs.length > 0
       ) {
         return rec as PriorAttempt;
       }
@@ -242,12 +250,18 @@ export class PriorAttemptStore {
 
   /**
    * Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`,
-   * keyed by the filename stem — exactly the key {@link read} would have
-   * used to write it (`slugify` is idempotent on an already-slugified key,
-   * so re-feeding the stem back through it resolves the same path). An
-   * absent or unreadable directory reads as no records, the same "no prior"
-   * degrade {@link read} already applies per file — the whole of
-   * `TickContext.priorAttempts` (spec/chain.md "What a hook receives").
+   * keyed by the identity each record was **written** under — its own
+   * {@link PriorAttempt.keyedAs} — not by the filename stem it happens to
+   * sit at. For a fanout record the two are the same text (the ref's key is
+   * already a tag slug); for a singleton they diverge whenever `slugify`
+   * rewrites the phase name, and it is the chain's own spelling of that name
+   * a hook holds when it reaches for its record (spec/chain.md "What a hook
+   * receives"). The stem still locates the file — it is read back through
+   * {@link read}, whose `slugify` is idempotent on it — and only the map key
+   * comes off the record.
+   *
+   * An absent or unreadable directory reads as no records, the same "no
+   * prior" degrade {@link read} already applies per file.
    */
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const dir = priorAttemptsDir(this.flumeDir);
@@ -260,17 +274,17 @@ export class PriorAttemptStore {
     const out = new Map<string, PriorAttempt>();
     for (const e of entries) {
       if (!e.isFile() || !e.name.endsWith(".json")) continue;
-      const key = e.name.slice(0, -".json".length);
-      const rec = await this.read(key);
-      if (rec) out.set(key, rec);
+      const stem = e.name.slice(0, -".json".length);
+      const rec = await this.read(stem);
+      if (rec) out.set(rec.keyedAs, rec);
     }
     return out;
   }
 
   /**
    * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") and the
-   * writing ref's keyspace onto whatever mode-specific fields the caller
-   * built, so every one of the `build*` functions below stays ignorant of
+   * writing ref's keyspace and key onto whatever mode-specific fields the
+   * caller built, so every one of the `build*` functions below stays ignorant of
    * the anchor rather than each re-reading the trunk tip itself. `repoRoot`,
    * never `key`'s worktree — the anchor is the *trunk* tip regardless of
    * which worktree produced the record.
@@ -280,6 +294,10 @@ export class PriorAttemptStore {
     const anchored: PriorAttempt = {
       ...rec,
       key: ref.keyspace,
+      // The ref's key verbatim, not the slugged stem `p` sits at: this is
+      // the identity `readAll` keys a chain's map by, and a phase name
+      // `slugify` rewrites must still answer to the name the chain spells.
+      keyedAs: ref.key,
       headSha: await git.revParse(this.repoRoot),
       at: new Date().toISOString(),
     };
@@ -315,10 +333,12 @@ export class PriorAttemptStore {
    * every `shouldRun`/`promptArgs` reading `TickContext.priorAttempts`, and
    * a tag reused later would inherit a predecessor it never had.
    *
-   * Keyed on the record's own `key` keyspace, never on the stem's text: a
-   * phase's record is named by a phase name, which no queue ever carries,
-   * so a stem-only test would clear the singleton records the queue has no
-   * say over. Records that read as absent (corrupt, unanchored, no
+   * Keyed on the record's own `key` keyspace, never on the written
+   * identity's text: a phase's record is named by a phase name, which no
+   * queue ever carries, so a text-only test would clear the singleton
+   * records the queue has no say over. Within the entry keyspace the
+   * identity {@link readAll} keys by *is* the tag slug the ref wrote it
+   * under, which is what `queued` holds. Records that read as absent (corrupt, unanchored, no
    * keyspace) are not cleared — {@link readAll} never surfaces them, and
    * deleting a file this store cannot parse is a guess about what wrote it.
    */
@@ -456,7 +476,7 @@ export async function buildGateRevert(
    * returns") — the footprint `suspectFlake` disjointness reads against.
    */
   footprint: string[],
-): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key">> {
+): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs">> {
   const diffStat = await capturedDiffStat(diffCwd, sha);
   return {
     mode: "gate-revert",
@@ -492,7 +512,7 @@ export async function buildGateRevert(
  */
 export function buildCleanExit(
   finalMessage: string,
-): Omit<CleanExitAttempt, "headSha" | "at" | "key"> {
+): Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "clean-exit",
@@ -506,7 +526,7 @@ export function buildCleanExit(
 /** Build the platform-preempt record from the non-work failure class. */
 export function buildPlatformPreempt(
   failureClass: string,
-): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key"> {
+): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
@@ -520,7 +540,7 @@ export function buildPlatformPreempt(
  */
 export function buildRenderRefused(
   err: InlineExecRenderError,
-): Omit<RenderRefusedAttempt, "headSha" | "at" | "key"> {
+): Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   return {
     mode: "render-refused",
     failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
@@ -546,7 +566,7 @@ export function buildRenderRefused(
 export function buildTipMoved(
   expectedTip: string,
   observedTip: string,
-): Omit<TipMovedAttempt, "headSha" | "at" | "key"> {
+): Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   return { mode: "tip-moved", expectedTip, observedTip };
 }
 
@@ -566,7 +586,7 @@ export function buildTipMoved(
 export function buildNotShipped(
   mergedSha: string,
   touchedPaths: readonly string[],
-): Omit<NotShippedAttempt, "headSha" | "at" | "key"> {
+): Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
   return {
     mode: "not-shipped",

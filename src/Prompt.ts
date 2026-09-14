@@ -99,6 +99,16 @@ export interface GateRevertAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -128,6 +138,16 @@ export interface CleanExitAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -149,6 +169,16 @@ export interface PlatformPreemptAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -171,6 +201,16 @@ export interface RenderRefusedAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -207,6 +247,16 @@ export interface TipMovedAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -244,6 +294,16 @@ export interface NotShippedAttempt {
    * signal") — stamped by the writer, never derived from the key's text.
    */
   key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds. The stem stays slugged; only
+   * the map key is the written identity.
+   */
+  keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
