@@ -37,7 +37,10 @@ Every check lives at the most deterministic layer that can express it — a
   harness's own prose is written is harness governance, which this page does
   not administer; a suite that reads prose against prose is that governance
   wearing engine discipline, and every section here becomes a generator
-  against it.
+  against it. The one carve-out is prose that compiles into the package's
+  public types: a doc comment reachable from the `exports` map's `.d.ts` is
+  the hover text a chain author reads, so it is engine surface and may be
+  pinned. Prose the package never ships stays with its authors.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is
