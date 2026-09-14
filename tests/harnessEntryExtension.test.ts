@@ -1,0 +1,127 @@
+/**
+ * The harness package's entry extension (`spec/harness.md`, *The entry
+ * extension*), driven through the two engine surfaces that consume it: the
+ * parser a gate runs and the renderer a prompt is built from.
+ *
+ * Every case here is an agreement gate (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*). The claim under test is that
+ * the declaration the prompt announces and the declaration the parser
+ * enforces are one declaration, so both sides run for real: the package's
+ * own `entryExtension()` goes into the engine's `renderSchemaForPrompt` and
+ * into the engine's `parsePending`, and no hint text or cap is restated by
+ * the tester's hand.
+ *
+ * The removal case hand-authors its input, which is the sanctioned shape —
+ * no real consumer produces the extension a refusal exists to catch.
+ */
+
+import { expect, it } from "vitest";
+
+import {
+  ENTRY_CAPS,
+  EntryFieldRemovalError,
+  entryExtension,
+} from "../harness/index.ts";
+import { parsePending, renderSchemaForPrompt } from "../src/index.ts";
+import type { EntryExtension } from "../src/index.ts";
+
+/** The six the spec section lists, in the order it lists them. */
+const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
+
+/** One core-valid entry, with the extension fields a caller wants over it. */
+const entryJson = (fields: Record<string, unknown>): string =>
+  JSON.stringify([
+    {
+      tag: "SOME-TAG",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: { new: [], edit: [], retire: [] },
+      summary: "extract the package's entry extension",
+      per: { path: "spec/harness.md", section: "The entry extension" },
+      acceptance: "the six fields render and parse",
+      tests: ["a behavior"],
+      pins: [],
+      ...fields,
+    },
+  ]);
+
+/** A Standard Schema that accepts anything — this file judges wiring, not validation. */
+const anything = { "~standard": { version: 1, vendor: "test", validate: (value: unknown) => ({ value }) } } as const;
+
+/** A consumer's own field — a name the package never declares. */
+const riskField: EntryExtension = {
+  risk: { schema: anything, hint: `"low" | "high"` },
+};
+
+it("the package's entry extension declares summary, per, acceptance, tests, pins and notes", () => {
+  const extension = entryExtension();
+
+  expect(Object.keys(extension)).toEqual(SPEC_FIELDS);
+
+  // The acceptance: the six reach a prompt through the engine's own
+  // renderer, each carrying the hint its declaration holds. Read off the
+  // declaration rather than restated here — a hint list by the tester's hand
+  // is the second copy this module exists to prevent.
+  const rendered = renderSchemaForPrompt(extension);
+  for (const [name, field] of Object.entries(extension)) {
+    expect(rendered).toContain(`"${name}": `);
+    expect(rendered).toContain(field.hint);
+  }
+
+  // Each hint appears once: a field rendered twice would satisfy the
+  // `toContain` above while handing the agent two schemas for one field.
+  for (const field of Object.values(extension)) {
+    expect(rendered.split(field.hint)).toHaveLength(2);
+  }
+
+  // And the same declaration is what the parser enforces: the render is a
+  // claim about a schema only if that schema is the one a gate runs.
+  const parsed = parsePending(entryJson({}), extension);
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.entries).toHaveLength(1);
+});
+
+it("a consumer field is merged into the entry extension beside the package's own", () => {
+  const extension = entryExtension(riskField);
+
+  expect(Object.keys(extension)).toEqual([...SPEC_FIELDS, "risk"]);
+
+  // Beside, not instead: the package's own still parse and still render.
+  const parsed = parsePending(entryJson({ risk: "low" }), extension);
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.entries[0]).toMatchObject({ risk: "low", summary: expect.any(String) });
+
+  const rendered = renderSchemaForPrompt(extension);
+  expect(rendered).toContain(riskField.risk!.hint);
+  for (const name of SPEC_FIELDS) expect(rendered).toContain(`"${name}": `);
+});
+
+it("a consumer extension that drops a package field is refused, naming the field", () => {
+  // Redeclaring a package field displaces its schema and its hint — removal
+  // spelled as addition, which is what the spec section denies.
+  for (const name of SPEC_FIELDS) {
+    const usurper: EntryExtension = { [name]: { schema: anything, hint: `"anything"` } };
+    expect(() => entryExtension(usurper)).toThrow(EntryFieldRemovalError);
+    expect(() => entryExtension(usurper)).toThrow(new RegExp(`"${name}"`));
+  }
+  expect(SPEC_FIELDS.length).toBe(6);
+});
+
+it("a summary past the package's cap is refused", () => {
+  const extension = entryExtension();
+
+  // At the cap, through the real parser — without this the refusal below
+  // would pass over a schema that rejected every summary.
+  const atCap = parsePending(
+    entryJson({ summary: "x".repeat(ENTRY_CAPS.summary) }),
+    extension,
+  );
+  expect(atCap.errors).toEqual([]);
+
+  const past = parsePending(
+    entryJson({ summary: "x".repeat(ENTRY_CAPS.summary + 1) }),
+    extension,
+  );
+  expect(past.ok).toBe(false);
+  expect(past.errors.map((e) => e.path)).toContain("summary");
+});

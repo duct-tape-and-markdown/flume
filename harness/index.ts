@@ -24,3 +24,9 @@ export {
   parseDeclaration,
   type Declaration,
 } from "./declaration.js";
+
+export {
+  ENTRY_CAPS,
+  EntryFieldRemovalError,
+  entryExtension,
+} from "./entryExtension.js";
