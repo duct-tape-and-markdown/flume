@@ -1,47 +1,5 @@
 [
   {
-    "tag": "HARNESS-ENTRY-EXTENSION",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/entryExtension.ts",
-          "description": "the six fields, their caps and their hints"
-        },
-        {
-          "path": "tests/harnessEntryExtension.test.ts",
-          "description": "the render, the consumer add, the removal refusal"
-        }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "summary": "Extract the package's entry extension — summary, per, acceptance, tests[], pins[], notes with their caps and hints — as a value a consumer adds to but cannot remove from.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The entry extension"
-    },
-    "tests": [
-      "the package's entry extension declares summary, per, acceptance, tests, pins and notes",
-      "a consumer field is merged into the entry extension beside the package's own",
-      "a consumer extension that drops a package field is refused, naming the field",
-      "a summary past the package's cap is refused"
-    ],
-    "pins": [],
-    "acceptance": "harness/entryExtension.ts renders the six fields into a prompt schema and refuses a consumer extension that removes one.",
-    "notes": "Chain-side twin at .flume/chain.ts:117 until the cutover. Consumed by the judges, the gates and the factory. Renders through the engine's renderSchemaForPrompt — one declaration per field, never a second hint copy in a prompt.",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-ENTRY-EXTENSION.md",
-      "harness/entryExtension.ts",
-      "harness/index.ts",
-      "tests/harnessEntryExtension.test.ts",
-      "tests/harnessPackaging.test.ts"
-    ]
-  },
-  {
     "tag": "HARNESS-RECORDS",
     "gate": {
       "kind": "open"
@@ -61,6 +19,13 @@
       "edit": [],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-RECORDS.md",
+      "harness/index.ts",
+      "harness/records.ts",
+      "tests/harnessPackaging.test.ts",
+      "tests/harnessRecords.test.ts"
+    ],
     "summary": "Extract the record conventions the inbox slice drains — the record dirs, the per-tag note path, the byte cap — into one package-owned home under a declared state root.",
     "per": {
       "path": "spec/harness.md",
@@ -73,14 +38,7 @@
     ],
     "pins": [],
     "acceptance": "harness/records.ts names the record dirs, the per-tag note path and the byte cap under a declared state root, and reports whether any record is pending.",
-    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's.",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-RECORDS.md",
-      "harness/index.ts",
-      "harness/records.ts",
-      "tests/harnessPackaging.test.ts",
-      "tests/harnessRecords.test.ts"
-    ]
+    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's."
   },
   {
     "tag": "HARNESS-PLAN-STATE",
@@ -102,6 +60,13 @@
       "edit": [],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-PLAN-STATE.md",
+      "harness/index.ts",
+      "harness/planState.ts",
+      "tests/harnessPackaging.test.ts",
+      "tests/harnessPlanState.test.ts"
+    ],
     "summary": "Add the package's plan-state accessor: the derive and sweep cursors and the continuation signal as declared fields of a typed artifact, never a line regexed out of prose.",
     "per": {
       "path": "spec/harness.md",
@@ -115,14 +80,7 @@
     ],
     "pins": [],
     "acceptance": "harness/planState.ts reads and writes both cursors and the continuation signal as typed fields and refuses a malformed artifact by name.",
-    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563.",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-PLAN-STATE.md",
-      "harness/index.ts",
-      "harness/planState.ts",
-      "tests/harnessPackaging.test.ts",
-      "tests/harnessPlanState.test.ts"
-    ]
+    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563."
   },
   {
     "tag": "HARNESS-RUNTIME-IGNORES",
@@ -161,7 +119,14 @@
     ],
     "pins": [],
     "acceptance": "harness/ignores.ts derives .flume's ignore lines from the engine's path record and a test drives that output against this repo's .gitignore.",
-    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md."
+    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md.",
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-RUNTIME-IGNORES.md",
+      ".gitignore",
+      "harness/ignores.ts",
+      "harness/index.ts",
+      "tests/harnessIgnores.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-CITE-RESOLVER",
@@ -205,10 +170,7 @@
   {
     "tag": "HARNESS-JUDGES",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-ENTRY-EXTENSION"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -245,7 +207,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-ENTRY-EXTENSION",
         "HARNESS-RECORDS",
         "HARNESS-CITE-RESOLVER"
       ]
