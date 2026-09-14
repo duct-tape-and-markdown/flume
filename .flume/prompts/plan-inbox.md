@@ -5,7 +5,7 @@
 </records>
 
 <build-records>
-!`node .flume/delta-window.mjs build-records`
+!`node --import tsx .flume/delta-window.mjs build-records`
 </build-records>
 
 <pending-now>

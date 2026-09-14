@@ -816,7 +816,7 @@ const factory: ChainFactory = (api) => {
       // be red on the base.
       const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
       const pinned = entryExtension.pins.schema.parse(ctx.entry?.pins);
-      const touched = ctx.touchedPaths ?? [];
+      const touched = ctx.touchedPaths;
       // A park is the note alone: nothing to judge, and the named lines are
       // the work's, which the park did not attempt. Judging them here turned
       // every park on an entry that names a test into a gate revert, which

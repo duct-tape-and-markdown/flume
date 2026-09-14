@@ -114,10 +114,12 @@ switch (mode) {
     const recs = existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(".json")).sort() : [];
     out(`=== ${recs.length} standing prior-attempt record(s) ===`);
     for (const n of recs) { out(`--- ${n} ---`); out(readFileSync(join(dir, n), "utf8").trimEnd()); }
-    const log = join(flumeDir, "tick-verdicts.jsonl");
-    const last = existsSync(log)
-      ? readFileSync(log, "utf8").trim().split("\n").map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((v) => v?.phaseName === "build").at(-1)
-      : undefined;
+    // The engine's own reader: the latest verdict per phase, the log's
+    // filename and record shape included. This mode runs under `--import
+    // tsx` (`.flume/prompts/plan-inbox.md`) so the runtime's TypeScript
+    // entry resolves; the other modes read only chain-owned artifacts.
+    const { readLatestVerdictsSync } = await import("../src/index.ts");
+    const last = readLatestVerdictsSync(flumeDir).build;
     out(`=== last build verdict ===`);
     if (!last) { out("(none)"); break; }
     out(`${last.at}  ${last.summary}`);
