@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "tag": "HARVEST-DEST-NAME-EXCEEDS-NAME-MAX",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/friction.ts",
+          "description": "bound harvestFriction's composed destination basename to NAME_MAX"
+        },
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "TAG_MAX_LENGTH's doc names writeRevertNote as the tightest raw-tag consumer — correct it to what holds"
+        },
+        {
+          "path": "tests/friction.test.ts",
+          "description": "the module's own agreement gate over the real harvestFriction"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Bound harvestFriction's <tag>--<stamp>--<name> destination to NAME_MAX: at TAG_MAX_LENGTH any source name >=12 chars overruns 255 and the note dies with the worktree",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "tests": [
+      "harvestFriction delivers a note whose source filename is 13 chars under the longest tag parsePending accepts, within NAME_MAX",
+      "two harvests of one source filename under the longest tag parsePending accepts land as two distinct files, neither overwriting the other"
+    ],
+    "acceptance": "At TAG_MAX_LENGTH the composed destination basename is <=255 and the file lands in the primary friction dir; PendingSchema's TAG_MAX_LENGTH doc no longer claims every non-writeRevertNote raw-tag consumer is looser.",
+    "notes": "writeRevertNote is 24+2+tag+2+11 = 255 exactly at tag 216 — that is where 255-39 comes from. harvestFriction is tag+2+24+2+len(name) = 244+len(name), over at len(name)>=12. rename throws ENAMETOOLONG, src/friction.ts:239 logs and continues, and src/Dispatcher.ts:3011 removes the worktree straight after; the site's 'left for the removal-fallback sweep to surface' bound surfaces a surviving worktree path, not a lost note. TAG-LENGTH-BOUND-AGREEMENT-PIN covers writeRevertNote alone."
+  }
+]

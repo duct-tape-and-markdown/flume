@@ -36,11 +36,11 @@ with `examples/`'s three chain modules and `tests/helpers/dispatcherFixture.ts`;
 with `src/job.ts`, `src/Baton.ts`, `src/paths.ts` and `src/Dispatcher.ts`;
 `tests/cliJobResolution.test.ts` with `src/cliJobResolution.ts`, `src/cli.ts`,
 `src/Baton.ts` and `tests/helpers/subprocess.ts`;
-`tests/setupWorktree.test.ts` with `src/setupWorktree.ts`.
+`tests/setupWorktree.test.ts` with `src/setupWorktree.ts`;
+`tests/friction.test.ts` with `src/friction.ts`.
 Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts`,
 `tests/build-changelog.test.ts`, `tests/cli.test.ts`, `tests/cliHelp.test.ts`,
 `tests/cliJobVerbs.test.ts`, `tests/docComments.test.ts`,
-`tests/examples.integration.test.ts`, `tests/friction.test.ts`,
-`tests/job.integration.test.ts`,
+`tests/examples.integration.test.ts`, `tests/job.integration.test.ts`,
 `tests/loop-process-boundary.integration.test.ts` and
 `tests/tip-claim.integration.test.ts`.
