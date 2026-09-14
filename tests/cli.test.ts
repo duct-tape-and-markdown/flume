@@ -25,7 +25,7 @@ import { computeStateRootRel, EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG, loadChainMod
 import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
-import { resolvePendingPath } from "../src/paths.ts";
+import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
 
@@ -442,7 +442,7 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
     `    const slug = basename(inv.cwd);\n` +
     `    if (slug === "ship-a") {\n` +
     `      const flumeDirEnv = process.env.FLUME_DIR ?? "";\n` +
-    `      const pendingPath = join(flumeDirEnv, "plan", "pending.json");\n` +
+    `      const pendingPath = join(flumeDirEnv, ${JSON.stringify(DEFAULT_PENDING_REL)});\n` +
     `      writeFileSync(pendingPath, "{ corrupted mid-wave, not json", "utf8");\n` +
     // Committed on trunk, not left on disk uncommitted: the rewrite read
     // this corruption targets now resolves the committed HEAD tip, never
@@ -451,7 +451,7 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
     `      const repoRoot = join(flumeDirEnv, "..");\n` +
     `      execFileSync(\n` +
     `        "git",\n` +
-    `        ["add", "--", ".flume/plan/pending.json"],\n` +
+    `        ["add", "--", pendingPath],\n` +
     `        { cwd: repoRoot },\n` +
     `      );\n` +
     `      execFileSync(\n` +
@@ -495,8 +495,8 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
       try {
         await writeRepoConfig(repo.dir, ledgerRewriteFailureChainSrc("build"));
         const flumeDir = join(repo.dir, ".flume");
-        const pendingPath = join(flumeDir, "plan", "pending.json");
-        await mkdir(join(flumeDir, "plan"), { recursive: true });
+        const pendingPath = resolvePendingPath(flumeDir);
+        await mkdir(dirname(pendingPath), { recursive: true });
         await writeFile(
           pendingPath,
           JSON.stringify(
@@ -530,7 +530,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         // Committed, not left on disk uncommitted — the decide-read now
         // resolves the committed HEAD tip (spec/pending.md "Dispatch reads
         // come from the tip, not the tree").
-        await exec("git", ["add", "--", ".flume/plan/pending.json"], {
+        await exec("git", ["add", "--", pendingPath], {
           cwd: repo.dir,
         });
         await exec("git", ["commit", "-q", "-m", "test: seed SHIP-A/DECLINE-B"], {
@@ -967,10 +967,10 @@ describe("flume status — pending entry count (§3)", () => {
   it("names the entry count for a valid pending.json", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
-      const planDir = join(dir, ".flume", "plan");
-      await mkdir(planDir, { recursive: true });
+      const queuePath = resolvePendingPath(join(dir, ".flume"));
+      await mkdir(dirname(queuePath), { recursive: true });
       await writeFile(
-        join(planDir, "pending.json"),
+        queuePath,
         JSON.stringify([
           {
             tag: "A",
@@ -999,9 +999,9 @@ describe("flume status — pending entry count (§3)", () => {
   it('prints "pending: unparsable" for a corrupt pending.json instead of dropping it silently', async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
-      const planDir = join(dir, ".flume", "plan");
-      await mkdir(planDir, { recursive: true });
-      await writeFile(join(planDir, "pending.json"), "not json{", "utf8");
+      const queuePath = resolvePendingPath(join(dir, ".flume"));
+      await mkdir(dirname(queuePath), { recursive: true });
+      await writeFile(queuePath, "not json{", "utf8");
 
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1041,14 +1041,14 @@ describe("flume status — pending entry count (§3)", () => {
         ]),
         "utf8",
       );
-      // A plan/pending.json at the default location must never be consulted
-      // once a custom pendingPath is declared.
-      await mkdir(join(dir, ".flume", "plan"), { recursive: true });
-      await writeFile(
-        join(dir, ".flume", "plan", "pending.json"),
-        JSON.stringify([]),
-        "utf8",
-      );
+      // A queue at the default location must never be consulted once a
+      // custom pendingPath is declared — so the decoy is placed by the
+      // accessor that owns that default, never by a path spelled here. A
+      // decoy at a stale literal would sit somewhere `status` never looks,
+      // and this control would pass without controlling anything.
+      const decoyPath = resolvePendingPath(join(dir, ".flume"));
+      await mkdir(dirname(decoyPath), { recursive: true });
+      await writeFile(decoyPath, JSON.stringify([]), "utf8");
 
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1088,9 +1088,10 @@ async function writeCapabilityGatedPending(
   root: string,
   capability: string,
 ): Promise<void> {
-  await mkdir(join(root, ".flume", "plan"), { recursive: true });
+  const queuePath = resolvePendingPath(join(root, ".flume"));
+  await mkdir(dirname(queuePath), { recursive: true });
   await writeFile(
-    join(root, ".flume", "plan", "pending.json"),
+    queuePath,
     JSON.stringify(
       [
         {
@@ -1952,7 +1953,7 @@ function noFanoutCheckChainSrc(): string {
 async function writeCheckPending(
   root: string,
   entries: unknown[],
-  rel: string = join("plan", "pending.json"),
+  rel: string = DEFAULT_PENDING_REL,
 ): Promise<void> {
   const path = join(root, ".flume", rel);
   await mkdir(dirname(path), { recursive: true });
@@ -2073,8 +2074,10 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(0);
       expect(r.out).toContain(`${customRel} valid (1 entries)`);
-      // The default location was never written or read.
-      expect(existsSync(join(repo.dir, ".flume", "plan", "pending.json"))).toBe(
+      // The default location was never written or read. Resolved through
+      // the accessor that owns it: a stale literal here would assert the
+      // absence of a file nothing ever writes, and stay green for free.
+      expect(existsSync(resolvePendingPath(join(repo.dir, ".flume")))).toBe(
         false,
       );
     } finally {
@@ -2101,7 +2104,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       // A directory in place of pending.json reproduces a non-ENOENT read
       // failure (EISDIR) without relying on permission bits a root-run test
       // could bypass (`.claude/rules/engineering.md`, "Loud or nothing").
-      await mkdir(join(repo.dir, ".flume", "plan", "pending.json"), {
+      await mkdir(resolvePendingPath(join(repo.dir, ".flume")), {
         recursive: true,
       });
 
@@ -2130,7 +2133,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
           },
         },
       ]);
-      const pendingPath = join(repo.dir, ".flume", "plan", "pending.json");
+      const pendingPath = resolvePendingPath(join(repo.dir, ".flume"));
       const before = await readFile(pendingPath, "utf8");
 
       const r = await runCli(repo.dir, ["check"]);
