@@ -21,6 +21,22 @@ Nothing has been dropped.
 but each is a judgment about another bay's work. They are laid out here with
 the evidence so whoever owns the triage can rule cheaply.
 
+## Ruling
+
+**2026-09-14 — the chef ruled 1-6 closed**, in the flume session, with
+confirmation to follow at the pass.
+
+Per the pass's house law an agent-attributed confirmation is a claim until the
+chef confirms it at that keyboard, so this line is the claim and not yet the
+confirmation. Relayed verbatim to `jeff-intake-triage`; the board's carry line
+(`jeff/spool/2026-09-04-flume-inbox-carry.md`) narrows to the entries below
+that are *not* 1-6 once the confirmation lands.
+
+Nothing in the stash was deleted on this ruling. The six close by **not being
+carried** — their disposition is this file plus the consumer files it cites.
+The stash, `preserved-inbox.md`, and the pass's byte-identical 09-04 copy all
+remain intact.
+
 ## Closeable — verified on disk 2026-09-14
 
 | # | Entry | Why it looks closed | Evidence |
