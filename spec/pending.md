@@ -47,9 +47,11 @@ Entry order is meaningful — top is next. An empty array is valid and means not
 `TAG_PATTERN` admits letters, digits, and `._()-`, length 1..`TAG_MAX_LENGTH`. No whitespace, no
 path separators. `TAG_MAX_LENGTH = 255 - 39`: 255 is the conservative shared filesystem
 `NAME_MAX`, and 39 is the fixed scaffolding `Dispatcher.writeRevertNote` wraps around a raw tag
-(`<stamp>--<tag>--reverted.md`) — the tightest raw-tag consumer. Every other tag-derived
-component (the commit-message token, and the `slugify`d branch name and prior-attempt key —
-`slugify` never lengthens) is looser, so this bound clears them too. It is not the only ceiling a
+(`<stamp>--<tag>--reverted.md`) — the tightest raw-tag consumer. Every other component that is
+the tag or its slug alone (the commit-message token, the `slugify`d branch name and prior-attempt
+key — `slugify` never lengthens) is looser, so this bound clears them too; a component composing
+the tag with a second variable-length part — the friction harvest's stamped destination — is
+bounded at its writer instead of inheriting the schema's. It is not the only ceiling a
 tag meets: the worktree **directory** component answers to
 git's own win32 worktree-path wall, which is tighter than `NAME_MAX` and independent of it, so a
 schema-valid tag's raw slug can exceed it — `worktreeDirName` truncates and hashes to stay under
@@ -119,7 +121,7 @@ object.
 
 ## `files` is a prediction the scheduler consumes
 
-`declaredPaths(entry)` is `files.new[].path ∪ files.edit[].path ∪ files.retire`. It is what the
+An entry's **declared paths** are `files.new[].path ∪ files.edit[].path ∪ files.retire`. They are what the
 entry's author committed to. Three mechanics read it: the fanout partition (below),
 `pendingGate`'s fence pre-check, and — only where a chain opts in — the entry-scoped write guard
 together with the prompt's effective-fence rendering, which share one derivation. **Ship
@@ -237,10 +239,10 @@ test, so every entry opens its own batch and the wave runs a single entry rather
 The disjointness input is deliberately **wider** than the fence input:
 
 ```
-touchedPaths(entry) = declaredPaths(entry) ∪ (entry.observedFiles ?? [])
+touched paths = declared paths ∪ (entry.observedFiles ?? [])
 ```
 
-`declaredPaths` is what the author promised; `observedFiles` is what a reverted attempt actually
+The declared paths are what the author promised; `observedFiles` is what a reverted attempt actually
 touched. The partition needs the union — otherwise a retry rides the same wave as the entry it
 already collided with. The write guard and ship detection deliberately do **not** consume
 `observedFiles`: it feeds parallelism, not permission, and not proof of work.
@@ -251,7 +253,7 @@ a generated index — declares those paths (globs, matched by `matchesAny`, spec
 partition treats them as touched by nobody: `partitionByFileOverlap` and the footprint recorder
 both read `touchedPaths` through the filter. Without it every pair collides, the batch is one
 entry wide regardless of `maxParallel`, and a full producer tick runs between every ship.
-`declaredPaths` itself is untouched — the fence, the write guard, and ship detection see the
+The declared paths themselves are untouched — the fence, the write guard, and ship detection see the
 declared file exactly as before — so the knob can widen a wave but never a permission. The
 residual risk is the one the dispatcher already bounds: two ships that do collide in the ignored
 file cost one cherry-pick conflict and a re-pick, never a silent bad merge.
@@ -288,7 +290,7 @@ default `false`. Undeclared, a scoped tick's write allowance is byte-identical t
 tick's. Declared:
 
 ```
-declaredPaths(entry) ∪ phase.entryChannelPaths     — the fence
+declared paths ∪ phase.entryChannelPaths          — the fence
 with phase.writablePaths                            — the outer ceiling (both checks apply)
 ```
 
@@ -317,9 +319,10 @@ refusal of the work — plan cannot know which files a move breaks without doing
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick
   artifacts an entry never declares: a build phase reporting a finding into the producer's
   open-questions file, prior-attempt context, and the like.
-- **The fence has one home.** The fence the tick's `<harness>` block states, the fence
-  the write guard enforces, and the fence a queue is pre-checked against (`flume check`
-  and the pending gate alike) are one computation, so none of them can differ from another.
+- **The fence has one home.** The fence the tick's `<harness>` block states and the fence
+  the write guard enforces are one computation, so they cannot differ. The queue pre-check
+  (`flume check` and the pending gate alike) judges a different set — the phase's own
+  fence — and shares that computation's one spelling of the union, not its operands.
   Path matching is `matchesAny` — regex specials escaped, `*` and `**` the only
   wildcards, so a declared literal path matches only itself. `matchesAny` rides `FlumeApi`
   (`spec/chain.md`), so a chain predicate over the same globs shares the enforcing matcher
@@ -403,7 +406,7 @@ neither check attaches neither.
 1. **Schema validation.** Parses the queue against the composed core + `opts.extension` — the
    same declaration passed to `renderSchemaForPrompt`, so gate and prompt cannot drift. Failure
    reports one line per issue, entry-indexed.
-2. **Fence pre-check.** Each entry's `declaredPaths` are matched against
+2. **Fence pre-check.** Each entry's declared paths are matched against
    `opts.targetFence.writablePaths ∪ opts.targetFence.entryChannelPaths` — typically the consumer
    phase passed as the value itself. An entry whose declaration cannot survive the consumer's
    fence fails **here, at the producer's own commit, naming the offending paths**, instead of

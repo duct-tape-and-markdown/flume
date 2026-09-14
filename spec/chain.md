@@ -155,8 +155,8 @@ default export that is not a factory, no `phases[]`. Two layers, both required.
   percent-encoded `?namespace=` query (an empirical two-shape family)
   — the engine refuses with a usage-shaped message naming the fix (`"type":
   "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
-  exits **2**, not the mount-dead constant (`CjsContextLoadError`;
-  `tickExitCode` checks it first). Matching is deliberately narrow: a
+  exits **2**, not the mount-dead constant (`CjsContextLoadError`,
+  checked ahead of every other outcome). Matching is deliberately narrow: a
   genuinely missing dependency must keep surfacing as itself, unshadowed.
   Supporting a CJS-context host is declined; relaying a raw loader stack is
   the defect.
@@ -465,10 +465,12 @@ confines side effects to disk inside `cwd`.
   not nested. A gate that reads a tracked file off `flumeDir` instead reads
   the previous commit's copy under `afterCommit`; `pendingGate` reads at the
   sha.
-- **`commitSha` and `touchedPaths` are optional in the type and always set on a
-  dispatcher-built context.** The optionality exists for hand-built fixtures;
-  a builtin that falls back to its own `git show --name-only` is covering the
-  fixture case, never a real tick.
+- **A `GateContext` field the dispatcher always sets is required in the type.** No
+  builtin carries a second derivation to fall back to, and no field is optional for a
+  hand-built fixture's convenience: a fixture assembles what a tick hands a gate, or
+  the test drives a real tick. `commitSha`, `touchedPaths` and `baseSha` are set on
+  every dispatcher-built context; `stateRootRel` is the one genuinely absent case (a
+  relocated state root) and is a required key carrying that absence.
 - **`baseSha`** — the sha the span started from: the worktree's tip when the
   tick branched, the same value the dispatcher cherry-picks from. Set on both
   stages. It is how a gate tells an input the tick *ignored* from one it
@@ -531,8 +533,9 @@ missing field, and the field is added rather than the chain excused.
     computation fanout selection uses, so a
     singleton `shouldRun` and the next fanout tick cannot disagree.
   - **`priorAttempts`** — every persisted `PriorAttempt` record under
-    `<flumeDir>/prior-attempts/`, keyed as the files are (tag slug for fanout
-    entries, phase name for singletons), read with the engine's own reader and
+    `<flumeDir>/prior-attempts/`, keyed by the identity each was written under (tag slug for
+    fanout entries, phase name for singletons — the file on disk sits at a slugged
+    stem; the map key does not), read with the engine's own reader and
     the engine's own tolerance (a corrupt record is absent). A plan-phase
     `shouldRun` deciding "build has a standing bail to reconcile" reads this
     map; it does not `readdirSync` the engine's directory. A park is in the

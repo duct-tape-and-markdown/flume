@@ -29,7 +29,7 @@ database, no in-memory carry. Disk is truth, including the baton. A relocated
   or declined.
 - **Hibernation is the empty baton.** `Baton.hibernating()` is true iff no flags
   exist; `superviseLoop` reads it off disk between children and stops. Hibernation is
-  a clean stop, not an error class — `flume tick` exits 0 on it (`tickExitCode`). The
+  a clean stop, not an error class — `flume tick` exits 0 on it. The
   loop's own exit code is decided by the run totals (see *Exit codes*), not by the
   fact of hibernating.
 - **Humans hold the other end.** `flume wake <phase>` / `flume sleep <phase>` touch
@@ -597,10 +597,10 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   `headSha` is the recovery handle for the agent's.
 - **Every agent invocation leaves a usage row.** `invocations[]` carries one row per
   agent run in the tick — one for a singleton, one per provisioned entry under fanout —
-  with the entry `tag` (absent for a singleton), the agent's model id, turn count,
+  with the entry's `entryTag` (absent for a singleton), the agent's model id, turn count,
   duration, and the token counts the agent reports: input, output, cache-creation, and
   cache-read, each as its own field, because cost is unrecoverable without the cache
-  split. Recorded when the agent emits them, absent per field when it does not; a chain
+  split; and the cost the agent reports, `costUsd`, lifted at the same decode. Recorded when the agent emits them, absent per field when it does not; a chain
   wanting cost telemetry reads the verdict rather than re-parsing the agent's stream in a
   decorator beside it.
 
@@ -729,7 +729,9 @@ inferred*).
 Two legs, not either alone:
 
 - **Per-entry quarantine.** The supervisor quarantines the failing entry **as read** —
-  keyed by its slug and a hash of its bytes in `pending.json` — for the remainder of
+  keyed by its slug and a hash of the entry as declared in `pending.json`, excluding
+  `observedFiles` — the engine's own accretion from a blamed attempt, which would otherwise
+  re-key the hold in the very wave that placed it — for the remainder of
   the run: the entry stays in `pending.json` untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
@@ -744,7 +746,7 @@ Two legs, not either alone:
   blamed for falls to the backstop.
 - **Consecutive-identical-failure backstop.** If the same stage-tagged signature
   repeats three consecutive ticks with no clearing tick between them, the run aborts
-  non-zero with a summary naming the repeated signature. This covers the
+  non-zero with a summary naming the aborting stage and the repeated signature. This covers the
   non-entry-scoped class quarantine cannot isolate, generalizing the mount-dead abort
   past its class without touching its semantics. Any tick recording no failure of the
   class clears the streaks. The streak is keyed by signature across the whole tick, not

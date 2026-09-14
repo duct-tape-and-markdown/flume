@@ -174,7 +174,7 @@ a gate receives*).
 
 ## Inline-exec spans reach `sh` through stdin, never argv
 
-`runInlineExec` spawns `sh` with **no command arguments** and writes
+An inline-exec span's spawn runs `sh` with **no command arguments** and writes
 the span's command text to the child's stdin as UTF-8, then closes it. There is no argv
 (`["-c", cmd]`) path.
 
@@ -217,7 +217,7 @@ The gate-binary spawn path retries through a shell on a win32 ENOENT. That is co
 for gate binaries, where package-manager `.cmd` shims cannot be spawned directly and the
 arguments are chain-authored flags.
 
-It is wrong for shell script. `runInlineExec` therefore does not share it — it spawns
+It is wrong for shell script. The inline-exec spawn therefore does not share it — it runs
 `sh` directly and a missing `sh` is a render failure, not a fallback. Sharing one helper
 across two use cases with opposite interpreter needs is the defect; the helper stays for
 gates, unchanged.

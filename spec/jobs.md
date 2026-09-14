@@ -109,7 +109,7 @@ rendered-prompts/
 worktrees/
 node_modules/
 loop.pid
-last-tick.json
+tick-verdict.json
 tick-verdicts.jsonl
 stop
 merging/
@@ -170,10 +170,12 @@ Enumerate the directories under `.flume/jobs/`, sorted, one line each. Purely ob
 it reads what exists and writes nothing (a job's `Baton` is constructed only when its `awake/`
 dir is already on disk, because the constructor would otherwise create it).
 
-Per job: the awake phases from that job's baton, or `hibernating`; the entry count from
-`<jobdir>/plan/pending.json`; and, where the repo chain declares `Chain.friction` and the
+Per job: the awake phases from that job's baton, `hibernating` when it holds none, or
+`awake: unreadable` when the baton exists but cannot be read — contained per job, so one
+sealed job never hides its siblings; the entry count from the chain's declared queue path
+under `<jobdir>` (the default `plan/pending.json` when the chain did not load); and, where the repo chain declares `Chain.friction` and the
 count is non-zero, the number of friction notes awaiting routing. An empty or missing jobs
-dir prints `no jobs`.
+dir prints `no jobs`; an unreadable one fails the verb rather than reporting an empty repo.
 
 - Pending count is read through the same chain-less loose parse `flume status` uses
   (`readPendingLoose`), so a corrupt file reads identically on either surface: absent is `0`

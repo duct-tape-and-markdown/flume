@@ -44,9 +44,9 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
   agent: the real parse (`parsePending`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
   consumer phase's declared fence, under the same `matchesAny` matching the
-  write guard enforces. `check` refuses exactly the entries the pending gate
-  would refuse, naming the same offending paths, because the two read one
-  derivation. Read-only; touches no
+  write guard enforces. For any entry both judge, `check` and the pending gate name the same
+  offending paths, because one derivation decides; which entries each submits — the
+  gate's `fenceWhen` selection, the verb's every-entry read — is each caller's own. Read-only; touches no
   baton flag and invokes nothing. A parse or fence refusal exits
   `EX_DATAERR` (65), naming the entry and the offending paths — the same
   refusal the next tick would have bought with an invocation. Scope is
@@ -110,13 +110,16 @@ In printed order:
 4. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
    `tip claimed by pid N`, or `tip claim present, process dead — stale`. A
    detached HEAD or an absent claim both read as silence.
-5. **Pending entry count** from `<flumeDir>/plan/pending.json`: `pending: N`,
+5. **Pending entry count** from the chain's declared queue path (`Chain.pendingPath`)
+   when the chain loads, and from the default `<flumeDir>/plan/pending.json` when it
+   does not: `pending: N`,
    `pending: 0` when absent, `pending: unparsable` when present but malformed —
    the same loose read `flume job status` performs, so a corrupt queue reads
    identically on both surfaces.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
    fail status — a missing or broken chain withholds them and says so on
-   stderr, never silently; nothing above this line is withheld: the
+   stderr, never silently; nothing above this line is withheld, and the count's fall
+   back to the default queue path is the one cost that report names: the
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
@@ -258,10 +261,11 @@ query. Detection is deliberately conservative — a genuinely missing dependency
 must keep surfacing as itself, so when the signature does not match, the raw
 error shows through unshadowed.
 
-Every surface that loads a chain holds the rule: `tick` routes the refusal through
-`TickOutcome.usageError` → `tickExitCode`, and `runJobVerb`'s `new` catch tests
-`CjsContextLoadError` ahead of its operational branch. Both print it as the headline
-and exit 2.
+Every surface that loads a chain holds the rule. Each chain-loading verb that owns an
+exit code refuses a CJS-context host at exit 2 — ahead of its own operational branches,
+and ahead of the mount-dead code the same verb returns for every other load failure —
+and `flume tick` reports the same refusal as a usage outcome. Every one prints it as the
+headline; none relays the raw loader error.
 
 ## Exec-local invocation, and no version-coordination machinery
 
@@ -404,6 +408,9 @@ Standing consequences:
   semver.
 - Each public-API breaking change lands under a `### Breaking` subheading in
   `CHANGELOG.md`.
+- The mined draft closes `### Breaking` with a `### Uncategorized` subheading over every
+  non-breaking entry, so the draft leads with breaks as the curated changelog does, and
+  the second heading is the curating human's cue for what is still unsorted.
 - The version bump and `npm publish` are human-performed at cut time.
 
 The changelog is a **release artifact mined from git history at the cut**, not

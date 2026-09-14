@@ -72,13 +72,15 @@ against worktrees still standing at the real base (field-traced four times). The
 `Chain.worktreesDir`: the base is machine-local placement, the operator's to set per host,
 and a committed chain file is the wrong home for it.
 
-**The base must be flume-exclusive.** Before `worktree add`, `createWorktree` removes whatever
-sits at the computed `<base>/[<namespace>/]<dirName>` path if anything does — `git worktree
-remove --force` first (`removeWorktree`), a recursive filesystem delete as the
-fallback. The test is existence of the path alone: nothing checks that the directory is a git
-worktree, that it belongs to this repo, or that it carries a flume marker. An operator who
-points `FLUME_WORKTREES_DIR` at a directory holding anything else loses that content the first
-time an entry's bounded directory name matches.
+**The base must be flume-exclusive.** Before `worktree add`, `createWorktree` clears the
+computed `<base>/[<namespace>/]<dirName>` path only when git's own worktree registry names it
+as a worktree of this repo — `git worktree remove --force` first (`removeWorktree`), a
+recursive filesystem delete as the fallback. An occupant the registry does not name, or a
+registry that cannot be read, refuses the tick naming the path and provisions nothing;
+nothing unregistered is ever deleted. Exclusivity is still asked of the operator: content of
+their own under the base is no longer lost, but it stalls provisioning loudly the first time
+an entry's bounded directory name matches — a weaker promise than deletion was, not a
+retracted one.
 
 Both the branch name and the directory path carry the job namespace when one is set. The path
 must, not just the branch: under a shared `FLUME_WORKTREES_DIR` two jobs with identical tag
@@ -141,7 +143,9 @@ than serialized — see `spec/jobs.md`.
 
 A fresh worktree holds only tracked files, so something has to materialize whatever the gates
 need before they run. Both hooks are optional and receive the same
-`WorktreeSetupContext` — `{ worktreePath, repoRoot, entryTag }`.
+`WorktreeSetupContext` — `{ worktreePath, repoRoot, worktreeKey }`, where `worktreeKey` is the
+entry tag under fanout and the phase name for a singleton: the key the worktree was
+provisioned under, never absent.
 
 - **`Phase.setupWorktree?(ctx): Promise<void | WorktreeSetupResult>`** runs after the worktree
   is created and before the agent. Returning `{ extraEnv }` (the exported type
@@ -318,7 +322,10 @@ worktree-local friction note survives it. At wave end, for each worktree, **befo
 
 - **The guarantee holds across retries.** `harvestFriction` stamps its destination
   (`` `${tag}--${stamp}--${file.name}` ``), so a retried entry whose agent writes the same
-  filename cannot destroy the earlier, still-unread note. `writeRevertNote` writes into the
+  filename cannot destroy the earlier, still-unread note. The stamped name is bounded to
+  the filesystem name limit by truncate-with-hash — the one rule the worktree directory
+  name already takes — so a long tag or filename still lands beside the earlier note
+  instead of failing the rename. `writeRevertNote` writes into the
   same directory on the same principle.
 
 ## Worktree removal has a win32 fallback, unconditionally
@@ -354,7 +361,7 @@ stop*) at the only moment it is safe to.
   `flume tick` does not sweep; its per-wave prune and stale-slug removal are
   unchanged.
 - **Scope is the engine's own residue, exactly.** Every directory under the worktree
-  base (`FLUME_WORKTREES_DIR` or `<flumeDir>/worktrees` — *Placement*, above),
+  base that git's worktree registry names as this repo's (`FLUME_WORKTREES_DIR` or `<flumeDir>/worktrees` — *Placement*, above),
   removed through the same `removeWorktree` + win32-fallback path teardown uses;
   then `git worktree prune`; then every branch under this instance's own
   `flume/[<namespace>/]…` grammar. The base is declared flume-exclusive
@@ -364,7 +371,8 @@ stop*) at the only moment it is safe to.
   own job's directories and branches, by the same namespace that keeps live jobs
   from colliding there.
 - **Loud on failure, silent on empty.** An empty base is the normal case and prints
-  nothing. A directory that cannot be removed (held handle, EBUSY) is a warning
+  nothing; a worktree registry that cannot be read removes nothing and warns saying so,
+  never printing the silence a clean base does. A directory that cannot be removed (held handle, EBUSY) is a warning
   naming the surviving path, never an abort — the per-entry provisioning-failure
   isolation already covers an entry that later collides with the leftover, and a
   sweep that could abort the run would convert dead residue into a denial of
