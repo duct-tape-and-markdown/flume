@@ -23,14 +23,18 @@ the evidence so whoever owns the triage can rule cheaply.
 
 ## Ruling
 
-**2026-09-14 — the chef ruled 1-6 closed**, in the flume session, with
-confirmation to follow at the pass.
+**2026-09-14 — 1-6 are closed. Ruled by the chef in the flume session,
+confirmed by the chef at the pass.**
 
-Per the pass's house law an agent-attributed confirmation is a claim until the
-chef confirms it at that keyboard, so this line is the claim and not yet the
-confirmation. Relayed verbatim to `jeff-intake-triage`; the board's carry line
-(`jeff/spool/2026-09-04-flume-inbox-carry.md`) narrows to the entries below
-that are *not* 1-6 once the confirmation lands.
+The ruling was relayed verbatim to `jeff-intake-triage` and held there as a
+claim, per the pass's house law that a confirmation an agent attributes to the
+chef enters no member until the chef confirms it at that keyboard. That
+confirmation has since landed, and the board's carry line
+(`jeff/spool/2026-09-04-flume-inbox-carry.md`) is narrowed to the entries below
+that are *not* 1-6 — `jeff` `7cf7c31`.
+
+The confirmation is reported by the pass rather than witnessed from this
+session; `7cf7c31` is the record of it.
 
 Nothing in the stash was deleted on this ruling. The six close by **not being
 carried** — their disposition is this file plus the consumer files it cites.
