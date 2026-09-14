@@ -49,7 +49,7 @@ with `src/job.ts`, `src/Baton.ts`, `src/paths.ts` and `src/Dispatcher.ts`;
 `src/cliJobVerbs.ts` and `tests/helpers/subprocess.ts`; `tests/cli.test.ts`
 with `src/cli.ts`, `src/Baton.ts`, `src/Dispatcher.ts`, `src/builtinGates.ts`,
 `src/Gate.ts`, `src/job.ts`, `src/paths.ts`, `src/git.ts` and
+`tests/helpers/subprocess.ts`; `tests/job.integration.test.ts` with
 `tests/helpers/subprocess.ts`.
 Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts`,
-`tests/cliHelp.test.ts`, `tests/docComments.test.ts` and
-`tests/job.integration.test.ts`.
+`tests/cliHelp.test.ts` and `tests/docComments.test.ts`.
