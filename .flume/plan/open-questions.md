@@ -909,9 +909,17 @@ third option above dies here, because no author of a spec commit or an inbox
 note is choosing a cite.
 
 Nothing about the fork changes; what changes is who it binds. It is plan's
-render as well as build's, the exposure is uncheckable by hand rather than two
-known sections, and the ruling is needed **before `HARNESS-SLICE-WINDOWS`
-supplies the four args** — that entry is what arms it.
+render as well as build's, and the exposure is uncheckable by hand rather than
+two known sections.
+
+**The arming point moved: `HARNESS-SLICE-WINDOWS` shipped without arming it.**
+Re-read on disk this tick — `harness/windows.ts` returns the four values behind
+`args` callbacks (`:263`, `:340`, `:419`) and nothing constructs a phase from
+them; the package carries no chain factory. So no render substitutes a window
+yet. `HARNESS-PHASES` builds that factory, and `.flume/chain.ts` adopting it is
+the cutover, an interactive `chore(flume):`. The ruling binds **before the
+cutover commit** — the first tick whose prompt is rendered with a window in it.
+`HARNESS-PHASES` is the last queue entry between here and that commit.
 
 Recommend the first. Parked because it amends a spec sentence whose rationale
 is stated as measured, and because the second option is a one-line chain change

@@ -137,6 +137,6 @@
     ],
     "pins": [],
     "acceptance": "harness/chain.ts turns a parsed declaration into a Chain whose phases, prompts, gates and handoff are the package's.",
-    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8)."
+    "notes": "The assembly point: it wires the gates, the judge, the handoff, the windows, the prompt args and the entry extension, and carries setup, agents and slots through. .flume/chain.ts becomes this factory over .flume/declaration.ts at the cutover — an interactive chore(flume):, never build's (the cutover ruling, 6286ba8). The span-neutralization question binds at that cutover, not at this entry."
   }
 ]
