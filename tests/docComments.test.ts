@@ -116,24 +116,71 @@ const FOREIGN_GLOB_DIALECTS: readonly RegExp[] = [
 ];
 
 /**
- * The hover text a chain author reads when declaring the containment
- * boundary. Declarations ship (tsconfig.build.json), so this block is the
- * only statement of the dialect most consumers ever see; it points at
- * `matchesAny` rather than carrying a second copy of what that matcher
- * implements (`.claude/rules/engineering.md` § Derived state is computed,
- * never restated beside its source).
+ * Every chain-facing glob option, judged by the one scan. The dialect is a
+ * property of `matchesAny`, not of any single option that feeds it, so the
+ * scan generalizes over the options rather than pinning the first one that
+ * shipped a wrong spelling (`.claude/rules/engineering.md` § The fix lands at
+ * the mechanism). `PartitionOptions` reaches the shipped declarations through
+ * `partitionByFileOverlap`'s signature (`src/index.ts`), so its block is
+ * hover text on the same footing as the `Chain` fields.
+ *
+ * Each subject carries anchors only *its* block states, so a block that was
+ * renamed or absorbed elsewhere fails loudly here instead of passing an
+ * absence asserted over nothing.
  */
-it("the shipped `writablePaths` doc comment names no glob dialect the engine's matcher does not implement", () => {
-  const doc = docCommentFor(srcText("Phase.ts"), "writablePaths");
+const GLOB_OPTIONS: readonly {
+  readonly label: string;
+  readonly module: string;
+  readonly field: string;
+  readonly anchors: readonly string[];
+}[] = [
+  {
+    label: "writablePaths",
+    module: "Phase.ts",
+    field: "writablePaths",
+    anchors: ["permitted to modify", "relative to the repo root"],
+  },
+  {
+    label: "entryChannelPaths",
+    module: "Phase.ts",
+    field: "entryChannelPaths",
+    anchors: ["entry-scoped fanout tick", "outer ceiling"],
+  },
+  {
+    label: "supervisorPolicy.partitionIgnore",
+    module: "Phase.ts",
+    field: "partitionIgnore",
+    anchors: ["collision set", "never a permission"],
+  },
+  {
+    label: "PartitionOptions.ignore",
+    module: "partition.ts",
+    field: "ignore",
+    anchors: ["collision set", "dropped before placement"],
+  },
+];
 
-  // Vacuity guard: this is the block it claims to be, and the dialect list
-  // is populated, before any absence is asserted over either — an absence
-  // over a vanished subject, or judged by zero patterns, is a false green.
-  expect(doc).toContain("permitted to modify");
-  expect(doc).toContain("relative to the repo root");
+it("the shipped chain-facing glob options' doc comments name no glob dialect the engine's matcher does not implement", () => {
+  // Vacuity guard: the subject list and the dialect list are both populated
+  // before any absence is asserted — a scan over zero options, or one judged
+  // by zero patterns, is a false green.
+  expect(GLOB_OPTIONS.length).toBeGreaterThan(0);
   expect(FOREIGN_GLOB_DIALECTS.length).toBeGreaterThan(0);
 
-  for (const dialect of FOREIGN_GLOB_DIALECTS) {
-    expect(doc, `\`writablePaths\` doc names ${dialect}`).not.toMatch(dialect);
+  for (const { label, module, field, anchors } of GLOB_OPTIONS) {
+    const doc = docCommentFor(srcText(module), field);
+
+    // Vacuity guard: each block is the one it claims to be before the
+    // absence is asserted over it — an absence over a vanished subject is a
+    // false green.
+    for (const anchor of anchors) {
+      expect(doc, `\`${label}\` doc no longer states ${anchor}`).toContain(
+        anchor,
+      );
+    }
+
+    for (const dialect of FOREIGN_GLOB_DIALECTS) {
+      expect(doc, `\`${label}\` doc names ${dialect}`).not.toMatch(dialect);
+    }
   }
 });
