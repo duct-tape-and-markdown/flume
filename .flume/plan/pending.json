@@ -51,6 +51,149 @@
     ]
   },
   {
+    "tag": "HARNESS-ENTRY-EXTENSION",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/entryExtension.ts",
+          "description": "the six fields, their caps and their hints"
+        },
+        {
+          "path": "tests/harnessEntryExtension.test.ts",
+          "description": "the render, the consumer add, the removal refusal"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Extract the package's entry extension — summary, per, acceptance, tests[], pins[], notes with their caps and hints — as a value a consumer adds to but cannot remove from.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The entry extension"
+    },
+    "tests": [
+      "the package's entry extension declares summary, per, acceptance, tests, pins and notes",
+      "a consumer field is merged into the entry extension beside the package's own",
+      "a consumer extension that drops a package field is refused, naming the field",
+      "a summary past the package's cap is refused"
+    ],
+    "pins": [],
+    "acceptance": "harness/entryExtension.ts renders the six fields into a prompt schema and refuses a consumer extension that removes one.",
+    "notes": "Chain-side twin at .flume/chain.ts:117 until the cutover. Consumed by the judges, the gates and the factory. Renders through the engine's renderSchemaForPrompt — one declaration per field, never a second hint copy in a prompt."
+  },
+  {
+    "tag": "HARNESS-RECORDS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/records.ts",
+          "description": "record dirs, the per-tag note path, the byte cap, the pending predicate"
+        },
+        {
+          "path": "tests/harnessRecords.test.ts",
+          "description": "the note path, and the live/empty window both asserted"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Extract the record conventions the inbox slice drains — the record dirs, the per-tag note path, the byte cap — into one package-owned home under a declared state root.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Records as one file each"
+    },
+    "tests": [
+      "the note path for an entry tag is that tag's file under the state root's notes dir",
+      "a record directory holding a file reports the record window live",
+      "a record directory holding no file reports the record window empty"
+    ],
+    "pins": [],
+    "acceptance": "harness/records.ts names the record dirs, the per-tag note path and the byte cap under a declared state root, and reports whether any record is pending.",
+    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's."
+  },
+  {
+    "tag": "HARNESS-PLAN-STATE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/planState.ts",
+          "description": "the declared state fields, their schema, and the read/write accessor"
+        },
+        {
+          "path": "tests/harnessPlanState.test.ts",
+          "description": "the two cursors, the continuation signal, the refusal, the absent case"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Add the package's plan-state accessor: the derive and sweep cursors and the continuation signal as declared fields of a typed artifact, never a line regexed out of prose.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Plan state as declared state"
+    },
+    "tests": [
+      "the plan state accessor reads the derive and sweep cursors as fields",
+      "the plan state accessor reads the continuation signal and its covered set",
+      "a plan state artifact missing a required field is refused, naming the field",
+      "an absent plan state artifact reads as no cursor rather than throwing"
+    ],
+    "pins": [],
+    "acceptance": "harness/planState.ts reads and writes both cursors and the continuation signal as typed fields and refuses a malformed artifact by name.",
+    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563."
+  },
+  {
+    "tag": "HARNESS-RUNTIME-IGNORES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/ignores.ts",
+          "description": "the consumer state-root ignore lines, derived from the engine's path record"
+        },
+        {
+          "path": "tests/harnessIgnores.test.ts",
+          "description": "the derivation, and the derived set driven against this repo's .gitignore"
+        }
+      ],
+      "edit": [
+        {
+          "path": ".gitignore",
+          "description": "drop the retired .flume/last-tick.json line the derived set does not name"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Derive the consumer's state-root ignore lines from the engine's path record, and drive that output against this repo's .gitignore so a retired runtime name cannot linger.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The runtime ignore set"
+    },
+    "tests": [
+      "the consumer ignore set prefixes every engine runtime path with the declared state root",
+      "the consumer ignore set names no path outside the engine's path record",
+      "this repository's .gitignore carries no state-root line the derived set does not name"
+    ],
+    "pins": [],
+    "acceptance": "harness/ignores.ts derives .flume's ignore lines from the engine's path record and a test drives that output against this repo's .gitignore.",
+    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md."
+  },
+  {
     "tag": "HARNESS-CITE-RESOLVER",
     "gate": {
       "kind": "blockedBy",
@@ -91,5 +234,179 @@
     "pins": [],
     "acceptance": "harness/citeResolver.ts resolves a per against a declared specLocus at a commit and yields one verdict shape whether the section is found by heading or by a declared resolver.",
     "notes": "The at-ref reader is injected, not imported, so every case stays in the fast lane. .flume/chain.ts's perResolvesGate and sectionOf are the chain-side copy this retires at the cutover."
+  },
+  {
+    "tag": "HARNESS-JUDGES",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-ENTRY-EXTENSION"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/judge.ts",
+          "description": "the tests[]/pins[] judge over the runner interface"
+        },
+        {
+          "path": "tests/harnessJudge.test.ts",
+          "description": "the refusal, the green-on-base fact, the pins lane, the empty case"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Extract the tests[]/pins[] judge onto the runner interface — named lines green on the merged tree and red at the base, pins green only — reporting green-on-base as a fact.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The judges"
+    },
+    "tests": [
+      "a tests[] line no passing test carries is refused, naming the line",
+      "a tests[] line already green at the base is reported as a named fact",
+      "a pins[] line is judged on the merged tree and never run at the base",
+      "a judge over no named lines reports the empty case rather than a green verdict"
+    ],
+    "pins": [],
+    "acceptance": "harness/judge.ts judges an entry's tests[] and pins[] through a declared runner and hands back the per-line verdict, green-on-base included.",
+    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*)."
+  },
+  {
+    "tag": "HARNESS-GATES",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-ENTRY-EXTENSION",
+        "HARNESS-RECORDS",
+        "HARNESS-CITE-RESOLVER"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/gates.ts",
+          "description": "the per, records, clean-tree and pending gates as one set per phase"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "one refusal per gate, plus the ordering"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Extract the four gates the discipline needs — per, records, clean-tree, and the pending gate wired to the consumer's fence — as the package's always-first gate set per phase.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The gates the discipline needs"
+    },
+    "tests": [
+      "the per gate refuses a commit whose cited file is not in it, naming the tag",
+      "the records gate refuses a record written outside the tick's own tag",
+      "the records gate refuses a record past the byte cap",
+      "the clean-tree gate refuses a leftover path the phase may not write",
+      "the package's gates precede a consumer's declared gates for the same phase"
+    ],
+    "pins": [],
+    "acceptance": "harness/gates.ts returns the four gates for a phase ahead of a consumer's declared ones, each refusing on its own case.",
+    "notes": "The per gate wraps HARNESS-CITE-RESOLVER's verdict rather than re-resolving it; the pending gate takes the declaration's fence as targetFence and the package's entry extension. Twins at .flume/chain.ts:264, :340, :386."
+  },
+  {
+    "tag": "HARNESS-HANDOFF",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-RECORDS",
+        "HARNESS-PLAN-STATE"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/handoff.ts",
+          "description": "the default next-phase ladder and the refusal leg"
+        },
+        {
+          "path": "tests/harnessHandoff.test.ts",
+          "description": "each rung, the refusal route, the no-self-rewake case, the override"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "Extract the package's default handoff — first live slice, else build while the engine reports anything pickable, else hibernate — with a build refusal routing to the inbox slice.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
+    "tests": [
+      "the default handoff names the first live slice ahead of build",
+      "the default handoff names build when no slice is live and the engine reports a pickable entry",
+      "the default handoff hibernates when no slice is live and nothing is pickable",
+      "a build tick the chain declined routes to the inbox slice whatever is pickable",
+      "a slice that committed nothing is not named by its own handoff",
+      "a declared handoff replaces the package's default"
+    ],
+    "pins": [],
+    "acceptance": "harness/handoff.ts maps the engine's reported pickable set and no-commit facts onto the next phase, and a consumer's declaration replaces it.",
+    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. Twins at .flume/chain.ts:686 and :920."
+  },
+  {
+    "tag": "HARNESS-INIT-BIN",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-DECLARATION-SCHEMA",
+        "HARNESS-RUNTIME-IGNORES"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "bin/flume-harness.js",
+          "description": "the package's own bin shim, argv through and exit code out"
+        },
+        {
+          "path": "harness/init.ts",
+          "description": "the init verb and what it writes"
+        },
+        {
+          "path": "harness/templates/PROTOCOL.md",
+          "description": "the PROTOCOL skeleton init writes"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "the four written artifacts and the no-overwrite refusal"
+        }
+      ],
+      "edit": [
+        {
+          "path": "package.json",
+          "description": "the second bin entry, and the files allowlist covering the template"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Ship flume-harness, the bin the package carries beside the engine's flume, and its init verb: the declaration skeleton, the state root, the ignore set and PROTOCOL.md.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Adoption and upgrade"
+    },
+    "tests": [
+      "flume-harness init writes a declaration skeleton the package's schema parses",
+      "flume-harness init writes the state root and its derived ignore lines",
+      "flume-harness init writes PROTOCOL.md from the package's own template",
+      "flume-harness init refuses a state root that already exists rather than overwriting it"
+    ],
+    "pins": [
+      "the engine's flume bin exposes no harness verb"
+    ],
+    "acceptance": "node bin/flume-harness.js init in an empty repo writes a declaration the package's schema parses, the state root, the ignore set and PROTOCOL.md.",
+    "notes": "The shim is bin/flume.js's shape — argv through, stdio inherited, exit code out, no options of its own (spec/cli.md, *Distribution*). The files allowlist must cover the template: tsc emits no .md into dist/, and CI asserts the packed set both ways. The dependency add shells the consumer's package manager. The engine's verb set stays closed — that is why the verb lives here."
   }
 ]

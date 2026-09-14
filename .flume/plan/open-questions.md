@@ -71,8 +71,10 @@ direction or the section's readability, and leaves exactly the spec↔code pair
 the human already maintains. Parked rather than filed because the choice is
 among three homes, not one mechanical fix.
 
-One loose end rides whichever entry a ruling files: this repo's `.gitignore:11`
-still carries `.flume/last-tick.json`, which ignores a file no tick writes.
+The loose end this question carried — this repo's `.gitignore:11` ignoring
+`.flume/last-tick.json`, a file no tick writes — now rides
+`HARNESS-RUNTIME-IGNORES`, whose derived consumer-root set names no such line.
+That entry adds no fourth copy: it derives from the engine's path record.
 
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
@@ -831,3 +833,56 @@ argument and is not what the tree did.
 
 Plan cannot edit `spec/` (`.claude/rules/spec-plan-build.md`), so the amendment
 is the human's; nothing in the queue blocks on it.
+
+The same section will want a `flume-harness` sentence once `HARNESS-INIT-BIN`
+lands the second bin: the **Bin.** bullet describes `bin.flume` alone, and
+`spec/harness.md`, *Adoption and upgrade* now ratifies a second one. Additive,
+same amendment pass.
+
+## A package-shipped prompt has no address, and two harness subsections wait on it (NEEDS AMENDMENT)
+
+`spec/harness.md`, *The prompts and their discipline* makes the prompts the
+package's, and *The phases* makes the phases the package's. A `Phase` cannot be
+constructed without a `promptPath`, and `spec/chain.md`, *The chain is a plugin*
+fixes what one means: "it joins `configDir`" — the directory the consumer's
+chain lives in. A prompt inside `node_modules/@dtmd/flume` is not under that
+directory, so neither subsection derives until the address is ruled. Verified on
+disk: `src/Dispatcher.ts:1934` and `:3259` both `join(this.opts.configDir,
+phase.promptPath)`.
+
+Two further facts the ruling should carry, both verified:
+
+- **The bytes do not ship today.** `tsc -p tsconfig.build.json` emits no `.md`
+  into `dist/`, and `package.json`'s `files` allowlist has no `harness` entry —
+  CI asserts that allowlist in both directions (`spec/cli.md`, *Distribution*).
+  Whatever the address, the prompts need a packing route.
+- **The vocabulary half is blocked by the same thing.** "Names the engine's
+  no-commit vocabulary from the engine's own declaration" needs the engine to
+  declare `NoCommitMode` as a *value*, not only a type — `src/Prompt.ts:57` is a
+  type union, unreadable at runtime, and `.flume/prompts/plan-inbox.md:33`
+  spells `gate-revert` and `not-shipped` in prose as a result. That export earns
+  no consumer until a package-owned prompt exists to name it, so it rides the
+  same entry rather than landing alone.
+
+Options:
+
+- **Resolve, don't join.** `resolve(configDir, phase.promptPath)` — a relative
+  `promptPath` keeps today's meaning exactly, an absolute one wins. One word in
+  the engine, pure mechanism, and any second implementation shipping prompts
+  from a dependency wants it. Costs one amended sentence in `spec/chain.md`,
+  *The chain is a plugin*.
+- **Compute a relative path.** The package derives `relative(flumeDir,
+  ownPromptsDir)` from `import.meta.url` and hands the engine a `..`-prefixed
+  relative path. No spec change, no engine change. Against it: it breaks on
+  Windows when the consumer and its `node_modules` sit on different drives
+  (`path.relative` returns an absolute path there, which `join` then mangles),
+  and it makes every consumer's phase carry a path computed from where its
+  dependency happened to install.
+- **Copy the prompts in at `init`.** Rejected on the spec's own words — *Adoption
+  and upgrade* says a consumer never copies a prompt — and it re-creates the
+  drift the package exists to end.
+
+**Recommend the first.** It is the smallest change, it is mechanism rather than
+convention, and it leaves `promptPath`'s existing meaning untouched for every
+chain that keeps its prompts beside `chain.ts`. A ruling unblocks both
+subsections at once; nothing else in the queue blocks on it.
