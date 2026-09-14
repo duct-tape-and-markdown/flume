@@ -79,48 +79,6 @@
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
   },
   {
-    "tag": "HARNESS-PLAN-STATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/planState.ts",
-          "description": "the declared state fields, their schema, and the read/write accessor"
-        },
-        {
-          "path": "tests/harnessPlanState.test.ts",
-          "description": "the two cursors, the continuation signal, the refusal, the absent case"
-        }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-PLAN-STATE.md",
-      "harness/index.ts",
-      "harness/planState.ts",
-      "tests/harnessPackaging.test.ts",
-      "tests/harnessPlanState.test.ts"
-    ],
-    "summary": "Add the package's plan-state accessor: the derive and sweep cursors and the continuation signal as declared fields of a typed artifact, never a line regexed out of prose.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Plan state as declared state"
-    },
-    "tests": [
-      "the plan state accessor reads the derive and sweep cursors as fields",
-      "the plan state accessor reads the continuation signal and its covered set",
-      "a plan state artifact missing a required field is refused, naming the field",
-      "an absent plan state artifact reads as no cursor rather than throwing"
-    ],
-    "pins": [],
-    "acceptance": "harness/planState.ts reads and writes both cursors and the continuation signal as typed fields and refuses a malformed artifact by name.",
-    "notes": "Typed artifact, not a parser over prose — the section forecloses the regex, and pending.json is the precedent for agent-written, schema-gated plan output. The narrative state.md carries today moves to the plan commit body (collaboration.md, *Artifacts are the present; git is the log*). Migrating the live .flume/plan/state.md is chain-side and rides the cutover. Twin at .flume/chain.ts:563."
-  },
-  {
     "tag": "HARNESS-RUNTIME-IGNORES",
     "gate": {
       "kind": "open"
@@ -225,6 +183,13 @@
       "edit": [],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-JUDGES.md",
+      "harness/entryExtension.ts",
+      "harness/index.ts",
+      "harness/judge.ts",
+      "tests/harnessJudge.test.ts"
+    ],
     "summary": "Extract the tests[]/pins[] judge onto the runner interface — named lines green on the merged tree and red at the base, pins green only — reporting green-on-base as a fact.",
     "per": {
       "path": "spec/harness.md",
@@ -238,14 +203,7 @@
     ],
     "pins": [],
     "acceptance": "harness/judge.ts judges an entry's tests[] and pins[] through a declared runner and hands back the per-line verdict, green-on-base included.",
-    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*).",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-JUDGES.md",
-      "harness/entryExtension.ts",
-      "harness/index.ts",
-      "harness/judge.ts",
-      "tests/harnessJudge.test.ts"
-    ]
+    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*)."
   },
   {
     "tag": "HARNESS-PROMPTS",
@@ -348,10 +306,7 @@
   {
     "tag": "HARNESS-HANDOFF",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-PLAN-STATE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
