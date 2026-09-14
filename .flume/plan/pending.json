@@ -1,45 +1,5 @@
 [
   {
-    "tag": "HARNESS-DECL-INPUT-TYPE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "the schema's input type, beside `Declaration`"
-        },
-        {
-          "path": "harness/index.ts",
-          "description": "export it"
-        },
-        {
-          "path": "harness/init.ts",
-          "description": "the skeleton annotates its literal with it"
-        },
-        {
-          "path": "tests/harnessInit.test.ts",
-          "description": "the skeleton typechecks against it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Export the declaration schema's input type, and annotate the skeleton init writes with it, so a consumer's literal is authorable.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "a consumer annotating declaration.ts gets tsc refusal and completion, not load refusal alone.",
-    "tests": [
-      "the declaration skeleton init writes typechecks against the package's exported input type"
-    ],
-    "pins": [],
-    "notes": "`Declaration` is `z.infer`, so a defaulted field (`scopeWritesToEntry`) is required on the output side and `satisfies Declaration` will not compile over a literal. The input side is the authorable one, and the skeleton's own annotation is the export's consumer. tsc-in-test precedent: tests/cliJobVerbs.test.ts."
-  },
-  {
     "tag": "HARNESS-INIT-CHAIN-HOP",
     "gate": {
       "kind": "open"
@@ -61,15 +21,100 @@
     },
     "summary": "Have `flume-harness init` write the chain.ts hop — the factory over the declaration beside it — so an adopted repo can tick.",
     "per": {
-      "path": ".claude/rules/engine-boundary.md",
-      "section": "Surface, not prescription"
+      "path": "spec/harness.md",
+      "section": "Adoption and upgrade"
     },
-    "acceptance": "a repo flume-harness init adopted resolves a chain at <stateRoot>/chain.ts with no hand-written file.",
+    "acceptance": "a repo flume-harness init adopted resolves a chain at <configDir>/chain.ts with no hand-written file.",
     "tests": [
       "init writes a chain.ts applying the package factory to the declaration beside it",
       "the chain.ts init writes loads through the engine's chain loader as a valid Chain"
     ],
     "pins": [],
-    "notes": "The engine refuses a load with no `<configDir>/chain.ts`, so init leaves a repo one file short of a tick. The hop is three lines identical in every consumer — *Verbatim copying is the detector*. `spec/harness.md` *Adoption and upgrade* lists four artifacts; the fifth row is the human's. The existing skeleton test's tsx-over-shim probe drives the written file through the real loader."
+    "notes": "The engine refuses a load with no `<configDir>/chain.ts`, so init today leaves a repo one file short of a tick. The hop is three lines identical in every consumer — *Verbatim copying is the detector*. The existing skeleton test's tsx-over-shim probe drives the written file through the real loader."
+  },
+  {
+    "tag": "HARNESS-IGNORES-PACKAGE-SESSIONS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/ignores.ts",
+          "description": "the derived set gains the package's own per-run artifacts"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the session-capture path stops being module-private"
+        },
+        {
+          "path": "tests/harnessIgnores.test.ts",
+          "description": "the carve-out goes; both directions close over the whole footprint"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Derive the consumer ignore set from the package's own per-run artifacts too, so an adopted repo never hand-adds a line for the package's session captures.",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The runtime ignore set"
+    },
+    "acceptance": "an adopted repo carries no untracked state-root path after its first tick, and the ignores test carries no consumer-owned carve-out.",
+    "tests": [
+      "the consumer ignore set names the package's own session capture directory"
+    ],
+    "pins": [],
+    "notes": "`consumerIgnores` filters `RUNTIME_IGNORES` by `STATE_ROOT_NAMES`, so a package-owned name is excluded by construction. `SESSIONS_REL` is module-private in `harness/chain.ts` and needs a home `ignores.ts` can import. This repo's `.gitignore` already carries the line — after this the derived set names it, so the test's `CONSUMER_OWNED` carve-out and its stale `.flume/chain.ts` attribution both delete."
+  },
+  {
+    "tag": "HARNESS-ADOPT-PROMPT-DATA-KEYS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/chain.ts",
+          "description": "each phase declares its data keys; the defuse call goes"
+        },
+        {
+          "path": "harness/prompts.ts",
+          "description": "the shared and build producers name their keys"
+        },
+        {
+          "path": "harness/windows.ts",
+          "description": "each slice window names its keys"
+        },
+        {
+          "path": "harness/index.ts",
+          "description": "the defuse export goes"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "producers against declared keys"
+        }
+      ],
+      "retire": [
+        "harness/defuse.ts",
+        "tests/harnessDefuse.test.ts"
+      ]
+    },
+    "summary": "Declare the package's substituted prompt-arg keys as `promptDataKeys`, derived from the producers that build them, and retire the interim defuse module.",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "The render pipeline"
+    },
+    "acceptance": "no package code neutralizes spans — the engine does it from declared keys — and a key a producer adds without declaring fails the suite.",
+    "tests": [
+      "every prompt-arg key the package's producers return is declared in its phase's promptDataKeys"
+    ],
+    "pins": [
+      "a substituted value carrying an inline-exec span reaches the agent inert"
+    ],
+    "notes": "The engine's list is static and the package's args are computed, so each producer (`sharedPromptArgs`, the three window `args`, `buildPromptArgs`) names its keys beside the map it builds — type the return against them and the sync is structural, not disciplined. A declared key a tick never returns is unused, so over-declaring is safe; an undeclared one loses neutralization silently, which the agreement test catches."
   }
 ]
