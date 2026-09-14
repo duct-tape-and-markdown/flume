@@ -6021,6 +6021,111 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.phaseName).toBe("build");
   }, 20_000);
+
+  it("a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict", async () => {
+    // The refusal-site verdict reads its no-commit cause through
+    // `waveNoCommitCause`, whose first line short-circuits on
+    // `committedWave`. Every other exercise of that site ships an entry, so
+    // the precedence chain below the short-circuit has never run there
+    // (engineering.md "A green verdict is proven non-vacuous"): a wave that
+    // ships nothing is the only shape that evaluates it.
+    //
+    // Reaching it needs both halves at once — shipped=0 *and* a recorded
+    // footprint, since `commitPendingUpdate` (and so the rewrite read that
+    // refuses) is skipped entirely when the wave has neither. An in-worktree
+    // afterCommit writable-paths revert supplies exactly that: nothing
+    // reaches cherry-pick, the entry's captured footprint still needs a
+    // trunk commit, and the entry's own cause is `gate-revert`.
+    await writePending(fx.repo, [makeEntry("REVERT-ONLY", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+
+    // Same mid-wave corruption mechanism as the shipping siblings above: a
+    // concurrent writer lands unparseable bytes on trunk after this wave's
+    // decide-read and before `commitPendingUpdate`'s rewrite read.
+    const corrupt = "{ corrupted mid-wave, not json";
+    const agent = fanoutAgent({
+      "revert-only": async (cwd) => {
+        await commitPendingFile(fx.repo, corrupt);
+        await writeFile(join(cwd, "src", "a.ts"), "a\n");
+        await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec(
+          "git",
+          ["commit", "-q", "-m", "build(REVERT-ONLY): overreach"],
+          { cwd },
+        );
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The refusal itself, unchanged from the shipping siblings: failed tick,
+    // ledger left byte-identical rather than overwritten with a rewrite
+    // derived from `[]`.
+    expect(outcome.failed).toBe(true);
+    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+
+    const verdict = outcome.verdict;
+    expect(verdict).toBeDefined();
+    // …and this verdict is the refusal site's, not a clean completion's:
+    // only the `WaveLedgerParseFailure` leg summarizes a wave this way.
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+
+    // Vacuity pins for the leg this test exists to judge — without all
+    // three, the `noCommit` assertion below would pass over a wave that
+    // never reached the precedence chain at all:
+    //   1. the wave shipped nothing, so `waveNoCommitCause`'s
+    //      `committedWave` short-circuit did NOT fire;
+    expect(verdict?.shippedTags).toEqual([]);
+    expect(verdict?.committed).toBe(false);
+    //   2. the entry was afterCommit-gate-reverted with a real footprint —
+    //      the only reason `commitPendingUpdate` ran at all with shipped=0,
+    //      and so the only reason the rewrite read refused;
+    expect(verdict?.mergeOutcomes).toEqual([
+      {
+        tag: "REVERT-ONLY",
+        outcome: "afterCommit-reverted",
+        footprint: expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      },
+    ]);
+    //   3. the wave really did carry the entry, and the gate really failed.
+    expect(verdict?.tags).toEqual(["REVERT-ONLY"]);
+    expect(verdict?.gateFailures).toEqual([
+      expect.objectContaining({ tag: "REVERT-ONLY" }),
+    ]);
+
+    // The claim: the refusal-site verdict reports the same cause a clean
+    // completion would have (engineering.md "Derived state is computed,
+    // never restated beside its source") — not `undefined` from a
+    // short-circuit that never ran, and not a cause invented at the
+    // refusal site.
+    expect(verdict?.noCommit).toBe("gate-revert");
+
+    // Nothing shipped: the entry is still queued under the corrupt bytes
+    // the refusal preserved, and neither written file reached trunk.
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
+    expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
+  }, 20_000);
 });
 
 // ---------- foundations governor (§v0.3) ----------
@@ -7419,8 +7524,8 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
 
 // ---------- fanout wave-level noCommit precedence (§6, mixed causes) ----------
 
-// Dispatcher.ts:1836-1853: when a fanout wave ships nothing, the single
-// wave-level `noCommit` label is picked from the set of per-entry causes by
+// `Dispatcher.waveNoCommitCause`: when a fanout wave ships nothing, the
+// single wave-level `noCommit` label is picked from the set of per-entry causes by
 // precedence gate-revert > render-refused > platform-preempt >
 // clean-exit. Every other test above drives one mode per wave in
 // isolation, so a swapped or dropped precedence branch is invisible to the
