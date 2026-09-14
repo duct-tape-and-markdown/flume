@@ -19,6 +19,8 @@ export {
   type VitestRunnerOptions,
 } from "./vitestRunner.js";
 
+export { consumerIgnores } from "./ignores.js";
+
 export {
   DeclarationSchema,
   parseDeclaration,
