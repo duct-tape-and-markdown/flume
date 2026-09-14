@@ -1,64 +1,5 @@
 [
   {
-    "tag": "HARNESS-PROMPTS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/prompts.ts",
-          "description": "each phase's prompt address, resolved from the package's own location, and the shared args"
-        },
-        {
-          "path": "harness/prompts/build.md",
-          "description": "the build prompt, package-owned"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the inbox slice's prompt"
-        },
-        {
-          "path": "harness/prompts/plan-derive.md",
-          "description": "the derive slice's prompt"
-        },
-        {
-          "path": "harness/prompts/plan-sweep.md",
-          "description": "the sweep slice's prompt"
-        },
-        {
-          "path": "harness/prompts/plan-discipline.md",
-          "description": "the discipline the slices point at"
-        },
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "the addresses, the modes arg, the orphan check"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the prompt addresses and the shared args"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Ship the package's five prompts under harness/prompts/, addressed absolutely from the package's own location and naming the no-commit modes from the engine's exported value.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The prompts and their discipline"
-    },
-    "tests": [
-      "the package addresses each phase's prompt absolutely from its own location",
-      "the package's prompt args name the no-commit modes from the engine's exported value",
-      "every prompt address the package names is a file it ships"
-    ],
-    "pins": [],
-    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and the modes list any prompt renders comes from the engine's exported value — prose naming one mode inline is not a copy.",
-    "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; packing is HARNESS-PROMPT-PACKING. plan-discipline and plan-sweep describe harness/planState.ts's typed artifact, not state.md's cursor lines and `Rotation open` paragraph: the typed form refuses a present artifact missing a cursor."
-  },
-  {
     "tag": "HARNESS-HANDOFF",
     "gate": {
       "kind": "open"
@@ -104,10 +45,7 @@
   {
     "tag": "HARNESS-PROMPT-PACKING",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-PROMPTS"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -202,7 +140,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-PROMPTS",
         "HARNESS-HANDOFF"
       ]
     },
