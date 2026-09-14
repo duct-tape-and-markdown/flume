@@ -55,7 +55,7 @@
       "every prompt address the package names is a file it ships"
     ],
     "pins": [],
-    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
+    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and the modes list any prompt renders comes from the engine's exported value — prose naming one mode inline is not a copy.",
     "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; packing is HARNESS-PROMPT-PACKING. plan-discipline and plan-sweep describe harness/planState.ts's typed artifact, not state.md's cursor lines and `Rotation open` paragraph: the typed form refuses a present artifact missing a cursor."
   },
   {
@@ -99,7 +99,7 @@
     ],
     "pins": [],
     "acceptance": "harness/handoff.ts maps the engine's reported pickable set and no-commit facts onto the next phase, and a consumer's declaration replaces it.",
-    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. The render-refused leg is new: .flume/chain.ts:929 names clean-exit and not-shipped only, so a walled render re-picks forever. Twins at .flume/chain.ts:686 and :920."
+    "notes": "Liveness comes from harness/records.ts and harness/planState.ts; the slice set is a parameter until the factory exists. Reads the engine's reported pickableAfter and no-commit facts only — never a re-parse of an agent stream. Mode names key off NO_COMMIT_MODES as a type, never string literals: .flume/chain.ts:624's ReadonlySet<string> is unchecked. The render-refused leg is new — :929 names clean-exit and not-shipped only, so a walled render re-picks forever. Twins at :686, :920."
   },
   {
     "tag": "HARNESS-PROMPT-PACKING",
