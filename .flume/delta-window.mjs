@@ -19,7 +19,7 @@ const [mode, budgetArg] = process.argv.slice(2);
 const BUDGET = Number(budgetArg ?? 1200);
 const STATE = ".flume/plan/state.md";
 const SWEEP_DOMAIN = [
-  "src", "harness", "tests", "bin", "examples",
+  "src", "harness", "tests", "bin", "examples", "scripts",
   ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
 ];
 
@@ -123,7 +123,7 @@ switch (mode) {
     out(`=== last build verdict ===`);
     if (!last) { out("(none)"); break; }
     out(`${last.at}  ${last.summary}`);
-    for (const m of last.mergeOutcomes ?? []) out(`${m.tag}: ${m.outcome}${m.outcome === "not-shipped" ? "  ← parked: the entry stays; reconcile it" : ""}`);
+    for (const m of last.mergeOutcomes ?? []) out(`${m.entryTag}: ${m.outcome}${m.outcome === "not-shipped" ? "  ← parked: the entry stays; reconcile it" : ""}`);
     break;
   }
   default:

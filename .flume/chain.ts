@@ -258,19 +258,15 @@ const factory: ChainFactory = (api) => {
    * every sibling gate and `isPark` read — a tick that commits a record and
    * then commits code is judged on both. Name-status is re-derived here
    * because `ctx.touchedPaths` carries paths without their deleted/written
-   * status, which is what this gate keys on; a context without `baseSha`
-   * (a hand-built fixture) falls back to the single commit.
+   * status, which is what this gate keys on.
    */
   const recordsGate: Gate = {
     name: "records",
     when: "afterCommit",
     async run(ctx) {
-      if (!ctx.commitSha) {
-        return { ok: false, message: "records gate requires commitSha" };
-      }
       const sha = ctx.commitSha;
       const dirs = RECORD_DIRS.map((d) => `${STATE_ROOT}/${d}/`);
-      const span = ctx.baseSha ? [ctx.baseSha, sha] : ["--root", sha];
+      const span = [ctx.baseSha, sha];
       const touched = execFileSync(
         "git",
         ["diff-tree", "--no-commit-id", "--name-status", "-r", ...span],
@@ -387,9 +383,6 @@ const factory: ChainFactory = (api) => {
     name: "per cites resolve",
     when: "afterCommit",
     async run(ctx) {
-      if (!ctx.commitSha) {
-        return { ok: false, message: "per gate requires commitSha" };
-      }
       const sha = ctx.commitSha;
       const queueRel = relative(ctx.flumeDir, ctx.pendingPath);
       // The sanctioned queue-read idiom: `stateRootRel` + the queue's
@@ -603,7 +596,7 @@ const factory: ChainFactory = (api) => {
 
   /** Same domain `.flume/delta-window.mjs sweep` renders, plus spec/ for the retired-claim delta. */
   const SWEEP_DOMAIN = [
-    "src", "harness", "tests", "bin", "examples",
+    "src", "harness", "tests", "bin", "examples", "scripts",
     ".claude/rules/engineering.md", ".claude/rules/engine-boundary.md",
     "spec",
   ];
@@ -783,9 +776,6 @@ const factory: ChainFactory = (api) => {
    * chain copies this.
    */
   async function redOnBase(ctx: GateContext, named: readonly string[], details: string | undefined): Promise<GateResult> {
-    if (!ctx.baseSha || !ctx.commitSha) {
-      return { ok: false, message: "red-on-base needs baseSha and commitSha on the gate context" };
-    }
     const files = filesPinning(details, named, ctx.repoRoot);
     // Under the base every other worktree uses, so a gate that dies mid-run
     // leaves a directory the engine's stale-worktree sweep reclaims. Imported
