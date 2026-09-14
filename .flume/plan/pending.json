@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "QUARANTINESCOPE-DEFAULT-GETS-A-HOME",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "DEFAULT_QUARANTINE_SCOPE becomes the one home; the `??` and the option's own doc read it"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "the chain-facing quarantineScope doc drops its default marker, as abortThreshold's did"
+        },
+        {
+          "path": "tests/docComments.test.ts",
+          "description": "the absence pin, beside the abortThreshold one"
+        }
+      ]
+    },
+    "summary": "Give the quarantine default one home — DEFAULT_QUARANTINE_SCOPE — and drop the `(default)` marker its two shipped docs restate beside it",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "tests": [
+      "the shipped `quarantineScope` doc comment marks no union member as the engine default"
+    ],
+    "acceptance": "The quarantine default is stated once, at its constant; both docs point there and tests/docComments.test.ts covers the shipped one.",
+    "notes": "Sibling of 3ba6838, one line up in the same supervisorPolicy block: abortThreshold's docs read DEFAULT_ABORT_THRESHOLD, while quarantine's default is an inline `?? \"run\"` (loopSupervisor.ts:221) restated by both docs. Phase.ts cannot import it (Phase -> loopSupervisor -> Dispatcher -> Phase), so its marker deletes — the enclosing block already points at loopSupervisor's docs. Module export only; loopSupervisor is not in src/index.ts. Pin reads the imported constant."
+  }
+]

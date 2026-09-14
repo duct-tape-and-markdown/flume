@@ -675,10 +675,10 @@ which is the door `bd75f27` closed outside the `.d.ts` carve-out, so the
 ruling is unchanged; only the price of one option moved.
 
 The census, for whoever rules: three prose copies of this number remain.
-`src/Phase.ts`'s is `.d.ts`-reachable, inside the carve-out, and is filed as
-`PHASE-ABORTTHRESHOLD-DOC-DROPS-THE-LITERAL`. `spec/loop.md` and
-`spec/chain.md` carry it as the human's own surface, which the ladder does not
-administer. `docs/CHAIN-AUTHORING.md` is the only one this question governs.
+`src/Phase.ts`'s was `.d.ts`-reachable, inside the carve-out, and is gone
+(`3ba6838`). `spec/loop.md` and `spec/chain.md` carry it as the human's own
+surface, which the ladder does not administer. `docs/CHAIN-AUTHORING.md` is
+the only one this question governs.
 
 ## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
 
