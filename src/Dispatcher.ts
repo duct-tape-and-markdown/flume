@@ -1815,6 +1815,7 @@ export class Dispatcher {
     // path is the single difference, and it is spelled once.
     const ctxFacts = {
       flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
       pending,
       pickable,
       priorAttempts,
@@ -3247,6 +3248,7 @@ export class Dispatcher {
     const ctx: TickContext = {
       cwd: wt.path,
       flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
       assignedEntry: entry,
       pickable,
       priorAttempts,

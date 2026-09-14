@@ -11808,6 +11808,134 @@ describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, 
   }, 20_000);
 });
 
+describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, spec/chain.md 'What a hook receives')", () => {
+  it("a dispatcher-built TickContext carries the state root's path relative to the repo root, on the singleton consult and on a fanout entry's tick alike", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const expected = relative(fx.repo, flumeDir);
+    // Non-vacuity: the offset under test is a real path segment, not the
+    // empty string a state root sitting at the repo root would produce.
+    expect(expected.length).toBeGreaterThan(0);
+
+    // --- singleton: the decline consult and promptArgs read one object.
+    await writePending(fx.repo, [makeEntry("TCSRR", ["src/tcsrr.ts"])]);
+    new Baton(flumeDir).wake("plan");
+
+    let planShouldRun: TickContext | undefined;
+    let planPromptArgs: TickContext | undefined;
+    const plan = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: (ctx) => {
+        planShouldRun = ctx;
+        return true;
+      },
+      promptArgs: (ctx) => {
+        planPromptArgs = ctx;
+        return {};
+      },
+    });
+
+    await new Dispatcher({
+      chainLoader: staticLoader({ phases: [plan], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/out.ts", "x\n", "plan: derive");
+      }),
+      log: silent,
+    }).tick();
+
+    expect(planShouldRun?.stateRootRel).toBe(expected);
+    expect(planPromptArgs?.stateRootRel).toBe(expected);
+
+    // --- fanout: the entry's own context, whose `cwd` is the worktree and
+    // whose `flumeDir` is not an ancestor of it — the shape in which no hook
+    // could derive this offset for itself.
+    new Baton(flumeDir).wake("build");
+
+    let buildCtx: TickContext | undefined;
+    const build = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: (ctx) => {
+        buildCtx = ctx;
+        return {};
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [build], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        tcsrr: (cwd) =>
+          writeAndCommit(cwd, "src/tcsrr.ts", "y\n", "build(TCSRR): ship"),
+      }),
+      log: silent,
+    }).tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["TCSRR"]);
+    expect(buildCtx?.stateRootRel).toBe(expected);
+    // The premise the field exists for: the worktree is not under the state
+    // root's parent in a way a hook could invert, and `flumeDir` is absolute.
+    expect(buildCtx?.cwd).not.toBe(fx.repo);
+    expect(buildCtx?.flumeDir).toBe(flumeDir);
+  }, 30_000);
+
+  it("fanout: TickContext.stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
+    const dock = await mkdtemp(join(tmpdir(), "flume-dock-tcsrr-"));
+    try {
+      const pendingPath = join(dock, "plan", "pending.json");
+      await mkdir(dirname(pendingPath), { recursive: true });
+      await writeFile(
+        pendingPath,
+        JSON.stringify([makeEntry("TCSRR-RELOC", ["src/tcsrr-reloc.ts"])], null, 2) +
+          "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      let seen: TickContext | undefined;
+      const build = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        writablePaths: ["src/**"],
+        promptArgs: (ctx) => {
+          seen = ctx;
+          return {};
+        },
+      });
+
+      const outcome = await new Dispatcher({
+        chainLoader: staticLoader({ phases: [build], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent: fanoutAgent({
+          "tcsrr-reloc": (cwd) =>
+            writeAndCommit(
+              cwd,
+              "src/tcsrr-reloc.ts",
+              "z\n",
+              "build(TCSRR-RELOC): ship",
+            ),
+        }),
+        log: silent,
+      }).tick();
+
+      expect(outcome.result?.shippedTags).toEqual(["TCSRR-RELOC"]);
+      // The hook ran, so the value below is a reported absence and not a
+      // context that was never built.
+      expect(seen).toBeDefined();
+      expect("stateRootRel" in seen!).toBe(true);
+      expect(seen!.stateRootRel).toBeUndefined();
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
 describe("Dispatcher — GateContext.configDir rebase (GATECTX-CONFIGDIR-ESCAPE)", () => {
   /**
    * Drive one singleton tick whose afterCommit gate captures `ctx.configDir`,

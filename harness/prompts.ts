@@ -37,7 +37,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { computeStateRootRel } from "../src/Dispatcher.js";
 import {
   renderSchemaForPrompt,
   type EntryExtension,
@@ -199,6 +198,15 @@ export interface BuildTickContext {
   readonly cwd: string;
   /** The tick's resolved state root — `TickContext.flumeDir`. */
   readonly flumeDir: string;
+  /**
+   * That state root as the repository addresses it, `undefined` when it is
+   * relocated outside the repo — `TickContext.stateRootRel`, which the
+   * dispatcher computes once and hands every hook (`spec/chain.md`, *What a
+   * hook receives*). Read rather than derived: the tick's `cwd` is its own
+   * worktree and `flumeDir` is not under it, so the offset between the two
+   * roots is knowable here only because the engine reports it.
+   */
+  readonly stateRootRel?: string | undefined;
   /** The entry this tick was handed — `TickContext.assignedEntry`. */
   readonly assignedEntry?: PendingEntry | undefined;
 }
@@ -207,16 +215,7 @@ export interface BuildTickContext {
 export interface BuildPromptArgsInput {
   /** The consumer's validated declaration — the locus a `per` resolves in. */
   readonly declaration: Declaration;
-  /**
-   * The repo the run was invoked from — `FlumeApi.paths.repoRoot`.
-   *
-   * A parameter because `TickContext` carries the worktree, not the root, and
-   * the note path is addressed from the root. The offset between the two is
-   * the engine's own `computeStateRootRel`, called rather than re-derived
-   * here (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
-   */
-  readonly repoRoot: string;
-  /** The tick itself. */
+  /** The tick itself — every per-tick fact these args need is on it. */
   readonly ctx: BuildTickContext;
 }
 
@@ -243,7 +242,7 @@ export interface BuildPromptArgsInput {
 export function buildPromptArgs(
   input: BuildPromptArgsInput,
 ): Record<string, string> {
-  const { declaration, repoRoot, ctx } = input;
+  const { declaration, ctx } = input;
   const entry = ctx.assignedEntry;
   if (entry === undefined) {
     throw new Error(
@@ -267,7 +266,7 @@ export function buildPromptArgs(
     PER_PATH: cite.path,
     PER_SECTION: cite.section,
     PER_SECTION_TEXT: verdict.text,
-    NOTE_PATH: notePath(stateRootRel(repoRoot, ctx.flumeDir), entry.tag),
+    NOTE_PATH: notePath(noteRoot(ctx), entry.tag),
   };
 }
 
@@ -297,18 +296,18 @@ function inTree(cwd: string): (path: string) => string | null {
  * A state root outside the repo tree has no path in any commit, so the note
  * the prompt would name is one the records gate cannot admit and the park
  * shape cannot be read back from — the channel build's prompt promises is not
- * there. Refused here rather than rendered as a path that silently writes
- * nowhere the tick's commit reaches (*Loud or nothing*).
+ * there. The engine reports that case as an absent `stateRootRel`; refused
+ * here rather than rendered as a path that silently writes nowhere the tick's
+ * commit reaches (*Loud or nothing*).
  */
-function stateRootRel(repoRoot: string, flumeDir: string): string {
-  const rel = computeStateRootRel(repoRoot, flumeDir);
-  if (rel === undefined) {
+function noteRoot(ctx: BuildTickContext): string {
+  if (ctx.stateRootRel === undefined) {
     throw new Error(
-      `prompt args: the state root ${flumeDir} is outside ${repoRoot}, so ` +
-        `build's note is no path in the tick's commit and the park it ` +
-        `carries could not be read back (spec/harness.md, Records as one ` +
-        `file each)`,
+      `prompt args: the state root ${ctx.flumeDir} resolves outside the ` +
+        `repository, so build's note is no path in the tick's commit and ` +
+        `the park it carries could not be read back (spec/harness.md, ` +
+        `Records as one file each)`,
     );
   }
-  return rel;
+  return ctx.stateRootRel;
 }

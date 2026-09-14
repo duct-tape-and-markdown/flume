@@ -139,10 +139,17 @@ function entry(
   };
 }
 
-/** The tick, as the dispatcher builds it for a fanout build phase. */
+/**
+ * The tick, as the dispatcher builds it for a fanout build phase — including
+ * `stateRootRel`, which the dispatcher computes from the two roots it holds
+ * and reports on every context it hands a hook. Built with the engine's own
+ * `computeStateRootRel` here for the same reason the dispatcher calls it:
+ * nothing else in a tick's context can spell that offset.
+ */
 const tick = (assignedEntry: PendingEntry): BuildTickContext => ({
   cwd,
   flumeDir: join(repoRoot, ".flume"),
+  stateRootRel: computeStateRootRel(repoRoot, join(repoRoot, ".flume")),
   assignedEntry,
 });
 
@@ -151,7 +158,7 @@ const argsFor = (
   assignedEntry: PendingEntry,
   declaration: Declaration = declare(),
 ): Record<string, string> =>
-  buildPromptArgs({ declaration, repoRoot, ctx: tick(assignedEntry) });
+  buildPromptArgs({ declaration, ctx: tick(assignedEntry) });
 
 /** The tick's tree as the `per` gate's reader sees a commit: bytes, or absent. */
 const asRead: AtRefReader = async (path) => {
@@ -231,30 +238,43 @@ it("build's per-tick args refuse an assigned entry whose cite names no section i
   ).toThrow(/outside the declared spec locus/);
 });
 
-it("build's per-tick args name the entry's note path under the tick's state root", () => {
+it("build's per-tick args name the entry's note path from the tick context alone", () => {
   const assigned = entry();
 
-  const args = argsFor(assigned);
+  // The declaration and the tick, and nothing else: no repo root is passed,
+  // because the offset the note path needs is a fact the engine reports on
+  // the context rather than one a hook recomputes.
+  const args = buildPromptArgs({ declaration: declare(), ctx: tick(assigned) });
 
+  // Non-vacuity: the context under test actually carries a state root, so the
+  // path below was read from a populated field and not from an absent one.
+  expect(tick(assigned).stateRootRel).toBe(".flume");
   // The path the records gate keys a build tick's one note by, composed from
   // the same `notePath` and the same repo-relative state root the gate reads.
-  const stateRootRel = computeStateRootRel(repoRoot, join(repoRoot, ".flume"));
-  expect(stateRootRel).toBe(".flume");
-  expect(args.NOTE_PATH).toBe(notePath(stateRootRel!, assigned.tag));
+  expect(args.NOTE_PATH).toBe(notePath(".flume", assigned.tag));
 
   // Repo-relative, never absolute: the agent writes it inside its own
   // worktree, and a path resolved from the state root would land in the
   // trunk checkout instead.
   expect(isAbsolute(args.NOTE_PATH!)).toBe(false);
   expect(args.NOTE_PATH!.startsWith(cwd)).toBe(false);
+});
 
-  // A state root outside the repository has no such path, so the args refuse
-  // rather than name a note no commit could carry.
+it("build's per-tick args refuse a state root outside the repo rather than naming a note path no commit holds", () => {
+  const assigned = entry();
+
+  // Vacuity guard: the same call over the tick's real state root renders a
+  // path, so the refusal below is the relocation's doing.
+  expect(argsFor(assigned).NOTE_PATH).toBe(notePath(".flume", assigned.tag));
+
+  // The shape the dispatcher reports for a relocated state root: the key is
+  // there, its value is absent, and there is no path in any commit to name.
+  const relocated = join(`${repoRoot}-relocated`, ".flume");
+  expect(computeStateRootRel(repoRoot, relocated)).toBeUndefined();
   expect(() =>
     buildPromptArgs({
       declaration: declare(),
-      repoRoot,
-      ctx: { ...tick(assigned), flumeDir: join(`${repoRoot}-relocated`, ".flume") },
+      ctx: { ...tick(assigned), flumeDir: relocated, stateRootRel: undefined },
     }),
   ).toThrow(/outside/);
 });
@@ -263,8 +283,7 @@ it("a build tick with no assigned entry refuses rather than rendering an empty e
   expect(() =>
     buildPromptArgs({
       declaration: declare(),
-      repoRoot,
-      ctx: { cwd, flumeDir: join(repoRoot, ".flume") },
+      ctx: { cwd, flumeDir: join(repoRoot, ".flume"), stateRootRel: ".flume" },
     }),
   ).toThrow(/no assigned entry/);
 });
@@ -299,8 +318,12 @@ it("the package's build prompt renders over a real tick with no placeholder left
       }),
       ...buildPromptArgs({
         declaration,
-        repoRoot: REPO_ROOT,
-        ctx: { cwd: REPO_ROOT, flumeDir, assignedEntry: assigned },
+        ctx: {
+          cwd: REPO_ROOT,
+          flumeDir,
+          stateRootRel: computeStateRootRel(REPO_ROOT, flumeDir),
+          assignedEntry: assigned,
+        },
       }),
     },
   });
