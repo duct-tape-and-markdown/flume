@@ -219,8 +219,17 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
 export interface ResolveHandoffOptions {
   /** The phase whose handoff is being built. */
   readonly phase: HarnessPhase;
-  /** The consumer's declared handoffs, per phase; absent means the default. */
-  readonly declared?: Partial<Record<HarnessPhase, Handoff>> | undefined;
+  /**
+   * The consumer's declared handoffs, per phase; absent means the default.
+   *
+   * Each phase's value is optional **and** nullable, which is the shape the
+   * declaration's own per-phase schema infers: a key present holding nothing
+   * is the same "no override" a missing key is, and a narrower type here
+   * would make the declaration unassignable to the surface that reads it.
+   */
+  readonly declared?:
+    | Partial<Record<HarnessPhase, Handoff | undefined>>
+    | undefined;
   /** The plan slices the ladder may name, in order. */
   readonly slices: readonly HandoffSlice[];
 }

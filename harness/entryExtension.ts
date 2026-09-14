@@ -55,6 +55,20 @@ export const PerSchema = z.strictObject({
 });
 
 /**
+ * A list of named lines — the shape `tests[]` and `pins[]` share. One
+ * schema, three readers: the two fields below, and the judge gate that
+ * narrows an entry's lines before ruling on them. A second spelling beside
+ * this one is a lane the gate reads under a shape the queue was never
+ * validated against (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*).
+ *
+ * Defaulted rather than optional: an entry that names no line has an empty
+ * list, and a reader that had to tell `undefined` from `[]` would be
+ * deciding the same thing twice.
+ */
+export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
+
+/**
  * The six fields, in the order `spec/harness.md` lists them — which is the
  * order they render in, since `renderSchemaForPrompt` follows declaration
  * order.
@@ -84,7 +98,7 @@ const PACKAGE_FIELDS = {
    * and plan prescribing inside build's lane.
    */
   tests: {
-    schema: z.array(z.string().min(1)).default([]),
+    schema: NamedLinesSchema,
     hint: `[ "behavior this entry introduces or changes" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim; the judge proves it passes, then proves it fails on the pre-fix tree; the file is build's call`,
   },
   /**
@@ -94,7 +108,7 @@ const PACKAGE_FIELDS = {
    * a real pin back into prose. Plan chooses the list a line belongs to.
    */
   pins: {
-    schema: z.array(z.string().min(1)).default([]),
+    schema: NamedLinesSchema,
     hint: `[ "property that already holds and gains its check here" ] — same title discipline as tests[]; judged green, never red on the base`,
   },
   notes: {

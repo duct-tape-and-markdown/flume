@@ -41,6 +41,11 @@ export {
 } from "./init.js";
 
 export {
+  harnessChain,
+  type HarnessChainOptions,
+} from "./chain.js";
+
+export {
   DeclarationSchema,
   parseDeclaration,
   type Declaration,

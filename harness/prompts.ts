@@ -76,12 +76,16 @@ export type PromptName = (typeof PROMPT_NAMES)[number];
  * other path the package composes.
  *
  * Spelled here because nothing else owns it: the queue's path is the
- * engine's (`resolvePendingPath`), the plan state's is `planState.ts`'s, the
- * record queues' are `records.ts`'s, and this artifact's only readers are
- * the slice prompts rendered below. A second spelling anywhere is a slice
- * writing a question where the next slice does not look.
+ * engine's (`resolvePendingPath`), the plan state's is `planState.ts`'s and
+ * the record queues' are `records.ts`'s. Two readers share this one —
+ * the slice prompts rendered below, and the fence the chain factory hands
+ * every plan slice. A second spelling anywhere is a slice writing a question
+ * where the next slice does not look, or a fence that reverts the commit
+ * carrying it.
  */
-const QUESTIONS_REL = "plan/open-questions.md";
+export function questionsPath(stateRoot: string): string {
+  return `${stateRoot}/plan/open-questions.md`;
+}
 
 /**
  * Where a prompt lives on disk — absolute, resolved from this module rather
@@ -139,7 +143,7 @@ export function sharedPromptArgs(
     PINS_HINT: hintOf(extension, "pins"),
     SPEC_LOCUS: backticked(declaration.specLocus),
     PENDING_PATH: resolvePendingPath(stateRoot),
-    QUESTIONS_PATH: `${stateRoot}/${QUESTIONS_REL}`,
+    QUESTIONS_PATH: questionsPath(stateRoot),
     PLAN_STATE_PATH: planStatePath(stateRoot),
     RECORD_DIRS: backticked(recordDirs(stateRoot)),
     DOMAIN: slot("environment", declaration.slots?.domain),
