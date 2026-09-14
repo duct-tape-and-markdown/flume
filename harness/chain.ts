@@ -36,6 +36,7 @@
  * where every consumer gets it.
  */
 
+import { defuseArgs } from "./defuse.js";
 import { resolve } from "node:path";
 
 import type { Agent } from "../src/Agent.js";
@@ -233,7 +234,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       // decides whether this slice runs, and the material its prompt
       // renders (`windows.ts`). Both come off the same value here, so a
       // slice cannot be woken over a window its prompt then shows as empty.
-      promptArgs: (ctx) => ({ ...shared(ctx), ...window.args(ctx) }),
+      promptArgs: (ctx) => defuseArgs({ ...shared(ctx), ...window.args(ctx) }),
       shouldRun: (ctx) =>
         window.live({
           flumeDir: ctx.flumeDir,
@@ -289,7 +290,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [
       namedLinesGate(declaration, isPark),
     ]),
-    promptArgs: (ctx) => ({
+    promptArgs: (ctx) => defuseArgs({
       ...shared(ctx),
       ...buildPromptArgs({ declaration, ctx }),
     }),

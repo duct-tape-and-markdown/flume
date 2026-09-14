@@ -21,6 +21,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { existsLoud } from "../src/fsProbe.js";
 import { addWorktree, removeWorktree } from "../src/git.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
+import { setupWorktree } from "../src/setupWorktree.js";
 
 import type { Lane, NamedResult, RunResult, Runner, TestFailure } from "./runner.js";
 
@@ -59,10 +60,11 @@ export interface VitestRunnerOptions {
    * flume's stale-worktree sweep reclaims.
    */
   worktreeRoot?: string;
-  /**
+    /**
    * Run in the detached checkout after the base bytes are laid down and
    * before the tests. A checkout of a git ref has no installed dependencies;
-   * this is where they arrive.
+   * this is where they arrive. Defaults to the engine's lockfile-aware
+   * installer, the same provisioning a build worktree gets.
    */
   prepare?: (worktreePath: string) => Promise<void>;
 }
@@ -269,7 +271,11 @@ export function vitestRunner(options: VitestRunnerOptions = {}): Runner {
           await mkdir(dirname(join(worktree, f)), { recursive: true });
           await copyFile(from, join(worktree, f));
         }
-        await options.prepare?.(worktree);
+        // A checkout of a git ref has no installed dependencies. Undeclared,
+        // the engine's own lockfile-aware installer provisions it the way a
+        // build worktree is provisioned; a consumer whose stack the engine
+        // cannot install declares its own.
+        await (options.prepare ?? setupWorktree)(worktree);
         const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
         return readRun(output, names, worktree);
       } finally {

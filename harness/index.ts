@@ -31,6 +31,8 @@ export {
 
 export { consumerIgnores } from "./ignores.js";
 
+export { defuseArgs, defuseSpans } from "./defuse.js";
+
 export {
   DEFAULT_STATE_ROOT,
   harnessInit,
