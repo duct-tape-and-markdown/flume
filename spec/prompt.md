@@ -31,8 +31,13 @@ stage's output. A substituted value is therefore prompt text. Stage 2 scans the
 *substituted* text, so an inline-exec span carried in by a `promptArgs` value is
 executed, and — the same fact in the other direction — a span whose command contains a
 placeholder resolves, because the placeholder was already replaced when the span runs.
-The engine neither delimits nor escapes what it substitutes: whatever a value carries
-reaches the agent as prompt syntax, including text shaped like a structural block.
+The engine neither delimits nor escapes what it substitutes by default: whatever a value
+carries reaches the agent as prompt syntax, including text shaped like a structural block.
+A phase that substitutes content it did not author — a spec section, a queue entry, a
+diff — declares those keys as data (`Phase.promptDataKeys`), and the engine neutralizes
+every inline-exec span in those values before stage 2 scans, so file content can never
+execute. The pass-through stays the default for every undeclared key: the chain says
+which values are data, the engine enforces it.
 
 Both structural blocks are **dispatcher-owned and structural** — there is no `{{token}}`
 for either in the prompt file, and no `promptArgs` key names, positions, or suppresses

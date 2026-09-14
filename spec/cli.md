@@ -149,7 +149,7 @@ Two independent roots:
   `plan/pending.json`, worktrees, prior-attempt records, `loop.pid`.
   `FLUME_DIR` relocates it.
 - **`configDir`** — the chain and prompts dir: `<configDir>/chain.ts`, and
-  `phase.promptPath` joins it. `FLUME_CONFIG_DIR` relocates it.
+  `phase.promptPath` resolves against it. `FLUME_CONFIG_DIR` relocates it.
 
 Both default to `<repoRoot>/.flume`; a set-but-relative value resolves against
 cwd. Setting both to one directory co-locates config and state.
@@ -314,7 +314,8 @@ unrelated package.
   the packed file set matches it in **both** directions: a packed path no entry
   covers (over-inclusion) and an entry that packs nothing (under-inclusion) are
   each a failure.
-- **Bin.** `bin.flume` points at `bin/flume.js`, a Node script with a
+- **Bin.** `bin.flume` points at `bin/flume.js`, and `bin.flume-harness` at
+  `bin/flume-harness.js` (`spec/harness.md`, *Adoption and upgrade*) — each a Node script with a
   `#!/usr/bin/env node` shebang, so npm generates working shims on every
   platform — including the Windows `.cmd` / `.ps1` shims, which invoke it with
   `node.exe` directly and never hunt for `sh.exe`. It reaches the same entry
@@ -410,7 +411,8 @@ Standing consequences:
   `CHANGELOG.md`.
 - The mined draft closes `### Breaking` with a `### Uncategorized` subheading over every
   non-breaking entry, so the draft leads with breaks as the curated changelog does, and
-  the second heading is the curating human's cue for what is still unsorted.
+  the second heading is the curating human's cue for what is still unsorted. A
+  subheading renders only over a non-empty bucket; an empty one has no cue to give.
 - The version bump and `npm publish` are human-performed at cut time.
 
 The changelog is a **release artifact mined from git history at the cut**, not

@@ -92,7 +92,7 @@ Node's ordinary walk-up to the bay's own install — the same copy that is execu
 points at an engine that once ran there, nothing reads or repairs it, and `job rm` removes the
 dir wholesale. It is also unreachable, not merely unread — chain and prompts are
 repo-resident (`loadChainModule(resolve(configDir, "chain.ts"))` and
-`join(configDir, phase.promptPath)`), so nothing is ever resolved from
+a `promptPath` resolved against `configDir`), so nothing is ever resolved from
 inside a job dir and the walk-up never passes through one.
 
 ## Runtime ignores

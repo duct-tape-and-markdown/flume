@@ -87,8 +87,8 @@ record — a consumer never hand-maintains a list against engine-owned paths.
 ## What a consumer declares
 
 One declaration module beside the consumer's state root — `declaration.ts`,
-a TypeScript module, because two of its fields are values with behavior (the
-runner and the resolver) — validated by the package's strict schema at chain
+a TypeScript module, because three of its fields are values with behavior (the
+runner, the resolver, and a handoff override) — validated by the package's strict schema at chain
 load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
@@ -99,6 +99,8 @@ one refuses the load naming the field and the valid set.
 | `channelPaths` | Build's `entryChannelPaths`. Optional. |
 | `scopeWritesToEntry` | Off by default. The package documents both arguments and takes no side. |
 | `runner` | The test runner the judge drives — see *The runner interface*. |
+| `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
+| `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script; the package's own gates are always present and always first. |
 | `agents` | Model per phase and extra agent arguments; absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore` — declared here so one file holds the environment and no knob is lost behind the factory. |

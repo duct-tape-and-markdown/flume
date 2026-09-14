@@ -496,7 +496,13 @@ confines side effects to disk inside `cwd`.
 ## What a gate returns
 
 `GateResult` is `{ ok, message, details?, failingFiles?,
-skipped? }`.
+skipped?, verdict? }`.
+
+- **`verdict?: string`** — a chain-authored discriminant for *why* the gate
+  ruled as it did, persisted verbatim onto the tick verdict's gate result and
+  onto a `gate-revert` prior-attempt record beside `message`. The engine
+  interprets it no further, as with `skipped`. A chain whose next tick keys on
+  the reason reads this field rather than re-reading its own prose.
 
 - **`skipped?: string`** — the gate did not run its judge, and says why: no
   code path among the touched paths, a runner the chain scopes out by design.
