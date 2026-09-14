@@ -43,8 +43,18 @@ const globs = z.array(z.string().min(1)).min(1);
  */
 export const INBOX_PHASE = "plan-inbox" as const;
 
-/** The plan slices the package ships (`spec/harness.md`, *The phases*). */
-const PLAN_SLICES = [INBOX_PHASE, "plan-derive", "plan-sweep"] as const;
+/**
+ * The plan slices the package ships (`spec/harness.md`, *The phases*), in
+ * the order that section lists them — which is also the order the ladder
+ * consults their windows in (`windows.ts`): records first, since either an
+ * operator's finding or a build refusal can invalidate anything below;
+ * derive next, so intent is current before work is planned against it; the
+ * posture sweep last, insurance behind product. Exported so the ladder reads
+ * that order off this list rather than keeping a second one beside it
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+export const PLAN_SLICES = [INBOX_PHASE, "plan-derive", "plan-sweep"] as const;
 
 /** One plan slice — every phase the package ships except {@link BUILD_PHASE}. */
 export type PlanSlice = (typeof PLAN_SLICES)[number];

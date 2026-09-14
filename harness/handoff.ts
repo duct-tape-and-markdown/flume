@@ -91,8 +91,16 @@ export interface HandoffSlice {
  * Exhaustive over {@link NoCommitMode} by type, so a mode the engine adds is
  * a type error here and must be classified rather than defaulting to "not a
  * refusal".
+ *
+ * Exported because the same question is asked of a second evidence: this
+ * table reads a fate the engine reported on *this* tick's result, while the
+ * inbox slice's window reads a prior-attempt record still standing on disk
+ * from an earlier one (`windows.ts`). One classification, two evidences — a
+ * copy beside the other reader is how a mode comes to route to the inbox
+ * from a `TickResult` and nowhere from a record
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
-const PLAN_RESOLVES_NO_COMMIT: Record<NoCommitMode, boolean> = {
+export const PLAN_RESOLVES_NO_COMMIT: Record<NoCommitMode, boolean> = {
   "clean-exit": true,
   "render-refused": true,
   "gate-revert": false,

@@ -28,7 +28,6 @@
  */
 
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
 
 /** The build-note directory's name under a state root. */
 const NOTES_REL = "plan/notes";
@@ -37,8 +36,9 @@ const NOTES_REL = "plan/notes";
  * The record directories' names under a state root, in the order
  * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
  * the field, then notes from build ticks. The one spelling — {@link
- * recordDirs}, {@link notesDir} and {@link recordsPending} all compose from
- * here rather than beside it.
+ * recordDirs} and {@link notesDir} compose from here, and {@link
+ * recordFiles} composes from {@link recordDirs}, rather than each walking
+ * its own list.
  */
 const RECORD_DIR_NAMES = ["inbox", NOTES_REL] as const;
 
@@ -99,30 +99,60 @@ export function notePath(stateRoot: string, tag: string): string {
 }
 
 /**
- * Whether any record is waiting to be drained under `stateRoot` — the inbox
- * slice's window, true while either directory holds a `.md` file.
+ * Every record waiting under `stateRoot`, as slash-joined paths in queue
+ * order: the directories in the order {@link recordDirs} names them, each
+ * directory's files sorted by name — an inbox record's name leads with its
+ * date, so the order is oldest first.
  *
- * Synchronous by its caller's contract: a slice's liveness predicate is pure
- * over its inputs and runs on the selection path, and this is two small
+ * One listing, two readers: the inbox slice's liveness predicate below asks
+ * whether this is empty, and the slice's own window renders these files'
+ * bytes. A second walk beside this one is a window that shows a record the
+ * predicate did not count, or counts one it does not show
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ *
+ * A missing directory contributes nothing: an empty queue and an absent one
+ * are the same fact, and a consumer that has never had a record should not
+ * have to create a directory to say so. Every **other** listing failure
+ * throws — a caller here is about to read these bytes, and a queue that
+ * silently lost a record is a finding that never reaches the slice draining
+ * it (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Synchronous by its callers' contract: a slice's liveness predicate is pure
+ * over its inputs and runs on the selection path, and these are two small
  * directory listings.
+ */
+export function recordFiles(stateRoot: string): string[] {
+  return recordDirs(stateRoot).flatMap((dir) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    return names
+      .filter((entry) => entry.endsWith(RECORD_EXT))
+      .sort()
+      .map((entry) => `${dir}/${entry}`);
+  });
+}
+
+/**
+ * Whether any record is waiting to be drained under `stateRoot` — the inbox
+ * slice's record leg, true while {@link recordFiles} names anything.
  *
- * A missing directory is the drained state — an empty queue and an absent
- * one are the same fact, and a consumer that has never had a record should
- * not have to create a directory to say so. Any **other** failure reports
- * the window live: an unreadable queue is a reason to run the tick that
- * drains it, never a reason to skip one. That is a degraded path taken
- * deliberately, and it is bounded — the slice it wakes reads the directory
- * itself and fails loudly there rather than proceeding over the unread
- * bytes (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Where that listing throws, the window reports **live**: an unreadable
+ * queue is a reason to run the tick that drains it, never a reason to skip
+ * one. That is a degraded path taken deliberately, and it is bounded — the
+ * slice it wakes renders the same listing and fails loudly there rather than
+ * proceeding over the unread bytes (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
  */
 export function recordsPending(stateRoot: string): boolean {
-  for (const name of RECORD_DIR_NAMES) {
-    try {
-      const names = readdirSync(join(stateRoot, name));
-      if (names.some((entry) => entry.endsWith(RECORD_EXT))) return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
-    }
+  try {
+    return recordFiles(stateRoot).length > 0;
+  } catch {
+    return true;
   }
-  return false;
 }
