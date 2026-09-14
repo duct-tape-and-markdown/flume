@@ -680,6 +680,31 @@ The census, for whoever rules: three prose copies of this number remain.
 surface, which the ladder does not administer. `docs/CHAIN-AUTHORING.md` is
 the only one this question governs.
 
+**Sixth instance: the same file, a second default, and the boundary is now
+drawn twice.** Drained from `QUARANTINESCOPE-DEFAULT-GETS-A-HOME`'s note;
+verified on disk this tick. `docs/CHAIN-AUTHORING.md:1501` opens
+`quarantineScope`'s bullet with `` `"run"` (default) ``, twelve lines above
+the `Default 3.` the fifth instance names. Both are true; neither is held.
+
+Two ships have now retired this exact restatement from `src/Phase.ts` —
+`3ba6838` for the number, `d0f457b` for the marker — and neither touched the
+guide. So the boundary those commits drew is confirmed, not incidental:
+**compiled surface, not every doc that quotes a default.** The census
+generalizes with it — `spec/chain.md:337` carries `quarantineScope ?? "run"`
+as the human's own surface, and `docs/CHAIN-AUTHORING.md` is again the only
+copy this question governs.
+
+What is new is a wrinkle in the cheap option's shape. The `.d.ts` pins are
+**absence** assertions (`tests/docComments.test.ts`: the hover text names no
+default at all), and absence is the wrong bar for a guide — a chain-authoring
+page that omits the default reads worse, not better. The guide's pin would
+have to be **agreement**: the bullet's literal equals `DEFAULT_ABORT_THRESHOLD`
+/ names `DEFAULT_QUARANTINE_SCOPE`'s member. That is still one cheap assertion
+apiece against a real constant, and still a test reading `docs/` prose, so the
+ruling stands unchanged — but whoever rules should know the two surfaces want
+opposite pins, and that a single "pin the guide's defaults" entry therefore
+covers both bullets in one shape.
+
 ## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
 
 Derived from the spec window; both sentences verified against `src/paths.ts`,
