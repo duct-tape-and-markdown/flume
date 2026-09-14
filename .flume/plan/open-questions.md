@@ -655,3 +655,46 @@ harvest* too, and its cheapest option edits the same paragraph.
 
 Needs an amendment because closing it edits `spec/`, which no autonomous phase
 may write.
+
+## The mined draft closes with `### Breaking`; every curated release leads with it (NEEDS AMENDMENT)
+
+Drained from `CHANGELOG-DRAFT-BREAKING-SECTION-BOUNDED`'s note; verified on
+disk this tick. `ea6a1aa` fixed a real defect — `### Breaking` led the draft
+with nothing closing it, so every ordinary entry rendered *inside* the
+subsection. The fix bounds it by ordering: flat list first, `### Breaking`
+last. That is the only bound available, because `spec/cli.md` *Versioning
+policy* names `### Breaking` and no sibling heading.
+
+**The ordering the spec forces is the inverse of the one the artifact uses.**
+`CHANGELOG.md` puts `### Breaking` first in all nine curated releases
+(0.8.0 through 0.15.0), closed by `### Added` / `### Fixed` / `### Changed`
+siblings. The draft cannot emit those siblings: sorting a mined entry into
+Added-vs-Fixed-vs-Changed is the curation judgment the cut exists to make.
+So the draft's flat list is the uncategorized remainder, and today it has no
+heading of its own — which is exactly why Breaking had to move to the end.
+
+Options:
+
+- **Declare a neutral heading for the uncategorized remainder** (recommended).
+  *Versioning policy* names a second subheading the draft emits over the
+  non-breaking entries — `### Uncategorized` reads honestly as "the curating
+  human splits these"; `### Other` if the draft should read closer to a
+  finished section. Either one closes `### Breaking`, so the draft can lead
+  with breaks like the artifact it feeds, and the heading is the human's
+  visible cue for what still needs sorting. Cheap to ship: one spec bullet,
+  one flip in `renderSection`.
+- **Ratify the ordering as it now stands.** *Versioning policy* states that
+  the mined draft renders the flat list ahead of `### Breaking`, and says why
+  — no sibling heading exists to close the subsection. Costs nothing to ship
+  and makes the current behavior intentional, but leaves the draft's shape
+  permanently unlike the changelog's, which the curating human re-inverts by
+  hand at every cut.
+- **Accept as debt.** Costs the reader of a draft whose breaks are buried at
+  the bottom — the one section of the cut that most wants to be read first.
+
+Not a defect in `scripts/build-changelog.mjs`: the fix is correct as the spec
+reads, and its comment cites the constraint at the site. Needs an amendment
+because closing it edits `spec/`, which no autonomous phase may write.
+
+**Rule this beside the other open question on the same section** — "The
+release publish is hand-run" proposes wording in *Versioning policy* too.
