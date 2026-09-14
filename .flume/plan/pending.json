@@ -1,46 +1,38 @@
 [
   {
-    "tag": "HARNESS-VITEST-RUNNER",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [
-        { "path": "harness/runner.ts", "description": "the Runner type — run, runAtBase, lanes" },
-        { "path": "harness/vitestRunner.ts", "description": "the vitest runner the package ships" },
-        { "path": "harness/index.ts", "description": "the package entry point" },
-        { "path": "tests/harnessRunner.test.ts", "description": "the three operations, driven over the real reporter's output" }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "summary": "Seed harness/ with the Runner interface — run, runAtBase, lanes — and the vitest runner behind it, each operation returning structured results rather than exit codes.",
-    "per": { "path": "spec/harness.md", "section": "The runner interface" },
-    "tests": [
-      "the vitest runner reports, per named line, whether one passing test carried it",
-      "the vitest runner lays the merged bytes over a detached base checkout and runs the same names there",
-      "the vitest runner reports its lanes and the files each excludes"
-    ],
-    "pins": [
-      "no module under src/ imports harness/"
-    ],
-    "acceptance": "harness/vitestRunner.ts satisfies harness/runner.ts's three operations with structured per-name results, and pnpm tsc --noEmit + pnpm test are green.",
-    "notes": "Port from .flume/vitestJudge.ts, keeping its posture: pure over the reporter's own output, so the real writer drives the real reader. `lanes` is the mechanism the open vitest-lane question wants — the runner declares its lanes, the judge refuses at plan time. The chain-side copy retires at the cutover (open-questions, the phase-lane question)."
-  },
-  {
     "tag": "HARNESS-SUBPATH-EXPORT",
-    "gate": { "kind": "blockedBy", "tags": ["HARNESS-VITEST-RUNNER"] },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "tests/harnessPackaging.test.ts", "description": "the exports map and the build include name the subpath" }
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "the exports map and the build include name the subpath"
+        }
       ],
       "edit": [
-        { "path": "package.json", "description": "exports ./harness" },
-        { "path": "tsconfig.build.json", "description": "include harness/**" },
-        { "path": "scripts/smoke-install.mjs", "description": "resolve the subpath from the installed tarball" }
+        {
+          "path": "package.json",
+          "description": "exports ./harness"
+        },
+        {
+          "path": "tsconfig.build.json",
+          "description": "include harness/**"
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "resolve the subpath from the installed tarball"
+        }
       ],
       "retire": []
     },
     "summary": "Ship harness/ as the ./harness subpath of @dtmd/flume — one package, one version, one exports map — and extend the install acceptance to resolve it.",
-    "per": { "path": "spec/harness.md", "section": "Where it lives" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Where it lives"
+    },
     "tests": [
       "the package exports map resolves ./harness to the built harness entry point",
       "the build tsconfig emits harness/ beside src/"
@@ -51,19 +43,34 @@
   },
   {
     "tag": "HARNESS-DECLARATION-SCHEMA",
-    "gate": { "kind": "blockedBy", "tags": ["HARNESS-VITEST-RUNNER"] },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "harness/declaration.ts", "description": "the strict declaration schema and its refusal" },
-        { "path": "tests/harnessDeclaration.test.ts", "description": "one acceptance case, two refusals" }
+        {
+          "path": "harness/declaration.ts",
+          "description": "the strict declaration schema and its refusal"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "one acceptance case, two refusals"
+        }
       ],
       "edit": [
-        { "path": "harness/index.ts", "description": "export the schema and its type" }
+        {
+          "path": "harness/index.ts",
+          "description": "export the schema and its type"
+        }
       ],
       "retire": []
     },
     "summary": "Add the package's strict declaration schema — the eleven fields a consumer declares — refusing an unknown or a missing required field at load, naming the field and the valid set.",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
     "tests": [
       "the declaration schema parses a declaration naming every field",
       "an unknown declaration field is refused, naming the field and the valid set",
@@ -75,19 +82,37 @@
   },
   {
     "tag": "HARNESS-CITE-RESOLVER",
-    "gate": { "kind": "blockedBy", "tags": ["HARNESS-DECLARATION-SCHEMA"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "HARNESS-DECLARATION-SCHEMA"
+      ]
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [
-        { "path": "harness/citeResolver.ts", "description": "per resolution against specLocus, resolver declarable" },
-        { "path": "tests/harnessCiteResolver.test.ts", "description": "the two refusals and the declared resolver" }
+        {
+          "path": "harness/citeResolver.ts",
+          "description": "per resolution against specLocus, resolver declarable"
+        },
+        {
+          "path": "tests/harnessCiteResolver.test.ts",
+          "description": "the two refusals and the declared resolver"
+        }
       ],
       "edit": [
-        { "path": "harness/index.ts", "description": "export the resolver and its verdict type" }
+        {
+          "path": "harness/index.ts",
+          "description": "export the resolver and its verdict type"
+        }
       ],
       "retire": []
     },
     "summary": "Add the package's per resolver: the path matches a specLocus glob and is in the gated commit, the section is a heading in it, and a consumer may declare a resolver that keys sections instead.",
-    "per": { "path": "spec/harness.md", "section": "The cite resolver" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The cite resolver"
+    },
     "tests": [
       "a per cite whose path matches no specLocus glob is refused, naming the path",
       "a per cite whose section is no heading at the gated commit is refused, naming the section",
