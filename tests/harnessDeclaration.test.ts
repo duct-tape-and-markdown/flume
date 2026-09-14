@@ -21,7 +21,7 @@ import {
   parseDeclaration,
   type Declaration,
 } from "../harness/index.ts";
-import type { RunResult, Runner } from "../harness/index.ts";
+import type { RunResult, Runner, SectionResolver } from "../harness/index.ts";
 
 /** The empty result a stub runner reports; no test here runs a suite. */
 const EMPTY_RUN: RunResult = {
@@ -45,7 +45,14 @@ const stubRunner: Runner = {
   lanes: [{ name: "default", excludes: [], runs: true }],
 };
 
-/** The fields `spec/harness.md` lists, every one of them populated. */
+/**
+ * A section resolver, declared as a value for the same reason the runner is:
+ * a consumer whose spec is typed keys a section rather than matching heading
+ * text, and the schema checks that it is a function, not which spec it reads.
+ */
+const stubResolver: SectionResolver = (cite) => cite.section;
+
+/** The fields `spec/harness.md` names, every one of them populated. */
 const fullDeclaration = (): Record<string, unknown> => ({
   specLocus: ["spec/**", ".claude/rules/**"],
   fence: {
@@ -57,6 +64,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   channelPaths: [".flume/plan/notes/*.md"],
   scopeWritesToEntry: true,
   runner: stubRunner,
+  resolver: stubResolver,
   gates: {
     build: [
       { kind: "registry", name: "tsc", when: "afterCommit" },
@@ -107,7 +115,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(11);
+    expect(Object.keys(declared)).toHaveLength(12);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -119,6 +127,8 @@ describe("the harness declaration schema", () => {
     // The runner survives as the value it was declared as, not a copy: the
     // judge calls these operations.
     expect(parsed.runner).toBe(stubRunner);
+    // Same for the resolver: the cite resolver calls it.
+    expect(parsed.resolver).toBe(stubResolver);
     expect(parsed.gates?.build?.[0]).toEqual({
       kind: "registry",
       name: "tsc",
@@ -225,6 +235,7 @@ describe("the harness declaration schema", () => {
     for (const field of [
       "channelPaths",
       "scopeWritesToEntry",
+      "resolver",
       "gates",
       "agents",
       "supervisor",
@@ -237,7 +248,19 @@ describe("the harness declaration schema", () => {
     const parsed = parseDeclaration(declared);
 
     expect(parsed.channelPaths).toBeUndefined();
+    // Absent, the package resolves a cite's section by heading text.
+    expect(parsed.resolver).toBeUndefined();
     expect(parsed.scopeWritesToEntry).toBe(false);
+  });
+
+  it("a resolver that is not a function is refused, naming the resolver field", () => {
+    const declared = fullDeclaration();
+    declared["resolver"] = "byKey";
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("resolver");
+    expect(message).toContain("The cite resolver");
   });
 
   it("a runner missing one of the three operations is refused, naming the runner field", () => {

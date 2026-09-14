@@ -34,6 +34,15 @@ export {
 } from "./entryExtension.js";
 
 export {
+  resolveCite,
+  type AtRefReader,
+  type Cite,
+  type CiteLocus,
+  type CiteVerdict,
+  type SectionResolver,
+} from "./citeResolver.js";
+
+export {
   PlanStateSchema,
   planStatePath,
   readPlanState,

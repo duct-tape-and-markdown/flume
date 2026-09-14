@@ -40,6 +40,21 @@ export const ENTRY_CAPS = Object.freeze({
 });
 
 /**
+ * The cite that justifies the work: which file, which section of it. Shape
+ * only — whether the path lands inside the consumer's declared `specLocus`
+ * and whether the section is in the cited file belong to the cite resolver
+ * (`citeResolver.ts`), which reads a cite as exactly this rather than as a
+ * second `{ path, section }` beside it (`.claude/rules/engineering.md`,
+ * *Derived state is computed, never restated beside its source*). An entry
+ * that cannot carry a clean cite is a question for a human rather than a
+ * queue entry.
+ */
+export const PerSchema = z.strictObject({
+  path: z.string().min(1),
+  section: z.string().min(1),
+});
+
+/**
  * The six fields, in the order `spec/harness.md` lists them — which is the
  * order they render in, since `renderSchemaForPrompt` follows declaration
  * order.
@@ -54,17 +69,8 @@ const PACKAGE_FIELDS = {
     schema: z.string().min(1).max(ENTRY_CAPS.summary),
     hint: `"one-line what (≤${ENTRY_CAPS.summary} chars)"`,
   },
-  /**
-   * The cite that justifies the work: which file, which heading in it. Shape
-   * only — the path is resolved against the consumer's declared `specLocus`
-   * by the cite resolver, and an entry that cannot carry a clean cite is a
-   * question for a human rather than a queue entry.
-   */
   per: {
-    schema: z.strictObject({
-      path: z.string().min(1),
-      section: z.string().min(1),
-    }),
+    schema: PerSchema,
     hint: `{ "path": "the file that justifies this work, inside the declared spec locus", "section": "exact heading text, no leading '#'" }`,
   },
   acceptance: {

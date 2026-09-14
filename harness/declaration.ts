@@ -1,7 +1,7 @@
 /**
  * The declaration a consumer writes to adopt the harness package
- * (`spec/harness.md`, *What a consumer declares*) — the eleven fields that
- * decide an environment, and the strict schema that refuses anything else.
+ * (`spec/harness.md`, *What a consumer declares*) — the fields that decide an
+ * environment, and the strict schema that refuses anything else.
  *
  * Strict is the whole point of the shape. A field the package never reads is
  * a consumer's belief about its environment that nothing honours, and a
@@ -26,6 +26,7 @@ import { z } from "zod";
 import type { GatePhase } from "../src/Gate.js";
 import type { Chain } from "../src/Phase.js";
 
+import type { SectionResolver } from "./citeResolver.js";
 import { parseOrThrow, strict } from "./refusal.js";
 import type { Runner } from "./runner.js";
 
@@ -110,6 +111,25 @@ const RunnerValue = z.custom<Runner>(
 );
 
 /**
+ * The consumer's own section resolver (`spec/harness.md`, *The cite
+ * resolver*) — the second of the two declared values with behavior, beside
+ * the runner, and the reason this declaration is a module rather than JSON.
+ *
+ * Checked as a function and nothing more: what it returns for a cite is the
+ * cite resolver's contract, and a schema re-asserting it here would be the
+ * same check in two places. Absent, the package resolves a section by
+ * heading text.
+ */
+const ResolverValue = z.custom<SectionResolver>(
+  (value): boolean => typeof value === "function",
+  {
+    error:
+      "must be a function resolving a cite's section from the cited file's " +
+      "text (spec/harness.md, The cite resolver)",
+  },
+);
+
+/**
  * The engine's supervisor policy entire — not a subset of it. The alias is
  * the tie in both directions: `satisfies Record<keyof …>` below refuses a
  * shape missing a knob the engine names, and the object literal's excess
@@ -169,10 +189,11 @@ const Slices = strict({
 });
 
 /**
- * The eleven fields, as `spec/harness.md`, *What a consumer declares* lists
- * them. Four are required — the three a tick cannot run without and the one
- * that says which slices run; the rest are the package's opinion until a
- * consumer states otherwise.
+ * The fields `spec/harness.md`, *What a consumer declares* names: its
+ * table's eleven, plus the `resolver` that section names in prose as one of
+ * the two values with behavior. Four are required — the three a tick cannot
+ * run without and the one that says which slices run; the rest are the
+ * package's opinion until a consumer states otherwise.
  */
 export const DeclarationSchema = strict({
   /**
@@ -194,6 +215,11 @@ export const DeclarationSchema = strict({
   scopeWritesToEntry: z.boolean().default(false),
   /** The test runner the judge drives. */
   runner: RunnerValue,
+  /**
+   * How a `per` cite's section is found in the file it names. Absent, by
+   * heading text; declared, by whatever key a typed spec is read with.
+   */
+  resolver: ResolverValue.optional(),
   /**
    * Extra gates per phase. The package's own gates are always present and
    * always first, so nothing here can displace one.
