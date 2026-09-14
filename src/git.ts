@@ -245,14 +245,18 @@ async function getLocalConfig(
 export async function addWorktree(opts: {
   repoRoot: string;
   path: string;
-  branch: string;
+  /**
+   * The branch to create or reset at `fromRef`. Omitted checks `fromRef`
+   * out **detached** — a worktree nothing commits to, for a caller that
+   * wants a second tree at a known sha and no ref to clean up afterwards.
+   */
+  branch?: string;
   fromRef: string;
 }): Promise<void> {
   await run(opts.repoRoot, [
     "worktree",
     "add",
-    "-B",
-    opts.branch,
+    ...(opts.branch === undefined ? ["--detach"] : ["-B", opts.branch]),
     opts.path,
     opts.fromRef,
   ]);
