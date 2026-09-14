@@ -233,11 +233,11 @@ behavior(s) have no passing test" no matter how green the work is. That is exact
 what cost this entry a wave: plan declared the decline case against
 `tests/examples.integration.test.ts`, which the gate cannot see.
 
-**Nothing warns at plan time, and nothing can.** `.flume/prompts/plan-discipline.md`
+**Nothing warns at plan time.** `.flume/prompts/plan-discipline.md`
 (*Tests ride the entry, and the gate reads them*) says "the file a test lands in is
 build's call" — true, and the constraint the sentence omits is that the call is
-bounded to the fast lane. The `pendingGate` cannot check it: the file does not exist
-when plan derives.
+bounded to the fast lane. No check can read the *test file*: it does not exist when
+plan derives.
 
 **A second shape, same paragraph, drained from
 `EXAMPLES-INTEGRATION-API-PATHS-ARE-THE-TICKS`'s park (2026-09-14 build wave);
@@ -267,6 +267,36 @@ exposes. The prose clause above stays the right default.
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
 meanwhile, and moved the parked entry's line to `pins[]`, so the queue does not
 re-hit either wall while the wording is ruled.
+
+**A third field instance, and one correction to the paragraph above**
+(`EXAMPLES-GROOMER-CAPTURE-ROOTS-AT-FLUMEDIR`'s note, 2026-09-14 build wave;
+verified on disk). The entry declared both behaviors against
+`tests/examples.integration.test.ts`; build shipped them to
+`tests/examples.test.ts` and merged green. So the lane wall costs a wave only
+when build follows the prediction — but plan is still writing predictions that
+name a revert, three waves running.
+
+**The prediction is the plan-time signal, and it is decidable.** The test file
+is unknowable at plan time; the entry's declared `files` is not, and
+`pendingGate` already pre-checks every `files` path against `buildFence`
+(`.flume/chain.ts:730`). A path matching the lane `vitest.config.ts` excludes
+is a literal string in the queue plan just wrote. Two homes, both chain-side,
+both `chore(flume):`:
+
+- **The `tests[]` hint** (`.flume/chain.ts:139`, chain-authored, injected into
+  plan's schema block) gains the lane clause. Reaches plan at authorship, costs
+  nothing, refuses nothing.
+- **A second plan gate** reading the committed queue and failing an entry that
+  names both a `tests[]` line and an `*.integration.test.ts` path in `files`.
+  Against it: `files` is a prediction build is not held to
+  (`spec/pending.md`, *`files` is a prediction the scheduler consumes*), so
+  this entry — which shipped fine — would have had its plan commit reverted.
+  A gate that refuses a correct queue over a prediction build ignored is the
+  wrong rung.
+
+**Recommend** the hint, alongside the plan-discipline clause already
+recommended above; the two say one thing in the two places plan reads. Held
+here rather than filed because `.flume/chain.ts` is outside every phase lane.
 
 ## Two spec sentences still name unexported helpers, after the ruling that removed three (NEEDS AMENDMENT)
 
