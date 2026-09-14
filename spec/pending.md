@@ -317,10 +317,9 @@ refusal of the work — plan cannot know which files a move breaks without doing
   tick regardless of what the assigned entry declared. The channel allowance for cross-tick
   artifacts an entry never declares: a build phase reporting a finding into the producer's
   open-questions file, prior-attempt context, and the like.
-- **The union has one home.** `entryWriteScopeUnion` is consumed both by
-  `writablePathsGate`'s entry-scope check, which enforces the fence, and by
-  `effectiveFenceLines`, which renders it into the tick's `<harness>` block.
-  The stated fence and the enforced fence cannot differ, because they are the same computation.
+- **The fence has one home.** The fence the tick's `<harness>` block states, the fence
+  the write guard enforces, and the fence a queue is pre-checked against (`flume check`
+  and the pending gate alike) are one computation, so none of them can differ from another.
   Path matching is `matchesAny` — regex specials escaped, `*` and `**` the only
   wildcards, so a declared literal path matches only itself. `matchesAny` rides `FlumeApi`
   (`spec/chain.md`), so a chain predicate over the same globs shares the enforcing matcher

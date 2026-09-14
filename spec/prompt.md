@@ -213,9 +213,9 @@ with no changes) renders as the empty string and is not a failure.
 
 ## No cmd.exe on the inline-exec path
 
-`execGate` (module-private) retries through `shell: true` on a
-win32 ENOENT. That is correct for gate binaries, where package-manager `.cmd` shims
-cannot be spawned directly and the arguments are chain-authored flags.
+The gate-binary spawn path retries through a shell on a win32 ENOENT. That is correct
+for gate binaries, where package-manager `.cmd` shims cannot be spawned directly and the
+arguments are chain-authored flags.
 
 It is wrong for shell script. `runInlineExec` therefore does not share it — it spawns
 `sh` directly and a missing `sh` is a render failure, not a fallback. Sharing one helper

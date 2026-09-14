@@ -43,8 +43,10 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 - `check` — validates the working tree's `pending.json` without spending an
   agent: the real parse (`parsePending`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
-  consumer phase's declared fence, the same `entryWriteScopeUnion`/
-  `matchesAny` computation the write guard enforces. Read-only; touches no
+  consumer phase's declared fence, under the same `matchesAny` matching the
+  write guard enforces. `check` refuses exactly the entries the pending gate
+  would refuse, naming the same offending paths, because the two read one
+  derivation. Read-only; touches no
   baton flag and invokes nothing. A parse or fence refusal exits
   `EX_DATAERR` (65), naming the entry and the offending paths — the same
   refusal the next tick would have bought with an invocation. Scope is
