@@ -373,14 +373,26 @@ export interface TickVerdict {
   noCommit?: NoCommitMode;
   /**
    * Set when this tick (or, for a fanout wave, any part of
-   * it) refused to commit because the ref moved between the tip it recorded
-   * at tick start and the point a commit would have landed onto it — the
-   * tip-verify backstop. A sibling fact to `noCommit`, never folded into it:
-   * the cause here is never one of the four `NoCommitMode` classes, and a
-   * wave can carry both (some entries shipped before the ref moved, the rest
-   * refused) or `tipMoved` alone with `committed: true` (every entry that
-   * reached cherry-pick shipped; only the trailing pending-ledger commit
-   * refused). Absent when nothing this tick touched hit the backstop.
+   * it) hit the tip-verify backstop and refused a commit. Two producers,
+   * and neither compares the ref against a tip recorded at tick start:
+   *
+   *  - before every harness-driven commit — each cherry-pick and the
+   *    trailing pending-ledger commit — a **live foreign claim** on the ref,
+   *    which is a second engine instance interleaving merges. An unclaimed
+   *    foreign commit is absorbed instead: the pick lands onto whatever tip
+   *    is current and git's conflict detection arbitrates content.
+   *  - on the agent's own private `flume/**` branch, a **recorded base that
+   *    is no longer an ancestor** of the HEAD the agent left — something
+   *    reset or rewrote the branch out from under it. Committing twice on
+   *    that branch is a completed tick, not interference, so the check is
+   *    ancestry rather than equality.
+   *
+   * A sibling fact to `noCommit`, never folded into it: the cause here is
+   * never one of the four `NoCommitMode` classes, and a wave can carry both
+   * (some entries shipped before the refusal, the rest refused) or
+   * `tipMoved` alone with `committed: true` (every entry that reached
+   * cherry-pick shipped; only the trailing pending-ledger commit refused).
+   * Absent when nothing this tick touched hit the backstop.
    */
   tipMoved?: boolean;
   /**
@@ -1382,9 +1394,13 @@ export interface TickOutcome {
   noCommit?: NoCommitMode;
   /**
    * Mirrors {@link TickVerdict.tipMoved} — set when this
-   * tick refused a commit because the ref moved out from under the tip it
-   * recorded at tick start. A sibling fact to `noCommit` above, never a
-   * fifth `NoCommitMode`: the tip-verify backstop is a harness-mechanical
+   * tick hit the tip-verify backstop and refused a commit, from either of
+   * its two producers: a live foreign claim on the ref before a
+   * harness-driven commit (a concurrent engine instance), or a recorded
+   * base that is no longer an ancestor of the HEAD the agent left on its
+   * private branch. Neither leg compares the ref against a tip recorded at
+   * tick start. A sibling fact to `noCommit` above, never a fifth
+   * `NoCommitMode`: the tip-verify backstop is a harness-mechanical
    * refusal, not a cause the four causally-distinct modes classify.
    */
   tipMoved?: boolean;
@@ -3138,15 +3154,26 @@ export class Dispatcher {
      * start the wave loop cherry-picks and diffs from (`base..commitSha`,
      * spec/loop.md "N commits are completion"). Set on every path that
      * reached a commit — alongside `commitSha` when the span survived, and
-     * alongside `headSha` when it was lost to a moved tip or an afterCommit
-     * revert, so the verdict's span row can name the range both ends of
-     * (`TickVerdictMergeOutcome.baseSha`). Absent only when no commit landed.
+     * alongside `headSha` when it was lost to the ancestry refusal below or
+     * to an afterCommit revert, so the verdict's span row can name the range
+     * both ends of (`TickVerdictMergeOutcome.baseSha`). Absent only when no
+     * commit landed.
      */
     spanBase?: string;
     gateResults: GateResultEntry[];
     /** No-commit mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
-    /** Sibling to `noCommit`, set when this entry's own worktree commit landed on a moved tip. */
+    /**
+     * Sibling to `noCommit`, set by the tip-verify backstop's per-entry
+     * producer: the base this entry's worktree branched from is no longer
+     * an ancestor of the HEAD the agent left on its private branch, so the
+     * span was soft-reset and never reached cherry-pick. No tip recorded at
+     * tick start is compared against anything here — and the backstop's
+     * other producer, a live foreign claim before a harness-driven commit,
+     * refuses at the wave's merge step and leaves this per-entry field
+     * unset (it surfaces as the wave-level {@link TickVerdict.tipMoved} and
+     * a `tip-moved` mergeOutcome, against `dropped-work` for this leg).
+     */
     tipMoved?: boolean;
     /** Sibling to `noCommit`/`tipMoved`, set when `phase.shouldRun` declined this entry before the agent was invoked. */
     declined?: boolean;
