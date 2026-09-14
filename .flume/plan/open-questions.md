@@ -35,88 +35,44 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## The `spec/jobs.md` ignore block names a retired file, `last-tick.json` (NEEDS AMENDMENT)
+## The runtime ignore list has three unpinned copies (PARKED)
 
-**`last-tick.json` no longer exists.** Drained from
-`RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`'s note. The block lists `last-tick.json`;
-nothing in `src/` writes that name. The per-tick verdict file is `tick-verdict.json`
-(`STATE_ROOT_NAMES.tickVerdict`), and `CHANGELOG.md:1357` records the rename.
-`README.md` and `docs/CHAIN-AUTHORING.md` both already teach the new name. Build
-shipped the accessor's name rather than the spec's — an ignore line for
-`last-tick.json` would ignore a file no tick creates while leaving the real one
-trackable, which is the defect that entry existed to close — so `RUNTIME_IGNORES` now
-reads one line off the spec block verbatim. No agreement pin is driven off the block
-today; the first one authored would fail against the runtime.
+Was "The `spec/jobs.md` ignore block names a retired file, `last-tick.json`";
+the stale name closed at `1ebf971` (`tick-verdict.json`), and `RUNTIME_IGNORES`
+(`src/job.ts`) already carried the live name, so spec and code agree. The fork
+that ship raised is what remains, drained from
+`RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS`'s note.
 
-**Recommend:** `last-tick.json` → `tick-verdict.json`. `spec/` is human-only; it is not
-a code change. This repo's own `.gitignore` carries the stale `.flume/last-tick.json`
-line too — harmless (it ignores nothing), and inside build's fence, so it rides
-whatever entry the amendment files.
+**Pinning is off the table.** The equality pin on `docs/CHAIN-AUTHORING.md`'s
+copy left with the hygiene suite at `bd75f27`, and that commit forecloses
+re-authoring it — prose read against code is harness governance, held by its
+authors, never promoted into the suite (`.claude/rules/engineering.md`,
+*Narration is the ladder's bottom rung*, last bullet). So the list stands in
+three unpinned copies — `spec/jobs.md` *Runtime ignores*, `RUNTIME_IGNORES`
+(`src/job.ts`), `docs/CHAIN-AUTHORING.md:133-135` — and nothing mechanical
+catches the next stale name. The one just amended is what an unpinned copy
+does. The fork is which copy stops existing:
 
-**The first half closed, and its code half shipped.** The block was also missing
-`merging/`; the amendment landed at `17cf6a3` and `RUNTIME-IGNORES-NAMES-MERGING`
-shipped on 2026-09-11.
-
-**A second fork that ship raised — pin the block, or shrink it to a pointer?**
-Drained from that entry's note. The evidence this fork rested on is gone: the equality
-pin on `docs/CHAIN-AUTHORING.md`'s copy of the same list left with the hygiene suite at
-`bd75f27`, and that commit forecloses re-authoring it — prose read against code is
-harness governance, held by its authors, never promoted into the suite
-(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*, last bullet).
-So **pinning is off the table**, and the list now has three unpinned copies:
-`spec/jobs.md:105-116`, `RUNTIME_IGNORES` (`src/job.ts`), and
-`docs/CHAIN-AUTHORING.md:133-135`. The stale name above is what an unpinned copy does,
-and nothing mechanical will catch the next one. The fork is now which copy stops existing:
-
-- **Shrink the doc's copy to a pointer** at `spec/jobs.md`, *Runtime ignores*. Prose
-  pointing at prose — no pipeline inversion, inside build's fence, files as an ordinary
-  entry. Leaves spec and `RUNTIME_IGNORES` as the two copies the ruling hands to their
-  authors.
+- **Shrink the doc's copy to a pointer** at `spec/jobs.md`, *Runtime ignores*.
+  Prose pointing at prose — no pipeline inversion, inside build's fence, files
+  as an ordinary entry. Leaves spec and `RUNTIME_IGNORES` as the two copies the
+  ruling hands to their authors.
 - **Shrink the spec's copy to a pointer** at `RUNTIME_IGNORES`
-  (`.claude/rules/engineering.md`, *Derived state is computed, never restated beside its
-  source* — "in artifacts, the same bar"). Against it: the spec is upstream of the code
-  here, so a spec section citing `src/` inverts the flow `spec-plan-build.md` rests on,
-  and the section stops being readable standing alone.
-- **Accept all three, author-held.** The ruling's own posture; costs the next stale name.
+  (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+  beside its source* — "in artifacts, the same bar"). Against it: the spec is
+  upstream of the code here, so a spec section citing `src/` inverts the flow
+  `spec-plan-build.md` rests on, and the section stops being readable standing
+  alone.
+- **Accept all three, author-held.** The ruling's own posture; costs the next
+  stale name.
 
-**Recommend the first** — it removes a copy at no cost to the pipeline's direction or the
-section's readability, and leaves exactly the spec↔code pair the human already maintains.
-Either way the name fix above lands first.
+**Recommend the first** — it removes a copy at no cost to the pipeline's
+direction or the section's readability, and leaves exactly the spec↔code pair
+the human already maintains. Parked rather than filed because the choice is
+among three homes, not one mechanical fix.
 
-## The degraded chain load also rebases the pending count, and two spec sections say otherwise (NEEDS AMENDMENT)
-
-Drained from `DOCS-CLI-CHAIN-LOAD-REPORTED`'s note (2026-09-11 build wave).
-`loadChainForObservation` (`src/cliChainLoad.ts`) reports two costs of a failed
-load, and the code takes both: the withheld friction/capability lines, **and**
-the pending count falling back to the default queue path — `chain?.pendingPath`
-threads into `resolvePendingPath` at `src/cli.ts:365` and into `jobStatus` at
-`src/cliJobVerbs.ts:44`.
-
-Two spec sections name only the first, and one of them denies the second
-outright:
-
-- `spec/cli.md`, *`flume status` owes exactly this* — item 5 states the count
-  reads `<flumeDir>/plan/pending.json`, and item 6 then says "nothing above
-  this line is withheld". For a chain declaring a non-default `pendingPath`,
-  item 5 is false the moment the load fails: the degraded count reads a
-  different file than the healthy one.
-- `spec/jobs.md`, *`flume job status`* — "the entry count from
-  `<jobdir>/plan/pending.json`", and the best-effort bullet stops at "withholds
-  the friction counts".
-
-**Not a code defect.** `resolvePendingPath` is the single resolver
-(`src/paths.ts:155`) and both call sites already thread the declared path; both
-sites carry a comment naming the fallback. `docs/CLI.md` now states it too —
-the doc is ahead of the spec, which is the wrong direction for this pipeline.
-
-**Recommend:** amend both sections to say the count resolves through
-`Chain.pendingPath` when the chain loads and through the default relative path
-when it does not, and soften item 6's "nothing above this line is withheld" to
-exclude the queue path it does not cover. The alternative — ruling that a
-degraded count must refuse rather than rebase (`engineering.md`, *Loud or
-nothing*) — is a behavior change, and a plausible one: a `pending: N` read off
-the wrong file is a confident wrong answer where `pending: unknown` would not
-be. If that is the ruling, say so and this becomes an entry instead.
+One loose end rides whichever entry a ruling files: this repo's `.gitignore:11`
+still carries `.flume/last-tick.json`, which ignores a file no tick writes.
 
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
@@ -151,36 +107,6 @@ Options:
 Parked rather than filed because arming, restating and retiring are three different
 answers about whether the lenses are still wanted, and the section is a design-intent
 ruling — plan choosing among them would be filling a gap silently.
-
-## The quarantine key excludes `observedFiles`, and `spec/loop.md` says "a hash of its bytes" (NEEDS AMENDMENT)
-
-Drained from `QUARANTINE-KEYS-THE-ENTRY-AS-READ`'s note; verified on disk.
-`spec/loop.md` *Repeated identical failures* keys the run-scoped quarantine by
-"its slug and a hash of its bytes in `pending.json`". `quarantineKey`
-(`src/Dispatcher.ts:768-801`) hashes the entry **minus `observedFiles`**, and
-declares the divergence at the site.
-
-The exclusion is load-bearing, not a shortcut. `commitPendingUpdate` merges a
-failed attempt's footprint into `entry.observedFiles` (`src/Dispatcher.ts:4826`)
-in the *same* wave that blames the entry, so a whole-bytes hash mints a fresh
-key on the next read: every merge- and gate-stage quarantine lifts its own hold
-one tick later and the run re-attempts the same wall at full agent price — the
-burn the section exists to prevent. Provision-stage failures are unaffected (no
-`mergeOutcome`, so no write-back). Every other write-back — `blockedBy` →
-`open` — is a real state change and re-keys deliberately, which is the behavior
-the sentence wants to keep.
-
-**Recommend:** amend the bullet so the hash is stated over the entry *as
-declared*, naming `observedFiles` as the engine's own accretion that is excluded
-— the code's rule, said once in the spec, at which point the declared divergence
-at `quarantineKey` shrinks to a pointer (`engineering.md`, *Narration is the
-ladder's bottom rung*).
-
-The alternative is a behavior change rather than a spec edit: rule that the key
-must cover the whole entry, and move the `observedFiles` merge out of the
-blaming wave so the accretion no longer re-keys. That is the larger change and
-it buys nothing the exclusion does not already buy — but if it is the ruling,
-say so and this becomes an entry against `commitPendingUpdate`.
 
 ## A contract-touching entry ships mid-run with no ordering and no signal (PARKED)
 
@@ -310,166 +236,6 @@ recommended above; the two surfaces say one thing in the two places plan reads.
 Held here rather than filed because `.flume/chain.ts` is outside every phase
 lane.
 
-## Four spec symbols name package-unreachable helpers, after the ruling that removed three (NEEDS AMENDMENT)
-
-**Amended: the enumeration was two, and is four.** A ruling on the two below
-would leave the two new ones standing. All four are the shape `07b550c`
-closed: a `spec/*.md` sentence naming a symbol unreachable from the package's
-`exports` map, against `.claude/rules/spec-writing.md`, *A claim names
-behavior, never location*. Every site re-verified on disk this tick.
-
-The two `07b550c` left unruled:
-
-- **`declaredPaths`** — `spec/pending.md` six times (:122, :240, :243, :254,
-  :291, :406), including the defining equation and two equations built on top
-  of it. Exported from `src/PendingSchema.ts`, absent from `src/index.ts`.
-  This is the larger instance the ruling named: the corpus treats it as
-  defining vocabulary, not as a location cite.
-- **`runInlineExec`** — `spec/prompt.md` twice (:177, :220), in the same
-  section whose third sentence `07b550c` restated. Module-private in
-  `src/Prompt.ts`; nothing exports it.
-
-The two that sweep missed, both in the CJS/exit-code area:
-
-- **`tickExitCode`** — `spec/cli.md` (:262), `spec/loop.md` (:32),
-  `spec/chain.md` (:159). Exported from `src/cliVerdict.ts`, absent from
-  `src/index.ts` and from `FlumeApi`. Each of the three sentences already
-  states the exit code itself, so the symbol adds only the call site.
-  `TickOutcome`, named beside it at cli.md:262, *is* exported and stays.
-- **`runJobVerb`** — `spec/cli.md` (:262), as "`runJobVerb`'s `new` catch
-  tests `CjsContextLoadError` ahead of its operational branch". Exported from
-  `src/cliJobVerbs.ts`, absent from `src/index.ts`. This one names call order
-  between internal functions as well as the symbol — the rule's second and
-  third prohibited forms at once. `CjsContextLoadError` is legal vocabulary:
-  it is a `FlumeApi` field.
-
-Options:
-
-- **Restate all four as behavior** (recommended, and what the ruling implies).
-  pending.md gives the equation a spec-owned left side — "an entry's declared
-  paths" — so the corpus keeps its vocabulary without borrowing a symbol's
-  spelling; prompt.md names the inline-exec span's own spawn in place of the
-  helper; the three `tickExitCode` sites drop the symbol and keep the exit
-  code they already state; cli.md's `runJobVerb` clause is subsumed by the
-  roll-call rewrite the next question proposes. No headings move, so no `per`
-  cite re-homes.
-- **Carve out defining vocabulary.** Amend `spec-writing.md` to permit a name
-  the corpus defines and then reuses, whatever its visibility; `declaredPaths`
-  then stays and the other three go. Against it: the rule's bar is whether a
-  reader needs `src/` open to follow the sentence, which a defined term
-  already clears without the symbol's spelling — and only `declaredPaths` is
-  defined by the corpus at all.
-- **Accept as debt.** All four age exactly as the ruled three did — the
-  question re-opens on the next extraction that moves any of them, and the
-  count has now grown once unobserved.
-
-**`spec/cli.md`:262 is also the subject of the next question**, which finds a
-second defect in the same paragraph; the rewrite it proposes closes the
-`runJobVerb` instance as a side effect. Rule the two together.
-
-Needs an amendment because closing it edits `spec/` (and on the second option
-`.claude/rules/spec-writing.md`), which no autonomous phase may write.
-
-## `spec/cli.md`'s CJS refusal names two surfaces; five hold the rule (NEEDS AMENDMENT)
-
-Surfaced while re-verifying `JOBRUN-CJS-EXIT-CODE`'s note; every site read on
-disk this tick. `spec/cli.md` *A CJS-context host is refused, never relayed*
-closes with a roll-call written when two surfaces loaded a chain:
-
-> Every surface that loads a chain holds the rule: `tick` routes the refusal
-> through `TickOutcome.usageError` → `tickExitCode`, and `runJobVerb`'s `new`
-> catch tests `CjsContextLoadError` ahead of its operational branch. Both
-> print it as the headline and exit 2.
-
-The lead clause is still true. The illustration is not: **four** surfaces now
-own an exit code and reach one shared arm — `check`, `friction`, `job new`,
-`job run` — with `tick` holding the same contract one layer down as a usage
-*outcome* rather than a code. "Both" reads as a closed pair over a set of
-five, and a reader checking the spec against the tree finds three surfaces the
-corpus never mentions.
-
-The paragraph also drops the one reading a chain author would want: on this
-load failure `check` and `friction` exit **2**, where every *other* chain-load
-failure on those two verbs exits the mount-dead constant. That divergence is
-the shipped behavior and the spec states it nowhere.
-
-Options:
-
-- **Restate the roll-call as the property, naming no surface list**
-  (recommended). One sentence: every chain-loading verb that owns an exit code
-  refuses a CJS-context host at exit 2 — ahead of its own operational
-  branches, and ahead of the mount-dead code it would otherwise return — and
-  `flume tick` reports the same refusal as a usage outcome. Nothing to
-  re-amend when the sixth surface lands, it states the check/friction reading
-  the current text drops, and it closes the `runJobVerb` instance in the
-  question above without a second edit.
-- **Enumerate all five.** Truer today, stale on the next chain-loading verb,
-  and it re-commits the spec to naming internal call sites to stay accurate.
-- **Accept as debt.** Costs a reader who audits the spec against the tree and
-  concludes two surfaces relay what four refuse — the exact confusion the
-  section exists to prevent.
-
-Not a defect in `src/`: the four surfaces share one arm (*The fix lands at the
-mechanism*), and `tick`'s divergence is declared and cited at both sites.
-Needs an amendment because closing it edits `spec/`, which no autonomous phase
-may write.
-
-## `spec/worktrees.md` still ratifies the blind delete `4d76998` shipped out (NEEDS AMENDMENT)
-
-Re-filed from the inbox; the first filing was written at `2ef648c` and lost
-to an unstaged edit (second question below is that defect). Verified on disk
-this tick.
-
-`createWorktree` (`src/worktrees.ts:183-199`) no longer removes whatever
-occupies its computed path. It probes `git worktree list --porcelain`
-(`readWorktreeRegistry`) and removes **only** a path git registers as a
-worktree of this repo; an unregistered occupant, or a registry it could not
-read, throws naming the path and provisions nothing. `spec/worktrees.md`
-*Placement — the worktree base and the job namespace* still states the
-retired behavior as deliberate, in three sentences:
-
-- "`createWorktree` removes whatever sits at the computed
-  `<base>/[<namespace>/]<dirName>` path if anything does" — now conditional
-  on the registry.
-- "The test is existence of the path alone: nothing checks that the directory
-  is a git worktree, that it belongs to this repo, or that it carries a flume
-  marker" — flatly inverted; that is exactly what is now checked.
-- "An operator who points `FLUME_WORKTREES_DIR` at a directory holding
-  anything else loses that content the first time an entry's bounded
-  directory name matches" — no longer reachable; the tick refuses instead.
-
-The `--force`-then-recursive-delete sentence stays true (`removeWorktree`,
-`src/git.ts:274`), but it is now only ever reached for a registered path.
-
-*Startup sweep* needs a smaller edit on the same commit. Its scope bullet
-says "Every directory under the worktree base … removed", which was already
-wider than the code and is now wider still — `sweepStaleWorktrees`
-(`src/worktrees.ts:355-370`) skips every entry the registry does not name.
-And its "Loud on failure, silent on empty" bullet does not cover the case the
-same ship added: an unreadable registry removes nothing and **warns** saying
-so, precisely so it cannot print the same silence a clean base does
-(`src/worktrees.ts:344-353`).
-
-**The carried fork, undecided.** *Placement* opens its removal paragraph with
-"**The base must be flume-exclusive.**" That sentence was load-bearing when
-existence was the whole test. Now the registry, not the base, bounds what gets
-removed, and the sweep leaves a sibling's container directory untouched by the
-same evidence. Two readings:
-
-- **Exclusivity is retired.** It was a consequence of the blind delete, and
-  the blind delete is gone. Say instead that the base may be shared, and that
-  an occupant flume does not own is refused rather than removed. Against it:
-  a shared base is still a collision surface for *names*, and the namespace
-  argument two paragraphs down assumes sharing is possible anyway.
-- **Exclusivity is still a requirement**, now merely no longer enforced by
-  deletion — the operator is still asked not to point the base at their own
-  content, because an occupant there stalls provisioning instead of being
-  cleared. That is a real cost, just a loud one.
-
-Recommend the second: the refusal converts data loss into a stalled entry, and
-that is a weaker promise to the operator, not a retracted one. But the choice
-is the spec's author's — plan restating either one would be picking it.
-
 ## A tick that commits nothing dies with its worktree, seen by nothing (PARKED)
 
 Was "A worktree torn down with uncommitted tracked edits reads as merged";
@@ -523,38 +289,6 @@ only a fact to read instead of a `git status` to run.
 
 Parked, not filed: an entry here ships against `spec/loop.md:283` as it reads,
 and `spec/` is the human's alone.
-
-## `spec/jobs.md` § `flume job status` under-states two shipped readings (NEEDS AMENDMENT)
-
-Drained from `JOB-EXISTSSYNC-NARROW-ENOENT`'s note; both sentences verified on
-disk this tick. That entry (`ad2bb12`) narrowed `src/job.ts`'s existence gates
-to `ENOENT`, and two sentences in this section still describe the pre-narrowing
-readings.
-
-**1. The per-job awake reading has a third value.** Line 173 states "the awake
-phases from that job's baton, or `hibernating`". A job dir that exists but
-cannot be read now reads as neither: `readAwake` (`src/job.ts:561`) returns
-`null`, `JobStatus.awake` is `string[] | null` (`:471`), and
-`src/cliJobVerbs.ts:60` prints `awake: unreadable`. It is per-job contained, so
-one sealed job never hides its siblings. `docs/CLI.md:142` already teaches the
-three readings. The section's very next bullet already spells the absent /
-`unparsable` split for the pending count — same shape, same paragraph.
-
-**2. An unreadable jobs root no longer prints `no jobs`.** Line 175 states "An
-empty or missing jobs dir prints `no jobs`". `jobStatus` (`src/job.ts:600`)
-returns `[]` on `ENOENT` alone and rethrows every other `readdir` failure, so
-the verb fails rather than reporting an empty repo — an unreadable root hides
-every job at once, which `no jobs` would state as a fact.
-`docs/CLI.md:142` already spells "*missing*, never merely unreadable".
-
-**Recommend widening both; no fork.** The code is the deliberate ship, each
-reading is cited to `.claude/rules/engineering.md` *Loud or nothing* at its
-site, and `docs/CLI.md` teaches both already — the spec is the only surface
-still stating the old readings. Nothing is filable: `spec/` is the human's
-alone, and there is no code change behind this.
-
-Sibling, not an amendment, to the `last-tick.json` question above: same file,
-different section, independent edits.
 
 ## Nothing arms on a `docs/` claim that drifted out of `src/` (PARKED)
 
@@ -707,232 +441,6 @@ apiece against a real constant, and still a test reading `docs/` prose, so the
 ruling stands unchanged — but whoever rules should know the two surfaces want
 opposite pins, and that a single "pin the guide's defaults" entry therefore
 covers both bullets in one shape.
-
-## `07b550c`'s two restatements over-claim: a shared helper is not one fence (NEEDS AMENDMENT)
-
-Derived from the spec window; both sentences verified against `src/paths.ts`,
-`src/builtinGates.ts` and `src/cli.ts` on disk this tick. The helper-naming
-defect that ruling fixed is fixed. What replaced it asserts an equality the
-shared derivation does not support.
-
-- **`spec/cli.md` § *Subcommand surface*** — "`check` refuses exactly the
-  entries the pending gate would refuse". The two share the *judgment*
-  (`queueFenceViolations`, `src/paths.ts:181`) but not the *selection*: the
-  gate submits `entries.filter(fenceWhen)` against its one `targetFence`
-  (`src/builtinGates.ts:421`), the verb submits every entry against every
-  fanout phase's union (`src/cli.ts:640,660`). A chain declaring the
-  `fenceWhen` `spec/pending.md:422` sanctions — exempt parked entries — gets
-  `flume check` exiting 65 over an entry the tick path's gate passes, which is
-  precisely not "the same refusal the next tick would have bought with an
-  invocation". `src/cli.ts:655` states the divergence in its own words.
-- **`spec/pending.md` § *The entry-scoped write guard is opt-in, and off by
-  default*** — "The fence the tick's `<harness>` block states, the fence the
-  write guard enforces, and the fence a queue is pre-checked against ... are
-  one computation, so none of them can differ from another." The first two are
-  one computation (`entryWriteScope`) and cannot differ; that much the
-  superseded sentence had right. The third is a different set over different
-  operands — `declaredPaths(entry) ∪ channel` for a scoped tick,
-  `phase.writablePaths ∪ channel` for the queue pre-check. They share the
-  union's one *spelling* (`entryWriteScopeUnion`), not the fence.
-
-Options:
-
-- **Narrow both to the property that holds** (recommended). cli.md: the two
-  name the same offending paths for any entry both judge, because one
-  derivation decides — which entries each submits, and how many consumers each
-  reads, is the caller's. pending.md: the stated fence and the enforced fence
-  are one computation; the queue pre-check shares the union's one spelling. No
-  headings move, so no `per` cite re-homes.
-- **Make `src/` conform to cli.md's sentence.** `flume check` would have to
-  read the attached `pendingGate`'s `fenceWhen` and `targetFence` — the engine
-  introspecting a chain-attached gate's options, which `engine-boundary.md`
-  (*Told, not inferred*) fences — or hardcode a park-kind exemption in the
-  verb, the convention that same page forbids. Against on both counts.
-- **Accept as debt.** Costs the chain author who reads either sentence as a
-  guarantee. The `fenceWhen` instance is operator-visible: `flume check` red
-  over a queue the plan gate passed green.
-
-Needs an amendment because closing it edits `spec/`, which no autonomous phase
-may write.
-
-## `spec/chain.md`'s `priorAttempts` lead-in, "keyed as the files are", is false for a singleton (NEEDS AMENDMENT)
-
-Drained from `PRIOR-ATTEMPT-MAP-KEYS-A-SINGLETON-BY-ITS-PHASE-NAME`'s note;
-verified on disk this tick. That entry shipped `keyedAs` — the record carries
-the ref's key verbatim, `readAll` keys its map by it, `read` refuses a record
-without it. `spec/chain.md:534` § *What a hook receives* still reads
-"`<flumeDir>/prior-attempts/`, keyed as the files are (tag slug for fanout
-entries, phase name for singletons)".
-
-The **parenthetical is exactly what the engine does**; the **lead-in is the
-half that drifted**. `priorAttemptRef` keys a fanout record `slugify(tag)` and
-a singleton record `phase.name` raw (`src/priorAttempts.ts:176-177`), while
-every file stem is `slugify(key)` (`:104`). `slugify` lowercases and rewrites
-anything outside `[a-z0-9-]`, so for any phase name carrying an underscore,
-a dot, or a capital, the map key and the filename differ — a phase `plan_sweep`
-is keyed `plan_sweep` and filed at `plan-sweep.json`. This repo's own phase
-names are already slug-shaped, so nothing here diverges today; a downstream
-chain's would.
-
-The prior ruling said the sentences stay and the engine conforms. It conforms
-to the parenthetical — the raw phase name is deliberate, so a chain's
-`shouldRun` looks a record up under the name it already spells, with no private
-slug rule to reverse-engineer.
-
-Options:
-
-- **Adopt the wording the docs already carry** (recommended). `docs/CHAIN-AUTHORING.md:282`
-  and `:1246`, `src/Phase.ts:110` were reworded in the same commit to "keyed by
-  the identity it was written under"; `:282` adds the disambiguator "(the file
-  on disk sits at a slugged stem; the map key does not)". Dropping four words
-  from the lead-in and borrowing that clause closes it. No heading moves, no
-  `per` cite re-homes, no code changes.
-- **Make `src/` conform to the lead-in** — key `readAll`'s map by the slugged
-  stem. Against: it re-imposes the engine's naming rule on every consumer, which
-  is the defect `keyedAs` shipped to remove, and it would need the docs and
-  `src/Phase.ts` reworded back.
-- **Accept as debt.** Costs the chain author who reads the lead-in as the rule
-  and looks up a slugged key that is not there — a silent `undefined`, read as
-  "no prior attempt".
-
-Needs an amendment because closing it edits `spec/`, which no autonomous phase
-may write.
-
-## The harvest's NAME_MAX bound is stated in neither spec sentence that describes it (NEEDS AMENDMENT)
-
-Drained from `HARVEST-DEST-NAME-EXCEEDS-NAME-MAX`'s note; verified on disk this
-tick. `05d73d7` shipped the bound — the harvest's destination filename is
-composed and then cut to fit the filesystem name limit, truncate-with-hash,
-the same one rule the worktree directory name already took. Not a defect in
-`src/`; two human-surface sentences the fix outran.
-
-- **`spec/worktrees.md:319-322`, *Teardown harvest — the delivery guarantee***
-  prints the destination as `` `${tag}--${stamp}--${file.name}` `` with no
-  ceiling. The retry guarantee that bullet exists to make is exactly what the
-  bound restores: two of the three parts are variable-length, so the tag's own
-  schema ceiling could not hold the sum, `rename` threw `ENAMETOOLONG`, the
-  per-file catch logged and continued, and the worktree took the note with it.
-  The composition the sentence prints is no longer the whole rule.
-- **`spec/pending.md:45-57`, *Tag grammar is mechanical safety, nothing more***
-  enumerates the ceilings a tag meets — the revert note's arithmetic, and
-  git's win32 worktree-path wall under "It is not the only ceiling a tag
-  meets". The harvest destination is a third, and the one that motivated the
-  entry. Its clause "Every other tag-derived component … is looser, so this
-  bound clears them too" is the half the fix disproved: it holds for the
-  components it lists, each the tag or its slug alone, and not for one that
-  composes the tag with a second variable-length part.
-
-Options:
-
-- **Name the bound as behavior in both** (recommended). *Teardown harvest*
-  says the stamped destination is bounded to the filesystem name limit by
-  truncate-with-hash, so a retried note still lands beside the earlier one
-  rather than over it — the guarantee the bullet already makes, now stated
-  where the ceiling bites. *Tag grammar* adds the harvest destination to its
-  not-the-only-ceiling list and narrows the "every other component" clause to
-  components that are the tag or its slug alone, saying a component composing
-  the tag with a second variable-length part is bounded at its writer instead
-  of inheriting the schema's. No headings move, no `per` cite re-homes, no
-  code changes.
-- **Point instead of restate.** *Teardown harvest* drops the printed
-  composition and states only the guarantee, leaving both the spelling and the
-  ceiling at the writer — which is what *Tag grammar* already asks for itself
-  ("The arithmetic lives at the writer, not in a second copy here"). Against
-  it: the provenance prefix is operator-visible in the primary friction dir,
-  and an abbreviated filename read there is surprising if the corpus never
-  says names may be cut.
-- **Accept as debt.** Costs the next reader who sizes something against the
-  printed composition, which is how this defect arrived in the first place.
-
-**Rule this beside the other open question on the same section** — "A tick
-that commits nothing dies with its worktree" proposes wording in *Teardown
-harvest* too, and its cheapest option edits the same paragraph.
-
-Needs an amendment because closing it edits `spec/`, which no autonomous phase
-may write.
-
-## The mined draft closes with `### Breaking`; every curated release leads with it (NEEDS AMENDMENT)
-
-Drained from `CHANGELOG-DRAFT-BREAKING-SECTION-BOUNDED`'s note; verified on
-disk this tick. `ea6a1aa` fixed a real defect — `### Breaking` led the draft
-with nothing closing it, so every ordinary entry rendered *inside* the
-subsection. The fix bounds it by ordering: flat list first, `### Breaking`
-last. That is the only bound available, because `spec/cli.md` *Versioning
-policy* names `### Breaking` and no sibling heading.
-
-**The ordering the spec forces is the inverse of the one the artifact uses.**
-`CHANGELOG.md` puts `### Breaking` first in all nine curated releases
-(0.8.0 through 0.15.0), closed by `### Added` / `### Fixed` / `### Changed`
-siblings. The draft cannot emit those siblings: sorting a mined entry into
-Added-vs-Fixed-vs-Changed is the curation judgment the cut exists to make.
-So the draft's flat list is the uncategorized remainder, and today it has no
-heading of its own — which is exactly why Breaking had to move to the end.
-
-Options:
-
-- **Declare a neutral heading for the uncategorized remainder** (recommended).
-  *Versioning policy* names a second subheading the draft emits over the
-  non-breaking entries — `### Uncategorized` reads honestly as "the curating
-  human splits these"; `### Other` if the draft should read closer to a
-  finished section. Either one closes `### Breaking`, so the draft can lead
-  with breaks like the artifact it feeds, and the heading is the human's
-  visible cue for what still needs sorting. Cheap to ship: one spec bullet,
-  one flip in `renderSection`.
-- **Ratify the ordering as it now stands.** *Versioning policy* states that
-  the mined draft renders the flat list ahead of `### Breaking`, and says why
-  — no sibling heading exists to close the subsection. Costs nothing to ship
-  and makes the current behavior intentional, but leaves the draft's shape
-  permanently unlike the changelog's, which the curating human re-inverts by
-  hand at every cut.
-- **Accept as debt.** Costs the reader of a draft whose breaks are buried at
-  the bottom — the one section of the cut that most wants to be read first.
-
-Not a defect in `scripts/build-changelog.mjs`: the fix is correct as the spec
-reads, and its comment cites the constraint at the site. Needs an amendment
-because closing it edits `spec/`, which no autonomous phase may write.
-
-**Rule this beside the other open question on the same section** — "The
-release publish is hand-run" proposes wording in *Versioning policy* too.
-
-## `AgentUsage` drops the cost the engine decoded, and the usage-row list excludes it (NEEDS AMENDMENT)
-
-Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
-this tick. `src/Agent.ts:662` reads `total_cost_usd` off the `result` event to
-render the terminal line and keeps it nowhere else; `AgentUsage`
-(`src/Agent.ts:64-76`) carries model, turns, duration and four token counts.
-`TickVerdictInvocation extends AgentUsage`, so the verdict row has no cost
-either.
-
-**The spec promises what the field list withholds.** `spec/loop.md`, *Every
-agent invocation leaves a usage row*, enumerates those fields "because cost is
-unrecoverable without the cache split", then closes: "a chain wanting cost
-telemetry reads the verdict rather than re-parsing the agent's stream in a
-decorator beside it." Two of five surveyed consumers
-(`docs/surveys/consumer-chains/consumer-a.md` §3 #6, `consumer-b.md` §3 #3)
-re-scan raw stdout for exactly that number, each commenting that it is the
-only reason they still look at raw output. The engine parsed it and dropped it
-(`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
-rediscovered*).
-
-Options:
-
-- **Carry the number** (recommended). `AgentUsage` gains `costUsd`, lifted at
-  the same decode as the rest, under the same optionality rule — absent when
-  the event did not report it, never coerced to zero — and it reaches the
-  verdict row for free through the `extends`. The amendment adds it to the
-  enumerated list; the cache-split clause stays, since a chain re-pricing
-  against its own rates still needs the split. One spec bullet, one field, one
-  lift.
-- **Rule the omission deliberate.** Cost is a provider's billing view, not a
-  usage fact, and a chain prices from tokens. Then the closing clause is the
-  half that moves: it promises the verdict covers cost telemetry, and it does
-  not.
-- **Accept as debt.** Costs those two consumers their raw-stdout scan, and the
-  next one the same discovery.
-
-Needs an amendment because the enumerated list is the contract and `spec/` is
-human-only. Filed as a question rather than an entry for that reason alone —
-the rule page above already authorizes the work.
 
 ## Whether the engine's agent passes `--strict-mcp-config` (PARKED)
 
@@ -1113,50 +621,6 @@ Options:
 Recommend the first. Parked because it is new CLI surface, and `spec/cli.md` is
 the human's.
 
-## `entryTag` names two rules two hops apart on the chain surface (NEEDS AMENDMENT)
-
-Drained from `AGENT-INVOCATION-CARRIES-ENTRY-TAG`'s note; verified on disk this
-tick. Three fields carry one adjacent fact under three spellings:
-
-- `AgentInvocation.entryTag?` (`src/Agent.ts:39`) — the provisioned entry's
-  tag, **absent under singleton**.
-- `TickVerdictInvocation.tag?` (`src/Dispatcher.ts:334`) — same rule, different
-  name, and the only one of the three carrying no doc comment.
-- `WorktreeSetupContext.entryTag` (`src/Phase.ts:476`) — same *name* as the
-  first, **different rule**: it is the worktree key, so it falls back to the
-  phase name under singleton rather than going absent.
-
-The last pair is the hazard. A chain author who reads `ctx.entryTag` in
-`setupWorktree`/`teardownWorktree` with the `AgentInvocation` rule in mind
-writes `ctx.entryTag ? perEntryResource(ctx.entryTag) : skip` and gets the
-phase name, silently keying a per-entry resource to a phase — a reaper shape
-the queue already carries an entry for
-(`FLUMEAPI-REPORTS-THE-WORKTREE-REGISTRY`). Both doc comments now state the
-divergence; that is the prose rung, and a name is the rung up
-(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
-
-**One name per rule** closes it: `entryTag` means "the provisioned entry's tag,
-absent under singleton" on both the invocation and the verdict row;
-`WorktreeSetupContext.entryTag` becomes `worktreeKey`, which is the first word
-of its own doc comment already.
-
-**Not fileable as an entry — two spec sentences name the fields.**
-
-- `spec/worktrees.md:144` — `WorktreeSetupContext` — `{ worktreePath, repoRoot,
-  entryTag }`.
-- `spec/loop.md:600` — the usage row carries "the entry `tag` (absent for a
-  singleton)".
-
-Both are outside build's fence. `.flume/chain.ts:796` passes the field by name
-too, so the rename also rides a `chore(flume):` chain update in the same commit
-(CLAUDE.md, *Source of truth*). The verdict row's rename is a breaking on-disk
-shape change to `tick-verdicts.jsonl` and `flume log --json`; pre-1.0 posture
-takes it in place under a `### Breaking` line
-(`.claude/rules/spec-plan-build.md`, *Pre-1.0 clean-slate posture*).
-
-**Recommend:** amend both spec sentences, then the entry ships the rename
-across `src/`, `tests/`, `docs/CHAIN-AUTHORING.md` and `.flume/chain.ts`.
-
 ## A test title can contradict its body, and the title is what a `pins[]` line buys (PARKED)
 
 Drained from `BATON-LOUD-AGREEMENT-PINNED-AT-THE-DIR`'s note; every claim below
@@ -1220,88 +684,3 @@ are both outside every phase lane:
 alongside it if a second rung is wanted: the two say one thing at the two
 surfaces, and neither is paid per rotation. Held here rather than filed because
 both files are human-held.
-
-## `spec/chain.md` ratifies a fixture-only optionality `touchedPaths` no longer has (NEEDS AMENDMENT)
-
-Drained from `GATECONTEXT-TOUCHEDPATHS-REQUIRED`'s note; every claim below
-verified on disk this tick.
-
-`spec/chain.md:468` states, under *What a gate receives*:
-
-> **`commitSha` and `touchedPaths` are optional in the type and always set on
-> a dispatcher-built context.** The optionality exists for hand-built
-> fixtures; a builtin that falls back to its own `git show --name-only` is
-> covering the fixture case, never a real tick.
-
-Both halves are false at HEAD. `66e25dd` made `touchedPaths` required
-(`src/Gate.ts:119`) and deleted the fallback the second half describes
-(`src/builtinGates.ts` no longer shells `--name-only` at all). The sentence is
-the only place in `spec/` still describing either.
-
-**The half that survives is the defect, not the drift.** `commitSha?`
-(`src/Gate.ts:108`) and `baseSha?` (`:132`, whose doc cites "the same
-hand-built-fixture reason as `commitSha` above") are set by all three
-dispatcher-built contexts (`src/Dispatcher.ts:2085`, `:2714`, `:3699`); the
-only contexts omitting them are this suite's fixtures. That is a shape kept
-for the tester's convenience — the back-compat posture
-`.claude/rules/spec-plan-build.md` (*Pre-1.0 clean-slate posture*) forbids,
-and the fixture seam `.claude/rules/engineering.md` (*A seam gate reads what
-the real writer wrote*) names: a gate driven over a context the tester
-assembled is not a gate driven over the one a tick hands it. Requiring
-`touchedPaths` is what let `writablePathsGate` gain its agreement pin; the
-same move is available for both remaining fields, and neither has a real
-absent case to express.
-
-**Recommend** replacing the bullet with the rule rather than the enumeration:
-a `GateContext` field the dispatcher always sets is **required in the type**,
-and no builtin carries a second derivation to fall back to. Stating the rule
-rather than a field list keeps the next always-set field from re-acquiring the
-same optionality. The entry then follows the amendment, making `commitSha` and
-`baseSha` required across `src/Gate.ts` and the hand-built contexts under
-`tests/`.
-
-**`commitSha?` and `baseSha?` are now the last two.** `stateRootRel` was never
-this question — its absence is real (a relocated state root), so it kept
-`string | undefined` and only became a required key; that shipped at `188c72e`,
-and its doc comment (`src/Gate.ts:59`) now names relocation rather than fixture
-compat. `baseSha`'s still reads "Optional for the same hand-built-fixture reason
-as `commitSha` above" (`src/Gate.ts:131`), so both surviving optionals are keyed
-to this one spec sentence: amending it is what unblocks them, and nothing else
-in `spec/` states the rationale.
-
-**Split the bullet, don't delete it.** `commitSha` is still optional in the
-type, so striking the sentence outright would leave a shipped shape with no
-spec home. Whether the replacement is the general rule above or a
-`commitSha`-only restatement is the fork for the human.
-
-**Not fileable as an entry** — `spec/` is outside every phase lane
-(`.claude/rules/spec-plan-build.md`).
-
-## `spec/loop.md`'s abort sentence under-states the summary it describes (NEEDS AMENDMENT)
-
-Drained from `ABORT-SIGNATURE-NAMES-ITS-STAGE`'s note; verified on disk this
-tick.
-
-`spec/loop.md:745` states, under *Repeated identical failures — quarantine,
-then abort*:
-
-> If the same stage-tagged signature repeats three consecutive ticks with no
-> clearing tick between them, the run aborts non-zero with a summary naming
-> the repeated signature.
-
-True but narrower than what shipped. `578513c` put `stage` on
-`SuperviseResult.repeatedFailure` (`src/loopSupervisor.ts:151`) beside
-`signature` and `count`, and `loopCompletionSummary` renders all three
-(`src/cliVerdict.ts:88-94`): "aborted: identical merge-stage failure repeated
-3 consecutive ticks — <signature>". The quarantine leg one paragraph up
-already spells its triple ("logged distinctly (tag, stage, failure
-signature)"); the abort leg names one of three.
-
-**Recommend** matching the leg above it — "a summary naming the aborting
-stage and the repeated signature" — so the two legs of one section describe
-their reported shape at the same grain. Naming `count` too is the fork: it is
-rendered, but it is also the threshold restated, and that number is
-`abortThreshold`'s, not the section's to fix.
-
-**Not fileable as an entry** — `spec/` is outside every phase lane
-(`.claude/rules/spec-plan-build.md`).
