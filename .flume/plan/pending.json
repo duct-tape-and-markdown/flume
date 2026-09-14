@@ -1,45 +1,5 @@
 [
   {
-    "tag": "PROMPT-DATA-KEYS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "`promptDataKeys` beside `promptArgs`"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "neutralize the declared keys' values between stage 1 and stage 2"
-        },
-        {
-          "path": "tests/Prompt.test.ts",
-          "description": "the declared key, the undeclared key, the unresolvable span"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Let a phase declare which promptArgs keys are data, and neutralize every inline-exec span in those values before stage 2 scans the substituted text.",
-    "per": {
-      "path": "spec/prompt.md",
-      "section": "The render pipeline"
-    },
-    "tests": [
-      "a declared data key's value carries an inline-exec span into the prompt without executing it",
-      "a declared data key's neutralized span still shows the agent the command text",
-      "a declared data key carrying an unresolvable span renders instead of refusing the tick"
-    ],
-    "pins": [
-      "an undeclared key's value carrying an inline-exec span is still evaluated"
-    ],
-    "acceptance": "a phase naming a key in `promptDataKeys` renders content it did not author with no span executable, every undeclared key unchanged.",
-    "notes": "The neutralizing transform itself is spec-silent. Keep the command text visible and the sigil inert: dropping the span would be the silent degradation `engineering.md` *Loud or nothing* names, over content the prompt exists to show. `renderPrompt` already takes `phase`, so nothing new threads through, and the reserved `FLUME_DIR` is engine-authored — it needs no declaration."
-  },
-  {
     "tag": "HARNESS-DECL-INPUT-TYPE",
     "gate": {
       "kind": "open"
@@ -72,11 +32,11 @@
       "path": "spec/harness.md",
       "section": "What a consumer declares"
     },
+    "acceptance": "a consumer annotating declaration.ts gets tsc refusal and completion, not load refusal alone.",
     "tests": [
       "the declaration skeleton init writes typechecks against the package's exported input type"
     ],
     "pins": [],
-    "acceptance": "a consumer annotating declaration.ts gets tsc refusal and completion, not load refusal alone.",
     "notes": "`Declaration` is `z.infer`, so a defaulted field (`scopeWritesToEntry`) is required on the output side and `satisfies Declaration` will not compile over a literal. The input side is the authorable one, and the skeleton's own annotation is the export's consumer. tsc-in-test precedent: tests/cliJobVerbs.test.ts."
   },
   {
@@ -104,12 +64,12 @@
       "path": ".claude/rules/engine-boundary.md",
       "section": "Surface, not prescription"
     },
+    "acceptance": "a repo flume-harness init adopted resolves a chain at <stateRoot>/chain.ts with no hand-written file.",
     "tests": [
       "init writes a chain.ts applying the package factory to the declaration beside it",
       "the chain.ts init writes loads through the engine's chain loader as a valid Chain"
     ],
     "pins": [],
-    "acceptance": "a repo flume-harness init adopted resolves a chain at <stateRoot>/chain.ts with no hand-written file.",
     "notes": "The engine refuses a load with no `<configDir>/chain.ts`, so init leaves a repo one file short of a tick. The hop is three lines identical in every consumer — *Verbatim copying is the detector*. `spec/harness.md` *Adoption and upgrade* lists four artifacts; the fifth row is the human's. The existing skeleton test's tsx-over-shim probe drives the written file through the real loader."
   }
 ]
