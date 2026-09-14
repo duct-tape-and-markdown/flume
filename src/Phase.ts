@@ -574,7 +574,7 @@ export interface Chain {
      * Number of consecutive ticks the same stage-tagged failure signature
      * must repeat, with no successful tick between them, before the
      * supervisor aborts the run — a provision-, merge- or gate-stage wall
-     * alike, each streak counted separately. Default 3.
+     * alike, each streak counted separately.
      */
     abortThreshold?: number;
     /**

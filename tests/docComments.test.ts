@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
+import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 
 // Declarations ship (tsconfig.build.json), so a doc comment on a chain-facing
@@ -47,4 +48,23 @@ it("the shipped `forkResolver` and `entryChannelPaths` doc comments name no term
   for (const [field, doc] of Object.entries(docs)) {
     expectNoChainVocabulary(doc, `\`${field}\` doc`);
   }
+});
+
+/**
+ * `DEFAULT_ABORT_THRESHOLD` (`src/loopSupervisor.ts`) is the one home for the
+ * abort backstop's default; the chain-facing option's hover text points at
+ * that home rather than keeping a second copy of the number
+ * (`.claude/rules/engineering.md` § Derived state is computed, never restated
+ * beside its source). Read against the real constant, so bumping the default
+ * can never leave a stale literal passing this pin.
+ */
+it("the shipped `abortThreshold` doc comment restates no DEFAULT_ABORT_THRESHOLD literal", () => {
+  const doc = docCommentFor(srcText("Phase.ts"), "abortThreshold");
+
+  // Vacuity guard: this is the block it claims to be before the absence is
+  // asserted over it — an absence over a vanished subject is a false green.
+  expect(doc).toContain("consecutive ticks");
+  expect(doc).toContain("aborts the run");
+
+  expect(doc).not.toContain(String(DEFAULT_ABORT_THRESHOLD));
 });
