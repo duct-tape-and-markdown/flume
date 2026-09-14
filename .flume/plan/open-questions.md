@@ -222,10 +222,10 @@ first when the flag goes unset. Parked rather than filed because both edits are
 human-only — `spec/`, `.flume/PROTOCOL.md` and `.flume/chain.ts` are outside every
 phase lane.
 
-## Two shapes of `tests[]` line the vitest gate cannot judge, and nothing warns at plan time (NEEDS AMENDMENT)
+## Two shapes of named line the vitest gate cannot judge, and nothing warns at plan time (NEEDS AMENDMENT)
 
 Drained from `CASCADE-SHOULDRUN-FROM-DISK`'s park (2026-09-11 build wave); verified
-on disk. The build gate runs `vitest run --reporter=json` (`.flume/chain.ts:728`) —
+on disk. The build gate runs `vitest run --reporter=json` (`.flume/chain.ts:768`) —
 the **fast** lane, and `vitest.config.ts` excludes `*.integration.test.ts` from it.
 So a `tests[]` line whose only passing test lands in `tests/*.integration.test.ts`
 is absent from the gate's report, and the entry reverts with "N of N named
@@ -254,19 +254,18 @@ when the entry also changes a file that is *not* among the ones holding it.
 names a behavior a **fast-lane** test can carry **and** that some non-test file
 in the same entry changes; work with neither property (an integration-only
 home, or a tests-only diff) declares its named behavior over the fast-lane
-surface it exposes, moves the line to `pins[]`, or carries no `tests[]` line at
-all. No fork, no mechanism, one `chore(flume):`. Parked only because
-`.flume/prompts/**` is outside every phase lane.
+surface it exposes, or carries no `tests[]` line at all. **The fast-lane half
+binds `pins[]` identically**: `vitestOnCode` judges `[...named, ...pinned]`
+against the one fast-lane report (`.flume/chain.ts:834`), so moving a line to
+`pins[]` drops the red-on-base requirement and nothing else. No fork, no
+mechanism, one `chore(flume):`. Parked only because `.flume/prompts/**` is
+outside every phase lane.
 
 **Reported independently from the field** (inbox, 2026-09-11, human), which
 names the alternative and rejects it: the `vitest` gate could run the
 integration lane whenever an entry touches `examples/` — a second full suite
 per merge, paid on every such entry to buy a lane the fast one already
 exposes. The prose clause above stays the right default.
-
-I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
-meanwhile, and moved the parked entry's line to `pins[]`, so the queue does not
-re-hit either wall while the wording is ruled.
 
 **A third field instance, and one correction to the paragraph above**
 (`EXAMPLES-GROOMER-CAPTURE-ROOTS-AT-FLUMEDIR`'s note, 2026-09-14 build wave;
@@ -276,6 +275,16 @@ verified on disk). The entry declared both behaviors against
 when build follows the prediction — but plan is still writing predictions that
 name a revert, three waves running.
 
+**A fourth field instance, and it corrects the `pins[]` remedy**
+(`TIPCLAIM-INTEGRATION-DERIVES-CLAIM-PATH`'s note, 2026-09-14 build wave;
+verified on disk). The entry's `pins[]` line was declared against the
+integration file its `files.edit` named, and could not live there: a pin whose
+only test sits in the excluded lane reverts with "N of N named behavior(s) have
+no passing test", exactly as a `tests[]` line does. Build relocated the case to
+`tests/cli.test.ts` (`--max 0` loads no chain, so the lane stays fast) and
+merged green. `pins[]` was never an escape from the lane, only from
+red-on-base; the clause above now says so, for both fields.
+
 **The prediction is the plan-time signal, and it is decidable.** The test file
 is unknowable at plan time; the entry's declared `files` is not, and
 `pendingGate` already pre-checks every `files` path against `buildFence`
@@ -284,7 +293,9 @@ is a literal string in the queue plan just wrote. Two homes, both chain-side,
 both `chore(flume):`:
 
 - **The `tests[]` hint** (`.flume/chain.ts:139`, chain-authored, injected into
-  plan's schema block) gains the lane clause. Reaches plan at authorship, costs
+  plan's schema block) gains the lane clause, and the `pins[]` hint (`:148`,
+  currently "judged green, never red on the base") gains its fast-lane half —
+  that hint is what read as a lane escape. Reaches plan at authorship, costs
   nothing, refuses nothing.
 - **A second plan gate** reading the committed queue and failing an entry that
   names both a `tests[]` line and an `*.integration.test.ts` path in `files`.
@@ -294,9 +305,10 @@ both `chore(flume):`:
   A gate that refuses a correct queue over a prediction build ignored is the
   wrong rung.
 
-**Recommend** the hint, alongside the plan-discipline clause already
-recommended above; the two say one thing in the two places plan reads. Held
-here rather than filed because `.flume/chain.ts` is outside every phase lane.
+**Recommend** the two hints, alongside the plan-discipline clause already
+recommended above; the two surfaces say one thing in the two places plan reads.
+Held here rather than filed because `.flume/chain.ts` is outside every phase
+lane.
 
 ## Two spec sentences still name unexported helpers, after the ruling that removed three (NEEDS AMENDMENT)
 
