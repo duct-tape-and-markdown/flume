@@ -25,6 +25,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -47,7 +48,7 @@ import {
   silent,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import type { GateContext } from "../src/Gate.ts";
+import type { Gate, GateContext } from "../src/Gate.ts";
 // Barrel-export pin (engineering.md "An export earns its consumer",
 // CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call shellGate/tscGate/
 // vitestGate/eslintGate but, pre-fix, could not name the shape it passes
@@ -78,6 +79,10 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
+    // The dispatcher states the span's diff on every context it builds; a
+    // fixture with no particular list states the empty one rather than
+    // leaving the field off. Cases that turn on the list override it.
+    touchedPaths: [],
     log: () => {},
     ...overrides,
   };
@@ -919,4 +924,132 @@ describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md
     });
     expect(gate.command).toBeUndefined();
   });
+});
+
+// ---------- the fence gate over a real tick's list
+// (GATECONTEXT-TOUCHEDPATHS-REQUIRED, engineering.md "A seam gate reads what
+// the real writer wrote") ----------
+
+describe("builtin gates take the touched-path list they are handed, with no private derivation beside it", () => {
+  it("src/builtinGates.ts carries no git show --name-only fallback for a commit's touched paths", async () => {
+    const src = await readFile(
+      fileURLToPath(new URL("../src/builtinGates.ts", import.meta.url)),
+      "utf8",
+    );
+    // Non-vacuity: the module really was read, and it really is the one whose
+    // gates key off the list (engineering.md "A green verdict is proven
+    // non-vacuous").
+    expect(src).toContain("ctx.touchedPaths");
+    // A second derivation beside the dispatcher's is what let every gate
+    // fixture here drive the fence gate over a list no tick ever produced.
+    expect(src).not.toContain("--name-only");
+  });
+});
+
+describe("writablePathsGate — the fence seam, both sides real", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("writablePathsGate judges exactly the touched-path list a real dispatcher tick hands its gates", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await commitFiles(
+      fx.repo,
+      {
+        ".flume/plan/pending.json":
+          JSON.stringify([{ ...validEntry, tag: "FENCE-SEAM" }], null, 2) +
+          "\n",
+      },
+      "test: pending.json",
+    );
+    new Baton(flumeDir).wake("build");
+
+    // The producer's output, captured off a context the dispatcher built —
+    // not restated here. The gate loop hands every gate the same list, so
+    // what this probe records is what the fence gate judged.
+    let handed: string[] | undefined;
+    const probe: Gate = {
+      name: "touched-probe",
+      when: "afterCommit",
+      run: async (ctx) => {
+        handed = [...ctx.touchedPaths];
+        return { ok: true, message: "probed" };
+      },
+    };
+
+    const phase: Phase = {
+      name: "build",
+      description: "test phase",
+      promptPath: "prompt.md",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      // The fence gate itself is the dispatcher's own attachment — no test
+      // double stands in for either side of the seam.
+      gates: [probe],
+      handoff: () => [],
+    };
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const commit = async (cwd: string, rel: string, body: string) => {
+      const abs = join(cwd, rel);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, body);
+      await exec("git", ["add", "--", rel], { cwd });
+      await exec("git", ["commit", "-q", "-m", `build(FENCE-SEAM): ${rel}`], {
+        cwd,
+      });
+    };
+
+    const agent: Agent = {
+      name: "fake-fanout",
+      async invoke(inv) {
+        // Two commits, so the span's diff is provably not the tip commit's
+        // own `git show --name-only`: the off-fence path rides the *first*
+        // commit, and a gate deriving its own list from the tip would never
+        // see it.
+        await commit(inv.cwd, "spec/off-fence.md", "out of bounds\n");
+        await commit(inv.cwd, "src/ok.ts", "export const ok = 1;\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: () => Promise.resolve({ chain }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pin: the probe ran, and over a populated list — every
+    // comparison below is empty otherwise.
+    expect(handed).toBeDefined();
+    expect([...handed!].sort()).toEqual(["spec/off-fence.md", "src/ok.ts"]);
+
+    const fenceResults = (outcome.verdict?.gateResults ?? []).filter(
+      (g) => g.gate === "writable-paths",
+    );
+    expect(fenceResults).toHaveLength(1);
+    expect(fenceResults[0]?.ok).toBe(false);
+
+    // The gate faulted exactly the members of the handed list its globs
+    // exclude — no path it was never given, and none it was given and
+    // silently dropped.
+    const faulted = (fenceResults[0]?.details ?? "")
+      .split("\n")
+      .map((l) => l.replace(/^\s*-\s*/, "").split(" ")[0] ?? "")
+      .filter((l) => l.length > 0);
+    expect(faulted).toEqual(handed!.filter((p) => !p.startsWith("src/")));
+
+    // The fence gate's verdict is the tick's: nothing shipped.
+    expect(outcome.result?.shippedTags).toEqual([]);
+  }, 30_000);
 });

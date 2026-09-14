@@ -646,6 +646,10 @@ describe("records gate and the park predicate — one file each", () => {
       pendingPath: join(repo, ".flume", "plan", "pending.json"),
       phaseName,
       commitSha: sha,
+      // The dispatcher always states the span's diff; a fixture that has no
+      // particular list states the empty one rather than leaving the field
+      // off. Cases that turn on the list override it.
+      touchedPaths: [],
       log: () => {},
       ...(entry ? { entry } : {}),
       ...(baseSha ? { baseSha } : {}),

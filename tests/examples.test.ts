@@ -796,6 +796,7 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
     configDir: "/repo/.flume",
     pendingPath: "/repo/.flume/plan/pending.json",
     phaseName: "build",
+    touchedPaths: [],
     entry: {
       tag: "NAMED-BEHAVIOR",
       gate: { kind: "open" },
@@ -1010,7 +1011,10 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
 
     // Loud or nothing (engineering.md): a context without the span cannot be
     // judged, and passing it would be a green earned by nothing.
-    for (const missing of ["baseSha", "commitSha", "touchedPaths"] as const) {
+    // `touchedPaths` is not among them: the engine states it on every gate
+    // context by type, so an absent list is unconstructable rather than
+    // refusable. An *empty* one is judged below, not here.
+    for (const missing of ["baseSha", "commitSha"] as const) {
       const partial = ctxFor(entry, ["src/kept.ts"]);
       delete partial[missing];
       const blind = await gate.run(partial);

@@ -181,6 +181,7 @@ function ctx(cwd: string): GateContext {
     configDir: `${cwd}/.flume`,
     repoRoot: cwd,
     phaseName: "test-phase",
+    touchedPaths: [],
     log: () => {},
   };
 }

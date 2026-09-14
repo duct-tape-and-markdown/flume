@@ -2329,15 +2329,17 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
       });
       const consumer = chain.phases.find((p) => p.concurrency === "fanout");
       expect(consumer).toBeDefined();
+      const queuePath = resolvePendingPath(flumeDir, chain.pendingPath);
       const gateResult = await pendingGate({ targetFence: consumer! }).run({
         cwd: repo.dir,
         flumeDir,
         stateRootRel: computeStateRootRel(repo.dir, flumeDir),
-        pendingPath: resolvePendingPath(flumeDir, chain.pendingPath),
+        pendingPath: queuePath,
         configDir: flumeDir,
         repoRoot: repo.dir,
         phaseName: "plan",
         commitSha,
+        touchedPaths: [relative(repo.dir, queuePath).split(/[\\/]/).join("/")],
         log: () => {},
       } satisfies GateContext);
 

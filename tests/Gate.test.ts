@@ -2,10 +2,15 @@ import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import ts from "typescript";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+
+import { diffNameOnly } from "../src/git.ts";
 
 import {
   shellGate,
@@ -29,6 +34,10 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     configDir: join(cwd, ".flume"),
     repoRoot: cwd,
     phaseName: "test-phase",
+    // The dispatcher states the span's diff on every context it builds; a
+    // fixture with no particular list states the empty one rather than
+    // leaving the field off. Cases that turn on the list override it.
+    touchedPaths: [],
     log: () => {},
     ...overrides,
   };
@@ -241,6 +250,15 @@ async function commitFiles(
   return stdout.trim();
 }
 
+/**
+ * The touched-path list a real tick hands its gates for `sha` — the same
+ * `git.diffNameOnly` the dispatcher runs once per commit, not a list
+ * re-spelled by hand here.
+ */
+async function touchedFor(repo: string, sha: string): Promise<string[]> {
+  return diffNameOnly(repo, `${sha}^`, sha);
+}
+
 describe("writablePathsGate — git-backed checks", () => {
   let repo: string;
 
@@ -258,7 +276,9 @@ describe("writablePathsGate — git-backed checks", () => {
       "src/nested/bar.ts": "y",
     });
     const gate = writablePathsGate(["src/**"]);
-    const result = await gate.run(ctx(repo, { commitSha: sha }));
+    const result = await gate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/writable paths respected/);
   });
@@ -269,7 +289,9 @@ describe("writablePathsGate — git-backed checks", () => {
       "spec/bad.md": "stay out",
     });
     const gate = writablePathsGate(["src/**"]);
-    const result = await gate.run(ctx(repo, { commitSha: sha }));
+    const result = await gate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/1 path/);
     expect(result.details ?? "").toContain("spec/bad.md");
@@ -282,7 +304,9 @@ describe("writablePathsGate — git-backed checks", () => {
       "src/foo.ts": "x",
     });
     const gate = writablePathsGate(["src/**", "package.json"]);
-    const result = await gate.run(ctx(repo, { commitSha: sha }));
+    const result = await gate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(true);
   });
 
@@ -292,7 +316,9 @@ describe("writablePathsGate — git-backed checks", () => {
       "src/nested/deep.ts": "y",
     });
     const gate = writablePathsGate(["src/*"]);
-    const result = await gate.run(ctx(repo, { commitSha: sha }));
+    const result = await gate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(false);
     expect(result.details ?? "").toContain("src/nested/deep.ts");
     expect(result.details ?? "").not.toContain("src/foo.ts");
@@ -434,7 +460,9 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       { ".flume/chain.ts": VALID_CHAIN },
       "build: rewrite chain",
     );
-    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/valid Chain/);
   });
@@ -445,7 +473,9 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       { "src/unrelated.ts": "export const x = 1;\n" },
       "build: unrelated",
     );
-    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(true);
     expect(result.skipped).toMatch(/untouched/);
   });
@@ -460,7 +490,10 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     );
 
     const result = await chainLoadGate.run(
-      ctx(repo, { commitSha: brokenSha }),
+      ctx(repo, {
+        commitSha: brokenSha,
+        touchedPaths: await touchedFor(repo, brokenSha),
+      }),
     );
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/broken/);
@@ -473,7 +506,9 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       { ".flume/chain.ts": "export const notTheDefault = 1;\n" },
       "build: no default export",
     );
-    const result = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
     expect(result.ok).toBe(false);
     expect(result.details ?? "").toMatch(/default-export a chain factory/);
   });
@@ -491,7 +526,11 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       "build: rewrite chain under relocated configDir",
     );
     const result = await chainLoadGate.run(
-      ctx(repo, { commitSha: sha, configDir: join(repo, "custom-config") }),
+      ctx(repo, {
+        commitSha: sha,
+        touchedPaths: await touchedFor(repo, sha),
+        configDir: join(repo, "custom-config"),
+      }),
     );
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/valid Chain/);
@@ -504,7 +543,11 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
       "build: rewrite default-path chain.ts, but configDir points elsewhere",
     );
     const result = await chainLoadGate.run(
-      ctx(repo, { commitSha: sha, configDir: join(repo, "custom-config") }),
+      ctx(repo, {
+        commitSha: sha,
+        touchedPaths: await touchedFor(repo, sha),
+        configDir: join(repo, "custom-config"),
+      }),
     );
     expect(result.ok).toBe(true);
     expect(result.skipped).toMatch(/untouched/);
@@ -567,22 +610,65 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/valid Chain/);
   });
+});
 
-  it("both gates still fall back to git show when ctx.touchedPaths is omitted — a hand-built ctx keeps working", async () => {
-    const repo = await createBootstrappedRepo("flume-touchedpaths-fallback-");
+// ---------- GateContext.touchedPaths is required
+// (GATECONTEXT-TOUCHEDPATHS-REQUIRED, engineering.md "A seam gate reads what
+// the real writer wrote") ----------
+
+// The claim is a type-level one, so the judge is the type-checker itself: a
+// `GateContext` literal that omits `touchedPaths` is compiled for real and
+// its diagnostics read back. While the field was optional, every hand-built
+// fixture in this suite was free to leave it off and drive the gates through
+// a private `git show --name-only` instead of the list a tick actually hands
+// them — which is how the fence gate's real seam went unexercised.
+describe("GateContext.touchedPaths — the field every gate context states", () => {
+  const GATE_SRC = fileURLToPath(new URL("../src/Gate.ts", import.meta.url));
+  // Everything a GateContext needs except the field under test.
+  const REST =
+    'cwd: "", flumeDir: "", configDir: "", pendingPath: "", ' +
+    'repoRoot: "", phaseName: "", log: () => {}';
+
+  /** Type-check one `GateContext` literal against the real `src/Gate.ts`. */
+  async function diagnose(fields: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "flume-gatectx-type-"));
     try {
-      const sha = await commitFiles(repo, { "src/foo.ts": "x" });
-      const wp = await writablePathsGate(["src/**"]).run(
-        ctx(repo, { commitSha: sha }),
+      const file = join(dir, "fixture.ts");
+      await writeFile(
+        file,
+        `import type { GateContext } from ${JSON.stringify(GATE_SRC)};\n` +
+          `export const ctx: GateContext = { ${fields} };\n`,
+        "utf8",
       );
-      expect(wp.ok).toBe(true);
-      const cl = await chainLoadGate.run(ctx(repo, { commitSha: sha }));
-      expect(cl.ok).toBe(true);
-      expect(cl.skipped).toMatch(/untouched/);
+      // The repo's own strictness — `exactOptionalPropertyTypes` included,
+      // since that is what makes a missing required field a hard error.
+      const program = ts.createProgram([file], {
+        target: ts.ScriptTarget.ES2023,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: true,
+        exactOptionalPropertyTypes: true,
+        allowImportingTsExtensions: true,
+        skipLibCheck: true,
+        noEmit: true,
+      });
+      return program
+        .getSemanticDiagnostics(program.getSourceFile(file))
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "))
+        .join("\n");
     } finally {
-      await rm(repo, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
     }
-  });
+  }
+
+  it("GateContext.touchedPaths is required, so a gate context omitting it is a type error", async () => {
+    // Control first, so the refusal below is the field's and not the
+    // fixture's: the same literal *with* the field compiles clean
+    // (engineering.md "A green verdict is proven non-vacuous").
+    expect(await diagnose(`${REST}, touchedPaths: []`)).toBe("");
+
+    expect(await diagnose(REST)).toContain("touchedPaths");
+  }, 60_000);
 });
 
 // ---------- pendingGate (RELEASE-v0.8 §6) ----------

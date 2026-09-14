@@ -107,15 +107,16 @@ export interface GateContext {
   /** SHA of the commit under inspection. */
   commitSha?: string;
   /**
-   * The commit's changed paths (relative to repo root, forward-slash),
-   * computed once per commit by the dispatcher via `git.showNameOnly` and
-   * shared across every gate this tick runs. A gate that needs touched-path
-   * detection reads this instead of shelling `git show --name-only` out on
-   * its own (engineering.md "The fix lands at the mechanism"). Optional so
-   * hand-built `GateContext` fixtures that predate this field keep
-   * compiling; every dispatcher-constructed context sets it.
+   * The gated span's changed paths (relative to repo root, forward-slash) —
+   * the cumulative `baseSha..commitSha` diff, computed once per commit by
+   * the dispatcher and shared across every gate this tick runs. A gate that
+   * needs touched-path detection reads this instead of shelling `git show
+   * --name-only` out on its own (engineering.md "The fix lands at the
+   * mechanism"); no gate carries a second derivation to fall back to, so a
+   * hand-built context states the same list a real tick would hand it
+   * (engineering.md "A seam gate reads what the real writer wrote").
    */
-  touchedPaths?: string[];
+  touchedPaths: string[];
   /**
    * The sha the gated span started from — the worktree's tip when the tick
    * branched, the same value the dispatcher cherry-picks the span from. Set
@@ -127,8 +128,8 @@ export interface GateContext {
    * `git show <baseSha>:<path>` is the input as the tick read it
    * (spec/chain.md "What a gate receives"). Without it a chain rebuilds the
    * base from a worktree path convention the engine never promised. Optional
-   * for the same hand-built-fixture reason as `commitSha`/`touchedPaths`
-   * above; every dispatcher-constructed context sets it.
+   * for the same hand-built-fixture reason as `commitSha` above; every
+   * dispatcher-constructed context sets it.
    */
   baseSha?: string;
   /**

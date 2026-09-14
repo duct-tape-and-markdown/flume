@@ -302,6 +302,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         cwd: repo.dir,
         pendingPath: join(paths.flumeDir, "plan", "pending.json"),
         phaseName: "groom",
+        touchedPaths: [],
         log: () => {},
       };
 

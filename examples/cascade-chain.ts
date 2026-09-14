@@ -259,10 +259,10 @@ export function declaredFilesGate(
         };
       }
       const { baseSha, commitSha, touchedPaths } = ctx;
-      if (!baseSha || !commitSha || !touchedPaths) {
+      if (!baseSha || !commitSha) {
         return {
           ok: false,
-          message: `${entry.tag}: declared-files needs baseSha, commitSha and touchedPaths on the gate context`,
+          message: `${entry.tag}: declared-files needs baseSha and commitSha on the gate context`,
         };
       }
       const span = `${baseSha.slice(0, 7)}..${commitSha.slice(0, 7)}`;

@@ -6,10 +6,8 @@
  * project-specific check; promote new gates here only when ≥2 chains want them.
  */
 
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { promisify } from "node:util";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
@@ -27,8 +25,6 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "./PendingSchema.js";
-
-const exec = promisify(execFile);
 
 /**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
@@ -200,25 +196,6 @@ export const eslintGate: PkgManagerGate = pkgManagerGate(
 );
 
 /**
- * A commit's touched paths, shared across every gate that needs them.
- * `ctx.touchedPaths` is the dispatcher's one-per-commit computation
- * (`git.showNameOnly`, run once before the gate loop); a gate reads it from
- * there instead of shelling `git show --name-only` out itself. Falls back to
- * that same exec only for hand-built `GateContext` fixtures that predate the
- * field (tests, mainly) — never for a dispatcher-constructed context, which
- * always sets it.
- */
-async function resolveTouchedPaths(ctx: GateContext): Promise<string[]> {
-  if (ctx.touchedPaths) return ctx.touchedPaths;
-  const { stdout } = await exec(
-    "git",
-    ["show", "--name-only", "--pretty=format:", ctx.commitSha!],
-    { cwd: ctx.cwd },
-  );
-  return stdout.split("\n").filter((l) => l.length > 0);
-}
-
-/**
  * Builtin chain-load gate. Declared by any chain on the phase(s) that may
  * rewrite `<configDir>/chain.ts` (a self-modifying loop; default `configDir`
  * is `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md
@@ -247,7 +224,7 @@ export const chainLoadGate: Gate = {
     if (!ctx.commitSha) {
       return { ok: false, message: "chain-load gate requires commitSha" };
     }
-    const touched = await resolveTouchedPaths(ctx);
+    const touched = ctx.touchedPaths;
     const configDirRel = relative(ctx.repoRoot, ctx.configDir);
     const chainRelPath = join(configDirRel, "chain.ts")
       .split(/[\\/]/)
@@ -475,7 +452,7 @@ export function writablePathsGate(
           message: "writable-paths gate requires commitSha",
         };
       }
-      const touched = await resolveTouchedPaths(ctx);
+      const touched = ctx.touchedPaths;
       // Ceiling check: phase-wide globs bind on every tick, scoped or not.
       const outsideCeiling = touched.filter((p) => !matchesAny(p, globs));
       // Entry-scope check, against the scope as handed in — the same array

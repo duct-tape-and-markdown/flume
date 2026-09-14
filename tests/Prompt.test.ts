@@ -374,6 +374,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
       repoRoot: dir,
       phaseName: "build",
       commitSha: "deadbeef",
+      touchedPaths: [],
       log: () => {},
       ...overrides,
     };
