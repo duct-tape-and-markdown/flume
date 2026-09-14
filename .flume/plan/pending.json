@@ -79,47 +79,6 @@
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
   },
   {
-    "tag": "HARNESS-RECORDS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/records.ts",
-          "description": "record dirs, the per-tag note path, the byte cap, the pending predicate"
-        },
-        {
-          "path": "tests/harnessRecords.test.ts",
-          "description": "the note path, and the live/empty window both asserted"
-        }
-      ],
-      "edit": [],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-RECORDS.md",
-      "harness/index.ts",
-      "harness/records.ts",
-      "tests/harnessPackaging.test.ts",
-      "tests/harnessRecords.test.ts"
-    ],
-    "summary": "Extract the record conventions the inbox slice drains — the record dirs, the per-tag note path, the byte cap — into one package-owned home under a declared state root.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Records as one file each"
-    },
-    "tests": [
-      "the note path for an entry tag is that tag's file under the state root's notes dir",
-      "a record directory holding a file reports the record window live",
-      "a record directory holding no file reports the record window empty"
-    ],
-    "pins": [],
-    "acceptance": "harness/records.ts names the record dirs, the per-tag note path and the byte cap under a declared state root, and reports whether any record is pending.",
-    "notes": "One home so the gate, the prompt and the liveness predicate cannot name different files. Twins at .flume/chain.ts:25 and :171. The byte cap is the package's value, not a declaration knob — the discipline it enforces is the package's."
-  },
-  {
     "tag": "HARNESS-PLAN-STATE",
     "gate": {
       "kind": "open"
@@ -186,6 +145,13 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-RUNTIME-IGNORES.md",
+      ".gitignore",
+      "harness/ignores.ts",
+      "harness/index.ts",
+      "tests/harnessIgnores.test.ts"
+    ],
     "summary": "Derive the consumer's state-root ignore lines from the engine's path record, and drive that output against this repo's .gitignore so a retired runtime name cannot linger.",
     "per": {
       "path": "spec/harness.md",
@@ -198,14 +164,7 @@
     ],
     "pins": [],
     "acceptance": "harness/ignores.ts derives .flume's ignore lines from the engine's path record and a test drives that output against this repo's .gitignore.",
-    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md.",
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-RUNTIME-IGNORES.md",
-      ".gitignore",
-      "harness/ignores.ts",
-      "harness/index.ts",
-      "tests/harnessIgnores.test.ts"
-    ]
+    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md."
   },
   {
     "tag": "HARNESS-CITE-RESOLVER",
@@ -279,42 +238,14 @@
     ],
     "pins": [],
     "acceptance": "harness/judge.ts judges an entry's tests[] and pins[] through a declared runner and hands back the per-line verdict, green-on-base included.",
-    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*)."
-  },
-  {
-    "tag": "HARNESS-DECLARED-SUPERVISOR",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "the fifth knob on the supervisor Pick and its shape"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the accepted knob and its refused value"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Pass the engine's supervisor policy through the declaration whole: quarantineScope beside the four knobs already declared.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "tests": [
-      "a declaration naming quarantineScope on supervisor parses",
-      "a quarantineScope value outside the engine's two is refused"
-    ],
-    "pins": [
-      "the declaration's supervisor refuses a knob the engine's policy does not name"
-    ],
-    "acceptance": "harness/declaration.ts's supervisor accepts every knob of the engine's policy, quarantineScope included, and refuses anything else.",
-    "notes": "The Pick against Chain[\"supervisorPolicy\"] already ties the key set to the engine; this widens it to the fifth knob, typed \"run\" | \"none\" (src/Phase.ts:576). The factory's own pass-through is HARNESS-PHASES' test, not this one."
+    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*).",
+    "observedFiles": [
+      ".flume/plan/notes/HARNESS-JUDGES.md",
+      "harness/entryExtension.ts",
+      "harness/index.ts",
+      "harness/judge.ts",
+      "tests/harnessJudge.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-PROMPTS",
@@ -369,8 +300,8 @@
       "the package's prompt args name the no-commit modes from the engine's exported value",
       "every prompt address the package names is a file it ships"
     ],
-    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
     "pins": [],
+    "acceptance": "harness/prompts.ts addresses the five prompts the package ships, and no prompt restates the engine's no-commit vocabulary.",
     "notes": "Content starts from .flume/prompts/ minus what only this repo can say — the per hint's spec filenames, and vitest (spec/harness.md, *The judges*). The .flume/ copies die chain-side at the cutover. Absolute addressing is *Where it lives*; the packing route is HARNESS-PROMPT-PACKING. Not harness/index.ts: the factory exposes it."
   },
   {
@@ -378,7 +309,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-RECORDS",
         "HARNESS-CITE-RESOLVER"
       ]
     },
@@ -418,7 +348,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "HARNESS-RECORDS",
         "HARNESS-PLAN-STATE"
       ]
     },
@@ -555,7 +484,6 @@
       "kind": "blockedBy",
       "tags": [
         "PROMPT-PATH-RESOLVE",
-        "HARNESS-DECLARED-SUPERVISOR",
         "HARNESS-PROMPTS",
         "HARNESS-JUDGES",
         "HARNESS-GATES",
