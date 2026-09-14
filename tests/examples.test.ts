@@ -42,7 +42,7 @@ import {
   type FlumeApi,
   type FlumePaths,
 } from "../src/flumeApi.ts";
-import { makeFixture, silent } from "./helpers/dispatcherFixture.ts";
+import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
   declaredFilesGate,
@@ -51,7 +51,13 @@ import minimalFactory from "../examples/minimal-chain.ts";
 
 const exec = promisify(execFile);
 
-/** The roots a real tick would resolve for an `examples/`-hosted chain. */
+/**
+ * The roots a real tick would resolve for an `examples/`-hosted chain — this
+ * checkout's. What is built from it below is read, or driven at a gate over
+ * a hand-built `GateContext` — never handed to a `Dispatcher`, so there is
+ * no engine-resolved root for these roots to disagree with. A drive that
+ * ticks builds its chain from the roots it ticks (`ladderDrive`, below).
+ */
 const EXAMPLE_PATHS: FlumePaths = {
   repoRoot: fileURLToPath(new URL("..", import.meta.url)),
   configDir: fileURLToPath(new URL("../examples", import.meta.url)),
@@ -474,9 +480,6 @@ describe("cascade-chain.ts — the plan ladder", () => {
  * *The default test lane must stay fast*).
  */
 describe("cascade-chain.ts — the plan ladder over a real tick", () => {
-  const planSlices = cascadeChain.phases.filter((p) => p.name !== "build");
-  const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
-
   /** What the re-derive leg files: pickable, and inside build's fence. */
   const filedEntry = {
     tag: "LADDER-PICKABLE",
@@ -493,21 +496,57 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
     acceptance: "the ladder hands the baton to build",
   };
 
-  it("cascade's plan ladder routes the baton from a TickResult the dispatcher produced", async () => {
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a one-slice plan, or a chain that lost `build`, would satisfy the
-    // routing below over a ladder with nothing to order.
-    expect(
-      planSlices.length,
-      "cascade's plan is a ladder — one slice orders nothing",
-    ).toBe(2);
-    expect(buildPhase, "cascade declares a build phase").toBeDefined();
-    const [inbox, derive] = planSlices as [Phase, Phase];
+  /** The agent's whole contribution: a commit the engine has to classify. */
+  const commits =
+    (message: string, edit: (cwd: string) => void) =>
+    async (cwd: string): Promise<void> => {
+      edit(cwd);
+      await exec("git", ["add", "-A"], { cwd });
+      await exec("git", ["commit", "-q", "-m", message], { cwd });
+    };
+  /** An agent that exits clean having produced nothing. */
+  const commitsNothing = async (): Promise<void> => {};
 
+  /** One drive: a fixture repo, the chain built from its roots, and a tick over both. */
+  interface Ladder {
+    fx: Fixture;
+    /** Handed to `buildFlumeApi`, and spread into every `Dispatcher` below. */
+    paths: FlumePaths;
+    api: FlumeApi;
+    chain: Chain;
+    /** The finding the inbox slice routes, absolute. */
+    report: string;
+    tick: (
+      name: string,
+      act: (cwd: string) => Promise<void>,
+    ) => Promise<TickOutcome>;
+  }
+
+  /**
+   * The drive's disk, and cascade built from the roots the drive ticks: one
+   * `FlumePaths` object handed to `buildFlumeApi` and spread into every
+   * `Dispatcher` here, so the api the chain composed against is the api a
+   * tick at that repo resolves.
+   *
+   * The module-scope `EXAMPLE_PATHS` build is this checkout's roots, which
+   * the pure shape reads above may hold because they tick nothing. Handing
+   * it to a dispatcher driving a temp fixture puts the two halves of one
+   * seam on two different repos (`engineering.md`, *A seam gate reads what
+   * the real writer wrote*): the first chain to resolve state from
+   * `api.paths` would reach into the working tree the suite runs from, and
+   * every leg below would still be green.
+   */
+  async function ladderDrive(): Promise<Ladder> {
     const fx = await makeFixture();
     try {
-      const repo = fx.repo;
-      const flumeDir = join(repo, ".flume");
+      const paths: FlumePaths = {
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: join(fx.repo, ".flume"),
+      };
+      const api = buildFlumeApi(paths);
+      const { chain } = cascadeFactory(api);
+      const { repoRoot: repo, configDir, flumeDir } = paths;
       const report = join(flumeDir, "inbox", "2026-09-11-report.md");
 
       // The disk the ladder reads, committed: a singleton runs in a fresh
@@ -527,22 +566,11 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       // seam — it is the agent's input, and the agent here is a stub — while
       // its inline-exec spans would put `pnpm tsc` on the fast lane once per
       // tick below.
-      mkdirSync(join(fx.configDir, "prompts"), { recursive: true });
+      mkdirSync(join(configDir, "prompts"), { recursive: true });
       writeFileSync(
-        join(fx.configDir, "prompts", "plan.md"),
+        join(configDir, "prompts", "plan.md"),
         "{{SLICE_JOB}}\n\n{{PENDING_SCHEMA}}\n",
       );
-
-      /** The agent's whole contribution: a commit the engine has to classify. */
-      const commits =
-        (message: string, edit: (cwd: string) => void) =>
-        async (cwd: string): Promise<void> => {
-          edit(cwd);
-          await exec("git", ["add", "-A"], { cwd });
-          await exec("git", ["commit", "-q", "-m", message], { cwd });
-        };
-      /** An agent that exits clean having produced nothing. */
-      const commitsNothing = async (): Promise<void> => {};
 
       /**
        * One real tick of `name`, with exactly that phase awake so the
@@ -553,12 +581,10 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
         act: (cwd: string) => Promise<void>,
       ): Promise<TickOutcome> => {
         const baton = new Baton(flumeDir);
-        for (const p of cascadeChain.phases) baton.sleep(p.name);
+        for (const p of chain.phases) baton.sleep(p.name);
         baton.wake(name);
         const outcome = await new Dispatcher({
-          repoRoot: repo,
-          configDir: fx.configDir,
-          flumeDir,
+          ...paths,
           agent: {
             name: "ladder-stub",
             async invoke({ cwd }) {
@@ -566,7 +592,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
               return { exitCode: 0, stdout: "", stderr: "" };
             },
           },
-          chainLoader: async () => ({ chain: cascadeChain }),
+          chainLoader: async () => ({ chain }),
           log: silent,
         }).tick();
         // Vacuity pin: a declined, hibernated or failed tick answers with a
@@ -579,6 +605,57 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
         expect(outcome.result?.flumeDir).toBe(flumeDir);
         return outcome;
       };
+
+      return { fx, paths, api, chain, report, tick };
+    } catch (err) {
+      await fx.cleanup();
+      throw err;
+    }
+  }
+
+  it("the cascade chain the ladder drive ticks is built from the fixture repo's roots", async () => {
+    const l = await ladderDrive();
+    try {
+      // The chain's half: the api cascade composed against carries the
+      // dispatcher's own roots, by identity — one object, not two that agree
+      // today.
+      expect(l.api.paths).toBe(l.paths);
+      expect(l.paths).toEqual({
+        repoRoot: l.fx.repo,
+        configDir: l.fx.configDir,
+        flumeDir: join(l.fx.repo, ".flume"),
+      });
+      // Named against the roots a module-scope build would have handed it:
+      // this checkout's, which no tick here runs against.
+      expect(l.paths.repoRoot).not.toBe(EXAMPLE_PATHS.repoRoot);
+      expect(l.paths.flumeDir).not.toBe(EXAMPLE_PATHS.flumeDir);
+
+      // The engine's half, off a real tick of that chain through the drive's
+      // own `tick`: the state root the dispatcher resolved is the fixture's.
+      const outcome = await l.tick(l.chain.phases[0]!.name, commitsNothing);
+      expect(outcome.result?.flumeDir).toBe(l.paths.flumeDir);
+      expect(outcome.result?.flumeDir).not.toBe(EXAMPLE_PATHS.flumeDir);
+    } finally {
+      await l.fx.cleanup();
+    }
+  }, 30_000);
+
+  it("cascade's plan ladder routes the baton from a TickResult the dispatcher produced", async () => {
+    const l = await ladderDrive();
+    try {
+      const { report, tick } = l;
+      const { flumeDir } = l.paths;
+      const planSlices = l.chain.phases.filter((p) => p.name !== "build");
+      const buildPhase = l.chain.phases.find((p) => p.name === "build");
+      // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+      // a one-slice plan, or a chain that lost `build`, would satisfy the
+      // routing below over a ladder with nothing to order.
+      expect(
+        planSlices.length,
+        "cascade's plan is a ladder — one slice orders nothing",
+      ).toBe(2);
+      expect(buildPhase, "cascade declares a build phase").toBeDefined();
+      const [inbox, derive] = planSlices as [Phase, Phase];
 
       // The finding is still on disk after the slice committed: a window
       // wider than one tick's budget re-wakes its own slice.
@@ -654,7 +731,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       ]);
       expect(refilled.awakeAfter).toEqual([buildPhase!.name]);
     } finally {
-      await fx.cleanup();
+      await l.fx.cleanup();
     }
   }, 30_000);
 });

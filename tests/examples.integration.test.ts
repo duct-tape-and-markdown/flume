@@ -27,6 +27,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Agent } from "../src/Agent.ts";
 import type { GateContext } from "../src/Gate.ts";
+import type { Chain } from "../src/Phase.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
@@ -42,23 +43,29 @@ const exec = promisify(execFile);
 const EXAMPLES_DIR = fileURLToPath(new URL("../examples", import.meta.url));
 
 /**
- * The roots a real tick would resolve for this chain: `examples/` as the
- * config dir, this repo above it, its `.flume` as the state root. The chain
- * does not read `api.paths` yet — the values are here because
- * `buildFlumeApi` requires them, which is the point of requiring them.
+ * The chain as a tick at `repoRoot` builds it (v0.11 §6: examples
+ * default-export a factory, so the chain under test is built the way a real
+ * tick builds it — through the real API object, not a hand-assembled
+ * stand-in). One `FlumePaths` object, handed to `buildFlumeApi` and spread
+ * into the `Dispatcher` that ticks those same roots, so the api the chain
+ * composed against is identity-same with the roots the engine resolved
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * Built per-test, not once at module scope: a module-scope build over this
+ * checkout's roots pointed the chain's half of the seam at the flume repo
+ * while the engine's half ran against a temp fixture, so the first chain to
+ * resolve anything from `api.paths` would reach into this working tree with
+ * every drive below still green.
  */
-const EXAMPLE_PATHS: FlumePaths = {
-  repoRoot: fileURLToPath(new URL("..", import.meta.url)),
-  configDir: EXAMPLES_DIR,
-  flumeDir: fileURLToPath(new URL("../.flume", import.meta.url)),
-};
-
-// v0.11 §6: examples default-export a factory, so the chain under test is
-// built the same way a real tick builds it — through the real API object,
-// not a hand-assembled stand-in.
-const { chain: backlogGroomerChain } = backlogGroomerFactory(
-  buildFlumeApi(EXAMPLE_PATHS),
-);
+function buildChainFor(repoRoot: string): { paths: FlumePaths; chain: Chain } {
+  const paths: FlumePaths = {
+    repoRoot,
+    configDir: EXAMPLES_DIR,
+    flumeDir: join(repoRoot, ".flume"),
+  };
+  return { paths, chain: backlogGroomerFactory(buildFlumeApi(paths)).chain };
+}
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
@@ -132,15 +139,13 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
           await exec("git", ["rev-parse", "HEAD"], { cwd: repo.dir })
         ).stdout.trim();
 
-        const flumeDir = join(repo.dir, ".flume");
-        new Baton(flumeDir).wake("groom");
+        const { paths, chain } = buildChainFor(repo.dir);
+        new Baton(paths.flumeDir).wake("groom");
 
         const dispatcher = new Dispatcher({
-          repoRoot: repo.dir,
-          configDir: EXAMPLES_DIR,
-          flumeDir,
+          ...paths,
           agent: neverAgent,
-          chainLoader: async () => ({ chain: backlogGroomerChain }),
+          chainLoader: async () => ({ chain }),
         });
 
         const outcome = await dispatcher.tick();
@@ -211,15 +216,13 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         cwd: repo.dir,
       });
 
-      const flumeDir = join(repo.dir, ".flume");
-      new Baton(flumeDir).wake("groom");
+      const { paths, chain } = buildChainFor(repo.dir);
+      new Baton(paths.flumeDir).wake("groom");
 
       const dispatcher = new Dispatcher({
-        repoRoot: repo.dir,
-        configDir: EXAMPLES_DIR,
-        flumeDir,
+        ...paths,
         agent: neverAgent,
-        chainLoader: async () => ({ chain: backlogGroomerChain }),
+        chainLoader: async () => ({ chain }),
       });
 
       const outcome = await dispatcher.tick();
@@ -260,15 +263,13 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         cwd: repo.dir,
       });
 
-      const flumeDir = join(repo.dir, ".flume");
-      new Baton(flumeDir).wake("groom");
+      const { paths, chain } = buildChainFor(repo.dir);
+      new Baton(paths.flumeDir).wake("groom");
 
       const dispatcher = new Dispatcher({
-        repoRoot: repo.dir,
-        configDir: EXAMPLES_DIR,
-        flumeDir,
+        ...paths,
         agent: neverAgent,
-        chainLoader: async () => ({ chain: backlogGroomerChain }),
+        chainLoader: async () => ({ chain }),
       });
 
       const outcome = await dispatcher.tick();
@@ -290,17 +291,16 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
     // any commit lands, so dispatcher.tick() bails pre-gate. Only a direct
     // gate.run() call exercises the gate's own catch site
     // (BACKLOG-GROOMER-GATE-ENOENT-UNTESTED).
-    const backlogParseGate = backlogGroomerChain.phases[0]!.gates[0]!;
     const repo = await makeRepo();
     try {
       await mkdir(join(repo.dir, "BACKLOG.json"));
 
+      const { paths, chain } = buildChainFor(repo.dir);
+      const backlogParseGate = chain.phases[0]!.gates[0]!;
       const ctx: GateContext = {
+        ...paths,
         cwd: repo.dir,
-        flumeDir: join(repo.dir, ".flume"),
-        pendingPath: join(repo.dir, ".flume", "plan", "pending.json"),
-        configDir: join(repo.dir, ".flume"),
-        repoRoot: repo.dir,
+        pendingPath: join(paths.flumeDir, "plan", "pending.json"),
         phaseName: "groom",
         log: () => {},
       };
