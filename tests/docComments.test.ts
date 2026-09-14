@@ -92,3 +92,48 @@ it("the shipped `quarantineScope` doc comment marks no union member as the engin
 
   expect(doc).not.toMatch(/defaults?/i);
 });
+
+/**
+ * Foreign glob dialects, named as classes rather than one literal apiece —
+ * pinning a single spelling lets its siblings ship green.
+ *
+ * `matchesAny` (`src/paths.ts`) is the one home for the dialect the write
+ * guard enforces, and every special but `*` and `**` is escaped there. A
+ * chain-facing glob option whose hover text names some *other* dialect
+ * promises syntax the matcher reads as literal text — `?`, `{a,b}`, `[abc]`
+ * — so an author trusting it declares a fence narrower than the one they
+ * wrote, and the commit reverts on a path they believed they had covered.
+ */
+const FOREIGN_GLOB_DIALECTS: readonly RegExp[] = [
+  /\b(mini|micro|pico|node)-?match\b/i,
+  /\bfn-?match\b/i,
+  /\bglob-?star\b/i,
+  /\bext-?glob\b/i,
+  /\b(bash|sh|shell|posix|gitignore)[-\s]?(style\s+)?glob/i,
+  /\bglob\(\d\)/,
+  /\bbrace expansion\b/i,
+  /\bcharacter class(es)?\b/i,
+];
+
+/**
+ * The hover text a chain author reads when declaring the containment
+ * boundary. Declarations ship (tsconfig.build.json), so this block is the
+ * only statement of the dialect most consumers ever see; it points at
+ * `matchesAny` rather than carrying a second copy of what that matcher
+ * implements (`.claude/rules/engineering.md` § Derived state is computed,
+ * never restated beside its source).
+ */
+it("the shipped `writablePaths` doc comment names no glob dialect the engine's matcher does not implement", () => {
+  const doc = docCommentFor(srcText("Phase.ts"), "writablePaths");
+
+  // Vacuity guard: this is the block it claims to be, and the dialect list
+  // is populated, before any absence is asserted over either — an absence
+  // over a vanished subject, or judged by zero patterns, is a false green.
+  expect(doc).toContain("permitted to modify");
+  expect(doc).toContain("relative to the repo root");
+  expect(FOREIGN_GLOB_DIALECTS.length).toBeGreaterThan(0);
+
+  for (const dialect of FOREIGN_GLOB_DIALECTS) {
+    expect(doc, `\`writablePaths\` doc names ${dialect}`).not.toMatch(dialect);
+  }
+});

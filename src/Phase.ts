@@ -334,7 +334,10 @@ export interface Phase {
    * harness diffs the commit against these patterns; violations revert
    * the commit. This replaces prose "You may NOT modify X" rules in prompts.
    *
-   * Paths are relative to the repo root. Patterns are minimatch-style.
+   * Paths are relative to the repo root. Patterns are matched by
+   * `matchesAny` (`src/paths.ts`), the one home for the dialect they are
+   * read in; it rides `FlumeApi`, so a chain predicate over the same globs
+   * shares the enforcing matcher instead of hand-rolling one.
    */
   writablePaths: string[];
 
