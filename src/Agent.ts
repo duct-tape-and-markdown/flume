@@ -88,6 +88,13 @@ export interface AgentUsage {
   outputTokens?: number;
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
+  /**
+   * The `result` event's `total_cost_usd` — the cost the agent itself
+   * reports for the invocation, lifted at the same decode as the token
+   * fields so a chain wanting cost telemetry reads it here rather than
+   * re-scanning raw stdout beside the engine.
+   */
+  costUsd?: number;
 }
 
 /**
@@ -664,6 +671,7 @@ export function extractResultUsage(e: NdjsonEvent): AgentUsage {
   if (typeof usage.cache_read_input_tokens === "number") {
     out.cacheReadInputTokens = usage.cache_read_input_tokens;
   }
+  if (typeof e.total_cost_usd === "number") out.costUsd = e.total_cost_usd;
   return out;
 }
 

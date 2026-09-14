@@ -809,6 +809,35 @@ describe("extractResultUsage — usage/cost facts off a stream-json result event
     expect("model" in usage).toBe(false);
   });
 
+  it("the usage decode lifts the result event's total_cost_usd onto costUsd", () => {
+    const usage = extractResultUsage({
+      type: "result",
+      num_turns: 1,
+      duration_ms: 900,
+      total_cost_usd: 0.4213,
+      usage: { input_tokens: 11, output_tokens: 22 },
+    });
+    expect(usage.costUsd).toBe(0.4213);
+    // Same decode as the token fields, not a second pass: one call yields
+    // both, and neither is rounded to the renderer's display precision.
+    expect(usage).toEqual({
+      turns: 1,
+      durationMs: 900,
+      costUsd: 0.4213,
+      inputTokens: 11,
+      outputTokens: 22,
+    });
+  });
+
+  it("leaves costUsd absent when the result event reports no total_cost_usd", () => {
+    const usage = extractResultUsage({
+      type: "result",
+      num_turns: 1,
+      usage: { input_tokens: 2 },
+    });
+    expect("costUsd" in usage).toBe(false);
+  });
+
   it("leaves model absent when modelUsage names more than one model — ambiguous, not guessed", () => {
     const usage = extractResultUsage({
       type: "result",

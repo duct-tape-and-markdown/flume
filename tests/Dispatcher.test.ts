@@ -40,7 +40,7 @@ import { worktreeDirName } from "../src/worktrees.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
-import { extractFinalMessage } from "../src/Agent.ts";
+import { extractFinalMessage, withTerminalRenderer } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
@@ -8819,6 +8819,54 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     expect("durationMs" in row).toBe(false);
     expect("cacheCreationInputTokens" in row).toBe(false);
     expect("cacheReadInputTokens" in row).toBe(false);
+  });
+
+  it("a tick verdict's invocation row carries the agent's reported costUsd", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    // Agreement, not a hand-set field: the real stream-json `result` event
+    // goes through the real decode (`withTerminalRenderer`), and the verdict
+    // row is read for what that decode produced.
+    const stream =
+      [
+        JSON.stringify({ type: "system", subtype: "init" }),
+        JSON.stringify({
+          type: "result",
+          num_turns: 3,
+          duration_ms: 1200,
+          total_cost_usd: 1.2345,
+          usage: { input_tokens: 10, output_tokens: 20 },
+          modelUsage: { "claude-fable-5-1": {} },
+        }),
+      ].join("\n") + "\n";
+    const inner: Agent = {
+      name: "emits-cost",
+      async invoke(inv) {
+        await writeAndCommit(inv.cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+        inv.onStdout?.(stream);
+        return { exitCode: 0, stdout: stream, stderr: "" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: withTerminalRenderer(inner),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.verdict!.invocations).toHaveLength(1);
+
+    const row = outcome.verdict!.invocations[0]!;
+    expect(row.costUsd).toBe(1.2345);
+    // The cost rides beside the token split it is unrecoverable without,
+    // off the one decode — not a second reading of the same stream.
+    expect(row.inputTokens).toBe(10);
+    expect(row.outputTokens).toBe(20);
+    expect(row.turns).toBe(3);
   });
 
   it("a fanout tick's verdict carries one invocations[] row per provisioned entry, each tagged", async () => {
