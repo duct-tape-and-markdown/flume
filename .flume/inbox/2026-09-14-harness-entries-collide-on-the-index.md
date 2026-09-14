@@ -1,0 +1,5 @@
+# Every harness entry touches harness/index.ts, and none declares it (interactive session)
+
+Observed at 87c0e57. Four of the last seven harness picks ended in a merge-stage cherry-pick conflict (RUNTIME-IGNORES, RECORDS, PLAN-STATE, JUDGES, each quarantined for its run), all on `harness/index.ts`: every new module re-exports through the package's one barrel, so any two harness entries in one batch collide there. The partition intersects declared `files` as literal strings (`.flume/prompts/plan-discipline.md`, *files is a prediction*), and no harness entry declares the barrel, so each pays one wasted agent run before its recorded footprint serializes it.
+
+Why it matters: six harness entries are still queued; each will conflict once unless its `files` names `harness/index.ts`. Route: add the barrel to `files.edit` on every queued and future harness entry — an honest prediction, since every module lands there — so the partitioner serializes them from the first pick. Not `partitionIgnore`: that would put them back in one batch.
