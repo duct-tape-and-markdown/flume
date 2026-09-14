@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { loopCompletionSummary, tickExitCode } from "../src/cliVerdict.ts";
+import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
@@ -348,5 +349,55 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
       expect(prose).toContain(`${stage}-stage`);
     }
     expect(prose).not.toContain("worktree provisioning");
+  });
+});
+
+/**
+ * HELP-ABORT-THRESHOLD-IS-OVERRIDABLE — both exit-1 surfaces stated the
+ * consecutive-failure backstop as a fixed three ticks, which is wrong for
+ * any chain declaring `supervisorPolicy.abortThreshold`
+ * (`engine-boundary.md`, "Routing rule": a policy constant is an
+ * overridable default, never fixed behavior). Help prints before any chain
+ * is resolved, so the surface names the knob rather than rendering a run's
+ * value; the default it quotes is interpolated from
+ * {@link DEFAULT_ABORT_THRESHOLD}, the same constant `superviseLoop`
+ * falls back to, so the number cannot drift from the engine's
+ * (`engineering.md`, "Derived state is computed, never restated beside its
+ * source").
+ */
+describe("flume loop/job --help — the backstop threshold names its knob (HELP-ABORT-THRESHOLD-IS-OVERRIDABLE)", () => {
+  /**
+   * The exit-1 clause of a help surface, whitespace-collapsed: help text
+   * wraps the prose across lines, so a phrase match needs one line.
+   */
+  function exitOneClause(out: string, nextCodeMarker: string): string {
+    const start = out.indexOf("\n  1 ");
+    const end = out.indexOf(nextCodeMarker);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return out.slice(start, end).replace(/\s+/g, " ");
+  }
+
+  /** What every backstop-describing surface owes an operator. */
+  function expectsOverridableThreshold(prose: string): void {
+    expect(prose.length).toBeGreaterThan(0);
+    // The knob a chain overrides, by the name it is declared under.
+    expect(prose).toContain("supervisorPolicy.abortThreshold");
+    // The engine's default, quoted as a default...
+    expect(prose).toContain(`default ${DEFAULT_ABORT_THRESHOLD}`);
+    // ...and never as the count the backstop always fires on.
+    expect(prose).not.toMatch(/\d+ consecutive ticks/);
+  }
+
+  it("flume loop --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count", async () => {
+    const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
+    expect(code).toBe(0);
+    expectsOverridableThreshold(exitOneClause(out, "\n  74 "));
+  });
+
+  it("flume job --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count", async () => {
+    const { out, code } = await runCli(process.cwd(), ["job", "--help"]);
+    expect(code).toBe(0);
+    expectsOverridableThreshold(exitOneClause(out, "\n  2 "));
   });
 });

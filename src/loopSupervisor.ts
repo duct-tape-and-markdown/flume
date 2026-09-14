@@ -28,6 +28,16 @@ import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { namespacedJoin, stopFlagPath } from "./paths.js";
 
+/**
+ * Engine default for the consecutive-identical-failure abort backstop — the
+ * number of consecutive ticks one stage-tagged signature must repeat before
+ * `superviseLoop` aborts the run, absent a chain's
+ * `supervisorPolicy.abortThreshold` (`src/Phase.ts`). One home: the help
+ * text that quotes this default to an operator (`src/cliHelp.ts`) reads it
+ * from here rather than restating the number beside it.
+ */
+export const DEFAULT_ABORT_THRESHOLD = 3;
+
 /** Options for {@link superviseLoop}. */
 export interface SuperviseLoopOptions {
   /** Repo root; child ticks spawn with this as their cwd. */
@@ -67,7 +77,8 @@ export interface SuperviseLoopOptions {
    * Chain-declared override for the consecutive-identical-failure abort
    * threshold — the number of consecutive ticks the same *stage-tagged* signature
    * (provision, merge, or gate) must repeat, with no successful tick between
-   * them, before the run aborts. Default 3, pinned by the same
+   * them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
+   * pinned by the same
    * tests/loopSupervisor.test.ts case cited on `quarantineScope` above. The CLI
    * forwards this from the resolved chain's `supervisorPolicy.abortThreshold`;
    * undeclared falls through to the default here.
@@ -135,7 +146,8 @@ export interface SuperviseResult {
   erroredTicks: string[];
   /**
    * Set when the run aborted because the same stage-tagged signature
-   * repeated on `abortThreshold` (default 3) consecutive ticks with no
+   * repeated on `abortThreshold` ({@link DEFAULT_ABORT_THRESHOLD} by
+   * default) consecutive ticks with no
    * successful tick between them (spec/loop.md "Repeated identical
    * failures") — the consecutive-failure backstop for non-entry-scoped
    * walls the run-scoped quarantine can't isolate, and a wider abort than
@@ -207,7 +219,7 @@ export async function superviseLoop(
 
   // Engine defaults, overridable per opts above.
   const quarantineScope = opts.quarantineScope ?? "run";
-  const abortThreshold = opts.abortThreshold ?? 3;
+  const abortThreshold = opts.abortThreshold ?? DEFAULT_ABORT_THRESHOLD;
 
   let ticks = 0;
   const shippedTags = new Set<string>();
