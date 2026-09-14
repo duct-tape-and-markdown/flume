@@ -707,7 +707,7 @@ pickable without waiting for an interim plan tick.
 
 Both concurrencies provision, so both invoke the hook: a fanout wave calls
 it once per entry, a singleton tick once for the one worktree it runs in
-(`ctx.entryTag` is the entry's tag under fanout, the phase name under
+(`ctx.worktreeKey` is the entry's tag under fanout, the phase name under
 singleton).
 
 A fresh worktree holds only tracked files; provision the gitignored deps
@@ -809,9 +809,9 @@ scratch dir, a short-lived credential — anything the agent needs at runtime
 that shouldn't be baked into the worktree's tracked filesystem.
 
 ```ts
-async setupWorktree({ worktreePath, entryTag }) {
+async setupWorktree({ worktreePath, worktreeKey }) {
   await setupWorktree(worktreePath);
-  const dbUrl = await provisionScratchDb(entryTag);
+  const dbUrl = await provisionScratchDb(worktreeKey);
   return { extraEnv: { DATABASE_URL: dbUrl } };
 },
 ```
@@ -831,13 +831,13 @@ Scope notes:
 
 `teardownWorktree(ctx)` runs after the agent exits and gates finish, just
 before the harness removes the worktree. It receives the same
-`WorktreeSetupContext` as setup (`worktreePath`, `repoRoot`, `entryTag`) —
+`WorktreeSetupContext` as setup (`worktreePath`, `repoRoot`, `worktreeKey`) —
 use it to release whatever setup acquired: drop the scratch DB, return the
 lease, delete the issued credential.
 
 ```ts
-async teardownWorktree({ entryTag }) {
-  await dropScratchDb(entryTag);
+async teardownWorktree({ worktreeKey }) {
+  await dropScratchDb(worktreeKey);
 },
 ```
 
@@ -985,7 +985,7 @@ knows about the run. Beyond `cwd` and `prompt`, that shape carries:
   tick verdict's per-invocation `tag` row carries, handed to the decorator
   instead of left only on disk; read it rather than recovering the tag by
   pattern-matching the rendered `prompt`. Note that it is *not* the worktree
-  key `setupWorktree` receives as `ctx.entryTag`, which falls back to the
+  key `setupWorktree` receives as `ctx.worktreeKey`, which falls back to the
   phase name under singleton.
 - `extraEnv` — whatever this tick's `setupWorktree` returned.
 - `timeoutMs` / `signal` — the per-invocation cap the provider must honor.

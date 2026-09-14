@@ -619,7 +619,7 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     ]);
   });
 
-  it("the singleton hook's ctx.entryTag is the phase name and ctx.worktreePath is the provisioned worktree", async () => {
+  it("the singleton hook's ctx.worktreeKey is the phase name and ctx.worktreePath is the provisioned worktree", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const setupCtxs: WorktreeSetupContext[] = [];
@@ -660,7 +660,7 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     // A singleton tick carries no entry, so the key is the phase name —
     // the same key `createWorktree` derived the directory and branch from.
     expect(setupCtxs).toHaveLength(1);
-    expect(setupCtxs[0]!.entryTag).toBe("plan");
+    expect(setupCtxs[0]!.worktreeKey).toBe("plan");
     expect(setupCtxs[0]!.repoRoot).toBe(fx.repo);
     expect(setupCtxs[0]!.worktreePath).toBe(agentCwd);
     expect(setupCtxs[0]!.worktreePath).toContain(
@@ -679,7 +679,7 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
       name: "plan",
       concurrency: "singleton",
       setupWorktree: async (ctx) => ({
-        extraEnv: { WT_TAG: ctx.entryTag, WT_HANDLE: "singleton-handle" },
+        extraEnv: { WT_TAG: ctx.worktreeKey, WT_HANDLE: "singleton-handle" },
       }),
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -1212,8 +1212,8 @@ describe("Dispatcher — the agent invocation states which entry it is running",
     expect(outcome.result?.committed).toBe(true);
     // A singleton tick provisions no entry, so there is no tag to state —
     // absent rather than the phase name the worktree key falls back to
-    // (`WorktreeSetupContext.entryTag`), the same rule the verdict's
-    // `TickVerdictInvocation.tag` row follows.
+    // (`WorktreeSetupContext.worktreeKey`), the same rule the verdict's
+    // `TickVerdictInvocation.entryTag` row follows.
     expect(seenEntryTag).toBeUndefined();
     expect(seenKeys).not.toContain("entryTag");
   }, 20_000);
@@ -2943,7 +2943,7 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
       name: "build",
       concurrency: "fanout",
       setupWorktree: async (ctx) => {
-        if (ctx.entryTag === "FAIL-HOOK") {
+        if (ctx.worktreeKey === "FAIL-HOOK") {
           throw new Error("setupWorktree boom for FAIL-HOOK");
         }
         return undefined;
@@ -3015,10 +3015,10 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
       // their own tag, so a misaligned splice (surviving entry fed the
       // wrong neighbor's extraEnv/worktree) shows up as a mismatch below.
       setupWorktree: async (ctx) => {
-        if (ctx.entryTag === "ENTRY-B") {
+        if (ctx.worktreeKey === "ENTRY-B") {
           throw new Error("setupWorktree boom for ENTRY-B");
         }
-        return { extraEnv: { WT_TAG: ctx.entryTag } };
+        return { extraEnv: { WT_TAG: ctx.worktreeKey } };
       },
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -3094,7 +3094,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
       concurrency: "fanout",
       writablePaths: ["src/**"],
       setupWorktree: async (ctx) => {
-        if (ctx.entryTag === "FAIL-HOOK") {
+        if (ctx.worktreeKey === "FAIL-HOOK") {
           throw new Error("setupWorktree boom for FAIL-HOOK");
         }
         return undefined;
@@ -8772,7 +8772,7 @@ describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
 });
 
 describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agent invocation leaves a usage row')", () => {
-  it("a singleton tick's verdict carries one invocations[] row with no tag; a field the agent didn't report is absent, not zero", async () => {
+  it("a singleton tick's verdict carries one invocations[] row with no entryTag; a field the agent didn't report is absent, not zero", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -8815,7 +8815,7 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     });
     // Absent, not zero/undefined-as-a-key: the agent's usage never named
     // these fields, so the row carries no key for them at all.
-    expect("tag" in row).toBe(false);
+    expect("entryTag" in row).toBe(false);
     expect("durationMs" in row).toBe(false);
     expect("cacheCreationInputTokens" in row).toBe(false);
     expect("cacheReadInputTokens" in row).toBe(false);
@@ -8924,16 +8924,16 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       expect(i.promptPath).toMatch(/^rendered-prompts\/.+\.md$/);
     }
     const byTag = Object.fromEntries(
-      invocations.map(({ promptPath: _p, ...i }) => [i.tag, i]),
+      invocations.map(({ promptPath: _p, ...i }) => [i.entryTag, i]),
     );
     expect(byTag["TEST-A"]).toEqual({
-      tag: "TEST-A",
+      entryTag: "TEST-A",
       model: "claude-fable-5-1",
       turns: 1,
       inputTokens: 100,
     });
     expect(byTag["TEST-B"]).toEqual({
-      tag: "TEST-B",
+      entryTag: "TEST-B",
       model: "claude-haiku-4-5",
       turns: 3,
       outputTokens: 50,
@@ -9053,7 +9053,7 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     expect(rows).toHaveLength(2);
     expect(new Set(rows.map((r) => r.promptPath)).size).toBe(2);
     for (const row of rows) {
-      const slug = row.tag!.toLowerCase();
+      const slug = row.entryTag!.toLowerCase();
       expect(row.promptPath).toMatch(
         new RegExp(`^rendered-prompts/[^/]+-${slug}\\.md$`),
       );
@@ -9061,7 +9061,7 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
         join(fx.repo, ".flume", row.promptPath),
         "utf8",
       );
-      expect(recorded).toContain(`entry: ${row.tag}`);
+      expect(recorded).toContain(`entry: ${row.entryTag}`);
       expect(recorded).toBe(handed.get(slug));
     }
     expect((await renderedFiles()).length).toBe(2);

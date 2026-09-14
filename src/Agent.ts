@@ -33,7 +33,7 @@ export interface AgentInvocation {
    *
    * Set under fanout, absent under singleton — which provisions no entry and
    * so has no tag to state, the same rule the verdict row follows. Not the
-   * worktree key: `WorktreeSetupContext.entryTag` falls back to the phase
+   * worktree key: `WorktreeSetupContext.worktreeKey` falls back to the phase
    * name under singleton, where this field stays absent.
    */
   entryTag?: string;

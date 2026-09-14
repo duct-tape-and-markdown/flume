@@ -475,8 +475,9 @@ export interface WorktreeSetupContext {
    * Key of the worktree this context describes: the pending entry's tag on
    * a fanout tick, the phase name on a singleton one, which carries no
    * entry. `teardownWorktree` receives the same key its `setupWorktree` did.
+   * Never absent — distinct from `AgentInvocation.entryTag`, which is.
    */
-  entryTag: string;
+  worktreeKey: string;
 }
 
 /** Optional return shape from Phase.setupWorktree. */

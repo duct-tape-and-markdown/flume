@@ -157,7 +157,7 @@ describe("worktrees — one lifecycle over one directory tree", () => {
 
     expect(removed).toBe(true);
     expect(hookSaw).toEqual([
-      { worktreePath: wt.path, repoRoot: fx.repo, entryTag: tag },
+      { worktreePath: wt.path, repoRoot: fx.repo, worktreeKey: tag },
     ]);
     expect(existsSync(wt.path)).toBe(false);
     expect(await registeredWorktrees(fx.repo)).not.toContain(wt.path);

@@ -793,7 +793,7 @@ const factory: ChainFactory = (api) => {
     const wt = join(worktreesBase(api.paths.flumeDir), `red-on-base-${ctx.commitSha.slice(0, 7)}`);
     try {
       await materializeBase(ctx.repoRoot, ctx.baseSha, ctx.commitSha, files, wt, api.git.readFileAtRef);
-      await setupBuildWorktree({ worktreePath: wt, repoRoot: ctx.repoRoot, entryTag: ctx.entry?.tag ?? "red-on-base" });
+      await setupBuildWorktree({ worktreePath: wt, repoRoot: ctx.repoRoot, worktreeKey: ctx.entry?.tag ?? "red-on-base" });
       const out = await new Promise<string>((res) =>
         execFile(
           "pnpm",

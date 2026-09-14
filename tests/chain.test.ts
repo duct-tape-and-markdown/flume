@@ -310,7 +310,7 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
     const ctx: WorktreeSetupContext = {
       worktreePath: worktree,
       repoRoot: worktree,
-      entryTag: "TEST",
+      worktreeKey: "TEST",
     };
 
     await expect(build.setupWorktree!(ctx)).rejects.toThrow(
@@ -336,7 +336,7 @@ describe("setupBuildWorktree (build.setupWorktree) — the sentinel assertion", 
     const ctx: WorktreeSetupContext = {
       worktreePath: worktree,
       repoRoot: worktree,
-      entryTag: "TEST",
+      worktreeKey: "TEST",
     };
 
     await expect(build.setupWorktree!(ctx)).resolves.toBeUndefined();

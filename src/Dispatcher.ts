@@ -292,7 +292,7 @@ export interface TickVerdictMergeOutcome {
    * The fanout entry this span belongs to. Absent on a singleton phase's own
    * span, which has no entry to tag — the verdict's `phaseName` already names
    * it, and restating it here would invent a tag naming no queue entry (same
-   * shape as {@link TickVerdictInvocation.tag}).
+   * shape as {@link TickVerdictInvocation.entryTag}).
    */
   tag?: string;
   outcome: MergeOutcome;
@@ -326,12 +326,13 @@ export interface TickVerdictMergeOutcome {
 /**
  * spec/loop.md "The tick verdict — one facts artifact", "Every agent
  * invocation leaves a usage row": one row per agent run this tick, carrying
- * whatever cost/usage facts that run's {@link AgentResult} reported. `tag`
- * names the provisioned entry under fanout; absent for a singleton phase,
+ * whatever cost/usage facts that run's {@link AgentResult} reported.
+ * `entryTag` names the provisioned entry under fanout — the same name and
+ * rule as {@link AgentInvocation.entryTag}; absent for a singleton phase,
  * which has no entry to tag.
  */
 export interface TickVerdictInvocation extends AgentUsage {
-  tag?: string;
+  entryTag?: string;
   /**
    * spec/prompt.md "The rendered prompt is persisted before the agent runs":
    * the file holding the prompt this invocation was handed, byte for byte,
@@ -1861,7 +1862,7 @@ export class Dispatcher {
         const r = await phase.setupWorktree({
           worktreePath: wt.path,
           repoRoot,
-          entryTag: phase.name,
+          worktreeKey: phase.name,
         });
         if (r && r.extraEnv) extraEnv = r.extraEnv;
       } catch (err) {
@@ -2452,7 +2453,7 @@ export class Dispatcher {
             return await phase.setupWorktree!({
               worktreePath: worktrees[i]!.path,
               repoRoot,
-              entryTag: entry.tag,
+              worktreeKey: entry.tag,
             });
           } catch (err) {
             const message = (err as Error).message;
@@ -2559,7 +2560,7 @@ export class Dispatcher {
     for (const r of perEntry) {
       if (r.termination) {
         invocations.push({
-          tag: r.entry.tag,
+          entryTag: r.entry.tag,
           promptPath: r.termination.promptPath,
           ...(r.termination.usage ?? {}),
         });
