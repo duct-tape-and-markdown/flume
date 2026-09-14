@@ -602,3 +602,56 @@ Options:
 
 Needs an amendment because closing it edits `spec/`, which no autonomous phase
 may write.
+
+## The harvest's NAME_MAX bound is stated in neither spec sentence that describes it (NEEDS AMENDMENT)
+
+Drained from `HARVEST-DEST-NAME-EXCEEDS-NAME-MAX`'s note; verified on disk this
+tick. `05d73d7` shipped the bound — the harvest's destination filename is
+composed and then cut to fit the filesystem name limit, truncate-with-hash,
+the same one rule the worktree directory name already took. Not a defect in
+`src/`; two human-surface sentences the fix outran.
+
+- **`spec/worktrees.md:319-322`, *Teardown harvest — the delivery guarantee***
+  prints the destination as `` `${tag}--${stamp}--${file.name}` `` with no
+  ceiling. The retry guarantee that bullet exists to make is exactly what the
+  bound restores: two of the three parts are variable-length, so the tag's own
+  schema ceiling could not hold the sum, `rename` threw `ENAMETOOLONG`, the
+  per-file catch logged and continued, and the worktree took the note with it.
+  The composition the sentence prints is no longer the whole rule.
+- **`spec/pending.md:45-57`, *Tag grammar is mechanical safety, nothing more***
+  enumerates the ceilings a tag meets — the revert note's arithmetic, and
+  git's win32 worktree-path wall under "It is not the only ceiling a tag
+  meets". The harvest destination is a third, and the one that motivated the
+  entry. Its clause "Every other tag-derived component … is looser, so this
+  bound clears them too" is the half the fix disproved: it holds for the
+  components it lists, each the tag or its slug alone, and not for one that
+  composes the tag with a second variable-length part.
+
+Options:
+
+- **Name the bound as behavior in both** (recommended). *Teardown harvest*
+  says the stamped destination is bounded to the filesystem name limit by
+  truncate-with-hash, so a retried note still lands beside the earlier one
+  rather than over it — the guarantee the bullet already makes, now stated
+  where the ceiling bites. *Tag grammar* adds the harvest destination to its
+  not-the-only-ceiling list and narrows the "every other component" clause to
+  components that are the tag or its slug alone, saying a component composing
+  the tag with a second variable-length part is bounded at its writer instead
+  of inheriting the schema's. No headings move, no `per` cite re-homes, no
+  code changes.
+- **Point instead of restate.** *Teardown harvest* drops the printed
+  composition and states only the guarantee, leaving both the spelling and the
+  ceiling at the writer — which is what *Tag grammar* already asks for itself
+  ("The arithmetic lives at the writer, not in a second copy here"). Against
+  it: the provenance prefix is operator-visible in the primary friction dir,
+  and an abbreviated filename read there is surprising if the corpus never
+  says names may be cut.
+- **Accept as debt.** Costs the next reader who sizes something against the
+  printed composition, which is how this defect arrived in the first place.
+
+**Rule this beside the other open question on the same section** — "A tick
+that commits nothing dies with its worktree" proposes wording in *Teardown
+harvest* too, and its cheapest option edits the same paragraph.
+
+Needs an amendment because closing it edits `spec/`, which no autonomous phase
+may write.
