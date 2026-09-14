@@ -32,6 +32,15 @@ export {
 export { consumerIgnores } from "./ignores.js";
 
 export {
+  DEFAULT_STATE_ROOT,
+  harnessInit,
+  protocolTemplatePath,
+  type DependencyOutcome,
+  type HarnessInitOptions,
+  type HarnessInitResult,
+} from "./init.js";
+
+export {
   DeclarationSchema,
   parseDeclaration,
   type Declaration,

@@ -54,6 +54,7 @@ import {
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { superviseLoop } from "./loopSupervisor.js";
+import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
 import { parsePending } from "./PendingSchema.js";
@@ -105,44 +106,6 @@ export const EX_DATAERR = 65;
  * than absence must never read as "nothing to check").
  */
 export const EX_IOERR = 74;
-
-/**
- * The hops from the directory holding this module to flume's own
- * package.json, one per shipped layout: a checkout runs `src/cli.ts`, and
- * `tsconfig.build.json` (rootDir `.`) emits the published entry at
- * `dist/src/cli.js`. Ordered checkout-first; the first that exists wins.
- */
-const PACKAGE_JSON_HOPS = ["..", "../.."] as const;
-
-/**
- * Flume's own package.json, resolved from the directory holding the running
- * CLI module. No layout is guessed from what happens to be on disk above
- * `fromDir`: only the declared hops are tried, and none existing throws
- * naming every path tried rather than reporting a placeholder version
- * (`.claude/rules/engineering.md`, "Loud or nothing").
- */
-export function resolvePackageJson(fromDir: string): string {
-  const tried = PACKAGE_JSON_HOPS.map((hop) =>
-    resolve(fromDir, hop, "package.json"),
-  );
-  const found = tried.find((candidate) => existsLoud(candidate));
-  if (found === undefined) {
-    throw new Error(
-      `flume: no package.json at any of ${tried.join(", ")} — ` +
-        `the CLI cannot report its own version`,
-    );
-  }
-  return found;
-}
-
-function readPackageVersion(): string {
-  const pkgPath = resolvePackageJson(HERE);
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
-  if (typeof pkg.version !== "string") {
-    throw new Error(`package.json at ${pkgPath} has no string "version"`);
-  }
-  return pkg.version;
-}
 
 /**
  * Shared `--max` numeric parse for `job run` (rewrites into `loop` below) and
@@ -231,7 +194,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (firstArg === "--version" || firstArg === "-v") {
-    console.log(readPackageVersion());
+    console.log(readPackageVersion(HERE));
     return 0;
   }
 

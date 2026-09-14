@@ -102,24 +102,26 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries (a
- * declared `Chain.friction` dir) — into `<jobDir>/.gitignore`: create the file
- * if absent, append only the missing entries otherwise. Idempotent;
- * template-authored lines (and their order) are preserved verbatim.
+ * Merge `lines` into the `.gitignore` at `path`: create the file if absent,
+ * append only the entries it does not already carry otherwise. Returns the
+ * lines appended, empty when the file already held every one. Idempotent;
+ * hand-authored lines (and their order) are preserved verbatim.
+ *
+ * **One home, two adopters.** {@link ensureRuntimeIgnores} merges the runtime
+ * set into a job's state root, and `flume-harness init` (`harness/init.ts`)
+ * merges the consumer-prefixed set into a repository's root `.gitignore`.
+ * The merge is the same detection either way, and a second spelling is how
+ * one caller comes to duplicate a line the other deduped
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
-export async function ensureRuntimeIgnores(
-  jobDir: string,
-  extra: readonly string[] = [],
-): Promise<void> {
-  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): jobDir nests under
-  // the state root, so `.gitignore` under it can cross the total-path
-  // limit even though no single component is long. namespacedJoin
-  // (src/paths.ts) is the shared idiom.
-  const path = namespacedJoin(jobDir, ".gitignore");
+export async function mergeIgnoreLines(
+  path: string,
+  lines: readonly string[],
+): Promise<string[]> {
   // Absent (`ENOENT`) is the empty file: nothing authored, nothing to merge
   // into. Any other read failure rethrows rather than reading as empty — an
-  // unreadable `.gitignore` treated as "" would be rewritten with the runtime
-  // set alone, dropping the template-authored lines this function exists to
+  // unreadable `.gitignore` treated as "" would be rewritten with the merged
+  // set alone, dropping the hand-authored lines this function exists to
   // preserve (`.claude/rules/engineering.md`, "Loud or nothing").
   let existing: string;
   try {
@@ -129,13 +131,30 @@ export async function ensureRuntimeIgnores(
     existing = "";
   }
   const have = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
-  const missing = [...RUNTIME_IGNORES, ...extra].filter(
-    (entry) => !have.has(entry),
-  );
-  if (missing.length === 0) return;
+  const missing = lines.filter((entry) => !have.has(entry));
+  if (missing.length === 0) return [];
   const base =
     existing.length === 0 || existing.endsWith("\n") ? existing : existing + "\n";
   await writeFile(path, base + missing.join("\n") + "\n", "utf8");
+  return missing;
+}
+
+/**
+ * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries (a
+ * declared `Chain.friction` dir) — into `<jobDir>/.gitignore`.
+ */
+export async function ensureRuntimeIgnores(
+  jobDir: string,
+  extra: readonly string[] = [],
+): Promise<void> {
+  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): jobDir nests under
+  // the state root, so `.gitignore` under it can cross the total-path
+  // limit even though no single component is long. namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  await mergeIgnoreLines(namespacedJoin(jobDir, ".gitignore"), [
+    ...RUNTIME_IGNORES,
+    ...extra,
+  ]);
 }
 
 /**

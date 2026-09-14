@@ -21,7 +21,7 @@
  */
 
 import { execFile, spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,8 +31,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const exec = promisify(execFile);
 
-const BIN_FLUME = fileURLToPath(new URL("../bin/flume", import.meta.url));
-const BIN_FLUME_JS = fileURLToPath(new URL("../bin/flume.js", import.meta.url));
+const BIN_DIR = fileURLToPath(new URL("../bin", import.meta.url));
+const BIN_FLUME = join(BIN_DIR, "flume");
 
 // Stands in for the real build output: records argv and cwd as JSON so the
 // test can assert bin/flume resolved *this* file (relative to the real
@@ -157,8 +157,12 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     await mkdir(join(pkgDir, "dist", "src"), { recursive: true });
     await writeFile(join(pkgDir, "package.json"), JSON.stringify({ type: "module" }));
 
+    // The whole `bin/` rather than the one shim: the shims import their
+    // shared spawn helper (bin/execEntry.js) by a relative specifier, so a
+    // package carrying only one file fails at module resolution instead of
+    // on the property each case is about.
+    await cp(BIN_DIR, join(pkgDir, "bin"), { recursive: true });
     const shim = join(pkgDir, "bin", "flume.js");
-    await writeFile(shim, await readFile(BIN_FLUME_JS));
     await chmod(shim, 0o755);
     await writeFile(join(pkgDir, "dist", "src", "cli.js"), cli);
 
@@ -282,4 +286,38 @@ describe("bin/flume.js — the published bin.flume entry", () => {
       expect(result.status).toBeNull();
     },
   );
+});
+
+/**
+ * `package.json`'s `bin` map names two entries — the engine's `flume` and the
+ * harness package's `flume-harness` (`spec/cli.md`, *Distribution*;
+ * `spec/harness.md`, *Adoption and upgrade*) — and npm generates a working
+ * shim per platform for each only because each is a Node script carrying the
+ * env-node shebang. A `bin` entry pointing at a file without one installs
+ * cleanly and fails at the consumer's first invocation, on every platform
+ * whose shell reads the first line.
+ *
+ * Read off the map rather than from a list here, so a third entry added
+ * without its shebang is caught by the same case
+ * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ */
+it("the flume-harness bin is a Node script whose first line is the env-node shebang", async () => {
+  const manifest = JSON.parse(
+    await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  ) as { bin?: Record<string, string> };
+  const bins = manifest.bin ?? {};
+
+  // Non-vacuity, and the claim this case is named for: the harness bin is in
+  // the map at all, beside the engine's.
+  expect(Object.keys(bins).sort()).toContain("flume-harness");
+  expect(Object.keys(bins).sort()).toContain("flume");
+
+  const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+  for (const [name, entry] of Object.entries(bins)) {
+    const source = await readFile(join(REPO_ROOT, entry), "utf8");
+    expect({ name, first: source.split(/\r?\n/)[0] }).toEqual({
+      name,
+      first: "#!/usr/bin/env node",
+    });
+  }
 });

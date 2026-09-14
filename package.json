@@ -43,7 +43,8 @@
     "CHANGELOG.md"
   ],
   "bin": {
-    "flume": "./bin/flume.js"
+    "flume": "./bin/flume.js",
+    "flume-harness": "./bin/flume-harness.js"
   },
   "scripts": {
     "flume": "node --import tsx src/cli.ts",
@@ -52,7 +53,7 @@
     "test:integration": "vitest run --mode integration",
     "smoke:install": "node scripts/smoke-install.mjs",
     "changelog": "node scripts/build-changelog.mjs",
-    "build": "tsc -p tsconfig.build.json && node scripts/pack-harness-prompts.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/pack-harness-assets.mjs",
     "prepack": "pnpm build",
     "prepublishOnly": "pnpm build"
   },

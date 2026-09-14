@@ -13,7 +13,7 @@
  *
  * The build runs once for the file, into a scratch dir rather than the
  * repo's own `dist/` so a parallel suite building there cannot race it. Its
- * two steps are the two `pnpm build` runs — `tsc`, then the prompt copy —
+ * two steps are the two `pnpm build` runs — `tsc`, then the asset copy —
  * each invoked as the manifest invokes it.
  */
 
@@ -28,8 +28,10 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import * as harnessSource from "../harness/index.ts";
+import { consumerIgnores } from "../harness/ignores.ts";
+import { protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
-import { resolvePackageJson } from "../src/cli.ts";
+import { resolvePackageJson } from "../src/selfPackage.ts";
 import { hermeticEnv, runCli, runNodeStreams } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -39,11 +41,11 @@ const TSC_BIN = fileURLToPath(
   new URL("../node_modules/typescript/bin/tsc", import.meta.url),
 );
 /** The build's second step, run here exactly as `pnpm build` runs it. */
-const PACK_PROMPTS = fileURLToPath(
-  new URL("../scripts/pack-harness-prompts.mjs", import.meta.url),
+const PACK_ASSETS = fileURLToPath(
+  new URL("../scripts/pack-harness-assets.mjs", import.meta.url),
 );
 /** The path `pnpm build`'s own script must name for this file to be judging it. */
-const PACK_PROMPTS_REL = "scripts/pack-harness-prompts.mjs";
+const PACK_ASSETS_REL = "scripts/pack-harness-assets.mjs";
 
 interface Manifest {
   readonly version: string;
@@ -63,14 +65,14 @@ let manifest: Manifest;
 /** Every file the build emitted, as a path relative to `pkgDir`. */
 let emitted: string[];
 /**
- * What the build's prompt-copy step reported.
+ * What the build's asset-copy step reported.
  *
- * Captured rather than thrown on, and bounded by the refusal in the prompt
- * case below, which asserts it before anything it wrote: a step that failed
- * should red the case that judges its output, not erase every unrelated case
+ * Captured rather than thrown on, and bounded by the refusals in the asset
+ * cases below, which assert it before anything it wrote: a step that failed
+ * should red the cases that judge its output, not erase every unrelated case
  * in this file behind a `beforeAll` stack.
  */
-let packPrompts: { stdout: string; stderr: string; code: number };
+let packAssets: { stdout: string; stderr: string; code: number };
 
 async function filesUnder(dir: string, prefix: string): Promise<string[]> {
   const out: string[] = [];
@@ -114,8 +116,9 @@ beforeAll(async () => {
     [TSC_BIN, "-p", "tsconfig.build.json", "--outDir", join(pkgDir, "dist")],
     { cwd: REPO_ROOT },
   );
-  // tsc emits no markdown, so the prompts arrive by the build's second step.
-  packPrompts = await runNodeStreams(REPO_ROOT, [PACK_PROMPTS, join(pkgDir, "dist")]);
+  // tsc emits no markdown, so the prompts and templates arrive by the
+  // build's second step.
+  packAssets = await runNodeStreams(REPO_ROOT, [PACK_ASSETS, join(pkgDir, "dist")]);
 
   // The tarball's non-emitted half, verbatim: the manifest whose map is
   // under test and the bins that resolve into the emit.
@@ -268,7 +271,7 @@ it("every shipped entry path resolves inside the layout the build tsconfig emits
  * only true in the emit if the build put the files there — and `tsc` emits no
  * markdown.
  *
- * Both sides are real. The writer is `scripts/pack-harness-prompts.mjs`, the
+ * Both sides are real. The writer is `scripts/pack-harness-assets.mjs`, the
  * same file `pnpm build` runs, over the same emit. The reader is the emitted
  * `promptPath()` itself, reached through Node's `exports` resolver in a
  * consumer that knows only the package name — so the case judges the
@@ -278,7 +281,7 @@ it("every shipped entry path resolves inside the layout the build tsconfig emits
  * constructs.
  */
 it("the build emits every prompt the package addresses beside dist/harness", async () => {
-  expect({ code: packPrompts.code, stderr: packPrompts.stderr }).toEqual({ code: 0, stderr: "" });
+  expect({ code: packAssets.code, stderr: packAssets.stderr }).toEqual({ code: 0, stderr: "" });
 
   // Non-vacuity: an empty address set would make every assertion below pass
   // over nothing at all.
@@ -329,27 +332,111 @@ it("the build emits every prompt the package addresses beside dist/harness", asy
   // that `pnpm build` reaches it at all. A `build` script that dropped the
   // step would otherwise leave every assertion above green over an emit no
   // release ever produces.
-  expect(manifest.scripts?.build ?? "").toContain(PACK_PROMPTS_REL);
+  expect(manifest.scripts?.build ?? "").toContain(PACK_ASSETS_REL);
 });
 
 /**
- * `files` decides what leaves the tarball, and the prompts are the one part
- * of the emit that is not a `tsc` output — a `files` list narrowed to the
- * compiled shapes, or a copy step aimed outside `dist`, would publish a
- * harness whose every prompt address is dead.
+ * The other half of the same emit hop: `flume-harness init` addresses the
+ * `PROTOCOL.md` it writes by a `templates/` hop beside its own module
+ * (`harness/init.ts`), so an emit without it is an adoption verb that fails
+ * at a consumer's first `flume-harness init` — after the state root exists.
+ *
+ * Read through the published surface rather than off the scratch tree: the
+ * reader is the emitted `protocolTemplatePath()` reached through Node's
+ * `exports` resolver, and the case compares the bytes it resolves against
+ * the checkout's template, so a copy step that reached the wrong directory
+ * or shipped stale bytes reds here.
+ */
+it("the build emits the PROTOCOL template flume-harness init writes from", async () => {
+  expect({ code: packAssets.code, stderr: packAssets.stderr }).toEqual({ code: 0, stderr: "" });
+
+  const probe = join(consumerDir, "template.mjs");
+  await writeFile(
+    probe,
+    `import { readFileSync, existsSync } from "node:fs";\n` +
+      `import { protocolTemplatePath } from "@dtmd/flume/harness";\n` +
+      `const address = protocolTemplatePath();\n` +
+      `process.stdout.write(JSON.stringify({ address, body: existsSync(address) ? readFileSync(address, "utf8") : null }));\n`,
+  );
+
+  const resolved = await runNodeStreams(consumerDir, [probe]);
+  expect(resolved.stderr).toBe("");
+  expect(resolved.code).toBe(0);
+
+  const addressed = JSON.parse(resolved.stdout) as { address: string; body: string | null };
+  const source = await readFile(protocolTemplatePath(), "utf8");
+
+  // Non-vacuity: the checkout's template has bytes to agree with, so the
+  // equality below cannot pass over two empty reads.
+  expect(source.length).toBeGreaterThan(0);
+  expect({
+    besideTheEmit: addressed.address.startsWith(join(pkgDir, "dist", "harness") + sep),
+    body: addressed.body,
+  }).toEqual({ besideTheEmit: true, body: source });
+});
+
+/**
+ * `bin.flume-harness` end to end over the published layout: the shim spawns
+ * `dist/harness/cli.js`, the verb resolves its template beside the emitted
+ * module, and a repository that had nothing comes out adopted
+ * (`spec/harness.md`, *Adoption and upgrade*).
+ *
+ * The one case that runs the bin rather than reading it. Every part is the
+ * shipped one — npm would link this same file, and the emit under it is the
+ * build's — so a shim aimed at the wrong entry, an emit missing the template,
+ * or a verb that resolves package content from a cwd all red here instead of
+ * at a consumer's first adoption.
+ */
+it("the flume-harness bin adopts an empty repository against the published emit", async () => {
+  const adopt = join(scratch, "adopt");
+  await mkdir(adopt, { recursive: true });
+
+  const run = await runNodeStreams(
+    adopt,
+    [join(pkgDir, "bin", "flume-harness.js"), "init"],
+    hermeticEnv(),
+  );
+  expect({ code: run.code, stderr: run.stderr }).toEqual({ code: 0, stderr: "" });
+
+  // The four artifacts *Adoption and upgrade* names, read off disk rather
+  // than off what the verb printed.
+  const stateRoot = join(adopt, ".flume");
+  expect(existsSync(stateRoot)).toBe(true);
+  const declaration = await readFile(join(stateRoot, "declaration.ts"), "utf8");
+  expect(declaration).toContain('"@dtmd/flume/harness"');
+  expect(await readFile(join(stateRoot, "PROTOCOL.md"), "utf8")).toBe(
+    (await readFile(protocolTemplatePath(), "utf8")).split("{{STATE_ROOT}}").join(".flume"),
+  );
+  const ignores = (await readFile(join(adopt, ".gitignore"), "utf8")).split(/\r?\n/);
+  expect(ignores).toEqual(expect.arrayContaining(consumerIgnores(".flume")));
+});
+
+/**
+ * `files` decides what leaves the tarball, and the harness assets — the
+ * prompts and the `PROTOCOL.md` template — are the part of the emit that is
+ * not a `tsc` output. A `files` list narrowed to the compiled shapes, or a
+ * copy step aimed outside `dist`, would publish a harness whose every asset
+ * address is dead.
+ *
+ * The asset set is read off the emit by what it is *not* — a compiled
+ * output — rather than by a list of directory names here, so an asset
+ * directory added to the package is covered by this case without it being
+ * touched (`.claude/rules/engineering.md`, *Derived state is computed*).
  *
  * npm's own packer is the reader: its ignore semantics (the `files`
  * allowlist, the always-excluded set, the negations) are not something a
  * prefix check by hand reproduces, and a hand-rolled one would agree with
  * itself rather than with the tool that builds the tarball.
  */
-it("the package's files allowlist covers the emitted harness prompts", async () => {
-  const emittedPrompts = emitted.filter((p) =>
-    p.startsWith(["dist", "harness", "prompts"].join("/") + "/"),
+it("the package's files allowlist covers the emitted harness assets", async () => {
+  const COMPILED = /\.(js|d\.ts|js\.map|d\.ts\.map)$/;
+  const emittedAssets = emitted.filter(
+    (p) => p.startsWith(["dist", "harness"].join("/") + "/") && !COMPILED.test(p),
   );
-  // Non-vacuity: with no emitted prompts the containment below holds for
-  // free, and the allowlist would go unjudged.
-  expect(emittedPrompts.length).toBe(PROMPT_NAMES.length);
+  // Non-vacuity: with no emitted assets the containment below holds for
+  // free, and the allowlist would go unjudged. Every prompt, plus at least
+  // the template `flume-harness init` writes from.
+  expect(emittedAssets.length).toBeGreaterThan(PROMPT_NAMES.length);
   expect(Array.isArray(manifest.files) && manifest.files.length > 0).toBe(true);
 
   // `--ignore-scripts`: `prepack` is `pnpm build`, which would rebuild into
@@ -365,7 +452,7 @@ it("the package's files allowlist covers the emitted harness prompts", async () 
   const tarball = new Set((packed?.files ?? []).map((f) => f.path));
   expect(tarball.size).toBeGreaterThan(0);
 
-  for (const prompt of emittedPrompts) {
-    expect({ prompt, packed: tarball.has(prompt) }).toEqual({ prompt, packed: true });
+  for (const asset of emittedAssets) {
+    expect({ asset, packed: tarball.has(asset) }).toEqual({ asset, packed: true });
   }
 });
