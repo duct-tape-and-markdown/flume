@@ -274,11 +274,18 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // package's, not the consumer's work, so a declaration that had to list
     // it would be the verbatim copy every consumer carries.
     writablePaths: buildWritablePaths,
-    // Same glob again as a channel: on a scoped tick the write allowance
-    // narrows to the entry's declared files, which never name a note, so
-    // without this the park the prompt promises would revert.
-    entryChannelPaths: unique([...(declaration.channelPaths ?? []), noteGlob]),
-    scopeWritesToEntry: declaration.scopeWritesToEntry,
+    // Same glob again as a channel, on a scoped tick only: there the write
+    // allowance narrows to the entry's declared files, which never name a
+    // note, so without it the park the prompt promises would revert. On an
+    // unscoped tick the fence above already admits the note, and the engine
+    // refuses a channel declared where nothing consults it
+    // (`spec/pending.md`, *The entry-scoped write guard is opt-in*).
+    ...(declaration.scopeWritesToEntry
+      ? {
+          scopeWritesToEntry: true,
+          entryChannelPaths: unique([...(declaration.channelPaths ?? []), noteGlob]),
+        }
+      : {}),
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [
       namedLinesGate(declaration, isPark),
     ]),

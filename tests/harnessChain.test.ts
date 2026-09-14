@@ -279,7 +279,13 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
   // Beside the consumer's fence, the package's own channel: the note a tick
   // parks into is the package's path, never a glob every consumer copies.
   expect(build.writablePaths).toContain(noteGlob);
-  expect(build.entryChannelPaths).toContain(noteGlob);
+  // The channel is declared only where a tick consults it — a scoped tick,
+  // whose allowance narrows to the entry's files. On an unscoped phase a
+  // declared channel is dead, and the engine refuses the chain at load.
+  expect(build.entryChannelPaths).toBeUndefined();
+  const scoped = phaseNamed(chainFor({ ...DECLARATION, scopeWritesToEntry: true }), BUILD_PHASE);
+  expect(scoped.scopeWritesToEntry).toBe(true);
+  expect(scoped.entryChannelPaths).toContain(noteGlob);
 
   // And the fence is build's alone — a plan slice writes plan artifacts and
   // whatever that slice declared, never build's paths.
