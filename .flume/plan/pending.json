@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "MATCHESANY-QUESTION-MARK-UNESCAPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/paths.ts",
+          "description": "globToRegex's escape class misses `?`"
+        },
+        {
+          "path": "tests/paths.test.ts",
+          "description": "the matchesAny literal-matching cases"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "globToRegex leaves `?` unescaped, so a declared path carrying one matches neither itself nor only itself",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "The entry-scoped write guard is opt-in, and off by default"
+    },
+    "tests": [
+      "a declared literal path containing `?` matches itself",
+      "a declared literal path containing `?` does not admit the path its preceding character dropped"
+    ],
+    "pins": [
+      "every regex metacharacter globToRegex escapes leaves a declared literal path matching only itself"
+    ],
+    "acceptance": "matchesAny reads every regex metacharacter in a declared path as a literal; tests/paths.test.ts green",
+    "notes": "Verified this tick through the real matchesAny: matchesAny(\"src/a?b.ts\", [\"src/a?b.ts\"]) is false and matchesAny(\"docs/fa.md\", [\"docs/faq?.md\"]) is true. `?` is the sole gap — the twelve other specials in the class hold. One character at src/paths.ts:94. Reached by the write fence, ship detection, queueFenceViolations and api.paths.matchesAny, so a fence both refuses its own path and admits an undeclared one."
+  }
+]
