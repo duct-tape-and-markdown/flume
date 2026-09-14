@@ -45,7 +45,8 @@ with `src/job.ts`, `src/Baton.ts`, `src/paths.ts` and `src/Dispatcher.ts`;
 `tests/loop-process-boundary.integration.test.ts` with `src/Baton.ts`,
 `src/Dispatcher.ts` and `tests/helpers/subprocess.ts`;
 `tests/tip-claim.integration.test.ts` with `src/Baton.ts` and
-`tests/helpers/subprocess.ts`.
+`tests/helpers/subprocess.ts`; `tests/cliJobVerbs.test.ts` with
+`src/cliJobVerbs.ts` and `tests/helpers/subprocess.ts`.
 Frontier remaining: `tests/Baton.test.ts`, `tests/Dispatcher.test.ts`,
-`tests/cli.test.ts`, `tests/cliHelp.test.ts`, `tests/cliJobVerbs.test.ts`,
-`tests/docComments.test.ts` and `tests/job.integration.test.ts`.
+`tests/cli.test.ts`, `tests/cliHelp.test.ts`, `tests/docComments.test.ts`
+and `tests/job.integration.test.ts`.
