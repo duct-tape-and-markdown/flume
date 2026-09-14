@@ -21,34 +21,68 @@ The package sits above the engine and below a consumer's declaration:
 ## What the package owns
 
 The package's chain factory returns a complete `Chain` from a declaration. It
-owns, and a consumer does not write:
+owns, and a consumer does not write, one subsection each:
 
-- **The phases.** Three plan slices — `plan-inbox`, `plan-derive`, `plan-sweep`,
-  one job each, selected by the first live window — and `build`, fanout, one
-  entry per worktree. A consumer enables or disables slices; it does not
-  re-author them.
-- **The prompts and their discipline.** Every prompt the package renders names
-  the engine's no-commit vocabulary from the engine's own declaration, never a
-  restated copy, so a rename in the engine cannot strand a prompt.
-- **The entry extension.** `summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
-  `notes`, with their caps and hints. A consumer may add fields; it may not
-  remove these.
-- **The judges.** `tests[]` lines are proven green on the merged tree and red on
-  the base; `pins[]` lines green only. The judge speaks to the consumer's test
-  runner through the runner interface below and never assumes vitest.
-- **The gates the discipline needs.** The `per` gate (the cited file is in the
-  gated commit and the section is a heading in it), the records gate (one file
-  per record, titled, under the byte cap, under the tick's own tag), the
-  clean-tree gate, and the pending gate wired to the consumer's fence.
-- **Records as one file each.** The inbox and build-note conventions of
-  `.flume/PROTOCOL.md`, *Records: one file each*, drained by the inbox slice.
-- **Plan state as declared state.** The derive and sweep cursors and the
-  continuation signal are fields the package reads through its own accessor,
-  never a line regexed out of prose.
-- **The default `handoff`.** Reads the engine's reported pickable set and
-  no-commit facts. A consumer overrides it by declaration, not by copying it.
-- **The runtime ignore set** for the consumer's state root, derived from the
-  engine's path record.
+### The phases
+
+Three plan slices — `plan-inbox`, `plan-derive`, `plan-sweep`,
+one job each, selected by the first live window — and `build`, fanout, one
+entry per worktree. A consumer enables or disables slices; it does not
+re-author them.
+
+
+### The prompts and their discipline
+
+Every prompt the package renders names
+the engine's no-commit vocabulary from the engine's own declaration, never a
+restated copy, so a rename in the engine cannot strand a prompt.
+
+
+### The entry extension
+
+`summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
+`notes`, with their caps and hints. A consumer may add fields; it may not
+remove these.
+
+
+### The judges
+
+`tests[]` lines are proven green on the merged tree and red on
+the base; `pins[]` lines green only. The judge speaks to the consumer's test
+runner through the runner interface below and never assumes vitest.
+
+
+### The gates the discipline needs
+
+The `per` gate (the cited file is in the
+gated commit and the section is a heading in it), the records gate (one file
+per record, titled, under the byte cap, under the tick's own tag), the
+clean-tree gate, and the pending gate wired to the consumer's fence.
+
+
+### Records as one file each
+
+The inbox and build-note conventions of
+`.flume/PROTOCOL.md`, *Records: one file each*, drained by the inbox slice.
+
+
+### Plan state as declared state
+
+The derive and sweep cursors and the
+continuation signal are fields the package reads through its own accessor,
+never a line regexed out of prose.
+
+
+### The default `handoff`
+
+Reads the engine's reported pickable set and
+no-commit facts. A consumer overrides it by declaration, not by copying it.
+
+
+### The runtime ignore set
+
+The ignore lines for the consumer's state root, derived from the engine's path
+record — a consumer never hand-maintains a list against engine-owned paths.
 
 ## What a consumer declares
 
@@ -102,7 +136,9 @@ is the same either way.
 
 ## Adoption and upgrade
 
-`flume init` (a verb of the package, not the engine) writes the declaration
+`flume-harness init` — a verb on the bin the package ships beside the engine's
+`flume`, so the engine's verb set stays closed and never imports the harness —
+writes the declaration
 skeleton, the state root, the ignore set, and `PROTOCOL.md`, and adds the
 package as the consumer's dependency. A consumer never copies a prompt, a slice,
 or a judge from another consumer; what it wants to change it declares.
