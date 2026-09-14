@@ -1,48 +1,5 @@
 [
   {
-    "tag": "PROMPT-PATH-RESOLVE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "both render sites resolve promptPath instead of joining it"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "the promptPath doc: relative beneath configDir, absolute as given"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "RenderOptions.promptFile doc — resolved, not joined"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the absolute address at both render sites"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Resolve phase.promptPath against configDir at both dispatcher render sites, so an absolute path from a package is an address rather than a path beneath the chain.",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "Chain residency — one chain per `.flume`"
-    },
-    "tests": [
-      "a singleton tick reads an absolute promptPath as the prompt file's address",
-      "a fanout tick reads an absolute promptPath as the prompt file's address"
-    ],
-    "pins": [
-      "a relative promptPath resolves beneath the chain's config directory"
-    ],
-    "acceptance": "A phase whose promptPath is absolute renders from that file at both the singleton and the fanout render site.",
-    "notes": "One call each at src/Dispatcher.ts:1934 and :3259; the two doc comments are engine surface reachable from the .d.ts and say join today. Cited at spec/chain.md, never spec/prompt.md *The render pipeline*: that section documents the inline-exec grammar by writing a live span, so PER_SECTION_TEXT walls the render (open-questions.md, *A promptArgs value is prompt syntax*). spec/cli.md:152 and spec/jobs.md:94 still say joins, the human's. HARNESS-PROMPTS and the factory wait on this."
-  },
-  {
     "tag": "NO-COMMIT-MODES-VALUE",
     "gate": {
       "kind": "open"
@@ -77,53 +34,6 @@
     "pins": [],
     "acceptance": "NO_COMMIT_MODES is exported from the package root, NoCommitMode is derived from it, and src/ holds no second list.",
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
-  },
-  {
-    "tag": "HARNESS-JUDGES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/judge.ts",
-          "description": "the tests[]/pins[] judge over the runner interface"
-        },
-        {
-          "path": "tests/harnessJudge.test.ts",
-          "description": "the refusal, the green-on-base fact, the pins lane, the empty case"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/index.ts",
-          "description": "export the judge and its verdict type"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-JUDGES.md",
-      "harness/entryExtension.ts",
-      "harness/index.ts",
-      "harness/judge.ts",
-      "tests/harnessJudge.test.ts"
-    ],
-    "summary": "Extract the tests[]/pins[] judge onto the runner interface — named lines green on the merged tree and red at the base, pins green only — reporting green-on-base as a fact.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The judges"
-    },
-    "tests": [
-      "a tests[] line no passing test carries is refused, naming the line",
-      "a tests[] line already green at the base is reported as a named fact",
-      "a pins[] line is judged on the merged tree and never run at the base",
-      "a judge over no named lines reports the empty case rather than a green verdict"
-    ],
-    "pins": [],
-    "acceptance": "harness/judge.ts judges an entry's tests[] and pins[] through a declared runner and hands back the per-line verdict, green-on-base included.",
-    "notes": "Drives harness/runner.ts and never names vitest; the runner cuts over with the judge that drives it (the cutover ruling). Twins: .flume/vitestJudge.ts and .flume/chain.ts:812. The reported fact is what retires .flume/chain.ts:632's regex over the gate's own message (engineering.md, *A fact the engine holds is reported, never rediscovered*)."
   },
   {
     "tag": "HARNESS-PROMPTS",
@@ -374,9 +284,7 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "PROMPT-PATH-RESOLVE",
         "HARNESS-PROMPTS",
-        "HARNESS-JUDGES",
         "HARNESS-GATES",
         "HARNESS-HANDOFF"
       ]
