@@ -44,8 +44,18 @@ const PLAN_SLICES = ["plan-inbox", "plan-derive", "plan-sweep"] as const;
  */
 export const BUILD_PHASE = "build" as const;
 
-/** Those three plus the one fanout phase. */
-const PHASES = [...PLAN_SLICES, BUILD_PHASE] as const;
+/**
+ * Those three plus the one fanout phase. Exported because the prompt
+ * addresses are keyed by it (`prompts.ts`): the set of phases the package
+ * constructs and the set of prompts it ships are one fact, and a second list
+ * beside this one is a phase whose prompt nothing addresses
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+export const PHASES = [...PLAN_SLICES, BUILD_PHASE] as const;
+
+/** One phase the package constructs. */
+export type HarnessPhase = (typeof PHASES)[number];
 
 /**
  * `{ [key]: value.optional() }` over a fixed key list — the shape `fence`,

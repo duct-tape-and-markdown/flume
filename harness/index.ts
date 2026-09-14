@@ -67,6 +67,14 @@ export {
 } from "./gates.js";
 
 export {
+  PROMPT_NAMES,
+  promptPath,
+  sharedPromptArgs,
+  type PromptName,
+  type SharedPromptArgsInput,
+} from "./prompts.js";
+
+export {
   RECORD_MAX_BYTES,
   notePath,
   notesDir,
