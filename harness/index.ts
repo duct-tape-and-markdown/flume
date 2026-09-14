@@ -19,6 +19,16 @@ export {
   type VitestRunnerOptions,
 } from "./vitestRunner.js";
 
+export {
+  judgeNamedLines,
+  type JudgeOutcome,
+  type JudgeRequest,
+  type JudgeVerdict,
+  type LineLane,
+  type LineState,
+  type LineVerdict,
+} from "./judge.js";
+
 export { consumerIgnores } from "./ignores.js";
 
 export {
