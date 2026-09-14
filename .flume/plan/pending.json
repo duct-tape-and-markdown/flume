@@ -8,19 +8,23 @@
         {
           "path": "tests/examples.integration.test.ts",
           "description": "build the chain per-test from the fixture repo's roots; drop the api.paths disclaimer"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "same for the ladder drive's cascadeChain (module scope, l.61) — it ticks at fx.repo (l.556); carries the pin"
         }
       ]
     },
-    "summary": "Build the backlog-groomer chain under test from the roots its Dispatcher ticks against, not from this repo's",
+    "summary": "Build the example chains under test from the roots their Dispatcher ticks against, not from this repo's",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A seam gate reads what the real writer wrote"
     },
-    "tests": [
-      "the backlog-groomer chain under test is built with the roots the dispatcher ticks against"
+    "tests": [],
+    "pins": [
+      "the cascade chain the ladder drive ticks is built from the fixture repo's roots"
     ],
-    "pins": [],
-    "acceptance": "The factory call moves out of module scope: repoRoot/flumeDir come from the fixture repo each test makes, configDir stays examples/. The EXAMPLE_PATHS constant and its 'does not read api.paths yet' disclaimer are gone.",
-    "notes": "Module-scope EXAMPLE_PATHS hands the chain this repo's repoRoot/.flume while all three ticks run in a tmpdir fixture. FlumeApi.paths declares them 'by reference — the identity-same values the dispatcher was constructed with'; the file's own header claims it builds the chain 'the same way a real tick builds it'. Neither holds, and the gap is held by a prose 'yet' with no named trigger."
+    "acceptance": "The integration file builds its chain per-test from the fixture repo's roots and its 'does not read api.paths yet' disclaimer is gone; the ladder drive in tests/examples.test.ts ticks a cascadeChain built from the same roots it hands its Dispatcher. Pure shape reads keep module-scope EXAMPLE_PATHS — they tick nothing.",
+    "notes": "Re-scoped from the 2026-09-14 park. The fix was verified (5/5 integration tests pass) but its tests[] line was unjudgeable twice over: the gate reads the fast lane only, and a tests/-only entry has no pre-fix tree (red-on-base lays the merged bytes of the files holding the named tests over the base). So the line moves to pins[] and homes in the fast lane, where the same defect sits."
   }
 ]

@@ -222,7 +222,7 @@ first when the flag goes unset. Parked rather than filed because both edits are
 human-only — `spec/`, `.flume/PROTOCOL.md` and `.flume/chain.ts` are outside every
 phase lane.
 
-## A `tests[]` line homed in the integration lane is invisible to the vitest gate (NEEDS AMENDMENT)
+## Two shapes of `tests[]` line the vitest gate cannot judge, and nothing warns at plan time (NEEDS AMENDMENT)
 
 Drained from `CASCADE-SHOULDRUN-FROM-DISK`'s park (2026-09-11 build wave); verified
 on disk. The build gate runs `vitest run --reporter=json` (`.flume/chain.ts:728`) —
@@ -239,11 +239,24 @@ build's call" — true, and the constraint the sentence omits is that the call i
 bounded to the fast lane. The `pendingGate` cannot check it: the file does not exist
 when plan derives.
 
-**Recommend** one clause in that paragraph — a `tests[]` line names a behavior a
-**fast-lane** test can carry; work whose only honest home is the integration lane
-declares its named behavior over the fast-lane surface it exposes, or carries no
-`tests[]` line at all. No fork, no mechanism, one `chore(flume):`. Parked only
-because `.flume/prompts/**` is outside every phase lane.
+**A second shape, same paragraph, drained from
+`EXAMPLES-INTEGRATION-API-PATHS-ARE-THE-TICKS`'s park (2026-09-14 build wave);
+verified on disk.** An entry whose `files` are *all* test files can carry no
+judgeable `tests[]` line either, in any lane. Red-on-base checks the base out
+detached and lays the merged commit's bytes for **the files holding the named
+tests** over it (`.flume/vitestJudge.ts`, *red on the base*) — for a tests-only
+entry that is the entire diff, so the named test passes at the base by
+construction and the gate reverts with "already pass on the base". The
+condition is not the lane but the overlap: a `tests[]` line is judgeable only
+when the entry also changes a file that is *not* among the ones holding it.
+
+**Recommend** one clause in that paragraph covering both — a `tests[]` line
+names a behavior a **fast-lane** test can carry **and** that some non-test file
+in the same entry changes; work with neither property (an integration-only
+home, or a tests-only diff) declares its named behavior over the fast-lane
+surface it exposes, moves the line to `pins[]`, or carries no `tests[]` line at
+all. No fork, no mechanism, one `chore(flume):`. Parked only because
+`.flume/prompts/**` is outside every phase lane.
 
 **Reported independently from the field** (inbox, 2026-09-11, human), which
 names the alternative and rejects it: the `vitest` gate could run the
@@ -252,7 +265,8 @@ per merge, paid on every such entry to buy a lane the fast one already
 exposes. The prose clause above stays the right default.
 
 I have re-homed every `CASCADE-*` entry onto `tests/examples.test.ts`
-meanwhile, so the queue does not re-hit this wall while the wording is ruled.
+meanwhile, and moved the parked entry's line to `pins[]`, so the queue does not
+re-hit either wall while the wording is ruled.
 
 ## Two spec sentences still name unexported helpers, after the ruling that removed three (NEEDS AMENDMENT)
 
