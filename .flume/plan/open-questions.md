@@ -977,6 +977,27 @@ copying across consumers is the detector for a missing surface
 module-scope requirement is also why every surveyed chain resolves its roots
 before the factory instead of reading `api.paths`.
 
+**Amended (drained from `FLUMEAPI-REPORTS-THE-WORKTREE-REGISTRY`'s note): the
+read end is shut too, and the shipped `.d.ts` points into it.**
+`FlumePaths.flumeDir`'s doc comment (`src/flumeApi.ts:71-80`) tells a chain
+that "`worktreesBase` (`src/paths.ts`) is the one resolution that says where a
+worktree lands — resolve against it, never against this root", and
+`src/index.ts` exports no such symbol; the package's `exports` map reaches it
+under no spelling. That comment ships — `FlumeApi.paths` is public surface, so
+it is hover text a chain author reads (`.claude/rules/engineering.md`,
+*Narration is the ladder's bottom rung*, the `.d.ts` carve-out) — which makes
+it a public directive naming an unreachable helper. In-repo `.flume/chain.ts`
+imports the function from `../src/paths.ts` and declares the gap at the site
+(`:789-793`: "a downstream chain would need it on `FlumeApi.paths`, filed the
+day one asks"). Net: a chain that never sets `FLUME_WORKTREES_DIR` cannot
+learn the base at all — the only chains that know where worktrees land are the
+ones that chose the location themselves.
+
+Same decision at the other end, not a sibling: under the first option the base
+moves somewhere a chain still cannot name, under the second the chain supplies
+it and needs no read, and only under the third does "expose it" become the
+whole fix. Rule the two ends together.
+
 Options:
 
 - **Default outside the checkout** — a sibling of the git common dir rather
@@ -988,7 +1009,9 @@ Options:
   site raises against `Chain.worktreesDir`. The chain still chooses; what it
   stops needing is an env var set before the engine's own module loads.
 - **Keep, and document the module-scope idiom** in `docs/CHAIN-AUTHORING.md`,
-  so the block is written once correctly rather than copied.
+  so the block is written once correctly rather than copied — and, on this
+  option alone, export the base, since documenting an idiom leaves the `.d.ts`
+  directing a chain at a symbol the package does not ship.
 
 Parked because closing it overturns a decision the site declares deliberate,
 which plan does not re-open on its own
