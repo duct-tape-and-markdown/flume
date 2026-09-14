@@ -71,11 +71,6 @@ direction or the section's readability, and leaves exactly the spec↔code pair
 the human already maintains. Parked rather than filed because the choice is
 among three homes, not one mechanical fix.
 
-The loose end this question carried — this repo's `.gitignore:11` ignoring
-`.flume/last-tick.json`, a file no tick writes — now rides
-`HARNESS-RUNTIME-IGNORES`, whose derived consumer-root set names no such line.
-That entry adds no fourth copy: it derives from the engine's path record.
-
 ## `docs/INTENT.md`'s quality-lenses decision has a fired arming condition (PARKED)
 
 Drained from `INTENT-DOC-RECONCILED`'s note; verified on disk. The
@@ -702,3 +697,80 @@ are both outside every phase lane:
 alongside it if a second rung is wanted: the two say one thing at the two
 surfaces, and neither is paid per rotation. Held here rather than filed because
 both files are human-held.
+
+## The package places `sessions/` and derives an ignore set that excludes it (NEEDS AMENDMENT)
+
+Drained from `HARNESS-PHASES`'s note. `harness/chain.ts` builds every phase's
+agent as `withTerminalRenderer(withSessionCapture(...))` teeing into
+`<stateRoot>/sessions/` — the one path the *package* places that the engine
+does not. `consumerIgnores` (`harness/ignores.ts`) filters `RUNTIME_IGNORES`
+by `STATE_ROOT_NAMES`, so a package-owned name is excluded by construction,
+and `flume-harness init` writes that set into the consumer's `.gitignore`. An
+adopted repo carries a permanently untracked dir after its first tick. No gate
+catches it: `cleanTreeGate` drops `??` paths outside the fence, and this one
+is outside every fence.
+
+This repo already hand-adds the line (`.gitignore:6`), and
+`tests/harnessIgnores.test.ts` carves it out as `CONSUMER_OWNED` — a comment
+still attributing it to `.flume/chain.ts`, which `HARNESS-PHASES` made false.
+Both are the hand-maintained copy the section exists to end.
+
+`spec/harness.md`, *The runtime ignore set*, states the source: "derived from
+the engine's path record — a consumer never hand-maintains a list against
+engine-owned paths." The rationale covers a package-owned path; the source
+clause does not. The fork:
+
+- **Widen the source to the package's placements too** — the set becomes what
+  the consumer's state root needs, engine names plus the package's own
+  (`SESSIONS_REL`, today module-private to `harness/chain.ts`; it moves to a
+  module `ignores.ts` can import). Amendment: the source clause gains "and the
+  package's own". Then `.gitignore:6` and `CONSUMER_OWNED` both delete, and
+  the seam test's two directions close over the whole footprint.
+- **Drop session capture from the package's default agent**, leaving it to an
+  agent seam the declaration does not have (`agents.<phase>` carries `model`
+  and `extraArgs`, not decorators). Against it: `harness/` is where flume's
+  opinion lives (CLAUDE.md, `spec/harness.md` *Where it lives*), the package
+  states this one deliberately, and this arm buys a new declaration surface
+  with no asking consumer.
+- **Accept the hand-added line** — every consumer adds it after reading a
+  release note. The status quo, and precisely what the section's rationale
+  argues against.
+
+**Recommend the first.** `spec/jobs.md`, *Runtime ignores*, already rules that
+"the runtime owns its own layout, and only that. Chain-convention directories
+(`sessions/`) are the seed's to add" — the package *is* that seed for an
+adopted repo, and it is the thing writing the file. Held here because the
+source clause is a spec sentence and both arms change what every consumer gets.
+
+## The harness package refuses a state root the engine supports (NEEDS AMENDMENT)
+
+Also from `HARNESS-PHASES`'s note. `harnessChain` throws when
+`computeStateRootRel` returns `undefined` — a state root resolved outside the
+repository — because every discipline mechanic it wires addresses a path some
+commit must hold: the queue the `per` gate reads at a ref, the record a slice
+drains, the note build parks into, `shipped`'s own read-back. The refusal is
+right, and `spec/harness.md` states no such precondition; the code cites
+*Records as one file each*, which says only that the package carries the
+`PROTOCOL.md` record conventions.
+
+The sharper half: the engine **supports** that configuration, in four places —
+`spec/chain.md` ("A relocated state root is expected to live outside the
+working tree"), `spec/cli.md:206`, `spec/pending.md:390`, `spec/worktrees.md:317`,
+each spelling its own degraded-but-declared behavior. So the package narrows a
+configuration the engine ships, and no section says so. A consumer that
+relocates its root discovers it as a load-time throw.
+
+No fork on the behavior — refusing at load beats a chain whose every tick
+silently skips its own gates (`.claude/rules/engineering.md`, *Loud or
+nothing*). What is open is where the sentence lands and how wide it reads:
+
+- **A clause in *What a consumer declares*** — the declaration's unstated
+  precondition, beside the fields it validates.
+- **Its own subsection under *What the package owns***, stating that the
+  package's discipline is committed-path discipline and naming the engine
+  configurations it therefore excludes. Wider, and it is the one that would
+  also carry any future precondition of the same kind.
+
+**Recommend the second**, cross-referenced from `spec/chain.md`'s relocated-root
+bullet so the engine side names its own exception. Held here because it is a
+spec sentence about a shipped behavior, and the corpus states current truth.
