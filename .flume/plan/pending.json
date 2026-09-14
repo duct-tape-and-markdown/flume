@@ -79,56 +79,6 @@
     "notes": "src/Prompt.ts:57 is the union today, with no runtime value a prompt or a chain can name. What the package's prompts name the modes from, so an engine rename cannot strand one; .flume/prompts/plan-inbox.md:33 spells them in prose and is the chain-side copy the cutover deletes."
   },
   {
-    "tag": "HARNESS-RUNTIME-IGNORES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/ignores.ts",
-          "description": "the consumer state-root ignore lines, derived from the engine's path record"
-        },
-        {
-          "path": "tests/harnessIgnores.test.ts",
-          "description": "the derivation, and the derived set driven against this repo's .gitignore"
-        }
-      ],
-      "edit": [
-        {
-          "path": ".gitignore",
-          "description": "drop the retired .flume/last-tick.json line the derived set does not name"
-        },
-        {
-          "path": "harness/index.ts",
-          "description": "export the derived ignore set"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/HARNESS-RUNTIME-IGNORES.md",
-      ".gitignore",
-      "harness/ignores.ts",
-      "harness/index.ts",
-      "tests/harnessIgnores.test.ts"
-    ],
-    "summary": "Derive the consumer's state-root ignore lines from the engine's path record, and drive that output against this repo's .gitignore so a retired runtime name cannot linger.",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The runtime ignore set"
-    },
-    "tests": [
-      "the consumer ignore set prefixes every engine runtime path with the declared state root",
-      "the consumer ignore set names no path outside the engine's path record",
-      "this repository's .gitignore carries no state-root line the derived set does not name"
-    ],
-    "pins": [],
-    "acceptance": "harness/ignores.ts derives .flume's ignore lines from the engine's path record and a test drives that output against this repo's .gitignore.",
-    "notes": "Imports src/paths.ts directly, as harness/vitestRunner.ts does, so src/index.ts widens for no one. Retires .gitignore's .flume/last-tick.json. Not RUNTIME_IGNORES (src/job.ts) — that is the job dir's set and stays; this is the consumer root's, derived rather than copied, so it is not a fourth copy of the list parked in open-questions.md."
-  },
-  {
     "tag": "HARNESS-CITE-RESOLVER",
     "gate": {
       "kind": "open"
@@ -410,10 +360,7 @@
   {
     "tag": "HARNESS-INIT-BIN",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "HARNESS-RUNTIME-IGNORES"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
