@@ -12,7 +12,9 @@
  * ship green, which is exactly the change this file exists to hold.
  *
  * The build runs once for the file, into a scratch dir rather than the
- * repo's own `dist/` so a parallel suite building there cannot race it.
+ * repo's own `dist/` so a parallel suite building there cannot race it. Its
+ * two steps are the two `pnpm build` runs — `tsc`, then the prompt copy —
+ * each invoked as the manifest invokes it.
  */
 
 import { execFile } from "node:child_process";
@@ -26,6 +28,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import * as harnessSource from "../harness/index.ts";
+import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/cli.ts";
 import { hermeticEnv, runCli, runNodeStreams } from "./helpers/subprocess.ts";
 
@@ -35,12 +38,20 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const TSC_BIN = fileURLToPath(
   new URL("../node_modules/typescript/bin/tsc", import.meta.url),
 );
+/** The build's second step, run here exactly as `pnpm build` runs it. */
+const PACK_PROMPTS = fileURLToPath(
+  new URL("../scripts/pack-harness-prompts.mjs", import.meta.url),
+);
+/** The path `pnpm build`'s own script must name for this file to be judging it. */
+const PACK_PROMPTS_REL = "scripts/pack-harness-prompts.mjs";
 
 interface Manifest {
   readonly version: string;
   readonly main?: unknown;
   readonly types?: unknown;
   readonly exports?: unknown;
+  readonly files?: unknown;
+  readonly scripts?: Record<string, string>;
 }
 
 let scratch: string;
@@ -51,6 +62,15 @@ let consumerDir: string;
 let manifest: Manifest;
 /** Every file the build emitted, as a path relative to `pkgDir`. */
 let emitted: string[];
+/**
+ * What the build's prompt-copy step reported.
+ *
+ * Captured rather than thrown on, and bounded by the refusal in the prompt
+ * case below, which asserts it before anything it wrote: a step that failed
+ * should red the case that judges its output, not erase every unrelated case
+ * in this file behind a `beforeAll` stack.
+ */
+let packPrompts: { stdout: string; stderr: string; code: number };
 
 async function filesUnder(dir: string, prefix: string): Promise<string[]> {
   const out: string[] = [];
@@ -94,6 +114,8 @@ beforeAll(async () => {
     [TSC_BIN, "-p", "tsconfig.build.json", "--outDir", join(pkgDir, "dist")],
     { cwd: REPO_ROOT },
   );
+  // tsc emits no markdown, so the prompts arrive by the build's second step.
+  packPrompts = await runNodeStreams(REPO_ROOT, [PACK_PROMPTS, join(pkgDir, "dist")]);
 
   // The tarball's non-emitted half, verbatim: the manifest whose map is
   // under test and the bins that resolve into the emit.
@@ -237,5 +259,113 @@ it("every shipped entry path resolves inside the layout the build tsconfig emits
       env: hermeticEnv(),
     });
     expect(stdout.trim()).toBe(manifest.version);
+  }
+});
+
+/**
+ * The emitted half of `spec/harness.md`'s *Where it lives*: `harness/prompts.ts`
+ * addresses each prompt by a `prompts/` hop beside its own module, which is
+ * only true in the emit if the build put the files there — and `tsc` emits no
+ * markdown.
+ *
+ * Both sides are real. The writer is `scripts/pack-harness-prompts.mjs`, the
+ * same file `pnpm build` runs, over the same emit. The reader is the emitted
+ * `promptPath()` itself, reached through Node's `exports` resolver in a
+ * consumer that knows only the package name — so the case judges the
+ * addresses a published install computes, rather than a spelling of the emit
+ * layout by the tester's hand. Nothing here lists the prompts: the set comes
+ * off `PROMPT_NAMES`, which is derived from the phase list the package
+ * constructs.
+ */
+it("the build emits every prompt the package addresses beside dist/harness", async () => {
+  expect({ code: packPrompts.code, stderr: packPrompts.stderr }).toEqual({ code: 0, stderr: "" });
+
+  // Non-vacuity: an empty address set would make every assertion below pass
+  // over nothing at all.
+  expect(PROMPT_NAMES.length).toBeGreaterThan(0);
+
+  const probe = join(consumerDir, "prompts.mjs");
+  await writeFile(
+    probe,
+    `import { readFileSync, existsSync } from "node:fs";\n` +
+      `import { PROMPT_NAMES, promptPath } from "@dtmd/flume/harness";\n` +
+      `process.stdout.write(JSON.stringify(PROMPT_NAMES.map((name) => {\n` +
+      `  const address = promptPath(name);\n` +
+      `  return { name, address, body: existsSync(address) ? readFileSync(address, "utf8") : null };\n` +
+      `})));\n`,
+  );
+
+  const resolved = await runNodeStreams(consumerDir, [probe]);
+  expect(resolved.stderr).toBe("");
+  expect(resolved.code).toBe(0);
+
+  const addressed = JSON.parse(resolved.stdout) as {
+    name: string;
+    address: string;
+    body: string | null;
+  }[];
+  // The emit's own notion of which prompts exist, against the checkout's:
+  // a phase whose prompt the build failed to carry over shows up here as a
+  // name the emit addresses and cannot read.
+  expect(addressed.map((p) => p.name).sort()).toEqual([...PROMPT_NAMES].sort());
+
+  const emitRoot = join(pkgDir, "dist");
+  for (const { name, address, body } of addressed) {
+    const source = await readFile(promptPath(name as (typeof PROMPT_NAMES)[number]), "utf8");
+    expect({
+      name,
+      besideTheEmit: address.startsWith(join(emitRoot, "harness") + sep),
+      body,
+    }).toEqual({ name, besideTheEmit: true, body: source });
+  }
+
+  // And the other direction: the emitted directory holds no prompt the
+  // package stopped addressing, which a copy that merges instead of
+  // replacing would leave behind on a rename.
+  const emittedPrompts = await readdir(join(emitRoot, "harness", "prompts"));
+  expect(emittedPrompts.sort()).toEqual(PROMPT_NAMES.map((name) => `${name}.md`).sort());
+
+  // This file ran the copy step directly, so one thing is still unjudged:
+  // that `pnpm build` reaches it at all. A `build` script that dropped the
+  // step would otherwise leave every assertion above green over an emit no
+  // release ever produces.
+  expect(manifest.scripts?.build ?? "").toContain(PACK_PROMPTS_REL);
+});
+
+/**
+ * `files` decides what leaves the tarball, and the prompts are the one part
+ * of the emit that is not a `tsc` output — a `files` list narrowed to the
+ * compiled shapes, or a copy step aimed outside `dist`, would publish a
+ * harness whose every prompt address is dead.
+ *
+ * npm's own packer is the reader: its ignore semantics (the `files`
+ * allowlist, the always-excluded set, the negations) are not something a
+ * prefix check by hand reproduces, and a hand-rolled one would agree with
+ * itself rather than with the tool that builds the tarball.
+ */
+it("the package's files allowlist covers the emitted harness prompts", async () => {
+  const emittedPrompts = emitted.filter((p) =>
+    p.startsWith(["dist", "harness", "prompts"].join("/") + "/"),
+  );
+  // Non-vacuity: with no emitted prompts the containment below holds for
+  // free, and the allowlist would go unjudged.
+  expect(emittedPrompts.length).toBe(PROMPT_NAMES.length);
+  expect(Array.isArray(manifest.files) && manifest.files.length > 0).toBe(true);
+
+  // `--ignore-scripts`: `prepack` is `pnpm build`, which would rebuild into
+  // the repo's own `dist/` and race a parallel suite. win32 needs a shell to
+  // invoke `npm.cmd`; the args are fixed and carry nothing user-supplied.
+  const { stdout } = await exec("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+    cwd: pkgDir,
+    env: hermeticEnv(),
+    shell: process.platform === "win32",
+    maxBuffer: 16 << 20,
+  });
+  const [packed] = JSON.parse(stdout) as { files: { path: string }[] }[];
+  const tarball = new Set((packed?.files ?? []).map((f) => f.path));
+  expect(tarball.size).toBeGreaterThan(0);
+
+  for (const prompt of emittedPrompts) {
+    expect({ prompt, packed: tarball.has(prompt) }).toEqual({ prompt, packed: true });
   }
 });
