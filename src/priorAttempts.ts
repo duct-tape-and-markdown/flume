@@ -260,16 +260,26 @@ export class PriorAttemptStore {
    * {@link read}, whose `slugify` is idempotent on it — and only the map key
    * comes off the record.
    *
-   * An absent or unreadable directory reads as no records, the same "no
-   * prior" degrade {@link read} already applies per file.
+   * Absent (`ENOENT`) is the only silent reading: nothing written is no
+   * records. A directory that is present but cannot be enumerated — a plain
+   * file sitting at the path (`ENOTDIR`), permission denied, a path too long
+   * for the platform — escapes, the same ENOENT-vs-other split
+   * `countFrictionFiles` (src/job.ts) gives a friction dir. This map feeds
+   * every `TickContext.priorAttempts` a tick's hooks read, so an unreachable
+   * directory reported as an empty map tells every `shouldRun` "no prior
+   * attempt" and silently resets the repeated-failure count spec/loop.md
+   * "Repeated identical failures" keeps — the same refusal {@link read}
+   * makes per file, where the degrade to "no prior" is only ever for a
+   * record that was *read* and found garbled.
    */
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const dir = priorAttemptsDir(this.flumeDir);
     let entries: Dirent[];
     try {
       entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
-    } catch {
-      return new Map();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+      throw err;
     }
     const out = new Map<string, PriorAttempt>();
     for (const e of entries) {

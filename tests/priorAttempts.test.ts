@@ -178,6 +178,37 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     expect(existsSync(p)).toBe(true);
     await expect(store.read(key)).resolves.toBeUndefined();
   });
+
+  it("readAll refuses when the prior-attempts dir is present but unreadable", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const dir = priorAttemptsDir(flumeDir);
+    await mkdir(dirname(dir), { recursive: true });
+    // ENOTDIR — present at the path the store enumerates, unenumerable. Not
+    // a permission bit: a root-run test would bypass that.
+    await writeFile(dir, "not a directory");
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): something really occupies the path `readAll`
+    // reads, and the readdir that decides really does fail on it.
+    expect(existsSync(dir)).toBe(true);
+    expect((await lstat(dir)).isDirectory()).toBe(false);
+
+    // Reported as an empty map this would tell every `shouldRun` "no prior
+    // attempt" — the repeated-failure signal reset by an unreachable dir.
+    await expect(store.readAll()).rejects.toThrow(/ENOTDIR/);
+  });
+
+  it("readAll reads an absent prior-attempts dir as no records", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // Vacuity pin: the ENOENT leg is the one under test, so nothing may sit
+    // at the path.
+    expect(existsSync(priorAttemptsDir(flumeDir))).toBe(false);
+
+    expect((await store.readAll()).size).toBe(0);
+  });
 });
 
 describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.md`, 'The fix lands at the mechanism')", () => {
