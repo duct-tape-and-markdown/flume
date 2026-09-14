@@ -24,6 +24,19 @@ export interface AgentInvocation {
   cwd: string;
   /** Fully-rendered prompt (substitution + inline-exec already applied). */
   prompt: string;
+  /**
+   * Tag of the provisioned entry this invocation is running — the same fact
+   * the tick verdict's `TickVerdictInvocation.tag` row carries, on the one
+   * surface a decorator can read. A decorator is composed from a `Phase.agent`
+   * getter that holds no `TickContext`, so this is the only place the tag is
+   * reachable without re-parsing the rendered prompt.
+   *
+   * Set under fanout, absent under singleton — which provisions no entry and
+   * so has no tag to state, the same rule the verdict row follows. Not the
+   * worktree key: `WorktreeSetupContext.entryTag` falls back to the phase
+   * name under singleton, where this field stays absent.
+   */
+  entryTag?: string;
   /** Optional abort signal for cancellation. */
   signal?: AbortSignal;
   /**

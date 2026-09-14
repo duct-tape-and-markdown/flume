@@ -930,6 +930,26 @@ const agent = withTerminalRenderer(
 Order matters: capture innermost so the file holds the full NDJSON;
 render outermost so the terminal sees the human-readable summary.
 
+### What a decorator can read off the invocation
+
+A decorator is composed once, from a `Phase.agent` getter that holds no
+`TickContext`, so the `AgentInvocation` it receives is the only thing it
+knows about the run. Beyond `cwd` and `prompt`, that shape carries:
+
+- `entryTag` — the tag of the provisioned entry this invocation is running.
+  Set under `concurrency: "fanout"`, absent under `"singleton"`, which
+  provisions no entry and so has no tag to state. It is the same fact the
+  tick verdict's per-invocation `tag` row carries, handed to the decorator
+  instead of left only on disk; read it rather than recovering the tag by
+  pattern-matching the rendered `prompt`. Note that it is *not* the worktree
+  key `setupWorktree` receives as `ctx.entryTag`, which falls back to the
+  phase name under singleton.
+- `extraEnv` — whatever this tick's `setupWorktree` returned.
+- `timeoutMs` / `signal` — the per-invocation cap the provider must honor.
+
+A decorator that needs a fact none of these carry is a missing engine
+surface, not a chain problem — file it rather than re-deriving it.
+
 ### Per-phase agents
 
 `Phase.agent` assigns an agent to one phase. Per-tick resolution is

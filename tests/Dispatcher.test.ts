@@ -1105,6 +1105,119 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
   }, 20_000);
 });
 
+/**
+ * AGENT-INVOCATION-CARRIES-ENTRY-TAG — the entry tag reaches the agent seam.
+ * A decorator (`withTerminalRenderer`, a chain's own metrics wrapper) is
+ * composed from a `Phase.agent` getter that holds no `TickContext`, so
+ * `AgentInvocation` is the only surface it can read the running entry off.
+ * Without the field the tag is recoverable only by regexing the rendered
+ * prompt the harness authored — a chain restating a fact the engine holds
+ * (`.claude/rules/engineering.md`, "A fact the engine holds is reported").
+ */
+describe("Dispatcher — the agent invocation states which entry it is running", () => {
+  it("a fanout agent invocation carries the provisioned entry's tag", async () => {
+    const entries = [
+      makeEntry("TAG-CARRY-A", ["src/a.ts"]),
+      makeEntry("TAG-CARRY-B", ["src/b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    // Keyed by the worktree slug, which is derived from the tag by a rule
+    // this field exists to replace — so a field wired to the wrong entry
+    // shows up as a slug/tag mismatch rather than passing on a bare count.
+    const seenTagBySlug: Record<string, string | undefined> = {};
+    const agent: Agent = {
+      name: "entry-tag-capture",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        seenTagBySlug[slug] = inv.entryTag;
+        await writeAndCommit(
+          inv.cwd,
+          slug === "tag-carry-a" ? "src/a.ts" : "src/b.ts",
+          `${slug}\n`,
+          `build(${inv.entryTag}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pin: both entries reached `agent.invoke` at all, so the tag
+    // assertions below cannot pass over a wave that never ran.
+    expect(Object.keys(seenTagBySlug).sort()).toEqual([
+      "tag-carry-a",
+      "tag-carry-b",
+    ]);
+    expect(seenTagBySlug["tag-carry-a"]).toBe("TAG-CARRY-A");
+    expect(seenTagBySlug["tag-carry-b"]).toBe("TAG-CARRY-B");
+    expect(outcome.result?.shippedTags?.slice().sort()).toEqual([
+      "TAG-CARRY-A",
+      "TAG-CARRY-B",
+    ]);
+  }, 20_000);
+
+  it("a singleton agent invocation carries no entry tag", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let invoked = false;
+    let seenEntryTag: string | undefined;
+    let seenKeys: string[] = [];
+    const agent: Agent = {
+      name: "singleton-entry-tag-capture",
+      async invoke(inv) {
+        invoked = true;
+        seenEntryTag = inv.entryTag;
+        seenKeys = Object.keys(inv);
+        await writeAndCommit(
+          inv.cwd,
+          "src/plan-output.ts",
+          "ok\n",
+          "plan: derive",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pin: the agent ran, so the absence below is the dispatcher's
+    // choice and not an invocation that never happened.
+    expect(invoked).toBe(true);
+    expect(outcome.result?.committed).toBe(true);
+    // A singleton tick provisions no entry, so there is no tag to state —
+    // absent rather than the phase name the worktree key falls back to
+    // (`WorktreeSetupContext.entryTag`), the same rule the verdict's
+    // `TickVerdictInvocation.tag` row follows.
+    expect(seenEntryTag).toBeUndefined();
+    expect(seenKeys).not.toContain("entryTag");
+  }, 20_000);
+});
+
 describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md 'The pending queue')", () => {
   /**
    * Commits a pending queue's raw content at an arbitrary flumeDir-relative

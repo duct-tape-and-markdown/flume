@@ -3277,6 +3277,7 @@ export class Dispatcher {
       agent,
       tickTimeoutMs,
       extraEnv,
+      entry.tag,
     );
     const postHead = await git.revParse(wt.path);
     let committed = postHead !== preHead;
@@ -3561,6 +3562,12 @@ export class Dispatcher {
     agent: Agent,
     tickTimeoutMs: number | undefined,
     extraEnv?: Record<string, string>,
+    /**
+     * The provisioned entry's tag under fanout; omitted by the singleton
+     * caller, which has no entry — the same rule the {@link
+     * TickVerdictInvocation} row this call produces already follows.
+     */
+    entryTag?: string,
   ): Promise<AgentTermination> {
     // Before the try: a record that cannot be written refuses the run
     // outright rather than reading as a platform-preempt of a run that
@@ -3570,6 +3577,7 @@ export class Dispatcher {
       const result = await agent.invoke({
         cwd,
         prompt,
+        ...(entryTag !== undefined ? { entryTag } : {}),
         ...(tickTimeoutMs !== undefined ? { timeoutMs: tickTimeoutMs } : {}),
         onStdout: (chunk) => process.stdout.write(chunk),
         onStderr: (chunk) => process.stderr.write(chunk),
