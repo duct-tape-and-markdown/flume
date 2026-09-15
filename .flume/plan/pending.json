@@ -170,6 +170,10 @@
           "description": "the knob's doc comment stops naming the supervisor as a binder"
         },
         {
+          "path": "src/Agent.ts",
+          "description": "the killGraceMs doc comment stops cross-referencing the supervisor's retired bound"
+        },
+        {
           "path": "tests/cli.test.ts",
           "description": "the loop driver gains the real spawned agent; the two arms pinning the outer grace retire"
         },
