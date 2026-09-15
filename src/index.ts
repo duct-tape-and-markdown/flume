@@ -73,7 +73,7 @@ export {
 
 export { partitionByFileOverlap } from "./partition.js";
 
-export { gitPath, slugify, stopFlagPath } from "./paths.js";
+export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 
 export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 

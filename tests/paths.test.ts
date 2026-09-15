@@ -21,11 +21,19 @@ import {
   matchesAny,
   queueFenceViolations,
   resolvePendingPath,
+  slugify,
   STATE_ROOT_NAMES,
+  stopFlagPath,
   tickVerdictPath,
   tickVerdictsLogPath,
   worktreesBase,
 } from "../src/paths.ts";
+import {
+  gitPath as indexGitPath,
+  matchesAny as indexMatchesAny,
+  slugify as indexSlugify,
+  stopFlagPath as indexStopFlagPath,
+} from "../src/index.ts";
 
 // The win32 MAX_PATH idiom (`toNamespacedPath(join(...))`) is pinned by
 // source scan in tests/Baton.test.ts, not here: `namespacedJoin` *is* that
@@ -682,5 +690,31 @@ describe("gitPath — the one host-path-to-git-path rule", () => {
         "second copy is how one surface comes to key a committed path by a " +
         "separator another one does not",
     ).toEqual(["src/paths.ts"]);
+  });
+});
+
+// INDEX-EXPORTS-THE-GLOB-MATCHER, per spec/pending.md "What the package
+// exports": `src/index.ts` and `FlumeApi` are the canonical lists and they
+// carry the same values. `FlumeApi.matchesAny` is held to this function by
+// tests/chain.test.ts; the entry point carried the other three path rules
+// and not this one, so a chain composing a fence glob without the api
+// parameter in hand had to respell the dialect it is matched in.
+describe("src/index.ts — matchesAny barrel export (INDEX-EXPORTS-THE-GLOB-MATCHER)", () => {
+  it("the package entry point exports the glob matcher matchesAny", () => {
+    expect(indexMatchesAny).toBe(matchesAny);
+    // Identity is the claim, so one probe says which dialect it is: `**`
+    // crosses `/` where a bare `*` does not — the boundary a chain reaching
+    // for an off-the-shelf glob library instead would get wrong.
+    expect(indexMatchesAny("src/sub/a.ts", ["src/**.ts"])).toBe(true);
+    expect(indexMatchesAny("src/sub/a.ts", ["src/*.ts"])).toBe(false);
+  });
+
+  it("the entry point's path rules are the same functions src/paths.ts exports, not second copies", () => {
+    // The `beside` half of the claim: one set of path rules reaches a chain
+    // through the entry point, so none of the four can drift from the
+    // matcher the engine itself keys its fences by.
+    expect(indexGitPath).toBe(gitPath);
+    expect(indexSlugify).toBe(slugify);
+    expect(indexStopFlagPath).toBe(stopFlagPath);
   });
 });
