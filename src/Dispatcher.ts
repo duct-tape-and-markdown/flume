@@ -97,6 +97,7 @@ import {
   createWorktree,
   sweepStaleWorktrees,
   teardownWorktreeInstance,
+  withGateCheckouts,
   type WorktreeContext,
 } from "./worktrees.js";
 
@@ -3818,10 +3819,17 @@ export class Dispatcher {
    * duplicated line reads as evidence while carrying none
    * (`.claude/rules/engineering.md` "Derived state is computed, never restated
    * beside its source").
+   *
+   * It is also the one **reclamation** point for what a gate checked out:
+   * `withGateCheckouts` (`src/worktrees.ts`) scopes the invocation, and any
+   * detached tree the gate asked the API for (`api.git.checkoutAt`) is
+   * removed when this call unwinds — returned verdict and throw alike, so a
+   * differential gate that crashed mid-run cannot leak the tree it was
+   * reading (spec/chain.md "What a gate receives").
    */
   private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
     try {
-      return await gate.run(ctx);
+      return await withGateCheckouts(this.log, () => gate.run(ctx));
     } catch (err) {
       const { message, stack } = throwFacts(err);
       this.log.warn(

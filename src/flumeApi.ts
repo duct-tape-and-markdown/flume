@@ -55,7 +55,7 @@ import {
 } from "./PendingSchema.js";
 import { InlineExecRenderError, renderPrompt } from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
-import { readWorktreeRegistry } from "./worktrees.js";
+import { checkoutAt, readWorktreeRegistry } from "./worktrees.js";
 
 /**
  * The three roots the runtime resolved for this run, handed to the chain
@@ -204,6 +204,31 @@ export interface FlumeApi {
      * are the chain's to reap is the chain's to decide.
      */
     readWorktreeRegistry: typeof readWorktreeRegistry;
+    /**
+     * A detached checkout of a sha, planted under the state root's worktree
+     * base and removed by the engine when the gate that asked for it returns
+     * (`spec/chain.md`, *What a gate receives*). What a **differential** gate
+     * calls: one that needs the *tree* at `ctx.baseSha` — to run a suite
+     * there, to typecheck it, to diff a build output — rather than one file
+     * out of it, which `readFileAtRef` above already answers.
+     *
+     * A gate provisions nothing itself. Placement is the engine's own
+     * `worktreesBase` resolution, so an operator's `FLUME_WORKTREES_DIR` is
+     * honored and a run killed mid-gate leaves a directory the next start's
+     * sweep reclaims — where a chain's own temp dir leaves residue in a
+     * place nothing looks, and a chain's own path convention under the
+     * worktree base is a name only the engine owns, restated
+     * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+     * never rediscovered*).
+     *
+     * Reclamation is the engine's on both legs — the gate returning a
+     * verdict and the gate throwing — so a gate writes no `finally` of its
+     * own, and a differential gate that crashes mid-run cannot leak the tree
+     * it was reading. Outside a gate invocation there is no boundary to
+     * reclaim at, and this refuses rather than handing back a tree nothing
+     * will remove.
+     */
+    checkoutAt: typeof checkoutAt;
   };
   /** The error classes chains branch on with `instanceof`, no value import. */
   CjsContextLoadError: typeof CjsContextLoadError;
@@ -253,7 +278,13 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     priorAttemptPath,
     priorAttemptsDir,
     stopFlagPath,
-    git: { showNameOnly, readFileAtRef, statusRecords, readWorktreeRegistry },
+    git: {
+      showNameOnly,
+      readFileAtRef,
+      statusRecords,
+      readWorktreeRegistry,
+      checkoutAt,
+    },
     CjsContextLoadError,
     PendingParseFailure,
     InlineExecRenderError,

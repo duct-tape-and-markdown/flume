@@ -21,6 +21,7 @@
  * residue is removed at the next start".
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
@@ -162,6 +163,127 @@ export async function readWorktreeRegistry(
     }
   }
   return { read: true, paths };
+}
+
+/**
+ * One checkout {@link checkoutAt} planted, and the repo it was registered
+ * against — the pair {@link withGateCheckouts} needs to hand it back. The
+ * repo travels with the path rather than being re-read off the reclaiming
+ * context: a gate is free to ask for a tree of some repo other than its own
+ * `repoRoot`, and reclamation keyed on the reclaimer's guess would then run
+ * `git worktree remove` against a repo that never registered the path.
+ */
+interface PlantedCheckout {
+  repoRoot: string;
+  path: string;
+}
+
+/**
+ * The in-flight gate invocation's checkout ledger. Async-local rather than
+ * module-global because gate invocations overlap: a fanout wave runs its
+ * entries concurrently (`Dispatcher.runFanout`), so a single shared list
+ * would hand one gate's reclamation another gate's live tree. The store is
+ * entered once per gate run by {@link withGateCheckouts} and propagates
+ * through every `await` the gate makes, which is exactly the scope
+ * `spec/chain.md` ("What a gate receives") promises the checkout lives for.
+ */
+const gateCheckouts = new AsyncLocalStorage<PlantedCheckout[]>();
+
+/** Disambiguates two checkouts of the same sha in one process. */
+let checkoutSeq = 0;
+
+/**
+ * A detached checkout of `sha`, planted under the state root's worktree base
+ * and reclaimed by the engine when the gate that asked for it returns
+ * (`spec/chain.md`, *What a gate receives*) — the tree at a sha, for a
+ * differential gate that needs to run something in it rather than read one
+ * file out of it.
+ *
+ * **Under the worktree base, not a temp dir.** A run killed between the add
+ * and the reclamation leaves a directory git registers as a worktree at the
+ * exact level {@link sweepStaleWorktrees} reads at the next start, so the
+ * residue is reclaimed by machinery that already exists rather than
+ * accumulating somewhere nothing looks.
+ *
+ * **Detached, so there is no ref to clean up**: nothing commits here, and a
+ * branch would be a second thing the reclamation could fail to remove.
+ *
+ * Refuses outside a gate invocation rather than handing back a tree nothing
+ * will reclaim (`.claude/rules/engineering.md`, *Loud or nothing*): the
+ * removal this promises is the engine's, and off the gate path there is no
+ * "when the gate returns" for it to happen at. A caller that wants a
+ * checkout it owns the lifetime of calls `addWorktree`/`removeWorktree`
+ * (`src/git.ts`) itself and says so.
+ */
+export async function checkoutAt(opts: {
+  /** The repo to check out from — a gate's own `repoRoot`. */
+  repoRoot: string;
+  /** The state root whose worktree base the checkout lands under — a gate's `flumeDir`. */
+  flumeDir: string;
+  /** The sha to check out, detached — a differential gate's `baseSha`. */
+  sha: string;
+}): Promise<string> {
+  const planted = gateCheckouts.getStore();
+  if (!planted) {
+    throw new Error(
+      `checkoutAt: no gate invocation is in flight, so nothing would remove a checkout of ${opts.sha}; ` +
+        `this API is reclaimed by the engine at the gate boundary and is not available outside one`,
+    );
+  }
+  // One resolution for the base, shared with `createWorktree` and the
+  // startup sweep (`worktreesBase`, src/paths.ts).
+  const base = worktreesBase(opts.flumeDir);
+  const path = join(
+    base,
+    `checkout-${opts.sha.slice(0, 7)}-${process.pid}-${checkoutSeq++}`,
+  );
+  await mkdir(toNamespacedPath(base), { recursive: true });
+  // Same win32 MAX_PATH gap `createWorktree` pins for: this lands at the
+  // same depth its siblings do.
+  await git.pinLongPaths(opts.repoRoot);
+  // Recorded before the add, not after: an add that fails partway through
+  // still leaves a directory, and a ledger written only on success would
+  // leave it standing.
+  planted.push({ repoRoot: opts.repoRoot, path });
+  await git.addWorktree({ repoRoot: opts.repoRoot, path, fromRef: opts.sha });
+  return path;
+}
+
+/**
+ * Run one gate invocation as the reclamation scope for whatever
+ * {@link checkoutAt} plants inside it — `Dispatcher.runGate` is the one
+ * gate-run site and so the one place this wraps
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Reclaims on both legs: the `finally` runs whether the gate returned a
+ * verdict or threw, because a gate that crashed mid-differential is the case
+ * most likely to leave a tree behind. Most-recent-first, so a checkout
+ * planted inside another's lifetime goes first.
+ *
+ * A removal that fails is logged and swallowed, never propagated: the gate's
+ * verdict is the tick's fact, and losing it to a locked handle in the
+ * cleanup would convert dead residue into a lost tick. What survives is
+ * registered under the worktree base, which is where the next start's sweep
+ * looks.
+ */
+export async function withGateCheckouts<T>(
+  log: Logger,
+  body: () => Promise<T>,
+): Promise<T> {
+  const planted: PlantedCheckout[] = [];
+  try {
+    return await gateCheckouts.run(planted, body);
+  } finally {
+    for (const c of planted.reverse()) {
+      try {
+        await git.removeWorktree(c.repoRoot, c.path);
+      } catch (err) {
+        log.warn(
+          `[flume] could not reclaim the gate checkout at ${c.path}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
 }
 
 /**

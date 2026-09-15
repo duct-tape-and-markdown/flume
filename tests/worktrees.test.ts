@@ -219,13 +219,15 @@ describe("worktrees — the base is resolved in one place", () => {
     // defect whether or not it currently spells the same fallback.
     expect(readers).toEqual(["paths.ts"]);
 
-    // And the module's two consumers take the base from there rather than
+    // And the module's three consumers take the base from there rather than
     // rebuilding it: `createWorktree` (whose stale-slug removal runs against
-    // the path it computes) and the startup sweep. Keyed on the call, not on
-    // how the state root is currently spelled at either site — the claim is
-    // that both reach the resolver, not which field holds their root.
+    // the path it computes), the startup sweep, and `checkoutAt` (which
+    // plants a differential gate's detached tree at the level the sweep
+    // reads). Keyed on the call, not on how the state root is currently
+    // spelled at any of the sites — the claim is that all three reach the
+    // resolver, not which field holds their root.
     const worktrees = sources.get("worktrees.ts")!;
-    expect(worktrees.match(/worktreesBase\(/g) ?? []).toHaveLength(2);
+    expect(worktrees.match(/worktreesBase\(/g) ?? []).toHaveLength(3);
     // No hand-rolled default survives beside them.
     expect(worktrees).not.toMatch(/join\([^)]*[Ff]lumeDir,\s*"worktrees"\)/);
   });

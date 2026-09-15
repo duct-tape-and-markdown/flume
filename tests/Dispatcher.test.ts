@@ -38,8 +38,8 @@ import {
   type TickVerdict,
 } from "../src/Dispatcher.ts";
 import { frictionCountLine } from "../src/friction.ts";
-import { worktreeDirName } from "../src/worktrees.ts";
-import { mergingDir, slugify } from "../src/paths.ts";
+import { readWorktreeRegistry, worktreeDirName } from "../src/worktrees.ts";
+import { mergingDir, slugify, worktreesBase } from "../src/paths.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage, withTerminalRenderer } from "../src/Agent.ts";
@@ -51,8 +51,8 @@ import {
   // against what a chain factory receives.
   tscGate as realTscGate,
 } from "../src/builtinGates.ts";
-import type { FlumePaths } from "../src/flumeApi.ts";
-import type { Gate } from "../src/Gate.ts";
+import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
+import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type {
   Chain,
   Phase,
@@ -16331,5 +16331,208 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(rows, "the wave recorded no merge outcome").not.toHaveLength(0);
     expect(rows[0]?.outcome).toBe("not-shipped");
     expect(rows[0]?.threw).toBeUndefined();
+  }, 30_000);
+});
+
+describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, reclaimed by the engine at the gate boundary (API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE, spec/chain.md 'What a gate receives')", () => {
+  /**
+   * One afterCommit gate that asks the API for the tree at its own
+   * `baseSha`, hands the planted path back through `onPlanted`, and then does
+   * whatever `then` says — return a verdict or throw. The three tests below
+   * differ only in that last step, so the provisioning half is stated once.
+   */
+  function differentialGate(
+    onPlanted: (path: string, ctx: GateContext) => Promise<void> | void,
+    then: () => GateResult,
+  ): Gate {
+    return {
+      name: "differential",
+      when: "afterCommit",
+      async run(ctx) {
+        // Through the API a chain factory is handed, not through the module:
+        // `api.git.checkoutAt` is the surface the spec names, and a chain has
+        // no other way to reach it.
+        const api = buildFlumeApi({
+          repoRoot: fx.repo,
+          configDir: fx.configDir,
+          flumeDir: ctx.flumeDir,
+        });
+        const planted = await api.git.checkoutAt({
+          repoRoot: ctx.repoRoot,
+          flumeDir: ctx.flumeDir,
+          sha: ctx.baseSha,
+        });
+        await onPlanted(planted, ctx);
+        return then();
+      },
+    };
+  }
+
+  /** Is `path` a tree git currently registers as a worktree of the fixture repo? */
+  async function registered(path: string): Promise<boolean> {
+    const registry = await readWorktreeRegistry(fx.repo);
+    if (!registry.read) throw new Error(`registry unreadable: ${registry.reason}`);
+    return registry.paths.has(resolve(path));
+  }
+
+  it("api.git.checkoutAt plants a detached checkout under the state root's worktree base", async () => {
+    // The tree at `baseSha`, not a file out of it: a differential gate wants
+    // the bytes the tick branched from laid out on disk to run something in,
+    // and provisions nothing of its own to get them.
+    await writeAndCommit(fx.repo, "src/widget.ts", "base\n", "seed: widget");
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const branchedFrom = await head(fx.repo);
+
+    let planted: string | undefined;
+    let flumeDirSeen: string | undefined;
+    let headThere: string | undefined;
+    let detached: boolean | undefined;
+    let bytesThere: string | undefined;
+    let registeredDuringGate: boolean | undefined;
+
+    const gate = differentialGate(
+      async (path, ctx) => {
+        planted = path;
+        flumeDirSeen = ctx.flumeDir;
+        headThere = (
+          await exec("git", ["rev-parse", "HEAD"], { cwd: path })
+        ).stdout.trim();
+        // No ref to clean up: `symbolic-ref HEAD` exits non-zero on a
+        // detached head, which is the whole claim.
+        detached = await exec("git", ["symbolic-ref", "-q", "HEAD"], {
+          cwd: path,
+        }).then(
+          () => false,
+          () => true,
+        );
+        bytesThere = await readFile(join(path, "src", "widget.ts"), "utf8");
+        registeredDuringGate = await registered(path);
+      },
+      () => ({ ok: true, message: "differed" }),
+    );
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", gates: [gate] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent((cwd) =>
+        writeAndCommit(cwd, "src/widget.ts", "merged\n", "plan: move the widget"),
+      ),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the gate actually ran, on a span that actually committed.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.gateResults.map((g) => g.gate)).toContain("differential");
+
+    expect(planted).toBeDefined();
+    // Under the state root's worktree base — the engine's own resolution,
+    // honoring an operator's relocation of it — not a temp dir of the gate's.
+    expect(flumeDirSeen).toBe(join(fx.repo, ".flume"));
+    expect(dirname(planted!)).toBe(worktreesBase(flumeDirSeen!));
+    // A real checkout git owns, at the sha the span branched from, detached.
+    expect(registeredDuringGate).toBe(true);
+    expect(headThere).toBe(branchedFrom);
+    expect(detached).toBe(true);
+    // And it carries the base's bytes, not the tick's — which is the only
+    // reason a differential gate wanted a second tree at all.
+    expect(bytesThere).toBe("base\n");
+  }, 30_000);
+
+  it("the engine removes a gate's checkout when the gate returns", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let planted: string | undefined;
+    let presentDuringGate: boolean | undefined;
+
+    const gate = differentialGate(
+      async (path) => {
+        planted = path;
+        presentDuringGate = existsSync(path) && (await registered(path));
+      },
+      () => ({ ok: true, message: "differed" }),
+    );
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", gates: [gate] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent((cwd) =>
+        writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive"),
+      ),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: a checkout existed to be reclaimed, and the gate returned
+    // a verdict the tick acted on.
+    expect(planted).toBeDefined();
+    expect(presentDuringGate).toBe(true);
+    expect(outcome.result?.gateResults).toContainEqual(
+      expect.objectContaining({ gate: "differential", ok: true }),
+    );
+    expect(outcome.result?.committed).toBe(true);
+
+    // The gate wrote no `finally` of its own: the directory is gone and git
+    // no longer registers it.
+    expect(existsSync(planted!)).toBe(false);
+    expect(await registered(planted!)).toBe(false);
+  }, 30_000);
+
+  it("the engine removes a gate's checkout when the gate throws", async () => {
+    // The leg a gate's own cleanup is most likely to miss: it crashed
+    // mid-differential, so nothing it wrote ran.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let planted: string | undefined;
+    let presentDuringGate: boolean | undefined;
+
+    const gate = differentialGate(
+      async (path) => {
+        planted = path;
+        presentDuringGate = existsSync(path) && (await registered(path));
+      },
+      () => {
+        throw new Error("the differential blew up mid-run");
+      },
+    );
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", gates: [gate] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent((cwd) =>
+        writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive"),
+      ),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the checkout existed, and the throw is what ended the gate.
+    expect(planted).toBeDefined();
+    expect(presentDuringGate).toBe(true);
+    expect(outcome.result?.gateResults).toContainEqual(
+      expect.objectContaining({
+        gate: "differential",
+        ok: false,
+        message: "the differential blew up mid-run",
+      }),
+    );
+
+    expect(existsSync(planted!)).toBe(false);
+    expect(await registered(planted!)).toBe(false);
   }, 30_000);
 });
