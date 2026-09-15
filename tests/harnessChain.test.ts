@@ -48,6 +48,18 @@ import { renderPrompt } from "../src/Prompt.ts";
 /** The engine's own placeholder grammar, as the renderer spells it. */
 const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 
+/** The engine's own inline-exec grammar, as the renderer spells it. */
+const INLINE_EXEC = /!\s*`([^`]+)`/;
+
+/**
+ * A command no host resolves, and the span quoting it — the shape a queue
+ * entry or a spec section carries whenever it documents the grammar itself.
+ * Unresolvable on purpose: a span that ran would resolve quietly, so only a
+ * command that fails proves the sigil never fired.
+ */
+const COMMAND = "flume-no-such-command-in-this-tree";
+const SPAN = `documented as !\`${COMMAND}\` in the corpus`;
+
 /** The state root every case addresses, repo-relative. */
 const STATE_ROOT = ".flume";
 
@@ -391,6 +403,72 @@ it("every placeholder the package's prompts name is supplied by the phase the fa
       empty: rendered.trim().length === 0,
     }).toEqual({ name: phase.name, unresolved: [], empty: false });
   }
+});
+
+it("every prompt-arg key the package's producers return is declared in its phase's promptDataKeys", () => {
+  const chain = chainFor();
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  for (const phase of chain.phases) {
+    // The real writer again: the keys are read off what `promptArgs`
+    // returned for a real tick, never off a list the test spells. A producer
+    // that grows a key without its declaration loses neutralization
+    // silently, which is exactly what this reads back.
+    const keys = Object.keys(phase.promptArgs?.(tickContext(phase)) ?? {});
+    const declared = new Set(phase.promptDataKeys ?? []);
+
+    expect({ name: phase.name, produced: keys.length > 0 }).toEqual({
+      name: phase.name,
+      produced: true,
+    });
+    expect({
+      name: phase.name,
+      undeclared: keys.filter((key) => !declared.has(key)),
+    }).toEqual({ name: phase.name, undeclared: [] });
+  }
+});
+
+it("a substituted value carrying an inline-exec span reaches the agent inert", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const spanned: PendingEntry = {
+    ...entry("SPANNED-ENTRY"),
+    summary: `one line ${SPAN}`,
+  };
+  const raw = JSON.stringify(spanned, null, 2);
+  // Vacuity: the entry really carries the grammar the engine scans for, so
+  // the render below is proving something about a live span.
+  expect(raw).toMatch(INLINE_EXEC);
+
+  const ctx: TickContext = {
+    ...tickContext(build),
+    pending: [spanned],
+    assignedEntry: spanned,
+  };
+  const args = build.promptArgs?.(ctx) ?? {};
+  const render = (phase: Phase, overrides: Record<string, string> = {}) =>
+    renderPrompt({
+      phase,
+      promptFile: build.promptPath,
+      cwd: repo,
+      flumeDir,
+      args: { ...args, ...overrides },
+      assignedEntry: spanned,
+    });
+
+  // The control, hand-authored because no real writer produces an
+  // undeclared span (`.claude/rules/engineering.md`, *A seam gate reads what
+  // the real writer wrote*): the same bytes through a phase that declares
+  // nothing refuse the tick, so the scan this phase escapes is live.
+  const { promptDataKeys: _undeclared, ...passThrough } = build;
+  await expect(render(passThrough, { ENTRY_JSON: raw })).rejects.toThrow(
+    /inline-exec/,
+  );
+
+  // And through the phase the factory returned, the same value renders: the
+  // command text reaches the agent, and no span the engine would scan does.
+  const rendered = await render(build);
+  expect(rendered).toContain(COMMAND);
+  expect(rendered).not.toMatch(new RegExp(`!\\s*\`${COMMAND}`));
 });
 
 it("each returned phase runs the handoff the declaration names for it, else the package's default", () => {

@@ -36,7 +36,6 @@
  * where every consumer gets it.
  */
 
-import { defuseArgs } from "./defuse.js";
 import { resolve } from "node:path";
 
 import type { Agent } from "../src/Agent.js";
@@ -62,6 +61,8 @@ import { SESSIONS_REL } from "./ignores.js";
 import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
 import { planStatePath } from "./planState.js";
 import {
+  BUILD_PROMPT_DATA_KEYS,
+  SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
   promptPath,
   questionsPath,
@@ -226,7 +227,13 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       // decides whether this slice runs, and the material its prompt
       // renders (`windows.ts`). Both come off the same value here, so a
       // slice cannot be woken over a window its prompt then shows as empty.
-      promptArgs: (ctx) => defuseArgs({ ...shared(ctx), ...window.args(ctx) }),
+      promptArgs: (ctx) => ({ ...shared(ctx), ...window.args(ctx) }),
+      // Every value this phase substitutes is content it did not author, so
+      // the engine neutralizes the inline-exec spans in all of them before
+      // its own scan reads them as commands (`spec/prompt.md`, *The render
+      // pipeline*). Both halves are read off the producers that build the
+      // map above, never spelled again here.
+      promptDataKeys: [...SHARED_PROMPT_DATA_KEYS, ...window.dataKeys],
       shouldRun: (ctx) =>
         window.live({
           flumeDir: ctx.flumeDir,
@@ -282,10 +289,14 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [
       namedLinesGate(declaration, isPark),
     ]),
-    promptArgs: (ctx) => defuseArgs({
+    promptArgs: (ctx) => ({
       ...shared(ctx),
       ...buildPromptArgs({ declaration, ctx }),
     }),
+    // As above, and build is where it bites hardest: an entry's own prose
+    // and the spec section its `per` cites are both routinely the text that
+    // *documents* the span grammar.
+    promptDataKeys: [...SHARED_PROMPT_DATA_KEYS, ...BUILD_PROMPT_DATA_KEYS],
     shipped: ({ entry, touchedPaths }) => !isPark(entry, touchedPaths),
     handoff: handoffFor(BUILD_PHASE),
     ...(setup ? { setupWorktree: setup } : {}),

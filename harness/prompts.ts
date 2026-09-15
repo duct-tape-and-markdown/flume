@@ -100,6 +100,40 @@ export function promptPath(name: PromptName): string {
   return fileURLToPath(new URL(`prompts/${name}.md`, import.meta.url));
 }
 
+/**
+ * Every key {@link sharedPromptArgs} returns, in the order it builds them.
+ *
+ * **Declared here so a phase can hand them to the engine as data.** Nothing
+ * this module composes is prompt syntax the package authored: a rendered
+ * schema, a hint a consumer wrote, a declared slot's prose, a path. The
+ * engine's renderer scans substituted text for inline-exec spans
+ * (`spec/prompt.md`, *The render pipeline*), so a value that merely quotes
+ * the span grammar would run as a command; a phase naming these in
+ * `Phase.promptDataKeys` makes the engine neutralize them before that scan.
+ *
+ * The list is the producer's return type, not a second copy of it — a key
+ * added below without being named here fails the typecheck at the literal,
+ * and a declared key a tick never returns is simply unused.
+ */
+export const SHARED_PROMPT_DATA_KEYS = [
+  "NO_COMMIT_MODES",
+  "RECORD_MAX_BYTES",
+  "DISCIPLINE",
+  "PENDING_SCHEMA",
+  "TESTS_HINT",
+  "PINS_HINT",
+  "SPEC_LOCUS",
+  "PENDING_PATH",
+  "QUESTIONS_PATH",
+  "PLAN_STATE_PATH",
+  "RECORD_DIRS",
+  "DOMAIN",
+  "AUTONOMY",
+] as const;
+
+/** One argument every prompt the package renders is given. */
+export type SharedPromptArg = (typeof SHARED_PROMPT_DATA_KEYS)[number];
+
 /** What a prompt's shared arguments are composed from. */
 export interface SharedPromptArgsInput {
   /** The consumer's validated declaration — its spec locus and its slots. */
@@ -124,7 +158,7 @@ export interface SharedPromptArgsInput {
  */
 export function sharedPromptArgs(
   input: SharedPromptArgsInput,
-): Record<string, string> {
+): Record<SharedPromptArg, string> {
   const { declaration, extension, stateRoot } = input;
   return {
     /**
@@ -215,6 +249,27 @@ export interface BuildTickContext {
   readonly assignedEntry?: PendingEntry | undefined;
 }
 
+/**
+ * Every key {@link buildPromptArgs} returns — the entry as the queue holds
+ * it, its cite's path, section and section text, and the note path.
+ *
+ * Data, every one of them, and the two that most need saying so: an entry's
+ * own prose and a cited spec section are content the package did not author,
+ * and the section a build entry cites is routinely the one *documenting* the
+ * span grammar. Typed against the producer below for the reason
+ * {@link SHARED_PROMPT_DATA_KEYS} is.
+ */
+export const BUILD_PROMPT_DATA_KEYS = [
+  "ENTRY_JSON",
+  "PER_PATH",
+  "PER_SECTION",
+  "PER_SECTION_TEXT",
+  "NOTE_PATH",
+] as const;
+
+/** One argument build's prompt is rendered with for a tick. */
+export type BuildPromptArg = (typeof BUILD_PROMPT_DATA_KEYS)[number];
+
 /** What build's per-tick arguments are composed from. */
 export interface BuildPromptArgsInput {
   /** The consumer's validated declaration — the locus a `per` resolves in. */
@@ -245,7 +300,7 @@ export interface BuildPromptArgsInput {
  */
 export function buildPromptArgs(
   input: BuildPromptArgsInput,
-): Record<string, string> {
+): Record<BuildPromptArg, string> {
   const { declaration, ctx } = input;
   const entry = ctx.assignedEntry;
   if (entry === undefined) {

@@ -118,6 +118,35 @@ export interface WindowContext {
 }
 
 /**
+ * The `{{…}}` keys each slice's {@link PlanSliceWindow.args} returns.
+ *
+ * **Every one of them is data.** A window renders material the package did
+ * not author — a record an operator left, a prior-attempt record's own JSON,
+ * a spec diff, a deleted line off the retired-claim delta — and the engine's
+ * renderer scans substituted text for inline-exec spans (`spec/prompt.md`,
+ * *The render pipeline*). A spec diff that touches the section documenting
+ * that grammar carries a span verbatim, so an undeclared key here is a plan
+ * tick refused by a command the material only quoted.
+ *
+ * Keyed exhaustively by {@link PlanSlice} and read as each window's `args`
+ * return type below, so a slice added without its keys is a typecheck
+ * failure and a key added to a window without being named here is another
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+const SLICE_DATA_KEYS = {
+  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS"],
+  "plan-derive": ["SPEC_WINDOW"],
+  "plan-sweep": ["SWEEP_WINDOW"],
+} as const satisfies Record<PlanSlice, readonly string[]>;
+
+/** The argument map one slice's window returns. */
+type SliceArgs<S extends PlanSlice> = Record<
+  (typeof SLICE_DATA_KEYS)[S][number],
+  string
+>;
+
+/**
  * One plan slice's window: the {@link HandoffSlice} the ladder consults, plus
  * the prompt arguments that slice's own prompt names.
  *
@@ -131,6 +160,12 @@ export interface PlanSliceWindow extends HandoffSlice {
   readonly live: (inputs: SliceInputs) => boolean;
   /** The `{{…}}` arguments this slice's prompt is rendered with, for one tick. */
   readonly args: (ctx: WindowContext) => Record<string, string>;
+  /**
+   * Those same keys, for the phase to declare as `Phase.promptDataKeys` —
+   * the window says what it substitutes, the engine neutralizes it, and no
+   * package code touches the values on the way through.
+   */
+  readonly dataKeys: readonly string[];
 }
 
 /** What {@link planSliceWindows} needs to build a consumer's slice windows. */
@@ -259,10 +294,11 @@ function inboxWindow(): PlanSliceWindow {
     name: INBOX_PHASE,
     live: (inputs) =>
       recordsPending(inputs.flumeDir) || standingRefusals(inputs).length > 0,
-    args: (ctx) => ({
+    args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
     }),
+    dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
 }
 
@@ -337,7 +373,10 @@ function deriveWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       if (cursor === undefined) return true;
       return touchedPast(options.repoRoot, cursor, locus);
     },
-    args: (ctx) => ({ SPEC_WINDOW: renderSpecWindow(ctx, options) }),
+    args: (ctx): SliceArgs<"plan-derive"> => ({
+      SPEC_WINDOW: renderSpecWindow(ctx, options),
+    }),
+    dataKeys: SLICE_DATA_KEYS["plan-derive"],
   };
 }
 
@@ -416,7 +455,10 @@ function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       if (state.rotation.kind === "open") return true;
       return touchedPast(options.repoRoot, state.sweptThrough, frontier);
     },
-    args: (ctx) => ({ SWEEP_WINDOW: renderSweepWindow(ctx, options) }),
+    args: (ctx): SliceArgs<"plan-sweep"> => ({
+      SWEEP_WINDOW: renderSweepWindow(ctx, options),
+    }),
+    dataKeys: SLICE_DATA_KEYS["plan-sweep"],
   };
 }
 

@@ -31,7 +31,6 @@ export {
 
 export { consumerIgnores } from "./ignores.js";
 
-export { defuseArgs, defuseSpans } from "./defuse.js";
 
 export {
   DEFAULT_STATE_ROOT,
@@ -96,13 +95,17 @@ export {
 } from "./gates.js";
 
 export {
+  BUILD_PROMPT_DATA_KEYS,
   PROMPT_NAMES,
+  SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
   promptPath,
   sharedPromptArgs,
+  type BuildPromptArg,
   type BuildPromptArgsInput,
   type BuildTickContext,
   type PromptName,
+  type SharedPromptArg,
   type SharedPromptArgsInput,
 } from "./prompts.js";
 
