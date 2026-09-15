@@ -1,53 +1,10 @@
 [
   {
-    "tag": "FAILURE-STAGES-ONE-ROSTER",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "export the stage roster as a value; derive FailureStage from it"
-        },
-        {
-          "path": "src/index.ts",
-          "description": "re-export the roster beside NO_COMMIT_MODES"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "drive ABORT-SIGNATURE-NAMES-ITS-STAGE off the roster; retire the STAGES copy and the doc comment's not-hand-copied claim"
-        },
-        {
-          "path": "tests/cliVerdict.test.ts",
-          "description": "drive the summary case off the roster"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "drive the repeatedFailure case and abortOn's param off the roster"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Give FailureStage one exported value roster; the three stage lists in tests/ read it instead of respelling its members",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "acceptance": "FailureStage is derived from an exported FAILURE_STAGES; no test respells its members, and a member added to the roster reaches all three driven surfaces without an edit.",
-    "tests": [
-      "flume loop --help names every FAILURE_STAGES member as an abort stage",
-      "loopCompletionSummary renders every FAILURE_STAGES member as its own stage phrase",
-      "superviseLoop reports the aborting streak's stage for every FAILURE_STAGES member"
-    ],
-    "notes": "src/loopSupervisor.ts:119 declares FailureStage as a bare type union, so three suites hand-copy its members: tests/cliHelp.test.ts:616, tests/cliVerdict.test.ts:219, tests/loopSupervisor.test.ts:1644,1692 — each guarded only by `expect(stages.length).toBe(3)`, the copy pinned against itself. Same shape NO_COMMIT_MODES (src/Prompt.ts:79) and PRIOR_ATTEMPT_MODES (:107) already took. tests/cliHelp.test.ts:609 asserts the vocabulary is 'not hand-copied here'; that sentence goes with the copy."
-  },
-  {
     "tag": "RETIRED-RELEASE-CORPUS-CITES-CUT",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -148,6 +105,8 @@
       "section": "Routing"
     },
     "acceptance": "No RELEASE-v0.N, v0.N §M, or bare §M cite survives in tests/, src/ or scripts/; every sentence that carried one still reads; each src/ doc comment quotes its test case under the retitled title.",
+    "tests": [],
+    "pins": [],
     "notes": "spec/RELEASE-v0.*.md retired at b622b15; spec/ and .claude/rules/ carry no § at all, so every hit is dead. Cut the numbered form, keep the sentence: \"ensureRuntimeIgnores — §5a-3 create-or-merge\" -> \"... — create-or-merge\". ~101 sit in describe/it titles; the four src/ doc comments quote two of those titles verbatim and must move in the same commit. \"pre-§2 collapsed rendering\" needs a rephrase, not a deletion. Claims no property: no tests[], no pins[] per the cited clause."
   }
 ]
