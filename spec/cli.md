@@ -44,10 +44,17 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
   park/bail vocabulary is the chain's, so `log` prints what the record
   states and nothing derived (`engine-boundary.md`, *Told, not inferred*).
   No verdicts file → prints nothing, exits 0. Mutates nothing.
-- `render` — renders what a named phase (and, under fanout, `--entry <tag>`)
-  would be handed, and prints or writes it, invoking nothing: the other half
-  of what `check` does for the queue. An unresolved span exits `EX_DATAERR`
-  naming it, the refusal a tick would have bought with an invocation.
+- `render` — prints to stdout what a named phase (and, under fanout,
+  `--entry <tag>`) would be handed, invoking nothing: the other half of what
+  `check` does for the queue. It runs the dispatcher's own resolution path
+  short of the invocation — the same fence, the same pickability verdict, the
+  same renderer — over the primary checkout, so nothing is re-derived; an
+  earlier verb that previewed its own approximation of all three was removed
+  for it. The `<prior-attempt>` block is omitted, and the output's first line
+  says so, since a render outside a tick has no attempt to carry; it is never
+  reconstructed. An unresolved span exits `EX_DATAERR` naming it, the refusal a
+  tick would have bought with an invocation. No `--out`: stdout is the surface,
+  and a tick's own record of what it sent stays `rendered-prompts/`.
 - `check` — validates the working tree's `pending.json` without spending an
   agent: the real parse (`parsePending`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
