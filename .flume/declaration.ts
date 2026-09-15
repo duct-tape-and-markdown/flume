@@ -61,17 +61,20 @@ export const declaration: Declaration = {
   scopeWritesToEntry: false,
 
   runner: vitestRunner({
-    // vitest.config.ts: the default run excludes the integration lane, so a
-    // named line homed there is refused at plan time rather than reverted
-    // after a wave.
+    // vitest.config.ts: the default run excludes the integration lane. The
+    // running lane's exclusions are rendered into plan's named-line hints, so
+    // plan is told at authorship which globs no judge reaches — informed,
+    // never refused for a prediction.
     lanes: [
       { name: "default", excludes: ["**/*.integration.test.ts"], runs: true },
       { name: "integration", excludes: [], runs: false },
     ],
   }),
 
-  // The typecheck at both gate points, from the package registry; the
-  // package's own discipline gates are always present and always first.
+  // The typecheck at both gate points, from the package registry. The
+  // package's discipline gates always run first; its judge runs after these
+  // at the same `when`, so the seconds-long typecheck reports before the
+  // minutes-long suite (spec/harness.md, *What a consumer declares*).
   gates: {
     build: [
       { kind: "registry", name: "tsc", when: "afterCommit" },

@@ -163,9 +163,9 @@ unless told otherwise, so an autonomous tick inherits by-user runtime state
 through the binary. A wedged MCP child has held a finished agent's process
 open and stalled a whole fanout wave.
 
-Pass `--strict-mcp-config` so a tick loads only the MCP configuration the
-chain hands it. Whether the engine passes it by default is an open engine
-question; until it does, a chain passes it in `extraArgs`.
+The engine passes `--strict-mcp-config` by default, so a tick loads only the
+MCP configuration the chain hands it; `ClaudeCodeOptions.inheritUserMcp` is
+the declared opt-out.
 
 ## Git quotes porcelain output per subcommand and per config; `-z` is the one spelling right everywhere
 

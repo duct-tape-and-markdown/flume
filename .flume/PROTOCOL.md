@@ -1,6 +1,6 @@
 # Flume Protocol — project conventions
 
-Runtime mechanics (baton, gates, handoff, pending schema) live in `.flume/chain.ts` and the local `flume` runtime (this repo *is* flume — chain.ts imports from `../src/`). This file holds project-side conventions the chain config doesn't encode. Layer lanes, authorship, and commit prefixes: `.claude/rules/spec-plan-build.md`.
+Runtime mechanics (baton, gates, handoff, pending schema) live in the local `flume` runtime (`src/`, this repo *is* flume); the harness that runs it — slices, prompts, judges, gates, records, plan state — is the harness package (`harness/`, `spec/harness.md`), applied to this repo's `.flume/declaration.ts` by `.flume/chain.ts`.
 
 ## The chain
 
@@ -67,7 +67,7 @@ No schema holds these; they are the plan tick's actual work.
 
 ## Plan slices
 
-Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in `state.md` (`Spec derived through:`, `Posture swept through:`; the inbox and build's refusal records are the inbox slice's own cursor) and a prompt carrying only its material, rendered whole or as a contiguous oldest-first prefix within a budget (`.flume/delta-window.mjs`). Which slice runs is a fact of disk the chain computes — inbox non-empty, commits past a cursor, a build refusal to reconcile — never a claim the model writes; there is no continuation marker. A slice that committed and is still live re-wakes itself; one that did not commit hands on. The order is dependency order — route notes to plan, update intent, then build against it — so only the sweep yields to pickable work. There is no review phase: the gates are the review (the suite, the behaviors an entry names, the fence), and what they cannot judge is observed in the field and arrives through the inbox. The predicates and the ladder live in `.flume/chain.ts`; the shared writer discipline in `.flume/prompts/plan-discipline.md`.
+Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in the plan state (`plan/state.json`, three typed fields the package reads through its own accessor); the windows a slice reads, the predicates and the ladder, and the shared writer discipline are the package's — the slice prompts point at the discipline page by the address the package resolves.
 
 ## Records: one file each
 
@@ -92,5 +92,5 @@ When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (
 
 ## Where runtime lives
 
-- Inter-phase contracts: `.flume/chain.ts`. Per-phase prompts: `.flume/prompts/{plan-inbox,plan-derive,plan-sweep,build}.md`. Runtime: `src/` (this repo).
+- Inter-phase contracts: the harness package's chain factory (`harness/`), applied by `.flume/chain.ts`. Per-phase prompts: the package's (`harness/prompts/`). Runtime: `src/` (this repo).
 - CLI: `pnpm flume` (runs `src/cli.ts` under tsx) — `flume --help` is the authority for subcommands.
