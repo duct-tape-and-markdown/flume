@@ -374,10 +374,18 @@ unrelated package.
 ## win32 is a supported host
 
 POSIX remains the primary CI target; win32 is supported, and that commitment is
-only real while a red Windows suite blocks a merge — CI runs a
-`windows-latest` lane (typecheck, the default test lane, build, and the install
-smoke) beside the POSIX lane, which additionally carries the publish-acceptance
-steps and the integration lane (`spec/worktrees.md` for the lane split).
+only real while the Windows lane is read. CI runs a `windows-latest` lane
+(typecheck, the default test lane, build, and the install smoke) on every push
+to `main`, beside the POSIX lane, which additionally carries the
+publish-acceptance steps and the integration lane (`spec/worktrees.md` for the
+lane split). A loop that commits straight to `main` cannot block on a lane that
+runs after the push, so the lane is a plan input instead of a merge gate: its
+failing test titles are findings the harness package's inbox slice drains
+(`spec/harness.md`, *CI lanes as a findings source*), and a red lane is a
+queue, never silence. A win32 fix carries the lane-observed input as its
+fixture, which is the platform clause of `.claude/rules/engineering.md`, *A fix
+ships the test that would have caught it*; a fix without one is a guess and
+does not ship.
 
 Standing consequences:
 

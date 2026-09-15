@@ -73,6 +73,21 @@ The inbox and build-note conventions of
 `.flume/PROTOCOL.md`, *Records: one file each*, drained by the inbox slice.
 
 
+### CI lanes as a findings source
+
+A declared CI lane is a findings source beside the inbox. The inbox slice
+reads the latest completed run of the declared workflow job for the tip's
+branch through the forge's CLI, takes the failing test titles as findings
+keyed by lane name and title, and files or re-files each the way it drains a
+record: a title already heading a queue entry or an open question is not
+re-filed, and a title the latest run reports green closes in the plan commit
+body. A run is durable evidence on the forge, never a process's stdout, so the
+slice decides from what the forge holds (`.claude/rules/engine-boundary.md`,
+*Told, not inferred*). A lane the slice cannot read — no forge CLI on the host,
+no completed run for the tip yet — renders as unread and says so, never as
+green.
+
+
 ### Plan state as declared state
 
 The derive and sweep cursors and the
@@ -134,6 +149,7 @@ one refuses the load naming the field and the valid set.
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
+| `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, and the lane name its findings carry — see *CI lanes as a findings source*. Optional. |
 
 Nothing in the declaration names an engine artifact path, a verdict field, or a
 prior-attempt mode. Those are the engine's to report and the package's to read.
