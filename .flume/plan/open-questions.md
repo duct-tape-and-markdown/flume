@@ -984,11 +984,10 @@ So a **space never triggers quoting** under `--name-only`, `core.quotePath=false
 `-z` remains the one spelling right everywhere, but for a narrower reason than
 the fix that introduced it recorded.
 
-This matters twice. `src/git.ts:131`–`145` justifies its `-z` with "git wraps
-any path carrying a space … in double quotes" and "`core.quotePath=false` is
-not the fix, since a space still quotes" — both measured false above, and both
-are the reasoning the next reader would use to decide whether a sibling needs
-`-z` at all. That correction rides
-`SNAPSHOT-REVERTED-SHARES-THE-NAME-ONLY-DECODE`, since the comment is in
-build's fence. The page itself is still the human's, and the fact it should
-carry is the table, not the prose either fix wrote.
+This mattered twice. `src/git.ts`'s `-z` justification and the same claim in
+`tests/git.test.ts` both rested on "a space quotes", measured false above; both
+are corrected on the tree as of
+`SNAPSHOT-REVERTED-SHARES-THE-NAME-ONLY-DECODE`. What is still open is the
+page: `.claude/rules/platform-facts.md` is the human's, and the fact it should
+carry is the table above — quoting is per-subcommand *and* per-config — not the
+prose any of the three fixes wrote.
