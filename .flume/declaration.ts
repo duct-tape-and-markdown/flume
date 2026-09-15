@@ -95,6 +95,12 @@ export const declaration: Declaration = {
   // at its root, singleton and fanout alike.
   setup: { directories: ["."] },
 
+  // The CI lane the inbox slice reads as a findings source: the Windows job
+  // on the push-to-main workflow, whose failing titles are how win32 support
+  // stays real (spec/harness.md, *CI lanes as a findings source*;
+  // spec/cli.md, *win32 is a supported host*).
+  ci: [{ name: "windows", workflow: "ci.yml", job: "windows" }],
+
   slices: {
     enabled: ["plan-inbox", "plan-derive", "plan-sweep"],
     sweep: {

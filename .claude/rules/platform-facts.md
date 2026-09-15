@@ -206,3 +206,17 @@ empty while the previous version's `bin/` still holds it; the fix is
 --reinstall-packages-from=<old>` at upgrade time. Nothing in the repo holds
 this: no gate reads PATH, and an agent that lacks the tool parks the finding
 rather than rebuilding the verdict from grep.
+
+## TypeScript abandons a module lookup whose directory the host denies
+
+`ts.createProgram` over a custom `CompilerHost` resolves an import by asking
+the host `directoryExists` for each containing directory before it asks
+`fileExists` for the candidate file, and a directory the host reports absent
+ends the lookup there. A host that serves a virtual tree — an in-memory
+`outDir`, a declaration emit never written to disk — and implements only
+`fileExists` and `readFile` therefore resolves every cross-module import to
+`unknown`, with no diagnostic: the program builds, the types are `unknown`,
+and a scan over it reports an empty reach graph as a clean surface. Answer
+`directoryExists` (and `getDirectories`) for every virtual path, and pin the
+scan's judged count above zero so a silent resolution failure reds rather
+than passes.
