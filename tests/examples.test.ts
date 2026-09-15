@@ -35,7 +35,7 @@ import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
-import { renderPrompt } from "../src/Prompt.ts";
+import { InlineExecRenderError, renderPrompt } from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
 import { resolvePendingPath } from "../src/paths.ts";
@@ -311,20 +311,25 @@ describe("examples/prompts — the spans read the injected state root", () => {
   /** Every scratch dir a case made, torn down together. */
   const scratch: string[] = [];
 
-  /**
-   * The cwd a render runs its spans in. The spans not under test still have
-   * to resolve — `git log` carries no fallback, and the render aborts on any
-   * non-zero span — so this is a real repo with a real commit, rather than
-   * this checkout, whose `pnpm tsc` span would typecheck the tree per case.
-   */
-  let cwd: string;
+  /** The corpus file the plan template's `<spec-corpus>` span indexes. */
+  const CORPUS_SENTINEL = "corpus-sentinel.md";
 
-  beforeAll(async () => {
-    cwd = mkdtempSync(join(tmpdir(), "flume-example-prompts-cwd-"));
-    scratch.push(cwd);
-    writeFileSync(join(cwd, "README.md"), "scratch\n");
-    await exec("git", ["init", "-q", "-b", "main"], { cwd });
-    await exec("git", ["add", "-A"], { cwd });
+  /**
+   * A tick cwd the spans not under test can resolve in: a real repo with a
+   * real commit, because `git log` carries no fallback and the render aborts
+   * on any non-zero span. `withCorpus` seeds the corpus root the
+   * `<spec-corpus>` span now refuses without.
+   */
+  async function seedTickCwd(prefix: string, withCorpus: boolean): Promise<string> {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    scratch.push(dir);
+    writeFileSync(join(dir, "README.md"), "scratch\n");
+    if (withCorpus) {
+      mkdirSync(join(dir, "specs"), { recursive: true });
+      writeFileSync(join(dir, "specs", CORPUS_SENTINEL), "# a spec\n");
+    }
+    await exec("git", ["init", "-q", "-b", "main"], { cwd: dir });
+    await exec("git", ["add", "-A"], { cwd: dir });
     await exec(
       "git",
       [
@@ -336,8 +341,19 @@ describe("examples/prompts — the spans read the injected state root", () => {
         "-qm",
         "seed",
       ],
-      { cwd },
+      { cwd: dir },
     );
+    return dir;
+  }
+
+  /**
+   * The cwd a render runs its spans in — rather than this checkout, whose
+   * `pnpm tsc` span would typecheck the tree per case.
+   */
+  let cwd: string;
+
+  beforeAll(async () => {
+    cwd = await seedTickCwd("flume-example-prompts-cwd-", true);
   });
 
   afterAll(() => {
@@ -345,7 +361,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
   });
 
   /** One shipped template through the engine's real renderer. */
-  async function render(file: string, phase: Phase, root: string): Promise<string> {
+  async function render(file: string, phase: Phase, root: string, at = cwd): Promise<string> {
     const promptFile = join(PROMPT_DIR, file);
     const raw = readFileSync(promptFile, "utf8");
     const args = Object.fromEntries(
@@ -354,7 +370,26 @@ describe("examples/prompts — the spans read the injected state root", () => {
         .filter((key) => key !== "FLUME_DIR")
         .map((key) => [key, `<per-tick ${key}>`]),
     );
-    return renderPrompt({ phase, promptFile, cwd, flumeDir: root, args });
+    return renderPrompt({ phase, promptFile, cwd: at, flumeDir: root, args });
+  }
+
+  /** A state root carrying every artifact the templates' spans read. */
+  function seedStateRoot(prefix: string): string {
+    const root = mkdtempSync(join(tmpdir(), prefix));
+    scratch.push(root);
+    for (const artifact of ARTIFACTS) {
+      const at = artifact.at(root);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, artifact.body, "utf8");
+    }
+    return root;
+  }
+
+  /** The phase that names `plan.md`, as the shipped sweep found it. */
+  function planTemplate(): { file: string; phase: Phase } {
+    const found = shipped.find((s) => s.file === "plan.md");
+    expect(found?.phase, "plan.md is named by an example phase").toBeDefined();
+    return { file: found!.file, phase: found!.phase! };
   }
 
   async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
@@ -434,6 +469,71 @@ describe("examples/prompts — the spans read the injected state root", () => {
     expect(
       allSpans.filter((s) => /specs\/(?:active|_aligned)\b/.test(s.cmd)),
     ).toEqual([]);
+  });
+
+  /**
+   * `.claude/rules/engineering.md`, *Loud or nothing* — the corpus listing is
+   * a digest, and `find` over a missing root exits non-zero *behind* `head`,
+   * whose zero the pipeline reports (`spec/prompt.md`, *An unresolved
+   * inline-exec span fails the tick*: exit status decides). The span rendered
+   * empty-but-green, so a copy of this template in a repo with no corpus
+   * planned against nothing at all rather than refusing. The guard is
+   * `test -d` rather than `set -o pipefail`: the engine spawns `sh`, and dash
+   * carries no pipefail.
+   *
+   * Driven through the real renderer over the shipped markdown
+   * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
+   * claim is about what `sh` does with the bytes the template ships, which
+   * only the real reader can settle. Every sibling span resolves here — the
+   * scratch repo has a commit and the state root has its artifacts — so the
+   * one failure the error carries is the corpus span itself.
+   */
+  it("the example plan template's corpus span fails the render when the corpus root is absent", async () => {
+    const bare = await seedTickCwd("flume-example-prompts-nocorpus-", false);
+    expect(existsSync(join(bare, "specs"))).toBe(false);
+    const root = seedStateRoot("flume-example-prompts-nocorpus-root-");
+    const { file, phase } = planTemplate();
+
+    const outcome = await render(file, phase, root, bare).then(
+      (rendered) => ({ rendered }),
+      (error: unknown) => ({ error }),
+    );
+
+    expect(outcome, "the render resolved every span with no corpus root").not.toHaveProperty(
+      "rendered",
+    );
+    const error = (outcome as { error: unknown }).error;
+    expect(error).toBeInstanceOf(InlineExecRenderError);
+    const failures = (error as InlineExecRenderError).failures;
+    expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining("find specs -name")]);
+    // Loud, not merely non-zero: the refusal names what was missing.
+    expect(failures[0]!.stderr).toContain("spec corpus root");
+  });
+
+  /**
+   * The same defect, read off the text so it cannot come back in a span no
+   * case renders: a `||` fallback downstream of a pipe is unreachable, because
+   * the pipeline reports its *last* stage's status and the last stage is the
+   * digester (`head`, `tail`), which succeeds over an empty stream. A fallback
+   * that cannot fire reads as a defence and is none — residue against
+   * `engineering.md`, *Loud or nothing*.
+   */
+  it("no shipped example prompt span carries a || fallback behind a pipe that swallows its status", () => {
+    // Non-vacuity: a prompt set with no spans at all satisfies the absence,
+    // and so does one where nothing pipes.
+    expect(allSpans.length).toBeGreaterThan(0);
+    expect(allSpans.filter(({ cmd }) => /\|(?!\|)/.test(cmd)).length).toBeGreaterThan(0);
+
+    // Cut each span at the separators that end a pipeline; a `||` whose own
+    // segment already piped is the defect.
+    const swallowed = allSpans.filter(({ cmd }) =>
+      cmd.split(/[;\n]/).some((segment) => {
+        const fallback = segment.indexOf("||");
+        return fallback >= 0 && /\|(?!\|)/.test(segment.slice(0, fallback));
+      }),
+    );
+
+    expect(swallowed).toEqual([]);
   });
 
   /**

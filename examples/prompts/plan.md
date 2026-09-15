@@ -17,11 +17,11 @@
 </inbox>
 
 <spec-corpus>
-!`find specs -name '*.md' | sort | head -60`
+!`test -d specs || { echo "spec corpus root 'specs' not found under $(pwd)" >&2; exit 1; }; find specs -name '*.md' | sort | head -60`
 </spec-corpus>
 
 <tsc>
-!`pnpm tsc --noEmit 2>&1 | tail -15 || true`
+!`pnpm tsc --noEmit 2>&1 | tail -15`
 </tsc>
 
 <recent-commits>
