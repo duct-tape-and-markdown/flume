@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 
 import {
   DeclarationSchema,
@@ -98,6 +99,36 @@ const fullDeclaration = (): Record<string, unknown> => ({
   },
   slots: { autonomy: "ship without asking", domain: "an AI-derivation harness" },
 });
+
+/**
+ * The schema's own split between the fields a declaration must name and the
+ * fields it may omit: a key is optional exactly when the schema's entry for
+ * it accepts `undefined` — which covers the `.optional()` ones and the
+ * defaulted `scopeWritesToEntry` alike.
+ *
+ * Read off the schema rather than listed by hand at each case below. Two
+ * hand-kept lists are a partition nothing checks: a field added to the
+ * schema and typed into neither list is exercised as neither required nor
+ * optional, and both cases stay green over it (`.claude/rules/engineering.md`,
+ * *A green verdict is proven non-vacuous*).
+ */
+const partitionByOptionality = (): {
+  required: string[];
+  optional: string[];
+} => {
+  const required: string[] = [];
+  const optional: string[] = [];
+  for (const [field, schema] of Object.entries(DeclarationSchema.shape)) {
+    const bucket = (schema as z.ZodTypeAny).safeParse(undefined).success
+      ? optional
+      : required;
+    bucket.push(field);
+  }
+  return { required, optional };
+};
+
+const { required: requiredFields, optional: optionalFields } =
+  partitionByOptionality();
 
 /** The message a refused declaration carries, or a failure if it parsed. */
 const refusalFor = (declaration: unknown): string => {
@@ -221,11 +252,25 @@ describe("the harness declaration schema", () => {
     expect(message).toContain("valid fields are: autonomy, domain");
   });
 
+  it("the required and optional field cases together name every field the declaration schema declares", () => {
+    // The vacuity guard the two cases below inherit: whatever the schema
+    // declares lands in exactly one of the lists they loop over, so a field
+    // added there is exercised as required or as optional rather than by
+    // neither case.
+    expect(requiredFields.length).toBeGreaterThan(0);
+    expect(optionalFields.length).toBeGreaterThan(0);
+    expect([...requiredFields, ...optionalFields].sort()).toEqual(
+      Object.keys(DeclarationSchema.shape).sort(),
+    );
+  });
+
   it("a missing required declaration field is refused, naming the field", () => {
     // Every field a tick cannot run without, each proven required on its own
     // — a single missing-field case would pass over a field that quietly
     // became optional.
-    for (const field of ["specLocus", "fence", "runner", "slices"]) {
+    expect(requiredFields).toEqual(["specLocus", "fence", "runner", "slices"]);
+
+    for (const field of requiredFields) {
       const declared = fullDeclaration();
       delete declared[field];
 
@@ -238,16 +283,8 @@ describe("the harness declaration schema", () => {
 
   it("an optional declaration field left out parses, and scopeWritesToEntry defaults off", () => {
     const declared = fullDeclaration();
-    for (const field of [
-      "channelPaths",
-      "scopeWritesToEntry",
-      "resolver",
-      "gates",
-      "agents",
-      "supervisor",
-      "setup",
-      "slots",
-    ]) {
+    expect(optionalFields.length).toBeGreaterThan(0);
+    for (const field of optionalFields) {
       delete declared[field];
     }
 
@@ -257,6 +294,22 @@ describe("the harness declaration schema", () => {
     // Absent, the package resolves a cite's section by heading text.
     expect(parsed.resolver).toBeUndefined();
     expect(parsed.scopeWritesToEntry).toBe(false);
+  });
+
+  it("a declaration omitting its handoff parses, and handoff reads undefined", () => {
+    // The field the two hand-kept lists left between them: declared per
+    // phase and replacing outright, so a consumer wanting the package's
+    // ladder everywhere omits it — and gets the ladder, not a refusal.
+    expect(optionalFields).toContain("handoff");
+
+    const declared = fullDeclaration();
+    delete declared["handoff"];
+
+    const parsed = parseDeclaration(declared);
+
+    expect(parsed.handoff).toBeUndefined();
+    // Omitting it displaces nothing else the declaration named.
+    expect(parsed.runner).toBe(stubRunnerFactory);
   });
 
   it("a resolver that is not a function is refused, naming the resolver field", () => {
