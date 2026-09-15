@@ -1240,6 +1240,93 @@ describe("jobRm — §5c refusal + removal units", () => {
   }, 120_000);
 });
 
+// ---------- job names git must not read as patterns ----------
+
+/**
+ * `validateJobName` admits the glob metacharacters — a name only has to be
+ * one path segment — so `.flume/jobs/<name>` reaches git as a pathspec that
+ * may name a *sibling* job as well as its own. Read as a pattern, `a*` picks
+ * up `ab`, and the verbs' `add`/`commit`/`ls-files`/`rm -r` then act on a
+ * second operator's job.
+ *
+ * Both cases are top-level rather than inside a describe: each title is the
+ * queue entry's own `tests[]` line, matched on the full name. A filename may
+ * not contain `*` on win32, so neither fixture can exist there.
+ */
+it.runIf(process.platform !== "win32")(
+  "job rm on a glob-metacharacter job name leaves a sibling job's files tracked",
+  async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "ab", log: () => {} });
+      await jobNew({ repoRoot: repo.dir, name: "a*", log: () => {} });
+
+      // Vacuity pin: read as a pattern, the removed job's path really does
+      // select the sibling's tracked files too.
+      expect(
+        await gitOut(repo.dir, ["ls-files", "--", ".flume/jobs/a*"]),
+      ).toBe(".flume/jobs/a*/.gitignore\n.flume/jobs/ab/.gitignore");
+
+      await jobRm({ repoRoot: repo.dir, name: "a*", log: () => {} });
+
+      // The named job is gone from index and disk …
+      expect(existsSync(join(repo.dir, ".flume", "jobs", "a*"))).toBe(false);
+      expect(
+        (await gitOut(repo.dir, ["log", "--format=%s", "-1"])),
+      ).toBe("chore(flume): rm job a*");
+
+      // … and the sibling survives it, still tracked and still on disk.
+      expect(await gitOut(repo.dir, ["ls-files", "--", ".flume/jobs/ab"])).toBe(
+        ".flume/jobs/ab/.gitignore",
+      );
+      expect(
+        existsSync(join(repo.dir, ".flume", "jobs", "ab", ".gitignore")),
+      ).toBe(true);
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  60_000,
+);
+
+it.runIf(process.platform !== "win32")(
+  "job new on a glob-metacharacter job name leaves a dirty sibling job unstaged",
+  async () => {
+    const repo = await makeRepo();
+    try {
+      await writeRepoChain(repo.dir);
+      await jobNew({ repoRoot: repo.dir, name: "ab", log: () => {} });
+
+      // The sibling job carries an uncommitted edit when the new job is
+      // seeded — the seed commit is pathspec-scoped, so it must not move.
+      const siblingIgnore = join(repo.dir, ".flume", "jobs", "ab", ".gitignore");
+      await writeFile(siblingIgnore, "sessions/\n", { flag: "a" });
+
+      // Vacuity pin: read as a pattern, the new job's path selects the
+      // sibling's dirty file as well as its own.
+      expect(
+        await gitOut(repo.dir, ["ls-files", "--", ".flume/jobs/a*"]),
+      ).toBe(".flume/jobs/ab/.gitignore");
+
+      await jobNew({ repoRoot: repo.dir, name: "a*", log: () => {} });
+
+      // The seed commit carries the new job alone.
+      expect(
+        await gitOut(repo.dir, ["show", "--name-only", "--format=", "HEAD"]),
+      ).toBe(".flume/jobs/a*/.gitignore");
+
+      // The sibling's edit is untouched: not staged, not committed.
+      expect(await gitOut(repo.dir, ["status", "--porcelain"])).toBe(
+        " M .flume/jobs/ab/.gitignore",
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  60_000,
+);
+
 // ---------- v0.5 §5d — `flume job status` enumeration units ----------
 
 /** Minimal valid pending entry (schema defaults fill the rest). */

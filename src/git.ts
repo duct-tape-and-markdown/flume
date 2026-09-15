@@ -24,12 +24,45 @@ const exec = promisify(execFile);
 const FALLBACK_REMOVE_MAX_RETRIES = 5;
 const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
 
+/**
+ * The environment every git invocation in this engine runs under: the one
+ * literal-pathspec spelling.
+ *
+ * **Nothing this harness hands git after `--` is a pattern.** Every pathspec
+ * it passes is a path the host composed — a state-root-relative artifact
+ * path, a job dir named by an operator, a filename read back off git's own
+ * `--name-only`. Under git's default parse those are globs, so a name
+ * carrying `*`, `?` or `[` matches itself *and* every sibling it happens to
+ * glob: `git add -- '.flume/jobs/a*'` stages sibling job `ab` too, and `git
+ * rm -r` over the same spelling deletes it (measured, git 2.43). A leading
+ * `:` is worse still — read as magic, `:leading.ts` selects nothing and
+ * `:(icase)x` exits `128`. Either way the engine acts on a set it was never
+ * handed (`engine-boundary.md`, *Told, not inferred*).
+ *
+ * **One spelling, applied at the invocation, not at the argument.** Of git's
+ * three literal-pathspec forms, this is the only one that is neither
+ * position-bound nor per-path: `--literal-pathspecs` is a main-command
+ * option, which `ls-tree` rejects as one of its own (exit `129`), and a
+ * `:(literal)` prefix has to be remembered at every call site and re-spelled
+ * at every new one. Setting it on the child's environment covers every
+ * pathspec of every invocation the wrapper makes, including ones not written
+ * yet (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Exported for the sibling wrappers that spawn their own git —
+ * `src/job.ts`'s porcelain wrapper and `harness/windows.ts`'s window reader
+ * — so the three surfaces cannot disagree about what a pathspec means.
+ */
+export function literalPathspecEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, GIT_LITERAL_PATHSPECS: "1" };
+}
+
 async function run(
   cwd: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
   const { stdout, stderr } = await exec("git", args, {
     cwd,
+    env: literalPathspecEnv(),
     maxBuffer: 16 * 1024 * 1024,
   });
   return { stdout: stdout.trimEnd(), stderr: stderr.trimEnd() };
@@ -422,19 +455,20 @@ export async function showNameOnly(
  * distinguish them (`engine-boundary.md` "Told, not inferred"; the
  * `isAncestor`/`deleteBranch` structural-probe pattern above, applied here).
  *
- * That probe runs under `--literal-pathspecs`, so the argument is matched as
- * the path it is and never re-read as pathspec magic. A committed name may
- * begin with `:` — git lists it, `<ref>:<path>` resolves it — but a default
- * pathspec parse takes the leading colon as a magic prefix: `:leading.ts`
- * lists nothing (so an existing path reads back `null`) and `:(icase)x`
- * exits 128 (so the whole read throws). Both are the engine substituting a
- * verdict for a path it was handed (`engineering.md`, *Loud or nothing*).
- * It is a main-command option, before the subcommand — `ls-tree` rejects it
- * as one of its own.
+ * That probe's pathspec is matched as the path it is and never re-read as
+ * magic, because every invocation here runs under {@link
+ * literalPathspecEnv}. A committed name may begin with `:` — git lists it,
+ * `<ref>:<path>` resolves it — but a default pathspec parse takes the
+ * leading colon as a magic prefix: `:leading.ts` lists nothing (so an
+ * existing path reads back `null`) and `:(icase)x` exits 128 (so the whole
+ * read throws). Both are the engine substituting a verdict for a path it was
+ * handed (`engineering.md`, *Loud or nothing*).
  *
  * Content comes straight off `exec`, not `run()`: `run()`'s `trimEnd()` is
  * right for git's own line-oriented output but would silently drop a real
  * file's trailing bytes — a content read wants exactly what was committed.
+ * It carries the same environment, so the two legs of one read cannot run
+ * under different git dialects.
  */
 export async function readFileAtRef(
   repoRoot: string,
@@ -443,7 +477,6 @@ export async function readFileAtRef(
 ): Promise<string | null> {
   const pathspec = gitPath(relPath);
   const { stdout: listing } = await run(repoRoot, [
-    "--literal-pathspecs",
     "ls-tree",
     "--name-only",
     ref,
@@ -453,6 +486,7 @@ export async function readFileAtRef(
   if (listing.trim().length === 0) return null;
   const { stdout } = await exec("git", ["show", `${ref}:${pathspec}`], {
     cwd: repoRoot,
+    env: literalPathspecEnv(),
     maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;
@@ -542,7 +576,15 @@ export async function checkpointBystanderState(
   return stdout.length > 0 ? stdout : undefined;
 }
 
-/** Stage a specific set of paths and commit. */
+/**
+ * Stage a specific set of paths and commit.
+ *
+ * `paths` are staged as the paths they are, never as patterns: the stage
+ * runs under {@link literalPathspecEnv}, so an artifact whose name carries a
+ * glob metacharacter stages itself alone rather than itself plus every
+ * sibling it happens to match. The commit takes no pathspec of its own, so
+ * an over-matched sibling would ride along in full.
+ */
 export async function commitPaths(opts: {
   cwd: string;
   message: string;

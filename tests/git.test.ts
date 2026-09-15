@@ -264,6 +264,59 @@ describe("commitPaths", () => {
   });
 });
 
+// A filename may not contain `*` on win32 — the Win32 path layer refuses the
+// create call, so the sibling pair this case needs cannot exist there.
+//
+// Deliberately top-level rather than inside the describe above: this title is
+// the queue entry's own `tests[]` line, matched on the full name.
+it.runIf(process.platform !== "win32")(
+  "commitPaths stages only its given path when a sibling name glob-matches it",
+  async () => {
+    // Two tracked files whose names glob-match one another, both dirty. The
+    // commit leg takes no pathspec of its own, so anything the staging leg
+    // over-matches rides into the commit whole.
+    await writeFile(join(repo, "a*.txt"), "one\n");
+    await writeFile(join(repo, "ab.txt"), "two\n");
+    await exec("git", ["add", "--all"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "both names"], { cwd: repo });
+    await writeFile(join(repo, "a*.txt"), "one edited\n");
+    await writeFile(join(repo, "ab.txt"), "two edited\n");
+
+    // Vacuity pin: read as a pattern, the given path really does select the
+    // sibling as well as itself — which is what makes "only its given path" a
+    // claim about this repo rather than about a name with no sibling.
+    const { stdout: asPattern } = await exec(
+      "git",
+      ["ls-files", "--", "a*.txt"],
+      { cwd: repo },
+    );
+    expect(lines(asPattern)).toEqual(["a*.txt", "ab.txt"]);
+
+    await commitPaths({ cwd: repo, message: "ship one", paths: ["a*.txt"] });
+
+    const { stdout: changed } = await exec(
+      "git",
+      ["show", "--name-only", "--pretty=format:", "HEAD"],
+      { cwd: repo },
+    );
+    expect(lines(changed)).toEqual(["a*.txt"]);
+
+    // The sibling's edit is untouched: neither staged nor committed.
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
+    expect(lines(status)).toEqual(["M ab.txt"]);
+  },
+);
+
+/** Non-empty, trimmed lines of a git listing. */
+function lines(stdout: string): string[] {
+  return stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /**
  * spec/pending.md "Dispatch reads come from the tip, not the tree" —
  * `Dispatcher.readPending`'s tip-read primitive.

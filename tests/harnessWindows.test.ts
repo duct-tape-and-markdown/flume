@@ -296,6 +296,45 @@ it("a rendered window names the sha its cursor may advance to and defers the com
   expect(rendered).not.toContain("second line 0");
 });
 
+/**
+ * A filename may not contain `*` on win32, so this fixture cannot exist
+ * there. The title is the queue entry's own `pins[]` line, matched on the
+ * full name.
+ */
+it.runIf(process.platform !== "win32")(
+  "a window diff narrows by a path whose name carries a glob metacharacter",
+  () => {
+    const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
+    writePlanState(stateRoot(), planState());
+
+    // One commit, two paths: only the top-level `.md` is in the declared
+    // locus, and the window narrows the diff to it by name. Read as a
+    // pattern that name also selects the nested file, because git's default
+    // pathspec `*` crosses `/` while the engine's own `matchesAny` does not.
+    commit(
+      {
+        "spec/a*.md": "in the locus\n",
+        "spec/aliens/x.md": "outside the locus\n",
+      },
+      "spec: a starred name and a nested neighbour",
+    );
+
+    const rendered = windows({ specLocus: ["spec/*.md"] })["plan-derive"].args({
+      cwd: repo,
+      flumeDir: stateRoot(),
+    }).SPEC_WINDOW;
+
+    // Vacuity pin: the window is populated, and it is populated *by* the
+    // metacharacter path — not by some other commit in the range.
+    expect(rendered).toContain(`=== 1 commit(s) in the spec locus since ${base}`);
+    expect(rendered).toContain("+in the locus");
+
+    // The neighbour a pattern read would have swept in is absent.
+    expect(rendered).not.toContain("spec/aliens/x.md");
+    expect(rendered).not.toContain("+outside the locus");
+  },
+);
+
 it("a window refuses a cursor sha that does not resolve in the tick's tree", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   const absent = "0123456789abcdef0123456789abcdef01234567";

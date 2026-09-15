@@ -22,7 +22,7 @@ import { promisify } from "node:util";
 import { Baton } from "./Baton.js";
 import { loadChainModule } from "./Dispatcher.js";
 import { existsLoud } from "./fsProbe.js";
-import { pinLongPaths } from "./git.js";
+import { literalPathspecEnv, pinLongPaths } from "./git.js";
 import {
   awakeDir,
   chainModulePath,
@@ -88,10 +88,20 @@ export function validateJobName(name: string): string | null {
   return null;
 }
 
+/**
+ * The verbs' porcelain wrapper — a different surface from `src/git.ts`'s
+ * dispatcher plumbing, under the same pathspec dialect
+ * ({@link literalPathspecEnv}). Every pathspec these verbs pass is
+ * `.flume/jobs/<name>`, composed from a name an operator chose, and
+ * `validateJobName` admits the glob metacharacters: read as a pattern, `a*`
+ * names sibling job `ab` as well as itself, which `add`/`commit` sweep into
+ * one job's commit and `rm -r` deletes outright.
+ */
 async function git(cwd: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await exec("git", args, {
       cwd,
+      env: literalPathspecEnv(),
       maxBuffer: 16 * 1024 * 1024,
     });
     return stdout.trimEnd();

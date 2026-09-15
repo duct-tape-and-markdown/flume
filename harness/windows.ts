@@ -47,6 +47,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { literalPathspecEnv } from "../src/git.js";
 import type { PendingEntry } from "../src/PendingSchema.js";
 import { matchesAny, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
@@ -603,7 +604,7 @@ function retiredLines(
     ),
   ];
   if (paths.length === 0) return [];
-  return git(cwd, ["diff", `${cursor}..HEAD`, "--", ...paths.map(literal)])
+  return git(cwd, ["diff", `${cursor}..HEAD`, "--", ...paths])
     .split("\n")
     .filter((line) => line.startsWith("-") && !line.startsWith("---"));
 }
@@ -767,7 +768,7 @@ function diffOf(
     "-p",
     commit.sha,
     "--",
-    ...paths.map(literal),
+    ...paths,
   ]);
 }
 
@@ -798,17 +799,22 @@ const FIELD_SEP_FMT = "%x1f";
 const MAX_BUFFER = 64 << 20;
 
 /**
- * A path as an unambiguous pathspec: literal, anchored at the repo root.
+ * Every window read, under one pathspec dialect.
  *
- * Paths reach here from git's own `--name-only` output, so a filename
- * carrying `*` or `:` would otherwise be re-read as a glob or as pathspec
- * magic, and a diff narrowed by it would quietly show the wrong files.
+ * The paths these reads narrow by come straight from git's own
+ * `--name-only` output, so a filename carrying `*`, `?`, `[` or a leading
+ * `:` would otherwise be re-read as a glob or as pathspec magic and the
+ * narrowed diff would quietly show the wrong files. `literalPathspecEnv`
+ * (`src/git.ts`) is the engine's one spelling of that refusal, shared rather
+ * than re-derived here (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*); it replaces a local `:(top,literal)` prefix whose `top`
+ * leg anchored nothing, since `cwd` is the tick's working tree root and
+ * these paths are already relative to it.
  */
-const literal = (path: string): string => `:(top,literal)${path}`;
-
 function git(cwd: string, args: readonly string[]): string {
   return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
     cwd,
+    env: literalPathspecEnv(),
     encoding: "utf8",
     maxBuffer: MAX_BUFFER,
     stdio: ["ignore", "pipe", "pipe"],
