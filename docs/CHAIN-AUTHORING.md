@@ -130,8 +130,10 @@ factory over the same three operations), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `agents`, `supervisor` (the engine's policy
-passed through whole), `setup`, and `slots` (prompt text — an autonomy dial,
-domain context; never a directive).
+passed through whole), `setup`, `slots` (prompt text — an autonomy dial,
+domain context; never a directive), and `ci` (the CI lanes the inbox slice
+reads as findings sources beside the records — each a workflow file, a job
+name, and the lane name its findings carry).
 
 It is a TypeScript module rather than JSON because three of those fields are
 values with behavior. An unknown field, or a required one missing, refuses

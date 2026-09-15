@@ -250,12 +250,38 @@ const Slices = strict({
 });
 
 /**
- * The fields `spec/harness.md` names a consumer: the eleven in *What a
- * consumer declares*' table, plus the two that section and *The default
- * `handoff`* name in prose — the `resolver` and the `handoff`, the values
- * with behavior beside the runner. Four are required — the three a tick
- * cannot run without and the one that says which slices run; the rest are
- * the package's opinion until a consumer states otherwise.
+ * One CI lane the inbox slice reads as a findings source
+ * (`spec/harness.md`, *CI lanes as a findings source*): the workflow file
+ * and job name that locate a run on the forge, and the lane name the
+ * findings that run yields are filed under.
+ *
+ * All three are required because all three are consumed: a lane missing its
+ * workflow or job names no run to read, and one missing its name yields
+ * findings with no key — the slice keys a finding by lane name and title, so
+ * an unnamed lane is a finding that can never be recognized as already
+ * filed. Strict, so a consumer who spells the job component by some other
+ * name is told rather than silently left with a lane the slice cannot
+ * locate.
+ *
+ * Not the runner's `Lane`, despite the word: that is a partition of the
+ * consumer's *test suite*, read off `Runner.lanes` and consumed by the
+ * judge. This is a partition of the consumer's *CI*, declared here and
+ * consumed by the inbox slice. Nothing keys one by the other.
+ */
+const CiLane = strict({
+  /** The lane name the findings this lane yields are keyed and filed under. */
+  name: z.string().min(1),
+  /** The workflow file holding the job, as the forge's CLI names one. */
+  workflow: z.string().min(1),
+  /** The job within that workflow whose run the slice reads. */
+  job: z.string().min(1),
+});
+
+/**
+ * The fields `spec/harness.md` names a consumer, one per row of *What a
+ * consumer declares*' table. Four are required — the three a tick cannot run
+ * without and the one that says which slices run; the rest are the package's
+ * opinion until a consumer states otherwise.
  */
 export const DeclarationSchema = strict({
   /**
@@ -344,6 +370,34 @@ export const DeclarationSchema = strict({
     autonomy: z.string().min(1).optional(),
     domain: z.string().min(1).optional(),
   }).optional(),
+  /**
+   * The CI lanes the inbox slice reads as findings sources beside the
+   * records. Optional — a consumer with no forge, or one whose CI it does
+   * not want drained into the queue, declares nothing and the slice reads
+   * records alone.
+   *
+   * Non-empty when declared, and lane names unique across the list: an empty
+   * list is a findings source that sources nothing, and two lanes sharing a
+   * name file findings under one key, so the second lane's failure reads as
+   * the first's already-filed one.
+   */
+  ci: z
+    .array(CiLane)
+    .min(1)
+    .superRefine((lanes, ctx) => {
+      const seen = new Set<string>();
+      lanes.forEach((lane, index) => {
+        if (seen.has(lane.name)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "name"],
+            message: `lane name is already declared — findings are keyed by lane name, so two lanes named \`${lane.name}\` would file as one`,
+          });
+        }
+        seen.add(lane.name);
+      });
+    })
+    .optional(),
 });
 
 /** A validated declaration, as the chain factory reads it. */

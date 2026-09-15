@@ -98,6 +98,10 @@ const fullDeclaration = (): Record<string, unknown> => ({
     },
   },
   slots: { autonomy: "ship without asking", domain: "an AI-derivation harness" },
+  ci: [
+    { name: "windows", workflow: "ci.yml", job: "test (windows-latest)" },
+    { name: "linux", workflow: "ci.yml", job: "test (ubuntu-latest)" },
+  ],
 });
 
 /**
@@ -149,7 +153,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(13);
+    expect(Object.keys(declared)).toHaveLength(14);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -177,6 +181,11 @@ describe("the harness declaration schema", () => {
     expect(parsed.slices.enabled).toContain("plan-sweep");
     expect(parsed.slices.sweep?.domain).toEqual(["src/**", "harness/**"]);
     expect(parsed.slots?.autonomy).toBe("ship without asking");
+    expect(parsed.ci?.[0]).toEqual({
+      name: "windows",
+      workflow: "ci.yml",
+      job: "test (windows-latest)",
+    });
   });
 
   it("a declaration naming quarantineScope on supervisor parses", () => {
@@ -347,6 +356,70 @@ describe("the harness declaration schema", () => {
     // The refinement's own reason survives the missing-field wording, so the
     // refusal says which declaration made the field required.
     expect(message).toContain("plan-sweep");
+  });
+
+  it("a declaration carrying a ci lane with its workflow, job and lane name parses", () => {
+    const declared = fullDeclaration();
+    // Vacuity guard on "with its workflow, job and lane name": the three
+    // components are read off the lane's own schema, so a component the
+    // schema gains and this case never names fails here rather than passing
+    // over two of three.
+    const lane = { name: "windows", workflow: "ci.yml", job: "test (windows)" };
+    expect(Object.keys(lane).sort()).toEqual(
+      Object.keys(DeclarationSchema.shape.ci.unwrap().element.shape).sort(),
+    );
+    declared["ci"] = [lane];
+
+    const parsed = parseDeclaration(declared);
+
+    expect(parsed.ci).toEqual([lane]);
+    // The lane rides beside the rest of the declaration rather than
+    // displacing it.
+    expect(parsed.slices.enabled).toContain("plan-inbox");
+  });
+
+  it("a declaration whose ci lane omits its job refuses the load naming the field", () => {
+    const declared = fullDeclaration();
+    declared["ci"] = [{ name: "windows", workflow: "ci.yml" }];
+
+    const message = refusalFor(declared);
+
+    // The lane's own index and component, so a consumer with several lanes
+    // is told which one named no job.
+    expect(message).toContain("ci.0.job");
+    expect(message).toContain("required field is missing");
+  });
+
+  it("a ci lane naming a component the slice does not read is refused at its own path", () => {
+    const declared = fullDeclaration();
+    declared["ci"] = [
+      { name: "windows", workflow: "ci.yml", job: "test", branch: "main" },
+    ];
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("ci.0.branch");
+    expect(message).toContain("valid fields are: name, workflow, job");
+  });
+
+  it("two ci lanes sharing a lane name are refused, rather than filing findings under one key", () => {
+    const declared = fullDeclaration();
+    declared["ci"] = [
+      { name: "windows", workflow: "ci.yml", job: "test (windows)" },
+      { name: "windows", workflow: "nightly.yml", job: "test (windows)" },
+    ];
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("ci.1.name");
+    expect(message).toContain("keyed by lane name");
+  });
+
+  it("a declared ci list with no lanes is refused, rather than sourcing nothing", () => {
+    const declared = fullDeclaration();
+    declared["ci"] = [];
+
+    expect(refusalFor(declared)).toContain("ci:");
   });
 
   it("a gate declared at a point the engine does not run is refused", () => {
