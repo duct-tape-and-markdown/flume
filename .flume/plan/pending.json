@@ -44,18 +44,6 @@
       ],
       "retire": []
     },
-    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "every case whose subject is POSIX error semantics names its host and the reason it skips elsewhere, so the win32 lane's remaining reds are engine or fixture defects and nothing skips silently.",
-    "tests": [],
-    "pins": [
-      "no case in tests/ denies with a permission bit outside the declared-host list",
-      "every declared-host case carries the reason it cannot run on the other host"
-    ],
-    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction.",
     "observedFiles": [
       ".flume/plan/notes/A-POSIX-ONLY-CASE-DECLARES-ITS-HOST.md",
       "tests/Agent.test.ts",
@@ -75,37 +63,19 @@
       "tests/job.test.ts",
       "tests/priorAttempts.test.ts",
       "tests/worktrees.test.ts"
-    ]
-  },
-  {
-    "tag": "LONG-PATH-FIXTURES-KEEP-GIT-OFF-THE-DEEP-PATH",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/job.test.ts",
-          "description": "the jobRm and jobNew deep-nest cases carry their length in the job name, leaving the repo git inits at ordinary depth"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the deep pendingPath case points the worktree base off its deep state root"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the three win32 total-path cases run git at or into their own deep tree, so each reds on a limit toNamespacedPath cannot reach rather than on the engine call it names",
+    ],
+    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
     },
-    "acceptance": "each of the three cases keeps its deep path on the subject it names and lets git work at ordinary depth, so the lane's verdict on them is the engine's and not the fixture's.",
+    "acceptance": "every case whose subject is POSIX error semantics names its host and the reason it skips elsewhere, so the win32 lane's remaining reds are engine or fixture defects and nothing skips silently.",
     "tests": [],
-    "pins": [],
-    "notes": "Lane-observed (35016231910): the two job cases fail `spawn git ENOENT` — win32 refuses a spawn cwd past MAX_PATH, which `\\\\?\\` cannot reach. The Dispatcher case ships nothing: its worktree lands under the deep flumeDir, and git refuses a worktree path near 200 chars whatever core.longpaths says (`platform-facts.md`). Depth belongs on the jobDir/pendingPath alone — a long job name, a shallow worktree base. Nothing is judgeable off-win32: all three are `runIf(win32)`, so the lane is the verdict."
+    "pins": [
+      "no case in tests/ denies with a permission bit outside the declared-host list",
+      "every declared-host case carries the reason it cannot run on the other host"
+    ],
+    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
   },
   {
     "tag": "MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH",
@@ -152,45 +122,6 @@
       "readAll refuses when a plain file sits above the prior-attempts root"
     ],
     "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT → empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal — an unseen marker lets a loop start over an interrupted merge — so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
-  },
-  {
-    "tag": "RENDER-NAMES-THE-LANE-THAT-WOKE-THE-TICK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/windows.ts",
-          "description": "one lane read per tick, shared by the liveness leg and the render; each block says whether that lane is the one that made the slice live"
-        },
-        {
-          "path": "harness/ci.ts",
-          "description": "an unread degraded from a failing status keeps the run whose log could not be fetched"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "the wake marker, a wake whose log fetch failed, the stamped lane's silence, and the per-lane call count"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the liveness verdict is a boolean the render re-derives and the degraded unread drops its run, so a tick woken by a lane it then cannot fetch renders a bare UNREAD",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "CI lanes as a findings source"
-    },
-    "acceptance": "every rendered lane says whether it is the one that made the slice live, and a wake whose log fetch failed names the run it was woken over — no unread standing over an invisible cause.",
-    "tests": [
-      "the inbox window names the lane whose undrained failing run made the slice live",
-      "a lane woken by a run whose log the forge refuses renders unread over that run, not over nothing",
-      "a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries",
-      "one tick's liveness leg and render ask the forge once per lane between them"
-    ],
-    "pins": [],
-    "notes": "3b3dca4 accepted the double read as debt riding this entry: `undrainedRedLane` and `renderCiLanes` each walk every lane, and handing the render the liveness verdict is the same edit this sentence forces. `withMaterial`'s unread arm drops the failing status it degraded from, which is why the wake's cause cannot be named today. One window object serves both callers within a tick (`harness/chain.ts` builds it once; each tick is a fresh child)."
   },
   {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
@@ -280,36 +211,6 @@
       "the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span"
     ],
     "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag — so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
-  },
-  {
-    "tag": "DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/denial.ts",
-          "description": "the two stat facts shrink to a cite of the page section that now owns them"
-        },
-        {
-          "path": "tests/denial.test.ts",
-          "description": "the cover parent-seal comment, same shrink"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the denial helper spells out both stat facts `platform-facts.md` now owns, so one measured external fact is held in two prose copies that can drift apart",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the two measured stat facts have one home, and every site that turns on them points at it rather than restating it.",
-    "tests": [],
-    "pins": [],
-    "notes": "The trigger the closed question named has fired: 4e750c0 gave `.claude/rules/platform-facts.md` *win32 reports a path through a non-directory as not found*, carrying both facts and the deny-the-read-never-the-parent idiom. The helper's second paragraph and the cover's parent-seal comment predate it and restate it whole; the neighbouring *chmod denies nothing on win32* cite in the same comment is the pointer shape. tests/job.test.ts's one-line why stays debt."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
