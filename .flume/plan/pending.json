@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "DISPATCHER-SUITE-READS-THE-ENGINE-WORKTREE-REGISTRY",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "worktree presence/absence verdicts read readWorktreeRegistry instead of substring-matching a hand-spawned `worktree list`"
+        }
+      ]
+    },
+    "summary": "tests/Dispatcher.test.ts spawns `worktree list --porcelain` at seven sites and substring-matches host-separator paths against it; three absence verdicts are unconditionally green on the windows lane",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "no `worktree list` spawn is left in the file; presence and absence are exact membership over readWorktreeRegistry's resolved paths, and its read:false arm refuses rather than reading as an empty set",
+    "tests": [],
+    "pins": [
+      "a tick's teardown leaves the repo's worktree registry holding only the primary checkout",
+      "a fanout wave's teardown leaves the repo's worktree registry holding only the primary checkout",
+      "the startup sweep leaves the orphan's path out of the repo's worktree registry"
+    ],
+    "notes": "Sites ~438/3251/3296/3350/3391/3414/3484, beside readWorktreeRegistry the file already imports (line 41, used once at 16874). Lines 443/3298/3353 assert `not.toContain(join('.flume','worktrees',...))`; git prints forward slashes on every platform (the file says so at 3255), so on windows-latest — a lane .github/workflows/ci.yml:12 really runs — the needle is a string git never emits and the verdict is green over nothing. The positive ones pin a path fragment, not a registered path."
+  }
+]
