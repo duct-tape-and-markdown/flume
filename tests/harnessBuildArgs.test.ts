@@ -13,6 +13,13 @@
  * argument map would re-author the prompt's placeholder vocabulary by the
  * tester's hand and let a prompt naming an arg nothing supplies ship green.
  *
+ * The reader is configured as a tick configures it, too: the phase the render
+ * runs through carries the data keys `harness/chain.ts` declares for build. A
+ * phase omitting them drives the real renderer over a tick's real arguments
+ * with the engine's span neutralization off — so a cited section quoting the
+ * span grammar would run `sh` from this suite, and the neutralization every
+ * tick relies on would be pinned by nothing.
+ *
  * The cited-section case is the other side of that seam: the text these args
  * quote is compared against what `resolveCite` — the resolution the `per`
  * gate drives over the queue — returns for the same cite, so the gate that
@@ -30,6 +37,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
+  BUILD_PROMPT_DATA_KEYS,
+  SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
   entryExtension,
   notePath,
@@ -82,6 +91,26 @@ const TYPED_SPEC = JSON.stringify({
   sections: { prompts: "the section, keyed rather than headed" },
 });
 
+/**
+ * The command an inline-exec span in a cited section would run, and the token
+ * only running it produces — the text spells `SPAN` and `RAN` apart, so
+ * `SPANRAN` in a rendered prompt is `sh`'s output and nothing else.
+ */
+const SPAN_CMD = "printf %s%s SPAN RAN";
+const SPAN_OUTPUT = "SPANRAN";
+
+/**
+ * A spec section whose prose quotes the engine's own span grammar — the shape
+ * of every page documenting it, and so a section a build entry's `per` lands
+ * in routinely (`harness/prompts.ts`, BUILD_PROMPT_DATA_KEYS).
+ */
+const SPANNED_SPEC = [
+  `## ${SECTION}`,
+  "",
+  `A prompt resolves an inline-exec span, written !\`${SPAN_CMD}\`.`,
+  "",
+].join("\n");
+
 const byKey: SectionResolver = (cite, text) =>
   (JSON.parse(text) as { sections: Record<string, string> }).sections[
     cite.section
@@ -97,6 +126,7 @@ beforeAll(async () => {
   await mkdir(join(cwd, "spec"), { recursive: true });
   await writeFile(join(cwd, "spec", "harness.md"), SPEC);
   await writeFile(join(cwd, "spec", "contract.json"), TYPED_SPEC);
+  await writeFile(join(cwd, "spec", "spanned.md"), SPANNED_SPEC);
 });
 
 afterAll(async () => {
@@ -365,7 +395,67 @@ it("the package's build prompt renders over a real tick with no placeholder left
   expect(rendered).toContain("Every prompt the package renders");
 });
 
-/** A phase the renderer can read, carrying the prompt under test. */
+it("build's per-tick args reach the renderer through a phase carrying the package's declared prompt data keys", async () => {
+  const promptFile = promptPath("build");
+  const phase = buildPhase(promptFile);
+  const flumeDir = join(REPO_ROOT, ".flume");
+
+  // The consumer this file drives is configured as a tick configures it: the
+  // keys build declares, from the two producers' own lists.
+  expect(phase.promptDataKeys).toEqual([
+    ...SHARED_PROMPT_DATA_KEYS,
+    ...BUILD_PROMPT_DATA_KEYS,
+  ]);
+
+  const assigned = entry({ per: { path: "spec/spanned.md", section: SECTION } });
+  const perTick = argsFor(assigned);
+  // Non-vacuity: the real writer really did hand the renderer a span — the
+  // assertions below distinguish two renderings of it, not its absence.
+  expect(perTick.PER_SECTION_TEXT).toContain(`!\`${SPAN_CMD}\``);
+
+  const args = {
+    ...sharedPromptArgs({
+      declaration: declare(),
+      extension: entryExtension(),
+      stateRoot: flumeDir,
+    }),
+    ...perTick,
+  };
+
+  const render = (through: Phase): Promise<string> =>
+    renderPrompt({
+      phase: through,
+      promptFile,
+      // The repo itself, so the prompt's own `git log` span resolves; the
+      // cite is read from the tick's tree, as `argsFor` reads it.
+      cwd: REPO_ROOT,
+      flumeDir,
+      args,
+    });
+
+  // Through the declared phase: the command text reaches the agent as its
+  // author wrote it, and `sh` never saw it.
+  const rendered = await render(phase);
+  expect(rendered).toContain(`\`${SPAN_CMD}\``);
+  expect(rendered).not.toContain(SPAN_OUTPUT);
+
+  // And through a phase declaring nothing as data — what this file's consumer
+  // was before the keys were declared — the same args, the same renderer, and
+  // the cited section's span runs. Deliberately executed once, harmlessly, so
+  // "never saw it" above is the declaration's doing and not an inert fixture.
+  const unguarded = await render({ ...phase, promptDataKeys: [] });
+  expect(unguarded).toContain(SPAN_OUTPUT);
+  expect(unguarded).not.toContain(`\`${SPAN_CMD}\``);
+});
+
+/**
+ * A phase the renderer can read, carrying the prompt under test and the data
+ * keys the package's own build phase declares (`harness/chain.ts`). Declared
+ * from the producers' own lists rather than spelled here: a phase configured
+ * unlike any tick's would drive the real reader over arguments no tick hands
+ * it, and the section a build entry cites is routinely the prose documenting
+ * the engine's span grammar.
+ */
 function buildPhase(promptFile: string): Phase {
   return {
     name: "build",
@@ -374,6 +464,7 @@ function buildPhase(promptFile: string): Phase {
     concurrency: "fanout",
     writablePaths: ["harness/**"],
     gates: [],
+    promptDataKeys: [...SHARED_PROMPT_DATA_KEYS, ...BUILD_PROMPT_DATA_KEYS],
     handoff: () => [],
   };
 }
