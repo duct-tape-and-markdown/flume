@@ -36,6 +36,8 @@ Execute the assigned entry. Implement completely — no placeholders, no stubs.
 - Search the tree before assuming "not implemented".
 - Do NOT write a changelog line. The release changelog is built from git history before a release cut, so your commit message *is* the record — write the body accordingly: what changed and why, in terms a release note can be derived from.
 
+{{TURN_BOUNDARY}}
+
 {{AUTONOMY}}
 
 # OUTPUT

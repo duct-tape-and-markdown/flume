@@ -38,6 +38,8 @@ Findings route per the pages' own bar: correctness-adjacent → a pending entry 
 
 Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
+{{TURN_BOUNDARY}}
+
 {{AUTONOMY}}
 
 # OUTPUT

@@ -36,6 +36,8 @@ Each entry: `per` cites the section verbatim; `files` names the exact paths the 
 
 Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
+{{TURN_BOUNDARY}}
+
 {{AUTONOMY}}
 
 # OUTPUT

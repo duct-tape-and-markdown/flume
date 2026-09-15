@@ -44,6 +44,8 @@ Route what routes cleanly. Leave the rest on disk rather than guess; the next in
 
 Entry and artifact discipline: `{{DISCIPLINE}}` — read it before writing the queue or the questions file.
 
+{{TURN_BOUNDARY}}
+
 {{AUTONOMY}}
 
 # OUTPUT

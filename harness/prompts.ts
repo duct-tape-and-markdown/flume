@@ -18,7 +18,9 @@
  * mid-sentence (`.claude/rules/engineering.md`, *Derived state is computed,
  * never restated beside its source*). Every value below is read from the
  * surface that owns it — the engine's `NO_COMMIT_MODES`, `records.ts`'s cap,
- * the entry extension's own hints, the consumer's declaration.
+ * the entry extension's own hints, the consumer's declaration. The turn
+ * boundary is the one this module owns outright: nothing else holds it, so
+ * the single home *is* the constant below.
  *
  * A placeholder with no argument is refused by the engine's renderer before
  * the agent is invoked, so an arg this module stops supplying is a loud
@@ -59,6 +61,24 @@ import { RECORD_MAX_BYTES, notePath, recordDirs } from "./records.js";
  * substitutes into a file the renderer never reads.
  */
 const DISCIPLINE = "plan-discipline";
+
+/**
+ * What a tick is, from inside the agent invocation that runs it: one turn.
+ *
+ * The one shared value the package *authors* rather than reads off another
+ * surface — no engine export holds it, because the fact is about the harness
+ * that invokes the agent rather than about anything the engine computes.
+ * Spelled once here for the reason every other arg in this module is: four
+ * prompts carrying four copies is four things to edit and three to go stale
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * Field-traced: an agent that armed a watcher on its own suite and ended its
+ * turn ended the invocation with it, and the work the watcher was going to
+ * commit died with the worktree. No prompt the package shipped said the turn
+ * was the boundary, so nothing was contradicted.
+ */
+const TURN_BOUNDARY = `**One tick is one turn.** Ending your turn ends this invocation, and nothing wakes it afterwards. A command left running in the background, a scheduled wake-up, a watcher armed on your own work, a message whose reply you meant to read: each is a continuation this process will not be alive for, and whatever it would have written dies uncommitted with the worktree. Wait inside the turn on anything you started, and name what you left undone in the commit this tick writes.`;
 
 /**
  * Every prompt file the package ships: one per phase it constructs, plus the
@@ -116,6 +136,7 @@ export function promptPath(name: PromptName): string {
  * and a declared key a tick never returns is simply unused.
  */
 export const SHARED_PROMPT_DATA_KEYS = [
+  "TURN_BOUNDARY",
   "NO_COMMIT_MODES",
   "RECORD_MAX_BYTES",
   "DISCIPLINE",
@@ -161,6 +182,8 @@ export function sharedPromptArgs(
 ): Record<SharedPromptArg, string> {
   const { declaration, extension, stateRoot } = input;
   return {
+    /** The invocation boundary every phase runs inside. */
+    TURN_BOUNDARY,
     /**
      * The engine's no-commit taxonomy, rendered from the engine's own
      * declaration (`src/Prompt.ts`) — the whole point of this arg. A mode

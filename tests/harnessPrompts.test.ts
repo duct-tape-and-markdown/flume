@@ -777,3 +777,40 @@ it("a questions file carrying no headings renders the plan slices' none-open pla
   // the coverage above makes that count non-zero.
   expect(asserted).toBe(pairsToAssert(readers, [questions!]));
 });
+
+// ------------------------------------------------- the invocation boundary
+
+/**
+ * The turn boundary reaches every phase prompt from the one home that holds
+ * it, asserted at both ends of the seam: each shipped prompt names the
+ * placeholder, and the real renderer over the real `sharedPromptArgs` puts
+ * the arg's bytes into the text.
+ *
+ * What the sentence *says* is not judged here — prose read against prose is
+ * not this suite's (`.claude/rules/engineering.md`, *Narration is the
+ * ladder's bottom rung*). What is judged is the mechanical half that prose
+ * cannot hold: a phase added without the arg, or an arg this module stops
+ * supplying, leaves a prompt silent about the boundary that kills its work.
+ */
+it("every phase prompt the package renders substitutes the shared turn-boundary arg", async () => {
+  // Non-vacuity: a phase list that collapsed to zero would pass the loop
+  // below over nothing (`.claude/rules/engineering.md`, *A green verdict is
+  // proven non-vacuous*).
+  expect(PHASES.length).toBeGreaterThan(0);
+
+  // The producer's value, read from the producer — an empty one would make
+  // every `carries` assertion below trivially true.
+  const boundary = args()["TURN_BOUNDARY"];
+  expect(boundary, "the shared args supply no TURN_BOUNDARY").toBeDefined();
+  expect(boundary!.trim()).not.toBe("");
+
+  for (const name of PHASES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name);
+    expect({
+      name,
+      names: raw.includes("{{TURN_BOUNDARY}}"),
+      carries: rendered.includes(boundary!),
+    }).toEqual({ name, names: true, carries: true });
+  }
+});
