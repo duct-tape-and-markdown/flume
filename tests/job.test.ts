@@ -41,11 +41,13 @@ import {
 } from "../src/job.ts";
 import { Baton } from "../src/Baton.ts";
 import {
+  awakeDir,
   loopLockPath,
   mergingMarkerPath,
   STATE_ROOT_NAMES,
 } from "../src/paths.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
+import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -1451,19 +1453,22 @@ describe("jobStatus — enumeration units", () => {
       const frictionDir = join(jobs, "alpha", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "x\n");
-      // Strip traversal permission on the friction dir itself: readdir now
-      // fails with EACCES — the dir exists but can't be read — not ENOENT
-      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
-      // EACCES fixture readPendingLoose's own non-ENOENT test uses above.
-      await chmod(frictionDir, 0o000);
+      // Non-vacuity: the dir counts before it is denied.
+      expect(jobStatus(dir, "friction")).toEqual([
+        { name: "alpha", awake: [], pending: 0, frictionCount: 1 },
+      ]);
+
+      // Deny the friction dir structurally (`tests/helpers/denial.ts`):
+      // readdir now fails ENOTDIR — the path is there but is not a dir to
+      // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
+      // nothing"). Same primitive readPendingLoose's own non-ENOENT test
+      // uses above.
+      denyDirectory(frictionDir);
 
       expect(jobStatus(dir, "friction")).toEqual([
         { name: "alpha", awake: [], pending: 0, frictionCount: null },
       ]);
     } finally {
-      await chmod(join(dir, ".flume", "jobs", "alpha", "friction"), 0o755).catch(
-        () => {},
-      );
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -1574,10 +1579,15 @@ describe("jobStatus — enumeration units", () => {
       await mkdir(planDir, { recursive: true });
       const pendingPath = join(planDir, "pending.json");
       await writeFile(pendingPath, "[]");
-      // Strip traversal permission on the parent dir: stat(pendingPath) now
-      // fails with EACCES — the file exists but can't be reached — not
-      // ENOENT (`.claude/rules/engineering.md`, "Loud or nothing").
-      await chmod(planDir, 0o000);
+      // Non-vacuity: the queue reads before it is denied.
+      expect(readPendingLoose(pendingPath).ok).toBe(true);
+
+      // Deny the queue file structurally (`tests/helpers/denial.ts`): the
+      // path is still there to a stat, and the read fails EISDIR — not
+      // ENOENT (`.claude/rules/engineering.md`, "Loud or nothing"). Denying
+      // the *parent* would not arm this: `statSync` with `throwIfNoEntry`
+      // folds ENOTDIR into absence, so the gate would take its absent arm.
+      denyFile(pendingPath);
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
@@ -1588,7 +1598,6 @@ describe("jobStatus — enumeration units", () => {
       expect(caught).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
     } finally {
-      await chmod(join(dir, "plan"), 0o755).catch(() => {});
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -1598,12 +1607,12 @@ describe("jobStatus — enumeration units", () => {
     try {
       const jobs = join(dir, ".flume", "jobs");
 
-      // "broken": pending.json exists but its parent dir loses traversal
-      // permission, so the read fails EACCES — not ENOENT.
+      // "broken": pending.json is there to a stat but is not a file to read
+      // — a structural denial (`tests/helpers/denial.ts`) that fails the read
+      // EISDIR, not ENOENT.
       const planDir = join(jobs, "broken", "plan");
       await mkdir(planDir, { recursive: true });
-      await writeFile(join(planDir, "pending.json"), "[]");
-      await chmod(planDir, 0o000);
+      denyFile(join(planDir, "pending.json"));
 
       // "healthy": an ordinary, readable sibling job.
       await mkdir(join(jobs, "healthy", "plan"), { recursive: true });
@@ -1617,9 +1626,6 @@ describe("jobStatus — enumeration units", () => {
         { name: "healthy", awake: [], pending: 1 },
       ]);
     } finally {
-      await chmod(join(dir, ".flume", "jobs", "broken", "plan"), 0o755).catch(
-        () => {},
-      );
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -1700,7 +1706,7 @@ describe("jobStatus — enumeration units", () => {
         const frictionDir = join(repo.dir, ".flume", "jobs", "s1", "friction");
         await mkdir(frictionDir, { recursive: true });
         await writeFile(join(frictionDir, "note.md"), "blocked\n");
-        await chmod(frictionDir, 0o000);
+        denyDirectory(frictionDir);
 
         const r = await runCli(repo.dir, ["job", "status"]);
         expect(r.code).toBe(0);
@@ -1708,10 +1714,6 @@ describe("jobStatus — enumeration units", () => {
         expect(r.out).toContain("friction: unreadable");
         expect(r.out).not.toContain("note(s) await routing");
       } finally {
-        await chmod(
-          join(repo.dir, ".flume", "jobs", "s1", "friction"),
-          0o755,
-        ).catch(() => {});
         await repo.cleanup();
       }
     },
@@ -1728,11 +1730,12 @@ describe("jobStatus — enumeration units", () => {
  * correct-looking answer that is a lie about what was there
  * (`.claude/rules/engineering.md`, "Loud or nothing").
  *
- * EACCES is the reachable non-ENOENT stat failure on this platform: strip
- * traversal permission and the path exists but cannot be reached. Same
- * fixture shape `readPendingLoose` and `countFrictionFiles` are pinned with
- * above. Each test reads the fixture once *before* sealing it, so the
- * assertion after the `chmod` is judged against a populated subject rather
+ * The denial is structural, not a permission bit (`tests/helpers/denial.ts`):
+ * a plain file where the reader wants a directory, a directory where it wants
+ * a file. Same fixture shape `readPendingLoose` and `countFrictionFiles` are
+ * pinned with above, and it denies on win32 and under a root-run, where a
+ * mode denies nothing. Each test reads the fixture once *before* denying it,
+ * so the assertion afterwards is judged against a populated subject rather
  * than a mistyped path (`.claude/rules/engineering.md`, "A green verdict is
  * proven non-vacuous").
  */
@@ -1747,9 +1750,9 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
       await writeFile(loopLockPath(root), String(process.pid), "utf8");
       expect(await liveLoopPid(root)).toBe(process.pid);
 
-      // Strip traversal permission on the state root: the pidfile still
-      // records a live pid, but reading it now fails EACCES, not ENOENT.
-      await chmod(root, 0o000);
+      // Deny the pidfile structurally: the path is still there to a stat,
+      // and reading it now fails EISDIR, not ENOENT.
+      denyFile(loopLockPath(root));
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
@@ -1760,7 +1763,6 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
       expect(caught).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
     } finally {
-      await chmod(root, 0o755).catch(() => {});
       await rm(base, { recursive: true, force: true });
     }
   });
@@ -1775,15 +1777,18 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
         { name: "sealed", awake: ["build"], pending: 0 },
       ]);
 
-      // Strip traversal permission on the job dir itself: awake/ is still
-      // there, still holding a flag, but every read under it fails EACCES.
-      await chmod(jobDir, 0o000);
+      // Deny both of the job's readings at the paths jobStatus reads, not at
+      // the job dir above them: `jobStatus` enumerates `jobs/` by dirent and
+      // skips a non-directory, so a denied job dir would drop the row this
+      // case is about rather than report it unreadable.
+      denyDirectory(awakeDir(jobDir));
+      await mkdir(join(jobDir, "plan"), { recursive: true });
+      denyFile(join(jobDir, "plan", "pending.json"));
 
       expect(jobStatus(dir)).toEqual([
         { name: "sealed", awake: null, pending: null },
       ]);
     } finally {
-      await chmod(jobDir, 0o755).catch(() => {});
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -1793,7 +1798,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
     const sealedAwake = join(dir, ".flume", "jobs", "sealed", "awake");
     try {
       const jobs = join(dir, ".flume", "jobs");
-      // "sealed": awake/ exists and is unreadable (EACCES on the dir itself).
+      // "sealed": awake/ is there and cannot be read (denied structurally).
       await mkdir(sealedAwake, { recursive: true });
       await writeFile(join(sealedAwake, "plan"), "");
       // "healthy": an ordinary, readable sibling job.
@@ -1804,14 +1809,13 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
         { name: "sealed", awake: ["plan"], pending: 0 },
       ]);
 
-      await chmod(sealedAwake, 0o000);
+      denyDirectory(sealedAwake);
 
       expect(jobStatus(dir)).toEqual([
         { name: "healthy", awake: ["build"], pending: 0 },
         { name: "sealed", awake: null, pending: 0 },
       ]);
     } finally {
-      await chmod(sealedAwake, 0o755).catch(() => {});
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -1825,10 +1829,10 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
         { name: "alpha", awake: [], pending: 0 },
       ]);
 
-      // Strip traversal permission on .flume: jobs/ is still there, holding
-      // the job, but reading it fails EACCES rather than ENOENT — "no jobs"
-      // would report an empty repo over a hidden one.
-      await chmod(flumeDir, 0o000);
+      // Deny the jobs root itself: it is still there to a stat, but it is
+      // not a dir to list, so the read fails ENOTDIR rather than ENOENT —
+      // "no jobs" would report an empty repo over a hidden one.
+      denyDirectory(join(flumeDir, "jobs"));
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
@@ -1839,7 +1843,6 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
       expect(caught).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
     } finally {
-      await chmod(flumeDir, 0o755).catch(() => {});
       await rm(dir, { recursive: true, force: true });
     }
   });

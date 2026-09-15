@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -110,6 +110,7 @@ import {
   slugify as indexSlugify,
   priorAttemptPath as indexPriorAttemptPath,
 } from "../src/index.ts";
+import { denyDirectory } from "./helpers/denial.ts";
 import {
   makeFixture,
   silent,
@@ -4805,13 +4806,15 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
  * empty answer, and anything else must escape rather than read as "no
  * interrupted merge" (`.claude/rules/engineering.md`, "Loud or nothing").
  *
- * EACCES is the reachable non-ENOENT listing failure on this platform:
- * strip traversal permission and the dir exists but cannot be read. Same
- * fixture shape `countFrictionFiles` and `PriorAttempts.readAll` are pinned
- * with. The unreadable leg reads its fixture once *before* sealing it, so
- * the throw afterwards is judged against a dir that really held a marker
- * rather than a mistyped path (`.claude/rules/engineering.md`, "A green
- * verdict is proven non-vacuous").
+ * The denial is structural, not a permission bit (`tests/helpers/denial.ts`):
+ * a plain file stands where the listing wants a directory, so the read
+ * refuses — and not as ENOENT — on every host and under a root-run, where a
+ * mode denies nothing.
+ * Same fixture shape `countFrictionFiles` and `PriorAttempts.readAll` are
+ * pinned with. The unreadable leg reads its fixture once *before* denying
+ * it, so the throw afterwards is judged against a dir that really held a
+ * marker rather than a mistyped path (`.claude/rules/engineering.md`, "A
+ * green verdict is proven non-vacuous").
  */
 describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
   it("readMergingMarkers reads an absent merging dir as no interrupted merge", async () => {
@@ -4842,10 +4845,10 @@ describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
       // seal talking and not an empty dir.
       expect(await readMergingMarkers(flumeDir)).toHaveLength(1);
 
-      // Strip traversal permission on the merging dir itself: readdir now
-      // fails EACCES — the dir exists, the marker still stands, but neither
-      // can be seen — not ENOENT.
-      await chmod(dir, 0o000);
+      // Deny the merging dir structurally: readdir now fails ENOTDIR — the
+      // path is there, but it is not a dir the listing can read — not
+      // ENOENT.
+      denyDirectory(dir);
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
@@ -4859,7 +4862,6 @@ describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
       ).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
     } finally {
-      await chmod(dir, 0o755).catch(() => {});
       await rm(flumeDir, { recursive: true, force: true });
     }
   });

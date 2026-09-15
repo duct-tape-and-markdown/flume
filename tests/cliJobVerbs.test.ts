@@ -5,7 +5,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { denyDirectory } from "./helpers/denial.ts";
 import {
   SPAWN_BUDGET_MS,
   hermeticEnv,
@@ -297,10 +298,12 @@ describe("flume status / flume job status — one friction renderer (FRICTION-LI
       expect(segment(counted.status.out)).toBe("friction: 2 note(s) await routing");
       expect(segment(counted.job.out)).toBe(segment(counted.status.out));
 
-      // Unreadable: the dirs exist but cannot be read (EACCES, not ENOENT) —
-      // the arm that carries no count to give a drifted wording away.
-      await chmod(repoFriction, 0o000);
-      await chmod(jobFriction, 0o000);
+      // Unreadable: the dirs are there but are not dirs to read (ENOTDIR,
+      // not ENOENT) — the arm that carries no count to give a drifted
+      // wording away. Structural, so the win32 lane exercises it too
+      // (`tests/helpers/denial.ts`).
+      denyDirectory(repoFriction);
+      denyDirectory(jobFriction);
 
       const unreadable = {
         status: await runCli(repo.dir, ["status"]),
@@ -311,8 +314,6 @@ describe("flume status / flume job status — one friction renderer (FRICTION-LI
       expect(segment(unreadable.status.out)).toBe("friction: unreadable");
       expect(segment(unreadable.job.out)).toBe(segment(unreadable.status.out));
     } finally {
-      await chmod(repoFriction, 0o755).catch(() => {});
-      await chmod(jobFriction, 0o755).catch(() => {});
       await repo.cleanup();
     }
   }, SPAWN_BUDGET_MS);
@@ -341,11 +342,11 @@ describe("flume job status — an unreadable baton is its own reading (JOB-EXIST
       await writeFile(join(jobs, "live", "awake", "build"), "");
       // "quiet": no awake dir at all — hibernating.
       await mkdir(join(jobs, "quiet"), { recursive: true });
-      // "sealed": an awake dir that exists but cannot be read (EACCES, not
-      // ENOENT).
+      // "sealed": an awake dir that is there but cannot be read (ENOTDIR,
+      // not ENOENT), denied structurally (`tests/helpers/denial.ts`).
       await mkdir(sealedAwake, { recursive: true });
       await writeFile(join(sealedAwake, "plan"), "");
-      await chmod(sealedAwake, 0o000);
+      denyDirectory(sealedAwake);
 
       const r = await runCli(repo.dir, ["job", "status"]);
       expect(r.code).toBe(0);
@@ -359,7 +360,6 @@ describe("flume job status — an unreadable baton is its own reading (JOB-EXIST
       expect(row("sealed")).toContain("awake: unreadable");
       expect(row("sealed")).not.toContain("hibernating");
     } finally {
-      await chmod(sealedAwake, 0o755).catch(() => {});
       await repo.cleanup();
     }
   }, SPAWN_BUDGET_MS);

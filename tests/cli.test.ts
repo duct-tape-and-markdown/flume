@@ -33,6 +33,7 @@ import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { denyDirectory } from "./helpers/denial.ts";
 import {
   CLI,
   HERMETIC_ENV_STRIP_KEYS,
@@ -952,12 +953,12 @@ describe("flume status — friction line", () => {
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
-      // Strip traversal permission on the friction dir itself: readdir now
-      // fails with EACCES — the dir exists but can't be read — not ENOENT
-      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
-      // EACCES fixture `flume job status`'s own frictionCount test uses
-      // (tests/job.test.ts).
-      await chmod(frictionDir, 0o000);
+      // Deny the friction dir structurally (`tests/helpers/denial.ts`):
+      // readdir now fails ENOTDIR — the path is there but is not a dir to
+      // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
+      // nothing"). Same primitive `flume job status`'s own frictionCount
+      // test uses (tests/job.test.ts), and it denies on win32 too.
+      denyDirectory(frictionDir);
 
       const r = await runCli(repo.dir, ["status"]);
       expect(r.code).toBe(0);
@@ -965,7 +966,6 @@ describe("flume status — friction line", () => {
       expect(r.out).toContain("friction: unreadable");
       expect(r.out).not.toContain("note(s) await routing");
     } finally {
-      await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
       await repo.cleanup();
     }
   }, SPAWN_BUDGET_MS);
@@ -1990,9 +1990,11 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         expect(readable.code).toBe(EX_TERMINAL_MISCONFIG);
         expect(readable.out).toContain(markerPath);
 
-        // Strip traversal permission: the dir exists and the marker still
-        // stands, but neither can be seen — EACCES, not ENOENT.
-        await chmod(mergingPath, 0o000);
+        // Deny the merging dir structurally (`tests/helpers/denial.ts`): the
+        // path is there but is not a dir the listing can read, so the read
+        // refuses rather than reporting ENOENT — on win32 and under a
+        // root-run as well as here.
+        denyDirectory(mergingPath);
 
         const r = await runCli(repo.dir, ["loop", "--max", "3"]);
 
@@ -2004,7 +2006,6 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         expect(existsSync(join(flumeDir, "awake", "probe"))).toBe(true);
         expect(await branchExists(repo.dir)).toBe(true);
       } finally {
-        await chmod(mergingPath, 0o755).catch(() => {});
         await repo.cleanup();
       }
     },

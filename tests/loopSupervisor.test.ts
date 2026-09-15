@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -26,6 +26,7 @@ import {
 import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
+import { denyDirectory } from "./helpers/denial.ts";
 import {
   makeFixture,
   silent,
@@ -1517,9 +1518,11 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const frictionDir = join(fx.repo, ".flume", "friction");
     await mkdir(frictionDir, { recursive: true });
     await writeFile(join(frictionDir, "a.md"), "note\n");
-    // Strip traversal permission: readdir now fails EACCES, not ENOENT
-    // (`.claude/rules/engineering.md`, "Loud or nothing").
-    await chmod(frictionDir, 0o000);
+    // Deny the friction dir structurally (`tests/helpers/denial.ts`): readdir
+    // now refuses, and not as ENOENT (`.claude/rules/engineering.md`, "Loud
+    // or nothing") — on every host and under a root-run, where a mode
+    // refuses nothing.
+    denyDirectory(frictionDir);
 
     let calls = 0;
     const runTick = (): Promise<{ exitCode: number | null }> => {
@@ -1529,20 +1532,16 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     };
 
     const infos: string[] = [];
-    try {
-      const res = await superviseLoop({
-        repoRoot: fx.repo,
-        configDir: fx.configDir,
-        maxTicks: 5,
-        runTick,
-        log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
-      });
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      maxTicks: 5,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
 
-      expect(res.hibernated).toBe(true);
-      expect(infos.some((l) => l.includes("friction: unreadable"))).toBe(true);
-    } finally {
-      await chmod(frictionDir, 0o755).catch(() => {});
-    }
+    expect(res.hibernated).toBe(true);
+    expect(infos.some((l) => l.includes("friction: unreadable"))).toBe(true);
   });
 
   it("omits the friction line at hibernation when Chain.friction is undeclared", async () => {

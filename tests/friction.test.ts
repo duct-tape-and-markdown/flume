@@ -18,7 +18,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { frictionCountLine, harvestFriction } from "../src/friction.ts";
 import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
+import { denyDirectory } from "./helpers/denial.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 
 const exec = promisify(execFile);
@@ -131,19 +132,24 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
       const frictionDir = join(stateRoot, "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "x\n");
-      // Strip traversal permission on the friction dir itself: readdir now
-      // fails with EACCES — the dir exists but can't be read — not ENOENT
-      // (`.claude/rules/engineering.md`, "Loud or nothing"). Mirrors the
-      // EACCES fixture `countFrictionFiles` (`tests/job.test.ts`) uses,
-      // now the shared detection this helper reuses.
-      await chmod(frictionDir, 0o000);
-
       const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+      // Non-vacuity: the dir counts before it is denied, so the reading below
+      // is the denial talking and not a mistyped path.
+      expect(await frictionCountLine(stateRoot, chain)).toBe(
+        "friction: 1 note(s) await routing",
+      );
+
+      // Deny the friction dir structurally (`tests/helpers/denial.ts`):
+      // readdir now fails ENOTDIR — the path is there but is not a dir to
+      // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
+      // nothing"). Same primitive `countFrictionFiles` (`tests/job.test.ts`)
+      // is pinned with, and unlike a mode it denies on win32 too.
+      denyDirectory(frictionDir);
+
       expect(await frictionCountLine(stateRoot, chain)).toBe(
         "friction: unreadable",
       );
     } finally {
-      await chmod(join(stateRoot, "friction"), 0o755).catch(() => {});
       await rm(stateRoot, { recursive: true, force: true });
     }
   });
