@@ -13,6 +13,12 @@
  * gate reads what the real writer wrote*) — and it runs in both directions
  * over the whole footprint, so neither a line nobody owns any more nor a
  * per-run path nothing ignores can sit there unnoticed.
+ *
+ * The last case is the one the module's lifetime declaration rests on
+ * (`ignores.ts`, *One writer, and the refusal that bounds it*): the package's
+ * lines have a single writer only for as long as the engine's re-asserted set
+ * stays clear of the package's artifacts, so that separation is checked here
+ * rather than left to the prose that reasons from it.
  */
 
 import { readFileSync } from "node:fs";
@@ -21,7 +27,11 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 import { SESSIONS_REL, consumerIgnores } from "../harness/ignores.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
 import { STATE_ROOT_NAMES } from "../src/paths.ts";
+
+/** A gitignore line as its bare name — the directory separator dropped. */
+const bare = (line: string): string => line.replace(/\/$/, "");
 
 /** This repository's state root, as its `.gitignore` addresses it. */
 const STATE_ROOT = ".flume";
@@ -86,7 +96,7 @@ it("the consumer ignore set names no path outside the package's runtime footprin
 
   for (const line of derived) {
     expect(line.startsWith(`${STATE_ROOT}/`)).toBe(true);
-    expect(FOOTPRINT).toContain(line.slice(STATE_ROOT.length + 1).replace(/\/$/, ""));
+    expect(FOOTPRINT).toContain(bare(line.slice(STATE_ROOT.length + 1)));
   }
   // Nothing but those, and each exactly once: the footprint's size is the
   // set's size.
@@ -112,4 +122,28 @@ it("this repository's .gitignore names every line the derived set carries", () =
   expect(derived.length).toBeGreaterThan(0);
 
   expect(derived.filter((line) => !lines.has(line))).toEqual([]);
+});
+
+it("the engine's re-asserted runtime ignore set names none of the package's own artifacts", () => {
+  // The package's half of the derived set: everything under the state root
+  // the engine's path record does not name. Read off the real derivation,
+  // never respelled, so a package artifact added later joins this subject.
+  const engineOwned = new Set<string>(Object.values(STATE_ROOT_NAMES));
+  const packageOwned = consumerIgnores(STATE_ROOT)
+    .map((line) => bare(line.slice(STATE_ROOT.length + 1)))
+    .filter((name) => !engineOwned.has(name));
+
+  // Vacuity pin, both sides: a package contributing nothing, or an empty
+  // re-asserted set, would satisfy the disjointness below while saying
+  // nothing about the asymmetry it exists to hold.
+  expect(packageOwned).toContain(SESSIONS_REL);
+  expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+
+  // The engine re-merges its set into the state root at every `loop` /
+  // `job run` start (`ensureRuntimeIgnores`, `src/job.ts`), so an engine line
+  // repairs itself in an adopted consumer's file. A package artifact landing
+  // in that set would quietly give the package's lines a second writer, and
+  // `ignores.ts` declares it has exactly one — adoption.
+  const reasserted = new Set<string>(RUNTIME_IGNORES.map(bare));
+  expect(packageOwned.filter((name) => reasserted.has(name))).toEqual([]);
 });

@@ -9,8 +9,26 @@
  * the direction that looks fine: the retired line keeps matching nothing
  * while the renamed path arrives untracked, which the clean-tree gate reads
  * as a dirty tree on whatever tick happens to run next. Derived, a rename
- * lands in the set the moment its owner ships it — and a consumer that owns
+ * reaches this set the moment its owner ships it, and a consumer that owns
  * neither side adds no line of its own.
+ *
+ * **One writer, and the refusal that bounds it.** The derivation being
+ * current is not an adopted consumer's `.gitignore` being current.
+ * `flume-harness init` (`init.ts`) merges these lines in once, at adoption,
+ * and refuses a state root that already exists rather than rewriting one:
+ * upgrading is a version bump plus the release's migration note, never a
+ * re-run of init (`tests/harnessInit.test.ts`, *flume-harness init refuses a
+ * state root that already exists rather than overwriting it*). So a package
+ * rename landing after adoption rides that migration note — nothing here
+ * propagates it into a file already written (`spec/jobs.md`, *Runtime
+ * ignores*).
+ *
+ * The engine's half of the set has a second writer and does repair itself:
+ * the engine re-merges `RUNTIME_IGNORES` into the state root every `loop` /
+ * `job run` start resolves. What leaves the package's half with one writer
+ * is that that set names none of the package's own artifacts — the
+ * asymmetry this declaration rests on, so it is pinned rather than asserted
+ * here (`tests/harnessIgnores.test.ts`).
  *
  * **Why the engine's own ignore lines rather than its names.** A gitignore
  * line carries one fact past the name — whether the entry is a directory,
