@@ -29,8 +29,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,7 +48,7 @@ import { worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
 
 import { stubRunner } from "./helpers/stubRunner.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, mkTempDir } from "./helpers/subprocess.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -245,7 +243,10 @@ describe("the vitest runner", () => {
   };
 
   beforeAll(async () => {
-    fixture = await mkdtemp(join(tmpdir(), "flume-harness-runner-"));
+    // Rooted at the spelling git reports (`mkTempDir`): the gate-checkout
+    // assertions below compare `worktreesBase(flumeDir)`-composed paths
+    // against git's own worktree registry.
+    fixture = await mkTempDir("flume-harness-runner-");
     flumeDir = join(fixture, ".flume");
     git(fixture, ["init", "-q"]);
     git(fixture, ["config", "user.email", "t@example.com"]);

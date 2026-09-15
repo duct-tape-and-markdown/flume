@@ -10,13 +10,15 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import type { Logger, TickVerdict } from "../../src/Dispatcher.ts";
 import { RUNTIME_IGNORES } from "../../src/job.ts";
+
+import { mkTempDir } from "./subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -58,8 +60,17 @@ export interface Fixture {
   cleanup: () => Promise<void>;
 }
 
-export async function makeFixture(): Promise<Fixture> {
-  const repo = await mkdtemp(join(tmpdir(), "flume-dispatcher-repo-"));
+/**
+ * A seeded temp git repository and its config dir, both rooted at the
+ * spelling git reports (`mkTempDir`, tests/helpers/subprocess.ts) — every
+ * worktree-registry and `rev-parse` verdict in the suites below compares a
+ * path composed from `repo` against one git emitted.
+ *
+ * `parent` is the directory the two roots are created under; the tests that
+ * drive the fixture through a link supply their own.
+ */
+export async function makeFixture(parent: string = tmpdir()): Promise<Fixture> {
+  const repo = await mkTempDir("flume-dispatcher-repo-", parent);
   const opts = { cwd: repo };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -85,7 +96,7 @@ export async function makeFixture(): Promise<Fixture> {
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
 
-  const configDir = await mkdtemp(join(tmpdir(), "flume-dispatcher-cfg-"));
+  const configDir = await mkTempDir("flume-dispatcher-cfg-", parent);
   await writeFile(join(configDir, "prompt.md"), "dummy prompt\n", "utf8");
 
   return {

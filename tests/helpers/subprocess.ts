@@ -3,8 +3,8 @@
  * paths, the hermetic env, and the runCli/gitOut subprocess wrappers that
  * cli.test.ts, job.test.ts, job.integration.test.ts, and
  * loop-process-boundary.integration.test.ts each hand-rolled a copy of.
- * Also home to the fixture-rooting idiom (`mkFixtureRoot`), the suite-wide
- * guard that refuses a state root planted above the fixtures
+ * Also home to the fixture-rooting idiom (`mkTempDir`, `mkFixtureRoot`), the
+ * suite-wide guard that refuses a state root planted above the fixtures
  * (`installStateRootLeakGuard`, wired through `vitest.config.ts`), and the
  * one number every spawning site in the default lane declares as its budget
  * (`SPAWN_BUDGET_MS`), and the git-config pin every fixture repository runs
@@ -15,7 +15,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,6 +131,35 @@ export function hermeticEnv(): NodeJS.ProcessEnv {
 }
 
 /**
+ * A fresh temp directory under `parent`, named by the spelling the host
+ * reports for it: `mkdtemp`, folded through `realpath`.
+ *
+ * `tmpdir()` answers the path the environment was configured with, not the
+ * one the filesystem canonicalizes it to — `/var/folders/…` for macOS's
+ * `/private/var/folders/…`, `C:\Users\RUNNER~1\…` for the Windows runner's
+ * `C:\Users\runneradmin\…`, `/tmp` wherever it is a link. Git never carries
+ * that spelling forward: it resolves a working directory to its physical path
+ * before it reports one, so a fixture rooted at the raw `mkdtemp` result makes
+ * every assertion comparing a `join`-composed path against something git
+ * emitted — a worktree registry entry, a `rev-parse --show-toplevel`, a
+ * name-only line — read two spellings of one directory. The comparison is
+ * correct by accident on a host whose temp dir is already canonical and wrong
+ * everywhere else, which is the fixture answering for the real writer in the
+ * tester's own vocabulary (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*).
+ *
+ * Folded once, at creation, rather than at each comparison: a `realpath` per
+ * assertion is the same fact restated at every site that composes a path from
+ * the root, and the site that forgets is the one that reds.
+ */
+export async function mkTempDir(
+  prefix: string,
+  parent: string = tmpdir(),
+): Promise<string> {
+  return realpath(await mkdtemp(join(parent, prefix)));
+}
+
+/**
  * A fresh temp fixture directory that **owns its own bay** — `mkdtemp`, plus
  * an empty `.flume` planted at the root.
  *
@@ -155,6 +184,9 @@ export function hermeticEnv(): NodeJS.ProcessEnv {
  * never a CLI cwd (a scratch output dir, a worktree base handed over by env)
  * do not need rooting and keep plain `mkdtemp`.
  *
+ * The root itself is `mkTempDir`'s, so the bay and everything composed from
+ * it are spelled the way git spells them.
+ *
  * Not rootable: a fixture whose subject **is** the no-ancestor fallback. It
  * must reach the filesystem root without meeting a `.flume`, which no fixture
  * can guarantee — `resolveRepoRoot`'s fallback case in
@@ -164,7 +196,7 @@ export async function mkFixtureRoot(
   prefix: string,
   parent: string = tmpdir(),
 ): Promise<string> {
-  const dir = await mkdtemp(join(parent, prefix));
+  const dir = await mkTempDir(prefix, parent);
   await mkdir(join(dir, ".flume"), { recursive: true });
   return dir;
 }
