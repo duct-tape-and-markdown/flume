@@ -1,33 +1,5 @@
 [
   {
-    "tag": "FORGE-STUB-ANSWERS-BEFORE-THE-HOSTS-OWN-CLI",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "`plantForge` puts the stub's dir on a PATH the host's own forge CLI is not on, so the direct spawn reaches the stub or nothing"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`plantForge` prepends its dir but leaves the host's PATH behind it, so on a host whose real `gh` the direct spawn can reach, every lane-reader case reads the forge instead of the stub",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "every lane-reader case is answered by the planted stub on every host, and the vacuity pins on the stub's call count hold for the stub's own invocations rather than for a CLI the fixture never planted.",
-    "tests": [],
-    "pins": [
-      "every lane-reader case reads its planted forge stub, with the host's own forge CLI off PATH"
-    ],
-    "notes": "Lane-observed three times; at run 35014206480 every `plantForge` case fails — ten see `calls().length === 0`, two render the real `gh`'s GH_TOKEN message. The two shed cases 8e4946c added since take the same PATH. On win32 the stub is a `.cmd`, which a direct spawn skips; the search walks on to the host's `gh.exe`. The absent-CLI case already shows the shape — PATH stripped to one dir, the launcher naming `process.execPath` absolutely."
-  },
-  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
       "kind": "open"
@@ -83,7 +55,27 @@
       "no case in tests/ denies with a permission bit outside the declared-host list",
       "every declared-host case carries the reason it cannot run on the other host"
     ],
-    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
+    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction.",
+    "observedFiles": [
+      ".flume/plan/notes/A-POSIX-ONLY-CASE-DECLARES-ITS-HOST.md",
+      "tests/Agent.test.ts",
+      "tests/Baton.test.ts",
+      "tests/Gate.test.ts",
+      "tests/bin.test.ts",
+      "tests/builtinGates.test.ts",
+      "tests/cli.test.ts",
+      "tests/cliHelp.test.ts",
+      "tests/fsProbe.test.ts",
+      "tests/git.test.ts",
+      "tests/harnessCi.test.ts",
+      "tests/harnessRunner.test.ts",
+      "tests/harnessWindows.test.ts",
+      "tests/helpers/hostDeclarations.ts",
+      "tests/hostDeclarations.test.ts",
+      "tests/job.test.ts",
+      "tests/priorAttempts.test.ts",
+      "tests/worktrees.test.ts"
+    ]
   },
   {
     "tag": "LONG-PATH-FIXTURES-COMPOSE-THROUGH-THE-NAMESPACED-JOIN",
@@ -118,34 +110,6 @@
       "readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit"
     ],
     "notes": "Lane-observed: all three failed `spawn git ENOENT`, which is win32 refusing a cwd past the limit rather than a missing git. The idiom is the one the section names and the cases already exercise on the engine side. `job new` pins `core.longpaths` repo-locally on win32; a fixture that inits its own repo wants the same."
-  },
-  {
-    "tag": "DENIED-DIRECTORY-CLAIMS-ONLY-ITS-OWN-READ",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/denial.test.ts",
-          "description": "the denyDirectory cover's second case keeps the arm the primitive answers on every host; the child-read-through arm goes to the shape its fourth case already owns"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the denyDirectory cover asserts a child read through the denied dir is non-ENOENT — the parent-denial shape the primitive rules out, and win32 answers it as absence",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "the denial cover claims of the primitive only what it gives on every host — a refusal at the denied path itself — so the lane's red on this title is gone and no site downstream inherits an overstated promise.",
-    "tests": [],
-    "pins": [
-      "a structurally denied directory fails a mkdir of itself with a non-ENOENT error"
-    ],
-    "notes": "Lane-observed: `readFileSync(join(dir, \"plan\"))` through a denied `awake/` is ENOENT on win32 (`.claude/rules/platform-facts.md`, *win32 reports a path through a non-directory as not found*) — which `tests/helpers/denial.ts` already states as the reason to deny the read path and never a parent. The child-read-by-name shape keeps its cross-host home in the `denyFile` block, which denies the child itself."
   },
   {
     "tag": "MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH",
