@@ -270,12 +270,12 @@ export function slugify(tag: string): string {
  * `slugify` is lossy and two tags differing only in case would otherwise
  * hash alike. Defaults to `name`, the case where nothing was lost upstream.
  *
- * Shared rather than spelled beside each caller (`.claude/rules/
- * engineering.md`, "The fix lands at the mechanism"): `createWorktree`'s
- * directory name bounds against git's win32 worktree-path wall, and
- * `harvestFriction`'s destination filename against filesystem NAME_MAX. Two
- * ceilings, one rule — and a second spelling is how one of them comes to
- * truncate without a hash and start silently overwriting.
+ * Shared rather than spelled beside each caller
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism"):
+ * `createWorktree`'s directory name bounds against git's win32 worktree-path
+ * wall, and `harvestFriction`'s destination filename against filesystem
+ * NAME_MAX. Two ceilings, one rule — and a second spelling is how one of them
+ * comes to truncate without a hash and start silently overwriting.
  */
 export function boundedName(
   name: string,

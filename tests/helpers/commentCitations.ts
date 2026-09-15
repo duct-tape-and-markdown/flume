@@ -20,6 +20,14 @@
  * a namespace import's property access, an inherited member, a lib global —
  * so nothing resolves on a substring match.
  *
+ * Spans are paired the way markdown pairs them — across a run of consecutive
+ * comment lines, by equal-length backtick runs — so a citation an author
+ * wrapped is read as the one span it is rather than lost along with every
+ * span behind it. A wrapped span is reported apart from the judged set,
+ * because the space markdown puts at the break is not a character any subject
+ * spelling admits: it names nothing the scan can resolve, whatever the author
+ * meant by it.
+ *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
@@ -59,8 +67,16 @@ export interface CitationSite {
 export interface CitationScan {
   /** The modules read, relative to `root` — the scan's domain. */
   readonly modules: readonly string[];
-  /** Every backticked span in those modules' comments, subject or not. */
+  /** Every backticked span one comment line opened and closed, subject or not. */
   readonly backticked: readonly CitationSite[];
+  /**
+   * Every backticked span a comment line left open — the wrap, reported as
+   * markdown joins it. Judged by nothing: the space markdown puts at the
+   * break is not a character any subject spelling admits, so the citation the
+   * span meant to carry falls out of the scan whatever it named. Reported so
+   * the wrap cannot do that quietly.
+   */
+  readonly wrapped: readonly CitationSite[];
   /** The subset judged: the spans shaped like an identifier reference. */
   readonly scanned: readonly CitationSite[];
   /** Judged citations whose every token names something the trees hold. */
@@ -217,6 +233,124 @@ const commentRanges = (sf: ts.SourceFile): readonly ts.CommentRange[] => {
   return found;
 };
 
+/** The comment text carried by one line, and the 1-based line carrying it. */
+interface CommentLine {
+  readonly line: number;
+  readonly text: string;
+}
+
+/**
+ * A file's comment text, one entry per line that carries any, in line order.
+ * A line holding two comments carries both, concatenated in the order the
+ * file spells them.
+ */
+const commentLines = (sf: ts.SourceFile): readonly CommentLine[] => {
+  const full = sf.getFullText();
+  const byLine = new Map<number, string>();
+  for (const range of [...commentRanges(sf)].sort((a, b) => a.pos - b.pos)) {
+    const first = sf.getLineAndCharacterOfPosition(range.pos).line;
+    full
+      .slice(range.pos, range.end)
+      .split(/\r?\n/)
+      .forEach((piece, offset) => {
+        const line = first + offset + 1;
+        byLine.set(line, (byLine.get(line) ?? "") + piece);
+      });
+  }
+  return [...byLine]
+    .sort(([a], [b]) => a - b)
+    .map(([line, text]) => ({ line, text }));
+};
+
+/**
+ * The comment furniture a continuation line opens with — a block comment's
+ * `*` margin, the `//` of the next line comment in a run. Markdown never
+ * renders it, so a span the wrap carried across the break does not hold it
+ * either.
+ */
+const CONTINUATION_MARGIN = /^\s*(?:\/\/+|\*+)\s*/;
+
+/**
+ * A wrapped span as markdown reads it: the line break and the next line's
+ * margin collapse into the single space that breaks whatever the span was
+ * spelling.
+ */
+const joinWrapped = (raw: string): string =>
+  raw
+    .split(/\r?\n/)
+    .map((line, index) =>
+      index === 0 ? line : line.replace(CONTINUATION_MARGIN, ""),
+    )
+    .map((line) => line.trim())
+    .join(" ");
+
+/**
+ * Every backticked span in a file's comments, split by whether the line that
+ * opened it also closed it.
+ *
+ * Pairing runs over a *run* of consecutive comment lines rather than over one
+ * line at a time, because markdown does. A line that ends mid-span is closed
+ * by the next line's backtick, and every span behind it takes its parity from
+ * that pairing — read line by line, the wrapped span is lost *and* the rest
+ * of the comment pairs one backtick out of step, so the citations after it go
+ * unjudged too. Equal-length runs delimit a span, so a fenced block inside a
+ * doc comment is one span rather than three stray backticks.
+ */
+const commentSpans = (
+  sf: ts.SourceFile,
+  module: string,
+): { readonly closed: CitationSite[]; readonly wrapped: CitationSite[] } => {
+  const closed: CitationSite[] = [];
+  const wrapped: CitationSite[] = [];
+
+  const read = (run: readonly CommentLine[]): void => {
+    if (run.length === 0) return;
+    const joined = run.map((entry) => entry.text).join("\n");
+    const first = run[0]?.line ?? 0;
+    const marks = [...joined.matchAll(/`+/g)].map((m) => ({
+      start: m.index,
+      length: m[0].length,
+    }));
+    let index = 0;
+    while (index < marks.length) {
+      const open = marks[index];
+      if (!open) break;
+      const closeAt = marks.findIndex(
+        (mark, at) => at > index && mark.length === open.length,
+      );
+      // A run nothing of its own length closes opens no span at all.
+      if (closeAt < 0) {
+        index += 1;
+        continue;
+      }
+      const close = marks[closeAt];
+      if (!close) break;
+      const raw = joined.slice(open.start + open.length, close.start);
+      const before = joined.slice(0, open.start);
+      const site = {
+        module,
+        line: first + (before.match(/\n/g)?.length ?? 0),
+        text: raw.includes("\n") ? joinWrapped(raw) : raw,
+      };
+      (raw.includes("\n") ? wrapped : closed).push(site);
+      index = closeAt + 1;
+    }
+  };
+
+  let run: CommentLine[] = [];
+  for (const entry of commentLines(sf)) {
+    const previous = run[run.length - 1];
+    if (previous && entry.line !== previous.line + 1) {
+      read(run);
+      run = [];
+    }
+    run.push(entry);
+  }
+  read(run);
+
+  return { closed, wrapped };
+};
+
 /**
  * Scan a program's comments for citations naming nothing the judged trees
  * hold.
@@ -287,20 +421,11 @@ export const scanCommentCitations = (
 
   // --- what their comments cite ------------------------------------------
   const backticked: CitationSite[] = [];
+  const wrapped: CitationSite[] = [];
   for (const sf of sources) {
-    const module = relPath(root, resolve(sf.fileName));
-    const text = sf.getFullText();
-    for (const range of commentRanges(sf)) {
-      const body = text.slice(range.pos, range.end);
-      for (const match of body.matchAll(/`([^`\n]+)`/g)) {
-        const at = range.pos + (match.index ?? 0);
-        backticked.push({
-          module,
-          line: sf.getLineAndCharacterOfPosition(at).line + 1,
-          text: match[1] ?? "",
-        });
-      }
-    }
+    const spans = commentSpans(sf, relPath(root, resolve(sf.fileName)));
+    backticked.push(...spans.closed);
+    wrapped.push(...spans.wrapped);
   }
 
   // The working tree is the other thing the repo holds a citation's name in.
@@ -320,6 +445,7 @@ export const scanCommentCitations = (
   return {
     modules: [...modules],
     backticked,
+    wrapped,
     scanned,
     resolved: scanned.filter((site) => resolves(site.text)),
     dangling: scanned.filter((site) => !resolves(site.text)),

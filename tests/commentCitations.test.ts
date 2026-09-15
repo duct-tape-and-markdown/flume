@@ -50,6 +50,10 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * sitting past a division pair that a raw token scan reads as a regular
  * expression (unscanned, its finding would be lost).
  *
+ * The last comment is a path citation broken across the line, with a resolving
+ * citation behind it — the wrap costs both if the reader pairs backticks one
+ * line at a time.
+ *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
@@ -113,6 +117,13 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// \`refs/heads/main\` has no extension, \`./dataShapes.js\` is a specifier.`,
     `export const PATHS = 3;`,
     ``,
+    `// A wrap leaves the span open at the line's end, and markdown joins it`,
+    `// with a space: \`lib/`,
+    `// dataShapes.ts\` names no file. Pairing resumes from the wrap's close,`,
+    `// so \`Shipped\` behind it is read rather than taking the wrap's own`,
+    `// backtick as its opening.`,
+    `export const WRAPPED = 4;`,
+    ``,
   ].join("\n"),
 };
 
@@ -158,6 +169,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
   ]);
   expect(scan.scanned.map((s) => s.text).sort()).toEqual([
     "Holder",
+    "Shipped",
     "Shipped.maxDepth",
     "Vanished",
     "WeakMap",
@@ -185,6 +197,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
   // discrimination rather than a scan that flagged what it could not classify.
   expect(scan.resolved.map((s) => s.text).sort()).toEqual([
     "Holder",
+    "Shipped",
     "Shipped.maxDepth",
     "WeakMap",
     "blockedBy",
@@ -326,6 +339,33 @@ it("the citation scan judges neither an extensionless path nor a relative specif
   expect(judged).not.toContain("./dataShapes.js");
 });
 
+// --- the wrap, which no subject spelling can survive ---------------------
+
+it("the citation scan reports a backticked span its comment line leaves open", () => {
+  // Vacuity guard: every other comment in the fixture closes its spans on the
+  // line that opened them, so the single report below is the wrap the fixture
+  // authored rather than a parity artifact of some earlier comment.
+  expect(fixtureScan.wrapped.map(formatCitation)).toEqual([
+    "lib/surface.ts:42 lib/ dataShapes.ts",
+  ]);
+
+  // Reported because nothing else can reach it: neither half is a span of its
+  // own, and the joined text carries the space markdown puts at the break,
+  // which no path segment admits. Renaming the file it names would otherwise
+  // leave the citation standing.
+  expect(fixtureScan.backticked.filter((s) => s.line === 42)).toEqual([]);
+  expect(fixtureScan.scanned.map((s) => s.text)).not.toContain(
+    "lib/ dataShapes.ts",
+  );
+
+  // And the wrap costs only itself: pairing resumes from its close, so the
+  // citation behind it is read in its own right instead of pairing with the
+  // wrap's backtick and taking every span after it out of step.
+  expect(fixtureScan.resolved.map(formatCitation)).toContain(
+    "lib/surface.ts:44 Shipped",
+  );
+});
+
 // --- the pin -------------------------------------------------------------
 
 /**
@@ -404,4 +444,19 @@ it("the repo citation pin judges the repo-relative path citations src/ and harne
   ]) {
     expect(`${path} -> ${resolved.has(path)}`).toBe(`${path} -> true`);
   }
+});
+
+it("the repo citation pin refuses a path citation broken across a comment line", () => {
+  // Vacuity guard: these trees wrap backticked spans in quantity — commands,
+  // literal payloads, a fenced example — so the emptiness below is the path
+  // filter discriminating rather than a reader that found no wrap at all.
+  expect(repoScan.wrapped.length).toBeGreaterThan(20);
+
+  // A path citation the wrap broke is judged by nothing, so it is a defect at
+  // the comment rather than a resolution arm the scan is missing: the space
+  // markdown inserts is not a character any path segment spells, and the pin
+  // above stays green over it however the file is renamed. Rewrap the span.
+  expect(
+    repoScan.wrapped.filter((s) => s.text.includes("/")).map(formatCitation),
+  ).toEqual([]);
 });

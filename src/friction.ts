@@ -129,10 +129,11 @@ interface FrictionHarvestContext {
  * is already 244, so a source filename of 12 characters overruns 255.
  * Unbounded, `rename` throws `ENAMETOOLONG`, the per-file catch below logs
  * and continues, and the dispatcher removes the worktree moments later —
- * the note dies with it. That is the silent loss `.claude/rules/
- * engineering.md`, "Loud or nothing" names: the harvest's "left for the
- * removal-fallback sweep to surface" bound covers a worktree still standing
- * afterwards, never a file whose destination could not be written at all.
+ * the note dies with it. That is the silent loss
+ * `.claude/rules/engineering.md`, "Loud or nothing" names: the harvest's
+ * "left for the removal-fallback sweep to surface" bound covers a worktree
+ * still standing afterwards, never a file whose destination could not be
+ * written at all.
  *
  * Only the *name* is abbreviated — the note's content is delivered whole —
  * and truncating the finished name with a hash keyed on it keeps every
