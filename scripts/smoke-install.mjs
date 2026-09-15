@@ -12,8 +12,9 @@
  * Steps: npm pack the repo -> npm install the tarball into a scratch dir ->
  * run the shim `--version` -> resolve both `exports` subpaths from the
  * installed package -> scaffold a minimal chain-load fixture -> run the shim
- * `status`. Each step prints what it ran; the first failing step aborts the
- * run and is named in the error.
+ * through a verb that refuses on a chain that does not load
+ * (`CHAIN_LOAD_VERB` below). Each step prints what it ran; the first failing
+ * step aborts the run and is named in the error.
  *
  * The subpath step is here rather than in the suite because it is the only
  * place `@dtmd/flume/harness` is resolved by a real installer's node_modules
@@ -91,6 +92,26 @@ export default factory;
 `;
 
 const PROMPT_FIXTURE = "Append a dated line to notes/journal.md.\n";
+
+/**
+ * The verb the scaffolded chain-load fixture is driven through.
+ *
+ * It has to **refuse** on a chain that does not load, or the step asserts
+ * nothing: the claim is that the installed CLI reaches the `.flume/chain.ts`
+ * this script writes at the literal path below, and a verb that proceeds
+ * over a failed load answers 0 whether or not the fixture is where the CLI
+ * looks for it. `status` — what this step used to run — takes the
+ * best-effort observational load (`src/cliChainLoad.ts`): by contract it
+ * reports the failure on stderr and leaves the exit code alone. `check`
+ * refuses that same load with EX_MOUNT_DEAD, and exits 0 over an absent
+ * queue, so the success path stays one step.
+ *
+ * Named here, and read back out of this file by tests/bin.test.ts, which
+ * drives the real CLI through this verb over a directory holding no chain —
+ * the refusal this step depends on, checked where the smoke itself is not
+ * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
+ */
+const CHAIN_LOAD_VERB = "check";
 
 // Both entries of the exports map, by bare specifier, exactly as a consumer
 // writes them. Values rather than types: a type-only import would erase and
@@ -170,12 +191,12 @@ try {
     PROMPT_FIXTURE,
   );
 
-  run("generated shim status", shimPath, ["status"], {
+  run(`generated shim ${CHAIN_LOAD_VERB}`, shimPath, [CHAIN_LOAD_VERB], {
     cwd: consumerDir,
   });
 
   console.log(
-    "[smoke-install] OK — pack, install, shim --version, exports subpaths, and shim status all passed",
+    `[smoke-install] OK — pack, install, shim --version, exports subpaths, and shim ${CHAIN_LOAD_VERB} all passed`,
   );
 } catch (err) {
   if (err instanceof SmokeStepError) {

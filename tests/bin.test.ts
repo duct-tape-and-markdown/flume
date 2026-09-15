@@ -29,6 +29,8 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
+
 const exec = promisify(execFile);
 
 const BIN_DIR = fileURLToPath(new URL("../bin", import.meta.url));
@@ -321,3 +323,48 @@ it("the flume-harness bin is a Node script whose first line is the env-node sheb
     });
   }
 });
+
+/**
+ * `scripts/smoke-install.mjs` scaffolds a `.flume/chain.ts` under its scratch
+ * consumer and drives the installed shim at it — the only exercise anywhere
+ * of "the installed CLI finds a consumer's chain where the consumer wrote
+ * it", and the only thing making the script's `.flume` path literal loud.
+ * That step is a check only while the verb it runs exits non-zero on a chain
+ * it cannot load; under a best-effort observational verb it answers 0 whether
+ * the fixture landed where the CLI looks or not
+ * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
+ *
+ * The smoke is not a vitest suite and costs a full pack+install, so the
+ * property is held here instead — as an agreement case, not a restatement:
+ * the verb is read out of the script that actually runs it and driven
+ * through the real CLI over a chainless bay. A verb swapped in the script for
+ * one that tolerates a failed load reds this, on the script's own word.
+ */
+it("the install smoke's chain-load fixture is verified by a CLI verb that exits non-zero when the chain is absent", async () => {
+  const scriptPath = fileURLToPath(new URL("../scripts/smoke-install.mjs", import.meta.url));
+  const source = await readFile(scriptPath, "utf8");
+
+  const declared = /^const CHAIN_LOAD_VERB = "([a-z][a-z-]*)";$/m.exec(source);
+  // Non-vacuity, twice over: the verb was really read off the script, and the
+  // script really hands that constant to the shim rather than an inlined
+  // copy this case would then be judging nothing about.
+  expect(
+    declared?.[1],
+    `${scriptPath} must name the verb its chain-load step drives the shim ` +
+      `through, as \`const CHAIN_LOAD_VERB = "<verb>";\` — this case reads it ` +
+      `from there rather than restating it`,
+  ).toBeTypeOf("string");
+  expect(source).toContain("[CHAIN_LOAD_VERB]");
+  const verb = declared![1]!;
+
+  // A bay with no chain.ts — the shape the smoke's step exists to rule out.
+  const dir = await mkFixtureRoot("flume-smoke-verb-");
+  try {
+    const r = await runCli(dir, [verb]);
+
+    expect(r.out).toContain("chain failed to load");
+    expect(r.code).not.toBe(0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 30_000);
