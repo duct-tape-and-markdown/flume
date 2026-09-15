@@ -329,3 +329,48 @@ Fork: which sentence lands.
   Loudest, and no silent precedence to get wrong; costs the common case where an
   operator relocates a base on a host whose chain already declares one, which
   would then need the declaration edited rather than overridden.
+
+## `runAtBase` is callable only inside a gate, and the escape hatch its refusal names is not exported (NEEDS AMENDMENT — the answer is clear, the sentence is spec's)
+
+Drained from `RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT`'s note; verified on disk
+this tick. The note asked whether `spec/harness.md` should state that
+`runAtBase` is a gate-time operation. Checking it turned up a second, sharper
+half, and turned the note's own remedy around.
+
+`checkoutAt` refuses when no `withGateCheckouts` scope is in flight
+(`src/worktrees.ts:251-257`), so the shipped `vitestRunner.runAtBase` — and
+`judgeNamedLines` above it — throw off the gate path. Both are public
+(`harness/index.ts:19,25`). The note's stated workaround, "the caller opens
+`withGateCheckouts` itself," is **not available**: that function is imported by
+`src/Dispatcher.ts` alone and is on neither `exports` entry. Neither is the
+escape hatch `checkoutAt`'s own doc comment names — "a caller that wants a
+checkout it owns the lifetime of calls `addWorktree`/`removeWorktree`
+(`src/git.ts`)" (`src/worktrees.ts:239-241`). Those two are on neither `FlumeApi.git`
+(`src/flumeApi.ts:281-287`) nor `src/index.ts`, and the `exports` map reaches
+no third module. That comment rides `FlumeApi.git.checkoutAt` into the shipped
+`.d.ts`, so it is hover text a chain author reads — engine surface under
+`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung* — and
+it points at a route the package does not ship.
+
+Runtime is unaffected: `namedLinesGate` is `afterMerge` and runs through
+`Dispatcher.runGate`, which opens the scope.
+
+Fork: is a public `judgeNamedLines` / `runAtBase` meant to be driven outside a
+gate at all?
+
+- **No — gate-time by design, and the spec says so** (recommended). Every
+  declared consumer of `runAtBase` is the judge, and the judge runs from a
+  gate. Exporting a scope opener or widening `api.git` for a caller that does
+  not exist is public surface with no consumer (`.claude/rules/engineering.md`,
+  *An export earns its consumer*). One clause in `spec/harness.md`, *The runner
+  interface*: the `runAtBase` bullet already says the base checkout is the
+  engine's; it adds that the checkout is reclaimed at the gate boundary, so the
+  operation runs only inside a gate invocation. Once that line exists,
+  `checkoutAt`'s doc comment trading its `addWorktree`/`removeWorktree`
+  sentence for one naming what the package actually ships is an entry inside
+  build's fence with a clean cite.
+- **Yes — export a scope opener.** What a `flume judge <tag>` verb or a script
+  drive would need. Costs a public surface whose contract is subtle — reclaim
+  on both legs, async-local, overlapping gate invocations — and which has no
+  caller today; the recommended branch can be reversed later, this one cannot
+  be un-shipped.
