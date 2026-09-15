@@ -10,6 +10,10 @@
         {
           "path": "src/processTree.ts",
           "description": "one home for the own-group spawn and the SIGTERM → grace → SIGKILL teardown both signal paths take"
+        },
+        {
+          "path": "tests/processTree.test.ts",
+          "description": "the shared teardown's own cases — the engine observed this file on the reverted attempt"
         }
       ],
       "edit": [
