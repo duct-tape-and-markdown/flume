@@ -78,10 +78,13 @@ export interface RunResult {
   readonly failed: number;
   /** One entry per requested name, in the order they were requested. */
   readonly names: readonly NamedResult[];
-  /** Every failure, in report order. */
+  /**
+   * Every failure, in report order. The files a failure was attributed to
+   * are read off this — a runner reporting the deduplicated list beside it
+   * would be a second copy of one truth (`.claude/rules/engineering.md`,
+   * *Derived state is computed, never restated beside its source*).
+   */
   readonly failures: readonly TestFailure[];
-  /** The run-relative files a failure was attributed to, deduplicated. */
-  readonly failingFiles: readonly string[];
 }
 
 /** The three operations a consumer's `runner` declaration supplies. */

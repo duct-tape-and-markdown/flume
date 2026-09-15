@@ -56,7 +56,6 @@ const answer = (suite: FakeSuite, names: readonly string[]): RunResult => {
       return { name, carried: files.length > 0, files };
     }),
     failures,
-    failingFiles: [...new Set(failures.map((f) => f.file))],
   };
 };
 
@@ -233,6 +232,33 @@ describe("the judge", () => {
     expect(asked.runAtBase).toEqual([]);
   });
 
+  it("the judge names its failing files from the failures the run reported", async () => {
+    const line = "the widget refuses a negative count";
+    // Two failures in one file and one in another, out of alphabetical
+    // order: the blame list is the failures' files deduplicated in report
+    // order, and nothing the runner could have said beside them.
+    const { runner } = fakeRunner({
+      passing: [{ fullName: `widget > ${line}`, file: "tests/widget.test.ts" }],
+      failures: [
+        { file: "tests/zebra.test.ts", name: "zebra > stripes", message: "expected 1 to be 2" },
+        { file: "tests/apple.test.ts", name: "apple > core", message: "expected 3 to be 4" },
+        { file: "tests/zebra.test.ts", name: "zebra > hooves", message: "expected 5 to be 6" },
+      ],
+    });
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [line],
+      pins: [],
+      baseSha: BASE_SHA,
+      cwd: CWD,
+    });
+
+    // Vacuity: the run the blame list is read off actually reported
+    // failures, so the assertion below is over evidence rather than zero.
+    expect(verdict.failures).toHaveLength(3);
+    expect(verdict.failingFiles).toEqual(["tests/zebra.test.ts", "tests/apple.test.ts"]);
+  });
+
   it("refuses loudly when the runner answers fewer names than it was asked", async () => {
     const line = "the widget refuses a negative count";
     const runner: Runner = {
@@ -243,7 +269,6 @@ describe("the judge", () => {
         failed: 0,
         names: [],
         failures: [],
-        failingFiles: [],
       }),
       runAtBase: async () => {
         throw new Error("unreachable");

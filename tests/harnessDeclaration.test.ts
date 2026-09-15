@@ -36,7 +36,6 @@ const EMPTY_RUN: RunResult = {
   failed: 0,
   names: [],
   failures: [],
-  failingFiles: [],
 };
 
 /** A runner satisfying the three operations — what a factory returns. */

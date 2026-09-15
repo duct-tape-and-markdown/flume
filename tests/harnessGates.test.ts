@@ -75,8 +75,8 @@ const NESTED = { segments: ["jobs", "alpha", ".flume"] };
 
 /** The runner a declared factory returns here; no case runs a test. */
 const runner = {
-  run: async () => ({ ok: true, passed: [], failures: [], failingFiles: [] }),
-  runAtBase: async () => ({ ok: true, passed: [], failures: [], failingFiles: [] }),
+  run: async () => ({ ok: true, passed: [], failures: [] }),
+  runAtBase: async () => ({ ok: true, passed: [], failures: [] }),
   lanes: [],
 } as unknown as Runner;
 

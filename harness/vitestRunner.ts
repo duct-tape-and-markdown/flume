@@ -195,7 +195,6 @@ function readRun(output: string, names: readonly string[], root: string): RunRes
     failed: report.numFailedTests,
     names: named,
     failures,
-    failingFiles: [...new Set(failures.map((f) => f.file))],
   };
 }
 

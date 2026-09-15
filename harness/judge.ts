@@ -92,7 +92,12 @@ export interface JudgeVerdict {
   readonly passed: number;
   /** Every failure the merged-tree run reported, in report order. */
   readonly failures: readonly TestFailure[];
-  /** The run-relative files those failures were attributed to, deduplicated. */
+  /**
+   * The run-relative files those failures were attributed to, deduplicated
+   * in report order. Derived here from {@link failures} rather than asked of
+   * the runner, so the blame list cannot disagree with the failures it
+   * summarizes.
+   */
   readonly failingFiles: readonly string[];
 }
 
@@ -161,7 +166,7 @@ export async function judgeNamedLines(
   const observed = {
     passed: run.passed,
     failures: run.failures,
-    failingFiles: run.failingFiles,
+    failingFiles: [...new Set(run.failures.map((f) => f.file))],
   };
 
   const draft = (line: string, lane: LineLane): LineVerdict => {

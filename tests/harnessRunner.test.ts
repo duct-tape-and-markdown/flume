@@ -324,8 +324,8 @@ describe("the vitest runner", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.failingFiles).toEqual(["tests/widget.test.ts"]);
     expect(r.failures).toHaveLength(1);
+    expect(r.failures[0]!.file).toBe("tests/widget.test.ts");
     expect(r.failures[0]!.name).toBe("widget carries the merged widget");
     expect(r.failures[0]!.message).toContain("base");
 
