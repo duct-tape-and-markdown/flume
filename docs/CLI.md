@@ -99,7 +99,7 @@ Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever
 Every run (idempotent) also:
 
 - **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
-- **Merges the runtime ignore entries** into the job dir's `.gitignore` — `awake/`, `prior-attempts/`, `rendered-prompts/`, `worktrees/`, `node_modules/`, `loop.pid` — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
+- **Merges the runtime ignore entries** into the job dir's `.gitignore` — the runtime-owned set (`spec/jobs.md`, "Runtime ignores") — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout, and only that; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
 - **Pins `core.longpaths true`** repo-locally on Windows.
 - **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit) on the current HEAD, so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
 
