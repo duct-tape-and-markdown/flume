@@ -1,17 +1,17 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
  * glob matcher, the filesystem-safe tag slug, the length bound every
- * composed path component passes through, and the layout of the flume state
- * root itself.
+ * composed path component passes through, and the layout a repo root, a
+ * flume state root, and a config dir each carry.
  *
  * For the MAX_PATH idiom see `.claude/rules/platform-facts.md`, "Windows
  * MAX_PATH (~260 chars) breaks fs calls with no long component"; every call
  * site that builds a path for an fs call wants both steps together, and this
  * is the one place that pairs them.
  *
- * The state-root layout (bottom of this file) is here for the same reason
- * and needs nothing beyond `node:path`, so the CLI, the dispatcher, the
- * baton, and the job verbs can all reach it without a cycle. The module's
+ * Those layout sections (bottom of this file) are here for the same reason
+ * and need nothing beyond `node:path`, so the CLI, the dispatcher, the
+ * baton, and the job verbs can all reach them without a cycle. The module's
  * only other imports keep that property: `Phase` is type-only and erased,
  * and `PendingSchema` reaches no further than zod.
  */
@@ -279,6 +279,80 @@ export function boundedName(
   if (name.length <= max) return name;
   const hash = createHash("sha1").update(identity).digest("hex").slice(0, 10);
   return `${name.slice(0, max - hash.length - 1)}-${hash}`;
+}
+
+// ---------- the repo root's layout ----------
+
+/**
+ * The bay's own name under a repository root — the directory the walk-up
+ * discovery probe looks for (`resolveRepoRoot`, `src/cliJobResolution.ts`)
+ * and the one every state root defaults into absent `FLUME_DIR` / `--job`
+ * (spec/cli.md, *State-root and config-dir resolution*).
+ *
+ * Exported for the one consumer that needs the bare name rather than a
+ * path: the harness package's `DEFAULT_STATE_ROOT` (`harness/init.ts`),
+ * which writes it into a consumer's declaration, ignore set and
+ * `PROTOCOL.md`. Everything that builds a path takes an accessor below.
+ */
+export const STATE_ROOT_DIRNAME = ".flume";
+
+/**
+ * The job namespace's place under a repo root (spec/jobs.md, *A job is a
+ * state root*) — relative, so the absolute accessors below and the
+ * repo-relative {@link jobDirRel} hang from one composition rather than
+ * spelling the two segments apiece.
+ */
+const JOBS_REL = join(STATE_ROOT_DIRNAME, "jobs");
+
+/**
+ * The state root a repo root carries when nothing relocates it —
+ * `<repoRoot>/.flume`.
+ *
+ * **The one composition.** Every default that resolves to the bay reads it
+ * here: `resolveStateDirs`'s two dirs (`src/cliJobResolution.ts`), the
+ * `Dispatcher`'s `flumeDir` (`src/Dispatcher.ts`), `superviseLoop`'s two
+ * (`src/loopSupervisor.ts`), and `jobNew`'s `configDir` / `flumeDir`
+ * (`src/job.ts`). Each used to spell the layout itself, so a relocation had
+ * to be remembered at a dozen sites, and a site that forgot would resolve a
+ * state root the rest of the engine never reads
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+export function defaultStateRoot(repoRoot: string): string {
+  return join(repoRoot, STATE_ROOT_DIRNAME);
+}
+
+/**
+ * Where a repo's jobs live — `<repoRoot>/.flume/jobs`, the dir `job status`
+ * enumerates (`src/job.ts`). Anchored on the *default* state root by
+ * construction: a job's state root is a place in the repo's tree, not a
+ * place under whatever `FLUME_DIR` the current invocation resolved.
+ */
+export function jobsRoot(repoRoot: string): string {
+  return join(repoRoot, JOBS_REL);
+}
+
+/**
+ * One job's state root — `<repoRoot>/.flume/jobs/<name>`, absolute. The dir
+ * `job new` seeds, `job rm` removes, `job status` reads a row from, and
+ * `--job <name>` resolves `flumeDir` to; one composition, so the verb that
+ * creates a job and the flag that runs it cannot address different dirs.
+ *
+ * `name` is a single path segment — `validateJobName` (`src/job.ts`) is
+ * where that shape is enforced, on the creating verb.
+ */
+export function jobDir(repoRoot: string, name: string): string {
+  return join(jobsRoot(repoRoot), name);
+}
+
+/**
+ * The same dir, repo-relative — `.flume/jobs/<name>` in the host's
+ * alphabet. For the callers that need the offset rather than the location:
+ * `jobDirPathspec` (`src/job.ts`) folds {@link gitPath} over this to name
+ * the dir to git.
+ */
+export function jobDirRel(name: string): string {
+  return join(JOBS_REL, name);
 }
 
 // ---------- the state root's layout ----------

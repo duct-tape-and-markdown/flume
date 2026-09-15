@@ -5,10 +5,15 @@
  * counts only when verified on disk this tick").
  */
 
-import { resolve, join, dirname, basename } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 
 import { existsLoud } from "./fsProbe.js";
-import { namespacedJoin } from "./paths.js";
+import {
+  defaultStateRoot,
+  jobDir,
+  namespacedJoin,
+  STATE_ROOT_DIRNAME,
+} from "./paths.js";
 
 /**
  * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two resolution
@@ -56,10 +61,10 @@ export class CrossRepoFlumeDirError extends Error {}
  * nothing").
  */
 export function resolveRepoRoot(cwd: string): string {
-  if (basename(cwd) === ".flume") return dirname(cwd);
+  if (basename(cwd) === STATE_ROOT_DIRNAME) return dirname(cwd);
   let dir = cwd;
   for (;;) {
-    if (existsLoud(namespacedJoin(dir, ".flume"))) return dir;
+    if (existsLoud(namespacedJoin(defaultStateRoot(dir)))) return dir;
     const parent = dirname(dir);
     if (parent === dir) return cwd;
     dir = parent;
@@ -142,11 +147,11 @@ export function resolveStateDirs(
   const flumeDir = env.FLUME_DIR
     ? resolve(env.FLUME_DIR)
     : job
-      ? join(repoRoot, ".flume", "jobs", job)
-      : join(repoRoot, ".flume");
+      ? jobDir(repoRoot, job)
+      : defaultStateRoot(repoRoot);
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
-    : join(repoRoot, ".flume");
+    : defaultStateRoot(repoRoot);
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
   env.FLUME_DIR_RESOLVED_FOR = resolve(repoRoot);

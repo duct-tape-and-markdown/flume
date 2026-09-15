@@ -10,7 +10,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { join } from "node:path";
 
 import { Baton } from "./Baton.js";
 import {
@@ -26,7 +25,7 @@ import {
 } from "./Dispatcher.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
-import { namespacedJoin, stopFlagPath } from "./paths.js";
+import { defaultStateRoot, namespacedJoin, stopFlagPath } from "./paths.js";
 
 /**
  * Engine default for the run-scoped quarantine — the scope `superviseLoop`
@@ -205,8 +204,8 @@ export async function superviseLoop(
 ): Promise<SuperviseResult> {
   const log = opts.log ?? consoleLogger;
   const maxTicks = opts.maxTicks ?? 50;
-  const flumeDir = opts.flumeDir ?? join(opts.repoRoot, ".flume");
-  const configDir = opts.configDir ?? join(opts.repoRoot, ".flume");
+  const flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
+  const configDir = opts.configDir ?? defaultStateRoot(opts.repoRoot);
   const baton = new Baton(flumeDir);
   const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
 

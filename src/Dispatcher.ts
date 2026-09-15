@@ -54,6 +54,7 @@ import {
   assertStateRootRelative,
   chainModulePath,
   matchesAny,
+  defaultStateRoot,
   fsStamp,
   namespacedJoin,
   phasePromptPath,
@@ -1533,7 +1534,7 @@ export class Dispatcher {
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
-    this.flumeDir = opts.flumeDir ?? join(opts.repoRoot, ".flume");
+    this.flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
     this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
     this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;

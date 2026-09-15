@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import { existsLoud } from "../src/fsProbe.js";
 import { mergeIgnoreLines } from "../src/job.js";
-import { namespacedJoin } from "../src/paths.js";
+import { namespacedJoin, STATE_ROOT_DIRNAME } from "../src/paths.js";
 import { readSelfPackage } from "../src/selfPackage.js";
 
 import { consumerIgnores } from "./ignores.js";
@@ -45,12 +45,18 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /**
  * The state root a consumer gets unless it says otherwise — the bay name the
  * engine resolves from a repository root when nothing overrides it
- * (`spec/cli.md`, *Bay discovery*). Spelled as a default rather than baked
- * in: everything this module composes takes the root as a parameter, so a
- * consumer adopting into a different one gets a declaration, an ignore set,
- * and a `PROTOCOL.md` that agree about where its state lives.
+ * (`spec/cli.md`, *Bay discovery*). Taken from the engine rather than
+ * restated: init's default and the dir the engine's own discovery walk looks
+ * for are one fact, and a second spelling here would write an adoption the
+ * engine then fails to find (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
+ *
+ * Spelled as a default rather than baked in: everything this module composes
+ * takes the root as a parameter, so a consumer adopting into a different one
+ * gets a declaration, an ignore set, and a `PROTOCOL.md` that agree about
+ * where its state lives.
  */
-export const DEFAULT_STATE_ROOT = ".flume";
+export const DEFAULT_STATE_ROOT = STATE_ROOT_DIRNAME;
 
 /** Where the declaration sits under a state root (`spec/harness.md`). */
 const DECLARATION_REL = "declaration.ts";

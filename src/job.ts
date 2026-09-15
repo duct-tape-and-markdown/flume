@@ -26,7 +26,11 @@ import { literalPathspecEnv, pinLongPaths } from "./git.js";
 import {
   awakeDir,
   chainModulePath,
+  defaultStateRoot,
   gitPath,
+  jobDir,
+  jobDirRel,
+  jobsRoot,
   loopLockPath,
   namespacedJoin,
   resolvePendingPath,
@@ -118,9 +122,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
  * ({@link gitPath}, `src/paths.ts`). The one derivation the verbs' `add`,
  * `status`, `commit`, `ls-files` and `rm` all take their pathspec from.
  *
- * `join` alone composes in the *host's* alphabet: on win32 it yields
- * `.flume\jobs\<name>`, and under {@link literalPathspecEnv} git compares
- * that byte-for-byte against paths it spells with `/`, so it selects nothing.
+ * {@link jobDirRel} (`src/paths.ts`) composes it in the *host's* alphabet:
+ * on win32 that is `.flume\jobs\<name>`, and under {@link literalPathspecEnv}
+ * git compares that byte-for-byte against paths it spells with `/`, so it
+ * selects nothing.
  * Every verb then acts on the empty set without saying so — `job new` reports
  * "already baselined" over a job it just seeded, and `job rm` logs "no
  * tracked harness", leaves the harness committed, and removes the dir anyway.
@@ -132,7 +137,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
  * pathspec behind it cannot name the dir differently.
  */
 function jobDirPathspec(name: string): string {
-  return gitPath(join(".flume", "jobs", name));
+  return gitPath(jobDirRel(name));
 }
 
 /**
@@ -175,17 +180,17 @@ export async function mergeIgnoreLines(
 
 /**
  * Merge {@link RUNTIME_IGNORES} — plus any caller-supplied `extra` entries (a
- * declared `Chain.friction` dir) — into `<jobDir>/.gitignore`.
+ * declared `Chain.friction` dir) — into `<stateRoot>/.gitignore`.
  */
 export async function ensureRuntimeIgnores(
-  jobDir: string,
+  stateRoot: string,
   extra: readonly string[] = [],
 ): Promise<void> {
-  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): jobDir nests under
-  // the state root, so `.gitignore` under it can cross the total-path
+  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): a job's state root
+  // nests under the bay, so `.gitignore` under it can cross the total-path
   // limit even though no single component is long. namespacedJoin
   // (src/paths.ts) is the shared idiom.
-  await mergeIgnoreLines(namespacedJoin(jobDir, ".gitignore"), [
+  await mergeIgnoreLines(namespacedJoin(stateRoot, ".gitignore"), [
     ...RUNTIME_IGNORES,
     ...extra,
   ]);
@@ -252,8 +257,8 @@ export interface JobNewOptions {
  */
 export async function jobNew(opts: JobNewOptions): Promise<void> {
   const { repoRoot, name } = opts;
-  const configDir = opts.configDir ?? join(repoRoot, ".flume");
-  const flumeDir = opts.flumeDir ?? join(repoRoot, ".flume");
+  const configDir = opts.configDir ?? defaultStateRoot(repoRoot);
+  const flumeDir = opts.flumeDir ?? defaultStateRoot(repoRoot);
   const log = opts.log ?? ((line: string) => console.log(line));
 
   const invalid = validateJobName(name);
@@ -291,23 +296,23 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   // re-run fills gaps (a stub added to the seed dir reaches existing jobs) and
   // never clobbers a worked file. Absent seedDir → bare job; state accretes
   // from ticks, no warning.
-  const jobDir = join(repoRoot, ".flume", "jobs", name);
-  // win32 MAX_PATH: jobDir nests under the state root; namespacedJoin
+  const dir = jobDir(repoRoot, name);
+  // win32 MAX_PATH: the job dir nests under the state root; namespacedJoin
   // (src/paths.ts) is the shared idiom for every fs call built from it.
-  await mkdir(namespacedJoin(jobDir), { recursive: true });
+  await mkdir(namespacedJoin(dir), { recursive: true });
   if (seedPath !== undefined) {
-    await cp(namespacedJoin(seedPath), namespacedJoin(jobDir), {
+    await cp(namespacedJoin(seedPath), namespacedJoin(dir), {
       recursive: true,
       force: false,
     });
-    log(`[flume] seeded ${jobDir} from ${seedPath}`);
+    log(`[flume] seeded ${dir} from ${seedPath}`);
   }
 
   // 4. Runtime ignores — written before the baseline add so runtime state
   // never enters the commit. A declared Chain.friction dir folds into the same
   // set: gitignored by machinery, not by per-repo habit.
   await ensureRuntimeIgnores(
-    jobDir,
+    dir,
     chain.friction !== undefined ? [frictionIgnoreEntry(chain.friction)] : [],
   );
 
@@ -453,19 +458,19 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   const invalid = validateJobName(name);
   if (invalid) throw new JobUsageError(invalid);
 
-  const jobDir = join(repoRoot, ".flume", "jobs", name);
+  const dir = jobDir(repoRoot, name);
   const rel = jobDirPathspec(name);
-  // Absent (`ENOENT`) is the only "no job" reading — an unreachable jobDir
+  // Absent (`ENOENT`) is the only "no job" reading — an unreachable job dir
   // (permission denied, a path too long for the platform) throws rather than
   // reporting "no job" for one that exists. win32 MAX_PATH: namespacedJoin
   // (src/paths.ts) is the shared idiom.
-  if (!existsLoud(namespacedJoin(jobDir))) {
+  if (!existsLoud(namespacedJoin(dir))) {
     throw new JobUsageError(`no job '${name}': ${rel} does not exist`);
   }
 
   // 1. Refuse while the loop is live — removing the state root out from
   // under a running supervisor would strand its ticks.
-  const livePid = await liveLoopPid(jobDir);
+  const livePid = await liveLoopPid(dir);
   if (livePid !== null) {
     throw new Error(
       `job '${name}' has a live loop (pid ${livePid}); stop it before \`flume job rm\``,
@@ -490,7 +495,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   // entries kept them out of git, so git rm left them behind. fs.rm unlinks
   // a stale junction/symlink without following it; the link target is never
   // touched.
-  await rm(namespacedJoin(jobDir), { recursive: true, force: true });
+  await rm(namespacedJoin(dir), { recursive: true, force: true });
 
   // 4. Stale metadata from the job's fanout worktrees.
   await git(repoRoot, ["worktree", "prune"]);
@@ -598,10 +603,10 @@ export function readPendingLoose(pendingPath: string): ParseResult {
  * dir and `job status` writes nothing; the read itself is `Baton.awake()`, so
  * the dotfile filter and the sort stay the baton's own.
  */
-function readAwake(jobDir: string): string[] | null {
+function readAwake(dir: string): string[] | null {
   try {
-    if (!existsLoud(namespacedJoin(awakeDir(jobDir)))) return [];
-    return new Baton(jobDir).awake();
+    if (!existsLoud(namespacedJoin(awakeDir(dir)))) return [];
+    return new Baton(dir).awake();
   } catch (err) {
     // A dir removed between the probe and the read is the absent reading
     // still, not an unreadable one.
@@ -630,7 +635,7 @@ export function jobStatus(
   frictionDir?: string,
   pendingPath?: string,
 ): JobStatus[] {
-  const jobsRoot = join(repoRoot, ".flume", "jobs");
+  const root = jobsRoot(repoRoot);
   // Absent jobs root (`ENOENT`) is no jobs. Any other read failure escapes:
   // it hides every job at once, which "no jobs" reports as an empty repo
   // (`.claude/rules/engineering.md`, "Loud or nothing"). win32 MAX_PATH:
@@ -638,7 +643,7 @@ export function jobStatus(
   // path is one more failure misread as absent.
   let entries: Dirent[];
   try {
-    entries = readdirSync(namespacedJoin(jobsRoot), { withFileTypes: true });
+    entries = readdirSync(namespacedJoin(root), { withFileTypes: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -648,24 +653,22 @@ export function jobStatus(
     .map((d) => d.name)
     .sort()
     .map((name) => {
-      const jobDir = join(jobsRoot, name);
-      const awake = readAwake(jobDir);
+      const dir = jobDir(repoRoot, name);
+      const awake = readAwake(dir);
       // readPendingLoose rethrows a non-ENOENT read failure (permission
       // denied, a path too long for the platform, …) — a per-job read error
       // must not abort the enumeration for every sibling job, so it reads
       // as unparsable here rather than escaping the map.
       let pending: number | null;
       try {
-        const parsed = readPendingLoose(
-          resolvePendingPath(jobDir, pendingPath),
-        );
+        const parsed = readPendingLoose(resolvePendingPath(dir, pendingPath));
         pending = parsed.ok ? parsed.entries.length : null;
       } catch {
         pending = null;
       }
       const frictionCount =
         frictionDir !== undefined
-          ? countFrictionFiles(join(jobDir, frictionDir))
+          ? countFrictionFiles(join(dir, frictionDir))
           : undefined;
       return {
         name,

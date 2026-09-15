@@ -31,6 +31,7 @@ import {
 } from "../src/cliJobResolution.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
+import { jobNew } from "../src/job.ts";
 import {
   gitOut,
   hermeticEnv,
@@ -1175,3 +1176,46 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
     }
   }, 30_000);
 });
+
+/**
+ * Agreement pin (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*): `job new` writes a job's state root and `--job`
+ * resolves one, and the two used to spell `<repoRoot>/.flume/jobs/<name>`
+ * apiece — a claim the unit cases above cannot reach, because each composes
+ * its own expected path by the tester's hand and would ship a one-sided
+ * rename green. Here the real `jobNew` seeds the job, the dir it actually
+ * created is read back out of its own seed commit, and the real
+ * `resolveStateDirs` is asked where `--job` points, with nothing composed by
+ * this file in between.
+ */
+it("`--job <name>` resolves the state root `job new <name>` seeded", async () => {
+  const repo = await makeJobRepo("main");
+  try {
+    await writeRepoConfig(repo.dir, minimalChainSrc());
+    await jobNew({ repoRoot: repo.dir, name: "seeded", log: () => {} });
+
+    // Where the writer put the job, taken from the seed commit it made.
+    const tracked = (
+      await gitOut(repo.dir, ["show", "--name-only", "--format=", "HEAD"])
+    )
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    expect(tracked.length).toBeGreaterThan(0);
+    const seeded = new Set(tracked.map((p) => dirname(resolve(repo.dir, p))));
+    expect(seeded.size).toBe(1);
+    const seededDir = [...seeded][0]!;
+
+    const env: NodeJS.ProcessEnv = {};
+    const { flumeDir, configDir } = resolveStateDirs(env, repo.dir, "seeded");
+    expect(flumeDir).toBe(seededDir);
+    expect(existsSync(flumeDir)).toBe(true);
+
+    // Config never follows the job: the chain `jobNew` loaded is still the
+    // one `--job` resolves `configDir` to.
+    expect(configDir).not.toBe(flumeDir);
+    expect(existsSync(join(configDir, "chain.ts"))).toBe(true);
+  } finally {
+    await repo.cleanup();
+  }
+}, 30_000);

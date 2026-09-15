@@ -2054,3 +2054,35 @@ describe.runIf(process.platform === "win32")(
     }, 60_000);
   },
 );
+
+/**
+ * Agreement pin (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*): every enumeration case above plants its job dirs by
+ * hand, so both sides of `<repoRoot>/.flume/jobs/<name>` are the tester's
+ * spelling and a one-sided change to that layout enumerates nothing while
+ * staying green. Here the real `jobNew` writes the job — dir, ignore set and
+ * seeded queue — and the real `jobStatus` is asked what it finds, with no
+ * path composed by this file in between.
+ */
+it("`job status` lists a job `job new` seeded", async () => {
+  const repo = await makeRepo();
+  try {
+    await mkdir(join(repo.dir, ".flume", "job-seed", "plan"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(repo.dir, ".flume", "job-seed", "plan", "pending.json"),
+      JSON.stringify([pendingEntry("SEEDED-ONE")]),
+    );
+    await writeRepoChain(repo.dir, { seedDir: "job-seed" });
+    await jobNew({ repoRoot: repo.dir, name: "seeded", log: () => {} });
+
+    // The seeded queue is what makes the row non-vacuous: a `pending: 1`
+    // proves `jobStatus` read the very dir `jobNew` copied the seed into.
+    expect(jobStatus(repo.dir)).toEqual([
+      { name: "seeded", awake: [], pending: 1 },
+    ]);
+  } finally {
+    await repo.cleanup();
+  }
+}, 60_000);
