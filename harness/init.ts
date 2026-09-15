@@ -418,12 +418,42 @@ function renderProtocol(template: string, stateRoot: string): string {
   return rendered;
 }
 
+/**
+ * The manifest fields a package can already be declared in, in the order
+ * {@link addDependency} looks for one.
+ */
+const DEPENDENCY_FIELDS = ["dependencies", "devDependencies"] as const;
+type DependencyField = (typeof DEPENDENCY_FIELDS)[number];
+
+/**
+ * A parsed consumer manifest whose dependency fields init has already
+ * resolved: each one is a JSON object or absent, never a scalar, a list or a
+ * `null` that a spread would quietly turn into something else. The type is
+ * what carries that guarantee from the read to the write, so no arm of
+ * {@link addDependency} reads a shape {@link readConsumerManifest} did not
+ * refuse.
+ */
+type ConsumerPkg = Record<string, unknown> & {
+  [Field in DependencyField]?: Record<string, unknown>;
+};
+
 /** The consumer's `package.json` as init read it, before anything was written. */
 interface ConsumerManifest {
   /** Where it sits, absolute — the plain spelling, which is what gets reported. */
   readonly path: string;
-  /** What it declared, parsed. */
-  readonly pkg: Record<string, unknown>;
+  /** What it declared, parsed and with its dependency fields resolved. */
+  readonly pkg: ConsumerPkg;
+}
+
+/** Whether `value` is a JSON object — not a list, not `null`, not a scalar. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The shape a refusal names, in the alphabet `JSON.parse` hands back. */
+function jsonShape(value: unknown): string {
+  if (Array.isArray(value)) return "an array";
+  return `a JSON ${value === null ? "null" : typeof value}`;
 }
 
 /**
@@ -444,6 +474,13 @@ interface ConsumerManifest {
  * same way for the same reason: `dependencies` cannot be read off it, and
  * reaching the write to discover that is the defect above wearing a
  * `TypeError`.
+ *
+ * So does an object that hangs something other than an object off
+ * `dependencies` or `devDependencies`. That shape does not throw at the write
+ * at all — spreading a string yields a map of its characters, spreading a
+ * scalar or a list yields an empty one — so the adoption rewrites the
+ * consumer's manifest into something they never declared and reports it as a
+ * dependency added. It is refused here, by field name, before the first byte.
  */
 async function readConsumerManifest(
   repoRoot: string,
@@ -467,13 +504,16 @@ async function readConsumerManifest(
   } catch (error) {
     return refuse(error instanceof Error ? error.message : String(error));
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    const shape = Array.isArray(parsed)
-      ? "an array"
-      : `a JSON ${parsed === null ? "null" : typeof parsed}`;
-    return refuse(`it parsed as ${shape}, not an object`);
+  if (!isJsonObject(parsed)) {
+    return refuse(`it parsed as ${jsonShape(parsed)}, not an object`);
   }
-  return { path, pkg: parsed as Record<string, unknown> };
+  for (const field of DEPENDENCY_FIELDS) {
+    const value = parsed[field];
+    if (value !== undefined && !isJsonObject(value)) {
+      refuse(`its ${field} field is ${jsonShape(value)}, not an object`);
+    }
+  }
+  return { path, pkg: parsed as ConsumerPkg };
 }
 
 /**
@@ -485,6 +525,10 @@ async function readConsumerManifest(
  * `node_modules` against the manifest is the consumer's, and a library verb
  * that spawned one would be making that choice for every adopter
  * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ *
+ * Every field read here is an object or absent by the time this runs —
+ * {@link readConsumerManifest} refuses anything else in init's pre-write
+ * phase — so no arm reconciles a shape of its own.
  *
  * The rewrite is `JSON.stringify` at two-space indent with a trailing
  * newline — npm's own normalization, so a manifest npm wrote round-trips and
@@ -498,18 +542,18 @@ async function addDependency(
   if (manifest === undefined) return { kind: "absent", range };
   const { path, pkg } = manifest;
 
-  for (const field of ["dependencies", "devDependencies"] as const) {
-    const declared = (pkg[field] as Record<string, unknown> | undefined)?.[name];
+  for (const field of DEPENDENCY_FIELDS) {
+    const declared = pkg[field]?.[name];
     if (typeof declared === "string") {
       return { kind: "declared", manifest: path, range: declared };
     }
   }
 
-  const dependencies = {
-    ...((pkg["dependencies"] as Record<string, string> | undefined) ?? {}),
+  const dependencies: Record<string, unknown> = {
+    ...(pkg.dependencies ?? {}),
     [name]: range,
   };
-  pkg["dependencies"] = Object.fromEntries(
+  pkg.dependencies = Object.fromEntries(
     Object.keys(dependencies)
       .sort()
       .map((key) => [key, dependencies[key]]),

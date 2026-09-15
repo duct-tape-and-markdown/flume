@@ -412,6 +412,155 @@ it("flume-harness init refuses a consumer package.json that parses to a non-obje
 });
 
 /**
+ * The refusal's third shape, and the only one that never threw at all: a
+ * manifest that is a JSON object but hangs a non-object off a dependency
+ * field. Spreading a string into the rewrite yields a map of its characters
+ * and spreading a scalar or a list yields an empty one, so init wrote the
+ * consumer a `dependencies` field they never declared and reported it as a
+ * dependency added, with nothing downstream refusing over it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Hand-authored, for the reason the fixtures above are (*A seam gate reads
+ * what the real writer wrote*, last bullet).
+ */
+const NON_OBJECT_FIELD_VALUES = ['"oops"', "42", "null", "[]"] as const;
+
+/**
+ * Drive init over a manifest whose `field` carries each shape above, and
+ * assert the refusal names the file and the field with the repository
+ * byte-identical to what it was.
+ */
+async function expectFieldRefusal(field: string): Promise<void> {
+  // Non-vacuity: every fixture parses — so none of them is caught by the
+  // unparseable case — and none of them is an object once it has.
+  expect(NON_OBJECT_FIELD_VALUES.length).toBeGreaterThan(0);
+  for (const value of NON_OBJECT_FIELD_VALUES) {
+    const parsed: unknown = JSON.parse(value);
+    expect(typeof parsed !== "object" || parsed === null || Array.isArray(parsed)).toBe(
+      true,
+    );
+  }
+
+  const gitignore = "node_modules/\ndist/\n";
+  for (const [index, value] of NON_OBJECT_FIELD_VALUES.entries()) {
+    // A bay of its own per fixture, as the non-object manifests get: a write
+    // taken for one shape must not read as the next shape's tree being dirty.
+    const adopter = join(repoRoot, `${field}-${index}`);
+    await mkdir(adopter, { recursive: true });
+    const manifestPath = join(adopter, "package.json");
+    const source = `${JSON.stringify(
+      { name: "consumer", version: "1.0.0", [field]: JSON.parse(value) },
+      null,
+      2,
+    )}\n`;
+    await writeFile(join(adopter, ".gitignore"), gitignore, "utf8");
+    await writeFile(manifestPath, source, "utf8");
+
+    const thrown = await harnessInit({ repoRoot: adopter }).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+
+    // Flume's own voice, naming both the file and the field an operator has
+    // to go fix — `devDependencies` is not the substring `dependencies`, so
+    // each case's assertion discriminates the field it was given.
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toContain("flume-harness init");
+    expect(message).toContain(manifestPath);
+    expect(message).toContain(field);
+
+    // And before the first byte: no state root, and the consumer's two files
+    // exactly as they were — in particular the manifest, which is what the
+    // adoption used to rewrite into something nobody declared.
+    expect(existsSync(join(adopter, DEFAULT_STATE_ROOT))).toBe(false);
+    expect(await readFile(join(adopter, ".gitignore"), "utf8")).toBe(gitignore);
+    expect(await readFile(manifestPath, "utf8")).toBe(source);
+  }
+}
+
+it("flume-harness init refuses a consumer package.json whose dependencies field is not an object before writing anything", async () => {
+  await expectFieldRefusal("dependencies");
+});
+
+it("flume-harness init refuses a consumer package.json whose devDependencies field is not an object before writing anything", async () => {
+  await expectFieldRefusal("devDependencies");
+});
+
+it("flume-harness init reports the dependency line it added to the consumer's manifest", async () => {
+  // A manifest as an adopter's is: a package with a dependency of its own
+  // that the rewrite has to carry through untouched.
+  const manifestPath = join(repoRoot, "package.json");
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      { name: "consumer", version: "1.0.0", dependencies: { zod: "^3.0.0" } },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const result = await harnessInit({ repoRoot });
+
+  const outcome = result.dependency;
+  if (outcome.kind !== "added") {
+    throw new Error(`expected an added dependency, got ${outcome.kind}`);
+  }
+  expect(outcome.manifest).toBe(manifestPath);
+
+  // Agreement, not a hand-authored expectation: the real writer's manifest
+  // read back by a real parser, against the line the result reported. What
+  // init says it added and what the consumer's file now declares are one
+  // fact, at one range.
+  const written: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  expect(written).toMatchObject({
+    name: "consumer",
+    version: "1.0.0",
+    dependencies: { zod: "^3.0.0", [result.packageName]: outcome.range },
+  });
+  expect(outcome.range).toMatch(/^\^\d+\.\d+\.\d+/);
+});
+
+it("flume-harness init reports a dependency the consumer's manifest already declares without rewriting its range", async () => {
+  // The specifier comes off a real adoption rather than being spelled here,
+  // so the fixture declares whatever package name init actually writes.
+  const probe = join(repoRoot, "probe");
+  await mkdir(probe, { recursive: true });
+  const { packageName } = await harnessInit({ repoRoot: probe });
+
+  // Declared in `devDependencies`, which is where a harness dependency
+  // belongs and the field init has to look in to find it already there.
+  const adopter = join(repoRoot, "adopter");
+  await mkdir(adopter, { recursive: true });
+  const manifestPath = join(adopter, "package.json");
+  const pinned = "0.9.0";
+  const source = `${JSON.stringify(
+    {
+      name: "consumer",
+      version: "1.0.0",
+      devDependencies: { [packageName]: pinned },
+    },
+    null,
+    2,
+  )}\n`;
+  await writeFile(manifestPath, source, "utf8");
+
+  const result = await harnessInit({ repoRoot: adopter });
+
+  expect(result.packageName).toBe(packageName);
+  expect(result.dependency).toEqual({
+    kind: "declared",
+    manifest: manifestPath,
+    range: pinned,
+  });
+
+  // Byte-identical: a consumer's pin is a decision, so init neither widens
+  // it to its own caret range nor migrates the line into `dependencies`.
+  expect(await readFile(manifestPath, "utf8")).toBe(source);
+});
+
+/**
  * The reason the verb lives on a bin of its own (`spec/harness.md`,
  * *Adoption and upgrade*): the engine's verb set is closed, so `flume` gains
  * no adoption verb however convenient one would be. The import direction
