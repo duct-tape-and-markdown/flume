@@ -1,7 +1,6 @@
 /**
- * The harness suite's stand-in judge: that an engine type stood in for by a
- * test is stood in as a **typed value**, never reached through an `unknown`
- * cast.
+ * The suite's stand-in judge: that an engine type stood in for by a test is
+ * stood in as a **typed value**, never reached through an `unknown` cast.
  *
  * A cast through `unknown` is the one way a stand-in ships typed-looking and
  * checks nothing — the literal answers to no shape at all, so a field the
@@ -25,10 +24,19 @@
  * names a structural type, so reading the cast's target against the file's
  * engine imports is what separates them — no list of exemptions.
  *
- * The scanned set is `tests/harness*.test.ts` — the harness package's own
- * suite, which is where the package's types are stood in. This file is not
- * one of them, which is why the patterns it quotes are not its own subject;
- * a rename into that set would make it so.
+ * The scanned set is every top-level `tests/*.test.ts`. A file glob narrower
+ * than the suite would be the same special case one rung out: the engine's
+ * types are stood in wherever a test reaches for one, so a prefix that
+ * happens to name today's stand-in sites leaves tomorrow's unseen. The set
+ * is read off the directory, non-recursively, so `tests/helpers/` — the home
+ * of the shared typed stand-ins — is scanned by nothing and free to describe
+ * what it replaces.
+ *
+ * This file is in its own set. The cast patterns its prose and its regexes
+ * quote survive only because it imports no engine name, which is what makes
+ * every one of those casts a non-subject; an engine import added here would
+ * make this comment its own finding, and the fix is to name the type in
+ * prose without writing the cast.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -39,9 +47,9 @@ import { expect, it } from "vitest";
 
 const TESTS_DIR = fileURLToPath(new URL(".", import.meta.url));
 
-/** The harness package's own test files, read as text. */
-const harnessTests = readdirSync(TESTS_DIR)
-  .filter((name) => name.startsWith("harness") && name.endsWith(".test.ts"))
+/** Every top-level test file in the suite, read as text. */
+const suiteTests = readdirSync(TESTS_DIR)
+  .filter((name) => name.endsWith(".test.ts"))
   .map((name) => ({
     name,
     text: readFileSync(join(TESTS_DIR, name), "utf8"),
@@ -77,19 +85,28 @@ function engineNames(text: string): Set<string> {
   return names;
 }
 
-it("no harness test stands an engine type in through an `unknown` cast", () => {
+it("no test stands an engine type in through an `unknown` cast", () => {
   // Vacuity: the set exists, at least one of its files stands a runner in
   // through the shared value, and the suite names engine types at all — an
   // absence asserted over no subject is a false green
   // (`.claude/rules/engineering.md`, *A green verdict is proven
   // non-vacuous*).
-  expect(harnessTests.length).toBeGreaterThan(0);
-  const adopters = harnessTests.filter((file) =>
+  expect(suiteTests.length).toBeGreaterThan(0);
+  const adopters = suiteTests.filter((file) =>
     file.text.includes('from "./helpers/stubRunner.ts"'),
   );
   expect(adopters.length).toBeGreaterThan(0);
 
-  const scanned = harnessTests.map((file) => ({
+  // The set is the whole suite, not one prefix of it: files outside the
+  // harness package's own tests are scanned, and so is this file. Without
+  // these, a glob narrowed back to a prefix reads green.
+  const names = suiteTests.map((file) => file.name);
+  expect(names).toContain("stubRunner.test.ts");
+  expect(
+    names.filter((name) => !name.startsWith("harness")).length,
+  ).toBeGreaterThan(0);
+
+  const scanned = suiteTests.map((file) => ({
     name: file.name,
     engine: engineNames(file.text),
     casts: [...file.text.matchAll(UNKNOWN_CAST)]
