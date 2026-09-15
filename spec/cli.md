@@ -420,7 +420,21 @@ Standing consequences:
   — see `spec/worktrees.md`.
 - **Test-repo hygiene.** Temp git repos pin `core.autocrlf false` (and any
   future byte-sensitive config) so revert-path byte assertions survive
-  host-level git config.
+  host-level git config. The repository itself pins `eol=lf` through
+  `.gitattributes`, so a checkout on win32 carries the bytes the suite's
+  fixture-literal comparisons read.
+- **The lane's subject.** The win32 lane carries the whole default suite, and
+  what it proves is the engine's win32 paths — shim spawn, total path length,
+  the git alphabet against the host separator, canonical roots — and every
+  case whose subject is platform-neutral. A case whose subject is POSIX error
+  semantics — a permission bit that denies, a symlink loop, a symlink the host
+  refuses to create — declares its host and skips on win32 with the reason
+  stated, never silently. The suite's denial primitive is structural wherever
+  the code path allows it (`.claude/rules/platform-facts.md`, *`chmod` denies
+  nothing on win32*), so a denial case runs on both hosts by default and
+  declares a host only where no structural substitute exists. A red title on
+  the lane is a defect in the engine or in the fixture, never an accepted
+  platform gap.
 
 ## Versioning policy
 

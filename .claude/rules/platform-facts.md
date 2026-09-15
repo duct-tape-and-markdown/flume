@@ -1,6 +1,8 @@
 ---
 paths:
   - "src/**"
+  - "harness/**"
+  - "tests/**"
   - "bin/**"
   - "scripts/**"
   - "examples/**"
@@ -220,3 +222,27 @@ and a scan over it reports an empty reach graph as a clean surface. Answer
 `directoryExists` (and `getDirectories`) for every virtual path, and pin the
 scan's judged count above zero so a silent resolution failure reds rather
 than passes.
+
+## `chmod` denies nothing on win32
+
+A POSIX permission bit is the suite's denial primitive — `chmod(dir, 0o000)`
+to make a directory unreadable, `0o444` to make a file unwritable — and on
+win32 it toggles the read-only attribute and denies nothing: every read
+succeeds, every "unreadable" refusal case resolves instead of rejecting, and
+a lane reads the loud-or-nothing posture as verified when it was never
+exercised. Deny structurally wherever the code path allows it — a plain file
+where a directory is expected, a directory where a file is expected — which
+denies on every host and survives a root-run test; where no structural
+substitute exists, the case declares its host and skips on win32 with the
+reason stated, never silently.
+
+## `tmpdir()` can return an 8.3 short path git never spells
+
+On win32 `os.tmpdir()` may hand back the DOS short form
+(`C:\Users\RUNNER~1\AppData\Local\Temp`) while git reports every path it
+holds in the resolved long form (`C:\Users\runneradmin\...`). A fixture that
+composes a path from `mkdtemp(tmpdir())` and asserts it against git's
+worktree registry, name-only output, or a pathspec reads two spellings of
+one directory and fails on the comparison, not on the behavior. Canonicalize
+with `realpath` on both sides before comparing; a separator fold alone does
+not close it.

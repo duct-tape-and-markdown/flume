@@ -40,8 +40,8 @@ Every check lives at the most deterministic layer that can express it — a
   against it. Two carve-outs, both reading prose against the program rather
   than against prose. A doc comment reachable from the `exports` map's
   `.d.ts` is the hover text a chain author reads, so it is engine surface and
-  may be pinned for what it says. And a reference in a `src/` or `harness/`
-  comment — a backticked identifier, a backticked repo-relative path, or a
+  may be pinned for what it says. And a reference in a `src/`, `harness/`, or
+  `tests/` comment — a backticked identifier, a backticked repo-relative path, or a
   `*.md` page name with or without backticks, since a filename is never a
   sentence — is not prose: a pin may resolve it against the declarations
   those trees hold and the working tree — the token, never its meaning — so
