@@ -170,8 +170,12 @@ const RunJobsSchema = z.object({
   ),
 });
 
-/** One completed run, as the slice names and stamps it. */
-interface CiRun {
+/**
+ * One completed run, as the slice names and stamps it — and as a render names
+ * it back to the agent, which is why it is public rather than an internal
+ * shape of {@link CiLaneStatus}.
+ */
+export interface CiRun {
   /** The run's identity on the forge — the value a `drainedRuns` stamp holds. */
   readonly id: string;
   /** The run's own title, for a reader deciding what landed in it. */
@@ -225,12 +229,33 @@ export type CiLaneStatus =
     };
 
 /**
+ * The run an unread reading degraded from, where the read named one before
+ * coming up short.
+ *
+ * Present on exactly one unread: the lane whose declared job failed and whose
+ * log the forge would not then hand over. That run is the one such a lane may
+ * have made the slice live over, so dropping it here is what would leave a
+ * wake with no visible cause in the render (`spec/harness.md`, *CI lanes as a
+ * findings source*).
+ */
+interface CiUnreadOver {
+  /** The branch the run is keyed to — the repository's, not the tick's. */
+  readonly branch: string;
+  /** The run whose material this read could not fetch. */
+  readonly run: CiRun;
+}
+
+/**
  * One lane's status with a failing job's material on it — what the slice's
  * prompt renders, and the half only a render pays for.
  *
  * A material fetch that fails resolves to `unread` like every other way the
  * read can come up short, so a lane whose log could not be read never renders
- * as a failure with nothing in it.
+ * as a failure with nothing in it — but it carries {@link CiUnreadOver} for
+ * the run it degraded from, because the reader knows which run that was and a
+ * fact the reader holds is reported rather than left for a consumer to
+ * rebuild (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
  */
 export type CiLaneReading =
   | (Extract<CiLaneStatus, { kind: "failing" }> & {
@@ -240,7 +265,10 @@ export type CiLaneReading =
        */
       readonly log: string;
     })
-  | Extract<CiLaneStatus, { kind: "green" | "unread" }>;
+  | Extract<CiLaneStatus, { kind: "green" }>
+  | (Extract<CiLaneStatus, { kind: "unread" }> & {
+      readonly over?: CiUnreadOver;
+    });
 
 /** What any lane read needs: the repository the runs are keyed through. */
 interface CiRepoOptions {
@@ -251,7 +279,7 @@ interface CiRepoOptions {
   readonly repoRoot: string;
 }
 
-/** What {@link readCiLanes} needs to read a consumer's lanes for one tick. */
+/** What {@link withCiLaneMaterial} needs to read one tick's lane material. */
 interface CiReadOptions extends CiRepoOptions {
   /**
    * How many lines of a failing job's log one lane carries. The tail is
@@ -284,19 +312,20 @@ export function readCiLaneStatuses(
 }
 
 /**
- * The same readings with each failing lane's job log on it.
+ * The same statuses with each failing lane's job log layered on.
  *
- * One derivation, two depths: the statuses are read exactly as the liveness
- * half reads them, and the material is layered on top rather than fetched by
- * a second walk that could name a different run.
+ * Takes statuses rather than lanes, and that is the whole point: the two
+ * depths are one derivation, so a caller that already read the cheap half for
+ * a liveness verdict pays for the material on top of *those* readings rather
+ * than buying a second walk that could name a different run
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  */
-export function readCiLanes(
-  lanes: readonly CiLane[],
+export function withCiLaneMaterial(
+  statuses: readonly CiLaneStatus[],
   options: CiReadOptions,
 ): CiLaneReading[] {
-  return readCiLaneStatuses(lanes, options).map((status) =>
-    withMaterial(status, options),
-  );
+  return statuses.map((status) => withMaterial(status, options));
 }
 
 /**
@@ -424,7 +453,12 @@ function withMaterial(
     );
     return { ...status, log };
   } catch (err) {
-    return { kind: "unread", lane: status.lane, reason: readFailure(err) };
+    return {
+      kind: "unread",
+      lane: status.lane,
+      reason: readFailure(err),
+      over: { branch: status.branch, run: status.run },
+    };
   }
 }
 

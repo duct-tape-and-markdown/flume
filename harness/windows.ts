@@ -54,9 +54,10 @@ import type { PriorAttempt } from "../src/Prompt.js";
 
 import {
   readCiLaneStatuses,
-  readCiLanes,
+  withCiLaneMaterial,
   type CiLaneReading,
   type CiLaneStatus,
+  type CiRun,
 } from "./ci.js";
 import {
   INBOX_PHASE,
@@ -305,25 +306,61 @@ function standingRefusals(ctx: {
  * short-circuit is what keeps a woken plan tick from paying for the network.
  */
 function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
+  const statuses = ciLaneStatuses(options);
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
       recordsPending(inputs.flumeDir) ||
       standingRefusals(inputs).length > 0 ||
-      undrainedRedLane(inputs, options),
+      wokenLanes(statuses(), inputs.flumeDir).size > 0,
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
-      CI_LANES: renderCiLanes(options),
+      CI_LANES: renderCiLanes(statuses(), ctx.flumeDir, options),
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
 }
 
 /**
- * Whether some declared lane's latest completed run failed at a run this
+ * This tick's declared-lane statuses, read from the forge on first ask and
+ * handed out unchanged after — one lane read per window, shared by the
+ * liveness leg and the render.
+ *
+ * **Lazy, because the ordering above is load-bearing.** A tick the disk
+ * already woke never reaches this, so the short-circuit still spares it the
+ * network; a tick that does reach it pays once rather than once per reader
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * One window object is one tick — the chain factory builds the windows once
+ * and each tick is a fresh child (`harness/chain.ts`) — so the memo's lifetime
+ * is exactly the span over which the forge's answer is the same answer.
+ *
+ * The statuses alone, never {@link withCiLaneMaterial}: the liveness verdict
+ * is over run identity and conclusion, and fetching a failing job's whole log
+ * to answer a boolean would put a multi-megabyte read on the selection path.
+ * The render layers material on top of these readings.
+ */
+function ciLaneStatuses(
+  options: PlanSliceWindowsOptions,
+): () => readonly CiLaneStatus[] {
+  const lanes = options.declaration.ci;
+  let read: readonly CiLaneStatus[] | undefined;
+  return () => {
+    read ??=
+      lanes === undefined
+        ? []
+        : readCiLaneStatuses(lanes, { repoRoot: options.repoRoot });
+    return read;
+  };
+}
+
+/**
+ * The declared lanes whose latest completed run failed at a run this
  * consumer's plan state has not stamped as drained (`spec/harness.md`, *CI
- * lanes as a findings source*).
+ * lanes as a findings source*) — the lanes making the inbox slice live, by
+ * name.
  *
  * **The stamp is what closes the lane.** A red lane with no stamp leg would
  * hold this slice live for as long as the lane stays red, re-filing the same
@@ -335,24 +372,28 @@ function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
  *
  * A lane read as green, and a lane that could not be read at all, are live
  * for nothing: unread is not a reason to wake, only a thing to say on a tick
- * something else woke. A consumer declaring no lanes never asks the forge.
+ * something else woke. A consumer declaring no lanes never asks the forge,
+ * and never reads the plan state to ask this either.
  *
- * The statuses alone, never {@link readCiLanes}: the verdict is over run
- * identity and conclusion, and fetching a failing job's whole log to answer
- * a boolean would put a multi-megabyte read on the selection path.
+ * **A set rather than a boolean, because the render owes the same verdict by
+ * name.** The window's two readers are one derivation: the ladder asks
+ * whether any lane is in here, the render asks which, and a render
+ * recomputing its own answer would be free to disagree with the one that
+ * woke the tick.
  */
-function undrainedRedLane(
-  inputs: SliceInputs,
-  options: PlanSliceWindowsOptions,
-): boolean {
-  const lanes = options.declaration.ci;
-  if (lanes === undefined) return false;
-  const drained = readPlanState(inputs.flumeDir)?.drainedRuns ?? {};
-  const undrained = (status: CiLaneStatus): boolean =>
-    status.kind === "failing" && drained[status.lane.name] !== status.run.id;
-  return readCiLaneStatuses(lanes, {
-    repoRoot: options.repoRoot,
-  }).some(undrained);
+function wokenLanes(
+  statuses: readonly CiLaneStatus[],
+  flumeDir: string,
+): ReadonlySet<string> {
+  if (statuses.length === 0) return new Set();
+  const drained = readPlanState(flumeDir)?.drainedRuns ?? {};
+  return new Set(
+    statuses.flatMap((status) =>
+      status.kind === "failing" && drained[status.lane.name] !== status.run.id
+        ? [status.lane.name]
+        : [],
+    ),
+  );
 }
 
 /**
@@ -370,43 +411,80 @@ function undrainedRedLane(
  * window states per lane. What the render owes instead is that unread never
  * reads as green — which is what the block below says in its own words.
  */
-function renderCiLanes(options: PlanSliceWindowsOptions): string {
-  const lanes = options.declaration.ci;
-  if (lanes === undefined) return "(no CI lanes declared)";
-  return readCiLanes(lanes, {
+function renderCiLanes(
+  statuses: readonly CiLaneStatus[],
+  flumeDir: string,
+  options: PlanSliceWindowsOptions,
+): string {
+  if (options.declaration.ci === undefined) return "(no CI lanes declared)";
+  const woke = wokenLanes(statuses, flumeDir);
+  return withCiLaneMaterial(statuses, {
     repoRoot: options.repoRoot,
     logLines: budgetOf(options),
   })
-    .map(renderLane)
+    .map((reading) => renderLane(reading, woke.has(reading.lane.name)))
     .join("\n\n");
 }
 
-/** One lane's reading, under the lane name its findings are keyed by. */
-function renderLane(reading: CiLaneReading): string {
+/** One run as every block names it: its identity, its branch, and where it sits. */
+function renderRun(run: CiRun, branch: string): string {
+  return `run ${run.id} on branch ${branch} — ${run.title} (${run.at})\n${run.url}`;
+}
+
+/**
+ * One lane's reading, under the lane name its findings are keyed by, saying
+ * whether this lane is what made the slice live.
+ *
+ * **Every block answers the wake question, in both directions.** A marker on
+ * the woken lane alone would leave a reader inferring silence, and the lane
+ * that woke a tick is the one thing a drain has to start from
+ * (`spec/harness.md`, *CI lanes as a findings source*). The verdict is
+ * {@link wokenLanes}'s, handed in rather than recomputed here, so the render
+ * cannot name a different lane than the one the ladder woke over.
+ *
+ * `woke` is the lane's verdict, not the reading's — a lane whose failing run
+ * is past its stamp woke the slice whether or not the job's log then came
+ * back, which is exactly the case the unread arm below names its run for.
+ */
+function renderLane(reading: CiLaneReading, woke: boolean): string {
   const { lane } = reading;
   const head = `lane \`${lane.name}\` (workflow ${lane.workflow}, job ${lane.job})`;
+  const wake = woke
+    ? `Woke this slice: this lane's latest completed run failed and is not ` +
+      `the run stamped at \`drainedRuns.${lane.name}\`.`
+    : `Not what woke this slice.`;
   if (reading.kind === "unread") {
     return [
       `=== ${head}: UNREAD ===`,
+      wake,
+      // The run a failing lane degraded to unread over, which the reader
+      // reports rather than dropping (`ci.ts`, `CiUnreadOver`): without it a
+      // tick this lane woke renders a bare unread over an invisible cause.
+      ...(reading.over === undefined
+        ? []
+        : [
+            `The run this lane was read at, whose log this tick could not fetch:`,
+            renderRun(reading.over.run, reading.over.branch),
+          ]),
       `${reading.reason}.`,
       `Unread is not green: this tick knows nothing about the lane's state, ` +
         `so file nothing and close nothing against it.`,
     ].join("\n");
   }
   const { run, branch } = reading;
-  const stamp =
-    `run ${run.id} on branch ${branch} — ${run.title} (${run.at})\n${run.url}`;
   if (reading.kind === "green") {
     return [
       `=== ${head}: GREEN ===`,
-      stamp,
+      wake,
+      renderRun(run, branch),
       `Nothing to drain. A finding already filed under this lane's name that ` +
         `this run no longer reports closes in the commit body.`,
     ].join("\n");
   }
   return [
     `=== ${head}: FAILING ===`,
-    stamp,
+    wake,
+    renderRun(run, branch),
     // The stamp the slice writes for this lane, named rather than composed
     // by the agent out of the run line above — a lane drained without it is
     // a lane this window re-opens on next tick over the same run

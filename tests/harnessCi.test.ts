@@ -87,20 +87,30 @@ const runner = () => ({
   lanes: [],
 });
 
+/** A second lane, for a case whose claim is per-lane rather than per-tick. */
+const SECOND_LANE = { name: "posix", workflow: "ci.yml", job: "windows" } as const;
+
 /**
  * The inbox window over a declaration naming {@link LANE}.
  *
  * `budget` is the package's own line budget unless a case names one — the
  * knob the window already carries, so a case can provoke the trim without
  * minting a thousand-line fixture to reach the default.
+ *
+ * `lanes` is the declared list, one lane unless a case names more — the stub
+ * answers by question rather than by workflow, so a second lane is a second
+ * full read of the same fixture, which is what a per-lane count needs.
  */
-function inboxWindow(budget?: number): PlanSliceWindow {
+function inboxWindow(
+  budget?: number,
+  lanes: readonly (typeof LANE | typeof SECOND_LANE)[] = [LANE],
+): PlanSliceWindow {
   const declaration = parseDeclaration({
     specLocus: ["spec/**"],
     fence: { build: ["src/**"] },
     runner,
     slices: { enabled: [INBOX_PHASE] },
-    ci: [LANE],
+    ci: [...lanes],
   });
   const built = planSliceWindows({
     declaration,
@@ -163,11 +173,17 @@ function calls(): string[][] {
  * What the stub answers each of the reader's three questions with: the run
  * listing, the run's jobs, and the failing job's log. Absent means the case
  * expects the reader never to ask.
+ *
+ * `logRefusal` is the third question answered the way a forge that holds the
+ * run but will not hand over its log answers — a non-zero exit carrying its
+ * reason on stderr, after the first two questions succeeded. Set, it replaces
+ * `log`.
  */
 interface ForgeScenario {
   readonly runs: unknown[];
   readonly jobs?: unknown[];
   readonly log?: string;
+  readonly logRefusal?: string;
 }
 
 /** The name the reader spawns a lane's forge through (`harness/ci.ts`). */
@@ -252,7 +268,9 @@ function plantForge(scenario: ForgeScenario): void {
       `const runs = ${JSON.stringify(JSON.stringify(scenario.runs))};`,
       `const jobs = ${JSON.stringify(JSON.stringify({ jobs: scenario.jobs ?? [] }))};`,
       `const log = ${JSON.stringify(scenario.log ?? "")};`,
+      `const logRefusal = ${JSON.stringify(scenario.logRefusal ?? "")};`,
       `if (args[0] === "run" && args[1] === "list") process.stdout.write(runs);`,
+      `else if (args[0] === "run" && args[1] === "view" && args.includes("--log-failed") && logRefusal !== "") { process.stderr.write(logRefusal); process.exit(1); }`,
       `else if (args[0] === "run" && args[1] === "view" && args.includes("--log-failed")) process.stdout.write(log);`,
       `else if (args[0] === "run" && args[1] === "view") process.stdout.write(jobs);`,
       `else { process.stderr.write("stub: unexpected " + args.join(" ")); process.exit(9); }`,
@@ -683,6 +701,106 @@ it("the inbox slice is not live when the forge CLI cannot read the lane", () => 
   const rendered = inboxArgs()["CI_LANES"] ?? "";
   expect(rendered).toContain("UNREAD");
   expect(rendered).not.toContain("GREEN");
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The wake marker's own fixture line — a failing job's log with one title in
+ * it, so a case about the marker still renders a whole FAILING block.
+ */
+const FAILING_LOG = "FAIL tests/paths.test.ts > a long path is refused by name\n";
+
+it("the inbox window names the lane whose undrained failing run made the slice live", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  // Stamped at an older run of the same lane, so this lane is undrained by the
+  // comparison rather than by a map holding nothing for it.
+  stampLanes({ [LANE.name]: "17420000000" });
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+
+  // Vacuity: the forge answered all three questions, so what is asserted below
+  // is a reading of a real red lane and not an empty string.
+  expect(calls().length).toBe(3);
+  expect(rendered).toContain(`lane \`${LANE.name}\``);
+  expect(rendered).toContain("FAILING");
+
+  expect(rendered).toContain("Woke this slice:");
+  expect(rendered).toContain(`drainedRuns.${LANE.name}`);
+  expect(rendered).not.toContain("Not what woke this slice");
+}, SPAWN_BUDGET_MS);
+
+it("a lane woken by a run whose log the forge refuses renders unread over that run, not over nothing", () => {
+  const refusal = "gh: the forge would not hand over this job's log";
+  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: refusal });
+  stampLanes({});
+
+  // Vacuity: this lane really is what makes the slice live — nothing else on
+  // this disk opens it — so the block below renders over a wake and not over
+  // an unread nobody was woken by.
+  expect(inboxLive()).toBe(true);
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+
+  // Vacuity again: the log really was asked for, and really was refused.
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).toContain(refusal);
+
+  // The wake, and the run it was woken over — named, not dropped with the
+  // status the read degraded from.
+  expect(rendered).toContain("Woke this slice:");
+  expect(rendered).toContain(String(RUN.databaseId));
+  expect(rendered).toContain(RUN.url);
+  expect(rendered).toContain(RUN.displayTitle);
+  expect(rendered).not.toContain("GREEN");
+}, SPAWN_BUDGET_MS);
+
+it("a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  stampLanes({ [LANE.name]: String(RUN.databaseId) });
+
+  const stamped = inboxArgs()["CI_LANES"] ?? "";
+  expect(stamped).toContain("FAILING");
+  expect(stamped).not.toContain("Woke this slice");
+  expect(stamped).toContain("Not what woke this slice");
+
+  // Vacuity: the marker exists at all, and the stamp alone is what withheld
+  // it — the same red run under an older stamp carries it.
+  stampLanes({ [LANE.name]: "17420000000" });
+  const unstamped = inboxArgs()["CI_LANES"] ?? "";
+  expect(unstamped).toContain("FAILING");
+  expect(unstamped).toContain("Woke this slice");
+}, SPAWN_BUDGET_MS);
+
+it("one tick's liveness leg and render ask the forge once per lane between them", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  stampLanes({});
+
+  // One window object is one tick: the chain factory builds the windows once
+  // and each tick is a fresh child (`harness/chain.ts`), so the two legs below
+  // are the two readers of a single tick's window.
+  const lanes = [LANE, SECOND_LANE];
+  const built = inboxWindow(undefined, lanes);
+  expect(built.live({ flumeDir: stateRoot(), pickable: false })).toBe(true);
+  const rendered = built.args({ cwd: repo, flumeDir: stateRoot() })["CI_LANES"] ?? "";
+
+  // Vacuity: both declared lanes reached the forge and rendered from its
+  // answer, so the counts below are over two lanes actually read.
+  for (const lane of lanes) expect(rendered).toContain(`lane \`${lane.name}\``);
+  expect(rendered).toContain("FAILING");
+  expect(rendered).not.toContain("UNREAD");
+
+  const asked = calls();
+  const count = (matches: (call: string[]) => boolean): number =>
+    asked.filter(matches).length;
+  expect(count((call) => call[0] === "run" && call[1] === "list")).toBe(lanes.length);
+  expect(
+    count(
+      (call) =>
+        call[0] === "run" && call[1] === "view" && !call.includes("--log-failed"),
+    ),
+  ).toBe(lanes.length);
+  expect(count((call) => call.includes("--log-failed"))).toBe(lanes.length);
+  expect(asked.length).toBe(3 * lanes.length);
 }, SPAWN_BUDGET_MS);
 
 /**
