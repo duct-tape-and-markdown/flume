@@ -68,3 +68,47 @@ Options:
 
 Parked because `spec/` is the human's alone; build cannot reach it and plan
 picking a wording would be plan authoring spec.
+
+## `spec/cli.md` re-instates `flume render`, which an operator ruling deleted (PARKED — the fork is what replaces the three defects)
+
+Derived from `spec/cli.md` *Subcommand surface* at `d5c05b9`: "`render` —
+renders what a named phase (and, under fanout, `--entry <tag>`) would be
+handed, and prints or writes it, invoking nothing: the other half of what
+`check` does for the queue. An unresolved span exits `EX_DATAERR` naming it."
+
+**Not derivable as filed**, because the verb was removed by name. `docs/
+MIGRATING-0.10.md` §8 and `tests/cliHelp.test.ts` (CLI-RENDER-REMOVAL,
+operator ruling 2026-08-03) record why: it "previewed with the wrong fence,
+the wrong prior-attempt state, and its own re-derivation of pickability that
+disagreed with the dispatcher's — three ways to show an operator a prompt the
+next tick would not send." Three cases pin its absence from the subcommand
+surface.
+
+The new framing answers two of the three: "what a named phase would be
+handed" means the dispatcher's own resolution, so the fence and pickability
+are read rather than re-derived. The third has no answer in the sentence — a
+render outside a tick has no attempt, so there is no prior-attempt block to
+show, and the old verb's failure was showing one anyway.
+
+Forks the bullet leaves open:
+
+- **Prior-attempt state.** Render with the block omitted and say so in the
+  output; render the block a retry *would* carry by reading the store; or
+  refuse when the entry has a recorded attempt. Omitting it silently is the
+  2026-08-03 defect returning under a new name.
+- **"Prints or writes".** stdout only; `--out <path>`; or into the job's
+  `rendered-prompts/` capture dir (`spec/jobs.md`). A CLI output destination
+  is not plan's to choose.
+- **Provisioning.** A real tick renders its fence after `createWorktree`/
+  `setupWorktree`. Rendering without a worktree is cheap and is what an
+  operator wants; whether the rendered fence is then the one the tick would
+  send is the question the old verb got wrong.
+
+Recommended: stdout only, no `--out`; the dispatcher's own resolution path
+short of the invocation; the prior-attempt block omitted with a named line
+saying it is, never reconstructed. `check` is the precedent for all three —
+it reads the real parse and refuses rather than previewing an approximation.
+
+Parked rather than filed because each fork is a CLI surface decision
+(`.claude/rules/collaboration.md`, *Push back on weak product/UX specs*), and
+because shipping the verb retires three tests that pin a standing ruling.
