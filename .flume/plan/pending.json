@@ -1,7 +1,9 @@
 [
   {
     "tag": "FAILURE-STAGES-ONE-ROSTER",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -40,5 +42,112 @@
       "superviseLoop reports the aborting streak's stage for every FAILURE_STAGES member"
     ],
     "notes": "src/loopSupervisor.ts:119 declares FailureStage as a bare type union, so three suites hand-copy its members: tests/cliHelp.test.ts:616, tests/cliVerdict.test.ts:219, tests/loopSupervisor.test.ts:1644,1692 — each guarded only by `expect(stages.length).toBe(3)`, the copy pinned against itself. Same shape NO_COMMIT_MODES (src/Prompt.ts:79) and PRIOR_ATTEMPT_MODES (:107) already took. tests/cliHelp.test.ts:609 asserts the vocabulary is 'not hand-copied here'; that sentence goes with the copy."
+  },
+  {
+    "tag": "RETIRED-RELEASE-CORPUS-CITES-CUT",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "153 cites, many in describe titles; includes \"revert note to the friction channel (§5)\""
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "36 cites"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "30 cites"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "24 cites"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "23 cites"
+        },
+        {
+          "path": "tests/job.integration.test.ts",
+          "description": "21 cites"
+        },
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "15 cites"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "15 cites"
+        },
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "11 cites"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "10 cites"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "8 cites; includes the \"pre-§2 collapsed rendering\" title"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "8 cites"
+        },
+        {
+          "path": "tests/tip-claim.integration.test.ts",
+          "description": "7 cites"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "4 cites"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "4 cites"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "3 cites"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "3 cites"
+        },
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "1 cite, in a comment"
+        },
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "doc comment at :87 quotes a §-bearing Dispatcher title"
+        },
+        {
+          "path": "src/paths.ts",
+          "description": "doc comment at :253 quotes the same Dispatcher title"
+        },
+        {
+          "path": "src/Prompt.ts",
+          "description": "doc comments at :478 and :731 quote the §-bearing Prompt.test title"
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "cite at :191"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Cut the retired release-corpus cites (RELEASE-v0.N, v0.N §M, bare §M) from tests/, the src/ doc comments quoting §-bearing test titles, and scripts/smoke-install.mjs",
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "Routing"
+    },
+    "acceptance": "No RELEASE-v0.N, v0.N §M, or bare §M cite survives in tests/, src/ or scripts/; every sentence that carried one still reads; each src/ doc comment quotes its test case under the retitled title.",
+    "notes": "spec/RELEASE-v0.*.md retired at b622b15; spec/ and .claude/rules/ carry no § at all, so every hit is dead. Cut the numbered form, keep the sentence: \"ensureRuntimeIgnores — §5a-3 create-or-merge\" -> \"... — create-or-merge\". ~101 sit in describe/it titles; the four src/ doc comments quote two of those titles verbatim and must move in the same commit. \"pre-§2 collapsed rendering\" needs a rephrase, not a deletion. Claims no property: no tests[], no pins[] per the cited clause."
   }
 ]
