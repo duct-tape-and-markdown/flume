@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { loopCompletionSummary, tickExitCode } from "../src/cliVerdict.ts";
 import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
@@ -183,6 +183,25 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
  * from the subcommand surface entirely, not merely undocumented.
  */
 describe("flume render — removed from the subcommand surface (CLI-RENDER-REMOVAL)", () => {
+  /**
+   * One help spawn, in a throwaway cwd. One case per flag rather than both
+   * flags in one case: the default lane's carve-out for a CLI-surface test
+   * covers the single spawn that *is* the subject (spec/worktrees.md, "The
+   * default test lane must stay fast"), and a second spawn on the same
+   * per-test budget is what timed both flags out under full-suite load.
+   */
+  async function helpOut(flag: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-help-"));
+    try {
+      const { out, code } = await runCli(dir, [flag]);
+      expect(code).toBe(0);
+      expect(out.length).toBeGreaterThan(0);
+      return out;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
   it("is an unknown subcommand and exits 2", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-"));
     try {
@@ -194,19 +213,12 @@ describe("flume render — removed from the subcommand surface (CLI-RENDER-REMOV
     }
   });
 
-  it("no help text (flume --help, flume -h) names render", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-help-"));
-    try {
-      const long = await runCli(dir, ["--help"]);
-      expect(long.code).toBe(0);
-      expect(long.out).not.toContain("render");
+  it("flume --help names no render", async () => {
+    expect(await helpOut("--help")).not.toContain("render");
+  });
 
-      const short = await runCli(dir, ["-h"]);
-      expect(short.code).toBe(0);
-      expect(short.out).not.toContain("render");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+  it("flume -h names no render", async () => {
+    expect(await helpOut("-h")).not.toContain("render");
   });
 });
 
@@ -229,8 +241,10 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
    * carried past the parse report. The queue's entry declares files —
    * declared paths are what makes a skipped fence distinguishable from an
    * empty one refusing them all.
+   *
+   * Run once for the suite, off the per-test budget ({@link clause}).
    */
-  async function skipClauseFromRealRun(): Promise<string> {
+  async function skipClause(): Promise<string> {
     const dir = await mkFixtureRoot("flume-check-no-fanout-");
     try {
       await mkdir(join(dir, ".flume", "prompts"), { recursive: true });
@@ -291,8 +305,20 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
     }
   }
 
+  /**
+   * The real writer's clause, produced once for the whole suite. Both cases
+   * below check a prose surface against it and the `--help` case spawns its
+   * own subject on top, so the shared run rides the hook's budget rather
+   * than making either case a two-spawn test — the default lane's carve-out
+   * covers the one spawn a CLI-surface case *is* (spec/worktrees.md, "The
+   * default test lane must stay fast").
+   */
+  let clause: string;
+  beforeAll(async () => {
+    clause = await skipClause();
+  }, 30_000);
+
   it("flume check --help names the no-fanout skip among the ways check exits 0", async () => {
-    const clause = await skipClauseFromRealRun();
     const { out, code } = await runCli(process.cwd(), ["check", "--help"]);
     expect(code).toBe(0);
     const zero = out.slice(out.indexOf("\n  0 "), out.indexOf("\n  2 "));
@@ -302,7 +328,6 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
   });
 
   it("docs/CLI.md's flume check section names the no-fanout skip", async () => {
-    const clause = await skipClauseFromRealRun();
     const doc = await readFile(
       fileURLToPath(new URL("../docs/CLI.md", import.meta.url)),
       "utf8",
