@@ -19,7 +19,7 @@
       ],
       "retire": []
     },
-    "summary": "`FORGE_FRAMING` requires the timestamp field, so every forge line framed without one keeps its whole `job\\tstep\\t` prefix — and a framed empty line survives the drop, spending the budget",
+    "summary": "`FORGE_FRAMING` requires the timestamp field, so every forge line framed without one keeps its whole `job\\tstep\\t` prefix \u2014 and a framed empty line survives the drop, spending the budget",
     "per": {
       "path": "spec/harness.md",
       "section": "CI lanes as a findings source"
@@ -30,7 +30,7 @@
       "the shed drops a log line the forge framed around an empty message"
     ],
     "pins": [],
-    "notes": "Lane-observed on run 35008214078: ~380 tail lines rendered as `windows\\tRun pnpm test\\t…`, many holding nothing but the prefix, while 1160 head lines — carrying three reds' titles — were trimmed. The job name is a fact the lane declared (`CiLane.job`), so the frame is read, not guessed (`engine-boundary.md`, *Told, not inferred*); a bare two-field strip would eat the leading columns of any tab-carrying test output."
+    "notes": "Lane-observed on run 35008214078: ~380 tail lines rendered as `windows\\tRun pnpm test\\t\u2026`, many holding nothing but the prefix, while 1160 head lines \u2014 carrying three reds' titles \u2014 were trimmed. The job name is a fact the lane declared (`CiLane.job`), so the frame is read, not guessed (`engine-boundary.md`, *Told, not inferred*); a bare two-field strip would eat the leading columns of any tab-carrying test output."
   },
   {
     "tag": "FORGE-STUB-ANSWERS-BEFORE-THE-HOSTS-OWN-CLI",
@@ -58,7 +58,46 @@
     "pins": [
       "every lane-reader case reads its planted forge stub, with the host's own forge CLI off PATH"
     ],
-    "notes": "Lane-observed: the `refuses` case rendered the real `gh`'s GH_TOKEN message, and the other four saw `calls().length === 0`. On win32 the stub is a `.cmd`, which a direct spawn skips; the search then walks on to the host's `gh.exe` further down PATH. The helper's own doc comment already states the isolation this breaks, and the absent-CLI case already shows the shape — PATH stripped to a single dir, the launcher naming `process.execPath` absolutely."
+    "notes": "Lane-observed twice, now all eight lane-reader cases: the `refuses` case renders the real `gh`'s GH_TOKEN message and the other seven see `calls().length === 0`. On win32 the stub is a `.cmd`, which a direct spawn skips; the search then walks on to the host's `gh.exe` further down PATH. The helper's own doc comment already states the isolation this breaks, and the absent-CLI case already shows the shape \u2014 PATH stripped to a single dir, the launcher naming `process.execPath` absolutely."
+  },
+  {
+    "tag": "EXISTSLOUD-REFUSES-AN-OBSTRUCTED-ANCESTOR",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/fsProbe.test.ts",
+          "description": "the probe's own cover: the ENOENT-vs-everything-else split, on the raw call"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/fsProbe.ts",
+          "description": "only ENOENT reads as absent; every other stat failure throws, as the doc already claims"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "the consumer arm: an obstructed job dir is an unreadable baton, not a hibernating one"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`throwIfNoEntry: false` suppresses ENOTDIR alongside ENOENT, so every `existsLoud` gate reads a path under an obstructed ancestor as absent \u2014 the split the probe's own doc denies",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "the probe refuses a path it could not resolve, so every existence gate built on it refuses too and no engine reader folds an obstructed ancestor into absence.",
+    "tests": [
+      "existsLoud refuses a path whose ancestor is present and not a directory, rather than reading it as absent",
+      "statLoud refuses that path too, so the probe's Stats face and its boolean face split alike",
+      "jobStatus reads a job whose own dir is obstructed as an unreadable baton, not as hibernating"
+    ],
+    "pins": [],
+    "notes": "Measured here: `statSync('<file>/child', { throwIfNoEntry: false })` returns undefined where `statSync` alone throws ENOTDIR. ~25 gates read that undefined as absence (src/cli.ts, src/git.ts, src/job.ts, src/Dispatcher.ts, src/worktrees.ts, src/setupWorktree.ts, src/loopSupervisor.ts, src/cliJobResolution.ts), on both hosts. `readAll`'s descent is the win32 half and stays; this is the posix half, at the mechanism."
   },
   {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
@@ -93,11 +132,19 @@
         {
           "path": "tests/Dispatcher.test.ts",
           "description": "the EBUSY-survives-removal case declares its host"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "the ensureRuntimeIgnores read-denial arm declares its host"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "the two symlink-walk cases declare theirs"
         }
       ],
       "retire": []
     },
-    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, an EBUSY removal — still red the win32 lane on their fixture rather than on a defect",
+    "summary": "the cases with no structural substitute \u2014 a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one \u2014 red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -108,7 +155,7 @@
       "no case in tests/ denies with a permission bit outside the declared-host list",
       "every declared-host case carries the reason it cannot run on the other host"
     ],
-    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do, so the symlink goes whatever the host ruling."
+    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
   },
   {
     "tag": "LONG-PATH-FIXTURES-COMPOSE-THROUGH-THE-NAMESPACED-JOIN",
@@ -145,6 +192,128 @@
     "notes": "Lane-observed: all three failed `spawn git ENOENT`, which is win32 refusing a cwd past the limit rather than a missing git. The idiom is the one the section names and the cases already exercise on the engine side. `job new` pins `core.longpaths` repo-locally on win32; a fixture that inits its own repo wants the same."
   },
   {
+    "tag": "FIXTURE-AND-GIT-SPELL-ONE-PATH-THE-SAME-WAY",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the two startup-sweep fixtures root through the suite's canonicalizing helper"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the leak-guard attic, same"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "the local registry reader folds git's spelling before comparing, as its sibling already does"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "six lane reds compare a fixture-built path against git's own spelling: two roots still bare-`mkdtemp` (short form) and one registry reader that never folds what git printed",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "`tmpdir()` can return an 8.3 short path git never spells"
+    },
+    "acceptance": "every still-red spelling comparison reads one spelling of one directory, so the lane's verdict on these six is the behavior's and not the fixture's.",
+    "tests": [],
+    "pins": [
+      "the startup sweep reads the chain-declared base",
+      "an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR",
+      "a run that creates a state root above its own fixture fails the suite and names the offender",
+      "worktree provisioning and teardown are exported from src/worktrees.ts, and the real teardown removes exactly the path and branch the real provisioning named",
+      "createWorktree removes a stale worktree directory git still has registered",
+      "the startup sweep warns that it removed nothing when the worktree registry cannot be read"
+    ],
+    "notes": "The residue fc9ab9f left, scoped to what a lane past it actually reds. Two causes: the Dispatcher sweep pair and the leak attic root at `mkdtemp(join(tmpdir(), \u2026))` (`RUNNER~1` against git's `runneradmin`); `worktrees.test.ts`'s own `worktree list --porcelain -z` helper compares git's output raw, where the sibling helper in `tests/Dispatcher.test.ts` folds it through `resolve`. The other ~146 bare roots stay debt until a red names one."
+  },
+  {
+    "tag": "INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "the cap overrun's rejection settles after the child it killed has exited"
+        },
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the over-cap case asserts the child is gone when the render returns"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the cap overrun rejects from the data handler and never waits for the `sh` it killed, so the render returns with a live child still holding the tick's cwd",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "Inline-exec spans reach `sh` through stdin, never argv"
+    },
+    "acceptance": "no span the render abandoned outlives it: the cap rejection settles after its child's exit, and the case's own fixture root removes cleanly on either host.",
+    "tests": [
+      "an inline-exec span aborted at the output cap rejects only after its killed child has exited"
+    ],
+    "pins": [],
+    "notes": "Lane-observed: the over-cap case's afterEach died `EBUSY: rmdir` on the fixture root \u2014 win32 refusing a directory a live process still holds open, which is the killed `sh` (and its `head`) the reject raced past. `fail()` calls `child.kill()` and rejects in the same turn; the section already says the overrun 'kills the child and rejects', so the wait makes that sentence true rather than adding a claim."
+  },
+  {
+    "tag": "MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "EXISTSLOUD-REFUSES-AN-OBSTRUCTED-ANCESTOR"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/fsProbe.ts",
+          "description": "the descent `readAll` already runs, in the shared home both readers take it from"
+        },
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "drops its private copy onto the shared one"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "readMergingMarkers proves its dir absent from the path, never from the listing's errno"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the obstructed-ancestor arm, asserting the reader's own refusal rather than an errno"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "the standing refusals survive the move"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`readMergingMarkers` reads its listing's ENOENT as no interrupted merge, and win32 reports a path through a non-directory as ENOENT \u2014 the startup refusal passes over markers it cannot see",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "the one reader feeding the crash-equals-stop refusal proves its empty answer from the path on both hosts, and the descent has one home rather than two.",
+    "tests": [
+      "readMergingMarkers refuses an obstructed merging dir with a reading of its own, naming the path that is not a directory"
+    ],
+    "pins": [
+      "readAll refuses when a plain file sits above the prior-attempts root"
+    ],
+    "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT \u2192 empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal \u2014 an unseen marker lets a loop start over an interrupted merge \u2014 so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
+  },
+  {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
     "gate": {
       "kind": "open"
@@ -164,7 +333,7 @@
       ],
       "retire": []
     },
-    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page — three by section name — stand silently through a rename",
+    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page \u2014 three by section name \u2014 stand silently through a rename",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -176,7 +345,7 @@
       "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
       "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix.",
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges \u2014 one names `src/` alone \u2014 so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix.",
     "observedFiles": [
       ".flume/plan/notes/TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES.md",
       "tests/Dispatcher.test.ts",
