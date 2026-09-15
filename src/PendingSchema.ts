@@ -524,6 +524,26 @@ export function parsePendingLoose(raw: string): ParseResult {
 // ---------- prompt rendering ----------
 
 /**
+ * Append the field-list separator to a rendered block, landing it on the
+ * block's last line *before* any trailing `// comment` rather than after —
+ * a "," past "//" is swallowed into the comment text instead of delimiting
+ * the field that follows. A bare `indexOf("//")` also matches "//" occurring
+ * inside a hint's own text (e.g. a URL like "https://..."), so require the
+ * whitespace that only a real trailing comment marker carries.
+ *
+ * One home for both junctions the render has: extension-to-extension, and
+ * core-to-extension — whose last core line carries a trailing comment too.
+ */
+function withListSeparator(block: string): string {
+  const lastBreak = block.lastIndexOf("\n");
+  const head = block.slice(0, lastBreak + 1);
+  const line = block.slice(lastBreak + 1);
+  const commentIndex = line.lastIndexOf(" // ");
+  if (commentIndex === -1) return `${head}${line},`;
+  return `${head}${line.slice(0, commentIndex).trimEnd()},  ${line.slice(commentIndex + 1)}`;
+}
+
+/**
  * Render the schema — core plus the chain's declared extension — as a
  * compact, prompt-friendly description. Injected into the plan prompt so
  * the schema in the prompt and the parser cannot drift: both are built from
@@ -553,16 +573,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
   const extensionLines = extensionEntries
     .map(([name, field], i) => {
       const line = `  "${name}": ${field.hint}`;
-      if (i === extensionEntries.length - 1) return line;
-      // The separator must land before a hint's trailing "// comment", not
-      // after it — appending "," past "//" gets swallowed into the comment
-      // text instead of delimiting the next field. A bare `indexOf("//")`
-      // also matches "//" occurring inside the hint's own text (e.g. a URL
-      // like "https://..."), so require the whitespace that only a real
-      // trailing comment marker carries.
-      const commentIndex = line.lastIndexOf(" // ");
-      if (commentIndex === -1) return `${line},`;
-      return `${line.slice(0, commentIndex).trimEnd()},  ${line.slice(commentIndex + 1)}`;
+      return i === extensionEntries.length - 1 ? line : withListSeparator(line);
     })
     .join("\n");
 
@@ -580,10 +591,14 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
   },
   "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.`;
 
+  const fields = extensionLines
+    ? `${withListSeparator(coreLines)}\n${extensionLines}`
+    : coreLines;
+
   return `Each pending entry MUST conform to this shape (fields not listed here are rejected):
 
 {
-${coreLines}${extensionLines ? `,\n${extensionLines}` : ""}
+${fields}
 }
 
 Output is a JSON array of these entries, ordered by execution priority (top = next).

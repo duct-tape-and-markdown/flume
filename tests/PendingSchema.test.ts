@@ -1053,6 +1053,35 @@ describe("renderSchemaForPrompt", () => {
     );
   });
 
+  it("the list separator lands before the last core field's trailing line comment when an extension follows", () => {
+    // The core block's last line ends in a `// ` comment too, so the
+    // core-to-extension junction is the same case as the one above — a ","
+    // appended past "//" is read as comment text, leaving the first
+    // extension field undelimited. Both sides read off the real render:
+    // the last core line and the first extension line are located in the
+    // output rather than restated here.
+    const rendered = renderSchemaForPrompt(testExtension);
+    const lines = rendered.split("\n");
+    const firstExtensionName = Object.keys(testExtension)[0] as string;
+    const firstExtensionIndex = lines.findIndex((line) =>
+      line.startsWith(`  "${firstExtensionName}":`),
+    );
+    expect(
+      firstExtensionIndex,
+      "rendered schema carried no extension field — nothing to judge the junction on",
+    ).toBeGreaterThan(0);
+    const lastCoreLine = lines[firstExtensionIndex - 1] as string;
+    expect(lastCoreLine, "the last core line carries no trailing comment").toContain(
+      " // ",
+    );
+    const code = lastCoreLine.slice(0, lastCoreLine.indexOf(" // ")).trimEnd();
+    expect(
+      code.endsWith(","),
+      `the last core field is undelimited from the extension that follows: ${lastCoreLine}`,
+    ).toBe(true);
+    expect(lastCoreLine.trimEnd().endsWith(",")).toBe(false);
+  });
+
   it("does not split a hint on '//' occurring inside its own text (e.g. a URL)", () => {
     const withUrlHint = {
       webhook: {
