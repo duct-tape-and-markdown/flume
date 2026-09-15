@@ -309,8 +309,9 @@
     "tests": [],
     "pins": [
       "every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold",
-      "the repo citation pin judges the repo-relative path citations tests/ comments carry"
+      "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
+      "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`, and the existing pin titles name two trees, so they retitle in the same commit. Whatever citations the widen turns up dangling are repaired here — the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix beside the two standing ones."
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
   }
 ]
