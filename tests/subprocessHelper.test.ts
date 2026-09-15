@@ -446,8 +446,9 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
     .map((s) => `${s.file}:${s.line} ${s.kind} — ${s.title}`);
   expect(
     inheriting,
-    `these sites name a node startup — \`process.execPath\`, or a launcher ` +
-      `like \`node\`/\`npm\`/\`pnpm\` — on vitest's 5s default: declare ` +
+    `these sites start a process — \`process.execPath\`, a launcher like ` +
+      `\`node\`/\`npm\`/\`pnpm\`, or \`renderPrompt\`, whose inline-exec spans ` +
+      `each start an \`sh\` — on vitest's 5s default: declare ` +
       `SPAWN_BUDGET_MS (tests/helpers/subprocess.ts) on each, rather than a ` +
       `number of its own`,
   ).toEqual([]);
@@ -572,6 +573,67 @@ it("the spawn-budget scan reports a case that starts node under a command-string
     expect(sites.map((s) => [s.title, s.budget])).toEqual([
       ["hands a bare node to a gate", null],
       ["shells out to npm", "SPAWN_BUDGET_MS"],
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The startup no launcher name spells: the engine's own renderer.
+ *
+ * `renderPrompt` runs each of a template's inline-exec spans through a fresh
+ * `sh`, so a case whose subject is a shipped template's spans pays a process
+ * per span. `sh` is no node launcher, and the propagation never follows an
+ * import, so neither half of the node vocabulary could reach it: a
+ * span-rendering case read as spawning nothing and kept vitest's 5s default,
+ * which is what timed one out under the afterMerge gate's full-suite
+ * contention and reverted an innocent entry.
+ *
+ * The negative half is a case that names the engine's render error without
+ * rendering: a file that merely *imports* from the same module pays no
+ * startup, so the report is the call reaching the entry rather than the
+ * module being in scope.
+ */
+it("the spawn scan reports a case that renders inline-exec spans without a declared budget", async () => {
+  const FIXTURE = [
+    `import { InlineExecRenderError, renderPrompt } from "../../src/Prompt.ts";`,
+    `import { SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+    ``,
+    `const render = (file: string) =>`,
+    `  renderPrompt({ phase, promptFile: file, cwd, flumeDir: root, args });`,
+    ``,
+    `it("renders a template's spans", async () => {`,
+    `  expect(await renderPrompt({ phase, promptFile, cwd, flumeDir: root, args })).toContain("x");`,
+    `});`,
+    ``,
+    `it("renders through a file-local wrapper", async () => {`,
+    `  expect(await render("plan.md")).toContain("x");`,
+    `});`,
+    ``,
+    `it("declares the budget over a render", async () => {`,
+    `  expect(await render("build.md")).toContain("x");`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("names the render error without rendering", () => {`,
+    `  expect(new InlineExecRenderError([]).failures).toEqual([]);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-render-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const sites = await scanLaneSpawnSites("default", dir);
+
+    // The whole list: the two inheriting shapes are reported, the declaring
+    // one is reported as declaring, and the case that only names the module
+    // is absent — so the widening is the render entry's doing rather than a
+    // scan that started reporting every case in the file.
+    expect(sites.map((s) => [s.title, s.budget])).toEqual([
+      ["renders a template's spans", null],
+      ["renders through a file-local wrapper", null],
+      ["declares the budget over a render", "SPAWN_BUDGET_MS"],
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -54,6 +54,7 @@ import type {
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 /** The engine's own placeholder grammar, as the renderer spells it. */
 const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
@@ -547,7 +548,7 @@ it("every placeholder the package's prompts name is supplied by the phase the fa
       empty: rendered.trim().length === 0,
     }).toEqual({ name: phase.name, unresolved: [], empty: false });
   }
-});
+}, SPAWN_BUDGET_MS);
 
 it("every prompt-arg key the package's producers return is declared in its phase's promptDataKeys", () => {
   const chain = chainFor();
@@ -613,7 +614,7 @@ it("a substituted value carrying an inline-exec span reaches the agent inert", a
   const rendered = await render(build);
   expect(rendered).toContain(COMMAND);
   expect(rendered).not.toMatch(new RegExp(`!\\s*\`${COMMAND}`));
-});
+}, SPAWN_BUDGET_MS);
 
 it("each returned phase runs the handoff the declaration names for it, else the package's default", () => {
   const declared: Handoff = () => ["a-phase-the-package-never-names"];

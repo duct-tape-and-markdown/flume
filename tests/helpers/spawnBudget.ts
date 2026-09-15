@@ -1,6 +1,6 @@
 /**
- * Either lane's spawn scan: which of its cases and hooks start a node
- * process, which of those declare the shared budget (`SPAWN_BUDGET_MS`,
+ * Either lane's spawn scan: which of its cases and hooks start a process,
+ * which of those declare the shared budget (`SPAWN_BUDGET_MS`,
  * `tests/helpers/subprocess.ts`), and which of them await a wall-clock timer
  * between the spawn and the assertion downstream of it.
  *
@@ -21,9 +21,9 @@
  * files a lane contains out of `vitest.config.ts`, so a wrapper, a rename, or
  * a widened include arms the scan without a second edit
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*). The two lists held here are `NODE_COMMANDS` and
- * `TIMERS`, neither of which has a source to be read off; both are declared
- * at their sites below rather than left looking derived.
+ * beside its source*). The three lists held here are `NODE_COMMANDS`,
+ * `SHELL_ENTRIES` and `TIMERS`, none of which has a source to be read off;
+ * each is declared at its site below rather than left looking derived.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -88,8 +88,34 @@ const NODE_COMMANDS: ReadonlySet<string> = new Set([
   "yarn",
 ]);
 
-/** Both spellings of a node startup, as the propagation's seed. */
-const NODE_STARTS: readonly string[] = [EXEC_PATH, NODE_COMMAND];
+/**
+ * The engine entries that start a process of their own, as names the
+ * propagation carries alongside the two node spellings. `renderPrompt`
+ * (`src/Prompt.ts`) runs every inline-exec span in the template it renders
+ * through a fresh `sh`, so a case whose subject is a shipped template's spans
+ * pays one process startup per span — several per case, and a whole suite of
+ * them per file.
+ *
+ * `sh` is no node launcher, so `NODE_COMMANDS` cannot reach this; and the
+ * propagation never follows an import, so the spawn inside the engine module
+ * is invisible from a lane file. The entry the spans go through is the name
+ * the scan can see, declared here for the same reason `NODE_COMMANDS` is: no
+ * surface enumerates it.
+ *
+ * Over-approximating on the propagation's standing trade — a render over a
+ * template with no spans starts nothing and still costs its case one declared
+ * ceiling, while a missed one costs the flake this scan exists to prevent
+ * (a span-rendering case timed out on vitest's 5s default under the
+ * afterMerge gate's full-suite contention, reverting an innocent entry).
+ */
+const SHELL_ENTRIES: readonly string[] = ["renderPrompt"];
+
+/** Every spelling of a process startup, as the propagation's seed. */
+const PROCESS_STARTS: readonly string[] = [
+  EXEC_PATH,
+  NODE_COMMAND,
+  ...SHELL_ENTRIES,
+];
 
 /**
  * The wall-clock timers, as the second propagation's seed. A case that starts
@@ -474,13 +500,13 @@ function exportedNames(src: ts.SourceFile): Set<string> {
 }
 
 /**
- * The harness module's spawn wrappers: every export of it that reaches
- * `process.execPath`, by the same propagation the suites are scanned with.
+ * The harness module's spawn wrappers: every export of it that reaches a
+ * process startup, by the same propagation the suites are scanned with.
  */
 export function harnessSpawnExports(): string[] {
   const src = parse(HARNESS);
   const exported = exportedNames(src);
-  return [...reachingNames(src, NODE_STARTS)].filter((n) => exported.has(n));
+  return [...reachingNames(src, PROCESS_STARTS)].filter((n) => exported.has(n));
 }
 
 /**
@@ -578,7 +604,7 @@ export async function scanLaneSpawnSites(
     const file = relative(REPO_ROOT, path).split(sep).join("/");
     const imported = harnessImports(src);
     const spawns = reachingNames(src, [
-      ...NODE_STARTS,
+      ...PROCESS_STARTS,
       ...wrappers.filter((n) => imported.has(n)),
     ]);
     const timers = reachingNames(src, TIMERS);

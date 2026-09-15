@@ -56,6 +56,7 @@ import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -393,7 +394,7 @@ it("the package's build prompt renders over a real tick with no placeholder left
   expect(rendered).toContain(notePath(".flume", assigned.tag));
   // The real section's own words, from the file the cite names.
   expect(rendered).toContain("Every prompt the package renders");
-});
+}, SPAWN_BUDGET_MS);
 
 it("build's per-tick args reach the renderer through a phase carrying the package's declared prompt data keys", async () => {
   const promptFile = promptPath("build");
@@ -446,7 +447,7 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
   const unguarded = await render({ ...phase, promptDataKeys: [] });
   expect(unguarded).toContain(SPAN_OUTPUT);
   expect(unguarded).not.toContain(`\`${SPAN_CMD}\``);
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * A phase the renderer can read, carrying the prompt under test and the data

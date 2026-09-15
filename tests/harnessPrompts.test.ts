@@ -49,6 +49,7 @@ import {
   NO_COMMIT_MODES,
   renderPrompt,
 } from "../src/Prompt.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 /** The repo root, and the directory the package's prompts ship in. */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -219,7 +220,7 @@ it("the package's prompt args name the no-commit modes from the engine's exporte
       restatesTaxonomy: NO_COMMIT_MODES.every((mode) => raw.includes(mode)),
     }).toEqual({ name, restatesTaxonomy: false });
   }
-});
+}, SPAWN_BUDGET_MS);
 
 it("every phase prompt the package ships resolves every placeholder it names", async () => {
   expect(PHASES.length).toBeGreaterThan(0);
@@ -234,7 +235,7 @@ it("every phase prompt the package ships resolves every placeholder it names", a
       unresolved: [],
     });
   }
-});
+}, SPAWN_BUDGET_MS);
 
 it("the discipline page names no placeholder, since no tick renders it", async () => {
   const raw = await readFile(promptPath("plan-discipline"), "utf8");
@@ -260,7 +261,7 @@ it("every plan slice the package declares points its reader at the discipline pa
       points: true,
     });
   }
-});
+}, SPAWN_BUDGET_MS);
 
 // ---------------------------------------------------------------- odd roots
 
@@ -421,7 +422,7 @@ it("every package prompt's spans read their artifacts under a state root path ca
   expect(root).toContain(" ");
 
   await everyPromptReadsItsArtifactsUnder(root);
-});
+}, SPAWN_BUDGET_MS);
 
 it("every package prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
   const base = await mkdtemp(join(tmpdir(), "flume-prompts-backslash-"));
@@ -434,7 +435,7 @@ it("every package prompt's spans read their artifacts under a state root path ca
   expect(root).toContain("\\");
 
   await everyPromptReadsItsArtifactsUnder(root);
-});
+}, SPAWN_BUDGET_MS);
 
 // ------------------------------------------------- guarded spans: the fork
 
@@ -627,11 +628,11 @@ async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
 
 it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
   await everySliceOverWrongKindAt("PLAN_STATE_PATH");
-});
+}, SPAWN_BUDGET_MS);
 
 it("each plan slice prompt's verdict on an open-questions directory in place follows whether its spans read that artifact", async () => {
   await everySliceOverWrongKindAt("QUESTIONS_PATH");
-});
+}, SPAWN_BUDGET_MS);
 
 // --------------------------------------------- unguarded spans: no fork
 
@@ -656,7 +657,7 @@ async function everySliceOverAbsentArtifactAt(
 
 it("each plan slice prompt's verdict on an absent queue follows whether its spans read that artifact", async () => {
   await everySliceOverAbsentArtifactAt("PENDING_PATH");
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The other end of that refusal, from a consumer's side: adoption seeds the
@@ -689,7 +690,7 @@ it("a state root flume-harness init just wrote renders every plan slice prompt's
       /^\[\]$/m,
     );
   }
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The other side of that fork, and the reason the guard is not a bare
@@ -735,7 +736,7 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
   // Every (slice, guarded artifact) pair the detector found was asserted, and
   // the coverage above makes that count non-zero.
   expect(asserted).toBe(pairsToAssert(readers, GUARDED));
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The third case the questions span has to tell apart, and the reason its
@@ -776,7 +777,7 @@ it("a questions file carrying no headings renders the plan slices' none-open pla
   // Every plan slice the detector found indexing the file was asserted, and
   // the coverage above makes that count non-zero.
   expect(asserted).toBe(pairsToAssert(readers, [questions!]));
-});
+}, SPAWN_BUDGET_MS);
 
 // ------------------------------------------------- the invocation boundary
 
@@ -813,4 +814,4 @@ it("every phase prompt the package renders substitutes the shared turn-boundary 
       carries: rendered.includes(boundary!),
     }).toEqual({ name, names: true, carries: true });
   }
-});
+}, SPAWN_BUDGET_MS);

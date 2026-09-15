@@ -12,6 +12,13 @@
  * wall-clock assertions are, and it has none (spec/worktrees.md, *The default
  * test lane must stay fast*). The full tick-cycle drives that do spawn stay
  * in `examples.integration.test.ts`.
+ *
+ * The second exception is the span-rendering block below: every case that
+ * puts a shipped template through `renderPrompt` starts one `sh` per
+ * inline-exec span, which is the subject of those cases rather than
+ * overhead. Each declares `SPAWN_BUDGET_MS` rather than inheriting the
+ * runner's default, and `tests/helpers/spawnBudget.ts` reports the entry so
+ * a new one cannot land without it.
  */
 
 import { execFile } from "node:child_process";
@@ -45,6 +52,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
   declaredFilesGate,
@@ -513,7 +521,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     expect(root).toContain(" ");
 
     await everyPromptReadsItsArtifactsUnder(root);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("every example prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
     const base = mkdtempSync(join(tmpdir(), "flume-example-prompts-backslash-"));
@@ -526,7 +534,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     expect(root).toContain("\\");
 
     await everyPromptReadsItsArtifactsUnder(root);
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * The same claim over the whole file, because a template's prose is an
@@ -612,7 +620,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining("find specs -name")]);
     // Loud, not merely non-zero: the refusal names what was missing.
     expect(failures[0]!.stderr).toContain("spec corpus root");
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * `engineering.md`, *Loud or nothing* — an entry's `per` cite is the build
@@ -658,7 +666,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     // Loud, not merely non-zero: the reader's own complaint survived, which
     // the deleted `2>/dev/null` used to discard.
     expect(failures[0]!.stderr.trim()).not.toBe("");
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * `engineering.md`, *Loud or nothing*, on the four state-root spans. These
@@ -715,7 +723,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     // loop over nothing.
     expect(asserted).toBe(ARTIFACTS.length);
     expect(asserted).toBeGreaterThan(0);
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * The other side of the same fork, and the reason the guard is not a bare
@@ -750,7 +758,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     // Non-vacuity: an emptied ARTIFACTS list would pass the loop over nothing.
     expect(asserted).toBe(ARTIFACTS.length);
     expect(asserted).toBeGreaterThan(0);
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * The same defect, read off the text so it cannot come back in a span no

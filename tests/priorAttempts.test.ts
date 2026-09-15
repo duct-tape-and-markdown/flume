@@ -51,7 +51,7 @@ import {
   silent,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import { gitOut } from "./helpers/subprocess.ts";
+import { gitOut, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 /**
  * One draft per mode, minted by the real builders in the shape
@@ -264,7 +264,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(threwBlock).toContain("THREW");
     expect(threwBlock).toContain(THREW);
     expect(threwBlock).not.toContain("RETURNED FALSE");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a thrown shipped hook's message is bounded on the record like every other captured text", async () => {
     const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();

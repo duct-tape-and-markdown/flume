@@ -101,7 +101,7 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
 
     expect(out).toContain("read /abs/state-root/plan/pending.json");
     expect(out).not.toContain("{{FLUME_DIR}}");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("FLUME_DIR is reserved — a chain-supplied arg cannot shadow the resolved root", async () => {
     const promptFile = join(dir, "prompt.md");
@@ -117,7 +117,7 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
 
     expect(out).toContain("root=/resolved");
     expect(out).not.toContain("chain-supplied-WRONG");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt — <harness> states the effective fence", () => {
@@ -166,7 +166,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     );
     expect(out).not.toContain("Effective fence");
     expect(out).not.toContain("Outer ceiling");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("scoped tick (no assignedEntry): byte-identical to a singleton tick's rendering", async () => {
     const p = phase({
@@ -191,7 +191,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     );
     expect(out).not.toContain("Effective fence");
     expect(out).not.toContain("Outer ceiling");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("scoped tick with scopeWritesToEntry: true: names entry.files ∪ entryChannelPaths as the effective fence and writablePaths as the outer ceiling", async () => {
     const p = phase({
@@ -234,7 +234,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     const ceilingIdx = out.indexOf("Outer ceiling");
     expect(fenceIdx).toBeGreaterThan(-1);
     expect(ceilingIdx).toBeGreaterThan(fenceIdx);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("scoped tick with no entryChannelPaths: fence is exactly entry.files, no stray empty line", async () => {
     const p = phase({
@@ -266,7 +266,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
       "Effective fence (your commit may touch exactly these; anything else reverts the commit whole):\n" +
         "  - src/only.ts\n",
     );
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt <harness> gate list names every declared gate regardless of concurrency", () => {
@@ -296,7 +296,7 @@ describe("renderPrompt <harness> gate list names every declared gate regardless 
 
     expect(out).toContain("  - tsc (afterCommit)");
     expect(out).toContain("  - vitest (afterMerge)");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a fanout phase's harness block still names its afterMerge gates unchanged", async () => {
     const p = phase({
@@ -313,7 +313,7 @@ describe("renderPrompt <harness> gate list names every declared gate regardless 
 
     expect(out).toContain("  - tsc (afterCommit)");
     expect(out).toContain("  - vitest (afterMerge)");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt <harness> gate list renders a declared command (spec/chain.md 'The builtin gates', spec/prompt.md 'The harness block')", () => {
@@ -339,7 +339,7 @@ describe("renderPrompt <harness> gate list renders a declared command (spec/chai
     const out = await render(p);
 
     expect(out).toContain("  - hand-rolled (afterCommit)\n");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a gate with a declared command renders 'name (when): <command>', sourced from shellGate's own declaration", async () => {
     const gate = shellGate({
@@ -442,7 +442,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     );
     expect(rejected.ok).toBe(false);
     expect(rejected.details).toContain("tests/unlisted.test.ts");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -492,7 +492,7 @@ describe("renderPrompt — inline-exec reaches sh through stdin", () => {
     expect(cmd).toBe("sh");
     expect(args).toEqual([]);
     expect(getWritten()).toBe("echo hi");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the U+2014 repro: a real sh child renders the command's actual output through stdin, non-ASCII intact", async () => {
     const out = await render(
@@ -500,7 +500,7 @@ describe("renderPrompt — inline-exec reaches sh through stdin", () => {
     );
 
     expect(out).toContain("value=(no prior plan: commit — bootstrap tick)");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the ASCII-hyphen twin of the U+2014 repro renders identically", async () => {
     const out = await render(
@@ -508,7 +508,7 @@ describe("renderPrompt — inline-exec reaches sh through stdin", () => {
     );
 
     expect(out).toContain("value=(no prior plan: commit - bootstrap tick)");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 describe("renderPrompt — a span's substituted value is shell text (spec/prompt.md 'The render pipeline')", () => {
   it("a placeholder substituted into a span's command reaches sh as text the engine neither quotes nor escapes", async () => {
@@ -537,7 +537,7 @@ describe("renderPrompt — a span's substituted value is shell text (spec/prompt
     // byte for byte: the quoting is the author's job because the engine
     // cannot know a placeholder was meant as one shell word.
     expect(out).toContain("author=[a\\b c]");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt — an unresolved inline-exec span aborts the render", () => {
@@ -557,7 +557,7 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render", ()
     expect(err.message).toContain("echo oops-stderr 1>&2; exit 3");
     expect(err.message).toContain("oops-stderr");
     expect(err.message).not.toContain("exec-failed");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("names every failing span when more than one fails in the same prompt", async () => {
     let caught: unknown;
@@ -570,7 +570,7 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render", ()
     expect(caught).toBeInstanceOf(InlineExecRenderError);
     const failures = (caught as InlineExecRenderError).failures;
     expect(failures.map((f) => f.cmd).sort()).toEqual(["exit 1", "exit 2"]);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a spawn failure (sh not found) also aborts the render rather than substituting a marker", async () => {
     spawnMock.mockImplementationOnce(() => {
@@ -588,13 +588,13 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render", ()
     await expect(render("value=!`echo hi`\n")).rejects.toThrow(
       InlineExecRenderError,
     );
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("an empty-but-zero-exit command still renders — exit status decides, never output length", async () => {
     const out = await render("value=[!`printf ''`]\n");
 
     expect(out).toContain("value=[]\n");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("stdout past the output cap rejects rather than resolving with truncated output", async () => {
     let caught: unknown;
@@ -610,7 +610,7 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render", ()
     expect(err.failures[0]!.cmd).toBe("head -c 5000000 /dev/zero");
     expect(err.failures[0]!.stderr).toContain("exceeded");
     expect(err.message).toContain("exceeded");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (spec/loop.md 'Every record is anchored')", () => {
@@ -717,7 +717,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       const out = await renderWithPrior(match![1]);
       expect(out).toContain("<prior-attempt>");
     }
-  });
+  }, SPAWN_BUDGET_MS);
 
   it.each(variants)(
     "%s: the rendered block carries the anchor (headSha + at) alongside the mode's own fields",
@@ -736,6 +736,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       expect(anchorIdx).toBeLessThan(blockEnd);
       expect(bodyIdx).toBeGreaterThan(blockEnd);
     },
+    SPAWN_BUDGET_MS,
   );
 
   it("the prior-attempt block quotes the prior attempt's final message without naming a refused constraint", async () => {
@@ -757,7 +758,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     expect(out).not.toMatch(/refused constraint/i);
     expect(out).not.toMatch(/refused to cross/i);
     expect(out).not.toMatch(/judgment likely still holds/i);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
     const whole = await renderWithPrior(notShipped);
@@ -769,7 +770,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
 
     const bounded = await renderWithPrior({ ...notShipped, omittedPaths: 7 });
     expect(bounded).toContain("…and 7 more path(s)");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
     // Vacuity: the record under test carries two distinct shas to name.
@@ -788,7 +789,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // the tick recorded on the ref.
     expect(out).not.toMatch(/tick start/i);
     expect(out).not.toMatch(/the ref moved/i);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("absent priorAttempt renders no block and no anchor line at all", async () => {
     const promptFile = join(dir, "prompt.md");
@@ -803,7 +804,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
 
     expect(out).not.toContain("<prior-attempt>");
     expect(out).not.toContain("Recorded ");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("src/index.ts — the no-commit taxonomy as a value (NO-COMMIT-MODES-VALUE)", () => {
@@ -868,7 +869,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     expect(spawnMock).not.toHaveBeenCalled();
     // The substituted text no longer matches the grammar stage 2 scans with.
     expect(spans(out.slice(out.indexOf("cited:")))).toHaveLength(0);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a declared data key's neutralized span still shows the agent the command text", async () => {
     const out = await renderWith({
@@ -882,7 +883,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     expect(out.replaceAll(BREAK, "")).toContain(
       `run ${span("pnpm tsc --noEmit")} first`,
     );
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a declared data key carrying an unresolvable span renders instead of refusing the tick", async () => {
     const out = await renderWith({
@@ -893,7 +894,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
 
     expect(out).toContain(inert("no-such-command-xyz"));
     expect(spawnMock).not.toHaveBeenCalled();
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("an undeclared key's value carrying an inline-exec span is still evaluated", async () => {
     const out = await renderWith({
@@ -903,7 +904,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     });
 
     expect(out).toContain("live from-other");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("neutralizing is per-key: a declared value goes inert beside an undeclared one in the same render", async () => {
     const out = await renderWith({
@@ -918,7 +919,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     expect(out).toContain(`data ${inert("echo from-data")}`);
     expect(out).toContain("live from-other");
     expect(spawnMock).toHaveBeenCalledOnce();
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a phase declaring no data keys evaluates every substituted span, as before", async () => {
     const out = await renderWith({
@@ -927,5 +928,5 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     });
 
     expect(out).toContain("live still-live");
-  });
+  }, SPAWN_BUDGET_MS);
 });
