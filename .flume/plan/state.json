@@ -25,7 +25,11 @@
       "harness/ignores.ts",
       "src/worktrees.ts",
       "src/git.ts",
-      "src/fsProbe.ts"
+      "src/fsProbe.ts",
+      "harness/vitestRunner.ts",
+      "src/spawnShim.ts",
+      "src/flumeApi.ts",
+      "src/setupWorktree.ts"
     ]
   }
 }

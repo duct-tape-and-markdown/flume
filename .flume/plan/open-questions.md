@@ -249,6 +249,50 @@ a declared `runner` is reachable from the chain factory. The **overlap** half
 no lane to read and stays a `plan-discipline.md` clause, outside every phase
 lane.
 
+**Both preconditions have landed, and the lane half is still unbuilt** (found
+sweeping `harness/vitestRunner.ts`, 2026-09-14; verified on disk this tick).
+`HARNESS-DECLARATION-SCHEMA` shipped, and `harness/chain.ts:147` builds the
+runner from the declaration — `const runner = declaration.runner(api)` — four
+lines before the gates that would read it. So the blocker this section named is
+gone, and nothing above it moved.
+
+`Runner.lanes` still has no reader, and that verdict is type-level, not a text
+search (`posture-sweep.md`, *A violation counts only when verified on disk this
+tick*): deleting the member from `harness/runner.ts:105` and typechecking
+breaks exactly six sites, all of them producers — `harness/vitestRunner.ts:259`
+and four test fixtures supplying the value, plus
+`tests/harnessRunner.test.ts:332,336`, the case asserting it round-trips. No
+judge, no gate, no prompt reads it. Meanwhile the fact is fully declared and
+live: `.flume/declaration.ts:67-70` names both lanes and the glob the running
+one excludes, under a comment asserting that "a named line homed there is
+refused at plan time rather than reverted after a wave" — behavior that does
+not exist. `harness/vitestRunner.ts:57-62` carries the same unfulfilled claim.
+
+**What is still forked is the rung, and the spec picks one this section
+rejects.** `spec/harness.md`, *The runner interface* says `lanes` exists "so the
+judge can refuse at plan time a line homed in a lane it will not run". The only
+plan-time signal is the entry's declared `files` — and the analysis four
+paragraphs up rejects refusing on it, because `files` is a prediction build is
+not held to (`spec/pending.md`), so a queue build would have shipped fine gets
+its plan commit reverted. The two cannot both stand. Three ways out, all
+needing the human:
+
+- **A — the spec's rung.** A plan-side gate refusing an entry that names a line
+  and predicts a file the running lane excludes. Decidable and cheap; pays the
+  false-refusal cost this section already argued against.
+- **B — report, never refuse** (recommended). The running lane's `excludes` are
+  rendered into plan's `tests[]`/`pins[]` hints, so plan is *told* which globs
+  are unjudgeable at authorship instead of being refused for a guess. Matches
+  `engine-boundary.md`, *Surface, not prescription*, and the "two hints"
+  recommendation already made above; needs the `spec/harness.md` sentence to say
+  "informs" rather than "refuses". Note `harness/entryExtension.ts:76-79` holds
+  the hints tool-neutral on purpose — lane names and globs are the consumer's
+  own vocabulary, so B does not breach that.
+- **C — retire `lanes`.** Drop the member and the declaration that feeds it,
+  and keep the lane wall as the `plan-discipline.md` prose clause the overlap
+  half already needs. Cheapest; gives up the mechanism and leaves five field
+  instances governed by prose alone.
+
 ## A tick that commits nothing dies with its worktree, seen by nothing (PARKED)
 
 Was "A worktree torn down with uncommitted tracked edits reads as merged";
@@ -1053,3 +1097,76 @@ spec sentence arms nothing in either direction. Same class as *Nothing arms on
 a `docs/` claim that drifted out of `src/`* above, one layer up — resolving
 that one does not cover this one. Recorded here rather than opened as a
 sibling, since this instance closes with the amendment either way.
+
+## The judge's base checkout ignores the consumer's declared `setup` (PARKED — needs a spec amendment)
+
+Found sweeping `harness/vitestRunner.ts` (2026-09-14); verified on disk this
+tick. A build worktree is provisioned by `worktreeSetup(api, declaration)`
+(`harness/chain.ts:189`, attached at `:261`/`:315`), which honors both halves
+of the declared `setup`: `directories` says *where* to install, `restore` says
+*how* when the engine's lockfile reader cannot (`harness/chain.ts:535-546`).
+The judge's base checkout is provisioned by `await api.setupWorktree(worktree)`
+(`harness/vitestRunner.ts:292`) — the engine's installer, at the checkout root,
+unconditionally.
+
+The site claims the two are the same: "the base tree is provisioned exactly the
+way a build worktree is — one implementation of that, on the API, rather than a
+second one here" (`harness/vitestRunner.ts:287-291`). It is not a declared
+divergence; it is a claim that is false for every declared `setup` other than
+`{ directories: ["."] }` over an engine-readable lockfile — which is this
+repo's (`.flume/declaration.ts:93`), and why nothing here has ever felt it.
+
+**What it costs a consumer.** `setupWorktree` refuses rather than guesses when
+neither lockfile sits in the directory it was handed (`src/setupWorktree.ts:58`).
+So a monorepo declaring `directories: ["packages/web"]` gets a base run that
+dies with "no pnpm-lock.yaml or package-lock.json found in `<base worktree>`" —
+a message about a checkout the consumer never asked for, raised from inside an
+`afterMerge` gate, reverting a correct commit. A `restore`-declaring consumer
+gets the same or `resolveVitest`'s "dependencies are not installed there"
+(`harness/vitestRunner.ts:87-90`). Loud, but blaming the wrong thing: the
+red-on-base leg is simply unreachable for any consumer whose install is not at
+the repo root. Fails `engineering.md`, *The fix lands at the mechanism* —
+provisioning a sibling surface already performs, re-derived beside it.
+
+**Why this is not a filed entry.** The fix has one shape and it is a seam
+change. `vitestRunner` cannot reach the declaration: the consumer constructs
+the runner in `declaration.ts` (`vitestRunner({ lanes })`) and the chain factory
+only ever calls it with the engine API (`RunnerFactory = (api: FlumeApi) =>
+Runner`, `harness/runner.ts:125`; called at `harness/chain.ts:147`). Both halves
+already exist in `createChain`, four lines apart — the runner at `:147`, the
+provisioning at `:189` — so the mechanism is there and only the parameter is
+too narrow.
+
+**Recommend** widening the factory's parameter to carry the provisioning
+alongside the API — `(ctx: { api, provision }) => Runner`, where `provision` is
+the declared `setup` reduced to a directory-taking function and falls back to
+`api.setupWorktree` when the consumer declared none. Every consumer of the
+*package's* runner is unchanged (`vitestRunner({ lanes })` is a
+`VitestRunnerOptions` call, not a factory implementation); only a hand-written
+factory re-types, which pre-1.0 clean-slate posture (`spec-plan-build.md`)
+takes in place.
+
+**The fork is the spec sentence, not the code.** `spec/harness.md`, *The runner
+interface* grounds the factory on exactly two things — "a runner is declared as
+a factory over the engine's API, because two things a base checkout needs are
+the engine's to hand out: its lockfile-aware installer … and the state root's
+worktree base". The recommendation adds a third that is *not* the engine's to
+hand out, so that sentence needs a clause. Parked on that alone: `spec/**` is
+outside every phase lane, and shipping the widening without it leaves the spec
+asserting a two-item list nothing re-reads — no delta arms on a `spec/` claim
+that merely went incomplete (see *Nothing arms on a `docs/` claim that drifted
+out of `src/`*).
+
+**Alternative, if the seam is to stay closed:** declare the bound at the site
+instead — `vitestRunner`'s doc says the base checkout takes the engine's
+installer at the checkout root and *not* the declared `setup`, and the runner
+refuses at construction when it cannot honor one. That keeps `RunnerFactory`
+as spec describes it and makes the limit legible, at the cost of the package's
+own runner being unusable for a whole ordinary class of consumer.
+
+**Decide beside *A differential gate has no base tree, so it provisions its
+own* above.** That question asks whether a checkout-at-sha helper belongs on
+the API; `runAtBase` *is* a checkout-at-sha plus provisioning, written inside
+the package. Whatever answers that one decides where the provisioning half of
+this one lives — a helper carrying it, or the factory parameter recommended
+here. Two consumers for that surface, not one.
