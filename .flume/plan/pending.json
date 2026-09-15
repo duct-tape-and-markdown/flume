@@ -1,1 +1,57 @@
-[]
+[
+  {
+    "tag": "LOOP-RELEASE-HANDLERS-PRECEDE-THE-LOCKS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "loop branch: install exit/SIGINT/SIGTERM release before taking either lock"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "default-lane cover for the held-claim refusal's rollback"
+        }
+      ]
+    },
+    "summary": "Install the loop's exit/SIGINT/SIGTERM release handlers before it takes loop.pid and the tip claim",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "No point in `flume loop` startup where loop.pid or the tip claim sits on disk with no release handler installed; the rollback on a refused claim has one owner.",
+    "tests": [],
+    "pins": [
+      "flume loop refuses a live-held tip claim and leaves no loop.pid behind"
+    ],
+    "notes": "Observed draining INTEGRATION-LANE-WAITS-ARE-EVENT-BASED: handlers install after both locks, so a SIGTERM between them takes node's default disposition and leaves both files. POSIX-only hole, and stale-reclaim (the stated guarantee) still covers it — hence no tests[]: racing a sub-ms window reds flakily, not decidably. Name that exception in the commit body per engineering.md, *A fix ships the test that would have caught it*."
+  },
+  {
+    "tag": "INTEGRATION-LANE-SYNC-POINT-SCAN",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "read either lane's globs by mode; report awaited timers in spawning cases"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the scan's assertion plus its detector-fires fixture"
+        }
+      ]
+    },
+    "summary": "Pin event-based sync points by scan: no case that starts a process awaits a timer, across both lanes",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "The lane scan reads the integration lane's globs as well as the default lane's and reports awaited timers in spawning cases; the suite asserts none over a populated site set.",
+    "tests": [],
+    "pins": [
+      "no case that starts a node process awaits a timer, in either lane",
+      "the timer scan reports an awaited timer in a spawning fixture case"
+    ],
+    "notes": "Residue from INTEGRATION-LANE-WAITS-ARE-EVENT-BASED: the no-fixed-sleep acceptance was verified by reading. Reuse the existing spawnNames propagation and parameterize the lane mode rather than standing up a second scan (engineering.md, *The fix lands at the mechanism*). Timers inside chain-source string literals are not call sites; friction.test.ts's clock-advance is in no spawning case, so the pin is green on the base."
+  }
+]
