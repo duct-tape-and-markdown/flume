@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "tag": "EXAMPLE-PROMPT-PROSE-ROOTS-AT-THE-STATE-ROOT",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/prompts/plan.md",
+          "description": "the OUTPUT block's three write targets, :54-56"
+        },
+        {
+          "path": "examples/prompts/build.md",
+          "description": "the pending.json prohibition, :42"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "widen the literal-`.flume/` pin past `allSpans` to the whole template"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Two shipped example prompts name literal .flume/ paths outside their spans; the pin that would catch it scans spans only",
+    "per": {
+      "path": "spec/prompt.md",
+      "section": "The reserved `{{FLUME_DIR}}` prompt arg"
+    },
+    "acceptance": "No shipped example prompt carries a literal `.flume/` path anywhere in its bytes, and the pin reads whole templates rather than `allSpans`",
+    "tests": [
+      "no shipped example prompt names a literal .flume/ path outside a span"
+    ],
+    "pins": [],
+    "notes": "examples/prompts/plan.md:54-56 and build.md:42 instruct the agent at `.flume/plan/...` while every span in those same files roots at {{FLUME_DIR}}. Under --job or a relocated root the instruction names a path outside the fence the slice is judged by — the footgun the cited section exists to close. tests/examples.test.ts's \"no span in a shipped example prompt names a literal .flume/ path\" filters `allSpans`, so prose is unreachable to it."
+  }
+]

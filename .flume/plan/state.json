@@ -94,7 +94,11 @@
       "tests/git.test.ts",
       "tests/builtinGates.test.ts",
       "tests/job.test.ts",
-      "tests/harnessInit.test.ts"
+      "tests/harnessInit.test.ts",
+      "tests/examples.test.ts",
+      "examples/prompts/plan.md",
+      "examples/prompts/build.md",
+      "examples/prompts/backlog-groomer.md"
     ]
   }
 }
