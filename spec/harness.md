@@ -99,7 +99,7 @@ one refuses the load naming the field and the valid set.
 | `fence` | Build's `writablePaths`, and per plan slice the paths that slice may write beyond the package's own plan artifacts. |
 | `channelPaths` | Build's `entryChannelPaths`. Optional. |
 | `scopeWritesToEntry` | Off by default. The package documents both arguments and takes no side. |
-| `runner` | The test runner the judge drives — see *The runner interface*. |
+| `runner` | A factory over the engine's API, `(api) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the same `FlumeApi` the chain receives, so a runner takes the engine's installer and the state root's worktree base from there and a consumer constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script; the package's own gates are always present and always first. |
@@ -127,8 +127,13 @@ than exit codes the judge would have to interpret:
   the judge can refuse at plan time a line homed in a lane it will not run,
   instead of at build time after a wave.
 
-The package ships a vitest runner. A consumer with cargo, dotnet, or a script
-declares its own against the same three operations.
+A runner is declared as a factory over the engine's API, because two things a
+base checkout needs are the engine's to hand out: its lockfile-aware installer
+for the checkout's dependencies, and the state root's worktree base, so a run
+that dies mid-flight leaves a directory the stale-worktree sweep reclaims. The
+package ships a vitest runner factory that takes both from the API it is
+given. A consumer with cargo, dotnet, or a script declares its own against the
+same three operations.
 
 ## The cite resolver
 

@@ -498,6 +498,12 @@ confines side effects to disk inside `cwd`.
 `GateResult` is `{ ok, message, details?, failingFiles?,
 skipped?, verdict? }`.
 
+- **A gate that throws is a gate that failed.** The engine catches the throw at
+  every gate-run site, records `{ ok: false, message: <the error's message> }`
+  for it, and completes the tick — verdict written, merge bookkeeping done —
+  exactly as it would for a refusal the gate returned. A gate's exception is
+  a fact about the gate, never a reason to lose the tick's facts or to strand
+  a merge behind the crash marker (`spec/loop.md`, *Crash equals stop*).
 - **`verdict?: string`** — a chain-authored discriminant for *why* the gate
   ruled as it did, persisted verbatim onto the tick verdict's gate result and
   onto a `gate-revert` prior-attempt record beside `message`. The engine
