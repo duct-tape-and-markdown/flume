@@ -611,6 +611,25 @@ describe("renderPrompt — an unresolved inline-exec span aborts the render", ()
     expect(err.failures[0]!.stderr).toContain("exceeded");
     expect(err.message).toContain("exceeded");
   }, SPAWN_BUDGET_MS);
+
+  it("an inline-exec span aborted at the output cap rejects only after its killed child has exited", async () => {
+    // A real `sh` (the mock's default implementation), so there is a live
+    // child for the cap to kill and a handle on it to read afterwards.
+    await expect(
+      render("value=!`head -c 5000000 /dev/zero`\n"),
+    ).rejects.toThrow(InlineExecRenderError);
+
+    expect(spawnMock.mock.results).toHaveLength(1);
+    const child = spawnMock.mock.results[0]!.value as ReturnType<typeof spawn>;
+    expect(child.killed).toBe(true);
+    // Both null means Node has not seen the child end: it was signalled and
+    // the render returned anyway, leaving a live process holding `dir` open —
+    // the win32 `EBUSY: rmdir` this case's own afterEach hit. One of them set
+    // means the child was reaped before the rejection surfaced. The exit
+    // event is a macrotask, so awaiting the rejection alone cannot have
+    // delivered it.
+    expect([child.exitCode, child.signalCode]).not.toEqual([null, null]);
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (spec/loop.md 'Every record is anchored')", () => {

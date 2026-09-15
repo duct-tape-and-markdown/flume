@@ -647,22 +647,28 @@ function runInlineExec(
     const child = spawn("sh", [], { cwd });
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
-    let settled = false;
+    let decided = false;
+    let capOverrun: Error | undefined;
 
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
+    // The cap overrun kills the child and then waits for it: `close` is what
+    // settles the promise, so the render never returns while the `sh` it
+    // abandoned is still alive holding the tick's cwd open. The stream
+    // listeners stay attached past `decided` (discarding what they read) so
+    // the pipes keep draining and the dying child cannot block on a full one.
+    const abortAtCap = (err: Error): void => {
+      if (decided) return;
+      decided = true;
+      capOverrun = err;
       child.kill();
-      reject(err);
     };
 
     const capture =
       (target: "stdout" | "stderr") => (chunk: Buffer): void => {
-        if (settled) return;
+        if (decided) return;
         const prior = target === "stdout" ? stdout : stderr;
         const next = Buffer.concat([prior, chunk]);
         if (next.length > INLINE_EXEC_MAX_BUFFER) {
-          fail(
+          abortAtCap(
             new Error(
               `inline-exec output exceeded ${INLINE_EXEC_MAX_BUFFER} bytes: ${cmd}`,
             ),
@@ -675,10 +681,20 @@ function runInlineExec(
 
     child.stdout.on("data", capture("stdout"));
     child.stderr.on("data", capture("stderr"));
-    child.on("error", fail);
+    // A spawn failure is the one case with no child to wait for — the process
+    // never started, so `error` settles on its own.
+    child.on("error", (err) => {
+      if (decided) return;
+      decided = true;
+      reject(err);
+    });
     child.on("close", (code) => {
-      if (settled) return;
-      settled = true;
+      if (capOverrun) {
+        reject(capOverrun);
+        return;
+      }
+      if (decided) return;
+      decided = true;
       if (code === 0) {
         resolve({
           stdout: stdout.toString("utf8"),
