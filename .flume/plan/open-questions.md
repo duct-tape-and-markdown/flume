@@ -966,3 +966,29 @@ chain loads through* states the node floor and says nothing about git, so an
 entry that edits the README would be inventing the ruling it cites. Add the
 git floor to that section's durable packaging policy and the README edit
 derives from it.
+
+**Amendment (drained from `GIT-NAME-ONLY-READS-NUL-SEPARATED`'s note).** Part 1
+needs a third axis before it is transcribed: quoting is per-subcommand *and*
+per-config, and the alphabet that triggers it is narrower than the tree now
+claims. Measured on git 2.43, one repo, one tick:
+
+| path | `show --name-only` | + `core.quotePath=false` |
+| --- | --- | --- |
+| `src/a b.ts` | raw | raw |
+| `src/trail .ts` | raw, trailing space intact | raw |
+| `src/café.ts` | `"src/caf\303\251.ts"` | raw |
+| `src/tab\tx.ts` | quoted | quoted |
+
+So a **space never triggers quoting** under `--name-only`, `core.quotePath=false`
+**does** disarm the non-ASCII case, and only control characters survive both.
+`-z` remains the one spelling right everywhere, but for a narrower reason than
+the fix that introduced it recorded.
+
+This matters twice. `src/git.ts:131`–`145` justifies its `-z` with "git wraps
+any path carrying a space … in double quotes" and "`core.quotePath=false` is
+not the fix, since a space still quotes" — both measured false above, and both
+are the reasoning the next reader would use to decide whether a sibling needs
+`-z` at all. That correction rides
+`SNAPSHOT-REVERTED-SHARES-THE-NAME-ONLY-DECODE`, since the comment is in
+build's fence. The page itself is still the human's, and the fact it should
+carry is the table, not the prose either fix wrote.
