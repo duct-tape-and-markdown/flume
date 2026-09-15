@@ -26,14 +26,21 @@
  * each is declared at its site below rather than left looking derived.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import ts from "typescript";
 import { configDefaults } from "vitest/config";
 
-const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+import {
+  REPO_ROOT,
+  filesUnder,
+  relPath,
+  type FileWalk,
+  type Scan,
+  type ScanSite,
+} from "./repoProgram.ts";
+
 const TESTS_DIR = join(REPO_ROOT, "tests");
 const HARNESS = join(TESTS_DIR, "helpers", "subprocess.ts");
 
@@ -139,11 +146,8 @@ const PROCESS_STARTS: readonly string[] = [
  */
 const TIMERS: readonly string[] = ["setTimeout", "setInterval"];
 
-export interface SpawnSite {
-  /** Repo-relative, forward-slashed. */
-  readonly file: string;
-  readonly line: number;
-  /** The case's title, or a `<file>:<line>` stand-in for a hook. */
+export interface SpawnSite extends ScanSite {
+  /** The case's title, or a `<module>:<line>` stand-in for a hook. */
   readonly title: string;
   readonly kind: "case" | "hook";
   /**
@@ -231,13 +235,13 @@ export interface LaneGlobs {
   readonly exclude: readonly string[];
 }
 
-/** That selection reduced to the walk below. */
-export interface LaneRule {
-  /** The directory the walk descends, absolute. */
-  readonly root: string;
-  /** The suffix a file carries to be in the lane, e.g. `.test.ts`. */
-  readonly suffix: string;
-  /** The suffixes that take it back out, e.g. `.integration.test.ts`. */
+/**
+ * That selection reduced to the shared directory walk. The reducer always
+ * produces the exclusions — empty where the lane declares none — so the rule
+ * states them where the walk leaves them optional, and the lane pin reads the
+ * list the lane itself declared rather than a default.
+ */
+export interface LaneRule extends FileWalk {
   readonly excluded: readonly string[];
 }
 
@@ -333,26 +337,6 @@ export function reduceLaneGlobs(globs: LaneGlobs): LaneRule {
 /** The rule one of this repo's lanes reduces to. */
 export async function laneRule(lane: Lane): Promise<LaneRule> {
   return reduceLaneGlobs(await declaredLaneGlobs(lane));
-}
-
-/**
- * Every file the lane runs, off disk rather than from a list: a suite added
- * without its budget is exactly the case this scan exists to catch, and a
- * hand-kept list is what would not carry it. Which files count is `rule`'s to
- * say — this walk holds no copy of the lane's root or its suffixes.
- */
-export function laneFiles(rule: LaneRule, dir: string = rule.root): string[] {
-  const out: string[] = [];
-  for (const dirent of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, dirent.name);
-    if (dirent.isDirectory()) out.push(...laneFiles(rule, path));
-    else if (
-      dirent.name.endsWith(rule.suffix) &&
-      !rule.excluded.some((dropped) => dirent.name.endsWith(dropped))
-    )
-      out.push(path);
-  }
-  return out;
 }
 
 /** The identifier at the head of a callee — `it` for `it.each(table)(…)`. */
@@ -580,28 +564,44 @@ function declaredBudget(
   return declared;
 }
 
+/** Which lane's files the scan walks, and which subtree of them. */
+export interface SpawnScanRequest {
+  readonly lane: Lane;
+  /**
+   * The subtree descended, the lane's own root by default. A parameter for
+   * one reason: the scan's own test drives it over a fixture whose cases are
+   * written to be caught, so a green verdict here is proven to be a detector
+   * firing rather than an empty set (`.claude/rules/engineering.md`, *A green
+   * verdict is proven non-vacuous*). The lane's suffixes apply either way.
+   */
+  readonly dir?: string;
+}
+
 /**
- * Every case and hook under `dir` in `lane` that starts a node process, with
- * the budget it declares and the timer it awaits.
- *
- * `dir` defaults to the root the declared lane names and is a parameter for
- * one reason: the scan's own test drives it over a fixture whose cases are
- * written to be caught, so a green verdict here is proven to be a detector
- * firing rather than an empty set (`.claude/rules/engineering.md`, *A green
- * verdict is proven non-vacuous*). The lane's suffixes apply either way.
+ * Two verdicts over one judged set, so both are finding lists beside it:
+ * every case and hook of the lane that starts a node process is `scanned`,
+ * the ones declaring no budget are `findings`, and the ones awaiting a
+ * wall-clock timer between the spawn and the assertion are `sleeping`.
  */
-export async function scanLaneSpawnSites(
-  lane: Lane,
-  dir?: string,
-): Promise<SpawnSite[]> {
-  const rule = await laneRule(lane);
+export interface SpawnScan extends Scan<SpawnSite> {
+  readonly sleeping: readonly SpawnSite[];
+}
+
+/**
+ * Every case and hook the request's lane holds that starts a node process,
+ * with the budget it declares and the timer it awaits.
+ */
+export async function scanSpawnSites(
+  request: SpawnScanRequest,
+): Promise<SpawnScan> {
+  const rule = await laneRule(request.lane);
   const wrappers = harnessSpawnExports();
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
 
-  for (const path of laneFiles(rule, dir)) {
+  for (const path of filesUnder(rule, request.dir)) {
     const src = parse(path);
-    const file = relative(REPO_ROOT, path).split(sep).join("/");
+    const module = relPath(REPO_ROOT, path);
     const imported = harnessImports(src);
     const spawns = reachingNames(src, [
       ...PROCESS_STARTS,
@@ -645,12 +645,12 @@ export async function scanLaneSpawnSites(
                 .flatMap((a) => [...awaitedNames(a)]),
             );
             sites.push({
-              file,
+              module,
               line,
               title:
                 first && ts.isStringLiteralLike(first)
                   ? first.text
-                  : `${root} at ${file}:${line}`,
+                  : `${root} at ${module}:${line}`,
               kind,
               budget: declaredBudget(node, named),
               awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
@@ -663,5 +663,9 @@ export async function scanLaneSpawnSites(
     visit(src);
   }
 
-  return sites;
+  return {
+    scanned: sites,
+    findings: sites.filter((site) => site.budget === null),
+    sleeping: sites.filter((site) => site.awaitedTimer !== null),
+  };
 }

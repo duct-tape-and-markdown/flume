@@ -40,11 +40,13 @@
  * the cast — what `helpers/stubRunner.ts` does.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { basename, join, relative, sep } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
+
+import { filesUnder, relPath } from "./helpers/repoProgram.ts";
 
 const TESTS_DIR = fileURLToPath(new URL(".", import.meta.url));
 
@@ -58,23 +60,15 @@ interface SuiteFile {
 }
 
 /**
- * Every `.ts` file under `tests/`, at any depth, read as text. Off the
- * directory rather than a list: a stand-in added in a new subdirectory is
- * exactly what this scan exists to see, and a hand-kept set is what would
- * not carry it.
+ * Every `.ts` file under `tests/`, at any depth, read as text — through the
+ * shared corpus walk (`tests/helpers/repoProgram.ts`), which is what makes
+ * the set the directory rather than a list.
  */
-function suiteFiles(dir: string = TESTS_DIR): SuiteFile[] {
-  const out: SuiteFile[] = [];
-  for (const dirent of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, dirent.name);
-    if (dirent.isDirectory()) out.push(...suiteFiles(path));
-    else if (dirent.name.endsWith(".ts"))
-      out.push({
-        name: relative(TESTS_DIR, path).split(sep).join("/"),
-        text: readFileSync(path, "utf8"),
-      });
-  }
-  return out;
+function suiteFiles(): SuiteFile[] {
+  return filesUnder({ root: TESTS_DIR, suffix: ".ts" }).map((path) => ({
+    name: relPath(TESTS_DIR, path),
+    text: readFileSync(path, "utf8"),
+  }));
 }
 
 const scannedFiles = suiteFiles();

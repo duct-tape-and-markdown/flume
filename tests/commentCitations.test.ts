@@ -236,7 +236,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "vanishedPastDivision",
   ]);
 
-  expect(scan.dangling.map(formatCitation)).toEqual([
+  expect(scan.findings.map(formatCitation)).toEqual([
     "lib/surface.ts:12 vanishedHelper",
     "lib/surface.ts:25 vanishedPastDivision",
     "lib/surface.ts:31 Vanished",
@@ -290,7 +290,7 @@ it("the citation scan judges a dotted citation whose segments carry no internal 
   // Judged, and judged in both directions: the module of this tree resolves
   // and the pair naming nothing dangles.
   expect(fixtureScan.resolved.map((s) => s.text)).toContain("surface.ts");
-  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:31 vanished.helper",
   );
 });
@@ -308,7 +308,7 @@ it("the citation scan judges a leading-capital citation whose name carries no in
   ]);
 
   expect(fixtureScan.resolved.map((s) => s.text)).toContain("Holder");
-  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:31 Vanished",
   );
 });
@@ -362,7 +362,7 @@ it("the citation scan flags a repo-relative path citation naming no file on disk
     "lib/dataShapes.ts",
   );
 
-  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:36 lib/vanished.ts",
   );
 });
@@ -414,7 +414,7 @@ it("the citation scan judges a backticked page name whose spelling carries a hyp
   expect(fixtureScan.resolved.map(formatCitation)).toContain(
     "lib/surface.ts:67 release-notes.md",
   );
-  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:68 vanished-notes.md",
   );
 });
@@ -441,7 +441,7 @@ it("the citation scan reports a backticked span its comment line leaves open", (
   // Vacuity guard: every other comment in the fixture closes its spans on the
   // line that opened them, so the four reports below are the wraps the
   // fixture authored rather than a parity artifact of some earlier comment.
-  expect(fixtureScan.wrapped.map(formatCitation)).toEqual([
+  expect(fixtureScan.wraps.scanned.map(formatCitation)).toEqual([
     "lib/surface.ts:42 lib/ dataShapes.ts",
     "lib/surface.ts:49 Shipped. maxDepth",
     "lib/surface.ts:51 not a citation",
@@ -470,7 +470,7 @@ it("the citation scan reports a wrapped span that names a subject once its break
   // in both fencings and in prose, before any subset of them is judged.
   // Closing the break removes the break alone — the prose span keeps the
   // space it spelled itself, which is why it closes to no subject.
-  expect(fixtureScan.wrapped.map((s) => s.closed)).toEqual([
+  expect(fixtureScan.wraps.scanned.map((s) => s.closed)).toEqual([
     "lib/dataShapes.ts",
     "Shipped.maxDepth",
     "nota citation",
@@ -480,7 +480,7 @@ it("the citation scan reports a wrapped span that names a subject once its break
   // The three that close to a name are reported as broken citations, and the
   // one that closes to prose is not: the wrap is read by the subject rule the
   // judged set is held to, in either alphabet, rather than by the slash.
-  expect(fixtureScan.broken.map(formatCitation)).toEqual([
+  expect(fixtureScan.wraps.findings.map(formatCitation)).toEqual([
     "lib/surface.ts:42 lib/ dataShapes.ts",
     "lib/surface.ts:49 Shipped. maxDepth",
     "lib/surface.ts:62 docs/ guide.md",
@@ -517,7 +517,7 @@ it("the citation scan judges an unbackticked *.md page name in a comment", () =>
   expect(fixtureScan.resolved.map(formatCitation)).toContain(
     "lib/surface.ts:56 docs/guide.md",
   );
-  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:57 docs/vanished.md",
   );
 });
@@ -550,13 +550,13 @@ it("the citation scan reports an unfenced page name broken across a comment line
   // Reported through the set the fenced wraps are reported into, read both
   // ways that break reads: as markdown joins it, and as the author spelled it
   // before the wrap — which is a subject, so it is a citation the break took.
-  expect(fixtureScan.wrapped.map(formatCitation)).toContain(
+  expect(fixtureScan.wraps.scanned.map(formatCitation)).toContain(
     "lib/surface.ts:62 docs/ guide.md",
   );
-  expect(fixtureScan.wrapped.find((s) => s.line === 62)?.closed).toBe(
+  expect(fixtureScan.wraps.scanned.find((s) => s.line === 62)?.closed).toBe(
     "docs/guide.md",
   );
-  expect(fixtureScan.broken.map(formatCitation)).toContain(
+  expect(fixtureScan.wraps.findings.map(formatCitation)).toContain(
     "lib/surface.ts:62 docs/ guide.md",
   );
 });
@@ -648,12 +648,12 @@ it("every backticked identifier in a src/, harness/ or tests/ comment names a de
   // below became decorative. Per entry the claim would be order-dependent —
   // a `dist/` citation dangles in a fresh checkout and resolves once
   // something has built — so it is made over the set.
-  const unresolved = new Set(scan.dangling.map((s) => s.text));
+  const unresolved = new Set(scan.findings.map((s) => s.text));
   expect(excluded.filter((name) => unresolved.has(name)).length)
     .toBeGreaterThan(0);
 
   expect(
-    scan.dangling
+    scan.findings
       .filter((s) => !excluded.includes(s.text))
       .map(formatCitation),
   ).toEqual([]);
@@ -708,12 +708,12 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   // literal payloads, a fenced example — so the emptiness below is the
   // subject rule reading those wraps and passing over them as prose, not a
   // reader that found no wrap to read at all.
-  expect(repoScan.wrapped.length).toBeGreaterThan(40);
+  expect(repoScan.wraps.scanned.length).toBeGreaterThan(40);
 
   // A citation the wrap broke is judged by nothing, so it is a defect at the
   // comment rather than a resolution arm the scan is missing: the space
   // markdown inserts is not a character any subject spelling admits, and the
   // pins above stay green over it however the name it cites is renamed.
   // Rewrap the span.
-  expect(repoScan.broken.map(formatCitation)).toEqual([]);
+  expect(repoScan.wraps.findings.map(formatCitation)).toEqual([]);
 });

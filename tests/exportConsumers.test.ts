@@ -40,7 +40,9 @@ import {
   formatSite,
   formatUnnamableType,
   scanExports,
+  type ExportPosition,
   type ExportScan,
+  type PositionKind,
   type UnnamableType,
 } from "./helpers/exportGraph.ts";
 
@@ -57,6 +59,17 @@ const isTopLevelSignature = (found: UnnamableType): boolean =>
 const isMemberSignature = (found: UnnamableType): boolean =>
   found.kind === "signature" && found.position.name.includes(".");
 const isProperty = (found: UnnamableType): boolean => found.kind === "property";
+
+/**
+ * The reached positions of one kind. The scan reports them as one judged set
+ * carrying its kind, so the vacuity guards below read the half each arm is
+ * about rather than a second array the scan would have to keep agreeing with.
+ */
+const positionsOfKind = (
+  scan: ExportScan,
+  kind: PositionKind,
+): readonly ExportPosition[] =>
+  scan.positions.scanned.filter((position) => position.kind === kind);
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -299,7 +312,7 @@ it("the export scan flags an export that no other module references and the expo
     "testOnly",
   ]);
 
-  expect(scan.unearned.map(formatSite)).toEqual(["lib/surface.ts:37 residue"]);
+  expect(scan.findings.map(formatSite)).toEqual(["lib/surface.ts:37 residue"]);
 
   // Both earning arms fired, each over the exports it belongs to — so the
   // single finding above is a discrimination, not a scan that flagged
@@ -333,7 +346,7 @@ it("the export scan flags a signature type no entry module exports", () => {
   // them. Without this, an empty `unnamable` below could mean the signature
   // was never walked at all.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
-  expect(scan.signatures.map(formatSite)).toContain(
+  expect(positionsOfKind(scan, "signature").map(formatSite)).toContain(
     "dist/lib/surface.d.ts:2 publicEntry",
   );
   expect(scan.reachable.map((s) => s.name).sort()).toContain("Shipped");
@@ -342,7 +355,7 @@ it("the export scan flags a signature type no entry module exports", () => {
   // is not, and is the finding. Same signature, same reachability, opposite
   // verdicts — the arm discriminates rather than flagging what it walked.
   expect(
-    scan.unnamable.filter(isTopLevelSignature).map(formatUnnamableType),
+    scan.positions.findings.filter(isTopLevelSignature).map(formatUnnamableType),
   ).toEqual([
     "dist/lib/surface.d.ts:2 publicEntry names dist/lib/shapes.d.ts:1 Shipped",
   ]);
@@ -356,7 +369,7 @@ it("the export scan walks a member signature and skips a private member and a na
   // holding only the top-level function — would make every exclusion below
   // read green for having walked nothing.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
-  expect(scan.signatures.map(formatSite).sort()).toEqual([
+  expect(positionsOfKind(scan, "signature").map(formatSite).sort()).toEqual([
     "dist/lib/surface.d.ts:2 publicEntry",
     "dist/lib/surface.d.ts:4 Container.reach",
   ]);
@@ -364,7 +377,7 @@ it("the export scan walks a member signature and skips a private member and a na
   // The member signature's parameter type is the finding, exactly as a
   // top-level function's would be.
   expect(
-    scan.unnamable.filter(isMemberSignature).map(formatUnnamableType),
+    scan.positions.findings.filter(isMemberSignature).map(formatUnnamableType),
   ).toEqual([
     "dist/lib/surface.d.ts:4 Container.reach names dist/lib/shapes.d.ts:7 Membered",
   ]);
@@ -372,7 +385,7 @@ it("the export scan walks a member signature and skips a private member and a na
   // Both exclusions, read off the types they would otherwise have flagged:
   // `Guarded.hush` is `private` and `Box.Lid.open` is a namespace member, so
   // neither `Hushed` nor `Key` reaches a verdict here.
-  const flagged = scan.unnamable.map((f) => f.type.name);
+  const flagged = scan.positions.findings.map((f) => f.type.name);
   expect(flagged).not.toContain("Hushed");
   expect(flagged).not.toContain("Key");
 });
@@ -385,7 +398,7 @@ it("the export scan flags a property type no entry module exports", () => {
   // verdict among them. An empty `properties` would report the same empty
   // `unnamable` below for having walked nothing at all.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
-  expect(scan.properties.map(formatSite).sort()).toEqual([
+  expect(positionsOfKind(scan, "property").map(formatSite).sort()).toEqual([
     "dist/lib/shapes.d.ts:14 Held.held",
     "dist/lib/shapes.d.ts:17 Inferred.deep",
     "dist/lib/shapes.d.ts:2 Shipped.n",
@@ -403,7 +416,7 @@ it("the export scan flags a property type no entry module exports", () => {
   // reachability, opposite verdicts — the arm discriminates rather than
   // flagging every property it walked.
   expect(
-    scan.unnamable
+    scan.positions.findings
       .filter(isProperty)
       .filter((f) => f.position.name.startsWith("Container."))
       .map(formatUnnamableType),
@@ -414,7 +427,7 @@ it("the export scan flags a property type no entry module exports", () => {
   // The namespace exclusion read from the named type's side rather than the
   // position's: `Box.lid` is an ordinary property of an ordinary interface,
   // and the `Box.Lid` it holds is written through the namespace.
-  expect(scan.unnamable.map((f) => f.type.name)).not.toContain("Lid");
+  expect(scan.positions.findings.map((f) => f.type.name)).not.toContain("Lid");
 });
 
 // --- what only the emit can see ------------------------------------------
@@ -429,7 +442,7 @@ it("the export scan carries a property position for a reached export that carrie
     "harness/index.ts",
     "src/index.ts",
   ]);
-  const walked = new Set(scan.properties.map((site) => site.name));
+  const walked = new Set(positionsOfKind(scan, "property").map((site) => site.name));
   expect(walked.size).toBeGreaterThan(0);
 
   // Three shapes whose type exists only because `tsc` wrote it down.
@@ -454,7 +467,7 @@ it("the export scan flags an unnamable type an export infers without a type anno
   // one position the walk happened to reach.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
   expect(
-    scan.properties
+    positionsOfKind(scan, "property")
       .filter((site) => site.name.startsWith("inferredSurface."))
       .map(formatSite)
       .sort(),
@@ -466,7 +479,7 @@ it("the export scan flags an unnamable type an export infers without a type anno
   // `named` holds a `Named` the entry module re-exports and is silent;
   // `seed` holds an `Inferred` it does not, and is the finding.
   expect(
-    scan.unnamable
+    scan.positions.findings
       .filter((f) => f.position.name.startsWith("inferredSurface."))
       .map(formatUnnamableType),
   ).toEqual([
@@ -494,7 +507,7 @@ it("every src/ and harness/ export is reached by the package exports map or refe
   expect(scan.reachable.length).toBeGreaterThan(0);
   expect(scan.referenced.length).toBeGreaterThan(0);
 
-  expect(scan.unearned.map(formatSite)).toEqual([]);
+  expect(scan.findings.map(formatSite)).toEqual([]);
 });
 
 it("every type an exported function's signature names is exported from an entry module", () => {
@@ -510,7 +523,7 @@ it("every type an exported function's signature names is exported from an entry 
     "harness/index.ts",
     "src/index.ts",
   ]);
-  const walked = new Set(scan.signatures.map((site) => site.name));
+  const walked = new Set(positionsOfKind(scan, "signature").map((site) => site.name));
   expect(walked.size).toBeGreaterThan(0);
   for (const fn of [
     "partitionByFileOverlap",
@@ -521,7 +534,7 @@ it("every type an exported function's signature names is exported from an entry 
   }
 
   expect(
-    scan.unnamable.filter(isTopLevelSignature).map(formatUnnamableType),
+    scan.positions.findings.filter(isTopLevelSignature).map(formatUnnamableType),
   ).toEqual([]);
 });
 
@@ -538,7 +551,7 @@ it("every type a member signature of a reached type names is exported from an en
     "harness/index.ts",
     "src/index.ts",
   ]);
-  const walked = new Set(scan.signatures.map((site) => site.name));
+  const walked = new Set(positionsOfKind(scan, "signature").map((site) => site.name));
   for (const member of [
     "Chain.worktreesBase",
     "Dispatcher.render",
@@ -548,7 +561,7 @@ it("every type a member signature of a reached type names is exported from an en
   }
 
   expect(
-    scan.unnamable.filter(isMemberSignature).map(formatUnnamableType),
+    scan.positions.findings.filter(isMemberSignature).map(formatUnnamableType),
   ).toEqual([]);
 });
 
@@ -563,7 +576,7 @@ it("every type a reached property position names is exported from an entry modul
     "harness/index.ts",
     "src/index.ts",
   ]);
-  const walked = new Set(scan.properties.map((site) => site.name));
+  const walked = new Set(positionsOfKind(scan, "property").map((site) => site.name));
   for (const property of [
     "TickResult.entries",
     "FlumeApi.paths",
@@ -572,7 +585,7 @@ it("every type a reached property position names is exported from an entry modul
     expect(walked).toContain(property);
   }
 
-  expect(scan.unnamable.filter(isProperty).map(formatUnnamableType)).toEqual(
+  expect(scan.positions.findings.filter(isProperty).map(formatUnnamableType)).toEqual(
     [],
   );
 });

@@ -35,14 +35,23 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import ts from "typescript";
 
+import {
+  eachToken,
+  parseConfig,
+  relPath,
+  repoProgram,
+  sourcesOf,
+  type ProgramScanRequest,
+  type Scan,
+  type ScanSite,
+} from "./repoProgram.ts";
+
 /**
  * The two config files a scan is drawn from, and the manifest whose `exports`
  * map supplies the roots. Every one is the artifact the real toolchain reads,
  * so a scan can never judge a surface the build does not actually ship.
  */
-export interface ExportScanRequest {
-  /** Absolute path to the package root — the directory holding the manifest. */
-  readonly root: string;
+export interface ExportScanRequest extends ProgramScanRequest {
   /**
    * The tsconfig whose file list *is* the shipped surface. The scan runs its
    * declaration emit, so the walk reads what a consumer imports. Its `outDir`
@@ -50,61 +59,17 @@ export interface ExportScanRequest {
    * from, which is how the export verdicts below reach source coordinates.
    */
   readonly buildConfig: string;
-  /**
-   * The tsconfig covering every module that may consume the shipped surface —
-   * the sources, the tests, the example chains. A consumer outside this list
-   * is invisible to the scan, so it is the widest config the repo has.
-   */
-  readonly programConfig: string;
-  /** Manifest filename, relative to `root`. */
+  /** Manifest filename, relative to the request's root. */
   readonly manifest?: string;
 }
 
-/** One exported symbol of one shipped module, or one position it carries. */
-export interface ExportSite {
-  /**
-   * Module path, relative to `root` and in posix form — an emitted
-   * declaration for the shipped-surface sites, a source for the export
-   * verdicts.
-   */
-  readonly module: string;
+/**
+ * One exported symbol of one shipped module, or one position it carries. Its
+ * module is an emitted declaration for the shipped-surface sites and a source
+ * for the export verdicts, per the two alphabets above.
+ */
+export interface ExportSite extends ScanSite {
   readonly name: string;
-  /** 1-based line of the symbol's declaration, in that module. */
-  readonly line: number;
-}
-
-export interface ExportScan {
-  /**
-   * The shipped modules the manifest's `exports` map names, relative to
-   * `root`. The map names each as an emitted declaration; this is that target
-   * folded back to the source it is built from.
-   */
-  readonly entryModules: readonly string[];
-  /** Every export of every shipped module — the judged set. */
-  readonly scanned: readonly ExportSite[];
-  /** Judged exports the `exports` map reaches, directly or through a type chain. */
-  readonly reachable: readonly ExportSite[];
-  /** Judged exports the map cannot reach, but some other module references. */
-  readonly referenced: readonly ExportSite[];
-  /** Judged exports neither reachable nor referenced — the residue. */
-  readonly unearned: readonly ExportSite[];
-  /**
-   * Every function signature the `exports` map reaches — one half of the set
-   * `unnamable` is judged over, so a walk that stopped finding functions is
-   * visible rather than reading as a clean verdict.
-   */
-  readonly signatures: readonly ExportSite[];
-  /**
-   * Every non-function property position the `exports` map reaches — the
-   * other half of that set, carrying the same guard.
-   */
-  readonly properties: readonly ExportSite[];
-  /**
-   * Types a consumer can read but cannot name: a type the shipped surface's
-   * signature and property positions mention, declared in the shipped tree,
-   * that no entry module exports under any name.
-   */
-  readonly unnamable: readonly UnnamableType[];
 }
 
 /**
@@ -113,6 +78,15 @@ export interface ExportScan {
  * different halves of the walk, so either can be judged alone.
  */
 export type PositionKind = "signature" | "property";
+
+/**
+ * One position of the shipped surface the `exports` map reaches, carrying
+ * which half of the walk found it — so a walk that stopped finding functions,
+ * or properties, is visible rather than reading as a clean verdict.
+ */
+export interface ExportPosition extends ExportSite {
+  readonly kind: PositionKind;
+}
 
 /** One reached position naming a type the `exports` map cannot hand out. */
 export interface UnnamableType {
@@ -123,21 +97,30 @@ export interface UnnamableType {
   readonly type: ExportSite;
 }
 
-const parseConfig = (path: string): ts.ParsedCommandLine => {
-  const host: ts.ParseConfigFileHost = {
-    ...ts.sys,
-    onUnRecoverableConfigFileDiagnostic: (d) => {
-      throw new Error(
-        `${path}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`,
-      );
-    },
-  };
-  const parsed = ts.getParsedCommandLineOfConfigFile(path, {}, host);
-  if (!parsed) {
-    throw new Error(`no tsconfig at ${path}`);
-  }
-  return parsed;
-};
+/**
+ * Two verdicts over two judged sets. The scan's own is the rule's: every
+ * export of every shipped module is `scanned`, and the residue neither
+ * reachable nor referenced is `findings`. `positions` carries the second — a
+ * different judged set, so a `Scan` of its own.
+ */
+export interface ExportScan extends Scan<ExportSite> {
+  /**
+   * The shipped modules the manifest's `exports` map names, relative to the
+   * request's root. The map names each as an emitted declaration; this is
+   * that target folded back to the source it is built from.
+   */
+  readonly entryModules: readonly string[];
+  /** Judged exports the `exports` map reaches, directly or through a type chain. */
+  readonly reachable: readonly ExportSite[];
+  /** Judged exports the map cannot reach, but some other module references. */
+  readonly referenced: readonly ExportSite[];
+  /**
+   * The positions the `exports` map reaches, and among them the ones naming a
+   * type a consumer can read but cannot name: a type declared in the shipped
+   * tree that no entry module exports under any name.
+   */
+  readonly positions: Scan<ExportPosition, UnnamableType>;
+}
 
 /**
  * The build config's declaration emit, run for real and kept in memory: every
@@ -261,10 +244,6 @@ const exportTargets = (node: unknown): string[] => {
   return Object.values(node as Record<string, unknown>).flatMap(exportTargets);
 };
 
-/** Repo-relative, posix-separated — the alphabet every reported path uses. */
-const relPath = (root: string, path: string): string =>
-  relative(root, path).split(/[\\/]/).join("/");
-
 /** Resolve an alias — a re-export — to the symbol it forwards. */
 const unalias = (checker: ts.TypeChecker, sym: ts.Symbol): ts.Symbol =>
   sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
@@ -346,7 +325,6 @@ export const formatUnnamableType = (found: UnnamableType): string =>
 export const scanExports = (request: ExportScanRequest): ExportScan => {
   const root = resolve(request.root);
   const build = parseConfig(join(root, request.buildConfig));
-  const domain = parseConfig(join(root, request.programConfig));
 
   const { outDir, rootDir } = build.options;
   if (outDir === undefined || rootDir === undefined) {
@@ -359,11 +337,8 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   const emit = declarationProgram(emitted, build.options);
   const emitChecker = emit.getTypeChecker();
 
-  const program = ts.createProgram({
-    rootNames: domain.fileNames,
-    options: domain.options,
-  });
-  const checker = program.getTypeChecker();
+  const domain = repoProgram(request);
+  const { program, checker } = domain;
 
   const manifest = JSON.parse(
     readFileSync(join(root, request.manifest ?? "package.json"), "utf8"),
@@ -600,8 +575,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     return out;
   };
 
-  const signatures: ExportSite[] = [];
-  const properties: ExportSite[] = [];
+  const positions: ExportPosition[] = [];
   const unnamable: UnnamableType[] = [];
   const reported = new Set<string>();
 
@@ -613,13 +587,14 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       if (inNamespace(decl)) continue;
 
       for (const found of positionsOf(decl, owner.getName())) {
-        const position: ExportSite = {
+        const position: ExportPosition = {
           module: relPath(root, file.fileName),
           name: found.name,
           line:
             file.getLineAndCharacterOfPosition(found.node.getStart()).line + 1,
+          kind: found.kind,
         };
-        (found.kind === "signature" ? signatures : properties).push(position);
+        positions.push(position);
 
         const named = (node: ts.Node): void => {
           if (ts.isTypeReferenceNode(node)) {
@@ -695,25 +670,20 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   // property access resolves to the same symbol a named import does; a name
   // that appears only inside a comment is no node at all and records nothing.
   const referencedFrom = new Map<ts.Symbol, Set<string>>();
-  for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile) continue;
+  for (const sf of sourcesOf(domain)) {
     const from = resolve(sf.fileName);
-    const visit = (node: ts.Node): void => {
-      if (ts.isIdentifier(node)) {
-        const sym = checker.getSymbolAtLocation(node);
-        if (sym) {
-          const target = unalias(checker, sym);
-          let files = referencedFrom.get(target);
-          if (!files) {
-            files = new Set<string>();
-            referencedFrom.set(target, files);
-          }
-          files.add(from);
-        }
+    eachToken(sf, (token) => {
+      if (!ts.isIdentifier(token)) return;
+      const sym = checker.getSymbolAtLocation(token);
+      if (!sym) return;
+      const target = unalias(checker, sym);
+      let files = referencedFrom.get(target);
+      if (!files) {
+        files = new Set<string>();
+        referencedFrom.set(target, files);
       }
-      ts.forEachChild(node, visit);
-    };
-    ts.forEachChild(sf, visit);
+      files.add(from);
+    });
   }
 
   // --- judge every export of every shipped module -------------------------
@@ -753,11 +723,9 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   return {
     entryModules: [...entryFiles].map((f) => relPath(root, sourceOf(f))),
     scanned,
+    findings: unearned,
     reachable: reachedSites,
     referenced: referencedSites,
-    unearned,
-    signatures,
-    properties,
-    unnamable,
+    positions: { scanned: positions, findings: unnamable },
   };
 };

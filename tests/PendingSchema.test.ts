@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -19,17 +19,12 @@ import {
 } from "../src/PendingSchema.ts";
 import type { StandardSchemaV1 } from "../src/standardSchema.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
+import { filesUnder } from "./helpers/repoProgram.ts";
 
 const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
 
-/** Every `.ts` file under `src/`, recursively. */
-function listSrcFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) return listSrcFiles(full);
-    return entry.name.endsWith(".ts") ? [full] : [];
-  });
-}
+/** Every `.ts` file under `src/`, recursively — the shared corpus walk. */
+const SRC_FILES = { root: SRC_DIR, suffix: ".ts" } as const;
 
 /**
  * The source span of the function named `fnName` in `src`, found by
@@ -768,7 +763,7 @@ describe("parsePendingLoose — chain-less informational reads", () => {
   });
 
   it("has exactly one production call site — job.ts's read-only job-listing (PendingSchema.ts:324-329)", () => {
-    const callSites = listSrcFiles(SRC_DIR)
+    const callSites = filesUnder(SRC_FILES)
       .filter((file) => !file.endsWith("/PendingSchema.ts")) // the declaration, not a call
       .flatMap((file) => {
         const src = readFileSync(file, "utf8");

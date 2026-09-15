@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +47,7 @@ import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
 
+import { filesUnder, relPath } from "./helpers/repoProgram.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS, mkTempDir } from "./helpers/subprocess.ts";
 
@@ -577,8 +578,8 @@ describe("the harness package boundary", () => {
   it("no module under src/ imports harness/", async () => {
     const srcDir = join(REPO_ROOT, "src");
     const harnessDir = join(REPO_ROOT, "harness");
-    const modules = readdirSync(srcDir, { recursive: true, encoding: "utf8" }).filter((f) =>
-      f.endsWith(".ts"),
+    const modules = filesUnder({ root: srcDir, suffix: ".ts" }).map((path) =>
+      relPath(srcDir, path),
     );
 
     // Vacuity: the engine's modules were found before their imports are

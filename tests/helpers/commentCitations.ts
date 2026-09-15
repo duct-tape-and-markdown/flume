@@ -47,20 +47,22 @@
  */
 
 import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import ts from "typescript";
 
+import {
+  eachToken,
+  relPath,
+  repoProgram,
+  sourcesOf,
+  type ProgramScanRequest,
+  type Scan,
+  type ScanSite,
+} from "./repoProgram.ts";
+
 /** The program a scan is drawn from, and the trees whose comments it judges. */
-export interface CitationScanRequest {
-  /** Absolute path to the repo root — the directory holding the config. */
-  readonly root: string;
-  /**
-   * The tsconfig describing the program. It is the widest config the repo
-   * has: resolution reads the checker, and a tree left out of the program
-   * resolves nothing.
-   */
-  readonly programConfig: string;
+export interface CitationScanRequest extends ProgramScanRequest {
   /**
    * The trees whose comments are judged, as repo-relative posix prefixes.
    * They are also the trees whose declarations resolve a citation — the
@@ -69,12 +71,8 @@ export interface CitationScanRequest {
   readonly trees: readonly string[];
 }
 
-/** One backticked subject in one comment. */
-export interface CitationSite {
-  /** Module path, relative to `root` and in posix form. */
-  readonly module: string;
-  /** 1-based line the citation's opening backtick sits on. */
-  readonly line: number;
+/** One backticked subject in one comment, at the line its opening fence sits on. */
+export interface CitationSite extends ScanSite {
   /** The backticked text, verbatim and without its fences. */
   readonly text: string;
 }
@@ -94,8 +92,14 @@ export interface WrappedCitation extends CitationSite {
   readonly closed: string;
 }
 
-export interface CitationScan {
-  /** The modules read, relative to `root` — the scan's domain. */
+/**
+ * Two verdicts over two judged sets. `scanned` is the citations shaped like a
+ * reference — the backticked spans and the page names — and `findings` is the
+ * subset naming nothing the trees hold. `wraps` carries the second, over a
+ * different judged set: the citations a comment line broke.
+ */
+export interface CitationScan extends Scan<CitationSite> {
+  /** The modules read, relative to the request's root — the scan's domain. */
   readonly modules: readonly string[];
   /** Every backticked span one comment line opened and closed, subject or not. */
   readonly backticked: readonly CitationSite[];
@@ -105,52 +109,24 @@ export interface CitationScan {
    * carve-out reads without a fence.
    */
   readonly bare: readonly CitationSite[];
-  /**
-   * Every citation a comment line left open — a backticked span the line
-   * never closed, or an unfenced page name the break split at a directory
-   * boundary — reported as markdown joins it. Judged by nothing: the space
-   * markdown puts at the break is not a character any subject spelling
-   * admits, so the citation the wrap meant to carry falls out of the scan
-   * whatever it named. Reported so the wrap cannot do that quietly.
-   */
-  readonly wrapped: readonly WrappedCitation[];
-  /**
-   * The wraps that broke a citation: `closed` is a subject, so the span was
-   * a name the scan would have judged had the author not wrapped it. A defect
-   * at the comment rather than a resolution arm the scan is missing — no
-   * renaming of what it cites can ever red it.
-   */
-  readonly broken: readonly WrappedCitation[];
-  /**
-   * The subset judged: the backticked spans shaped like a reference, and the
-   * page names spelled like a repo-relative file. In line order per module.
-   */
-  readonly scanned: readonly CitationSite[];
   /** Judged citations whose every token names something the trees hold. */
   readonly resolved: readonly CitationSite[];
-  /** Judged citations naming something no token in those trees does. */
-  readonly dangling: readonly CitationSite[];
+  /**
+   * The citations a comment line left open — a backticked span the line never
+   * closed, or an unfenced page name the break split at a directory boundary
+   * — reported as markdown joins them, and among them the ones whose `closed`
+   * spelling is a subject.
+   *
+   * The scanned half is judged by nothing else: the space markdown puts at the
+   * break is not a character any subject spelling admits, so the citation the
+   * wrap meant to carry falls out of the scan whatever it named. It is
+   * reported so the wrap cannot do that quietly. The findings half is the
+   * name the scan would have judged had the author not wrapped it — a defect
+   * at the comment rather than a resolution arm the scan is missing, which no
+   * renaming of what it cites can ever red.
+   */
+  readonly wraps: Scan<WrappedCitation>;
 }
-
-/** Repo-relative, posix-separated — the alphabet every reported path uses. */
-const relPath = (root: string, path: string): string =>
-  relative(root, path).split(/[\\/]/).join("/");
-
-const parseConfig = (path: string): ts.ParsedCommandLine => {
-  const host: ts.ParseConfigFileHost = {
-    ...ts.sys,
-    onUnRecoverableConfigFileDiagnostic: (d) => {
-      throw new Error(
-        `${path}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`,
-      );
-    },
-  };
-  const parsed = ts.getParsedCommandLineOfConfigFile(path, {}, host);
-  if (!parsed) {
-    throw new Error(`no tsconfig at ${path}`);
-  }
-  return parsed;
-};
 
 /**
  * A reserved word is a token of the language, not a name anything declares,
@@ -575,27 +551,9 @@ const commentSpans = (
 export const scanCommentCitations = (
   request: CitationScanRequest,
 ): CitationScan => {
-  const root = resolve(request.root);
-  const parsed = parseConfig(resolve(root, request.programConfig));
-  const program = ts.createProgram({
-    rootNames: parsed.fileNames,
-    options: parsed.options,
-  });
-  const checker = program.getTypeChecker();
-
-  const inTrees = (path: string): boolean => {
-    const rel = relPath(root, path);
-    return request.trees.some((tree) => rel.startsWith(tree));
-  };
-  const sources = program
-    .getSourceFiles()
-    .filter((sf) => !sf.isDeclarationFile && inTrees(resolve(sf.fileName)))
-    .sort((a, b) => a.fileName.localeCompare(b.fileName));
-  if (sources.length === 0) {
-    throw new Error(
-      `no source of ${request.programConfig} sits under ${request.trees.join(", ")}: the scan would judge nothing`,
-    );
-  }
+  const repo = repoProgram(request);
+  const { root, checker } = repo;
+  const sources = sourcesOf(repo, request.trees);
 
   // --- what those trees hold ---------------------------------------------
   const tokens = new Set<string>();
@@ -615,16 +573,14 @@ export const scanCommentCitations = (
     for (const sym of checker.getSymbolsInScope(sf, ts.SymbolFlags.All)) {
       tokens.add(sym.getName());
     }
-    const visit = (node: ts.Node): void => {
-      if (ts.isIdentifier(node)) {
-        const sym = checker.getSymbolAtLocation(node);
+    eachToken(sf, (token) => {
+      if (ts.isIdentifier(token)) {
+        const sym = checker.getSymbolAtLocation(token);
         if (sym) tokens.add(sym.getName());
-      } else if (ts.isStringLiteralLike(node)) {
-        tokens.add(node.text);
+      } else {
+        tokens.add(token.text);
       }
-      ts.forEachChild(node, visit);
-    };
-    ts.forEachChild(sf, visit);
+    });
   }
 
   // --- what their comments cite ------------------------------------------
@@ -664,13 +620,15 @@ export const scanCommentCitations = (
     modules: [...modules],
     backticked,
     bare,
-    wrapped,
-    // The wrap is read by the same rule as the judged set, with the break
-    // closed: what the author spelled before markdown put a space in it.
-    broken: wrapped.filter((site) => isSubject(site.closed)),
+    wraps: {
+      scanned: wrapped,
+      // The wrap is read by the same rule as the judged set, with the break
+      // closed: what the author spelled before markdown put a space in it.
+      findings: wrapped.filter((site) => isSubject(site.closed)),
+    },
     scanned,
     resolved: scanned.filter((site) => resolves(site.text)),
-    dangling: scanned.filter((site) => !resolves(site.text)),
+    findings: scanned.filter((site) => !resolves(site.text)),
   };
 };
 
