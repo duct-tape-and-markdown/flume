@@ -30,6 +30,34 @@
       "no shipped example prompt span carries a || fallback behind a pipe that swallows its status"
     ],
     "pins": [],
-    "notes": "Sites: examples/prompts/plan.md:20 (find behind head), :24 (|| true behind tail). Fork the note parked is already ruled — spec/prompt.md *Why: the measured transport facts* rejects per-span tolerance, naming both example chains' spans as digests whose failure means a blind tick. Consumer cost is deliberate: a cascade repo with no corpus now hard-fails tick one instead of planning blind. dash lacks pipefail and the engine spawns sh, so the guard is `test -d`, not a shell option."
+    "notes": "Sites: examples/prompts/plan.md:20 (find behind head), :24 (|| true behind tail). Fork the note parked is already ruled \u2014 spec/prompt.md *Why: the measured transport facts* rejects per-span tolerance, naming both example chains' spans as digests whose failure means a blind tick. Consumer cost is deliberate: a cascade repo with no corpus now hard-fails tick one instead of planning blind. dash lacks pipefail and the engine spawns sh, so the guard is `test -d`, not a shell option."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-QUOTES-CASCADE-SLICEPHASE-UNPINNED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.test.ts",
+          "description": "pin the shipped walkthrough's quoted `slicePhase` against examples/cascade-chain.ts"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md quotes cascade's slicePhase declaration with nothing pinning the quote against the file it names",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "Editing examples/cascade-chain.ts's slicePhase body without updating the docs/CHAIN-AUTHORING.md quote reds the default lane",
+    "tests": [],
+    "pins": [
+      "the CHAIN-AUTHORING slicePhase quote matches examples/cascade-chain.ts modulo indentation and comments"
+    ],
+    "notes": "Sites: docs/CHAIN-AUTHORING.md:194-241 (fence introduced as the `slicePhase` declaration from `examples/cascade-chain.ts`); examples/cascade-chain.ts:612-659. Both ship in the tarball (package.json `files`). The comments diverge deliberately \u2014 the doc adds reader context \u2014 so the pin normalizes indentation and comments away and compares the rest: identical today, hence pins[] not tests[]. Vacuity guard: the extracted block is non-empty and carries the `writablePaths` lines before any comparison."
   }
 ]
