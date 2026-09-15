@@ -422,6 +422,16 @@ export async function showNameOnly(
  * distinguish them (`engine-boundary.md` "Told, not inferred"; the
  * `isAncestor`/`deleteBranch` structural-probe pattern above, applied here).
  *
+ * That probe runs under `--literal-pathspecs`, so the argument is matched as
+ * the path it is and never re-read as pathspec magic. A committed name may
+ * begin with `:` — git lists it, `<ref>:<path>` resolves it — but a default
+ * pathspec parse takes the leading colon as a magic prefix: `:leading.ts`
+ * lists nothing (so an existing path reads back `null`) and `:(icase)x`
+ * exits 128 (so the whole read throws). Both are the engine substituting a
+ * verdict for a path it was handed (`engineering.md`, *Loud or nothing*).
+ * It is a main-command option, before the subcommand — `ls-tree` rejects it
+ * as one of its own.
+ *
  * Content comes straight off `exec`, not `run()`: `run()`'s `trimEnd()` is
  * right for git's own line-oriented output but would silently drop a real
  * file's trailing bytes — a content read wants exactly what was committed.
@@ -433,6 +443,7 @@ export async function readFileAtRef(
 ): Promise<string | null> {
   const pathspec = gitPath(relPath);
   const { stdout: listing } = await run(repoRoot, [
+    "--literal-pathspecs",
     "ls-tree",
     "--name-only",
     ref,

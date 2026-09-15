@@ -319,6 +319,41 @@ describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not 
   });
 });
 
+// A filename may not contain `:` on win32 — the Win32 path layer refuses the
+// create call, so neither this fixture nor a `git checkout` of it can exist
+// there.
+//
+// Deliberately top-level rather than inside the describe above: this title is
+// the queue entry's own `tests[]` line, matched on the full name.
+it.runIf(process.platform !== "win32")(
+  "readFileAtRef reads a committed path whose name begins with a colon",
+  async () => {
+    await writeFile(join(repo, ":leading.txt"), "colon content\n");
+    await exec("git", ["add", "--all"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add colon-leading path"], {
+      cwd: repo,
+    });
+
+    // Vacuity pin: the path really is at this ref (`<ref>:<path>` resolves
+    // it, and git's own listing names it), while the *default* pathspec parse
+    // of that same name lists nothing — which is what makes the probe's
+    // `null` a substituted verdict rather than an honest absence.
+    await expect(
+      exec("git", ["cat-file", "-e", "HEAD::leading.txt"], { cwd: repo }),
+    ).resolves.toBeDefined();
+    const { stdout: defaultParse } = await exec(
+      "git",
+      ["ls-tree", "--name-only", "HEAD", "--", ":leading.txt"],
+      { cwd: repo },
+    );
+    expect(defaultParse.trim()).toBe("");
+
+    expect(await readFileAtRef(repo, "HEAD", ":leading.txt")).toBe(
+      "colon content\n",
+    );
+  },
+);
+
 describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
   it("refuses, naming both shas, when the current tip does not match the expected sha", async () => {
     const seedSha = await revParse(repo);

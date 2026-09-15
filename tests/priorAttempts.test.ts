@@ -442,6 +442,61 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
+// A filename may not contain `:` on win32 — the Win32 path layer refuses the
+// create call, so neither this fixture nor a `git checkout` of it can exist
+// there.
+//
+// Repo-root rather than under `snap/` like the siblings above: pathspec magic
+// is read off a *leading* colon, so only a path whose own first character is
+// `:` reaches the parse that loses it.
+it.runIf(process.platform !== "win32")(
+  "snapshotReverted writes a colon-leading path's content into the revert snapshot",
+  async () => {
+    const fx = await makeFixture();
+    try {
+      const store = new PriorAttemptStore(
+        join(fx.repo, ".flume"),
+        fx.repo,
+        silent,
+      );
+      await writeFile(join(fx.repo, ":colon.ts"), "content of :colon.ts\n");
+      await writeFile(join(fx.repo, "plain.ts"), "content of plain.ts\n");
+      await gitOut(fx.repo, ["add", "--all"]);
+      await gitOut(fx.repo, ["commit", "-q", "-m", "colon-leading path"]);
+      const sha = await gitOut(fx.repo, ["rev-parse", "HEAD"]);
+
+      // Vacuity pin: git names the path unquoted and resolves it as
+      // `<sha>:<path>`, so the listing hands `snapshotReverted` a name that
+      // is genuinely readable — the content read's `null` came from the
+      // pathspec parse alone, and the null-skip then drops a file the commit
+      // really carried.
+      expect(
+        (
+          await gitOut(fx.repo, ["show", "--name-only", "--format=", sha])
+        ).split("\n"),
+      ).toContain(":colon.ts");
+      expect(
+        await gitOut(fx.repo, ["cat-file", "-e", `${sha}::colon.ts`]),
+      ).toBe("");
+
+      await store.snapshotReverted(fx.repo, sha, "key");
+
+      const dir = store.snapshotDir("key");
+      expect(await readFile(join(dir, ":colon.ts"), "utf8")).toBe(
+        "content of :colon.ts\n",
+      );
+      // The sibling git lists beside the awkward one: a drop that skipped
+      // only `:colon.ts` still leaves this one, so the assertion above is
+      // what carries the verdict.
+      expect(await readFile(join(dir, "plain.ts"), "utf8")).toBe(
+        "content of plain.ts\n",
+      );
+    } finally {
+      await fx.cleanup();
+    }
+  },
+);
+
 it("a snapshotReverted failure leaves the revert path unblocked", async () => {
   const fx = await makeFixture();
   try {
