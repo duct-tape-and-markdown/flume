@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "SMOKE-INSTALL-CHAIN-LOAD-STEP-REFUSES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "drive the scaffolded fixture through a verb that refuses on chain load"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "the agreement case, reading the fixture's verb out of the script"
+        }
+      ]
+    },
+    "summary": "`flume status` exits 0 over a chain that never loaded, so the install smoke's chain-load fixture step cannot fail — drive it through a refusing verb",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "The smoke run fails when the scaffolded chain is unreachable from where the installed CLI resolves it.",
+    "tests": [
+      "the install smoke's chain-load fixture is verified by a CLI verb that exits non-zero when the chain is absent"
+    ],
+    "notes": "scripts/smoke-install.mjs:170 ends on `shim status`; status takes loadChainForObservation (src/cliChainLoad.ts), best-effort by contract — stderr only, exit unaffected. `flume check` refuses the same load (EX_MOUNT_DEAD, src/cli.ts:594) and exits 0 on an absent queue, so it costs one step. This is also what makes the script's `.flume` literal (:166-169) loud — see the plan commit body."
+    }
+]
