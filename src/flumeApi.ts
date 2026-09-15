@@ -38,7 +38,7 @@ import {
 } from "./Dispatcher.js";
 import { readFileAtRef, showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { gitPath, matchesAny, slugify } from "./paths.js";
+import { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 import {
   composePendingList,
@@ -135,6 +135,20 @@ export interface FlumeApi {
   gitPath: typeof gitPath;
   priorAttemptPath: typeof priorAttemptPath;
   priorAttemptsDir: typeof priorAttemptsDir;
+  /**
+   * Where the graceful-stop flag lives under a state root (spec/loop.md
+   * "Graceful stop — the stop flag") — the engine's own rule, the one
+   * `flume stop` writes, `flume loop` refuses to start over, and the
+   * supervisor ends a live run on.
+   *
+   * A chain that wants a tick to end the run — a `handoff` that saw
+   * something it will not build past, a gate that will not let the next wave
+   * start — plants the flag through this rather than joining a filename it
+   * spelled itself: a chain-local `join(flumeDir, "stop")` is a second copy
+   * of a name only this module owns, and a run that never stops is how it
+   * reports its own drift.
+   */
+  stopFlagPath: typeof stopFlagPath;
   /** Read-only git helpers a chain gate may need. */
   git: {
     showNameOnly: typeof showNameOnly;
@@ -212,6 +226,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     gitPath,
     priorAttemptPath,
     priorAttemptsDir,
+    stopFlagPath,
     git: { showNameOnly, readFileAtRef, readWorktreeRegistry },
     CjsContextLoadError,
     PendingParseFailure,

@@ -79,7 +79,7 @@ import {
   PriorAttemptStore,
   type PriorAttemptRef,
 } from "./priorAttempts.js";
-import { parsePending } from "./PendingSchema.js";
+import { entryExtensionPayload, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
 /**
@@ -3122,6 +3122,10 @@ export class Dispatcher {
       const merge = mergeOutcomes.find((m) => m.entryTag === r.entry.tag);
       return {
         tag: r.entry.tag,
+        // The entry's chain-declared fields, off the entry the wave already
+        // holds — split by the engine's own core-field vocabulary, never by
+        // a consumer diffing against a list it spelled itself.
+        extension: entryExtensionPayload(r.entry),
         committed: r.committed,
         shipped: shipped.some((s) => s.tag === r.entry.tag),
         reverted: mergeReverted.some((e) => e.tag === r.entry.tag),

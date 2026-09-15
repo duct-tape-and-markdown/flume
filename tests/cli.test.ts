@@ -20,6 +20,12 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
+// Barrel-export pin (engineering.md "An export earns its consumer"):
+// stopFlagPath is the chain-facing rule for `<flumeDir>/stop`, reachable
+// from the package entry point as well as off the FlumeApi object. This
+// import fails tsc if it drops from src/index.ts.
+import { stopFlagPath as indexStopFlagPath } from "../src/index.ts";
 import { Baton } from "../src/Baton.ts";
 import { computeStateRootRel, EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG, loadChainModule } from "../src/Dispatcher.ts";
 import { pendingGate } from "../src/builtinGates.ts";
@@ -1426,6 +1432,43 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
     },
     30_000,
   );
+
+  /**
+   * The rule a chain reads the flag through, driven through the real writer:
+   * `flume stop` runs as a subprocess and the API's path is what locates
+   * what it wrote (`.claude/rules/engineering.md`, *A seam gate reads what
+   * the real writer wrote*). A chain planting or clearing the flag — a
+   * `handoff` that will not let the run continue, a gate that ends the wave
+   * — otherwise spells `join(flumeDir, "stop")` itself, a second copy of a
+   * name only `src/paths.ts` owns.
+   */
+  it("FlumeApi carries the stop-flag path rule", async () => {
+    const dir = await mkFixtureRoot("flume-api-stop-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      const api = buildFlumeApi({
+        repoRoot: dir,
+        configDir: flumeDir,
+        flumeDir,
+      });
+      const viaApi = api.stopFlagPath(flumeDir);
+      // The exported rule itself, not a lookalike composed beside it.
+      expect(api.stopFlagPath).toBe(indexStopFlagPath);
+
+      // Non-vacuity: nothing is at that path until the real writer runs, so
+      // the assertion below cannot pass over a pre-existing file.
+      expect(existsSync(viaApi)).toBe(false);
+
+      const r = await runCli(dir, ["stop"]);
+      expect(r.code).toBe(0);
+      // The writer's own statement names the same path the API composes, and
+      // the file the writer left is at it.
+      expect(r.out).toContain(viaApi);
+      expect(existsSync(viaApi)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("flume stop --help short-circuits before writing the flag", async () => {
     const dir = await mkFixtureRoot("flume-stop-help-");

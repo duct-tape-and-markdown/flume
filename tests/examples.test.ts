@@ -485,6 +485,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
         entries: [
           {
             tag: "PICKABLE",
+            extension: {},
             committed: true,
             shipped: false,
             reverted: false,
@@ -502,6 +503,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
         entries: [
           {
             tag: "PICKABLE",
+            extension: {},
             committed: true,
             shipped: false,
             reverted: false,

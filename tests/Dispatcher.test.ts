@@ -6,6 +6,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 // Partial mock: everything passes through to the real tsImport except in the
 // one test below that simulates tsx 4.23's ERR_MODULE_NOT_FOUND/namespace-
@@ -3308,6 +3309,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     expect([...byTag.keys()].sort()).toEqual(["OK-A", "OK-B"]);
     expect(byTag.get("OK-A")).toEqual({
       tag: "OK-A",
+      extension: {},
       committed: true,
       shipped: true,
       reverted: false,
@@ -3315,6 +3317,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     });
     expect(byTag.get("OK-B")).toEqual({
       tag: "OK-B",
+      extension: {},
       committed: true,
       shipped: true,
       reverted: false,
@@ -10432,6 +10435,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     const byTag = new Map(entries!.map((e) => [e.tag, e]));
     expect(byTag.get("SHIPS")).toEqual({
       tag: "SHIPS",
+      extension: {},
       committed: true,
       shipped: true,
       reverted: false,
@@ -10441,6 +10445,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     // it carries no merge outcome at all — absence is "nothing to merge".
     expect(byTag.get("BAILS")).toEqual({
       tag: "BAILS",
+      extension: {},
       committed: false,
       shipped: false,
       reverted: false,
@@ -10453,7 +10458,12 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
   // both — which is exactly why a `handoff` routing a park had to read the
   // verdict log to avoid waking plan on a conflict. Each test pins that
   // collapse alongside the outcome that resolves it.
-  const COLLAPSED = { committed: true, shipped: false, reverted: false };
+  const COLLAPSED = {
+    extension: {},
+    committed: true,
+    shipped: false,
+    reverted: false,
+  };
 
   it("TickResult.entries reports the merge outcome of an entry whose cherry-pick conflicted", async () => {
     // Same conflict vector as the cherry-pick-conflict suite above: disjoint
@@ -10565,6 +10575,85 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     expect(
       outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "PARKED")?.outcome,
     ).toBe("not-shipped");
+  }, 20_000);
+
+  it("a fanout wave reports the shipped entry's payload beside its tag", async () => {
+    // A shipped entry leaves the queue, so `pendingAfter`/`pickableAfter` no
+    // longer carry what it declared. Without the payload on its own record, a
+    // `handoff` routing on a chain-declared field has nowhere to read it but
+    // `pending.json` at `baseSha`, re-parsed with the chain's own extension.
+    const shipsPer = { path: "spec/loop.md", section: "Graceful stop" };
+    const bailsPer = { path: "spec/chain.md", section: "What a hook receives" };
+    await writePending(fx.repo, [
+      { ...makeEntry("SHIPS-RICH", ["src/a.ts"]), per: shipsPer, risk: "high" },
+      { ...makeEntry("BAILS-RICH", ["src/b.ts"]), per: bailsPer, risk: "low" },
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      entryExtension: {
+        per: {
+          schema: z.strictObject({
+            path: z.string().min(1),
+            section: z.string().min(1),
+          }),
+          hint: `{ "path": "...", "section": "..." }`,
+        },
+        risk: { schema: z.string().min(1), hint: `"high|low"` },
+      },
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ships-rich": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "a\n", "build(SHIPS-RICH): ship"),
+        // Clean exit: the sibling's payload rides its record too, so the
+        // claim is not "the shipped one happens to be the only record".
+        "bails-rich": async () => {},
+      }),
+      log: silent,
+      maxParallel: 4,
+    }).tick();
+
+    // Non-vacuity, twice over: the entry really shipped, and having shipped it
+    // is gone from every other surface this result carries.
+    expect(outcome.result?.shippedTags).toEqual(["SHIPS-RICH"]);
+    expect(
+      outcome.result?.pendingAfter.find((e) => e.tag === "SHIPS-RICH"),
+    ).toBeUndefined();
+
+    const byTag = new Map(
+      (outcome.result?.entries ?? []).map((e) => [e.tag, e]),
+    );
+    expect([...byTag.keys()].sort()).toEqual(["BAILS-RICH", "SHIPS-RICH"]);
+
+    const ships = byTag.get("SHIPS-RICH")!;
+    expect(ships.shipped).toBe(true);
+    // The payload, beside the tag: the chain-declared fields as parsed —
+    // `per` as the object the chain's schema accepted, not its source text.
+    expect(ships.extension).toEqual({ per: shipsPer, risk: "high" });
+    // Chain-declared fields only. A core field leaking in would make a
+    // consumer's `Object.keys(extension)` a different set than the one it
+    // declared.
+    expect(Object.keys(ships.extension).sort()).toEqual(["per", "risk"]);
+
+    // The sibling that never committed carries its own payload, not the
+    // shipped one's.
+    expect(byTag.get("BAILS-RICH")!.extension).toEqual({
+      per: bailsPer,
+      risk: "low",
+    });
   }, 20_000);
 });
 

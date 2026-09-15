@@ -67,6 +67,7 @@ const outcome = (
   overrides: Partial<FanoutEntryOutcome> = {},
 ): FanoutEntryOutcome => ({
   tag: "SOME-ENTRY",
+  extension: {},
   committed: true,
   shipped: true,
   reverted: false,

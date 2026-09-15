@@ -151,6 +151,26 @@ export interface TickContext {
 export interface FanoutEntryOutcome {
   /** The entry's tag, as it appears in `pending.json`. */
   tag: string;
+  /**
+   * The chain-declared extension fields this entry carried, exactly as the
+   * engine parsed them from `pending.json` — every field
+   * `CORE_ENTRY_FIELDS` (`src/PendingSchema.ts`) does not name. `{}` for a
+   * chain that declared no extension, never absent: the engine holds the
+   * entry for every record here, so "carried no payload" is a fact it can
+   * state rather than an absence a reader must interpret.
+   *
+   * What this adds beyond the tag: a **shipped** entry leaves the queue, so
+   * it is gone from `pendingAfter`/`pickableAfter` and nothing else on the
+   * result carries what it was. A `handoff` routing on the entry's own
+   * declaration — the section it cited, a surface field, a risk flag —
+   * would otherwise re-read `pending.json` at `TickResult.baseSha` and
+   * re-parse it with the chain's own extension, which is the engine's parse
+   * rebuilt by a second hand (spec/chain.md "What a hook receives").
+   *
+   * Values are `unknown` for the same reason they are on `PendingEntry`:
+   * the chain that declared the field knows its shape and narrows locally.
+   */
+  extension: Record<string, unknown>;
   /** This entry's own worktree tick produced a commit that passed every `afterCommit` gate. */
   committed: boolean;
   /** `committed` reached trunk and `phase.shipped` (undeclared counts as shipped) agreed — the entry left the queue. */

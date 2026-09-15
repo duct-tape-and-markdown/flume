@@ -217,6 +217,30 @@ export const CORE_ENTRY_FIELDS: readonly string[] = Object.keys(
 const CORE_FIELDS = new Set(CORE_ENTRY_FIELDS);
 
 /**
+ * The chain-declared half of one parsed entry: every field it carries that
+ * {@link CORE_ENTRY_FIELDS} does not name. `{}` for an entry carrying only
+ * core fields.
+ *
+ * Split by the engine's own vocabulary — the same {@link CORE_FIELDS} set
+ * that refuses a shadowing extension at composition — so what this reports
+ * as payload and what the chain was permitted to declare cannot disagree.
+ * `tag` stays core even when an extension refines it: a refinement adds a
+ * check, never a second value.
+ *
+ * Values stay `unknown`, as they are on {@link PendingEntry}: the chain that
+ * declared the field knows its shape and narrows locally.
+ */
+export function entryExtensionPayload(
+  entry: PendingEntry,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(entry)) {
+    if (!CORE_FIELDS.has(name)) payload[name] = value;
+  }
+  return payload;
+}
+
+/**
  * Reject a duplicate `tag` value within the queue — tag identity must be
  * unique: cli's find-by-tag and Dispatcher's blockedBy/shippedTags lookups key
  * on it, so a duplicate silently resolves to the wrong entry. Every index
