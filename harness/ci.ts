@@ -37,10 +37,11 @@
  * The branch that has runs is the one the repository's own tip sits on, which
  * is also the only tree a liveness predicate can consult — `SliceInputs`
  * carries no working tree — so reading it here is what lets the two readers
- * of one window agree on which runs they are talking about (`windows.ts`).
+ * of one window agree on which runs they are talking about (`ciLane.ts`).
  *
  * This module is the reader alone: how a reading is rendered into a prompt,
- * and which slice that prompt belongs to, are `windows.ts`'s.
+ * and which slice that prompt belongs to, are `ciLane.ts`'s and the inbox
+ * window's beyond it.
  */
 
 import {

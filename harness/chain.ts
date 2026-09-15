@@ -69,7 +69,8 @@ import {
 } from "./prompts.js";
 import { notePath, notesDir, recordDirs } from "./records.js";
 import type { Runner } from "./runner.js";
-import { planSliceWindows, type PlanSliceWindow } from "./windows.js";
+import type { PlanSliceWindow } from "./sliceWindow.js";
+import { planSliceWindows } from "./windows.js";
 
 /**
  * One line per phase, as `flume status` and the dispatcher's log print it.

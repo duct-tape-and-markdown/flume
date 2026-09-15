@@ -123,9 +123,11 @@ export {
 
 export {
   WINDOW_LINE_BUDGET,
-  planSliceWindows,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceInputs,
+  type TickFacts,
   type WindowContext,
-} from "./windows.js";
+} from "./sliceWindow.js";
+
+export { planSliceWindows } from "./windows.js";

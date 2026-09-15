@@ -32,7 +32,8 @@
  * from the tick's `TickContext` and read from the surfaces that own them: the
  * cite through the resolver the `per` gate drives, the note path through
  * `records.ts`. A slice's window is a scan with a liveness predicate on the
- * other end of it, which is `windows.ts`'s subject, not this module's.
+ * other end of it, which is `sliceWindow.ts`'s subject and its windows', not
+ * this module's.
  */
 
 import { readFileSync } from "node:fs";

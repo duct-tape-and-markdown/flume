@@ -1,16 +1,22 @@
 /**
- * The inbox slice's CI lane block (`spec/harness.md`, *CI lanes as a findings
+ * The inbox slice's CI lane leg (`spec/harness.md`, *CI lanes as a findings
  * source*): a declared lane's latest completed run, read through a forge CLI
- * on PATH and rendered under the lane's name.
+ * on PATH, turned into a wake verdict against the lane's stamp and rendered
+ * under the lane's name.
+ *
+ * **The lane module, not the slice around it.** Every case drives
+ * `laneLeg` (`harness/ciLane.ts`) — the module that owns both halves — rather
+ * than the inbox window's rendered arg, so a case names the subject it
+ * asserts. The one case that is about the wiring says so in its title and
+ * drives the window.
  *
  * **The real reader over a real spawn.** Every case here plants an executable
- * named for the forge CLI on PATH and drives the shipped window's own `args`,
- * so the seam under test is the reader's argument vector against a CLI that
- * answers it — not a mocked `execFileSync` pinning this package's idea of what
- * it would have printed (`.claude/rules/engineering.md`, *A seam gate reads
- * what the real writer wrote*). The stub records every invocation, so a case
- * can assert what the forge was asked as well as what the window did with the
- * answer.
+ * named for the forge CLI on PATH, so the seam under test is the reader's
+ * argument vector against a CLI that answers it — not a mocked `execFileSync`
+ * pinning this package's idea of what it would have printed
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The stub records every invocation, so a case can assert what the
+ * forge was asked as well as what the leg did with the answer.
  *
  * The declaration goes through the package's own `parseDeclaration`, and the
  * repository is a real one: the branch the reader filters runs by is the
@@ -32,12 +38,13 @@ import { delimiter, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 
+import { laneLeg, type LaneLeg } from "../harness/ciLane.ts";
 import { INBOX_PHASE } from "../harness/declaration.ts";
 import {
+  WINDOW_LINE_BUDGET,
   parseDeclaration,
   planSliceWindows,
   writePlanState,
-  type PlanSliceWindow,
 } from "../harness/index.ts";
 
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
@@ -91,52 +98,54 @@ const runner = () => ({
 const SECOND_LANE = { name: "posix", workflow: "ci.yml", job: "windows" } as const;
 
 /**
- * The inbox window over a declaration naming {@link LANE}.
- *
- * `budget` is the package's own line budget unless a case names one — the
- * knob the window already carries, so a case can provoke the trim without
- * minting a thousand-line fixture to reach the default.
+ * A declaration naming `lanes`, through the package's own schema — the lanes
+ * a leg reads are the ones a consumer could actually declare.
  *
  * `lanes` is the declared list, one lane unless a case names more — the stub
  * answers by question rather than by workflow, so a second lane is a second
  * full read of the same fixture, which is what a per-lane count needs.
  */
-function inboxWindow(
-  budget?: number,
+const declarationFor = (
   lanes: readonly (typeof LANE | typeof SECOND_LANE)[] = [LANE],
-): PlanSliceWindow {
-  const declaration = parseDeclaration({
+) =>
+  parseDeclaration({
     specLocus: ["spec/**"],
     fence: { build: ["src/**"] },
     runner,
     slices: { enabled: [INBOX_PHASE] },
     ci: [...lanes],
   });
-  const built = planSliceWindows({
-    declaration,
-    repoRoot: repo,
-    ...(budget === undefined ? {} : { budget }),
-  });
-  const window = built.find((candidate) => candidate.name === INBOX_PHASE);
-  if (window === undefined) throw new Error("the inbox slice built no window");
-  return window;
-}
-
-/** The state root the window reads records and the lane stamp from. */
-const stateRoot = (): string => join(repo, ".flume");
-
-/** The inbox window's rendered arguments for this tick. */
-function inboxArgs(budget?: number): Record<string, string> {
-  return inboxWindow(budget).args({ cwd: repo, flumeDir: stateRoot() });
-}
 
 /**
- * Whether the inbox slice's window is open, with nothing on disk to open it:
- * the state root holds no record and the tick reports no prior attempt, so a
- * true verdict is the lane leg's and nothing else's.
+ * The lane leg the inbox window builds for one tick, over that declaration.
+ *
+ * `budget` is the package's own line budget unless a case names one — the
+ * knob the leg already carries, so a case can provoke the trim without
+ * minting a thousand-line fixture to reach the default.
  */
-const inboxLive = (): boolean =>
-  inboxWindow().live({ flumeDir: stateRoot(), pickable: false });
+function lane(
+  budget?: number,
+  lanes: readonly (typeof LANE | typeof SECOND_LANE)[] = [LANE],
+): LaneLeg {
+  return laneLeg({
+    lanes: declarationFor(lanes).ci,
+    repoRoot: repo,
+    budget: budget ?? WINDOW_LINE_BUDGET,
+  });
+}
+
+/** The state root the leg reads the lane stamp from. */
+const stateRoot = (): string => join(repo, ".flume");
+
+/** The lane block this tick renders. */
+const laneBlock = (budget?: number): string => lane(budget).render(stateRoot());
+
+/**
+ * Whether the lane leg reports the inbox slice live. The state root holds no
+ * record and no prior attempt reaches this leg at all, so the verdict is the
+ * lane's and nothing else's.
+ */
+const laneLive = (): boolean => lane().live(stateRoot());
 
 /**
  * A plan state under that root stamping each named lane at a run.
@@ -345,7 +354,7 @@ function loggedLines(rendered: string): string[] {
   return rendered.slice(at + header.length + 1).split("\n");
 }
 
-it("the inbox window renders the declared lane's failing run under its lane name", () => {
+it("the lane block renders the declared lane's failing run under its lane name", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
   plantForge({
     runs: [RUN],
@@ -353,13 +362,7 @@ it("the inbox window renders the declared lane's failing run under its lane name
     log: `pnpm test\n${failure}\n2 failed | 40 passed\n`,
   });
 
-  const args = inboxArgs();
-
-  // The key is the window's own declared data, not text the prompt authored:
-  // the arg map and the keys the phase hands the engine as data are the same
-  // list (`harness/windows.ts`, SLICE_DATA_KEYS).
-  expect(inboxWindow().dataKeys).toContain("CI_LANES");
-  expect(Object.keys(args).sort()).toEqual([...inboxWindow().dataKeys].sort());
+  const rendered = laneBlock();
 
   // Vacuity: the forge was actually asked, and asked for this lane's workflow
   // on the branch git reports for the repository's tip — a render that
@@ -370,7 +373,6 @@ it("the inbox window renders the declared lane's failing run under its lane name
   expect(asked[0]?.join(" ")).toContain("--branch main");
   expect(asked[0]?.join(" ")).toContain("--status completed");
 
-  const rendered = args["CI_LANES"] ?? "";
   expect(rendered).toContain(`lane \`${LANE.name}\``);
   expect(rendered).toContain("FAILING");
   expect(rendered).toContain(String(RUN.databaseId));
@@ -388,10 +390,10 @@ it("the inbox window renders the declared lane's failing run under its lane name
   ).toBe(true);
 }, SPAWN_BUDGET_MS);
 
-it("the inbox window renders a lane whose latest completed run passed as green", () => {
+it("the lane block renders a lane whose latest completed run passed as green", () => {
   plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the same fixture as the failing case up to the job's conclusion,
   // and the forge answered both questions.
@@ -405,10 +407,10 @@ it("the inbox window renders a lane whose latest completed run passed as green",
   expect(calls().some((call) => call.includes("--log-failed"))).toBe(false);
 }, SPAWN_BUDGET_MS);
 
-it("the inbox window renders a lane as unread when no completed run for the tip's branch exists", () => {
+it("the lane block renders a lane as unread when no completed run for the tip's branch exists", () => {
   plantForge({ runs: [] });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the forge was reached and answered — this is an empty listing,
   // not a CLI that never ran.
@@ -429,7 +431,7 @@ it("the inbox window renders a lane as unread when no completed run for the tip'
  * host.
  */
 it.runIf(process.platform !== "win32")(
-  "the inbox window renders a lane as unread when the forge CLI is absent",
+  "the lane block renders a lane as unread when the forge CLI is absent",
   () => {
     linkGit();
     process.env["PATH"] = binDir;
@@ -443,7 +445,7 @@ it.runIf(process.platform !== "win32")(
       "git version",
     );
 
-    const rendered = inboxArgs()["CI_LANES"] ?? "";
+    const rendered = laneBlock();
     expect(rendered).toContain(`lane \`${LANE.name}\``);
     expect(rendered).toContain("UNREAD");
     expect(rendered).toContain("gh");
@@ -454,10 +456,10 @@ it.runIf(process.platform !== "win32")(
   SPAWN_BUDGET_MS,
 );
 
-it("the inbox window renders a lane as unread when the declared job is not in the run", () => {
+it("the lane block renders a lane as unread when the declared job is not in the run", () => {
   plantForge({ runs: [RUN], jobs: [{ ...job("success"), name: "posix" }] });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   expect(calls().length).toBe(2);
   expect(rendered).toContain("UNREAD");
@@ -466,7 +468,7 @@ it("the inbox window renders a lane as unread when the declared job is not in th
   expect(rendered).not.toContain("GREEN");
 }, SPAWN_BUDGET_MS);
 
-it("the inbox window renders a lane as unread when the forge CLI refuses", () => {
+it("the lane block renders a lane as unread when the forge CLI refuses", () => {
   // The launcher this plants stays; its script is replaced by a CLI that
   // refuses every question the way an unauthenticated one does — a non-zero
   // exit carrying its reason on stderr.
@@ -476,7 +478,7 @@ it("the inbox window renders a lane as unread when the forge CLI refuses", () =>
     `process.stderr.write("gh: could not authenticate to the forge");\nprocess.exit(4);\n`,
   );
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   expect(rendered).toContain("UNREAD");
   expect(rendered).toContain("could not authenticate");
@@ -499,7 +501,7 @@ it("a failing lane's log arrives without the forge's per-line job and step frami
     ].join("\n"),
   });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the forge answered all three questions and the log reached the
   // block — the assertions below are over material, not over an empty string.
@@ -530,7 +532,7 @@ it("a failing lane's log arrives without ANSI escape sequences", () => {
     ].join("\n"),
   });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the coloured lines reached the block, so the ESC assertion below
   // is over a log that really carried them.
@@ -543,7 +545,7 @@ it("a failing lane's log arrives without ANSI escape sequences", () => {
   expect(rendered).not.toContain(ESC);
 }, SPAWN_BUDGET_MS);
 
-it("the inbox window spends a failing lane's line budget on log lines, not the forge's framing", () => {
+it("the lane block spends a failing lane's line budget on log lines, not the forge's framing", () => {
   const titles = Array.from(
     { length: 4 },
     (_, index) => `FAIL tests/case${index}.test.ts > case ${index} is refused`,
@@ -563,7 +565,7 @@ it("the inbox window spends a failing lane's line budget on log lines, not the f
   const budget = 8;
   expect(log.split("\n").length).toBeGreaterThan(budget);
 
-  const rendered = inboxArgs(budget)["CI_LANES"] ?? "";
+  const rendered = laneBlock(budget);
 
   expect(rendered).toContain("FAILING");
   expect(loggedLines(rendered)).toEqual(
@@ -583,7 +585,7 @@ it("the shed strips the forge's frame from a log line the job name frames withou
     log: [unstamped(failure), unstamped(columns), ""].join("\n"),
   });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the forge answered all three questions and the log reached the
   // block, so the lines asserted below are over material.
@@ -615,20 +617,20 @@ it("the shed drops a log line the forge framed around an empty message", () => {
   const budget = 2;
   expect(log.split("\n").length).toBeGreaterThan(budget);
 
-  const rendered = inboxArgs(budget)["CI_LANES"] ?? "";
+  const rendered = laneBlock(budget);
 
   expect(rendered).toContain("FAILING");
   expect(loggedLines(rendered)).toEqual(titles);
   expect(rendered).not.toContain("above this tick's budget");
 }, SPAWN_BUDGET_MS);
 
-it("the inbox slice is live when a declared lane's latest completed run failed past the lane's stamp", () => {
+it("the lane leg reports live when a declared lane's latest completed run failed past the lane's stamp", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")] });
   // Stamped at an older run of the same lane, so the verdict below turns on
   // the comparison rather than on a map that holds nothing for this lane.
   stampLanes({ [LANE.name]: "17420000000" });
 
-  expect(inboxLive()).toBe(true);
+  expect(laneLive()).toBe(true);
 
   // Vacuity: the forge really was asked for this lane on the repository's
   // branch — a leg that never spawned would be answering from nothing.
@@ -645,38 +647,38 @@ it("the inbox slice is live when a declared lane's latest completed run failed p
   // A lane the state has never been stamped for is undrained too — the
   // absent map is a state, not a repair (`harness/planState.ts`).
   rmSync(join(stateRoot(), "plan"), { recursive: true, force: true });
-  expect(inboxLive()).toBe(true);
+  expect(laneLive()).toBe(true);
 }, SPAWN_BUDGET_MS);
 
-it("the inbox slice is not live when the lane's failing run is the one already stamped", () => {
+it("the lane leg does not report live when the lane's failing run is the one already stamped", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")] });
   stampLanes({ [LANE.name]: String(RUN.databaseId) });
 
-  expect(inboxLive()).toBe(false);
+  expect(laneLive()).toBe(false);
 
   // Vacuity twice: the forge was asked, and the lane it answered for is red —
   // the stamp is what closed the window, not an unread or green lane.
   expect(calls().length).toBeGreaterThan(0);
-  expect(inboxArgs()["CI_LANES"] ?? "").toContain("FAILING");
+  expect(laneBlock()).toContain("FAILING");
 
   // And the stamp alone: the same red run under a different stamp re-opens it.
   stampLanes({ [LANE.name]: "17420000000" });
-  expect(inboxLive()).toBe(true);
+  expect(laneLive()).toBe(true);
 }, SPAWN_BUDGET_MS);
 
-it("the inbox slice is not live when the lane's latest completed run passed", () => {
+it("the lane leg does not report live when the lane's latest completed run passed", () => {
   plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
   stampLanes({});
 
-  expect(inboxLive()).toBe(false);
+  expect(laneLive()).toBe(false);
 
   // Vacuity: the forge answered both of the leg's questions, and answered
   // green — a green run needs no drain, so no stamp is required to close it.
   expect(calls().length).toBe(2);
-  expect(inboxArgs()["CI_LANES"] ?? "").toContain("GREEN");
+  expect(laneBlock()).toContain("GREEN");
 }, SPAWN_BUDGET_MS);
 
-it("the inbox slice is not live when the forge CLI cannot read the lane", () => {
+it("the lane leg does not report live when the forge CLI cannot read the lane", () => {
   // The launcher plantForge leaves stays; its script becomes a CLI that
   // records the question and then refuses it, the way an unauthenticated one
   // does — so the call log proves the leg reached the forge.
@@ -693,12 +695,12 @@ it("the inbox slice is not live when the forge CLI cannot read the lane", () => 
   );
   stampLanes({});
 
-  expect(inboxLive()).toBe(false);
+  expect(laneLive()).toBe(false);
 
   // Vacuity: the forge was asked and refused, and the lane renders unread —
   // unread is live for nothing, and is not green.
   expect(calls().length).toBeGreaterThan(0);
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
   expect(rendered).toContain("UNREAD");
   expect(rendered).not.toContain("GREEN");
 }, SPAWN_BUDGET_MS);
@@ -709,13 +711,13 @@ it("the inbox slice is not live when the forge CLI cannot read the lane", () => 
  */
 const FAILING_LOG = "FAIL tests/paths.test.ts > a long path is refused by name\n";
 
-it("the inbox window names the lane whose undrained failing run made the slice live", () => {
+it("the lane block names the lane whose undrained failing run made the slice live", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
   // Stamped at an older run of the same lane, so this lane is undrained by the
   // comparison rather than by a map holding nothing for it.
   stampLanes({ [LANE.name]: "17420000000" });
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity: the forge answered all three questions, so what is asserted below
   // is a reading of a real red lane and not an empty string.
@@ -738,9 +740,9 @@ it("a lane woken by a run whose log the forge refuses renders unread over that r
   // Vacuity: this lane really is what makes the slice live — nothing else on
   // this disk opens it — so the block below renders over a wake and not over
   // an unread nobody was woken by.
-  expect(inboxLive()).toBe(true);
+  expect(laneLive()).toBe(true);
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
 
   // Vacuity again: the log really was asked for, and really was refused.
   expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
@@ -762,9 +764,9 @@ it("the unread block over the run a lane woke on names the stamp that closes tha
 
   // Vacuity: this lane is what makes the slice live, so what is asserted below
   // is the directive on a wake and not on an unread nobody was woken by.
-  expect(inboxLive()).toBe(true);
+  expect(laneLive()).toBe(true);
 
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
   expect(rendered).toContain("UNREAD");
   expect(rendered).toContain(LOG_REFUSAL);
 
@@ -773,27 +775,27 @@ it("the unread block over the run a lane woke on names the stamp that closes tha
   expect(rendered).toContain(`drainedRuns.${LANE.name}\` at \`${RUN.databaseId}\``);
 }, SPAWN_BUDGET_MS);
 
-it("a lane stamped at the run whose log the forge refused no longer makes the inbox slice live", () => {
+it("a lane stamped at the run whose log the forge refused no longer reports live", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
 
   // Vacuity: unstamped, this is a live lane whose log the forge really did
   // refuse — so the verdict below is the stamp's doing, not an unread the
   // liveness leg was never going to open for.
   stampLanes({});
-  expect(inboxLive()).toBe(true);
-  const unstamped = inboxArgs()["CI_LANES"] ?? "";
+  expect(laneLive()).toBe(true);
+  const unstamped = laneBlock();
   expect(unstamped).toContain("UNREAD");
   expect(unstamped).toContain(LOG_REFUSAL);
 
   stampLanes({ [LANE.name]: String(RUN.databaseId) });
-  expect(inboxLive()).toBe(false);
+  expect(laneLive()).toBe(false);
 }, SPAWN_BUDGET_MS);
 
 it("a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
   stampLanes({ [LANE.name]: String(RUN.databaseId) });
 
-  const stamped = inboxArgs()["CI_LANES"] ?? "";
+  const stamped = laneBlock();
   expect(stamped).toContain("FAILING");
   expect(stamped).not.toContain("Woke this slice");
   expect(stamped).toContain("Not what woke this slice");
@@ -801,7 +803,7 @@ it("a failing lane already stamped at its latest run renders without the wake ma
   // Vacuity: the marker exists at all, and the stamp alone is what withheld
   // it — the same red run under an older stamp carries it.
   stampLanes({ [LANE.name]: "17420000000" });
-  const unstamped = inboxArgs()["CI_LANES"] ?? "";
+  const unstamped = laneBlock();
   expect(unstamped).toContain("FAILING");
   expect(unstamped).toContain("Woke this slice");
 }, SPAWN_BUDGET_MS);
@@ -810,17 +812,19 @@ it("one tick's liveness leg and render ask the forge once per lane between them"
   plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
   stampLanes({});
 
-  // One window object is one tick: the chain factory builds the windows once
-  // and each tick is a fresh child (`harness/chain.ts`), so the two legs below
-  // are the two readers of a single tick's window.
+  // One lane leg is one tick: the chain factory builds the windows once and
+  // each tick is a fresh child (`harness/chain.ts`), so the two calls below
+  // are the two readers of a single tick's leg.
   const lanes = [LANE, SECOND_LANE];
-  const built = inboxWindow(undefined, lanes);
-  expect(built.live({ flumeDir: stateRoot(), pickable: false })).toBe(true);
-  const rendered = built.args({ cwd: repo, flumeDir: stateRoot() })["CI_LANES"] ?? "";
+  const leg = lane(undefined, lanes);
+  expect(leg.live(stateRoot())).toBe(true);
+  const rendered = leg.render(stateRoot());
 
   // Vacuity: both declared lanes reached the forge and rendered from its
   // answer, so the counts below are over two lanes actually read.
-  for (const lane of lanes) expect(rendered).toContain(`lane \`${lane.name}\``);
+  for (const declared of lanes) {
+    expect(rendered).toContain(`lane \`${declared.name}\``);
+  }
   expect(rendered).toContain("FAILING");
   expect(rendered).not.toContain("UNREAD");
 
@@ -836,6 +840,36 @@ it("one tick's liveness leg and render ask the forge once per lane between them"
   ).toBe(lanes.length);
   expect(count((call) => call.includes("--log-failed"))).toBe(lanes.length);
   expect(asked.length).toBe(3 * lanes.length);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The one case about the wiring rather than about the lane: the slice's window
+ * is where a lane block reaches a prompt, and the block it carries is this
+ * module's subject rendered by the module that owns it (`harness/ciLane.ts`).
+ * Every other case here drives that module directly.
+ */
+it("the inbox window's CI lane block is the lane leg's own render", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  stampLanes({});
+
+  const built = planSliceWindows({
+    declaration: declarationFor(),
+    repoRoot: repo,
+  }).find((candidate) => candidate.name === INBOX_PHASE);
+  if (built === undefined) throw new Error("the inbox slice built no window");
+  const args = built.args({ cwd: repo, flumeDir: stateRoot() });
+
+  // The key is the window's own declared data, not text the prompt authored:
+  // the arg map and the keys the phase hands the engine as data are one list.
+  expect(built.dataKeys).toContain("CI_LANES");
+  expect(Object.keys(args).sort()).toEqual([...built.dataKeys].sort());
+
+  // Vacuity: a real reading of a red lane reached the arg — an empty string or
+  // the no-lanes spelling would satisfy the equality below on nothing.
+  expect(args["CI_LANES"]).toContain(`lane \`${LANE.name}\``);
+  expect(args["CI_LANES"]).toContain("FAILING");
+
+  expect(args["CI_LANES"]).toBe(laneBlock());
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -880,7 +914,7 @@ it("every lane-reader case reads its planted forge stub, with the host's own for
   // And the reading really went through it: the stub answered all three
   // questions, and the lane renders from its answer on the branch git — still
   // reachable — named for the tip.
-  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  const rendered = laneBlock();
   expect(calls().length).toBe(3);
   expect(calls()[0]?.join(" ")).toContain("--branch main");
   expect(rendered).toContain("FAILING");
@@ -896,7 +930,7 @@ it("every lane-reader case reads its planted forge stub, with the host's own for
  * declares a host for.
  */
 it.runIf(process.platform !== "win32")(
-  "the inbox window names the tip's branch when the forge filter took git's own directory",
+  "the lane block names the tip's branch when the forge filter took git's own directory",
   () => {
     const mixed = stageHostForge();
     symlinkSync(String(onPath("git", originalPath ?? "")), join(mixed, "git"));
@@ -911,7 +945,7 @@ it.runIf(process.platform !== "win32")(
 
     expect((process.env["PATH"] ?? "").split(delimiter)).toEqual([binDir]);
 
-    const rendered = inboxArgs()["CI_LANES"] ?? "";
+    const rendered = laneBlock();
     expect(calls().length).toBe(3);
     expect(calls()[0]?.join(" ")).toContain("--branch main");
     expect(rendered).toContain("FAILING");

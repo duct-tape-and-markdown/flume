@@ -249,7 +249,7 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  * record's length is a shape rule on a prose channel, so it refuses the
  * prose and not the code it rode in with: an over-cap record ships with its
  * entry and the drain that reads it names the overrun
- * (`renderRecords`, `harness/windows.ts`).
+ * (`renderRecords`, `harness/inboxWindow.ts`).
  *
  * The layout itself is composed from `records.ts`, never re-spelled: a
  * directory renamed there moves this gate with it rather than leaving it

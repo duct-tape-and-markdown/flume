@@ -1,0 +1,160 @@
+/**
+ * The window a plan-state cursor opens: the commits past it, or the one
+ * spelled reason there are none to read.
+ *
+ * The derive and sweep slices differ only in which cursor they are drawn past,
+ * which globs they are drawn over, and what they make of the commits they get
+ * — so the three states a cursor can be in are decided once here rather than
+ * twice beside them (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * **The cursors are fields, never prose.** `derivedThrough` and `sweptThrough`
+ * arrive through {@link readPlanState}; nothing here regexes a sha out of a
+ * narrative document (`spec/harness.md`, *Plan state as declared state*).
+ *
+ * **A range that cannot be read refuses, in the window itself.** A state root
+ * with no artifact yet, a cursor naming no commit, or any git failure under
+ * the render, each resolves to material the woken slice is handed rather than
+ * to a throw or to an empty delta — an empty delta would advance a cursor over
+ * commits nobody read (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * What a slice does with the commits, and which glob list is its own, belong
+ * to the slice windows that drive this.
+ */
+
+import {
+  commitsPast,
+  filesMatching,
+  resolvesInTree,
+  tipOf,
+  type RangeCommit,
+} from "./gitRange.js";
+import { planStatePath, readPlanState, type PlanState } from "./planState.js";
+import type { WindowContext } from "./sliceWindow.js";
+
+/**
+ * A plan-state field a window is drawn past — read off the artifact's own
+ * shape rather than listed here, so a cursor the schema renames or drops is a
+ * typecheck failure at every window that names it
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ */
+type CursorField = {
+  [K in keyof PlanState]-?: NonNullable<PlanState[K]> extends string ? K : never;
+}[keyof PlanState];
+
+/**
+ * The commits past this window's cursor, handed to `render`, or the refusal
+ * that stands in for them.
+ *
+ * `globs` is what the window looks at, and it is declared rather than assumed:
+ * the bootstrap listing below is drawn from it, and `render` narrows the same
+ * list by the engine's own `matchesAny`. One dialect, so git is never handed a
+ * second reading of the declaration.
+ */
+export function cursorWindow(
+  field: CursorField,
+  globs: string[],
+  ctx: WindowContext,
+  render: (cursor: string, commits: RangeCommit[]) => string,
+): string {
+  return bounded(field, ctx, () => {
+    const state = readPlanState(ctx.flumeDir);
+    if (state === undefined) return bootstrap(field, ctx, globs);
+    const cursor = state[field];
+    if (!resolvesInTree(ctx.cwd, cursor)) {
+      return unresolvedCursor(field, cursor, ctx.flumeDir);
+    }
+    return render(cursor, commitsPast(ctx.cwd, cursor));
+  });
+}
+
+/**
+ * The window a state root with no artifact yet opens over: everything the
+ * globs name, read in full, ending on the tip the cursor is stamped at.
+ *
+ * Absence is the first tick's real state, not a degradation — a consumer
+ * whose state root was just written has no cursor, and the only honest
+ * window over "nothing has been derived" is the whole corpus
+ * (`planState.ts`).
+ *
+ * **The tip is named here, not rediscovered by the tick.** A window that
+ * said "stamp HEAD" would have the stamping tick resolve its own sha, so a
+ * commit landing mid-tick would be stamped over unread
+ * (`.claude/rules/posture-sweep.md`, *The stamp*). The tip is resolved
+ * before the listing rather than after, so anything that lands while this
+ * reads is at worst listed and not yet stamped — re-opened next tick, never
+ * skipped.
+ */
+function bootstrap(
+  field: CursorField,
+  ctx: WindowContext,
+  globs: string[],
+): string {
+  const tip = tipOf(ctx.cwd);
+  return [
+    `(bootstrap: no \`${field}\` yet — the whole of the declared paths is ` +
+      `the window; read every file below)`,
+    ...filesMatching(ctx.cwd, globs),
+    "",
+    `=== this window was drawn from tip ${tip}; the tick that closes it ` +
+      `stamps \`${field}\` at exactly that sha ===`,
+  ].join("\n");
+}
+
+/**
+ * The window an unreadable range opens over: nothing, loudly.
+ *
+ * Rendered into the prompt rather than thrown out of it, and that is
+ * deliberate. A throw here kills the tick before any agent runs — the engine
+ * invokes `promptArgs` uncaught — so the tick ends with no verdict and the
+ * next one is woken over the same unreadable tree with nothing said. The
+ * refusal instead reaches the woken slice, naming what could not be read and
+ * forbidding any cursor advance in the meantime
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+const refusal = (cause: string, repair: string): string =>
+  `REFUSE: ${cause}, so this window cannot be computed. Process nothing and ` +
+  `advance no cursor this tick; ${repair}`;
+
+/** The refusal a cursor that names no commit in this tree renders. */
+const unresolvedCursor = (
+  field: CursorField,
+  cursor: string,
+  flumeDir: string,
+): string =>
+  refusal(
+    `\`${field}\` is \`${cursor}\`, which does not resolve to a commit in ` +
+      `this tick's tree`,
+    `repair \`${field}\` in ${planStatePath(flumeDir)} and say in the ` +
+      `commit body what it was and what you set it to.`,
+  );
+
+/**
+ * The bound `touchedPast`'s fail-open already promises (`gitRange.ts`): every
+ * way a render reads the tree — the bootstrap listing, the range scan, a
+ * commit's diff, the retired-claim diff — arrives here as the named refusal
+ * rather than as a throw out of `promptArgs`. Not git's failures alone,
+ * because a refusal that classified what it caught would be guessing at a
+ * cause it was never told; the failure's own text is carried instead.
+ *
+ * The cursor is untouched by a failure this side of the render, so the
+ * window re-opens over the same range next tick; the tick that was woken
+ * says what it saw instead of dying silently.
+ */
+function bounded(
+  field: CursorField,
+  ctx: WindowContext,
+  render: () => string,
+): string {
+  try {
+    return render();
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    return refusal(
+      `the \`${field}\` window could not be read: ${text.trim()}`,
+      `say in the commit body what failed; \`${field}\` in ` +
+        `${planStatePath(ctx.flumeDir)} is untouched, so the window re-opens ` +
+        `over the same range next tick.`,
+    );
+  }
+}

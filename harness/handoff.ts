@@ -107,7 +107,7 @@ export interface HandoffSlice {
  * Exported because the same question is asked of a second evidence: this
  * table reads a fate the engine reported on *this* tick's result, while the
  * inbox slice's window reads a prior-attempt record still standing on disk
- * from an earlier one (`windows.ts`). One classification, two evidences — a
+ * from an earlier one (`inboxWindow.ts`). One classification, two evidences — a
  * copy beside the other reader is how a mode comes to route to the inbox
  * from a `TickResult` and nowhere from a record
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
@@ -136,7 +136,7 @@ export const PLAN_RESOLVES_NO_COMMIT: Record<NoCommitMode, boolean> = {
  * Exported for the same reason, and for the same second evidence: the two
  * fates a `PriorAttempt` can carry — `not-shipped` and `tip-moved` — are the
  * ones the inbox slice's window reads off a record still standing on disk
- * from an earlier run (`windows.ts`). It composes its classification from
+ * from an earlier run (`inboxWindow.ts`). It composes its classification from
  * this table rather than restating either verdict, so the fate a build tick
  * routes on and the fate a record routes on cannot come apart
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).

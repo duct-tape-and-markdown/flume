@@ -49,7 +49,7 @@ const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
  * yet (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
  * Exported for the sibling wrappers that spawn their own git —
- * `src/job.ts`'s porcelain wrapper and `harness/windows.ts`'s window reader
+ * `src/job.ts`'s porcelain wrapper and `harness/gitRange.ts`'s window reader
  * — so the three surfaces cannot disagree about what a pathspec means.
  */
 export function literalPathspecEnv(): NodeJS.ProcessEnv {
@@ -160,7 +160,7 @@ export async function softResetTo(cwd: string, sha: string): Promise<void> {
  * path yields one, and a commit touching nothing yields only that.
  *
  * Exported for the sibling readers that spawn their own git —
- * `harness/windows.ts` reads `log --name-only -z` and `ls-files -z` through
+ * `harness/gitRange.ts` reads `log --name-only -z` and `ls-files -z` through
  * this same decode — so no surface grows a second idea of what git named
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
  * listing verb is the caller's; the decode is not.
