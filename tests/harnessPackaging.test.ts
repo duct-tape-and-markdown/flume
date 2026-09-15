@@ -29,7 +29,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import * as harnessSource from "../harness/index.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
-import { protocolTemplatePath } from "../harness/init.ts";
+import { harnessInit, protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
 import {
@@ -184,6 +184,45 @@ function harnessVerbTokens(body: string): string[] {
     }
   }
   return named;
+}
+
+/**
+ * Whether a passage names `path` in code voice — a file a page points a
+ * reader at is a path they will look for on disk, and prose that merely
+ * gestures at one ("the declaration") is not that. Containment rather than
+ * span equality, so a bullet naming two files in one span still counts;
+ * a path no chunk carries is named nowhere.
+ */
+function namesPath(passage: string, path: string): boolean {
+  return codeVoice(passage).some((chunk) => chunk.includes(path));
+}
+
+/**
+ * The bullet list a section's first fenced block is followed by, or the
+ * empty string — for the Quickstart, what running the adoption command
+ * leaves behind.
+ *
+ * Addressed by position rather than by the sentence that introduces it: the
+ * neighbouring case already pins that first block to the adoption verb the
+ * bin dispatches, so "the list under the command" is a handle no rewording
+ * of the lead-in breaks. Scoped to the list because the section runs on into
+ * its `###` engine-level subsection, which names some of the same files for
+ * reasons of its own — a claim read over the whole section would hold with
+ * the list's bullet gone.
+ *
+ * A list runs from its first `- ` line through the last bullet or indented
+ * continuation, so a wrapped bullet stays whole and the paragraph after the
+ * list is out.
+ */
+function listUnderFirstBlock(section: string): string {
+  const fence = /```[^\n]*\n[\s\S]*?```/.exec(section);
+  if (fence === null) return "";
+  const lines = section.slice(fence.index + fence[0].length).split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith("- "));
+  if (start === -1) return "";
+  let end = start + 1;
+  while (end < lines.length && /^(- |\s+\S)/.test(lines[end] ?? "")) end += 1;
+  return lines.slice(start, end).join("\n");
 }
 
 /** The body of a markdown section's first shell block, or the empty string. */
@@ -697,6 +736,52 @@ it("the README quickstart names the adoption verb the flume-harness bin dispatch
   expect(opener.trim().length).toBeGreaterThan(0);
   expect(verbs.some((verb) => opener.includes(`flume-harness ${verb}`))).toBe(true);
 }, SPAWN_BUDGET_MS);
+
+/**
+ * The enumerable half of that same paragraph. The Quickstart names the verb
+ * above and then lists what running it leaves in the repository — a landing
+ * page a consumer reads before they have anything to compare it against, and
+ * the list they will look for on disk once the verb has run.
+ *
+ * An agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*): the writer is `harnessInit` over a real empty
+ * repository, and the set is the `written` list it reports — the same fact a
+ * consumer commits their adoption from (`tests/harnessInit.test.ts`,
+ * *flume-harness init seeds an empty queue in the state root*). A file added
+ * to the write set, or renamed in it, reds here rather than leaving the front
+ * door listing a file init no longer writes. The default state root is the
+ * one under test because it is the root the README's paths are spelled in.
+ *
+ * One direction only, and deliberately: what the page should *say* about each
+ * file — which are the consumer's to edit, which are not — is the human's,
+ * and the clauses beside the list (the ignore lines, the manifest line, the
+ * second-`init` refusal) are prose no writer enumerates. What is pinned is
+ * that every file init writes is named at all.
+ */
+it("the README adoption section names every file flume-harness init writes", async () => {
+  const adopt = join(scratch, "readme-adoption");
+  await mkdir(adopt, { recursive: true });
+  const { written } = await harnessInit({ repoRoot: adopt });
+
+  // Non-vacuity, both sides: an init reporting nothing, or a list that parsed
+  // to nothing, would leave the loop below judging an empty set.
+  expect(written.length).toBeGreaterThan(0);
+  const quickstart = await quickstartSection();
+  expect(quickstart).toContain(QUICKSTART_HEADING);
+  const adoption = listUnderFirstBlock(quickstart);
+  expect(adoption.split("\n").filter((line) => line.startsWith("- ")).length).toBeGreaterThan(0);
+
+  // The scan's own detection, before the verdict: a path this adoption did
+  // not write is one the list does not name, so a matcher that answered
+  // `true` for everything cannot pass for agreement.
+  const outside = `${written[0]}.backup`;
+  expect(written).not.toContain(outside);
+  expect(namesPath(adoption, outside)).toBe(false);
+
+  for (const path of written) {
+    expect({ path, named: namesPath(adoption, path) }).toEqual({ path, named: true });
+  }
+});
 
 /**
  * The per-verb contract page, against the bin it describes. The README sends
