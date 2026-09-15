@@ -1,0 +1,3 @@
+# The prior-attempt keyspace collision is ruled in spec (interactive session)
+
+Observed at 0bdce80. *Two prior-attempt keyspaces share one stem and one map key* is answered on option A: the stem is `prior-attempts/<keyspace>/<slug>.json`, `priorAttemptPath` takes the ref, and the hook map is keyed `entry:<slug>` / `phase:<name>` (spec/loop.md, spec/chain.md, spec/pending.md). The engine entry derives; its agreement case writes both refs through the real store and reads them back distinct. Breaking for a consumer that calls `priorAttemptPath(flumeDir, tag)` or reads the map by bare identity — the changelog names both.
