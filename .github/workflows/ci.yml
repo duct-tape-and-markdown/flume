@@ -80,64 +80,22 @@ jobs:
         run: npx --yes @arethetypeswrong/cli@latest --pack . --profile esm-only
 
       - name: Consumer-install smoke
-        run: |
-          set -euo pipefail
-          REPO="$PWD"
-          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
-          npm pack
-          CONSUMER="$RUNNER_TEMP/flume-consumer"
-          rm -rf "$CONSUMER"
-          mkdir -p "$CONSUMER/.flume/prompts"
-          cd "$CONSUMER"
-          npm init -y >/dev/null
-          # ESM consumer context — same rationale as scripts/smoke-install.mjs:
-          # without type:module the chain.ts load fails as CJS before it can
-          # exercise the package's exports map.
-          npm pkg set type=module
-          npm install --no-audit --no-fund --no-save "$REPO/$TARBALL"
-
-          # Realistic consumer chain.ts: bare-specifier type import of the
-          # published package (NOT ../src/ — that's the in-repo dogfood
-          # path). The factory takes `shellGate` from its `api` parameter
-          # rather than importing it as a value (spec/chain.md: "The chain is
-          # a plugin, not a consumer"); `flume check` below loads this file
-          # through tsx in the *refusing* load mode (EX_MOUNT_DEAD on a chain
-          # that does not load), so the step reds unless the installed CLI
-          # reaches the chain at the literal path written here. A verb taking
-          # the best-effort observational load instead (`status`, spec/cli.md:
-          # "Chain-declared extras") reports the failure on stderr and leaves
-          # the exit code alone — the step would answer 0 either way. The verb
-          # is the one scripts/smoke-install.mjs declares; tests/bin.test.ts
-          # pins the agreement.
-          cat > .flume/chain.ts <<'EOF'
-          import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
-
-          const factory: ChainFactory = (api) => {
-            const { shellGate } = api;
-
-            const notes: Phase = {
-              name: "notes",
-              description: "publish-acceptance smoke",
-              promptPath: "prompts/notes.md",
-              concurrency: "singleton",
-              writablePaths: ["notes/**"],
-              gates: [shellGate({ name: "noop", when: "afterCommit", cmd: "true", args: [] })],
-              handoff: () => [],
-            };
-
-            const chain: Chain = { phases: [notes], humanOnly: [] };
-            return { chain };
-          };
-
-          export default factory;
-          EOF
-          printf 'Append a dated line to notes/journal.md.\n' > .flume/prompts/notes.md
-
-          # --no-install: the unscoped `flume` is an unrelated registry package
-          # (§4) — fail loudly rather than silently run the wrong binary.
-          # `check` exits 0 over this consumer's absent queue and non-git
-          # working dir, so the success path stays one step.
-          npx --no-install flume check
+        # The shared script, not a second spelling of it: pack -> install ->
+        # generated shim `--version` -> both `exports` subpaths -> chain-load
+        # fixture driven through a verb that refuses on a chain it cannot
+        # load. This lane used to re-spell those steps inline, which is how
+        # its chain-load verb drifted behind the script's on one side only,
+        # and how it silently dropped the shim `--version` and subpath steps
+        # while still claiming install acceptance under the Windows lane's
+        # name (.claude/rules/engineering.md, "The fix lands at the
+        # mechanism").
+        #
+        # --scratch names the directory and takes ownership of it: the
+        # tarball and installed consumer this run leaves there are the
+        # type-resolution gate's input below. Without the flag (the Windows
+        # lane, `pnpm run smoke:install`) the script picks a temp dir and
+        # removes it.
+        run: node scripts/smoke-install.mjs --scratch "$RUNNER_TEMP/flume-smoke"
 
       - name: Consumer type-resolution gate
         # attw's binding value: can a consumer's TS compiler resolve the
@@ -145,17 +103,23 @@ jobs:
         # because attw@0.18.2 crashes (see the attw step). nodenext + an
         # ESM (.mts) consumer is the strict, faithful resolution mode for
         # this ESM-only package — exercises the exports `types` condition.
-        # Reuses the smoke step's consumer dir and tarball, but must
-        # re-install the tarball AFTER typescript: every `npm install`
-        # reconciles node_modules against package.json, pruning the
-        # --no-save'd package the smoke step left behind.
+        # Reuses the consumer dir and tarball scripts/smoke-install.mjs
+        # left in the --scratch root above, but must re-install the tarball
+        # AFTER typescript: every `npm install` reconciles node_modules
+        # against package.json, pruning the --no-save'd package the smoke
+        # step left behind.
         run: |
           set -euo pipefail
-          REPO="$PWD"
-          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
-          cd "$RUNNER_TEMP/flume-consumer"
+          SCRATCH="$RUNNER_TEMP/flume-smoke"
+          # Read off the scratch rather than re-derived from package.json:
+          # the smoke step's own `npm pack` named this file, and a second
+          # spelling of that name is a copy that can disagree. Two matches
+          # collapse into a path that is no file, so the guard reds.
+          TARBALL="$(ls "$SCRATCH"/*.tgz)"
+          test -f "$TARBALL"
+          cd "$SCRATCH/consumer"
           npm install --no-audit --no-fund -D typescript@5 >/dev/null
-          npm install --no-audit --no-fund --no-save "$REPO/$TARBALL" >/dev/null
+          npm install --no-audit --no-fund --no-save "$TARBALL" >/dev/null
           cat > tsconfig.json <<'EOF'
           {
             "compilerOptions": {

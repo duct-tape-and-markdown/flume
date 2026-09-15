@@ -325,10 +325,9 @@ it("the flume-harness bin is a Node script whose first line is the env-node sheb
 });
 
 /**
- * The chain-load verb, read off `scripts/smoke-install.mjs` — one reader for
- * both cases below, so neither restates the script's constant
- * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*).
+ * The chain-load verb, read off `scripts/smoke-install.mjs` rather than
+ * restated beside it (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*).
  */
 async function declaredChainLoadVerb(): Promise<string> {
   const scriptPath = fileURLToPath(new URL("../scripts/smoke-install.mjs", import.meta.url));
@@ -380,46 +379,72 @@ it("the install smoke's chain-load fixture is verified by a CLI verb that exits 
 }, 30_000);
 
 /**
- * ci.yml's "Consumer-install smoke" runs the same exercise from the CI side:
- * install the packed tarball into a scratch consumer, write a `.flume/chain.ts`
- * at a literal path, then drive the installed CLI at it. It carries the same
- * vacuity risk — a verb that proceeds over a chain it could not load answers 0
- * whether the CLI reached that path or not — and the risk is live in both
- * places independently, because a `run:` block cannot import the script's
- * constant.
+ * ci.yml's "Consumer-install smoke" used to re-spell the script's steps
+ * inline as a shell heredoc, and the two sides drifted exactly as a second
+ * spelling does: the POSIX copy fell behind on the chain-load verb and never
+ * carried the shim `--version` or `exports`-subpath steps at all, while
+ * passing under the same name as the Windows lane's real one.
  *
- * So the second copy is bounded rather than deleted: the verb the CI step
- * actually invokes is compared against the one the script declares, and a
- * change to either side alone reds this. The refusal itself is the case above.
+ * The step is now the script, so the drift has nowhere to live — and this
+ * case is what holds it there. It reads the step's body out of the workflow
+ * and refuses anything but a single invocation of `scripts/smoke-install.mjs`
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*): a
+ * re-inlined `npm pack`, a second chain heredoc, or a stray `npx flume <verb>`
+ * is a command this case does not allow. It also holds the handoff the
+ * collapse created — the `--scratch` root the smoke is given is the one the
+ * type-resolution gate reads its consumer dir and tarball out of.
  */
-it("the CI consumer-install smoke drives its chain-load fixture through the verb scripts/smoke-install.mjs declares", async () => {
-  const verb = await declaredChainLoadVerb();
-
+it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-spelling its steps", async () => {
   const workflowPath = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
   const lines = (await readFile(workflowPath, "utf8")).split(/\r?\n/);
 
-  const start = lines.findIndex((l) => /^\s*- name: Consumer-install smoke$/.test(l));
+  /** The lines a named step owns: its own, up to the next sibling list item. */
+  const stepBody = (name: string): string[] => {
+    const start = lines.findIndex((l) => l.trimEnd() === `      - name: ${name}`);
+    expect(
+      start,
+      `${workflowPath} must carry a step named "${name}" — this case reads ` +
+        `what that step runs`,
+    ).toBeGreaterThanOrEqual(0);
+    const after = lines.findIndex((l, i) => i > start && /^      - /.test(l));
+    return lines
+      .slice(start + 1, after === -1 ? lines.length : after)
+      .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
+  };
+
+  const smoke = stepBody("Consumer-install smoke");
+
+  // Non-vacuity: the step runs something at all, so the equality below is
+  // judging a command rather than an empty body.
+  expect(smoke.length).toBeGreaterThan(0);
+
+  // One command, and it is the shared script. A `run: |` block would land
+  // here as many lines; an inlined `npm pack` or chain heredoc as lines that
+  // are not this one.
+  expect(smoke).toHaveLength(1);
+  const invocation = /^\s*run: node (scripts\/smoke-install\.mjs)(?: (.*))?$/.exec(smoke[0]!);
   expect(
-    start,
-    `${workflowPath} must carry a step named "Consumer-install smoke" — this ` +
-      `case reads the chain-load verb out of that step`,
-  ).toBeGreaterThanOrEqual(0);
+    invocation,
+    `the "Consumer-install smoke" step must be a single ` +
+      `\`run: node scripts/smoke-install.mjs …\` — found: ${smoke.join(" / ")}`,
+  ).not.toBeNull();
 
-  // The step's own lines only: the next sibling list item at the same indent
-  // starts the following step, whose invocations are not this claim's.
-  const indent = /^(\s*)- /.exec(lines[start]!)![1]!;
-  const after = lines.findIndex((l, i) => i > start && new RegExp(`^${indent}- `).test(l));
-  const step = lines.slice(start, after === -1 ? lines.length : after);
+  // The script it names is really there, so the step is not green over a
+  // path that no longer resolves.
+  await expect(
+    readFile(fileURLToPath(new URL(`../${invocation![1]!}`, import.meta.url)), "utf8"),
+  ).resolves.toContain("CHAIN_LOAD_VERB");
 
-  const invoked = step.flatMap((l) => {
-    // Comment lines name verbs in prose; the claim is about what runs.
-    if (/^\s*#/.test(l)) return [];
-    const m = /npx --no-install flume ([a-z][a-z-]*)/.exec(l);
-    return m ? [m[1]!] : [];
-  });
+  // The scratch root the smoke is handed is the one the next step reads its
+  // consumer dir and tarball out of — the handoff collapsing the step
+  // created, and the one thing a rename would break silently.
+  const scratch = /--scratch "([^"]+)"/.exec(invocation![2] ?? "");
+  expect(
+    scratch?.[1],
+    `the smoke step must name the scratch root it keeps, as ` +
+      `\`--scratch "<dir>"\`, for the type-resolution gate to read`,
+  ).toBeTypeOf("string");
 
-  // Non-vacuity: the step really drives the installed CLI at the chain it
-  // scaffolds, so there is a verb here to judge at all.
-  expect(invoked).toHaveLength(1);
-  expect(invoked[0]).toBe(verb);
+  const gate = stepBody("Consumer type-resolution gate");
+  expect(gate.some((l) => l.includes(scratch![1]!))).toBe(true);
 });

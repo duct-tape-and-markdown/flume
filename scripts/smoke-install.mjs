@@ -21,6 +21,11 @@
  * layout against the packed `files` allowlist (`spec/harness.md`, *Where it
  * lives*): in-repo, `harness/` resolves relatively whether the map names it
  * or not.
+ *
+ * Usage: `node scripts/smoke-install.mjs [--scratch <dir>]`. Both CI lanes
+ * run this one script rather than a second spelling of it; the POSIX lane
+ * passes `--scratch` because its consumer type-resolution gate typechecks
+ * against the tarball and installed consumer this run leaves behind.
  */
 
 import { spawnSync } from "node:child_process";
@@ -130,9 +135,30 @@ for (const [specifier, value] of [
 console.log("both exports subpaths resolved from the installed package");
 `;
 
+/**
+ * Where the run works, and who owns the cleanup.
+ *
+ * Default: a fresh `mkdtemp`, removed on the way out — a local run leaves
+ * nothing behind. With `--scratch <dir>` the caller has named the directory
+ * and keeps it: what this run packs and installs there is the next step's
+ * input, and deleting it would delete that. The two cases differ in
+ * ownership only; every step below runs identically either way.
+ */
+const SCRATCH_FLAG = process.argv.indexOf("--scratch");
+const SUPPLIED_SCRATCH = SCRATCH_FLAG === -1 ? null : process.argv[SCRATCH_FLAG + 1];
+if (SCRATCH_FLAG !== -1 && !SUPPLIED_SCRATCH) {
+  console.error("[smoke-install] usage: smoke-install.mjs [--scratch <dir>]");
+  process.exit(2);
+}
+
 let scratch;
 try {
-  scratch = mkdtempSync(join(tmpdir(), "flume-smoke-"));
+  if (SUPPLIED_SCRATCH) {
+    scratch = resolve(SUPPLIED_SCRATCH);
+    mkdirSync(scratch, { recursive: true });
+  } else {
+    scratch = mkdtempSync(join(tmpdir(), "flume-smoke-"));
+  }
   console.log(`[smoke-install] scratch dir: ${scratch}`);
 
   const packOut = run(
@@ -207,11 +233,13 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  if (scratch) {
+  if (scratch && !SUPPLIED_SCRATCH) {
     try {
       rmSync(scratch, { recursive: true, force: true });
     } catch {
       // best-effort cleanup; a held file handle shouldn't fail the run
     }
+  } else if (scratch) {
+    console.log(`[smoke-install] kept caller-supplied scratch dir: ${scratch}`);
   }
 }
