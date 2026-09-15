@@ -48,10 +48,13 @@ let repo: string;
 let binDir: string;
 /** PATH as this process had it before a case rewrote it. */
 let originalPath: string | undefined;
+/** Directories a case staged on PATH to stand in for a host's own install. */
+let stagedDirs: string[];
 
 beforeEach(() => {
   repo = mkdtempSync(join(tmpdir(), "flume-ci-"));
   binDir = mkdtempSync(join(tmpdir(), "flume-ci-bin-"));
+  stagedDirs = [];
   originalPath = process.env["PATH"];
   git("init", "-q", "-b", "main");
   git("config", "user.email", "ci@example.test");
@@ -65,7 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   if (originalPath === undefined) delete process.env["PATH"];
   else process.env["PATH"] = originalPath;
-  for (const dir of [repo, binDir]) {
+  for (const dir of [repo, binDir, ...(stagedDirs ?? [])]) {
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -167,10 +170,72 @@ interface ForgeScenario {
   readonly log?: string;
 }
 
+/** The name the reader spawns a lane's forge through (`harness/ci.ts`). */
+const FORGE = "gh";
+
 /**
- * Plant a forge CLI on PATH answering `scenario`, and put its directory ahead
- * of everything else so a host that really has the CLI installed cannot
- * answer in its place.
+ * The first file a PATH search for `command` would turn up on `path`, or
+ * `undefined` where none would.
+ *
+ * Deliberately wider than a spawn's own search on win32: every `PATHEXT`
+ * spelling counts, and so does the bare name. The question every caller here
+ * asks is whether a copy of the CLI *lives* in a directory at all, not which
+ * spelling a given spawn would reach — a `.cmd` a direct spawn skips is still
+ * a copy a shell retry finds.
+ */
+function onPath(command: string, path: string): string | undefined {
+  const extensions =
+    process.platform === "win32"
+      ? (process.env["PATHEXT"] ?? ".COM;.EXE;.BAT;.CMD")
+          .split(";")
+          .filter((extension) => extension !== "")
+          .map((extension) => extension.toLowerCase())
+      : [];
+  for (const dir of path.split(delimiter)) {
+    if (dir === "") continue;
+    for (const name of [command, ...extensions.map((ext) => command + ext)]) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Link the host's own git into the stub's directory.
+ *
+ * The reader names the tip's branch through git (`harness/ci.ts`), so a case
+ * that takes the host's directories off PATH has to hand git back. A symlink
+ * is a POSIX spelling — a win32 git reached through one resolves its install
+ * layout from the link's directory — so on win32 the fixture refuses out loud
+ * rather than planting a git that would answer wrongly
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). That refusal needs a
+ * host that installs the forge CLI and git in one directory, which the hosts
+ * the win32 lane runs on do not.
+ */
+function linkGit(): void {
+  const real = onPath("git", originalPath ?? "");
+  if (real === undefined) throw new Error("this host has no git on PATH");
+  if (process.platform === "win32") {
+    throw new Error(
+      `this host keeps git (${real}) in a directory holding a forge CLI, so ` +
+        `the fixture cannot hide the forge without hiding git`,
+    );
+  }
+  symlinkSync(real, join(binDir, "git"));
+}
+
+/**
+ * Plant a forge CLI on PATH answering `scenario`, on a PATH no *other* forge
+ * CLI is reachable on: the stub's directory first, and every host directory
+ * holding a copy of the CLI dropped.
+ *
+ * Prepending alone does not hide what sits behind it, and on win32 nothing
+ * hides behind the stub — the launcher there is a `.cmd`, which a direct
+ * spawn refuses, so the search walks past it to whatever the host installed
+ * (`spec/cli.md`, *win32 is a supported host*). Dropping those directories is
+ * what makes the direct spawn reach the stub or nothing, and nothing is the
+ * `ENOENT` the reader's own shell retry answers with the stub.
  *
  * The launcher hands the absolute `process.execPath` the script, so the stub
  * runs whatever else PATH holds — which is what lets the absent-CLI case
@@ -205,7 +270,14 @@ function plantForge(scenario: ForgeScenario): void {
     writeFileSync(launcher, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
     chmodSync(launcher, 0o755);
   }
-  process.env["PATH"] = `${binDir}${delimiter}${originalPath ?? ""}`;
+  const host = (process.env["PATH"] ?? "")
+    .split(delimiter)
+    .filter((dir) => dir !== "" && onPath(FORGE, dir) === undefined);
+  process.env["PATH"] = [binDir, ...host].join(delimiter);
+
+  // The filter can take git's own directory with it, on a host that installs
+  // both in one — `/usr/bin` on the POSIX lane's runner.
+  if (onPath("git", process.env["PATH"]) === undefined) linkGit();
 }
 
 /** One completed run, shaped as the forge's own `run list --json` prints it. */
@@ -334,19 +406,14 @@ it("the inbox window renders a lane as unread when no completed run for the tip'
 /**
  * PATH is stripped to a single directory here, which is the only way to prove
  * the CLI is absent on a host that has it installed — prepending cannot hide
- * what sits behind it. git is symlinked into that directory because the
- * reader still has a branch to name, and a symlink is a POSIX spelling: a
- * win32 git found through one resolves its own install layout from the link's
- * directory, so the case is not written for that host.
+ * what sits behind it. The reader still has a branch to name, so git comes
+ * back through {@link linkGit}, whose spelling is why this case declares a
+ * host.
  */
 it.runIf(process.platform !== "win32")(
   "the inbox window renders a lane as unread when the forge CLI is absent",
   () => {
-    const realGit = execFileSync("/bin/sh", ["-c", "command -v git"], {
-      encoding: "utf8",
-    }).trim();
-    expect(realGit).not.toBe("");
-    symlinkSync(realGit, join(binDir, "git"));
+    linkGit();
     process.env["PATH"] = binDir;
 
     // Vacuity: the CLI really is unreachable from this PATH, and git really
@@ -617,3 +684,84 @@ it("the inbox slice is not live when the forge CLI cannot read the lane", () => 
   expect(rendered).toContain("UNREAD");
   expect(rendered).not.toContain("GREEN");
 }, SPAWN_BUDGET_MS);
+
+/**
+ * Stage a forge CLI on PATH ahead of anything a case plants, standing in for
+ * the one a host has installed of its own. Planted rather than looked for, so
+ * the case below proves the same thing on a host that has no forge CLI at
+ * all. The win32 spelling is the `.cmd` a direct spawn skips and a shell
+ * retry reaches — the same shape the stub's own launcher takes there, so a
+ * PATH that still carried this directory would answer from it.
+ */
+function stageHostForge(): string {
+  const dir = mkdtempSync(join(tmpdir(), "flume-ci-host-"));
+  stagedDirs.push(dir);
+  if (process.platform === "win32") {
+    writeFileSync(
+      join(dir, `${FORGE}.cmd`),
+      `@echo off\r\necho host forge, not the stub 1>&2\r\nexit /b 9\r\n`,
+    );
+  } else {
+    const launcher = join(dir, FORGE);
+    writeFileSync(launcher, `#!/bin/sh\necho "host forge, not the stub" >&2\nexit 9\n`);
+    chmodSync(launcher, 0o755);
+  }
+  process.env["PATH"] = `${dir}${delimiter}${process.env["PATH"] ?? ""}`;
+  return dir;
+}
+
+it("every lane-reader case reads its planted forge stub, with the host's own forge CLI off PATH", () => {
+  const staged = stageHostForge();
+
+  // Vacuity: the host's copy really is reachable, and ahead of everything, so
+  // what the assertions below read is a filter and not an accident of order.
+  expect(onPath(FORGE, process.env["PATH"] ?? "")?.startsWith(staged)).toBe(true);
+
+  plantForge({ runs: [RUN], jobs: [job("failure")] });
+
+  // One directory on the PATH every case is handed holds a forge CLI, and it
+  // is the stub's own — wherever the host's copy sat, it is off.
+  const dirs = (process.env["PATH"] ?? "").split(delimiter).filter((dir) => dir !== "");
+  expect(dirs.filter((dir) => onPath(FORGE, dir) !== undefined)).toEqual([binDir]);
+
+  // And the reading really went through it: the stub answered all three
+  // questions, and the lane renders from its answer on the branch git — still
+  // reachable — named for the tip.
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  expect(calls().length).toBe(3);
+  expect(calls()[0]?.join(" ")).toContain("--branch main");
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain(String(RUN.databaseId));
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The filter above takes git with it on a host that installs git and the
+ * forge CLI in one directory — `/usr/bin` on the POSIX lane's runner. Staged
+ * rather than waited for: PATH is cut to a single directory holding both, so
+ * the fixture is in that position on every host. POSIX-declared for
+ * {@link linkGit}'s reason, which is the same one the absent-CLI case above
+ * declares a host for.
+ */
+it.runIf(process.platform !== "win32")(
+  "the inbox window names the tip's branch when the forge filter took git's own directory",
+  () => {
+    const mixed = stageHostForge();
+    symlinkSync(String(onPath("git", originalPath ?? "")), join(mixed, "git"));
+    process.env["PATH"] = mixed;
+
+    // Vacuity: the one directory PATH names holds both, so the filter really
+    // has to drop git to drop the forge.
+    expect(onPath(FORGE, mixed)).toBe(join(mixed, FORGE));
+    expect(onPath("git", mixed)).toBe(join(mixed, "git"));
+
+    plantForge({ runs: [RUN], jobs: [job("failure")] });
+
+    expect((process.env["PATH"] ?? "").split(delimiter)).toEqual([binDir]);
+
+    const rendered = inboxArgs()["CI_LANES"] ?? "";
+    expect(calls().length).toBe(3);
+    expect(calls()[0]?.join(" ")).toContain("--branch main");
+    expect(rendered).toContain("FAILING");
+  },
+  SPAWN_BUDGET_MS,
+);
