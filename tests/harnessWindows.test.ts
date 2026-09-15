@@ -142,7 +142,8 @@ const entry = (tag: string): PendingEntry => ({
 /**
  * One standing prior-attempt record, keyed as the engine keys one: an entry's
  * identity is `slugify(tag)`, a phase's is the phase name verbatim
- * (`src/priorAttempts.ts`, `priorAttemptRef`). Both keyspaces, because the
+ * (`src/priorAttempts.ts`, `priorAttemptRef`), and the map a tick is handed
+ * files each under its keyspace and identity together. Both keyspaces, because the
  * window discriminates on the record's own `key` field and a fixture that can
  * only write one of them judges that leg over zero of its subject.
  */
@@ -297,7 +298,7 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
       flumeDir: stateRoot(),
       pickable: true,
       pending,
-      priorAttempts: new Map(records.map((r) => [r.keyedAs, r])),
+      priorAttempts: new Map(records.map((r) => [`${r.key}:${r.keyedAs}`, r])),
     });
 
   // Vacuity guard: no record queue holds the window open, so every verdict
@@ -323,10 +324,10 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
 });
 
 /**
- * The two keyspaces share one `keyedAs` map, so a phase named `build` and a
- * tag slugged `build` collide on one key — the window's only discriminator is
- * the record's own stated `key` field. Both arms below are written over that
- * one colliding stem, so the verdicts differ by the keyspace and nothing else.
+ * A phase named `build` and a tag slugged `build` share one identity — the
+ * window's only discriminator is the record's own stated `key` field, never
+ * that text. Both arms below are written over that one colliding identity, so
+ * the verdicts differ by the keyspace and nothing else.
  */
 it("the inbox window ignores a phase-keyed prior-attempt record whose key matches a queued entry's slug", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
@@ -343,7 +344,7 @@ it("the inbox window ignores a phase-keyed prior-attempt record whose key matche
       flumeDir: stateRoot(),
       pickable: true,
       pending,
-      priorAttempts: new Map([[rec.keyedAs, rec]]),
+      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
     });
 
   expect({
@@ -602,7 +603,7 @@ it("the inbox window renders every waiting record's bytes and marks the refusals
     cwd: repo,
     flumeDir: stateRoot(),
     pending,
-    priorAttempts: new Map(records.map((r) => [r.keyedAs, r])),
+    priorAttempts: new Map(records.map((r) => [`${r.key}:${r.keyedAs}`, r])),
   });
 
   expect(args.RECORDS).toContain("2026-09-14-a-finding.md");

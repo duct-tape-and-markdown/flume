@@ -41,6 +41,7 @@ import {
   priorAttemptsDir,
   PriorAttemptStore,
   type PriorAttemptDraft,
+  type PriorAttemptRef,
 } from "../src/priorAttempts.ts";
 import {
   makeFixture,
@@ -106,11 +107,11 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       expect(ref).toEqual({ key: draft.mode, keyspace: "phase" });
 
       await store.write(ref, draft);
-      expect(existsSync(priorAttemptPath(flumeDir, ref.key)), draft.mode).toBe(
+      expect(existsSync(priorAttemptPath(flumeDir, ref)), draft.mode).toBe(
         true,
       );
 
-      const back = await store.read(ref.key);
+      const back = await store.read(ref);
       expect(back, `${draft.mode} read back as absent`).toBeDefined();
       // The anchor `read` refuses a record without (spec/loop.md "Every
       // record is anchored" / "No false signal") — stamped by `write`, so no
@@ -122,13 +123,16 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       expect(back).toMatchObject(draft as Record<string, unknown>);
     }
 
-    // `readAll` is keyed by the identity `write` stamped — here one mode name
-    // per record — so a tick's `TickContext.priorAttempts` carries all six.
+    // `readAll` is keyed by the keyspace and the identity `write` stamped —
+    // here one mode name per record, all of them phase-keyed — so a tick's
+    // `TickContext.priorAttempts` carries all six.
     const all = await store.readAll();
-    expect([...all.keys()].sort()).toEqual([...ALL_MODES].sort());
+    expect([...all.keys()].sort()).toEqual(
+      ALL_MODES.map((m) => `phase:${m}`).sort(),
+    );
 
-    expect(dirname(priorAttemptPath(flumeDir, "any-key"))).toBe(
-      priorAttemptsDir(flumeDir),
+    expect(dirname(priorAttemptPath(flumeDir, { key: "any-key", keyspace: "phase" }))).toBe(
+      join(priorAttemptsDir(flumeDir), "phase"),
     );
   });
 
@@ -156,7 +160,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     );
     const withVerdict = priorAttemptRef({ name: "authored" } as Phase);
     await store.write(withVerdict, authored);
-    const back = await store.read(withVerdict.key);
+    const back = await store.read(withVerdict);
 
     // Vacuity pin: the record really came back, as the mode under judgement.
     expect(back?.mode).toBe("gate-revert");
@@ -181,7 +185,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(silentGate).not.toHaveProperty("verdict");
     const noVerdict = priorAttemptRef({ name: "unauthored" } as Phase);
     await store.write(noVerdict, silentGate);
-    const plain = await store.read(noVerdict.key);
+    const plain = await store.read(noVerdict);
     expect(plain?.mode).toBe("gate-revert");
     expect(plain).not.toHaveProperty("verdict");
   });
@@ -217,8 +221,8 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     await store.write(threwRef, threw);
 
     const all = await store.readAll();
-    const backDeclined = all.get(declinedRef.key);
-    const backThrew = all.get(threwRef.key);
+    const backDeclined = all.get(`phase:${declinedRef.key}`);
+    const backThrew = all.get(`phase:${threwRef.key}`);
     // Vacuity: both records really came back, as the mode under judgement.
     expect(backDeclined?.mode).toBe("not-shipped");
     expect(backThrew?.mode).toBe("not-shipped");
@@ -309,8 +313,8 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
   it("PriorAttempts.read throws on a record present but unstattable, never reporting no prior attempt", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const key = "build";
-    const p = priorAttemptPath(flumeDir, key);
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
     await mkdir(dirname(p), { recursive: true });
     // ELOOP — present, unstattable. Not a permission bit: a root-run test
     // would bypass that.
@@ -322,19 +326,19 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     expect((await lstat(p)).isSymbolicLink()).toBe(true);
     expect(existsSync(p)).toBe(false);
 
-    await expect(store.read(key)).rejects.toThrow(/ELOOP/);
+    await expect(store.read(ref)).rejects.toThrow(/ELOOP/);
   });
 
   it("PriorAttemptStore.read still reports no prior attempt for a record it read and could not decode", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const key = "build";
-    const p = priorAttemptPath(flumeDir, key);
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
     await mkdir(dirname(p), { recursive: true });
     await writeFile(p, "{not json");
 
     expect(existsSync(p)).toBe(true);
-    await expect(store.read(key)).resolves.toBeUndefined();
+    await expect(store.read(ref)).resolves.toBeUndefined();
   });
 
   it("readAll refuses when the prior-attempts dir is present but unreadable", async () => {
@@ -391,14 +395,15 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
     expect(rawKeys.every((k) => slugify(k) !== k)).toBe(true);
 
     for (const key of rawKeys) {
+      const ref: PriorAttemptRef = { key, keyspace: "phase" };
       // The real writers, not a re-derivation: `write` places the record and
       // `snapshotReverted` places the snapshot, each through the store's own
       // keying.
-      await store.write({ key, keyspace: "phase" }, buildTipMoved(head, head));
-      await store.snapshotReverted(fx.repo, head, key);
+      await store.write(ref, buildTipMoved(head, head));
+      await store.snapshotReverted(fx.repo, head, ref);
 
-      const record = priorAttemptPath(flumeDir, key);
-      const snapshot = store.snapshotDir(key);
+      const record = priorAttemptPath(flumeDir, ref);
+      const snapshot = store.snapshotDir(ref);
       expect(existsSync(record), key).toBe(true);
       expect(existsSync(snapshot), key).toBe(true);
 
@@ -417,11 +422,13 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
     // `clear` and `snapshotReverted` both `rm -rf` this dir; a key that
     // resolves out of `prior-attempts/` aims that removal at the tree.
     for (const key of ["../../escape", "..", "a/../../b", "/abs"]) {
-      const dir = store.snapshotDir(key);
+      const dir = store.snapshotDir({ key, keyspace: "phase" });
       const rel = relative(priorAttemptsDir(flumeDir), dir);
       expect(rel, key).not.toBe("");
       expect(rel.startsWith("..") || isAbsolute(rel), key).toBe(false);
-      expect(dirname(dir), key).toBe(priorAttemptsDir(flumeDir));
+      // Inside its keyspace's directory, which is inside the records root:
+      // the scoping segment is this module's own closed set, never the key.
+      expect(dirname(dir), key).toBe(join(priorAttemptsDir(flumeDir), "phase"));
     }
   });
 
@@ -429,11 +436,11 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
     const flumeDir = join(fx.repo, ".flume");
 
     for (const key of ["../../escape", "..", "a/../../b", "/abs"]) {
-      const p = priorAttemptPath(flumeDir, key);
+      const p = priorAttemptPath(flumeDir, { key, keyspace: "entry" });
       const rel = relative(priorAttemptsDir(flumeDir), p);
       expect(rel, key).not.toBe("");
       expect(rel.startsWith("..") || isAbsolute(rel), key).toBe(false);
-      expect(dirname(p), key).toBe(priorAttemptsDir(flumeDir));
+      expect(dirname(p), key).toBe(join(priorAttemptsDir(flumeDir), "entry"));
     }
   });
 });
@@ -455,6 +462,12 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
  * Deliberately top-level rather than inside a `describe`: these titles are
  * the queue entry's own `tests[]`/`pins[]` lines, matched on the full name.
  */
+/**
+ * The ref the snapshot cases below write under. Any one ref serves: what they
+ * judge is the content of the snapshot dir, not which keyspace it hangs off.
+ */
+const SNAP_REF: PriorAttemptRef = { key: "key", keyspace: "phase" };
+
 async function commitPathsNamed(
   repo: string,
   names: readonly string[],
@@ -489,9 +502,9 @@ it("snapshotReverted writes a non-ASCII path's content into the revert snapshot"
     ]);
     expect(quoted).toContain('"snap/caf\\303\\251.ts"');
 
-    await store.snapshotReverted(fx.repo, sha, "key");
+    await store.snapshotReverted(fx.repo, sha, SNAP_REF);
 
-    const dir = store.snapshotDir("key");
+    const dir = store.snapshotDir(SNAP_REF);
     expect(await readFile(join(dir, "snap", "café.ts"), "utf8")).toBe(
       "content of café.ts\n",
     );
@@ -532,11 +545,11 @@ it.runIf(process.platform !== "win32")(
         gitOut(fx.repo, ["cat-file", "-e", `${sha}:snap/trailing.ts`]),
       ).rejects.toThrow();
 
-      await store.snapshotReverted(fx.repo, sha, "key");
+      await store.snapshotReverted(fx.repo, sha, SNAP_REF);
 
       expect(
         await readFile(
-          join(store.snapshotDir("key"), "snap", "trailing.ts "),
+          join(store.snapshotDir(SNAP_REF), "snap", "trailing.ts "),
           "utf8",
         ),
       ).toBe("content of trailing.ts \n");
@@ -583,9 +596,9 @@ it.runIf(process.platform !== "win32")(
         await gitOut(fx.repo, ["cat-file", "-e", `${sha}::colon.ts`]),
       ).toBe("");
 
-      await store.snapshotReverted(fx.repo, sha, "key");
+      await store.snapshotReverted(fx.repo, sha, SNAP_REF);
 
-      const dir = store.snapshotDir("key");
+      const dir = store.snapshotDir(SNAP_REF);
       expect(await readFile(join(dir, ":colon.ts"), "utf8")).toBe(
         "content of :colon.ts\n",
       );
@@ -620,9 +633,9 @@ it("a snapshotReverted failure leaves the revert path unblocked", async () => {
     // Recovery is best-effort by spec: the caller's next move is the hard
     // reset, and a snapshot that cannot be taken must not stand in its way.
     await expect(
-      store.snapshotReverted(fx.repo, missing, "key"),
+      store.snapshotReverted(fx.repo, missing, SNAP_REF),
     ).resolves.toBeUndefined();
-    expect(existsSync(store.snapshotDir("key"))).toBe(false);
+    expect(existsSync(store.snapshotDir(SNAP_REF))).toBe(false);
   } finally {
     await fx.cleanup();
   }
@@ -675,15 +688,19 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     expect(all.size).toBe(phaseNames.length);
 
     for (const name of phaseNames) {
-      // The key a `shouldRun` holds is `phase.name` itself.
-      expect(all.get(name)?.mode, name).toBe("clean-exit");
-      expect(all.get(name)?.key, name).toBe("phase");
+      // The identity a `shouldRun` holds is `phase.name` itself, under its
+      // keyspace.
+      expect(all.get(`phase:${name}`)?.mode, name).toBe("clean-exit");
+      expect(all.get(`phase:${name}`)?.key, name).toBe("phase");
       // …and the slugged stem is not a second key for the same record.
-      expect(all.has(slugify(name)), name).toBe(false);
-      // The on-disk artifact is unmoved: still the slugged stem, so nothing
-      // a raw key could do to a path is reintroduced here.
+      expect(all.has(`phase:${slugify(name)}`), name).toBe(false);
+      // The on-disk artifact is still the slugged stem, under the keyspace's
+      // own directory, so nothing a raw key could do to a path is
+      // reintroduced here.
       expect(
-        existsSync(join(priorAttemptsDir(flumeDir), `${slugify(name)}.json`)),
+        existsSync(
+          join(priorAttemptsDir(flumeDir), "phase", `${slugify(name)}.json`),
+        ),
         name,
       ).toBe(true);
     }
@@ -711,16 +728,46 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     // The entry keyspace is unchanged by the singleton fix: the ref already
     // slugged the tag, so the written identity and the stem are one text —
     // which is what `clearStale` compares the queue's tags against.
-    expect(all.get(slugify(tag))?.key).toBe("entry");
-    expect(all.has(tag)).toBe(false);
+    expect(all.get(`entry:${slugify(tag)}`)?.key).toBe("entry");
+    expect(all.has(`entry:${tag}`)).toBe(false);
     expect(await store.clearStale([entry])).toEqual([]);
-    expect(await store.clearStale([])).toEqual([slugify(tag)]);
+    expect(await store.clearStale([])).toEqual([`entry:${slugify(tag)}`]);
+  });
+
+  it("a prior-attempt record whose stated keyspace disagrees with the directory it sits in reads as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "plan", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
+    await mkdir(dirname(p), { recursive: true });
+
+    // Hand-authored, the sanctioned exception for a refusal case: no writer
+    // mints a record that contradicts its own location. Honouring the stated
+    // half would file it in the map under `entry:plan`, whose path is a file
+    // that does not exist — so `clear` would later remove nothing and the
+    // record would outlive every sweep.
+    await writeFile(
+      p,
+      JSON.stringify({
+        mode: "clean-exit",
+        finalMessage: "parked: the entry needs a wider fence",
+        key: "entry",
+        keyedAs: "plan",
+        headSha: "0".repeat(40),
+        at: "2024-01-01T00:00:00.000Z",
+      }),
+    );
+    expect(existsSync(p)).toBe(true);
+
+    await expect(store.read(ref)).resolves.toBeUndefined();
+    expect((await store.readAll()).size).toBe(0);
   });
 
   it("a prior-attempt record carrying no written identity reads as no prior attempt", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const p = priorAttemptPath(flumeDir, "plan");
+    const ref: PriorAttemptRef = { key: "plan", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
     await mkdir(dirname(p), { recursive: true });
 
     // Everything the reader asked for before the identity existed — a record
@@ -740,7 +787,167 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     );
     expect(existsSync(p)).toBe(true);
 
-    await expect(store.read("plan")).resolves.toBeUndefined();
+    await expect(store.read(ref)).resolves.toBeUndefined();
     expect((await store.readAll()).size).toBe(0);
   });
+});
+
+/**
+ * The keyspace scoping, driven end to end: a phase name and an entry tag that
+ * `slugify` maps onto one stem are two records, on disk and in the map a tick
+ * reads, and the queue's stale sweep reaches only the one the queue has a say
+ * over.
+ *
+ * Driven through the real writer and the real reader
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*): the refs come from `priorAttemptRef`, the records from the real
+ * builders, and the verdict is what `read`/`readAll`/`clearStale` hand back.
+ *
+ * Deliberately top-level rather than inside a `describe`: these titles are the
+ * queue entry's own `tests[]` lines, matched on the full name.
+ */
+
+/** A phase name and a tag that slugify onto one stem — the collision itself. */
+const COLLIDING_PHASE = "plan_sweep";
+const COLLIDING_TAG = "PLAN-SWEEP";
+
+/** The queue entry the colliding tag names. */
+const collidingEntry: PendingEntry = {
+  tag: COLLIDING_TAG,
+  gate: { kind: "open" },
+  dependsOnForks: [],
+  files: { new: [], edit: [], retire: [] },
+};
+
+it("a singleton phase and a fanout entry whose identities slugify alike write distinct prior-attempt records through the store", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+
+    const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+
+    // Vacuity pin: the two identities really do slugify onto one stem, so
+    // everything below is judged over the collision rather than over two
+    // names that were never going to meet.
+    expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
+    expect(phaseRef.keyspace).not.toBe(entryRef.keyspace);
+
+    // Two modes, so a single shared file shows up as the wrong record rather
+    // than as an indistinguishable one.
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildTipMoved(head, head));
+
+    expect(priorAttemptPath(flumeDir, phaseRef)).not.toBe(
+      priorAttemptPath(flumeDir, entryRef),
+    );
+    expect(existsSync(priorAttemptPath(flumeDir, phaseRef))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef))).toBe(true);
+
+    // Each ref reads back its own attempt, not the other's.
+    const backPhase = await store.read(phaseRef);
+    const backEntry = await store.read(entryRef);
+    expect(backPhase).toMatchObject({
+      mode: "clean-exit",
+      key: "phase",
+      keyedAs: COLLIDING_PHASE,
+      finalMessage: "parked: the phase",
+    });
+    expect(backEntry).toMatchObject({
+      mode: "tip-moved",
+      key: "entry",
+      keyedAs: slugify(COLLIDING_TAG),
+    });
+
+    // The reverted-file snapshot hangs off the same stem as the record, so a
+    // shared stem would have shared that directory too.
+    expect(store.snapshotDir(phaseRef)).not.toBe(store.snapshotDir(entryRef));
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("readAll keys a fanout record under entry:<slug> and a singleton record under phase:<name>", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    // Vacuity pin: one stem, two records — a map keyed by the identity alone
+    // could only carry one of them.
+    expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
+
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const all = await store.readAll();
+    expect([...all.keys()].sort()).toEqual([
+      `entry:${slugify(COLLIDING_TAG)}`,
+      `phase:${COLLIDING_PHASE}`,
+    ]);
+    // The keyspace is the disambiguator, and the identity half is what the
+    // caller already holds: the tag slug for an entry, the phase name as the
+    // chain spells it for a singleton.
+    expect(all.get(`entry:${slugify(COLLIDING_TAG)}`)).toMatchObject({
+      key: "entry",
+      finalMessage: "parked: the entry",
+    });
+    expect(all.get(`phase:${COLLIDING_PHASE}`)).toMatchObject({
+      key: "phase",
+      finalMessage: "parked: the phase",
+    });
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("clearStale keeps a phase record whose name slugifies onto a tag the queue no longer carries", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    // Vacuity pin: the sweep runs over a populated map whose two records the
+    // queue's own text cannot tell apart.
+    expect((await store.readAll()).size).toBe(2);
+    expect(slugify(phaseRef.key)).toBe(entryRef.key);
+
+    // The queue carries neither tag: the entry's record is retired and
+    // reported, the phase's — which no queue has a say over — is untouched.
+    expect(await store.clearStale([])).toEqual([
+      `entry:${slugify(COLLIDING_TAG)}`,
+    ]);
+
+    expect(await store.read(entryRef)).toBeUndefined();
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef))).toBe(false);
+    expect(await store.read(phaseRef)).toMatchObject({
+      mode: "clean-exit",
+      key: "phase",
+      keyedAs: COLLIDING_PHASE,
+      finalMessage: "parked: the phase",
+    });
+    expect([...(await store.readAll()).keys()]).toEqual([
+      `phase:${COLLIDING_PHASE}`,
+    ]);
+  } finally {
+    await fx.cleanup();
+  }
 });

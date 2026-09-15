@@ -140,10 +140,12 @@ export interface GateRevertAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
@@ -179,10 +181,12 @@ export interface CleanExitAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
@@ -210,10 +214,12 @@ export interface PlatformPreemptAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
@@ -248,10 +254,12 @@ export interface RenderRefusedAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
@@ -294,10 +302,12 @@ export interface TipMovedAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
@@ -355,10 +365,12 @@ export interface NotShippedAttempt {
    * The identity this record was written under — the entry tag slug
    * (fanout) or the phase name as the chain spells it (singleton), stamped
    * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by this rather than by the filename
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
    * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds. The stem stays slugged; only
-   * the map key is the written identity.
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
    */
   keyedAs: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */

@@ -2188,7 +2188,7 @@ export class Dispatcher {
     const priorAttempts = await this.attempts.readAll();
 
     const ref = priorAttemptRef(phase);
-    const prior = await this.attempts.read(ref.key);
+    const prior = await this.attempts.read(ref);
 
     const noRunResult = (): TickResult => ({
       phaseName: phase.name,
@@ -2618,7 +2618,7 @@ export class Dispatcher {
             });
             // A clean ship clears the slot so the next tick starts with no
             // stale prior-attempt signal.
-            await this.attempts.clear(ref.key);
+            await this.attempts.clear(ref);
           }
         }
       }
@@ -3345,7 +3345,7 @@ export class Dispatcher {
       // — clear any stale prior-attempt slot so its next plan/build cycle
       // starts with no false signal.
       for (const s of shipped) {
-        await this.attempts.clear(priorAttemptRef(phase, s).key);
+        await this.attempts.clear(priorAttemptRef(phase, s));
       }
       const shippedTags = shipped.map((s) => s.tag);
       // The update can no-op (footprint already recorded, nothing shipped):
@@ -3663,7 +3663,7 @@ export class Dispatcher {
     // worktree), keyed by the entry tag — so a reverted attempt's record
     // survives into the next tick's brand-new worktree.
     const ref = priorAttemptRef(phase, entry);
-    const prior = await this.attempts.read(ref.key);
+    const prior = await this.attempts.read(ref);
 
     const ctx: TickContext = {
       cwd: wt.path,
@@ -4242,7 +4242,7 @@ export class Dispatcher {
       touchedPaths,
     );
     await this.writeRevertNote(chain, cwd, sha, label, failure);
-    await this.attempts.snapshotReverted(cwd, sha, ref.key);
+    await this.attempts.snapshotReverted(cwd, sha, ref);
     await git.dropLastCommit(cwd, sha);
     await this.attempts.write(ref, record);
     this.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);

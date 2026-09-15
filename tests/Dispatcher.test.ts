@@ -40,7 +40,12 @@ import {
 import { frictionCountLine } from "../src/friction.ts";
 import { readWorktreeRegistry, worktreeDirName } from "../src/worktrees.ts";
 import { mergingDir, slugify, worktreesBase } from "../src/paths.ts";
-import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
+import {
+  priorAttemptPath,
+  priorAttemptRef,
+  priorAttemptsDir,
+  type PriorAttemptRef,
+} from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage, withTerminalRenderer } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
@@ -110,6 +115,19 @@ import {
 } from "./helpers/dispatcherFixture.ts";
 
 const exec = promisify(execFile);
+
+/**
+ * The ref one prior-attempt record is written under, derived through the
+ * engine's own rule rather than a second spelling of it here: a singleton's
+ * record is keyed by the phase name, a fanout entry's by its tag
+ * (`src/priorAttempts.ts`, `priorAttemptRef`). Every path assertion below
+ * composes one of these with `priorAttemptPath`, so a keying change lands in
+ * one place on this side too.
+ */
+const phaseRef = (name: string): PriorAttemptRef =>
+  priorAttemptRef({ name } as Phase);
+const entryRef = (tag: string): PriorAttemptRef =>
+  priorAttemptRef({ name: "build" } as Phase, { tag } as PendingEntry);
 
 /**
  * Inject a fixed chain as the per-tick resolver — the `chainLoader` test
@@ -995,7 +1013,7 @@ describe("ReportedGateResult.verdict — a chain's own reason, carried not re-pa
     // The acceptance's second half: the same reason reaches the retry through
     // the gate-revert record, beside `message` rather than inside it.
     const record = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, phaseRef("plan")), "utf8"),
     ) as PriorAttempt;
     expect(record.mode).toBe("gate-revert");
     expect(record).toMatchObject({
@@ -1347,7 +1365,7 @@ describe("ReportedGateResult.failingFiles — what the gate blamed, reported not
     // The same list still drives the derivation it already fed: the row is an
     // additional reader of the fact, never a replacement for it.
     const record = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, phaseRef("plan")), "utf8"),
     ) as PriorAttempt;
     expect(record).toMatchObject({
       mode: "gate-revert",
@@ -6097,7 +6115,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     // The persisted §5 record names the ceiling violation, path included.
     const record = JSON.parse(
       await readFile(
-        join(fx.repo, ".flume", "prior-attempts", "scope-ceil.json"),
+        join(fx.repo, ".flume", "prior-attempts", "entry", "scope-ceil.json"),
         "utf8",
       ),
     ) as { mode: string; gate: string; details?: string };
@@ -7934,7 +7952,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     // The digest is bounded, not merely reordered.
     const record = JSON.parse(
       await readFile(
-        join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+        join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
         "utf8",
       ),
     ) as { mode: string; details: string };
@@ -8068,7 +8086,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     // Cleared on the clean ship → attempt 3 starts with no stale signal.
     expect(prompts[2]).not.toContain("<prior-attempt>");
     expect(
-      existsSync(join(fx.repo, ".flume", "prior-attempts", "plan.json")),
+      existsSync(join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json")),
     ).toBe(false);
   }, 20_000);
 
@@ -8085,7 +8103,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
   async function readPlanPriorAttempt(): Promise<Record<string, unknown>> {
     return JSON.parse(
       await readFile(
-        join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+        join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
         "utf8",
       ),
     ) as Record<string, unknown>;
@@ -9015,7 +9033,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     // HEAD's parent alone (which would read the agent's own top commit as
     // the intruder, or not exist at all on an orphan branch).
     const record = await readFile(
-      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
       "utf8",
     );
     const parsed = JSON.parse(record);
@@ -9241,7 +9259,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
     // HEAD's parent alone (which would read the agent's own top commit as
     // the intruder).
     const record = await readFile(
-      join(fx.repo, ".flume", "prior-attempts", "test-a.json"),
+      join(fx.repo, ".flume", "prior-attempts", "entry", "test-a.json"),
       "utf8",
     );
     const parsed = JSON.parse(record);
@@ -9542,7 +9560,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
     expect(singletonOutcome.tipMoved).toBe(true);
     expect(singletonRecordedBase).toBe(singletonPreHead);
     const singletonRecord = await readFile(
-      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
       "utf8",
     );
     // The ancestry check's "found" is the observed HEAD itself — the
@@ -9595,7 +9613,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       expect(fanoutOutcome.tipMoved).toBe(true);
       expect(fanoutRecordedBase).toBe(fanoutPreHead);
       const fanoutRecord = await readFile(
-        join(fx2.repo, ".flume", "prior-attempts", "fanout-twin.json"),
+        join(fx2.repo, ".flume", "prior-attempts", "entry", "fanout-twin.json"),
         "utf8",
       );
       expect(JSON.parse(fanoutRecord).observedTip).toBe(fanoutObservedHead);
@@ -9768,7 +9786,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
         },
       }),
     ).tick();
-    expect(existsSync(priorAttemptPath(flumeDir, "STALE-ONE"))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("STALE-ONE")))).toBe(true);
 
     // The judged wave, shaped to reach past the always-present fields: one
     // entry ships, one trips the real writable-paths gate, one is declined
@@ -10484,10 +10502,20 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(indexPriorAttemptPath).toBe(priorAttemptPath);
   });
 
-  it("priorAttemptsDir(flumeDir) agrees with the directory component of priorAttemptPath(flumeDir, tag) for an arbitrary tag", () => {
+  it("priorAttemptPath(flumeDir, ref) sits under the ref's own keyspace directory inside priorAttemptsDir(flumeDir)", () => {
     const flumeDir = join(fx.repo, ".flume");
     const tag = "Weird.Tag_Name(1)";
-    expect(priorAttemptsDir(flumeDir)).toBe(dirname(priorAttemptPath(flumeDir, tag)));
+    // The two keyspaces are two directories, so an identity that slugs alike
+    // in both still names two files.
+    expect(dirname(priorAttemptPath(flumeDir, entryRef(tag)))).toBe(
+      join(priorAttemptsDir(flumeDir), "entry"),
+    );
+    expect(dirname(priorAttemptPath(flumeDir, phaseRef(tag)))).toBe(
+      join(priorAttemptsDir(flumeDir), "phase"),
+    );
+    expect(priorAttemptPath(flumeDir, entryRef(tag))).not.toBe(
+      priorAttemptPath(flumeDir, phaseRef(tag)),
+    );
   });
 
   it("priorAttemptPath(flumeDir, tag) matches the path the dispatcher itself reads/writes for a fanout entry's record", async () => {
@@ -10529,9 +10557,9 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     await dispatcher.tick();
 
     const flumeDir = join(fx.repo, ".flume");
-    const derived = priorAttemptPath(flumeDir, tag);
+    const derived = priorAttemptPath(flumeDir, entryRef(tag));
     expect(derived).toBe(
-      join(flumeDir, "prior-attempts", `${slugify(tag)}.json`),
+      join(flumeDir, "prior-attempts", "entry", `${slugify(tag)}.json`),
     );
     expect(existsSync(derived)).toBe(true);
     expect(JSON.parse(await readFile(derived, "utf8")).mode).toBe(
@@ -10560,9 +10588,9 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     await dispatcher.tick();
 
     const flumeDir = join(fx.repo, ".flume");
-    const derived = priorAttemptPath(flumeDir, "plan");
+    const derived = priorAttemptPath(flumeDir, phaseRef("plan"));
     expect(existsSync(derived)).toBe(true);
-    expect(derived).toBe(join(flumeDir, "prior-attempts", "plan.json"));
+    expect(derived).toBe(join(flumeDir, "prior-attempts", "phase", "plan.json"));
   }, 20_000);
 
   /**
@@ -10602,7 +10630,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
 
     const record = JSON.parse(
       await readFile(
-        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     );
@@ -10634,7 +10662,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
 
     const record = JSON.parse(
       await readFile(
-        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     );
@@ -10666,7 +10694,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
 
     const record = JSON.parse(
       await readFile(
-        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     );
@@ -10703,7 +10731,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
 
     const record = JSON.parse(
       await readFile(
-        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     );
@@ -10744,7 +10772,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
 
     const record = JSON.parse(
       await readFile(
-        priorAttemptPath(join(fx.repo, ".flume"), "plan"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     );
@@ -10807,7 +10835,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     await buildDispatcher(committingAgent(slugs), [revertGate]).tick();
     for (const slug of slugs) {
       expect(
-        existsSync(priorAttemptPath(join(fx.repo, ".flume"), slug)),
+        existsSync(priorAttemptPath(join(fx.repo, ".flume"), entryRef(slug))),
       ).toBe(true);
     }
   };
@@ -10818,7 +10846,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     // Fanout: the record is filed under the entry's tag slug.
     await waveLeavingRecords(["keyed-entry"]);
     const entryRecord = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "KEYED-ENTRY"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, entryRef("KEYED-ENTRY")), "utf8"),
     ) as Record<string, unknown>;
     expect(entryRecord.mode).toBe("gate-revert");
     expect(entryRecord.key).toBe("entry");
@@ -10843,7 +10871,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
       log: silent,
     }).tick();
     const phaseRecord = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, phaseRef("plan")), "utf8"),
     ) as Record<string, unknown>;
     expect(phaseRecord.mode).toBe("clean-exit");
     expect(phaseRecord.key).toBe("phase");
@@ -10860,10 +10888,10 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     new Baton(flumeDir).wake("build");
     await buildDispatcher(bailingAgent(["live-one"])).tick();
 
-    expect(existsSync(priorAttemptPath(flumeDir, "STALE-ONE"))).toBe(false);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("STALE-ONE")))).toBe(false);
     // The entry still queued keeps its record — the clear is keyed on the
     // queue, not on age.
-    expect(existsSync(priorAttemptPath(flumeDir, "LIVE-ONE"))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("LIVE-ONE")))).toBe(true);
   }, 30_000);
 
   it("a wave leaves a phase-keyed prior-attempt record standing", async () => {
@@ -10888,18 +10916,18 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
       },
       log: silent,
     }).tick();
-    expect(existsSync(priorAttemptPath(flumeDir, "plan"))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, phaseRef("plan")))).toBe(true);
 
     await writePending(fx.repo, [entryFor("live-one")]);
     new Baton(flumeDir).wake("build");
     await buildDispatcher(bailingAgent(["live-one"])).tick();
 
     // The sweep ran on this wave — the retired tag's record is gone …
-    expect(existsSync(priorAttemptPath(flumeDir, "RETIRED-ONE"))).toBe(false);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("RETIRED-ONE")))).toBe(false);
     // … and the phase's record survived it intact.
-    expect(existsSync(priorAttemptPath(flumeDir, "plan"))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, phaseRef("plan")))).toBe(true);
     const phaseRecord = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, phaseRef("plan")), "utf8"),
     ) as Record<string, unknown>;
     expect(phaseRecord.key).toBe("phase");
     expect(phaseRecord.mode).toBe("clean-exit");
@@ -10925,11 +10953,13 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     new Baton(flumeDir).wake("build");
     const second = await buildDispatcher(bailingAgent(["live-one"])).tick();
 
+    // Named by the same key `TickContext.priorAttempts` files them under,
+    // keyspace included — one vocabulary for the record across both surfaces.
     expect(second.verdict?.clearedPriorAttempts).toEqual([
-      slugify("STALE-A"),
-      slugify("STALE-B"),
+      `entry:${slugify("STALE-A")}`,
+      `entry:${slugify("STALE-B")}`,
     ]);
-    expect(existsSync(priorAttemptPath(flumeDir, "LIVE-ONE"))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("LIVE-ONE")))).toBe(true);
   }, 30_000);
 });
 
@@ -11008,12 +11038,12 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     );
   }, 20_000);
 
-  it("TickContext.priorAttempts is keyed as the on-disk files are (tag slug / phase name) and a corrupt record reads as absent", async () => {
+  it("TickContext.priorAttempts is keyed by keyspace and identity as the on-disk layout is, and a corrupt record reads as absent", async () => {
     const entries: PendingEntry[] = [makeEntry("SHIPS", ["src/ships.ts"])];
     await writePending(fx.repo, entries);
 
     const flumeDir = join(fx.repo, ".flume");
-    await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+    await mkdir(join(flumeDir, "prior-attempts", "entry"), { recursive: true });
     const validRecord: PriorAttempt = {
       mode: "clean-exit",
       finalMessage: "off-writablePaths edit",
@@ -11022,16 +11052,17 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
-    // Written under the same slug the dispatcher itself would derive from
-    // the entry's tag — "the files are" keyed by slug, not raw tag.
+    // Written where the dispatcher itself would put it: under the entry
+    // keyspace's own directory, at the slug it derives from the tag — not
+    // the raw tag, and not the flat dir the two keyspaces used to share.
     await writeFile(
-      join(flumeDir, "prior-attempts", `${slugify("SHIPS")}.json`),
+      join(flumeDir, "prior-attempts", "entry", `${slugify("SHIPS")}.json`),
       JSON.stringify(validRecord),
     );
     // Malformed JSON — PriorAttemptStore.read's own tolerance ("a garbled record
     // must not crash the tick") should drop this key, not surface it or throw.
     await writeFile(
-      join(flumeDir, "prior-attempts", "corrupt.json"),
+      join(flumeDir, "prior-attempts", "entry", "corrupt.json"),
       "{ not valid json",
     );
 
@@ -11057,25 +11088,29 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     await dispatcher.tick();
 
     expect(captured).toBeDefined();
-    expect(captured!.get(slugify("SHIPS"))).toEqual(validRecord);
-    expect(captured!.has("corrupt")).toBe(false);
+    expect(captured!.get(`entry:${slugify("SHIPS")}`)).toEqual(validRecord);
+    // The identity alone is not a key: the keyspace rides it.
+    expect(captured!.has(slugify("SHIPS"))).toBe(false);
+    expect(captured!.has("entry:corrupt")).toBe(false);
     expect(captured!.size).toBe(1);
   }, 20_000);
 
   /**
-   * Drop `records` (raw JSON, whatever shape) under `<flumeDir>/prior-attempts/`
-   * and return the `TickContext.priorAttempts` map a phase hook is handed for
-   * them — the only surface a chain reads a record through.
+   * Drop `records` (raw JSON, whatever shape) under the phase keyspace's own
+   * directory and return the `TickContext.priorAttempts` map a phase hook is
+   * handed for them — the only surface a chain reads a record through. Phase-
+   * keyed throughout: these stems name no queue entry, and the wave's stale
+   * sweep retires entry-keyed records whose tag the queue no longer carries.
    */
   const priorAttemptsSeenBy = async (
     records: Record<string, unknown>,
   ): Promise<ReadonlyMap<string, PriorAttempt>> => {
     await writePending(fx.repo, [makeEntry("SHIPS", ["src/ships.ts"])]);
     const flumeDir = join(fx.repo, ".flume");
-    await mkdir(join(flumeDir, "prior-attempts"), { recursive: true });
+    await mkdir(join(flumeDir, "prior-attempts", "phase"), { recursive: true });
     for (const [key, rec] of Object.entries(records)) {
       await writeFile(
-        join(flumeDir, "prior-attempts", `${key}.json`),
+        join(flumeDir, "prior-attempts", "phase", `${key}.json`),
         JSON.stringify(rec),
       );
     }
@@ -11115,8 +11150,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     // The un-anchored record is refused exactly as the unrecognized-mode one
     // is: a chain reading `headSha` off a `priorAttempts` value never gets
     // `undefined` through a field the type declares required.
-    expect(captured.has("un-anchored")).toBe(false);
-    expect(captured.has("bad-mode")).toBe(false);
+    expect(captured.has("phase:un-anchored")).toBe(false);
+    expect(captured.has("phase:bad-mode")).toBe(false);
     expect(captured.size).toBe(0);
   }, 20_000);
 
@@ -11125,15 +11160,16 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       "no-at": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), key: "phase", keyedAs: "no-at", headSha: "0".repeat(40) },
     });
 
-    expect(captured.has("no-at")).toBe(false);
+    expect(captured.has("phase:no-at")).toBe(false);
     expect(captured.size).toBe(0);
   }, 20_000);
 
   it("an anchored record of each union variant still reads back, so the refusal is not swallowing the map", async () => {
-    // `key: "phase"` on every arm: these stems name no queue entry, and the
-    // wave's stale sweep retires entry-keyed records whose tag the queue no
-    // longer carries — a keyspace this test is not about would delete its
-    // own subject before the hook ever sees it.
+    // `key: "phase"` on every arm, matching the directory the helper writes
+    // them to: these stems name no queue entry, and the wave's stale sweep
+    // retires entry-keyed records whose tag the queue no longer carries — a
+    // keyspace this test is not about would delete its own subject before the
+    // hook ever sees it.
     const anchor = {
       key: "phase",
       headSha: "0".repeat(40),
@@ -11142,7 +11178,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     // One record per arm of the union, so a refusal that over-fired on any
     // single variant's own fields shows up as a missing key rather than
     // hiding behind a sibling that happened to survive. Each `keyedAs` is
-    // the record's own stem — the map key a hook then looks it up by.
+    // the record's own stem, which the keyspace then prefixes into the map
+    // key a hook looks it up by.
     const anchored: Record<string, PriorAttempt> = {
       "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", keyedAs: "gate-revert", ...anchor },
       "clean-exit": { mode: "clean-exit", finalMessage: "off-writablePaths edit", keyedAs: "clean-exit", ...anchor },
@@ -11156,7 +11193,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
     expect(Object.keys(anchored).length).toBe(6);
     for (const [key, rec] of Object.entries(anchored)) {
-      expect(captured.get(key)).toEqual(rec);
+      expect(captured.get(`phase:${key}`)).toEqual(rec);
     }
     expect(captured.size).toBe(6);
   }, 20_000);
@@ -11595,7 +11632,7 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
 
     // §8 acceptance: findings recoverable WITHOUT session logs — verbatim
     // on disk in the durable, reset-surviving snapshot mirror.
-    const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+    const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
     const recoveredOQ = await readFile(
       join(snapDir, ".flume", "plan", "open-questions.md"),
       "utf8",
@@ -11697,7 +11734,7 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     expect(singletonInvoked).toBe(false);
     expect(singletonOutcome.noCommit).toBe("render-refused");
     const singletonRecord = await readFile(
-      join(fx.repo, ".flume", "prior-attempts", "plan.json"),
+      join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
       "utf8",
     );
 
@@ -11735,7 +11772,7 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     expect(fanoutInvoked).toBe(false);
     expect(fanoutOutcome.noCommit).toBe("render-refused");
     const fanoutRecord = await readFile(
-      join(fx.repo, ".flume", "prior-attempts", "fanout-twin.json"),
+      join(fx.repo, ".flume", "prior-attempts", "entry", "fanout-twin.json"),
       "utf8",
     );
 
@@ -15188,6 +15225,7 @@ describe.runIf(process.platform === "win32")(
         fx.repo,
         ".flume",
         "prior-attempts",
+        "phase",
         "plan.reverted",
         deepRel,
       );
@@ -15257,7 +15295,7 @@ describe.runIf(process.platform === "win32")(
       expect(first.result?.committed).toBe(false);
       expect(first.noCommit).toBe("gate-revert");
 
-      const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+      const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
       const pathA = join(snapDir, deepRelA);
       expect(pathA.length).toBeGreaterThan(260);
       expect(existsSync(pathA)).toBe(true);
@@ -15345,7 +15383,7 @@ describe.runIf(process.platform === "win32")(
       expect(first.result?.committed).toBe(false);
       expect(first.noCommit).toBe("gate-revert");
 
-      const snapDir = join(fx.repo, ".flume", "prior-attempts", "plan.reverted");
+      const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
       const snapPath = join(snapDir, deepRel);
       expect(snapPath.length).toBeGreaterThan(260);
       expect(existsSync(snapPath)).toBe(true);
@@ -15364,8 +15402,9 @@ describe.runIf(process.platform === "win32")(
     it("PriorAttemptStore read/write/clear round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
       // from the reverted commit's own diff path), the depth driver here is
-      // the §5 record's own flat filename: priorAttemptPath is
-      // `<flumeDir>/prior-attempts/<key>.json` with no further nesting, so
+      // the §5 record's own filename: priorAttemptPath is
+      // `<flumeDir>/prior-attempts/<keyspace>/<key>.json`, one fixed segment
+      // of nesting and no more, so
       // only the fanout key (slugify(entry.tag), bounded by the real
       // TAG_PATTERN/TAG_MAX_LENGTH schema gate) can push it past 260 — the
       // longest tag the schema accepts, driven through the real writer.
@@ -15429,6 +15468,7 @@ describe.runIf(process.platform === "win32")(
         fx.repo,
         ".flume",
         "prior-attempts",
+        "entry",
         `${slug}.json`,
       );
       expect(priorAttemptPath.length).toBeGreaterThan(260);
@@ -15746,7 +15786,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     ]);
 
     const record = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "DECLINED-ONCE"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, entryRef("DECLINED-ONCE")), "utf8"),
     ) as Record<string, unknown>;
     expect(record.mode).toBe("not-shipped");
     expect(record.mergedSha).toBe(trunkTip);
@@ -15823,12 +15863,12 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(prompts).toHaveLength(2);
     // No false signal on the first attempt — neither on the hook's map nor
     // in the rendered prompt.
-    expect(seen[0]?.has(slugify("DECLINED-THEN-SHIPS"))).toBe(false);
+    expect(seen[0]?.has(`entry:${slugify("DECLINED-THEN-SHIPS")}`)).toBe(false);
     expect(prompts[0]).not.toContain("<prior-attempt>");
 
     // The retry reads the fact off `TickContext.priorAttempts` — no verdict
     // log, no directory walk of its own.
-    const carried = seen[1]?.get(slugify("DECLINED-THEN-SHIPS"));
+    const carried = seen[1]?.get(`entry:${slugify("DECLINED-THEN-SHIPS")}`);
     expect(carried).toEqual({
       mode: "not-shipped",
       mergedSha: declinedSha,
@@ -15846,7 +15886,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     // A clean ship clears the slot by the existing shipped-entry path.
     expect(second.result?.shippedTags).toEqual(["DECLINED-THEN-SHIPS"]);
     expect(
-      existsSync(priorAttemptPath(flumeDir, "DECLINED-THEN-SHIPS")),
+      existsSync(priorAttemptPath(flumeDir, entryRef("DECLINED-THEN-SHIPS"))),
     ).toBe(false);
   }, 20_000);
 
@@ -16358,15 +16398,20 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
   async function renderRefusedRecords(
     repo: string,
   ): Promise<Map<string, { mode: string; failures: string }>> {
-    const dir = priorAttemptsDir(join(repo, ".flume"));
+    const root = priorAttemptsDir(join(repo, ".flume"));
     const out = new Map<string, { mode: string; failures: string }>();
-    if (!existsSync(dir)) return out;
-    for (const name of (await readdir(dir)).sort()) {
-      const rec = JSON.parse(await readFile(join(dir, name), "utf8")) as {
-        mode: string;
-        failures: string;
-      };
-      if (rec.mode === "render-refused") out.set(basename(name, ".json"), rec);
+    // Both keyspaces: a hook refusal is persisted for a singleton phase and
+    // for a fanout entry alike, and each lands under its own directory.
+    for (const keyspace of ["entry", "phase"]) {
+      const dir = join(root, keyspace);
+      if (!existsSync(dir)) continue;
+      for (const name of (await readdir(dir)).sort()) {
+        const rec = JSON.parse(await readFile(join(dir, name), "utf8")) as {
+          mode: string;
+          failures: string;
+        };
+        if (rec.mode === "render-refused") out.set(basename(name, ".json"), rec);
+      }
     }
     return out;
   }
@@ -16747,7 +16792,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
 
     // The retry channel is the one a declined ship already writes.
     const record = JSON.parse(
-      await readFile(priorAttemptPath(flumeDir, "SHIPPED-THROWS"), "utf8"),
+      await readFile(priorAttemptPath(flumeDir, entryRef("SHIPPED-THROWS")), "utf8"),
     ) as Record<string, unknown>;
     expect(record.mode).toBe("not-shipped");
   }, 30_000);

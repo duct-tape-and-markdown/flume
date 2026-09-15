@@ -156,8 +156,10 @@ Harness-managed state — every name here is one the runtime spells itself
 - `.flume/awake/<phase>` — baton flag files. Presence = phase is awake.
 - `.flume/plan/pending.json` — structured handoff between plan and build.
   This is the default location; a chain moves it with `Chain.pendingPath`.
-- `.flume/prior-attempts/` — one record per reverted attempt, written beside
-  the baton so it outlives the worktree that produced it.
+- `.flume/prior-attempts/<keyspace>/` — one record per reverted attempt,
+  written beside the baton so it outlives the worktree that produced it, and
+  scoped by keyspace (`entry/`, `phase/`) so a tag and a phase name that
+  slugify alike never share a file.
 - `.flume/rendered-prompts/` — each invocation's fully rendered prompt,
   persisted before the agent runs.
 - `.flume/worktrees/<slug>/` — one worktree per tick: the entry's slug under

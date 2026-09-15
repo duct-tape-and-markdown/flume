@@ -23,7 +23,11 @@ import { expect, it } from "vitest";
 import { EX_DATAERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
-import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
+import {
+  priorAttemptPath,
+  priorAttemptsDir,
+  type PriorAttemptRef,
+} from "../src/priorAttempts.ts";
 import type { Agent, AgentInvocation } from "../src/Agent.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
 import {
@@ -182,21 +186,24 @@ it("flume render's first line says the prior-attempt block is omitted", async ()
   const repo = await makeRenderRepo([entry("ONLY", "src/only.ts")]);
   try {
     // Non-vacuity: a record the tick *would* have rendered a block from
-    // stands on disk under this entry's key. The notice is the verb's answer
+    // stands on disk under this entry's ref. The notice is the verb's answer
     // to a real record, not to an empty prior-attempts dir.
-    await mkdir(priorAttemptsDir(repo.flumeDir), { recursive: true });
+    const ONLY_REF: PriorAttemptRef = { key: "ONLY", keyspace: "entry" };
+    await mkdir(join(priorAttemptsDir(repo.flumeDir), "entry"), {
+      recursive: true,
+    });
     await writeFile(
-      priorAttemptPath(repo.flumeDir, "ONLY"),
+      priorAttemptPath(repo.flumeDir, ONLY_REF),
       JSON.stringify({
         mode: "clean-exit",
         key: "entry",
-        keyedAs: "ONLY",
+        keyedAs: "only",
         headSha: "0".repeat(40),
         at: "2026-01-01T00:00:00.000Z",
       }),
       "utf8",
     );
-    expect(existsSync(priorAttemptPath(repo.flumeDir, "ONLY"))).toBe(true);
+    expect(existsSync(priorAttemptPath(repo.flumeDir, ONLY_REF))).toBe(true);
 
     const r = await runCliStreams(repo.dir, ["render", "build", "--entry", "ONLY"]);
     expect(r.code).toBe(0);

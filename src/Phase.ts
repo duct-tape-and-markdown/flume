@@ -119,11 +119,12 @@ export interface TickContext {
   pickable?: readonly PendingEntry[];
   /**
    * Every persisted {@link PriorAttempt} record under
-   * `<flumeDir>/prior-attempts/`, keyed by the identity each record was
-   * written under — the entry tag slug for a fanout record, the phase name
-   * for a singleton one, exactly as this chain spells that name. A phase the
-   * chain calls `plan_sweep` finds its own record at `plan_sweep`, whatever
-   * stem the file sits at. Read with the dispatcher's own reader and its own
+   * `<flumeDir>/prior-attempts/`, keyed by the keyspace and the identity each
+   * record was written under — `entry:<tag slug>` for a fanout record,
+   * `phase:<phase name>` for a singleton one, the name exactly as this chain
+   * spells it. A phase the chain calls `plan_sweep` finds its own record at
+   * `phase:plan_sweep`, whatever stem the file sits at, and never collides
+   * with a tag that slugs the same way. Read with the dispatcher's own reader and its own
    * tolerance: a corrupt or unrecognized-mode record is absent from the map
    * rather than surfaced malformed. A `shouldRun` deciding "does some other
    * phase have a standing record to reconcile" reads this instead of

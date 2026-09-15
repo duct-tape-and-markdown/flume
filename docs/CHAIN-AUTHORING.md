@@ -280,7 +280,7 @@ declares is below, in declaration order.
 | `assignedEntry` | The pending entry this tick was handed. Fanout phases only.                                                                       |
 | `pending`       | The full pending list, for a singleton phase reasoning about queue state.                                                         |
 | `pickable`      | The entries the dispatcher would select right now — `blockedBy` resolved, declared forks checked through the chain's `forkResolver`, capabilities checked, this run's quarantine drop applied. A fact the dispatcher already computed, carried so a hook reads it instead of rebuilding it. Optional in the type only so a hand-built fixture may omit it; a dispatcher-built context always sets it. |
-| `priorAttempts` | Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`, keyed by the identity it was written under — the entry tag slug for a fanout record, the phase name for a singleton one, spelled exactly as your chain spells it (the file on disk sits at a slugged stem; the map key does not). Optional in the type for the same fixture reason as `pickable`. |
+| `priorAttempts` | Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`, keyed by keyspace and identity — `entry:<tag slug>` for a fanout record, `phase:<phase name>` for a singleton one, the name spelled exactly as your chain spells it (the file on disk sits at a slugged stem under its keyspace's directory; the map key does not). Optional in the type for the same fixture reason as `pickable`. |
 
 ### `shouldRun`: decline a tick before the invocation
 
@@ -1354,11 +1354,14 @@ it from the two lists, and a gate reporting no `failingFiles` earns no marker.
 An absent field is never a claim of flakiness.
 
 The carry is cross-process by construction — the record is persisted under
-`.flume/prior-attempts/` (gitignored, beside the baton) and read back by the
+`.flume/prior-attempts/<keyspace>/` (gitignored, beside the baton;
+`priorAttemptPath(flumeDir, ref)` is the exported rule, the ref pairing the
+keyspace with the identity) and read back by the
 next `flume tick`'s fresh process. That same read hands every record to your
-hooks as `TickContext.priorAttempts`, keyed by the identity each record was
-written under (entry tag slug for a fanout record, phase name for a singleton
-one — your spelling of that name, not the slugged stem the file sits at), so a
+hooks as `TickContext.priorAttempts`, keyed by the keyspace and identity each
+record was written under — `entry:<tag slug>` for a fanout record,
+`phase:<phase name>` for a singleton one, your spelling of that name rather
+than the slugged stem the file sits at — so a
 `shouldRun` or `promptArgs` reading one — the `suspectFlake` marker included —
 never opens the directory itself.
 
@@ -1369,8 +1372,10 @@ queue no longer carries. That second clear runs before selection, so an entry
 you dropped or renamed in `pending.json` leaves nothing behind for a later tick
 to read — the retry those records were written for is never going to happen.
 The wave names the keys it cleared on the tick verdict
-(`clearedPriorAttempts`, absent when it cleared none); a singleton phase's own
-record is outside that sweep, since no queue entry governs it.
+(`clearedPriorAttempts`, absent when it cleared none — the same
+`entry:<tag slug>` keys the map uses); a singleton phase's own record is
+outside that sweep, since no queue entry governs it, even where its name slugs
+onto a tag the queue has dropped.
 
 ## 6. The foundations governor (`forkResolver`)
 

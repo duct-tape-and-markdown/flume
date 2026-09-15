@@ -74,14 +74,65 @@ export interface PriorAttemptRef {
 }
 
 /**
+ * Every keyspace a record can belong to, as a value — the directory names
+ * {@link priorAttemptStem} scopes a stem under and the set
+ * {@link PriorAttemptStore.readAll} enumerates. Exhaustive over
+ * {@link PriorAttemptKeyspace} by type, so a keyspace the union gains must be
+ * given its directory here rather than silently going unread on disk.
+ */
+const KEYSPACES: Record<PriorAttemptKeyspace, true> = {
+  entry: true,
+  phase: true,
+};
+
+/** The same set as a list, for the enumeration `readAll` walks. */
+const KEYSPACE_NAMES = Object.keys(KEYSPACES) as PriorAttemptKeyspace[];
+
+/**
+ * Whether a decoded record's `key` field names a keyspace this store knows —
+ * the one reader of {@link KEYSPACES} that runs over untrusted JSON, so the
+ * accepted set and the enumerated directories cannot drift apart.
+ */
+function isKeyspace(value: unknown): value is PriorAttemptKeyspace {
+  return typeof value === "string" && Object.hasOwn(KEYSPACES, value);
+}
+
+/**
+ * The key one record occupies in the map a chain reads
+ * (`TickContext.priorAttempts`, spec/chain.md *What a hook receives*):
+ * the keyspace and the written identity, joined — `entry:<tag slug>` for a
+ * fanout record, `phase:<phase name>` for a singleton's. Both halves, because
+ * the identity alone collides exactly where the stems used to: a phase named
+ * `build` and a tag slugged `build` are two records, and a map keyed by the
+ * identity would hand a `shouldRun` whichever of them was read last.
+ */
+function priorAttemptMapKey(ref: PriorAttemptRef): string {
+  return `${ref.keyspace}:${ref.key}`;
+}
+
+/**
+ * The ref a persisted record was written under, read back off the record's
+ * own stamped fields — the inverse of what {@link PriorAttemptStore.write}
+ * stamps. `clearStale` re-derives the path of a record it enumerated this
+ * way rather than from the filename it found it at, so the identity that
+ * keys the map is the identity that keys the removal.
+ */
+function refOfRecord(rec: PriorAttempt): PriorAttemptRef {
+  return { key: rec.keyedAs, keyspace: rec.key };
+}
+
+/**
  * Prior-attempt records live beside the baton, under `priorAttemptsDir`
  * (`src/paths.ts`, which owns the name): gitignored harness runtime state
  * under the flume state dir, NOT in the per-entry worktree (a fanout retry
- * gets a fresh worktree; the record must outlive it). One JSON file per key —
- * the entry tag slug (fanout) or phase name (singleton).
+ * gets a fresh worktree; the record must outlive it). One JSON file per ref —
+ * the entry tag slug (fanout) or phase name (singleton), under its own
+ * keyspace's subdirectory.
  *
  * Re-exported here because that is where a chain reaches it from
- * (`src/index.ts`, `src/flumeApi.ts`).
+ * (`src/index.ts`, `src/flumeApi.ts`). The records themselves sit one level
+ * down, under the keyspace they belong to
+ * (`<flumeDir>/prior-attempts/<keyspace>/<slug>.json`).
  *
  * Session logs sit alongside under the same root (the dogfood chain places
  * them at `<flumeDir>/sessions/`), but that placement is chain-supplied, not
@@ -100,21 +151,34 @@ export { priorAttemptsDir };
  * two artifacts of a single attempt are named by one identity and neither
  * can be keyed by a raw tag that walks out of the dir
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ *
+ * Scoped by the ref's keyspace, not by its identity alone: `slugify` maps a
+ * phase name and an entry tag onto one text as readily as not — a phase
+ * named `build` and a tag `BUILD` slug alike — and two attempts sharing a
+ * stem is one overwriting the other's record and inheriting its snapshot.
+ * The keyspace is a closed set this module spells ({@link KEYSPACES}), never
+ * caller text, so the scoping segment cannot itself walk out of the dir.
  */
-function priorAttemptStem(flumeDir: string, key: string): string {
-  return join(priorAttemptsDir(flumeDir), slugify(key));
+function priorAttemptStem(flumeDir: string, ref: PriorAttemptRef): string {
+  return join(priorAttemptsDir(flumeDir), ref.keyspace, slugify(ref.key));
 }
 
 /**
- * Filesystem path of a tag's/phase's prior-attempt record
+ * Filesystem path of one prior-attempt record
  * (spec/loop.md "Prior-outcome feedback to the retrying tick": "the exported
- * rule"). Slugifies internally — idempotent on an already-slugified key — so
- * a chain-authored `shouldRun` can derive the same path the dispatcher
- * itself reads and writes from nothing but the raw tag/phase name it already
- * has, with no private dispatcher rule to reverse-engineer.
+ * rule"). Takes the {@link PriorAttemptRef} whole — keyspace and identity
+ * travel together, so a caller cannot name a record without saying which of
+ * the two keyspaces it belongs to. Slugifies internally — idempotent on an
+ * already-slugified key — so a chain-authored `shouldRun` can derive the same
+ * path the dispatcher itself reads and writes from nothing but the raw
+ * tag/phase name it already has, with no private dispatcher rule to
+ * reverse-engineer.
  */
-export function priorAttemptPath(flumeDir: string, tag: string): string {
-  return `${priorAttemptStem(flumeDir, tag)}.json`;
+export function priorAttemptPath(
+  flumeDir: string,
+  ref: PriorAttemptRef,
+): string {
+  return `${priorAttemptStem(flumeDir, ref)}.json`;
 }
 
 /** Telegraphic-prose bound on persisted gate details — a digest, not a transcript. */
@@ -207,9 +271,15 @@ export class PriorAttemptStore {
    * is a stale slot, and a stale slot must never become a false signal —
    * and one predating `keyedAs` has no identity to key {@link readAll}'s map
    * by, which would put it in a chain's hands under `undefined`.
+   *
+   * A record whose stated keyspace disagrees with the directory it was found
+   * in is the same class of undecodable: the two sides of its identity
+   * contradict each other, and honouring the stated one would file it in the
+   * map under a key whose path — the one {@link clear} would later remove —
+   * is not the file it came from.
    */
-  async read(key: string): Promise<PriorAttempt | undefined> {
-    const p = priorAttemptPath(this.flumeDir, key);
+  async read(ref: PriorAttemptRef): Promise<PriorAttempt | undefined> {
+    const p = priorAttemptPath(this.flumeDir, ref);
     // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
     // on a record that is present but unstattable. "No prior attempt" is the
     // signal spec/loop.md "Repeated identical failures" counts on, so a
@@ -235,7 +305,8 @@ export class PriorAttemptStore {
           rec.mode === "not-shipped") &&
         typeof rec.headSha === "string" &&
         typeof rec.at === "string" &&
-        (rec.key === "entry" || rec.key === "phase") &&
+        isKeyspace(rec.key) &&
+        rec.key === ref.keyspace &&
         typeof rec.keyedAs === "string" &&
         rec.keyedAs.length > 0
       ) {
@@ -250,15 +321,20 @@ export class PriorAttemptStore {
 
   /**
    * Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`,
-   * keyed by the identity each record was **written** under — its own
-   * {@link PriorAttempt.keyedAs} — not by the filename stem it happens to
-   * sit at. For a fanout record the two are the same text (the ref's key is
-   * already a tag slug); for a singleton they diverge whenever `slugify`
-   * rewrites the phase name, and it is the chain's own spelling of that name
-   * a hook holds when it reaches for its record (spec/chain.md "What a hook
-   * receives"). The stem still locates the file — it is read back through
-   * {@link read}, whose `slugify` is idempotent on it — and only the map key
-   * comes off the record.
+   * keyed by the keyspace and the identity each record was **written** under
+   * — `entry:<tag slug>`, `phase:<phase name>`
+   * ({@link priorAttemptMapKey}) — not by the filename stem it happens to
+   * sit at. For a fanout record the identity and the stem are the same text
+   * (the ref's key is already a tag slug); for a singleton they diverge
+   * whenever `slugify` rewrites the phase name, and it is the chain's own
+   * spelling of that name a hook holds when it reaches for its record
+   * (spec/chain.md "What a hook receives"). The stem still locates the file
+   * — it is read back through {@link read}, whose `slugify` is idempotent on
+   * it — and only the map key comes off the record.
+   *
+   * Walked one keyspace directory at a time, so which keyspace a record
+   * belongs to is known from where it was found and never guessed from the
+   * text of its stem.
    *
    * Absent (`ENOENT`) is the only silent reading: nothing written is no
    * records. A directory that is present but cannot be enumerated — a plain
@@ -273,20 +349,22 @@ export class PriorAttemptStore {
    * record that was *read* and found garbled.
    */
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
-    const dir = priorAttemptsDir(this.flumeDir);
-    let entries: Dirent[];
-    try {
-      entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
-      throw err;
-    }
     const out = new Map<string, PriorAttempt>();
-    for (const e of entries) {
-      if (!e.isFile() || !e.name.endsWith(".json")) continue;
-      const stem = e.name.slice(0, -".json".length);
-      const rec = await this.read(stem);
-      if (rec) out.set(rec.keyedAs, rec);
+    for (const keyspace of KEYSPACE_NAMES) {
+      const dir = join(priorAttemptsDir(this.flumeDir), keyspace);
+      let entries: Dirent[];
+      try {
+        entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw err;
+      }
+      for (const e of entries) {
+        if (!e.isFile() || !e.name.endsWith(".json")) continue;
+        const stem = e.name.slice(0, -".json".length);
+        const rec = await this.read({ key: stem, keyspace });
+        if (rec) out.set(priorAttemptMapKey(refOfRecord(rec)), rec);
+      }
     }
     return out;
   }
@@ -300,7 +378,7 @@ export class PriorAttemptStore {
    * which worktree produced the record.
    */
   async write(ref: PriorAttemptRef, rec: PriorAttemptDraft): Promise<void> {
-    const p = priorAttemptPath(this.flumeDir, ref.key);
+    const p = priorAttemptPath(this.flumeDir, ref);
     const anchored: PriorAttempt = {
       ...rec,
       key: ref.keyspace,
@@ -325,11 +403,11 @@ export class PriorAttemptStore {
    * no stale recovery artifact (the same no-false-signal invariant the
    * record slot already holds, extended to the prose snapshot).
    */
-  async clear(key: string): Promise<void> {
-    await rm(toNamespacedPath(priorAttemptPath(this.flumeDir, key)), {
+  async clear(ref: PriorAttemptRef): Promise<void> {
+    await rm(toNamespacedPath(priorAttemptPath(this.flumeDir, ref)), {
       force: true,
     });
-    await rm(toNamespacedPath(this.snapshotDir(key)), {
+    await rm(toNamespacedPath(this.snapshotDir(ref)), {
       recursive: true,
       force: true,
     });
@@ -346,26 +424,30 @@ export class PriorAttemptStore {
    * Keyed on the record's own `key` keyspace, never on the written
    * identity's text: a phase's record is named by a phase name, which no
    * queue ever carries, so a text-only test would clear the singleton
-   * records the queue has no say over. Within the entry keyspace the
-   * identity {@link readAll} keys by *is* the tag slug the ref wrote it
-   * under, which is what `queued` holds. Records that read as absent (corrupt, unanchored, no
-   * keyspace) are not cleared — {@link readAll} never surfaces them, and
-   * deleting a file this store cannot parse is a guess about what wrote it.
+   * records the queue has no say over — and a phase whose name slugs onto a
+   * retired tag is exactly the case where the two texts cannot tell the
+   * keyspaces apart. Within the entry keyspace the identity is the tag slug
+   * the ref wrote it under, which is what `queued` holds. The cleared keys
+   * reported are the ones {@link readAll} keys by, so a chain reading the
+   * verdict and a chain reading `TickContext.priorAttempts` name the same
+   * record. Records that read as absent (corrupt, unanchored, no keyspace)
+   * are not cleared — {@link readAll} never surfaces them, and deleting a
+   * file this store cannot parse is a guess about what wrote it.
    */
   async clearStale(pending: readonly PendingEntry[]): Promise<string[]> {
     const queued = new Set(pending.map((e) => slugify(e.tag)));
     const records = await this.readAll();
     const stale = [...records]
-      .filter(([key, rec]) => rec.key === "entry" && !queued.has(key))
-      .map(([key]) => key)
-      .sort();
-    for (const key of stale) await this.clear(key);
-    if (stale.length > 0) {
+      .filter(([, rec]) => rec.key === "entry" && !queued.has(rec.keyedAs))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const [, rec] of stale) await this.clear(refOfRecord(rec));
+    const keys = stale.map(([key]) => key);
+    if (keys.length > 0) {
       this.log.info(
-        `[flume] cleared ${stale.length} stale prior-attempt record(s): ${stale.join(", ")}`,
+        `[flume] cleared ${keys.length} stale prior-attempt record(s): ${keys.join(", ")}`,
       );
     }
-    return stale;
+    return keys;
   }
 
   /**
@@ -381,8 +463,8 @@ export class PriorAttemptStore {
    * `priorAttemptsDir` entirely — which `clear` and
    * {@link snapshotReverted} then `rm -rf`.
    */
-  snapshotDir(key: string): string {
-    return `${priorAttemptStem(this.flumeDir, key)}.reverted`;
+  snapshotDir(ref: PriorAttemptRef): string {
+    return `${priorAttemptStem(this.flumeDir, ref)}.reverted`;
   }
 
   /**
@@ -404,11 +486,15 @@ export class PriorAttemptStore {
    * Must run while `sha` is still reachable (before the drop). Best-effort —
    * a snapshot failure must never block or fail the revert.
    */
-  async snapshotReverted(cwd: string, sha: string, key: string): Promise<void> {
-    const dir = this.snapshotDir(key);
+  async snapshotReverted(
+    cwd: string,
+    sha: string,
+    ref: PriorAttemptRef,
+  ): Promise<void> {
+    const dir = this.snapshotDir(ref);
     try {
       // The artifact tracks the *latest* reverted attempt only — drop any
-      // stale snapshot from an earlier revert under this key first.
+      // stale snapshot from an earlier revert under this ref first.
       await rm(toNamespacedPath(dir), { recursive: true, force: true });
       // Both reads go through `src/git.ts`, never a second `git show` spelled
       // here (`.claude/rules/engineering.md`, "The fix lands at the

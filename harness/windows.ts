@@ -337,20 +337,30 @@ function renderRecords(flumeDir: string): string {
  * been doing, and the mark is what says which ones this tick must resolve.
  */
 function renderBuildRecords(ctx: WindowContext): string {
+  // Read off the map's values and each record's own stated identity, never
+  // off the map key: how the engine composes that key is the engine's, and a
+  // slice that re-spelled it here would mark the wrong records the day it
+  // changed (`.claude/rules/engineering.md`, *A fact the engine holds is
+  // reported, never rediscovered*).
   const records = [
-    ...(ctx.priorAttempts ?? new Map<string, PriorAttempt>()),
-  ].sort(([a], [b]) =>
-    a < b ? -1 : a > b ? 1 : 0,
-  );
+    ...(ctx.priorAttempts ?? new Map<string, PriorAttempt>()).values(),
+  ].sort((a, b) => {
+    const left = `${a.key}:${a.keyedAs}`;
+    const right = `${b.key}:${b.keyedAs}`;
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
   if (records.length === 0) return "(no standing prior-attempt records)";
 
-  const standing = new Set(standingRefusals(ctx).map((r) => r.keyedAs));
+  // By reference: `standingRefusals` filters the same record objects this
+  // list holds, so identity is the marking test and no second key spelling
+  // can drift from it.
+  const standing = new Set<PriorAttempt>(standingRefusals(ctx));
   const lines = [`=== ${records.length} standing prior-attempt record(s) ===`];
-  for (const [key, record] of records) {
-    const mark = standing.has(key)
+  for (const record of records) {
+    const mark = standing.has(record)
       ? " ← the queue still carries this entry; reconcile it"
       : "";
-    lines.push(`--- ${key} (${record.key} keyspace)${mark} ---`);
+    lines.push(`--- ${record.keyedAs} (${record.key} keyspace)${mark} ---`);
     lines.push(JSON.stringify(record, null, 2));
   }
   return lines.join("\n");
