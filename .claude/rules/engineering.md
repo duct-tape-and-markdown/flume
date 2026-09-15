@@ -51,8 +51,11 @@ Every check lives at the most deterministic layer that can express it — a
   sentence — is not prose: a pin may resolve it against the declarations
   those trees hold and the working tree — the token, never its meaning — so
   a deleted symbol or a renamed page cannot leave its citations standing.
-  Prose the package never ships, read for what it says, stays with its
-  authors.
+  A test's title carries the page-name arm alone: a title is a string
+  literal, and a literal is itself a resolution arm, so an identifier in a
+  title would resolve itself; only the `*.md` name, read against the working
+  tree, can bite there. Prose the package never ships, read for what it says,
+  stays with its authors.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is
