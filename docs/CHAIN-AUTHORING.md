@@ -77,30 +77,16 @@ verb set stays closed and `src/` never imports the harness:
 ```sh
 # adopt, then install what the adoption declared
 npx --package @dtmd/flume flume-harness init
-pnpm install            # or npm / yarn — init adds the dependency, it does not run your installer
+pnpm install            # or npm / yarn
 
 # already installed? the local shim is the same verb
 pnpm exec flume-harness init
 ```
 
-`init` writes, into the repository it is run in: `<stateRoot>/declaration.ts`
-(the skeleton you edit), `<stateRoot>/chain.ts` (the hop the engine loads),
-`<stateRoot>/plan/pending.json` holding an empty queue — nothing else creates
-one, and a plan slice refuses over an absent queue — `<stateRoot>/PROTOCOL.md`
-for your own conventions, and the runtime's ignore lines merged into
-`.gitignore` without disturbing what was already there. It adds
-`@dtmd/flume` to your `package.json` if you have one, leaves a range you
-already pinned alone, and reports what it found if there is no manifest at
-all — a fact, never a verdict: which package manager runs the install stays
-yours. `<stateRoot>` is `.flume`; the verb takes no arguments, and adopting
-into a different root is the exported `harnessInit({ repoRoot, stateRoot })`.
-
-Every refusal is taken before the first byte is written, and a state root
-that already exists is a refusal rather than a merge: a repository that has
-one has a declaration someone has edited, and **upgrading is a version bump
-plus the release's migration note, never a re-run of `init`**. A breaking
-change to the declaration schema is refused at chain load with the field
-named — never read as a silent default.
+What the verb writes, what it refuses over, what it leaves exactly as it
+found it, and the exit code each outcome carries is
+[`docs/CLI.md` § `flume-harness init`](CLI.md#flume-harness-init) — read off
+the bin itself and gated there, so it is the copy to trust.
 
 The `chain.ts` it writes is the whole hop, identical in every repository that
 adopts the package, and nothing in it is yours to tune:
