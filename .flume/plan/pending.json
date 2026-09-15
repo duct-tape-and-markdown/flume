@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "HARNESS-STANDIN-SCAN-ANY-ENGINE-TYPE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/stubRunner.test.ts",
+          "description": "widen the scan off the `Runner` literal to any engine-type target"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "type the `PendingEntry` stand-in `assigned()` casts at :194"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Scan any engine-type `unknown` cast in the harness suite, not the `Runner` literal alone; type the `PendingEntry` stand-in that literal misses",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "The scan's subject is the cast's target being an engine type; `assigned()` is a typed `PendingEntry`.",
+    "tests": [
+      "no harness test stands an engine type in through an `unknown` cast"
+    ],
+    "pins": [],
+    "notes": "Direction is the line: a cast **to** a type from src/ or harness/ is a stand-in; `as unknown as Record<string, unknown>` (harnessPlanState.test.ts:137) goes the other way and is refusal-test input engineering.md sanctions (*A seam gate reads what the real writer wrote*). The scan reads harnessGates.test.ts off disk, which the base run leaves at pre-fix bytes — so the widened line is red there."
+  }
+]
