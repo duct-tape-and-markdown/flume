@@ -355,6 +355,51 @@ it("the sweep window carries the frontier commits and the spec lines the window 
   expect(rendered).toContain("-A ratified claim.");
 });
 
+it("a rendered sweep window names the tip its frontier was drawn from", () => {
+  const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  // The tip is the tree's, not the frontier's last commit: the rotation this
+  // window closes has been re-derived against everything past the cursor.
+  const tip = commit({ "elsewhere/x.md": "outside the domain\n" }, "chore: elsewhere");
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Vacuity guard: the frontier this tip closes is populated.
+  expect(rendered).toContain(
+    `=== 1 commit(s) since ${base} touching the sweep domain or a posture page ===`,
+  );
+  expect(tip).not.toBe(base);
+  expect(rendered).toContain(
+    `=== this window was drawn from tip ${tip}; the tick that closes the ` +
+      `rotation stamps \`sweptThrough\` at exactly that sha ===`,
+  );
+});
+
+it("a sweep window with no commits past its cursor names the cursor as its tip", () => {
+  const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // The empty case, spelled: a quiet tree still names one tip, so the tick
+  // that closes on it stamps the cursor forward rather than nothing.
+  expect(rendered).toContain(
+    `=== 0 commit(s) since ${base} touching the sweep domain or a posture page ===`,
+  );
+  expect(rendered).toContain(
+    `=== this window was drawn from tip ${base}; the tick that closes the ` +
+      `rotation stamps \`sweptThrough\` at exactly that sha ===`,
+  );
+});
+
 it("the inbox window renders every waiting record's bytes and marks the refusals it must reconcile", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
   writePlanState(stateRoot(), planState());

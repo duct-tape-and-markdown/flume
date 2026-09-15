@@ -486,6 +486,19 @@ function sweepInputs(declaration: Declaration): {
   return sweep;
 }
 
+/**
+ * The rendered sweep window, ending in the tip its frontier was drawn from.
+ *
+ * **The window names its own tip.** The frontier is re-derived every tick
+ * against whatever the tree's tip is, so the sha a closing tick may stamp is
+ * a fact this render already holds — the last commit of the range it just
+ * scanned, or the cursor itself when the range is empty. Naming it here is
+ * what lets the closing tick stamp exactly the tip its frontier covered
+ * rather than resolving a HEAD that moved while it read
+ * (`.claude/rules/posture-sweep.md`, *The stamp*). It is the sibling of the
+ * `may advance to` line the derive window ends on, and costs no second git
+ * call.
+ */
 function renderSweepWindow(
   ctx: WindowContext,
   options: PlanSliceWindowsOptions,
@@ -536,6 +549,13 @@ function renderSweepWindow(
       );
     }
   }
+
+  const tip = all.at(-1)?.sha ?? cursor;
+  lines.push(
+    "",
+    `=== this window was drawn from tip ${tip}; the tick that closes the ` +
+      `rotation stamps \`sweptThrough\` at exactly that sha ===`,
+  );
   return lines.join("\n");
 }
 

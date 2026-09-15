@@ -34,7 +34,7 @@ Apply the declared posture pages to code that already exists. Those pages bind t
 
 Findings route per the pages' own bar: correctness-adjacent → a pending entry citing the owning section; pure shape → an accepted-debt line in the commit body; a design fork → an open question naming the section and the fork. A violation counts only when verified on disk this tick, cited by symbol and line — a finding read off a remembered impression, a commit message, or a prior tick's note does not count.
 
-**The cursor and the rotation.** An open rotation is `rotation: { kind: "open", covered: [...] }` in the plan state; the chain keeps this slice live while it is open. When the frontier empties, close the rotation and advance `sweptThrough` to the sha the frontier was derived from — never a HEAD that moved mid-rotation. Quiet-on-clean advances the cursor alone.
+**The cursor and the rotation.** An open rotation is `rotation: { kind: "open", covered: [...] }` in the plan state; the chain keeps this slice live while it is open. When the frontier empties, close the rotation and advance `sweptThrough` to the tip `<sweep-window>` names as the one it was drawn from — copy that sha, never one you resolve yourself. Quiet-on-clean advances the cursor alone.
 
 Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
