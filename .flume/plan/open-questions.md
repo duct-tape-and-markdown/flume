@@ -98,56 +98,29 @@ not re-derive them:
   Named here only so the failure tally above stays honest — three
   `harnessPrompts` cases and one `harnessChain` case belong to this family.
 
-## A deleted symbol leaves its doc-comment citations standing, and the ladder's carve-out excludes the prose that broke (PARKED — scope ruling needed)
+## `An export earns its consumer` still hand-holds the property `tests/exportConsumers.test.ts` now pins (NEEDS AMENDMENT — an operator edit)
 
-Drained from `.flume/plan/notes/UNEARNED-EXPORTS-NARROWED.md` (build tick,
-`bbf7091`). That wave deleted three dead helpers from `src/git.ts`
-(`softReset`, `commitsSince`, `hardResetTo`). Three surviving comments cited
-them by name — `resetKeepTo`'s and `softResetTo`'s doc blocks in `src/git.ts`,
-and the whole-wave-revert comment in `src/Dispatcher.ts`. The build agent
-repaired all three by hand. `UNEARNED-EXPORT-PIN` will catch the export; it
-sees nothing that cites a name the tree no longer declares.
+Drained from `.flume/plan/notes/UNEARNED-EXPORT-PIN.md` (build tick, `c4f5fdd`).
+Bullet three of that section promises its own retirement — "this bullet shrinks
+to a pointer in the commit that ships it" — and the pin shipped at `243f394`
+without the shrink, because `.claude/rules/**` is outside build's fence. No
+autonomous phase can clear it, and the page is re-injected into every tick, so
+prose asserting a property a test now pins stands as a per-tick tax against the
+same section's own ladder bullet.
 
-**The check is decidable, and measured this tick.** Backticked
-camelCase/PascalCase tokens in `src/` + `harness/` comments, read against the
-identifier text those two trees declare: **1080 subjects, 0 misses at
-`1226c5a`**. Green today, non-vacuous by a wide margin, no heuristic in the
-verdict — a token either appears in the source text or it does not.
+Measured on the tip (`tests/exportConsumers.test.ts`, 2.5s of the ~130s default
+lane): 343 judged exports across `src/` + `harness/` — 191 earned by
+exports-map reachability, 152 by cross-module reference, 0 unearned.
 
-**The scope is the problem.** None of the three broken comments is shipped
-hover text: the two `git.ts` helpers ride no `exports`-map entry (`FlumeApi.git`
-exposes only `showNameOnly`, `readFileAtRef`, `statusRecords`,
-`readWorktreeRegistry`), and the `Dispatcher.ts` block is an implementation
-comment. `.claude/rules/engineering.md` *Narration is the ladder's bottom rung*
-closes with "The one carve-out is prose that compiles into the package's public
-types… Prose the package never ships stays with its authors." At that scope the
-pin catches **zero of the three** and is decorative, which is why this is parked
-instead of filed — the entry that would have caught the defect cannot carry a
-cite that licenses its scope.
+**Two limits on how far the shrink goes**, so the pointer claims only what the
+pin holds:
 
-**The fork:**
+- The scan resolves symbols through the TS compiler API, so bullet two's "a
+  host that lacks it leaves the verdict unmade" no longer binds the *export*
+  verdict. It still governs the wider dead-symbol case.
+- Reachability walks **type positions only**, skipping function bodies — a
+  module-local helper a public method calls is not public surface. That is what
+  keeps the verdict honest; stated at `scanExports`.
 
-1. **The carve-out admits it.** The failure mode that bullet names is "a suite
-   that reads prose *against prose*"; this reads prose against the program's
-   symbol table, the same footing as the existing `abortThreshold` pin reading
-   a doc block against the real constant (`tests/docComments.test.ts`). Costs
-   one rule sentence and one test. Known leak: an author can evade it by
-   dropping the backticks — the value is catching *deletions*, not policing
-   authors.
-2. **Hold the line.** Internal comments stay their authors'; this closes as
-   debt and stale citations are found when someone next reads them.
-3. **Sweep instead of suite.** No pin; a symbol-deletion delta beside the
-   retired-claim delta in `.claude/rules/posture-sweep.md` *The frontier is
-   decidable; the neighborhood is judged*, so a rotation reads it rather than
-   every run. Cheaper on the rule, but it puts a mechanical verdict on a
-   judgment rung — the ladder argues against it.
-
-**Recommended: (1)**, falling back to (3) if the carve-out is meant as a closed
-set. Either branch is a `.claude/rules/**` edit, which is yours; the moment the
-sentence moves, the entry is a one-file pin.
-
-**One limit on the demonstration**, so the answering session does not look for
-a red that is not there: neither `bbf7091^` nor the tip reds, because the
-deletion and the hand-repair shipped in the same commit. The pin's red is the
-deletion that *is not* hand-repaired, so the entry's `tests[]` line would be
-the scanner's own flagging case and the tree property would be a `pins[]` line.
+**Recommended:** bullet three shrinks to a pointer at the pin; bullet two keeps
+the wider case and loses only its export clause.
