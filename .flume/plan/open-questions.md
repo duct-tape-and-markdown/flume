@@ -35,9 +35,9 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Spec enumerations that read exhaustive and lag the shipped surface (PARKED — the human's file)
+## Rosters that read exhaustive and lag the shipped surface (PARKED — four in spec, one in docs with no spec owner)
 
-Four sites, one shape; all verified on disk this tick.
+Five sites, one shape; all verified on disk this tick.
 
 1. **`spec/pending.md`, *What the package exports*** reads "`src/index.ts` and
    `FlumeApi` are the canonical lists. Both carry the *values*
@@ -60,8 +60,20 @@ Four sites, one shape; all verified on disk this tick.
    fields but not remove these. The package itself now declares a seventh,
    `contractTouching` (`harness/entryExtension.ts:84`), rendered last in the
    schema every plan slice reads. The list reads closed and is not.
+5. **`docs/CHAIN-AUTHORING.md:88-90`, *Harness-managed state*** spells ten
+   names "the runtime spells each of those itself". Nine are `RUNTIME_IGNORES`
+   (`src/job.ts:62`); the tenth, `plan/pending.json`, is never ignored, and
+   `node_modules/` — which is — is absent. Read as *which names the runtime
+   spells, so you neither author nor move them*, it is a claim of its own and
+   correct; read as the ignore set, it is a fourth copy. **This one is the
+   fork**, not just the wording: the site is in build's fence, but if it is a
+   copy it cannot shrink to a pointer, because no `spec/` section owns the
+   ignore set it would point at. A spec-side home has to exist first.
+   (`CHAIN-AUTHORING-IGNORES-POINT-AT-THE-SPEC` shipped the `job new` bullet
+   45 lines below as a pointer into `spec/jobs.md` *Runtime ignores*, and left
+   this one standing deliberately.)
 
-Beside them, one drift in the same file that is **not** an enumeration and
+Beside them, one drift in `spec/harness.md` that is **not** an enumeration and
 carries no fork — it rides the same edit pass. `spec/harness.md`, *The
 default `handoff`*, says it "Reads the engine's reported pickable set and
 no-commit facts." It also writes: `stopAfterContractTouchingShip`
@@ -71,11 +83,11 @@ handoff path, and live for this repo's own loop, which declares no override.
 `spec/loop.md`, *One tick is one fresh process*, sanctions the mechanism, so
 the drift is in this sentence alone.
 
-Options; one ruling covers all four:
+Options; one ruling covers all five:
 
 - **Transcribe.** Name the missing values in each sentence. Cheapest, and
-  leaves four hand-maintained lists that go stale at the next export — which
-  is how all four of these got here.
+  leaves five hand-maintained lists that go stale at the next export — which
+  is how all five of these got here.
 - **State the property, not the roster** (recommended). Say what makes a value
   canonical — the two lists carry the same values, held by the `.d.ts`
   doc-comment scan the carve-out sanctions — and say what a hook record
@@ -86,7 +98,9 @@ Options; one ruling covers all four:
   administer them. Costs the next omission.
 
 Parked because `spec/` is the human's alone; build cannot reach it and plan
-picking a wording would be plan authoring spec.
+picking a wording would be plan authoring spec. Site 5 is parked for the
+adjacent reason: build can reach `docs/`, but the ruling it needs is whether
+`spec/` grows a home for the ignore set — and that is the same lane.
 
 ## `spec/cli.md` re-instates `flume render`, which an operator ruling deleted (PARKED — the fork is what replaces the three defects)
 
@@ -132,12 +146,13 @@ Parked rather than filed because each fork is a CLI surface decision
 (`.claude/rules/collaboration.md`, *Push back on weak product/UX specs*), and
 because shipping the verb retires three tests that pin a standing ruling.
 
-## Expired narration in two files no phase can write (PARKED — mechanical, human-only)
+## Expired narration in three files no phase can write (PARKED — mechanical, human-only)
 
-Drained from `AGENT-LOADS-ONLY-THE-CHAINS-MCP-CONFIG` and
-`PLAN-DISCIPLINE-NAMES-THE-OVERLAP-RULE`; both verified on disk this tick. No
-fork here — it is parked only because neither plan's nor build's fence reaches
-either file.
+Drained from `AGENT-LOADS-ONLY-THE-CHAINS-MCP-CONFIG`,
+`PLAN-DISCIPLINE-NAMES-THE-OVERLAP-RULE` and
+`LANE-EXCLUDES-INFORM-THE-NAMED-LINE-HINTS`; all verified on disk this tick.
+No fork here — it is parked only because neither plan's nor build's fence
+reaches any of the three.
 
 - **`.claude/rules/platform-facts.md:166-168`** closes *A headless `claude -p`
   inherits the user's MCP servers* with "Whether the engine passes it by
@@ -156,6 +171,14 @@ either file.
   slice following the pointer opens nothing and writes the queue without the
   discipline. Line 95 repeats `.flume/prompts/{...}.md`; line 3 puts "baton,
   gates, handoff, pending schema" in `.flume/chain.ts`.
+- **`.flume/declaration.ts:62-64`**, the `runner:` block's comment, says the
+  integration lane's exclusion means "a named line homed there is refused at
+  plan time rather than reverted after a wave". No such refusal exists and
+  none will: `LANE-EXCLUDES-INFORM-THE-NAMED-LINE-HINTS` is the decision that
+  the exclusions **inform** authorship, since an entry's `files`/`tests` is a
+  prediction build is not held to. That commit retired the package-side copies
+  (`harness/runner.ts`, `harness/vitestRunner.ts`); this one it could not
+  reach. The comment states a refusal the reader can go looking for.
 
 Cheapest shape for the PROTOCOL pointers is the one a test already blesses:
 name the page, not a path — `tests/harnessPrompts.test.ts:193` pins every plan
