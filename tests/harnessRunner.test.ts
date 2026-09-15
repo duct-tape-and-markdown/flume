@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,7 +36,15 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { judgeNamedLines, vitestRunner, type Lane } from "../harness/index.ts";
+import {
+  judgeNamedLines,
+  vitestRunner,
+  type Lane,
+  type RunResult,
+  type Runner,
+} from "../harness/index.ts";
+import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
+import { worktreesBase } from "../src/paths.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -80,17 +88,58 @@ describe("widget", () => {
 
 describe("the vitest runner", () => {
   let fixture: string;
+  let flumeDir: string;
   let baseSha: string;
+  /** The engine surface the factory is handed, and the runner it returns. */
+  let api: FlumeApi;
+  let runner: Runner;
 
   /** `node_modules` for a tree that has none of its own. */
   const link = async (tree: string): Promise<void> => {
     await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
   };
 
-  const runner = vitestRunner({ prepare: link });
+  /**
+   * A real `FlumeApi` over the fixture, with one member replaced: the
+   * fixture commits no lockfile, so the engine's own installer would refuse
+   * it. Everything the factory reads — the state root, and the installer it
+   * provisions a base checkout with — arrives through this and nowhere else.
+   */
+  const apiWithInstaller = (
+    install: (tree: string) => Promise<void>,
+  ): FlumeApi => ({
+    ...buildFlumeApi({ repoRoot: fixture, configDir: flumeDir, flumeDir }),
+    setupWorktree: install,
+  });
+
+  /**
+   * One base run through a freshly-declared factory, recording every
+   * checkout path the API's installer was handed. Both halves of the
+   * factory's contract are observable from here: where the checkout landed,
+   * and that the run reached a suite at all — which it could only do
+   * through what the installer laid down.
+   */
+  const recordedBaseRun = async (): Promise<{
+    checkouts: string[];
+    result: RunResult;
+  }> => {
+    const checkouts: string[] = [];
+    const recording = apiWithInstaller(async (tree) => {
+      checkouts.push(tree);
+      await link(tree);
+    });
+    const result = await vitestRunner()(recording).runAtBase(
+      ["runs wherever it is laid down"],
+      ["tests/widget.test.ts"],
+      baseSha,
+      fixture,
+    );
+    return { checkouts, result };
+  };
 
   beforeAll(async () => {
     fixture = await mkdtemp(join(tmpdir(), "flume-harness-runner-"));
+    flumeDir = join(fixture, ".flume");
     git(fixture, ["init", "-q"]);
     git(fixture, ["config", "user.email", "t@example.com"]);
     git(fixture, ["config", "user.name", "t"]);
@@ -115,6 +164,9 @@ describe("the vitest runner", () => {
     git(fixture, ["commit", "-q", "-m", "merged"]);
 
     await link(fixture);
+
+    api = apiWithInstaller(link);
+    runner = vitestRunner()(api);
   }, 60_000);
 
   afterAll(async () => {
@@ -174,8 +226,8 @@ describe("the vitest runner", () => {
     expect(r.failures[0]!.name).toBe("widget carries the merged widget");
     expect(r.failures[0]!.message).toContain("base");
 
-    // The checkout is gone with the run — a default `worktreeRoot` owns its
-    // temp directory and removes it.
+    // The checkout is gone with the run: the base tree is removed whether it
+    // was judged or threw, so the worktree base holds no residue of it.
     expect(git(fixture, ["worktree", "list"]).split("\n")).toHaveLength(1);
   }, 180_000);
 
@@ -235,16 +287,53 @@ describe("the vitest runner", () => {
     expect(verdict.message).toContain(baseSha.slice(0, 7));
   }, 240_000);
 
+  it("the vitest runner factory places its base checkout under the state root's worktree base", async () => {
+    const { checkouts, result } = await recordedBaseRun();
+
+    // Vacuity: a base run happened and reached a checkout at all, so the
+    // path below is one the factory actually planted.
+    expect(checkouts).toHaveLength(1);
+    expect(result.passed).toBeGreaterThan(0);
+
+    // Under the engine's own resolution of the base, agreed with rather than
+    // respelled here: an operator may relocate it, and the whole point of
+    // taking the API is that the runner plants where the engine says.
+    expect(dirname(checkouts[0]!)).toBe(worktreesBase(flumeDir));
+
+    // Nothing of it survives the run; what a killed run would leave sits
+    // where the engine's stale-worktree sweep reads.
+    expect(existsSync(checkouts[0]!)).toBe(false);
+  }, 180_000);
+
+  it("the vitest runner factory provisions its base checkout with the installer from the API it was given", async () => {
+    const { checkouts, result } = await recordedBaseRun();
+
+    // The API's own member ran, on the checkout the factory planted.
+    expect(checkouts).toHaveLength(1);
+
+    // And it ran before the tests: the base checkout has no `node_modules`
+    // of its own, so a run that collected a suite and carried a name could
+    // only have resolved vitest through what this installer laid down. A
+    // factory reaching past the API for the engine's default installer would
+    // have refused the fixture outright — it commits no lockfile.
+    expect(result.passed).toBeGreaterThan(0);
+    expect(result.names[0]).toEqual({
+      name: "runs wherever it is laid down",
+      carried: true,
+      files: ["tests/widget.test.ts"],
+    });
+  }, 180_000);
+
   it("reports its lanes and the files each excludes", () => {
     const declared: Lane[] = [
       { name: "fast", excludes: ["**/*.integration.test.ts"], runs: true },
       { name: "integration", excludes: ["**/*.unit.test.ts"], runs: false },
     ];
-    expect(vitestRunner({ lanes: declared }).lanes).toEqual(declared);
+    expect(vitestRunner({ lanes: declared })(api).lanes).toEqual(declared);
 
     // Unsplit by default: one lane, nothing excluded — no consumer inherits
     // another's split.
-    expect(vitestRunner().lanes).toEqual([
+    expect(vitestRunner()(api).lanes).toEqual([
       { name: "default", excludes: [], runs: true },
     ]);
 
@@ -268,7 +357,9 @@ describe("the vitest runner", () => {
   }, 60_000);
 
   it("refuses a run that produced no report rather than reading one as empty", async () => {
-    const silent = vitestRunner({ invoke: () => ({ command: process.execPath, args: ["-e", ""] }) });
+    const silent = vitestRunner({
+      invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
+    })(api);
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
   });
 });

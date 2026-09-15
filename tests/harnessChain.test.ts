@@ -38,7 +38,7 @@ import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
-import type { Runner } from "../harness/runner.ts";
+import type { Runner, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
@@ -67,9 +67,8 @@ const STATE_ROOT = ".flume";
 const CITE = { path: "spec/harness.md", section: "The phases" };
 
 /**
- * A runner the declaration's structural check accepts. No case here rules on
- * a named line — that is `tests/harnessJudge.test.ts`'s subject — so this
- * never runs.
+ * A runner the declared factory returns. No case here rules on a named line
+ * — that is `tests/harnessJudge.test.ts`'s subject — so this never runs.
  */
 const runner = {
   run: async () => {
@@ -81,6 +80,18 @@ const runner = {
   lanes: [],
 } as unknown as Runner;
 
+/**
+ * The declared runner, as a factory recording the engine surface it was
+ * called with. A fresh recorder per declaration, so a case reading it never
+ * inherits another's call.
+ */
+const recordingRunner = (
+  seen: FlumeApi[],
+): RunnerFactory => (received) => {
+  seen.push(received);
+  return runner;
+};
+
 /** The declaration every case starts from — a shape a consumer could write. */
 const DECLARATION = {
   specLocus: ["spec/**"],
@@ -88,7 +99,7 @@ const DECLARATION = {
     build: ["src/**", "tests/**"],
     "plan-derive": [`${STATE_ROOT}/scratch/**`],
   },
-  runner,
+  runner: recordingRunner([]),
   slices: {
     enabled: [...PLAN_SLICES],
     sweep: { domain: ["src/**"], posturePages: ["rules/**"] },
@@ -221,6 +232,21 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     ...overrides,
   };
 }
+
+it("the chain factory calls the declared runner factory with the same FlumeApi it received", () => {
+  const seen: FlumeApi[] = [];
+
+  harnessChain({ api, declaration: { ...DECLARATION, runner: recordingRunner(seen) } });
+
+  // Once at load, not once per gate run: the judge drives one runner for the
+  // life of the chain.
+  expect(seen).toHaveLength(1);
+  // The identity-same surface, not a copy of it — the runner's base checkout
+  // reads this API's installer and this API's state root, and a second one
+  // built beside the declaration would resolve neither
+  // (`spec/harness.md`, *The runner interface*).
+  expect(seen[0]).toBe(api);
+});
 
 it("the factory returns the three plan slices and the build phase from a declaration", () => {
   // Non-vacuity: the package's own phase list is what the expectation is

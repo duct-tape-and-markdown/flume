@@ -57,7 +57,7 @@ beforeAll(async () => {
   declaration = parseDeclaration({
     specLocus: ["spec/**", "rules/**"],
     fence: { build: ["src/**"] },
-    runner: { run: async () => [], runAtBase: async () => [], lanes: [] },
+    runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
     slices: { enabled: [] },
   });
 });

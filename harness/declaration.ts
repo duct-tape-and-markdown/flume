@@ -29,7 +29,7 @@ import type { Chain } from "../src/Phase.js";
 import type { SectionResolver } from "./citeResolver.js";
 import type { Handoff } from "./handoff.js";
 import { parseOrThrow, strict } from "./refusal.js";
-import type { Runner } from "./runner.js";
+import type { RunnerFactory } from "./runner.js";
 
 /** A non-empty list of path globs, in the engine's `matchesAny` dialect. */
 const globs = z.array(z.string().min(1)).min(1);
@@ -128,26 +128,25 @@ const GateDeclaration = z.discriminatedUnion("kind", [
 
 /**
  * The runner the judge drives (`spec/harness.md`, *The runner interface*) —
- * a value, not a name: a consumer running cargo, dotnet or a shell script
- * supplies the three operations itself, and only the vitest one ships.
+ * a **factory** over the engine's API, not a built value: the installer its
+ * base checkout is provisioned with and the worktree base that checkout is
+ * planted under are both the engine's to hand out, and neither exists yet
+ * when a consumer's declaration module is evaluated. A consumer running
+ * cargo, dotnet or a shell script declares its own factory over the same
+ * three operations; only the vitest one ships.
  *
- * Checked structurally rather than by class, since the interface is the
- * contract and any object satisfying it is a runner.
+ * Checked as a function and nothing more, for the resolver's reason below:
+ * what the factory returns is the runner interface's contract, and the only
+ * thing that could check it here is calling it — which the chain factory
+ * does, once, with the API this schema has never seen.
  */
-const RunnerValue = z.custom<Runner>(
-  (value): boolean => {
-    if (typeof value !== "object" || value === null) return false;
-    const candidate = value as Partial<Runner>;
-    return (
-      typeof candidate.run === "function" &&
-      typeof candidate.runAtBase === "function" &&
-      Array.isArray(candidate.lanes)
-    );
-  },
+const RunnerFactoryValue = z.custom<RunnerFactory>(
+  (value): boolean => typeof value === "function",
   {
     error:
-      "must be a runner supplying run(), runAtBase() and lanes " +
-      "(spec/harness.md, The runner interface)",
+      "must be a factory over the engine's API returning a runner that " +
+      "supplies run(), runAtBase() and lanes — a built runner value is not " +
+      "one (spec/harness.md, The runner interface)",
   },
 );
 
@@ -274,8 +273,11 @@ export const DeclarationSchema = strict({
    * package documents both arguments and takes no side.
    */
   scopeWritesToEntry: z.boolean().default(false),
-  /** The test runner the judge drives. */
-  runner: RunnerValue,
+  /**
+   * The test runner the judge drives, as a factory the chain calls at load
+   * with its own engine API.
+   */
+  runner: RunnerFactoryValue,
   /**
    * How a `per` cite's section is found in the file it names. Absent, by
    * heading text; declared, by whatever key a typed spec is read with.

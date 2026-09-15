@@ -153,7 +153,7 @@ export function protocolTemplatePath(): string {
  * `DeclarationSchema` present and parseable, every value obviously theirs to
  * change.
  *
- * A module rather than JSON because `runner` is a value with behavior
+ * A module rather than JSON because `runner` is a factory with behavior
  * (`spec/harness.md`, *What a consumer declares*), and named beside its
  * default export because a `.ts` module carrying only a default is compiled
  * to CJS interop by the chain loader's `tsImport` — a namespace shape a
@@ -202,9 +202,11 @@ export const declaration = {
   },
 
   /**
-   * The test runner the judge drives. The package ships vitest's; a project
-   * running cargo, dotnet or a script supplies the same three operations
-   * itself (spec/harness.md, *The runner interface*).
+   * The test runner the judge drives, as a factory the chain calls at load
+   * with the engine's own API — that is where the base checkout's installer
+   * and worktree base come from. The package ships vitest's; a project
+   * running cargo, dotnet or a script declares its own factory over the same
+   * three operations (spec/harness.md, *The runner interface*).
    */
   runner: vitestRunner(),
 

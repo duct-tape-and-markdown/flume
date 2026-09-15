@@ -40,7 +40,7 @@ import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { readFileAtRef } from "../src/git.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import type { Runner } from "../harness/runner.ts";
+import type { Runner, RunnerFactory } from "../harness/runner.ts";
 
 /**
  * The engine, as a chain hands it in: the real builtin and the real at-ref
@@ -52,12 +52,15 @@ const engine: GateEngine = { pendingGate, git: { readFileAtRef } };
 /** The state root every case addresses, repo-relative. */
 const STATE_ROOT = ".flume";
 
-/** A runner the declaration's structural check accepts; no case runs a test. */
+/** The runner a declared factory returns here; no case runs a test. */
 const runner = {
   run: async () => ({ ok: true, passed: [], failures: [], failingFiles: [] }),
   runAtBase: async () => ({ ok: true, passed: [], failures: [], failingFiles: [] }),
   lanes: [],
 } as unknown as Runner;
+
+/** The runner as it is declared: a factory over the engine's API. */
+const runnerFactory: RunnerFactory = () => runner;
 
 /** Build's fence, and so the queue's target fence. `docs/**` is outside it. */
 const BUILD_FENCE = ["src/**", "tests/**", `${notesDir(STATE_ROOT)}/*.md`];
@@ -69,7 +72,7 @@ const BUILD_FENCE = ["src/**", "tests/**", `${notesDir(STATE_ROOT)}/*.md`];
 const declaration: Declaration = parseDeclaration({
   specLocus: ["spec/**"],
   fence: { build: BUILD_FENCE, "plan-derive": [`${STATE_ROOT}/plan/**`] },
-  runner,
+  runner: runnerFactory,
   slices: { enabled: ["plan-derive"] },
 });
 

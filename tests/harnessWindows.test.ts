@@ -91,12 +91,12 @@ function planState(overrides: Partial<PlanState> = {}): PlanState {
   };
 }
 
-/** A runner satisfying the declared interface; no case drives the judge. */
-const runner = {
+/** The runner factory a declaration carries; no case here drives the judge. */
+const runner = () => ({
   run: async () => [],
   runAtBase: async () => [],
   lanes: [],
-};
+});
 
 /** A declaration the package's own strict schema accepts. */
 function declaration(overrides: Record<string, unknown> = {}): Declaration {

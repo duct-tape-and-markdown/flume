@@ -69,6 +69,7 @@ import {
   sharedPromptArgs,
 } from "./prompts.js";
 import { notePath, notesDir, recordDirs } from "./records.js";
+import type { Runner } from "./runner.js";
 import { planSliceWindows, type PlanSliceWindow } from "./windows.js";
 
 /**
@@ -137,6 +138,15 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const declaration = parseDeclaration(options.declaration);
   const extension = entryExtension(options.entryFields);
   const stateRoot = repoRelativeStateRoot(api);
+
+  /**
+   * The consumer's runner, built here and once: the declaration carries a
+   * factory precisely so the value it returns can take the engine's
+   * installer and worktree base off the API this factory was handed, rather
+   * than off a second one a consumer resolved beside their declaration
+   * (`spec/harness.md`, *The runner interface*).
+   */
+  const runner = declaration.runner(api);
 
   /**
    * The engine values the package's gates run through, taken off `api` —
@@ -287,7 +297,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
         }
       : {}),
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [
-      namedLinesGate(declaration, isPark),
+      namedLinesGate(runner, isPark),
     ]),
     promptArgs: (ctx) => ({
       ...shared(ctx),
@@ -333,7 +343,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
  * verdict is proven non-vacuous*).
  */
 function namedLinesGate(
-  declaration: Declaration,
+  runner: Runner,
   isPark: (entry: PendingEntry, touched: readonly string[]) => boolean,
 ): Gate {
   return {
@@ -355,7 +365,7 @@ function namedLinesGate(
           skipped: "a park attempts none of the entry's named lines",
         };
       }
-      const verdict = await judgeNamedLines(declaration.runner, {
+      const verdict = await judgeNamedLines(runner, {
         tests: NamedLinesSchema.parse(entry.tests),
         pins: NamedLinesSchema.parse(entry.pins),
         baseSha: ctx.baseSha,

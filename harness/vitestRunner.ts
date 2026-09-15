@@ -2,6 +2,12 @@
  * The vitest runner the package ships (`spec/harness.md`, *The runner
  * interface*).
  *
+ * Declared as a factory (`runner.ts`, {@link RunnerFactory}): the two things
+ * its base checkout needs — an installer for the checkout's dependencies and
+ * a place to plant it — are the engine's to hand out, and both are read off
+ * the API this factory is called with rather than re-derived beside a
+ * consumer's declaration.
+ *
  * Its reading half is pure over vitest's own `--reporter=json` output, so a
  * test drives the real reporter through the real reader rather than through
  * a hand-authored report (`.claude/rules/engineering.md`, *A seam gate reads
@@ -13,17 +19,24 @@
  * for a judge to rule on.
  */
 
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
+import type { FlumeApi } from "../src/flumeApi.js";
 import { existsLoud } from "../src/fsProbe.js";
 import { addWorktree, removeWorktree } from "../src/git.js";
+import { worktreesBase } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
-import { setupWorktree } from "../src/setupWorktree.js";
 
-import type { Lane, NamedResult, RunResult, Runner, TestFailure } from "./runner.js";
+import type {
+  Lane,
+  NamedResult,
+  RunResult,
+  Runner,
+  RunnerFactory,
+  TestFailure,
+} from "./runner.js";
 
 /** The lane a plain, unsplit vitest project has: everything, nothing excluded. */
 const DEFAULT_LANE: Lane = { name: "default", excludes: [], runs: true };
@@ -53,20 +66,6 @@ export interface VitestRunnerOptions {
    * because `runAtBase` runs in a checkout that is not the caller's cwd.
    */
   invoke?: (cwd: string) => VitestInvocation;
-  /**
-   * Where `runAtBase` plants its detached checkout. Defaults to a fresh temp
-   * directory removed with the run — pass the state root's worktree base
-   * instead, and a run that dies mid-flight leaves its checkout somewhere
-   * flume's stale-worktree sweep reclaims.
-   */
-  worktreeRoot?: string;
-    /**
-   * Run in the detached checkout after the base bytes are laid down and
-   * before the tests. A checkout of a git ref has no installed dependencies;
-   * this is where they arrive. Defaults to the engine's lockfile-aware
-   * installer, the same provisioning a build worktree gets.
-   */
-  prepare?: (worktreePath: string) => Promise<void>;
 }
 
 /**
@@ -224,11 +223,17 @@ async function capture(
 }
 
 /**
- * Build the vitest runner. Every field of `options` is optional, and the
+ * Declare the vitest runner. Every field of `options` is optional, and the
  * defaults describe the unsplit single-lane project — a consumer whose suite
  * splits states its own lanes rather than inheriting one implementation's.
+ *
+ * Returns the factory, not the runner: what the returned function does with
+ * the API it is called with is the whole reason `runner` is declared as one
+ * (`runner.ts`, {@link RunnerFactory}). The lane refusal is raised here,
+ * where a consumer's declaration module can red before a chain ever loads,
+ * rather than deferred into the factory call.
  */
-export function vitestRunner(options: VitestRunnerOptions = {}): Runner {
+export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   const lanes = options.lanes ?? [DEFAULT_LANE];
   const running = lanes.filter((l) => l.runs);
   if (running.length !== 1) {
@@ -240,48 +245,57 @@ export function vitestRunner(options: VitestRunnerOptions = {}): Runner {
   }
   const invoke = options.invoke ?? resolveVitest;
 
-  return {
-    lanes,
+  return (api: FlumeApi): Runner => {
+    /**
+     * Where a base checkout is planted: the engine's own resolution of the
+     * state root's worktree base, honoring the operator's relocation of it.
+     * Not a temp directory — a run killed mid-flight leaves this checkout
+     * registered under the base the engine's startup sweep reads, so it is
+     * reclaimed rather than accumulating somewhere nothing looks.
+     */
+    const base = worktreesBase(api.paths.flumeDir);
 
-    async run(names, cwd) {
-      const output = await capture(invoke(cwd), ["--reporter=json"], cwd);
-      return readRun(output, names, cwd);
-    },
+    return {
+      lanes,
 
-    async runAtBase(names, files, baseSha, cwd) {
-      if (files.length === 0) {
-        throw new Error(
-          "vitestRunner.runAtBase: no files to lay over the base. A base run " +
-            "with no selection runs the whole suite there, which judges the " +
-            "wrong thing and costs a suite.",
-        );
-      }
-      const ownsRoot = options.worktreeRoot === undefined;
-      const root = options.worktreeRoot ?? (await mkdtemp(join(tmpdir(), "flume-base-")));
-      const worktree = join(root, `base-${baseSha.slice(0, 7)}`);
-      try {
-        await removeWorktree(cwd, worktree);
-        await mkdir(root, { recursive: true });
-        await addWorktree({ repoRoot: cwd, path: worktree, fromRef: baseSha });
-        for (const f of files) {
-          const from = resolve(cwd, f);
-          if (!existsLoud(from)) {
-            throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
-          }
-          await mkdir(dirname(join(worktree, f)), { recursive: true });
-          await copyFile(from, join(worktree, f));
+      async run(names, cwd) {
+        const output = await capture(invoke(cwd), ["--reporter=json"], cwd);
+        return readRun(output, names, cwd);
+      },
+
+      async runAtBase(names, files, baseSha, cwd) {
+        if (files.length === 0) {
+          throw new Error(
+            "vitestRunner.runAtBase: no files to lay over the base. A base run " +
+              "with no selection runs the whole suite there, which judges the " +
+              "wrong thing and costs a suite.",
+          );
         }
-        // A checkout of a git ref has no installed dependencies. Undeclared,
-        // the engine's own lockfile-aware installer provisions it the way a
-        // build worktree is provisioned; a consumer whose stack the engine
-        // cannot install declares its own.
-        await (options.prepare ?? setupWorktree)(worktree);
-        const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
-        return readRun(output, names, worktree);
-      } finally {
-        await removeWorktree(cwd, worktree);
-        if (ownsRoot) await rm(root, { recursive: true, force: true });
-      }
-    },
+        const worktree = join(base, `base-${baseSha.slice(0, 7)}`);
+        try {
+          await removeWorktree(cwd, worktree);
+          await mkdir(base, { recursive: true });
+          await addWorktree({ repoRoot: cwd, path: worktree, fromRef: baseSha });
+          for (const f of files) {
+            const from = resolve(cwd, f);
+            if (!existsLoud(from)) {
+              throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
+            }
+            await mkdir(dirname(join(worktree, f)), { recursive: true });
+            await copyFile(from, join(worktree, f));
+          }
+          // A checkout of a git ref has no installed dependencies. The
+          // engine's own lockfile-aware installer provisions it, so the base
+          // tree is provisioned exactly the way a build worktree is — one
+          // implementation of that, on the API, rather than a second one
+          // here.
+          await api.setupWorktree(worktree);
+          const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
+          return readRun(output, names, worktree);
+        } finally {
+          await removeWorktree(cwd, worktree);
+        }
+      },
+    };
   };
 }

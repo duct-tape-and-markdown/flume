@@ -112,7 +112,7 @@ function declare(over: Record<string, unknown> = {}): Declaration {
   return parseDeclaration({
     specLocus: ["spec/**"],
     fence: { build: ["harness/**"] },
-    runner: { run: async () => [], runAtBase: async () => [], lanes: [] },
+    runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
     slices: { enabled: [] },
     ...over,
   });

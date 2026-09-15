@@ -25,6 +25,7 @@ import type {
   Handoff,
   RunResult,
   Runner,
+  RunnerFactory,
   SectionResolver,
 } from "../harness/index.ts";
 
@@ -38,17 +39,20 @@ const EMPTY_RUN: RunResult = {
   failingFiles: [],
 };
 
-/**
- * A runner satisfying the three operations. The schema checks the interface
- * structurally, so a stub that answers all three is exactly as valid as the
- * shipped vitest one — which is the point of declaring a value rather than
- * naming a tool.
- */
+/** A runner satisfying the three operations — what a factory returns. */
 const stubRunner: Runner = {
   run: () => Promise.resolve(EMPTY_RUN),
   runAtBase: () => Promise.resolve(EMPTY_RUN),
   lanes: [{ name: "default", excludes: [], runs: true }],
 };
+
+/**
+ * The runner as it is declared: a factory over the engine's API. The schema
+ * checks that it is a function and nothing more, so a stub that ignores the
+ * API is exactly as valid as the shipped vitest one — which is the point of
+ * declaring a factory rather than naming a tool.
+ */
+const stubRunnerFactory: RunnerFactory = () => stubRunner;
 
 /**
  * A section resolver, declared as a value for the same reason the runner is:
@@ -75,7 +79,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   },
   channelPaths: [".flume/plan/notes/*.md"],
   scopeWritesToEntry: true,
-  runner: stubRunner,
+  runner: stubRunnerFactory,
   resolver: stubResolver,
   handoff: { build: stubHandoff },
   gates: {
@@ -137,9 +141,9 @@ describe("the harness declaration schema", () => {
     expect(parsed.fence["plan-inbox"]).toEqual([".flume/inbox/**"]);
     expect(parsed.channelPaths).toEqual([".flume/plan/notes/*.md"]);
     expect(parsed.scopeWritesToEntry).toBe(true);
-    // The runner survives as the value it was declared as, not a copy: the
-    // judge calls these operations.
-    expect(parsed.runner).toBe(stubRunner);
+    // The runner factory survives as the value it was declared as, not a
+    // copy: the chain factory calls it with its own API.
+    expect(parsed.runner).toBe(stubRunnerFactory);
     // Same for the resolver: the cite resolver calls it.
     expect(parsed.resolver).toBe(stubResolver);
     // And the handoff: the phase it is installed on calls it.
@@ -278,13 +282,18 @@ describe("the harness declaration schema", () => {
     expect(message).toContain("The cite resolver");
   });
 
-  it("a runner missing one of the three operations is refused, naming the runner field", () => {
+  it("a declaration whose runner is a Runner value rather than a factory is refused at load naming the field", () => {
     const declared = fullDeclaration();
-    declared["runner"] = { run: () => Promise.resolve(EMPTY_RUN), lanes: [] };
+    // A runner answering all three operations — the near-miss a consumer
+    // writes, and the shape the field held before a base checkout's
+    // installer and worktree base became the engine's to hand out.
+    declared["runner"] = stubRunner;
 
     const message = refusalFor(declared);
 
     expect(message).toContain("runner");
+    // What was wanted, and what a built value is not.
+    expect(message).toContain("factory");
     expect(message).toContain("runAtBase");
   });
 

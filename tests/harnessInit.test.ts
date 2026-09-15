@@ -117,7 +117,7 @@ it("flume-harness init writes a declaration.ts skeleton the package's schema par
       `  specLocus: declaration.specLocus,\n` +
       `  fenceBuild: declaration.fence.build,\n` +
       `  slices: declaration.slices.enabled,\n` +
-      `  runner: typeof declaration.runner.run,\n` +
+      `  runner: typeof declaration.runner,\n` +
       `}));\n`,
   );
 
@@ -135,6 +135,8 @@ it("flume-harness init writes a declaration.ts skeleton the package's schema par
   expect(declaration.specLocus.length).toBeGreaterThan(0);
   expect(declaration.fenceBuild.length).toBeGreaterThan(0);
   expect(declaration.slices.length).toBeGreaterThan(0);
+  // The runner arrived as the factory the chain calls at load, not as a
+  // built value the skeleton resolved without an API.
   expect(declaration.runner).toBe("function");
 }, 60_000);
 

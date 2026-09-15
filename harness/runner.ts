@@ -10,10 +10,12 @@
  * the judge reconstruct a statement it could have been told
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
- * A consumer with cargo, dotnet, or a shell script declares its own value
- * against these three operations; `vitestRunner.ts` is the one the package
+ * A consumer with cargo, dotnet, or a shell script declares its own factory
+ * over these three operations; `vitestRunner.ts` is the one the package
  * ships.
  */
+
+import type { FlumeApi } from "../src/flumeApi.js";
 
 /**
  * One selection of the consumer's suite, run as a unit. Lanes exist because
@@ -102,3 +104,22 @@ export interface Runner {
   /** The runner's declared lanes, and which files each excludes. */
   readonly lanes: readonly Lane[];
 }
+
+/**
+ * How a `runner` is **declared** (`spec/harness.md`, *The runner
+ * interface*): not a built value, but a factory the chain factory calls once
+ * at load with the engine surface it was itself handed.
+ *
+ * The factory exists because a base checkout needs two things only the
+ * engine can hand out — its lockfile-aware installer for the checkout's
+ * dependencies, and the state root's worktree base, so a run that dies
+ * mid-flight leaves a directory the stale-worktree sweep reclaims. A runner
+ * constructed before the API exists can have neither, and the alternative is
+ * every consumer re-deriving both beside their declaration: the verbatim
+ * copy that names a missing surface (`.claude/rules/engine-boundary.md`,
+ * *Surface, not prescription*).
+ *
+ * Called once per chain load, not once per run: the `Runner` it returns is
+ * the value the judge drives for the life of the chain.
+ */
+export type RunnerFactory = (api: FlumeApi) => Runner;
