@@ -196,6 +196,29 @@ export type GateFailure = StageFailureEntry & {
 const MAX_FAILURE_SIGNATURE = 500;
 
 /**
+ * What a throw reports: the message it raised and, when it has one, the stack
+ * that raised it. Every seam that answers a throw with a record rather than
+ * losing the tick reads it here — a gate's `{ message, details }`
+ * (`spec/chain.md`, *What a gate returns*) and a hook's render-refused record
+ * (*What a hook receives*) are the same two facts under two names, so the
+ * decoding is shared rather than re-derived beside each one
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `stack` is absent rather than a second copy of `message` when the thrown
+ * value has none — a non-`Error`, or an `Error` whose `stack` was stripped —
+ * because a duplicated line reads as evidence while carrying none
+ * (*Derived state is computed, never restated beside its source*).
+ */
+function throwFacts(err: unknown): { message: string; stack?: string } {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack =
+    err instanceof Error && typeof err.stack === "string" && err.stack
+      ? err.stack
+      : undefined;
+  return stack ? { message, stack } : { message };
+}
+
+/**
  * One gate's result as recorded in a {@link TickVerdict} — unlike
  * `TickResult.gateResults` (`./Phase.js`), this keeps `details`: for a
  * failing writable-paths gate that is the actual list of violating paths,
@@ -333,6 +356,15 @@ export interface TickVerdictMergeOutcome {
    * only when the entry never reached a commit at all.
    */
   headSha?: string;
+  /**
+   * The message a `shipped` predicate *threw* instead of returning
+   * (`spec/chain.md`, *What a hook receives*: a throw is not `false`). Only a
+   * `not-shipped` outcome carries it, and only when a throw produced that
+   * outcome — absent when the predicate deliberately returned `false`, so a
+   * chain reading the verdict tells a declined ship from a broken predicate
+   * without the two collapsing into one record.
+   */
+  threw?: string;
 }
 
 /**
@@ -1747,7 +1779,22 @@ export class Dispatcher {
 
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
-    const handoff = phase.handoff(resultForHandoff);
+    // spec/chain.md "What a hook receives": a throwing `handoff` is logged
+    // and the tick's facts stand — every one of them is already computed
+    // above, and the phase is already asleep, so the throw costs exactly the
+    // wakes the hook never got to name and nothing else. Losing the verdict
+    // and the merge bookkeeping to it would discard work that already landed
+    // on trunk.
+    let handoff: string[];
+    try {
+      handoff = phase.handoff(resultForHandoff);
+    } catch (err) {
+      const { message } = throwFacts(err);
+      this.log.warn(
+        `[flume] ${phase.name}: handoff threw: ${message}; no phase woken, this tick's facts stand`,
+      );
+      handoff = [];
+    }
     const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
     for (const name of allowed) this.baton.wake(name);
 
@@ -1872,9 +1919,22 @@ export class Dispatcher {
     // else, where it used to pay a full provisioning (dependency install
     // included) to reach a verdict computable from `pending.json`. `cwd` is
     // the repo root because no worktree exists yet, and none will.
-    if (phase.shouldRun && !phase.shouldRun({ cwd: repoRoot, ...ctxFacts })) {
-      this.log.info(`[flume] ${phase.name}: declined (shouldRun) — no invocation`);
-      return { result: noRunResult(), declined: true };
+    const consult = await this.consultShouldRun(
+      phase,
+      { cwd: repoRoot, ...ctxFacts },
+      ref,
+      phase.name,
+    );
+    if (consult === "declined") return { result: noRunResult(), declined: true };
+    // A throw is a refusal, never the decline above: no worktree is
+    // provisioned either way, but the verdict must not record a chain
+    // decision the chain never reached (spec/chain.md, "What a hook
+    // receives").
+    if (consult === "refused") {
+      return {
+        result: { ...noRunResult(), noCommit: "render-refused" },
+        noCommit: "render-refused",
+      };
     }
 
     // spec/worktrees.md "Singleton runs in a worktree": a singleton tick
@@ -1994,25 +2054,32 @@ export class Dispatcher {
     // other field is the same object the decline consult above read.
     const ctx: TickContext = { cwd: wt.path, ...ctxFacts };
 
-    const args = phase.promptArgs?.(ctx) ?? {};
+    const argsResult = await this.resolvePromptArgs(phase, ctx, ref, phase.name);
 
     let prompt: string | undefined;
-    try {
-      prompt = await renderPrompt({
-        phase,
-        flumeDir: this.flumeDir,
-        promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
-        cwd: wt.path,
-        args,
-        ...(prior ? { priorAttempt: prior } : {}),
-      });
-    } catch (err) {
-      if (!(err instanceof InlineExecRenderError)) throw err;
-      // An unresolved inline-exec span aborts the render — the agent is
-      // never invoked. Distinct from clean-exit/
-      // platform-preempt: no agent ran at all.
-      await this.persistRenderRefused(ref, phase.name, err);
+    // A thrown `promptArgs` never reaches the render, and lands on the render's
+    // own refusal — same no-commit mode, same persisted record, same teardown
+    // below (spec/chain.md, "What a hook receives").
+    if (!argsResult.ok) {
       noCommit = "render-refused";
+    } else {
+      try {
+        prompt = await renderPrompt({
+          phase,
+          flumeDir: this.flumeDir,
+          promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
+          cwd: wt.path,
+          args: argsResult.args,
+          ...(prior ? { priorAttempt: prior } : {}),
+        });
+      } catch (err) {
+        if (!(err instanceof InlineExecRenderError)) throw err;
+        // An unresolved inline-exec span aborts the render — the agent is
+        // never invoked. Distinct from clean-exit/
+        // platform-preempt: no agent ran at all.
+        await this.persistRenderRefused(ref, phase.name, err);
+        noCommit = "render-refused";
+      }
     }
 
     if (prompt !== undefined) {
@@ -2931,22 +2998,34 @@ export class Dispatcher {
       // which of the two this is. It reports facts; the chain interprets
       // (spec/pending.md "Ship detection trusts the agent's own account";
       // engine-boundary.md "Told, not inferred"). Undeclared means shipped.
-      const shipVerdict =
-        phase.shipped?.({
-          entry: r.entry,
-          mergedSha,
-          baseSha: r.spanBase,
-          touchedPaths: commitTouchedPaths,
-          gateResults: [
-            ...r.gateResults,
-            ...mergeGateResults.slice(entryMergeGateResultsStart),
-          ],
-          worktreePath: r.worktreePath,
-          repoRoot,
-        }) ?? true;
+      let shipVerdict: boolean;
+      // spec/chain.md "What a hook receives": a throwing `shipped` is not
+      // `false`. The outcome is the one the seam already has for a predicate
+      // that declines — entry stays pending, commit stays on trunk, merge
+      // bookkeeping below completes — but the verdict names the throw, so a
+      // broken predicate never reads back as a deliberate park.
+      let shipThrew: string | undefined;
+      try {
+        shipVerdict =
+          phase.shipped?.({
+            entry: r.entry,
+            mergedSha,
+            baseSha: r.spanBase,
+            touchedPaths: commitTouchedPaths,
+            gateResults: [
+              ...r.gateResults,
+              ...mergeGateResults.slice(entryMergeGateResultsStart),
+            ],
+            worktreePath: r.worktreePath,
+            repoRoot,
+          }) ?? true;
+      } catch (err) {
+        shipThrew = throwFacts(err).message;
+        shipVerdict = false;
+      }
       if (!shipVerdict) {
         this.log.warn(
-          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped returned false — commit stays on trunk, entry stays pending`,
+          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
         );
         // spec/loop.md "Prior-outcome feedback to the retrying tick": the
         // entry stays queued, so its next tick is a retry and gets the same
@@ -2965,6 +3044,7 @@ export class Dispatcher {
           outcome: "not-shipped",
           baseSha: preCherry,
           headSha: mergedSha,
+          ...(shipThrew === undefined ? {} : { threw: shipThrew }),
         });
         continue;
       }
@@ -3331,15 +3411,20 @@ export class Dispatcher {
     };
 
     // Same seam as the singleton callsite, scoped to this
-    // entry — sees the same ctx `promptArgs` sees.
-    if (phase.shouldRun && !phase.shouldRun(ctx)) {
-      this.log.info(
-        `[flume] ${entry.tag}: declined (shouldRun) — no invocation`,
-      );
+    // entry — sees the same ctx `promptArgs` sees, and answers a throw
+    // through the same guard (spec/chain.md, "What a hook receives").
+    const consult = await this.consultShouldRun(phase, ctx, ref, entry.tag);
+    if (consult === "declined") {
       return { entry, committed: false, gateResults: [], declined: true, worktreePath: wt.path, branch: wt.branch };
     }
+    if (consult === "refused") {
+      return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path, branch: wt.branch };
+    }
 
-    const args = phase.promptArgs?.(ctx) ?? {};
+    const argsResult = await this.resolvePromptArgs(phase, ctx, ref, entry.tag);
+    if (!argsResult.ok) {
+      return { entry, committed: false, gateResults: [], noCommit: "render-refused", worktreePath: wt.path, branch: wt.branch };
+    }
 
     let prompt: string;
     try {
@@ -3348,7 +3433,7 @@ export class Dispatcher {
         flumeDir: this.flumeDir,
         promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
         cwd: wt.path,
-        args,
+        args: argsResult.args,
         assignedEntry: entry,
         ...(prior ? { priorAttempt: prior } : {}),
       });
@@ -3741,11 +3826,7 @@ export class Dispatcher {
     try {
       return await gate.run(ctx);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const stack =
-        err instanceof Error && typeof err.stack === "string" && err.stack
-          ? err.stack
-          : undefined;
+      const { message, stack } = throwFacts(err);
       this.log.warn(
         `[flume] gate '${gate.name}' threw: ${message}; recorded as that gate's failure`,
       );
@@ -4085,10 +4166,88 @@ export class Dispatcher {
     label: string,
     err: InlineExecRenderError,
   ): Promise<void> {
-    await this.attempts.write(ref, buildRenderRefused(err));
+    await this.attempts.write(ref, buildRenderRefused(err.message));
     this.log.warn(
       `[flume] ${label}: render-refused (no commit): ${err.message}`,
     );
+  }
+
+  /**
+   * A pre-invocation hook that threw, persisted the way the render's own
+   * refusal is (`spec/chain.md`, *What a hook receives*): same
+   * `render-refused` record, so the retry reads the hook and the frame that
+   * raised instead of running blind against a seam it cannot see failed. The
+   * caller supplies the no-commit outcome; this writes the record and says so
+   * once, for both hooks and both concurrencies.
+   */
+  private async persistHookRefusal(
+    ref: PriorAttemptRef,
+    label: string,
+    hook: "shouldRun" | "promptArgs",
+    err: unknown,
+  ): Promise<void> {
+    const { message, stack } = throwFacts(err);
+    await this.attempts.write(
+      ref,
+      buildRenderRefused(
+        `${hook} hook threw: ${message}${stack === undefined ? "" : `\n${stack}`}`,
+      ),
+    );
+    this.log.warn(
+      `[flume] ${label}: ${hook} threw: ${message}; render-refused (no commit)`,
+    );
+  }
+
+  /**
+   * `phase.shouldRun`, consulted for both concurrencies at one site — the
+   * singleton leg before it provisions anything, the fanout leg per entry
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*;
+   * `runGate` is the same shape one seam over).
+   *
+   * Three answers, not two. A throw is **refused**, never `declined`: a hook
+   * that could not decide has not decided to skip (`spec/chain.md`, *What a
+   * hook receives*), so the caller takes its no-invocation refusal path and
+   * the verdict never records a chain decision the chain never reached. An
+   * absent hook runs, byte-identically to one that returned `true`.
+   */
+  private async consultShouldRun(
+    phase: Phase,
+    ctx: TickContext,
+    ref: PriorAttemptRef,
+    label: string,
+  ): Promise<"run" | "declined" | "refused"> {
+    if (!phase.shouldRun) return "run";
+    let verdict: boolean;
+    try {
+      verdict = phase.shouldRun(ctx);
+    } catch (err) {
+      await this.persistHookRefusal(ref, label, "shouldRun", err);
+      return "refused";
+    }
+    if (verdict) return "run";
+    this.log.info(`[flume] ${label}: declined (shouldRun) — no invocation`);
+    return "declined";
+  }
+
+  /**
+   * `phase.promptArgs`, called for both concurrencies at one site. A throw is
+   * `render-refused` (`spec/chain.md`, *What a hook receives*): the prompt
+   * never resolved, so the agent is never invoked and the record persisted is
+   * the one any other render refusal leaves. An absent hook is an empty map,
+   * exactly as before.
+   */
+  private async resolvePromptArgs(
+    phase: Phase,
+    ctx: TickContext,
+    ref: PriorAttemptRef,
+    label: string,
+  ): Promise<{ ok: true; args: Record<string, string> } | { ok: false }> {
+    try {
+      return { ok: true, args: phase.promptArgs?.(ctx) ?? {} };
+    } catch (err) {
+      await this.persistHookRefusal(ref, label, "promptArgs", err);
+      return { ok: false };
+    }
   }
 
   /**

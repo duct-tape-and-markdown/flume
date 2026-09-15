@@ -15725,3 +15725,388 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
     expect(prompts[0]).not.toContain("shipped-by-the-package");
   }, 20_000);
 });
+
+// ---------- a hook that throws (spec/chain.md "What a hook receives") ----------
+
+describe("Dispatcher — a hook that throws is answered the way its sibling seam already answers", () => {
+  /** What each hook raises instead of returning. */
+  const BOOM = "hook read a half-written file";
+
+  /**
+   * Every `render-refused` prior-attempt record under `<flumeDir>/
+   * prior-attempts/`, by filename stem — the durable channel a refused tick
+   * leaves for its retry. Read off disk rather than off the outcome, because
+   * "persisted as for any other render refusal" is a claim about the file.
+   */
+  async function renderRefusedRecords(
+    repo: string,
+  ): Promise<Map<string, { mode: string; failures: string }>> {
+    const dir = priorAttemptsDir(join(repo, ".flume"));
+    const out = new Map<string, { mode: string; failures: string }>();
+    if (!existsSync(dir)) return out;
+    for (const name of (await readdir(dir)).sort()) {
+      const rec = JSON.parse(await readFile(join(dir, name), "utf8")) as {
+        mode: string;
+        failures: string;
+      };
+      if (rec.mode === "render-refused") out.set(basename(name, ".json"), rec);
+    }
+    return out;
+  }
+
+  it("a throwing promptArgs is a render-refused no-commit outcome", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      promptArgs: () => {
+        throw new Error(BOOM);
+      },
+    });
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "must-not-run-while-promptargs-throws",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const preHead = await head(fx.repo);
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity (engineering.md "A green verdict is proven non-vacuous"):
+    // the phase really ran — the tick reached a result rather than
+    // hibernating past the seam under test.
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.result?.phaseName).toBe("plan");
+
+    // The prompt never resolved, so the agent was never invoked.
+    expect(prompts).toHaveLength(0);
+    expect(outcome.noCommit).toBe("render-refused");
+    expect(outcome.result?.committed).toBe(false);
+    expect(await head(fx.repo)).toBe(preHead);
+
+    // The verdict is written and the bookkeeping is complete — the whole
+    // point of answering the throw instead of losing the tick.
+    expect(outcome.verdict?.noCommit).toBe("render-refused");
+    expect(outcome.verdict?.committed).toBe(false);
+    expect(outcome.verdict?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.headSha).toBe(preHead);
+
+    // …and the record is the one any other render refusal persists, naming
+    // the hook and the frame that raised so the retry is not blind.
+    const records = await renderRefusedRecords(fx.repo);
+    expect([...records.keys()]).toEqual(["plan"]);
+    const failures = records.get("plan")!.failures;
+    expect(failures).toContain("promptArgs hook threw");
+    expect(failures).toContain(BOOM);
+    expect(failures).toContain("Dispatcher.test.ts");
+  }, 20_000);
+
+  it("a throwing shouldRun refuses the tick rather than declining it", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: () => {
+        throw new Error(BOOM);
+      },
+    });
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "must-not-run-while-shouldrun-throws",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const preHead = await head(fx.repo);
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the phase really ran, so the consult really happened.
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.result?.phaseName).toBe("plan");
+    expect(prompts).toHaveLength(0);
+
+    // The distinction under test: a hook that could not decide has not
+    // decided to skip, so the verdict records a refusal and *not* a decline
+    // the chain never reached.
+    expect(outcome.declined).toBeUndefined();
+    expect(outcome.verdict?.declined).toBeUndefined();
+    expect(outcome.noCommit).toBe("render-refused");
+    expect(outcome.result?.noCommit).toBe("render-refused");
+    expect(outcome.verdict?.noCommit).toBe("render-refused");
+
+    // Verdict written, bookkeeping complete, nothing on trunk.
+    expect(outcome.verdict?.committed).toBe(false);
+    expect(outcome.verdict?.headSha).toBe(preHead);
+    expect(await head(fx.repo)).toBe(preHead);
+
+    const records = await renderRefusedRecords(fx.repo);
+    expect([...records.keys()]).toEqual(["plan"]);
+    expect(records.get("plan")!.failures).toContain("shouldRun hook threw");
+    expect(records.get("plan")!.failures).toContain(BOOM);
+  }, 20_000);
+
+  it("a declining shouldRun is still a decline, not a refusal", async () => {
+    // The other direction of the pin above: the guard added for the throw
+    // leaves the returned `false` exactly where it was.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      shouldRun: () => false,
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.declined).toBe(true);
+    expect(outcome.verdict?.declined).toBe(true);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(await renderRefusedRecords(fx.repo)).toEqual(new Map());
+  }, 20_000);
+
+  it("the fanout copies of both pre-invocation seams answer a throw the same way", async () => {
+    // One guard per seam, reached by both concurrencies (engineering.md
+    // "The fix lands at the mechanism"): the same throw isolates one entry
+    // here exactly as it refuses the singleton tick above.
+    await writePending(fx.repo, [
+      makeEntry("SHOULDRUN-THROWS", ["src/a.ts"]),
+      makeEntry("PROMPTARGS-THROWS", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shouldRun: (ctx) => {
+        if (ctx.assignedEntry?.tag === "SHOULDRUN-THROWS") throw new Error(BOOM);
+        return true;
+      },
+      promptArgs: (ctx) => {
+        if (ctx.assignedEntry?.tag === "PROMPTARGS-THROWS") throw new Error(BOOM);
+        return {};
+      },
+    });
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "must-not-run-for-either-entry",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the wave really provisioned both entries, so both seams
+    // were really reached.
+    expect(outcome.verdict?.tags?.sort()).toEqual([
+      "PROMPTARGS-THROWS",
+      "SHOULDRUN-THROWS",
+    ]);
+    expect(prompts).toHaveLength(0);
+    expect(outcome.noCommit).toBe("render-refused");
+    expect(outcome.declined).toBeUndefined();
+    expect(outcome.result?.shippedTags).toEqual([]);
+    // Both entries stay queued for a retry that can read what raised.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag).sort()).toEqual(
+      ["PROMPTARGS-THROWS", "SHOULDRUN-THROWS"],
+    );
+    const records = await renderRefusedRecords(fx.repo);
+    expect([...records.keys()].sort()).toEqual([
+      "promptargs-throws",
+      "shouldrun-throws",
+    ]);
+    expect(records.get("shouldrun-throws")!.failures).toContain(
+      "shouldRun hook threw",
+    );
+    expect(records.get("promptargs-throws")!.failures).toContain(
+      "promptArgs hook threw",
+    );
+  }, 30_000);
+
+  it("a throwing handoff is logged and the tick's facts stand", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: () => {
+        throw new Error(BOOM);
+      },
+    });
+
+    const warnings: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/derived.ts", "y\n", "plan: derive");
+      }),
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    const preHead = await head(fx.repo);
+    const outcome = await dispatcher.tick();
+    const tip = await head(fx.repo);
+
+    // The facts are written before the hook runs, so they stand: the commit
+    // is on trunk and the verdict names it.
+    expect(tip).not.toBe(preHead);
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.commitSha).toBe(tip);
+    expect(await readFile(join(fx.repo, "src/derived.ts"), "utf8")).toBe("y\n");
+    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.headSha).toBe(tip);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+
+    // The throw costs exactly the wakes the hook never got to name: the
+    // phase is asleep (that happens before the hook runs) and nothing else
+    // woke.
+    expect(outcome.awakeAfter).toEqual([]);
+    expect(baton.awake()).toEqual([]);
+
+    // …and it is logged, not swallowed (engineering.md "Loud or nothing").
+    expect(
+      warnings.some((w) => w.includes("handoff threw") && w.includes(BOOM)),
+    ).toBe(true);
+  }, 20_000);
+
+  it("a throwing shipped leaves the entry pending and names the throw on the verdict", async () => {
+    await writePending(fx.repo, [makeEntry("SHIPPED-THROWS", ["src/s.ts"])]);
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shipped: () => {
+        throw new Error(BOOM);
+      },
+    });
+
+    const warnings: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "shipped-throws": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/s.ts",
+            "landed\n",
+            "build(SHIPPED-THROWS): land it",
+          ),
+      }),
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the entry's commit really reached trunk, so the ship
+    // predicate really ran — a throw before cherry-pick would leave the same
+    // "stays pending" verdict for a different reason.
+    expect(await readFile(join(fx.repo, "src/s.ts"), "utf8")).toBe("landed\n");
+
+    // Not `false`, but the same outcome `false` already has: entry queued,
+    // commit left on trunk.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "SHIPPED-THROWS",
+    ]);
+
+    // The verdict names the throw, so a broken predicate never reads back as
+    // a deliberate park.
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows, "the wave recorded no merge outcome").not.toHaveLength(0);
+    const row = rows.find((m) => m.entryTag === "SHIPPED-THROWS");
+    expect(row?.outcome).toBe("not-shipped");
+    expect(row?.threw).toBe(BOOM);
+    expect(
+      warnings.some((w) => w.includes("shipped threw") && w.includes(BOOM)),
+    ).toBe(true);
+
+    // The retry channel is the one a declined ship already writes.
+    const record = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "SHIPPED-THROWS"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(record.mode).toBe("not-shipped");
+  }, 30_000);
+
+  it("a `shipped` predicate that returns false records no throw on the verdict", async () => {
+    // The other direction: `threw` is present only when a throw produced the
+    // `not-shipped` outcome, so the two never collapse into one record.
+    await writePending(fx.repo, [makeEntry("SHIPPED-DECLINES", ["src/d.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      shipped: () => false,
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "shipped-declines": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/d.ts",
+            "landed\n",
+            "build(SHIPPED-DECLINES): land it",
+          ),
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows, "the wave recorded no merge outcome").not.toHaveLength(0);
+    expect(rows[0]?.outcome).toBe("not-shipped");
+    expect(rows[0]?.threw).toBeUndefined();
+  }, 30_000);
+});

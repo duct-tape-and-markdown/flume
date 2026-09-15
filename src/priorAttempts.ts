@@ -541,16 +541,20 @@ export function buildPlatformPreempt(
 }
 
 /**
- * Build the render-refused record from the render's own
- * {@link InlineExecRenderError} — its `message` already names every failing
- * span's command text and stderr.
+ * Build the render-refused record from the failure text of whatever refused
+ * the render. Two writers reach it: an {@link InlineExecRenderError}, whose
+ * `message` already names every failing span's command text and stderr, and a
+ * pre-invocation hook that threw (`spec/chain.md`, *What a hook receives*),
+ * whose text names the hook and the frame that raised. Text rather than the
+ * error itself because the two have no error type in common — a hook may
+ * throw any value at all.
  */
 export function buildRenderRefused(
-  err: InlineExecRenderError,
+  failures: string,
 ): Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   return {
     mode: "render-refused",
-    failures: bound(err.message, MAX_PRIOR_NOCOMMIT),
+    failures: bound(failures, MAX_PRIOR_NOCOMMIT),
   };
 }
 

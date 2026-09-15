@@ -82,7 +82,8 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       buildCleanExit("refused: the fence excludes spec/"),
       buildPlatformPreempt("process-failure"),
       buildRenderRefused(
-        new InlineExecRenderError([{ cmd: "git log", stderr: "not a repo" }]),
+        new InlineExecRenderError([{ cmd: "git log", stderr: "not a repo" }])
+          .message,
       ),
       buildTipMoved(head, `${"0".repeat(39)}1`),
       buildNotShipped(head, ["src/seed.ts"]),
