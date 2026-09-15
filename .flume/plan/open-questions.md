@@ -570,6 +570,17 @@ moves somewhere a chain still cannot name, under the second the chain supplies
 it and needs no read, and only under the third does "expose it" become the
 whole fix. Rule the two ends together.
 
+**Amended (the runner fork is ruled, `1d81a77`): a consumer's own runner needs
+the read end now.** `spec/harness.md`, *The runner interface*, declares `runner`
+as `(api) => Runner` and names the state root's worktree base among the two
+things that are "the engine's to hand out" — so a consumer writing its own
+runner factory is told to take the base from an API that does not carry it. The
+package's factory reaches `worktreesBase` by importing `../src/paths.js`, which
+no consumer can do. The third option's "export the base" stops being a courtesy:
+a spec sentence now asserts the reach. Stale above, with it: `.flume/chain.ts`
+no longer imports the helper — it is twenty lines applying `harnessChain` — so
+the one in-repo site that declared the gap is gone, and nothing states it now.
+
 Options:
 
 - **Default outside the checkout** — a sibling of the git common dir rather
@@ -730,83 +741,6 @@ nothing*). What is open is where the sentence lands and how wide it reads:
 **Recommend the second**, cross-referenced from `spec/chain.md`'s relocated-root
 bullet so the engine side names its own exception. Held here because it is a
 spec sentence about a shipped behavior, and the corpus states current truth.
-
-## A gate that throws takes the tick down with no verdict and a stranded merge (PARKED)
-
-Drained from the inbox (2026-09-14, interactive session); verified on disk
-this tick. All three `gate.run` sites — `src/Dispatcher.ts:2116` and `:2740`
-(afterMerge, singleton and fanout) and `:3729` (afterCommit) — `await` the
-gate bare. A gate that throws propagates out of the tick. Observed at
-`3447751`, loop 18 tick 2: the afterMerge judge's runner threw (`vitestRunner:
-vitest does not resolve from <base checkout>`), the tick process exited 1, no
-verdict was written, the cherry-picked commit was already on trunk, the queue
-rewrite never ran, and `merging/harness-decl-input-type.json` survived — so the
-next `loop` refused until an operator inspected. The supervisor counted it as
-an errored tick and nothing else.
-
-**Two halves, and only one of them forks.** `spec/chain.md` *What a gate
-returns* defines `GateResult` and states no throw semantics; the containment
-guarantee at *A broken chain fails loudly, at two layers* covers chain
-**resolution**, not a gate's run. What a throw *means* is open. That the
-tick's facts and the merge bookkeeping survive it is not: nothing wants a
-half-completed merge marker outliving a crash, and a `finally` around the merge
-bookkeeping is the same fix under every arm below.
-
-Options for the meaning:
-
-- **Catch at each gate-run site and fold in** — `{ ok: false, message: <error> }`
-  through the existing failure accounting, so a throwing gate reverts like a
-  failing one. The engine is reading an `Error` it caught, not reconstructing a
-  statement, so `engine-boundary.md` *Told, not inferred* is not in the way.
-  Against: a gate bug then reads as a failing check, and the revert path runs
-  over it — a chain defect wearing a code verdict.
-- **Rule a throwing gate a chain defect**, with a sentence in *What a gate
-  returns* saying so, and keep the crash. Cheapest on semantics, and the loudest
-  reading of `engineering.md` *Loud or nothing*. Costs the tick's facts unless
-  the bookkeeping half lands too.
-- **Catch, but classify apart** — a distinct no-commit mode beside
-  `gate-revert`, so the prior-attempt record says the gate threw rather than
-  failed, and the chain's `handoff` can tell them apart.
-
-Parked because the arms change behavior for every consumer and no corpus
-section decides. The bookkeeping half ships as an ordinary entry the moment the
-meaning is ruled, and the two should be ruled together rather than split.
-
-## The declared runner needs engine facts a static declaration cannot reach (NEEDS AMENDMENT)
-
-Drained from the inbox (2026-09-14, interactive session); verified on disk this
-tick. `declaration.runner` is a value the consumer constructs
-(`.flume/declaration.ts:63`, `vitestRunner({ lanes })`), and the judge calls
-its `runAtBase`, which checks the base out detached and runs tests there
-(`harness/vitestRunner.ts:259-283`). Two things that checkout needs live on
-`FlumeApi`, which a declaration module never sees.
-
-**One half already closed.** `prepare` now defaults to the engine's
-lockfile-aware installer (`:278`) — the interim that landed with the record,
-after loop 18 crashed on a base with no `node_modules`. What stays open is
-`worktreeRoot`: undeclared, it is `mkdtemp(tmpdir())` (`:260`), a path the
-stale-worktree sweep never reads, so a run that dies mid-flight leaks a
-checkout. The value it wants is the state root's worktree base, which the
-engine resolves per tick and hands to the chain as `api`.
-
-Either way a consumer should never construct the installer or the base path by
-hand — `engineering.md`, *A fact the engine holds is reported, never
-rediscovered*. The fork is where the seam goes:
-
-- **The factory adapts the declared runner**, filling api-derived defaults
-  before wiring it into the judge. No schema change; against it, the package
-  decides on the consumer's behalf which gaps it fills, and a consumer's own
-  runner gets nothing unless it happens to spell the same optional fields.
-- **`runner` becomes `(api) => Runner`** in the declaration schema, in *What a
-  consumer declares*, and in *The runner interface*. The cleaner contract — a
-  runner that needs engine facts asks for them, and any runner a consumer
-  writes gets the same reach. A breaking declaration-schema change, refused at
-  load with the field named, which *Adoption and upgrade* already provides for.
-
-**Recommend the second.** Held here because it is a spec sentence about the
-declaration's shape. **Rule it with *The worktree base is reachable only as an
-env read at chain import*** — that question decides where the base lives and
-whether it is readable at all, and this one decides who gets to read it.
 
 ## The package's ignore lines are written once, at adoption, and never re-asserted (PARKED)
 

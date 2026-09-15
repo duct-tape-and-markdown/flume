@@ -17,5 +17,34 @@
       "a window render refuses by name when git fails for a reason other than an unresolvable cursor"
     ],
     "notes": "touchedPast (harness/windows.ts:783) wakes the slice on any git failure and names refusal as its bound; refusal is reached only from the !resolves leg of renderSpecWindow:391 and renderSweepWindow:497. A throw out of commitsPast/diffOf/retiredLines/bootstrap escapes phase.promptArgs — uncaught at src/Dispatcher.ts:1957 and :3281 — so the tick dies with no verdict. Carry the failure's own text into the refusal."
+  },
+  {
+    "tag": "HARNESS-RUNNER-IS-A-FACTORY-OVER-THE-API",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/declaration.ts", "description": "the `runner` field becomes a factory" },
+        { "path": "harness/runner.ts", "description": "the factory type beside `Runner`" },
+        { "path": "harness/vitestRunner.ts", "description": "the vitest factory over the api; the `prepare`/`worktreeRoot` options go" },
+        { "path": "harness/chain.ts", "description": "call the declared factory at load with the chain's own api" },
+        { "path": "harness/init.ts", "description": "the scaffolded declaration's runner line" },
+        { "path": "harness/index.ts", "description": "the factory type on the package surface" },
+        { "path": "tests/harnessDeclaration.test.ts", "description": "the schema's refusal of a non-factory runner" },
+        { "path": "tests/harnessRunner.test.ts", "description": "the factory's base and installer" },
+        { "path": "tests/harnessChain.test.ts", "description": "the factory called with the chain's api" }
+      ],
+      "retire": []
+    },
+    "summary": "`runner` is declared `(api) => Runner` and called at chain load, so the vitest factory takes the engine's installer and the state root's worktree base from the API",
+    "per": { "path": "spec/harness.md", "section": "The runner interface" },
+    "acceptance": "The declaration schema refuses a runner that is not a factory, naming the field; the chain factory calls the declared factory with its own FlumeApi; the vitest factory's base checkout is provisioned by that API's installer under the state root's worktree base, and no consumer constructs either by hand.",
+    "tests": [
+      "a declaration whose runner is a Runner value rather than a factory is refused at load naming the field",
+      "the chain factory calls the declared runner factory with the same FlumeApi it received",
+      "the vitest runner factory places its base checkout under the state root's worktree base",
+      "the vitest runner factory provisions its base checkout with the installer from the API it was given"
+    ],
+    "notes": "Ruled in spec at 1d81a77. Breaking declaration-schema change with a chain-side twin: this repo's .flume/declaration.ts:63 still passes a vitestRunner({lanes}) value and .flume/ is outside build's fence, so chain load refuses every tick between this commit and the operator's edit -- an interactive session moves it the moment this lands. The package reaches the base as worktreesBase(api.paths.flumeDir) via ../src/paths.js; putting it on FlumeApi stays the parked question's call."
   }
 ]
