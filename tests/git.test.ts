@@ -55,7 +55,9 @@ vi.mock("node:child_process", async (importOriginal) => {
   )[nodePromisify.custom] as (
     ...args: unknown[]
   ) => Promise<{ stdout: string; stderr: string }>;
-  const execFileMock = vi.fn(actual.execFile) as unknown as typeof actual.execFile;
+  const execFileMock = vi.fn(
+    actual.execFile,
+  ) as unknown as typeof actual.execFile;
   Object.defineProperty(execFileMock, nodePromisify.custom, {
     configurable: true,
     value: (...callArgs: unknown[]) => {
@@ -210,7 +212,10 @@ describe("currentRefPath", () => {
     // A cwd that doesn't exist on disk fails at spawn (ENOENT), the same
     // shape node:child_process reports for a missing git binary — real
     // spawn failure, not a mocked stand-in.
-    const missing = join(await mkdtemp(join(tmpdir(), "flume-missing-")), "gone");
+    const missing = join(
+      await mkdtemp(join(tmpdir(), "flume-missing-")),
+      "gone",
+    );
     const ref = await currentRefPath(missing);
     expect(ref.kind).toBe("git-unavailable");
     if (ref.kind === "git-unavailable") {
@@ -240,7 +245,10 @@ describe("commitPaths", () => {
       ["show", "--name-only", "--pretty=format:", "HEAD"],
       { cwd: repo },
     );
-    const files = changed.split("\n").map((s) => s.trim()).filter(Boolean);
+    const files = changed
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
     expect(files).toEqual(["tracked.txt"]);
 
     const { stdout: status } = await exec("git", ["status", "--porcelain"], {
@@ -456,11 +464,9 @@ describe("resetKeepTo (spec/loop.md 'Tip verify', \"dropping it must not take by
     await resetKeepTo(repo, base);
 
     expect(await revParse(repo)).toBe(base);
-    const { stdout: status } = await exec(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repo },
-    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
     expect(status).toContain(".seed");
     expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
       "bystander staged edit",
@@ -523,11 +529,9 @@ describe("resetKeepTo (spec/loop.md 'Tip verify', \"dropping it must not take by
     // Refused: neither the engine's commit nor the bystander's staged edit
     // moved.
     expect(await revParse(repo)).toBe(postEngine);
-    const { stdout: status } = await exec(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repo },
-    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
     expect(status).toContain("shared.txt");
     expect(await readFile(join(repo, "shared.txt"), "utf8")).toBe(
       "base\nengine change\nbystander collision",
@@ -566,8 +570,9 @@ describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
  * misses it, and it lands in `observedFiles` under a name no partition can
  * key on (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * The space-bearing path rides along in the same commit: it is quoted by the
- * default form too, and is what rules out `core.quotePath=false` as the fix.
+ * The space-bearing path rides along in the same commit for the separator
+ * half of the claim: git leaves it *un*quoted (measured, 2.43), so only the
+ * `-z` field boundary keeps it whole and un-trimmed.
  */
 async function commitNonAsciiPath(): Promise<{ base: string; sha: string }> {
   const base = await revParse(repo);
@@ -736,11 +741,9 @@ describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
     expect(abortCalls(execArgsLogSince(since)).length).toBeGreaterThan(0);
 
     expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
-    const { stdout: status } = await exec(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repo },
-    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
     expect(status.trim()).toBe("");
     expect(await readFile(join(repo, "file.txt"), "utf8")).toBe(
       "from-primary\n",
@@ -772,11 +775,9 @@ describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
 describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged bystander state is checkpointed before a pick range begins')", () => {
   it("returns undefined and touches nothing when the checkout is clean", async () => {
     await expect(checkpointBystanderState(repo)).resolves.toBeUndefined();
-    const { stdout: status } = await exec(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repo },
-    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
     expect(status.trim()).toBe("");
   });
 
@@ -791,11 +792,9 @@ describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged by
 
     // Nothing was reset — the staged/unstaged content is exactly where the
     // caller left it, and the checkpoint itself moved no ref.
-    const { stdout: status } = await exec(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: repo },
-    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
     expect(status).toContain("staged.txt");
     expect(status).toContain(".seed");
     expect(await readFile(join(repo, "staged.txt"), "utf8")).toBe(
@@ -1037,9 +1036,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     const attempt = acquireTipClaim(repo, refPath);
     await expect(attempt).rejects.toBeInstanceOf(TipClaimHeldError);
     await expect(attempt).rejects.toThrow(
-      new RegExp(
-        `${refPath}.*pid ${process.pid}`.replace(/[/\\]/g, "\\$&"),
-      ),
+      new RegExp(`${refPath}.*pid ${process.pid}`.replace(/[/\\]/g, "\\$&")),
     );
 
     // The refused attempt never disturbed the live holder's claim file.
@@ -1142,54 +1139,51 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
 // hosts — assert it where it can actually run. Mirrors tests/job.test.ts's
 // §5a coverage of job.ts's baseline pin; this is the shared helper both
 // job.ts and Dispatcher's createWorktree now call.
-describe.runIf(process.platform === "win32")(
-  "pinLongPaths (v0.4 §6)",
-  () => {
-    it("pins core.longpaths repo-locally, idempotently", async () => {
-      await pinLongPaths(repo);
+describe.runIf(process.platform === "win32")("pinLongPaths (v0.4 §6)", () => {
+  it("pins core.longpaths repo-locally, idempotently", async () => {
+    await pinLongPaths(repo);
+    const { stdout } = await exec(
+      "git",
+      ["config", "--local", "--get", "core.longpaths"],
+      { cwd: repo },
+    );
+    expect(stdout.trim()).toBe("true");
+
+    // Re-run: pin idempotent, no error on repeat.
+    await pinLongPaths(repo);
+    const { stdout: again } = await exec(
+      "git",
+      ["config", "--local", "--get", "core.longpaths"],
+      { cwd: repo },
+    );
+    expect(again.trim()).toBe("true");
+  });
+
+  it("skips the write when already true, even when .git/config is unwritable (PINLONGPATHS-CHECKTHENSKIP)", async () => {
+    await pinLongPaths(repo);
+
+    const commonDir = await gitCommonDir(repo);
+    const configPath = join(commonDir, "config");
+    await chmod(configPath, 0o444);
+    try {
+      // Pre-fix, pinLongPaths always re-issues `git config
+      // core.longpaths true` — a write that throws EACCES against a
+      // read-only .git/config even though the value is already correct.
+      // Post-fix, the check-then-skip reads the value is already "true"
+      // and never attempts the write.
+      await expect(pinLongPaths(repo)).resolves.toBeUndefined();
+
       const { stdout } = await exec(
         "git",
         ["config", "--local", "--get", "core.longpaths"],
         { cwd: repo },
       );
       expect(stdout.trim()).toBe("true");
-
-      // Re-run: pin idempotent, no error on repeat.
-      await pinLongPaths(repo);
-      const { stdout: again } = await exec(
-        "git",
-        ["config", "--local", "--get", "core.longpaths"],
-        { cwd: repo },
-      );
-      expect(again.trim()).toBe("true");
-    });
-
-    it("skips the write when already true, even when .git/config is unwritable (PINLONGPATHS-CHECKTHENSKIP)", async () => {
-      await pinLongPaths(repo);
-
-      const commonDir = await gitCommonDir(repo);
-      const configPath = join(commonDir, "config");
-      await chmod(configPath, 0o444);
-      try {
-        // Pre-fix, pinLongPaths always re-issues `git config
-        // core.longpaths true` — a write that throws EACCES against a
-        // read-only .git/config even though the value is already correct.
-        // Post-fix, the check-then-skip reads the value is already "true"
-        // and never attempts the write.
-        await expect(pinLongPaths(repo)).resolves.toBeUndefined();
-
-        const { stdout } = await exec(
-          "git",
-          ["config", "--local", "--get", "core.longpaths"],
-          { cwd: repo },
-        );
-        expect(stdout.trim()).toBe("true");
-      } finally {
-        await chmod(configPath, 0o644);
-      }
-    });
-  },
-);
+    } finally {
+      await chmod(configPath, 0o644);
+    }
+  });
+});
 
 // win32 total-path limit (v0.4 §6): tipClaimPath mirrors refPath as nested
 // directories under commonDir/flume/tip-claims — the same shape

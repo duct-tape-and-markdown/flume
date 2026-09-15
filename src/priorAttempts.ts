@@ -410,28 +410,21 @@ export class PriorAttemptStore {
       // The artifact tracks the *latest* reverted attempt only — drop any
       // stale snapshot from an earlier revert under this key first.
       await rm(toNamespacedPath(dir), { recursive: true, force: true });
-      const { stdout } = await execFileP(
-        "git",
-        [
-          "show",
-          "--name-only",
-          "--diff-filter=d",
-          "--format=",
-          "--no-color",
-          sha,
-        ],
-        { cwd, maxBuffer: 16 * 1024 * 1024 },
-      );
-      const files = stdout
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
+      // Both reads go through `src/git.ts`, never a second `git show` spelled
+      // here (`.claude/rules/engineering.md`, "The fix lands at the
+      // mechanism"): the listing through the shared `-z` name-only decode, so
+      // a quoted or space-terminated path arrives as git committed it and
+      // still resolves as `<sha>:<path>`; the content through the shared
+      // tip-read.
+      const files = await git.showNameOnly(cwd, sha, { excludeDeleted: true });
       for (const rel of files) {
-        const { stdout: content } = await execFileP(
-          "git",
-          ["show", `${sha}:${rel}`],
-          { cwd, maxBuffer: 16 * 1024 * 1024 },
-        );
+        // `excludeDeleted` already dropped everything this commit removed, so
+        // a null here means the listing and the tree disagree at one sha —
+        // skip that path rather than abandoning the rest of the snapshot to
+        // the catch below, which is the whole artifact for the sake of one
+        // file.
+        const content = await git.readFileAtRef(cwd, sha, rel);
+        if (content === null) continue;
         const dest = join(dir, rel);
         // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth
         // here is driven by the reverted diff's own path depth, not

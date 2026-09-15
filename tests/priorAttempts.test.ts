@@ -16,7 +16,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { lstat, mkdir, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -301,9 +301,7 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
       // Same directory, same stem, different suffix — siblings by one
       // identity rather than two spellings of the same attempt.
       expect(dirname(snapshot)).toBe(dirname(record));
-      expect(basename(snapshot)).toBe(
-        `${basename(record, ".json")}.reverted`,
-      );
+      expect(basename(snapshot)).toBe(`${basename(record, ".json")}.reverted`);
       expect(basename(snapshot)).toBe(`${slugify(key)}.reverted`);
     }
   });
@@ -334,6 +332,141 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
       expect(dirname(p), key).toBe(priorAttemptsDir(flumeDir));
     }
   });
+});
+
+/**
+ * The revert snapshot over the two path spellings git's *default*
+ * `--name-only` form rewrites: a non-ASCII path (octal-escaped inside double
+ * quotes) and one that ends in a space (double-quoted). Either rewrite makes
+ * the listed name a path that no longer resolves as `<sha>:<path>`, so the
+ * content read throws and `snapshotReverted`'s best-effort catch swallows the
+ * rest of the commit with it.
+ *
+ * Driven as an agreement gate (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*): a real commit made by git is listed by
+ * the engine's own name-only reader and read back by the engine's own
+ * tip-read, with the snapshot on disk as the verdict. No fixture re-spells a
+ * path by the tester's hand.
+ *
+ * Deliberately top-level rather than inside a `describe`: these titles are
+ * the queue entry's own `tests[]`/`pins[]` lines, matched on the full name.
+ */
+async function commitPathsNamed(
+  repo: string,
+  names: readonly string[],
+): Promise<string> {
+  await mkdir(join(repo, "snap"), { recursive: true });
+  for (const name of names) {
+    await writeFile(join(repo, "snap", name), `content of ${name}\n`);
+  }
+  await gitOut(repo, ["add", "--all"]);
+  await gitOut(repo, ["commit", "-q", "-m", "awkward paths"]);
+  return gitOut(repo, ["rev-parse", "HEAD"]);
+}
+
+it("snapshotReverted writes a non-ASCII path's content into the revert snapshot", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+    const sha = await commitPathsNamed(fx.repo, ["café.ts", "plain.ts"]);
+
+    // Vacuity pin: the default form really does rewrite this path, so the
+    // snapshot below is judged over a listing that a raw `git show
+    // --name-only` would have mis-spelled rather than over an ASCII no-op.
+    const quoted = await gitOut(fx.repo, [
+      "show",
+      "--name-only",
+      "--format=",
+      sha,
+    ]);
+    expect(quoted).toContain('"snap/caf\\303\\251.ts"');
+
+    await store.snapshotReverted(fx.repo, sha, "key");
+
+    const dir = store.snapshotDir("key");
+    expect(await readFile(join(dir, "snap", "café.ts"), "utf8")).toBe(
+      "content of café.ts\n",
+    );
+    // The sibling git lists *after* the awkward one: a listing that throws on
+    // `café.ts` truncates the whole snapshot from there on.
+    expect(await readFile(join(dir, "snap", "plain.ts"), "utf8")).toBe(
+      "content of plain.ts\n",
+    );
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+// A filename may not end in a space on win32 — the Win32 path layer strips
+// trailing spaces before the create call reaches the filesystem, so neither
+// this fixture nor a `git checkout` of it can exist there.
+it.runIf(process.platform !== "win32")(
+  "snapshotReverted preserves a path's trailing space instead of trimming it",
+  async () => {
+    const fx = await makeFixture();
+    try {
+      const store = new PriorAttemptStore(
+        join(fx.repo, ".flume"),
+        fx.repo,
+        silent,
+      );
+      const sha = await commitPathsNamed(fx.repo, ["trailing.ts "]);
+
+      // Vacuity pin: the space really is part of the committed name, and the
+      // trimmed spelling names nothing at this commit — which is what makes a
+      // trim a substitution rather than a cleanup. (Unlike the non-ASCII case
+      // above, git leaves this path unquoted in either form; the trim alone
+      // loses it.)
+      expect(
+        await gitOut(fx.repo, ["cat-file", "-e", `${sha}:snap/trailing.ts `]),
+      ).toBe("");
+      await expect(
+        gitOut(fx.repo, ["cat-file", "-e", `${sha}:snap/trailing.ts`]),
+      ).rejects.toThrow();
+
+      await store.snapshotReverted(fx.repo, sha, "key");
+
+      expect(
+        await readFile(
+          join(store.snapshotDir("key"), "snap", "trailing.ts "),
+          "utf8",
+        ),
+      ).toBe("content of trailing.ts \n");
+    } finally {
+      await fx.cleanup();
+    }
+  },
+);
+
+it("a snapshotReverted failure leaves the revert path unblocked", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+
+    // Vacuity pin: the sha really is unresolvable here, so every git read
+    // inside `snapshotReverted` below fails rather than quietly succeeding.
+    const missing = "0".repeat(40);
+    await expect(
+      gitOut(fx.repo, ["cat-file", "-e", missing]),
+    ).rejects.toThrow();
+
+    // Recovery is best-effort by spec: the caller's next move is the hard
+    // reset, and a snapshot that cannot be taken must not stand in its way.
+    await expect(
+      store.snapshotReverted(fx.repo, missing, "key"),
+    ).resolves.toBeUndefined();
+    expect(existsSync(store.snapshotDir("key"))).toBe(false);
+  } finally {
+    await fx.cleanup();
+  }
 });
 
 /**

@@ -128,18 +128,25 @@ export async function softResetTo(cwd: string, sha: string): Promise<void> {
  * Decode the `-z` form of a `--name-only` listing: NUL-terminated fields,
  * each the path exactly as git committed it.
  *
- * **Both readers pass `-z`, because the default form is quoted.** Without it
- * git wraps any path carrying a space, a control character, or a non-ASCII
- * byte in double quotes with the offending bytes escaped — `src/café.ts`
- * arrives as `"src/caf\303\251.ts"` — and that spelling is a *different*
- * path than the one committed: it matches no fence glob, so a path the tick
- * was meant to write reads as out-of-fence, and it enters an entry's
- * `observedFiles` as a name no later partition can key on
- * (`.claude/rules/engineering.md`, *Loud or nothing*). `core.quotePath=false`
- * is not the fix, since a space still quotes.
+ * **Every reader passes `-z`, because neither the default form's spelling nor
+ * its separator is faithful.** Measured on git 2.43:
  *
- * No per-field trim, for the same reason: a committed path may legitimately
- * end in a space, and trimming it silently substitutes another path for the
+ * - A path carrying a non-ASCII byte or a control character comes back
+ *   double-quoted with the offending bytes octal-escaped: `src/café.ts`
+ *   arrives as `"src/caf\303\251.ts"`. That spelling is a *different* path
+ *   than the one committed — it matches no fence glob, so a path the tick was
+ *   meant to write reads as out-of-fence; it enters an entry's
+ *   `observedFiles` as a name no later partition can key on; and it resolves
+ *   nothing fed back to git as `<sha>:<path>`
+ *   (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * - `core.quotePath=false` is measured non-viable as the fix. It un-quotes
+ *   the non-ASCII case only: a control character stays quoted either way, and
+ *   a path containing a newline then splits into two paths under the default
+ *   form's line separator, which no un-quoting can undo.
+ *
+ * No per-field trim, for a second and independent reason: a space is *not*
+ * quoted by either form, so a committed path legitimately arrives still
+ * ending in one, and trimming it silently substitutes another path for the
  * one git named. Empty fields are dropped — the trailing NUL after the last
  * path yields one, and a commit touching nothing yields only that.
  */
@@ -249,12 +256,7 @@ async function getLocalConfig(
   key: string,
 ): Promise<string | undefined> {
   try {
-    const { stdout } = await run(repoRoot, [
-      "config",
-      "--local",
-      "--get",
-      key,
-    ]);
+    const { stdout } = await run(repoRoot, ["config", "--local", "--get", key]);
     return stdout;
   } catch (err) {
     const code = (err as { code?: unknown }).code;
@@ -380,14 +382,24 @@ export async function deleteBranch(
  * File paths touched by a single commit. Used to record an entry's *actual*
  * footprint when its merge fails, so the partitioner can learn what the
  * declared `files` under-stated.
+ *
+ * `excludeDeleted` drops the paths the commit *removed* (`--diff-filter=d`),
+ * leaving only those still readable at `sha` — what a caller that goes on to
+ * read each path's content at that same commit wants
+ * (`PriorAttemptStore.snapshotReverted`, src/priorAttempts.ts). A typed flag
+ * rather than a pass-through filter string: the engine forwards only the
+ * selection it consumes, and a mistyped filter letter is then not a thing a
+ * caller can express.
  */
 export async function showNameOnly(
   repoRoot: string,
   sha: string,
+  opts: { excludeDeleted?: boolean } = {},
 ): Promise<string[]> {
   const { stdout } = await run(repoRoot, [
     "show",
     "--name-only",
+    ...(opts.excludeDeleted ? ["--diff-filter=d"] : []),
     "--format=",
     "-z",
     sha,
@@ -606,7 +618,9 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
  * a tip another live writer holds — the refusal that branch exists to make
  * (`.claude/rules/engineering.md`, "Loud or nothing").
  */
-export async function liveTipClaimPid(claimPath: string): Promise<number | null> {
+export async function liveTipClaimPid(
+  claimPath: string,
+): Promise<number | null> {
   if (!existsLoud(toNamespacedPath(claimPath))) return null;
   const pid = Number(
     (await readFile(toNamespacedPath(claimPath), "utf8")).trim(),
