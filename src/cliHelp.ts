@@ -16,6 +16,7 @@ const SUBCOMMANDS = [
   "stop",
   "log",
   "check",
+  "render",
   "friction",
 ] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -41,6 +42,11 @@ Commands:
   check               Validate the working tree's plan/pending.json — parse
                       plus fence arithmetic against the consumer (fanout)
                       phase's declared fence — without spending an agent.
+  render <phase> [--entry <tag>]
+                      Print to stdout the prompt <phase> would be handed,
+                      invoking nothing — the dispatcher's own resolution run
+                      one call short of the agent. The <prior-attempt> block
+                      is omitted and the first line says so.
   friction [name]     List (bare) the declared friction channel's notes —
                       filename, size, mtime — or, with <name>, print that
                       note's bytes verbatim. Never interpreted.
@@ -261,6 +267,44 @@ Exit codes:
   74   I/O error (EX_IOERR): plan/pending.json exists but could not be read
        (permission denied, a path too long for the platform, …). Naming
        the underlying error.
+`,
+  render: `Usage: flume render <phase> [--entry <tag>]
+
+Print to stdout the prompt a tick would hand <phase>, invoking nothing: the
+dispatcher's own resolution path run one call short of the agent — the same
+chain load, the same queue read at HEAD, the same pickability verdict, the
+same fence in the <harness> block, the same renderer. Nothing is previewed
+twice or approximated.
+
+Two things differ from a tick, because no tick is running: the inline-exec
+spans evaluate in the primary checkout rather than a provisioned worktree,
+and the <prior-attempt> block is omitted — a render outside a tick has no
+attempt to carry, it is never reconstructed, and the output's first line
+says so. A tick's own record of what it sent stays in rendered-prompts/;
+there is no --out, stdout is the surface.
+
+Options:
+  --entry <tag>   Fanout phases only: scope the render to that queue entry,
+                  pickable or not — a gated, parked or blocked entry renders
+                  and stderr says a tick would not carry it. Omitted, the
+                  entry the next wave's first batch carries first is chosen
+                  by the dispatcher's own batch arithmetic.
+
+Exit codes:
+  0   The prompt resolved and was written to stdout.
+  2   Usage: missing <phase>, an extra positional past it, --entry with no
+      value, an unknown phase, --entry against a phase that picks no entry,
+      --entry naming no entry in the queue at HEAD, or a fanout phase with
+      nothing pickable and no --entry to scope it. Also: the chain failed to
+      load with the CJS-context refusal — the host repo's package.json (or
+      the one beside .flume/chain.ts) lacks "type": "module".
+  65  Data error (EX_DATAERR): the prompt never resolved — an inline-exec
+      span exited non-zero (each failing span named with its stderr), or the
+      phase's promptArgs hook threw. The same refusal a tick would have
+      bought with an invocation; the engine calls the class render-refused.
+  69  Mount-dead (EX_UNAVAILABLE): the chain could not be brought up for any
+      other reason — it failed to load, the queue at HEAD failed to parse,
+      or the declared prompt file is not on disk. Nothing was rendered.
 `,
   friction: `Usage: flume friction [name]
 

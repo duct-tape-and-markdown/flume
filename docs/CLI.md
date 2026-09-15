@@ -210,6 +210,62 @@ flume check   # a chain with no fanout phase
 # plan/pending.json valid (3 entries), no fanout phase declared; fence not checked
 ```
 
+## `flume render <phase> [--entry <tag>]`
+
+Prints to stdout the prompt a tick would hand `<phase>`, invoking nothing — the
+other half of what `flume check` does for the queue. It runs the dispatcher's own
+resolution path one call short of the agent: the same chain load, the same queue
+read at HEAD, the same pickability verdict, the same fence in the `<harness>`
+block, the same renderer. Nothing is re-derived beside the dispatcher — an earlier
+verb that previewed its own approximation of the fence, the prior-attempt state
+and pickability was removed for exactly that (`CHANGELOG`, 0.10.0).
+
+Two things differ from a tick, because no tick is running. Inline-exec spans
+evaluate in the primary checkout rather than a provisioned worktree — nothing is
+created, so nothing needs tearing down. And the `<prior-attempt>` block is
+omitted: a render outside a tick has no attempt to carry, it is never
+reconstructed, and the **output's first line says so**, whether or not a record
+stands on disk. `TickContext.priorAttempts` is still the real on-disk map, since
+that one is a fact a `promptArgs` hook reads.
+
+Under a fanout phase, `--entry <tag>` scopes the render to that queue entry —
+pickable or not. A parked, blocked or capability-gated entry renders, and stderr
+says a tick would not carry it; the verdict is reported, never spent as a refusal.
+Omitted, the entry the next wave's first batch carries first is chosen by the
+dispatcher's own batch arithmetic, and stderr names it. A singleton phase picks
+from no queue, so `--entry` against one is a usage error.
+
+There is no `--out`: stdout is the surface, and a tick's own record of what it
+sent stays in `rendered-prompts/`. Read-only apart from the one filesystem effect
+`flume status` also has — constructing the baton creates `<flumeDir>/awake/` when
+absent. No baton flag is set, no worktree is provisioned, no `rendered-prompts/`
+record is written, and no hook refusal is persisted.
+
+Exits `0` once the prompt is on stdout; `2` on any usage-shaped refusal (missing
+`<phase>`, a stray positional past it, `--entry` with no value, an unknown phase,
+`--entry` against a phase that picks nothing, `--entry` naming no entry in the
+queue at HEAD, a fanout phase with nothing pickable and no `--entry`, or the
+CJS-context chain-load refusal); `65` (`EX_DATAERR`) when the prompt never
+resolved — an inline-exec span that exited non-zero, named with its stderr, or a
+`promptArgs` hook that threw, which is the same `render-refused` class a tick
+would have spent an invocation to reach; `69` (`EX_MOUNT_DEAD`) when the chain
+could not be brought up at all — it failed to load, the queue at HEAD failed to
+parse, or the declared prompt file is not on disk.
+
+```sh
+flume render plan
+# [flume] render: <prior-attempt> omitted — a render outside a tick carries no attempt, and it is never reconstructed.
+# <harness>
+# Phase: plan
+# ...
+
+flume render build --entry DOCS-CLI-1 > /tmp/preview.md
+# [flume] render: build scoped to entry DOCS-CLI-1        (stderr)
+
+flume render build --entry PARKED-ONE
+# [flume] render: build scoped to entry PARKED-ONE — not pickable at HEAD; a tick would not carry it
+```
+
 ## `flume friction [name]`
 
 Bare, lists the declared friction channel's notes — filename, size in bytes, and

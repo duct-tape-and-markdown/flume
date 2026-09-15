@@ -1609,6 +1609,69 @@ const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
 };
 
 /**
+ * What to resolve a preview for: a phase the chain declares, and — under
+ * fanout — which queue entry to scope it to. `entryTag` omitted leaves the
+ * selection to {@link Dispatcher.render}'s own batch arithmetic, exactly as a
+ * tick makes it.
+ */
+export interface RenderRequest {
+  phase: string;
+  entryTag?: string;
+}
+
+/**
+ * What {@link Dispatcher.render} resolved. Facts, never a verdict
+ * (`.claude/rules/engine-boundary.md`, *Routing rule*): the caller decides
+ * what to print and what to exit with.
+ */
+export interface RenderResolution {
+  /** The phase, as the chain spells it. */
+  phaseName: string;
+  /**
+   * The entry the render was scoped to — the one `--entry` named, or the one
+   * the next wave's first batch carries first. Absent for a singleton phase,
+   * which picks from no queue.
+   */
+  entry?: PendingEntry;
+  /**
+   * The same pickability verdict the tick's own selection takes, over the
+   * queue at HEAD. Reported so a caller naming an entry by hand is told
+   * whether a tick would carry it, rather than re-deriving the gate switch.
+   */
+  pickable: readonly PendingEntry[];
+  /** The rendered prompt, byte-for-byte what the agent would be handed. */
+  prompt: string;
+}
+
+/**
+ * A render request the surface cannot honor as typed: an unknown phase, an
+ * `--entry` on a phase that picks nothing, a tag no queue entry carries, or a
+ * fanout phase with nothing pickable and no tag named. Usage-shaped
+ * (spec/cli.md, *Subcommand surface*) — the caller maps it to exit 2.
+ */
+export class RenderUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RenderUsageError";
+  }
+}
+
+/**
+ * A render that reached the prompt and could not resolve it: a `promptArgs`
+ * hook that threw. The tick's own name for this class is `render-refused`
+ * (`NO_COMMIT_MODES`, `src/Prompt.ts`) — the agent is never invoked either
+ * way; here there is simply no invocation to skip. An unresolved inline-exec
+ * span is the same class and keeps its own richer type,
+ * {@link InlineExecRenderError}, which names every failing span.
+ */
+export class RenderUnresolvedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RenderUnresolvedError";
+  }
+}
+
+/**
  * Runtime that wires baton + chain + agent + gates into one tick. Stateless
  * across ticks (everything it needs comes from disk). `tick()` runs exactly
  * one phase × one invocation (or N for fanout); `superviseLoop`
@@ -1926,6 +1989,142 @@ export class Dispatcher {
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
       awakeAfter: this.baton.awake(),
       summary,
+    };
+  }
+
+
+  // ---------- render: the resolution path, short of the invocation ----------
+
+  /**
+   * The prompt one tick would be handed, resolved without invoking anything —
+   * `flume render`'s whole body (spec/cli.md, *Subcommand surface*).
+   *
+   * Every step below is the tick's own: `chainLoader`, `readPending`,
+   * `pickableEntries`, `partitionByFileOverlap`, `attempts.readAll`,
+   * `phasePromptPath`, `renderPrompt`. The verb this replaces re-derived
+   * three of them beside the dispatcher and disagreed with it on all three
+   * (operator ruling 2026-08-03), which is the failure this method exists to
+   * make unrepresentable: there is one resolution, and a preview is it run
+   * one call short of `invokeAgent`.
+   *
+   * Two deliberate departures from `tick()`, each because no tick is running:
+   *
+   *  - `cwd` is the primary checkout, not a provisioned worktree. Nothing is
+   *    created, so nothing needs tearing down, and the inline-exec spans see
+   *    the tree the operator is looking at.
+   *  - No `<prior-attempt>` block. A render outside a tick has no attempt to
+   *    carry, and it is never reconstructed; `TickContext.priorAttempts` is
+   *    still the real on-disk map, because that one *is* a fact a hook reads.
+   *
+   * Nothing here writes: no baton flag, no `rendered-prompts/` record, and —
+   * unlike `tick()`'s own hook seam — no persisted refusal, because a hook
+   * that throws here refuses the verb instead of recording an attempt that
+   * never happened. `shouldRun` is not consulted for the same reason: it
+   * decides whether to invoke, and this path never does.
+   */
+  async render(opts: RenderRequest): Promise<RenderResolution> {
+    const chainModule = await this.chainLoader();
+    const chain = chainModule.chain;
+    // The same two per-tick rebinds `tick()` takes off a freshly-loaded
+    // chain, for the same two readers: `readPending`'s parse and its path.
+    this.entryExtension = chain.entryExtension;
+    this.pendingPath = resolvePendingPath(this.flumeDir, chain.pendingPath);
+
+    const phase = chain.phases.find((p) => p.name === opts.phase);
+    if (!phase) {
+      throw new RenderUsageError(
+        `unknown phase: ${opts.phase} — this chain declares ` +
+          chain.phases.map((p) => p.name).join(", "),
+      );
+    }
+    if (opts.entryTag !== undefined && phase.concurrency !== "fanout") {
+      throw new RenderUsageError(
+        `--entry ${opts.entryTag}: '${phase.name}' is a ${phase.concurrency} ` +
+          `phase and picks no entry from the queue`,
+      );
+    }
+
+    const pending = await this.readPending();
+    const isForkResolved =
+      (chainModule.forkResolver ?? this.opts.forkResolver)?.(
+        this.opts.repoRoot,
+      ) ?? (() => true);
+    const capabilities = new Set(chain.capabilities ?? []);
+    const pickable = pickableEntries(
+      pending,
+      isForkResolved,
+      capabilities,
+      this.opts.quarantinedSlugs,
+    );
+
+    let entry: PendingEntry | undefined;
+    if (phase.concurrency === "fanout") {
+      if (opts.entryTag !== undefined) {
+        // Looked up in the *queue*, not in `pickable`: previewing an entry a
+        // tick would decline to carry is the point of naming one by hand, and
+        // the verdict on it is reported below rather than spent as a refusal.
+        entry = pending.find((e) => e.tag === opts.entryTag);
+        if (!entry) {
+          throw new RenderUsageError(
+            `no entry tagged ${opts.entryTag} in the queue at HEAD ` +
+              `(${pending.length} entr${pending.length === 1 ? "y" : "ies"})`,
+          );
+        }
+      } else {
+        if (pickable.length === 0) {
+          throw new RenderUsageError(
+            `${phase.name}: nothing pickable at HEAD, so no entry a tick ` +
+              `would carry — name one with --entry <tag>`,
+          );
+        }
+        // The batch `runFanout` would build, under the same declared knobs;
+        // its first member is the entry the next wave carries first.
+        entry = partitionByFileOverlap(pickable, {
+          maxParallel: chain.supervisorPolicy?.maxParallel ?? this.maxParallel,
+          ignore: chain.supervisorPolicy?.partitionIgnore ?? [],
+        })[0]![0]!;
+      }
+    }
+
+    const priorAttempts = await this.attempts.readAll();
+    // Each concurrency's own context, field for field — a singleton reads the
+    // whole queue and carries no assignment, a fanout entry carries its
+    // assignment and no queue. A preview that widened either would show the
+    // chain a `promptArgs` input the tick never gets.
+    const ctx: TickContext = {
+      cwd: this.opts.repoRoot,
+      flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
+      pickable,
+      priorAttempts,
+      ...(entry !== undefined ? { assignedEntry: entry } : { pending }),
+    };
+
+    let args: Record<string, string>;
+    try {
+      args = phase.promptArgs?.(ctx) ?? {};
+    } catch (err) {
+      // Same class the tick calls `render-refused`: the prompt never
+      // resolved, so there is nothing to show. Loud, never a partial render.
+      throw new RenderUnresolvedError(
+        `${phase.name}: promptArgs threw: ${throwFacts(err).message}`,
+      );
+    }
+
+    const prompt = await renderPrompt({
+      phase,
+      flumeDir: this.flumeDir,
+      promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
+      cwd: this.opts.repoRoot,
+      args,
+      ...(entry !== undefined ? { assignedEntry: entry } : {}),
+    });
+
+    return {
+      phaseName: phase.name,
+      ...(entry !== undefined ? { entry } : {}),
+      pickable,
+      prompt,
     };
   }
 

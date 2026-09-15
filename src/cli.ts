@@ -48,6 +48,9 @@ import {
   writeTickVerdict,
   readTickVerdicts,
   readMergingMarkers,
+  RenderUnresolvedError,
+  RenderUsageError,
+  type RenderResolution,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
@@ -58,6 +61,7 @@ import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
 import { parsePending } from "./PendingSchema.js";
+import { InlineExecRenderError } from "./Prompt.js";
 import {
   DEFAULT_PENDING_REL,
   loopLockPath,
@@ -815,6 +819,91 @@ async function main(): Promise<number> {
     ...(job !== undefined ? { namespace: job } : {}),
     ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });
+
+  if (cmd === "render") {
+    const words = [...rest];
+    let entryTag: string | undefined;
+    const entryIdx = words.indexOf("--entry");
+    if (entryIdx >= 0) {
+      const value = words[entryIdx + 1];
+      if (!value || value.startsWith("-")) {
+        console.error("usage: flume render <phase> [--entry <tag>]");
+        return 2;
+      }
+      entryTag = value;
+      words.splice(entryIdx, 2);
+    }
+    const phaseName = words[0];
+    // One positional, `<phase>` — same class as `tick`'s stray-arg refusal
+    // (spec/cli.md "Subcommand surface", gh#1): rendering a phase other than
+    // the one typed is the harm, and it is refused before the chain loads.
+    if (!phaseName || words.length > 1) {
+      console.error("usage: flume render <phase> [--entry <tag>]");
+      return 2;
+    }
+
+    let resolution: RenderResolution;
+    try {
+      resolution = await dispatcher.render({
+        phase: phaseName,
+        ...(entryTag !== undefined ? { entryTag } : {}),
+      });
+    } catch (err) {
+      const cjs = refuseCjsContextHost(err);
+      if (cjs !== undefined) return cjs;
+      if (err instanceof RenderUsageError) {
+        console.error(`[flume] render refuses: ${err.message}`);
+        return 2;
+      }
+      // The two shapes of "the prompt never resolved" — an unresolved
+      // inline-exec span (which names every failing span itself) and a
+      // `promptArgs` throw. One exit code because the engine gives them one
+      // name: `render-refused` (`NO_COMMIT_MODES`, src/Prompt.ts). This is
+      // the refusal a tick would have bought with an invocation, so it is the
+      // same EX_DATAERR `check` spends nothing to reach.
+      if (
+        err instanceof InlineExecRenderError ||
+        err instanceof RenderUnresolvedError
+      ) {
+        console.error(`[flume] render refuses: ${err.message}`);
+        return EX_DATAERR;
+      }
+      // Declared bound (`.claude/rules/engineering.md`, "Loud or nothing"):
+      // everything left is the chain failing to come up — it would not load,
+      // its queue would not parse, its declared prompt file is not on disk.
+      // Classified mount-dead, the same code `tick` and `check` return when
+      // the chain cannot be run, rather than left to `main().catch`'s raw
+      // stack and exit 1.
+      console.error(
+        `[flume] render: nothing resolved: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_MOUNT_DEAD;
+    }
+
+    // Which entry the resolution picked, and what the tick's own pickability
+    // verdict says about it — on stderr, so stdout stays the prompt and its
+    // one notice line. A hand-named entry a tick would decline to carry is
+    // rendered and said so, never silently previewed as if it were next.
+    if (resolution.entry) {
+      const tag = resolution.entry.tag;
+      const carried = resolution.pickable.some((e) => e.tag === tag);
+      console.error(
+        carried
+          ? `[flume] render: ${resolution.phaseName} scoped to entry ${tag}`
+          : `[flume] render: ${resolution.phaseName} scoped to entry ${tag} — ` +
+              `not pickable at HEAD; a tick would not carry it`,
+      );
+    }
+    // spec/cli.md "Subcommand surface": the block is omitted, and the first
+    // line of the output says so — a render outside a tick has no attempt to
+    // carry, and one is never reconstructed for it.
+    console.log(
+      "[flume] render: <prior-attempt> omitted — a render outside a tick " +
+        "carries no attempt, and it is never reconstructed.",
+    );
+    process.stdout.write(resolution.prompt);
+    return 0;
+  }
 
   if (cmd === "tick") {
     // `tick` consumes no positionals (spec/cli.md "Subcommand surface") — a

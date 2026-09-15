@@ -4,8 +4,7 @@
  * violation counts only when verified on disk this tick").
  */
 
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -478,52 +477,6 @@ describe("the --help blocks that restate the loop range, against loopExitCode's 
 
   it("flume job --help names every exit code the loop range produces, since job run relays it", async () => {
     await expectHelpNamesTheLoopRange(["job", "--help"]);
-  });
-});
-
-/**
- * CLI-RENDER-REMOVAL — `render` previewed with the wrong fence, the wrong
- * prior-attempt state, and its own re-derivation of pickability that
- * disagreed with the dispatcher's (operator ruling 2026-08-03). It is gone
- * from the subcommand surface entirely, not merely undocumented.
- */
-describe("flume render — removed from the subcommand surface (CLI-RENDER-REMOVAL)", () => {
-  /**
-   * One help spawn, in a throwaway cwd. One case per flag rather than both
-   * flags in one case: the default lane's carve-out for a CLI-surface test
-   * covers the single spawn that *is* the subject (spec/worktrees.md, "The
-   * default test lane must stay fast"), and a second spawn on the same
-   * per-test budget is what timed both flags out under full-suite load.
-   */
-  async function helpOut(flag: string): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-help-"));
-    try {
-      const { out, code } = await runCli(dir, [flag]);
-      expect(code).toBe(0);
-      expect(out.length).toBeGreaterThan(0);
-      return out;
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }
-
-  it("is an unknown subcommand and exits 2", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-render-removed-"));
-    try {
-      const { out, code } = await runCli(dir, ["render", "probe"]);
-      expect(code).toBe(2);
-      expect(out).toContain("unknown command: render");
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("flume --help names no render", async () => {
-    expect(await helpOut("--help")).not.toContain("render");
-  });
-
-  it("flume -h names no render", async () => {
-    expect(await helpOut("-h")).not.toContain("render");
   });
 });
 
