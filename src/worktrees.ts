@@ -258,9 +258,11 @@ let checkoutSeq = 0;
  * Refuses outside a gate invocation rather than handing back a tree nothing
  * will reclaim (`.claude/rules/engineering.md`, *Loud or nothing*): the
  * removal this promises is the engine's, and off the gate path there is no
- * "when the gate returns" for it to happen at. A caller that wants a
- * checkout it owns the lifetime of calls `addWorktree`/`removeWorktree`
- * (`src/git.ts`) itself and says so.
+ * "when the gate returns" for it to happen at. Gate-time is the contract,
+ * not a restriction with a way around it — a base checkout is what a gate
+ * asks the engine for and what the engine reclaims when that gate returns,
+ * and nothing drives one from outside a gate invocation (`spec/harness.md`,
+ * *The runner interface*).
  */
 export async function checkoutAt(opts: {
   /** The repo to check out from — a gate's own `repoRoot`. */
