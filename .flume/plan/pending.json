@@ -1,1 +1,39 @@
-[]
+[
+  {
+    "tag": "CITATION-SCAN-JUDGES-A-FENCED-HYPHENATED-PAGE-NAME",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "isSubject routes a slashless span to the identifier arm alone; share the filename detection isPathSubject already performs"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "fixture case for the fenced hyphenated page name; EXTERNAL_VOCABULARY for the layout names the widened rule surfaces"
+        },
+        { "path": "src/git.ts", "description": "five `engine-boundary.md` cites, repo-relative" },
+        { "path": "src/Dispatcher.ts", "description": "four `engine-boundary.md` cites, repo-relative" },
+        { "path": "src/Phase.ts", "description": "two `engine-boundary.md` cites, repo-relative" },
+        { "path": "src/priorAttempts.ts", "description": "two `engine-boundary.md` cites, repo-relative" },
+        { "path": "src/Prompt.ts", "description": "two `engine-boundary.md` cites, repo-relative" },
+        { "path": "src/flumeApi.ts", "description": "one `engine-boundary.md` cite, repo-relative" },
+        { "path": "src/worktrees.ts", "description": "one `engine-boundary.md` cite, repo-relative" },
+        { "path": "src/cli.ts", "description": "one `platform-facts.md` cite, repo-relative" }
+      ]
+    },
+    "summary": "Share the path arm's filename detection with the backticked arm: a fenced slashless page name is judged by nothing today",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "The scan judges a fenced page name the identifier charset refuses, and the repo pin stays green with every span it newly surfaces repaired to a repo-relative path or named in EXTERNAL_VOCABULARY.",
+    "tests": [
+      "the citation scan judges a backticked page name whose spelling carries a hyphen"
+    ],
+    "pins": [
+      "the citation scan judges no backticked member access spelled with a leading dot"
+    ],
+    "notes": "isSubject reaches isPathSubject only on a slash, so a slashless span falls to SEGMENT, which refuses `-`. 22 fenced cites in src/ are judged by nothing: `engine-boundary.md` x14, `platform-facts.md`, `tick-verdicts.jsonl`, `package-lock.json`, `pnpm-lock.yaml`, `.element.shape`. src/git.ts:40 dangles unjudged while src/git.ts:49 cites the sibling page as a path and is judged. `.element.shape` (src/PendingSchema.ts:208) must stay refused — hence the pin."
+  }
+]

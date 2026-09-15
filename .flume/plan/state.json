@@ -103,7 +103,21 @@
       "tests/cliHelp.test.ts",
       "tests/waitForHelper.test.ts",
       "tests/helpers/waitFor.ts",
-      "tests/build-changelog.test.ts"
+      "tests/build-changelog.test.ts",
+      "tests/commentCitations.test.ts",
+      "tests/helpers/commentCitations.ts",
+      "examples/prompts/spec.md",
+      "harness/defuse.ts",
+      "scripts/pack-harness-prompts.mjs",
+      "tests/harnessDefuse.test.ts",
+      "tests/helpers/citeScanners.ts",
+      "tests/helpers/docAgreement.ts",
+      "tests/helpers/docClaims.ts",
+      "tests/helpers/retiredShapes.ts",
+      "tests/helpers/scanCorpus.ts",
+      "tests/helpers/specLocators.ts",
+      "tests/helpers/suiteShape.ts",
+      "tests/retired-narration.test.ts"
     ]
   }
 }
