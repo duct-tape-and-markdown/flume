@@ -246,3 +246,15 @@ worktree registry, name-only output, or a pathspec reads two spellings of
 one directory and fails on the comparison, not on the behavior. Canonicalize
 with `realpath` on both sides before comparing; a separator fold alone does
 not close it.
+
+## win32 reports a path through a non-directory as not found
+
+POSIX answers a lookup that passes through a plain file with `ENOTDIR`; win32
+answers the same lookup with `ENOENT`, indistinguishable from a path whose
+last segment is simply absent. And `statSync(path, { throwIfNoEntry: false })`
+suppresses `ENOTDIR` as well as `ENOENT` on every host, so a probe built on it
+takes its absent arm over an obstructed ancestor. An absent-or-present verdict
+keyed on an errno is therefore wrong on one host or the other; prove absence
+by descending the path and asserting each ancestor is a directory before the
+next segment is probed, and never deny a fixture's *parent* to stand in for
+denying the read — that un-arms the case on both hosts.

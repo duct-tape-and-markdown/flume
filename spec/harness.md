@@ -92,7 +92,10 @@ the tip's branch failed and that run is past the stamp the slice last wrote
 for the lane; the slice stamps the run it drained as it stamps a cursor. So a
 red lane is drained once per run and never re-read every tick, a green run
 needs no drain, and a lane the slice cannot read makes it live for nothing —
-unread renders only when the slice is live for another reason.
+unread renders only when the slice is live for another reason. The render
+names the lane that made the slice live, so a tick woken by a run it then
+cannot fetch says which lane woke it and why the drain was empty, never a
+bare unread over a wake with no visible cause.
 
 
 ### Plan state as declared state
