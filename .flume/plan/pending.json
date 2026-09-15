@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "tag": "CHANGELOG-BOUNDARY-UNRESOLVED-REFUSES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "scripts/build-changelog.mjs", "description": "refuse at the unresolved-boundary leg in resolveLastRelease" },
+        { "path": "tests/build-changelog.test.ts", "description": "the refusal case" }
+      ]
+    },
+    "summary": "Refuse when CHANGELOG.md records a version whose boundary commit does not resolve, instead of falling through to the semver tag",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "resolveLastRelease reaches the tag fallback only when no version was recorded; a recorded version with no resolvable boundary commit throws and main() exits non-zero naming the version",
+    "tests": [
+      "a recorded CHANGELOG version whose boundary commit does not resolve refuses instead of falling through to the tag"
+    ],
+    "notes": "scripts/build-changelog.mjs:86-108 — `if (sha) return sha.trim()` has no else. Reproduced: CHANGELOG.md on disk records 0.9.0, the cut is uncommitted so `git log -S` over the path is empty, and the draft is mined from tag v0.6.2, re-listing an already-released build: commit. Same harm the EISDIR refusal at :78 blocks, by the other door; the module doc at :19-22 already claims absence is the fallback's whole trigger."
+  },
+  {
+    "tag": "CHANGELOG-TAG-FALLBACK-PIN-NON-VACUOUS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "tests/build-changelog.test.ts", "description": "give the tag-fallback case a subject to exclude" }
+      ]
+    },
+    "summary": "Make the semver-tag-fallback case judge the boundary it names — today it passes with the fallback deleted",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A green verdict is proven non-vacuous" },
+    "acceptance": "the tag-fallback case carries a build: commit before the tag and asserts its absence from the draft, so deleting the fallback reds it",
+    "pins": [
+      "the semver tag fallback excludes a build: commit that predates the tag"
+    ],
+    "notes": "tests/build-changelog.test.ts:142 — the fixture's only pre-tag commit is a non-build: seed, so the sole assertion (draft contains AFTER-TAG-FEATURE) holds identically when resolveLastRelease returns null. Verified this tick: output byte-identical with the `tags.length > 0` branch disabled."
+  }
+]
