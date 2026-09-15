@@ -579,8 +579,9 @@ export function extractFinalMessage(stdout: string): string {
 
 /**
  * Render one NDJSON line to a condensed terminal string, or null to drop it.
- * Non-JSON input is passed through verbatim (prefixed with the tag) so stray
- * warnings or non-stream output still surface.
+ * Non-JSON input is passed through behind the tag prefix so stray warnings
+ * and non-stream output still surface — trimmed, as {@link parseNdjsonLine}
+ * hands it back, so a win32 child's trailing CR never reaches the terminal.
  */
 function renderStreamJsonLine(
   line: string,

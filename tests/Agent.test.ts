@@ -639,11 +639,14 @@ describe("withTerminalRenderer", () => {
     });
   });
 
-  it("passes non-JSON lines through verbatim with the tag prefix", async () => {
+  it("the terminal renderer emits a non-JSON line trimmed behind the tag prefix", async () => {
+    // A win32 child's CRLF leaves the CR on the line, and indented stray
+    // output keeps its leading run — both differ from the trimmed form.
+    const raw = "   warning: something off\r\n";
     const fake: Agent = {
       name: "fake",
       async invoke(inv) {
-        inv.onStdout?.("warning: something off\n");
+        inv.onStdout?.(raw);
         return { exitCode: 0, stdout: "", stderr: "" };
       },
     };
@@ -654,6 +657,8 @@ describe("withTerminalRenderer", () => {
       prompt: "",
       onStdout: (chunk) => captured.push(chunk),
     });
+    const line = raw.replace(/\n$/, "");
+    expect(line).not.toBe(line.trim());
     expect(captured.join("")).toBe("[T] warning: something off\n");
   });
 });
