@@ -29,8 +29,11 @@ import {
   watchStateRoots,
 } from "./helpers/subprocess.ts";
 import {
+  declaredLaneGlobs,
+  defaultLaneFiles,
   harnessBudgets,
   harnessSpawnExports,
+  reduceLaneGlobs,
   scanDefaultLaneSpawnSites,
 } from "./helpers/spawnBudget.ts";
 
@@ -417,7 +420,7 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
  * number has one home to move (`.claude/rules/engineering.md`, *Derived
  * state is computed, never restated beside its source*).
  */
-it("every default-lane suite that spawns the CLI declares the shared spawn budget rather than inheriting the runner's default", () => {
+it("every default-lane suite that spawns the CLI declares the shared spawn budget rather than inheriting the runner's default", async () => {
   // One home. `harnessBudgets` reads the harness module's exported numbers
   // off the module itself, so this is the parse and the import agreeing on
   // the same constant rather than the test restating either.
@@ -429,7 +432,7 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
   // found no spawn wrapper, or no suite, would clear every assertion below
   // without judging anything.
   expect(harnessSpawnExports().length).toBeGreaterThan(0);
-  const sites = scanDefaultLaneSpawnSites();
+  const sites = await scanDefaultLaneSpawnSites();
   expect(sites.length).toBeGreaterThan(0);
   expect(new Set(sites.map((s) => s.file)).size).toBeGreaterThan(1);
 
@@ -442,6 +445,66 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
       `SPAWN_BUDGET_MS (tests/helpers/subprocess.ts) on each, rather than a ` +
       `number of its own`,
   ).toEqual([]);
+});
+
+/**
+ * The lane the scan walks against the lane the runner is told to run.
+ *
+ * Both used to be spelled here — a root and two suffixes in the helper, the
+ * globs in `vitest.config.ts` — so a config-side widening (another suffix,
+ * another root, an exclude the walk does not implement) left the scan green
+ * over sites it had silently stopped reading.
+ *
+ * Config-first, like the setup-file pin above: the real config function is
+ * called and its own globs go through the scan's own reducer, which refuses
+ * anything the walk cannot implement (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ */
+it("the spawn-budget scan's lane rule agrees with the default lane vitest.config.ts declares", async () => {
+  const declared = await declaredLaneGlobs();
+
+  // Vacuity: the config was reached and it declared a selection at all, so
+  // the reduction below is judging globs rather than two empty lists.
+  expect(declared.include.length).toBeGreaterThan(0);
+  expect(declared.exclude.length).toBeGreaterThan(0);
+
+  // Agreement: reaching a rule at all is the claim — the reducer refuses any
+  // declared glob the walk cannot implement, so a lane the scan would read
+  // only part of cannot reduce quietly to the part it understands.
+  const rule = reduceLaneGlobs(declared);
+  const files = defaultLaneFiles(rule);
+
+  expect(files).toContain(fileURLToPath(import.meta.url));
+  expect(new Set(files).size).toBeGreaterThan(1);
+  expect(files.every((f) => f.endsWith(rule.suffix))).toBe(true);
+  expect(files.some((f) => rule.excluded.some((x) => f.endsWith(x)))).toBe(
+    false,
+  );
+
+  // Non-vacuity on the exclusion: the excluded lane is on disk, so the
+  // absence above is the rule doing work rather than a tree with nothing to
+  // drop.
+  expect(
+    readdirSync(rule.root).filter((name) =>
+      rule.excluded.some((x) => name.endsWith(x)),
+    ),
+  ).not.toEqual([]);
+
+  // Refusal, on hand-authored input as a refusal case must be: a lane
+  // declared in a shape this walk does not implement reds here instead of
+  // narrowing what the scan reads.
+  expect(() =>
+    reduceLaneGlobs({ include: ["tests/**/*.{test,spec}.ts"], exclude: [] }),
+  ).toThrow("<root>/**/*<suffix>");
+  expect(() =>
+    reduceLaneGlobs({
+      include: [...declared.include, "packages/**/*.test.ts"],
+      exclude: [],
+    }),
+  ).toThrow("walks one root");
+  expect(() =>
+    reduceLaneGlobs({ include: declared.include, exclude: ["**/fixtures/**"] }),
+  ).toThrow("drops files by suffix");
 });
 
 /**
@@ -488,7 +551,7 @@ describe("the default-lane spawn-budget scan", () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-scan-"));
     try {
       await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-      const sites = scanDefaultLaneSpawnSites(dir);
+      const sites = await scanDefaultLaneSpawnSites(dir);
 
       // A spawning hook inherits `hookTimeout`, which is lower still than
       // the case default — the same defect one registrar over.
@@ -515,12 +578,12 @@ describe("the default-lane spawn-budget scan", () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-lane-"));
     try {
       await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
-      expect(scanDefaultLaneSpawnSites(dir)).toEqual([]);
+      expect(await scanDefaultLaneSpawnSites(dir)).toEqual([]);
 
       // Sensitivity: the same bytes under the default lane's suffix are the
       // findings the assertion above must not be collecting.
       await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-      expect(scanDefaultLaneSpawnSites(dir).length).toBeGreaterThan(0);
+      expect((await scanDefaultLaneSpawnSites(dir)).length).toBeGreaterThan(0);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

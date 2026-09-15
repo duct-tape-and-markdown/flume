@@ -9,10 +9,11 @@
  * "The default test lane must stay fast").
  *
  * Nothing here holds a second copy of the lane's vocabulary — the spawn
- * wrappers are read out of the harness module and the budget names out of its
- * exported numbers, so a wrapper or a rename arms the scan without a second
- * edit (`.claude/rules/engineering.md`, *Derived state is computed, never
- * restated beside its source*).
+ * wrappers are read out of the harness module, the budget names out of its
+ * exported numbers, and which files the lane even contains out of
+ * `vitest.config.ts`, so a wrapper, a rename, or a widened include arms the
+ * scan without a second edit (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -20,6 +21,7 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
+import { configDefaults } from "vitest/config";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const TESTS_DIR = join(REPO_ROOT, "tests");
@@ -64,19 +66,132 @@ function parse(path: string): ts.SourceFile {
 }
 
 /**
- * Every default-lane suite file, off disk rather than from a list: a suite
- * added without its budget is exactly the case this scan exists to catch, and
- * a hand-kept list is what would not carry it. The lane is `vitest.config.ts`'s
- * — everything under `tests/` but the integration suffix.
+ * The mode a config function is called with when no `--mode` is passed, which
+ * is how the afterMerge gate invokes `vitest run` — so this is the lane the
+ * scan judges.
  */
-export function defaultLaneFiles(dir: string = TESTS_DIR): string[] {
+const DEFAULT_LANE_MODE = "test";
+
+/** One lane's file selection, as `vitest.config.ts` hands it over. */
+export interface LaneGlobs {
+  readonly include: readonly string[];
+  readonly exclude: readonly string[];
+}
+
+/** That selection reduced to the walk below. */
+export interface LaneRule {
+  /** The directory the walk descends, absolute. */
+  readonly root: string;
+  /** The suffix a file carries to be in the lane, e.g. `.test.ts`. */
+  readonly suffix: string;
+  /** The suffixes that take it back out, e.g. `.integration.test.ts`. */
+  readonly excluded: readonly string[];
+}
+
+// `<root>/**/*<suffix>` — the include shape the walk implements.
+const INCLUDE_SHAPE = /^([^*?{}[\]]+)\/\*\*\/\*([^*?{}[\]/]+)$/;
+
+// `**/*<suffix>` — the lane-authored exclude shape it implements.
+const EXCLUDE_SHAPE = /^\*\*\/\*([^*?{}[\]/]+)$/;
+
+/**
+ * The default lane's globs, off `vitest.config.ts` itself: the config
+ * function is called the way the runner calls it, so what comes back is the
+ * selection the lane actually runs rather than a reading of its source.
+ */
+export async function declaredLaneGlobs(): Promise<LaneGlobs> {
+  const exported: unknown = (
+    (await import("../../vitest.config.ts")) as { default?: unknown }
+  ).default;
+  if (typeof exported !== "function")
+    throw new Error(
+      "vitest.config.ts exports no config function; the default lane's " +
+        "file selection cannot be read",
+    );
+  const config = (await (
+    exported as (env: { command: "serve"; mode: string }) => unknown
+  )({ command: "serve", mode: DEFAULT_LANE_MODE })) as {
+    test?: { include?: unknown; exclude?: unknown };
+  };
+  return {
+    include: stringList(config.test?.include, "include"),
+    exclude: stringList(config.test?.exclude, "exclude"),
+  };
+}
+
+function stringList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((v) => typeof v !== "string"))
+    throw new Error(
+      `vitest.config.ts declares no string \`test.${field}\` for mode ` +
+        `'${DEFAULT_LANE_MODE}'; the spawn-budget scan reads the lane from it`,
+    );
+  return value as string[];
+}
+
+/**
+ * The declared globs reduced to the rule the walk runs — refusing on any glob
+ * it cannot implement, rather than reading a narrower set than the lane runs
+ * and reporting the shortfall as a clean lane (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
+ * The runner's own default excludes drop out by identity against
+ * `configDefaults.exclude`, read from vitest rather than listed here: they
+ * prune directories no suite lives in, and what survives the subtraction is
+ * the lane's own vocabulary, which reduces or refuses.
+ */
+export function reduceLaneGlobs(globs: LaneGlobs): LaneRule {
+  if (globs.include.length !== 1)
+    throw new Error(
+      `vitest.config.ts declares ${globs.include.length} include globs for ` +
+        `the default lane; the spawn-budget scan walks one root`,
+    );
+  const [include = ""] = globs.include;
+  const shape = INCLUDE_SHAPE.exec(include);
+  if (!shape)
+    throw new Error(
+      `default-lane include glob '${include}' is not '<root>/**/*<suffix>'; ` +
+        `the spawn-budget scan walks a root for a suffix and would read a ` +
+        `narrower set than the lane runs`,
+    );
+  const [, root = "", suffix = ""] = shape;
+  const runnerDefaults = new Set<string>(configDefaults.exclude);
+  const excluded = globs.exclude
+    .filter((glob) => !runnerDefaults.has(glob))
+    .map((glob) => {
+      const dropped = EXCLUDE_SHAPE.exec(glob)?.[1];
+      if (dropped === undefined)
+        throw new Error(
+          `default-lane exclude glob '${glob}' is not '**/*<suffix>'; the ` +
+            `spawn-budget scan drops files by suffix and would judge sites ` +
+            `the lane never runs`,
+        );
+      return dropped;
+    });
+  return { root: join(REPO_ROOT, ...root.split("/")), suffix, excluded };
+}
+
+/** The rule this repo's default lane reduces to. */
+export async function defaultLaneRule(): Promise<LaneRule> {
+  return reduceLaneGlobs(await declaredLaneGlobs());
+}
+
+/**
+ * Every file the lane runs, off disk rather than from a list: a suite added
+ * without its budget is exactly the case this scan exists to catch, and a
+ * hand-kept list is what would not carry it. Which files count is `rule`'s to
+ * say — this walk holds no copy of the lane's root or its suffixes.
+ */
+export function defaultLaneFiles(
+  rule: LaneRule,
+  dir: string = rule.root,
+): string[] {
   const out: string[] = [];
   for (const dirent of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, dirent.name);
-    if (dirent.isDirectory()) out.push(...defaultLaneFiles(path));
+    if (dirent.isDirectory()) out.push(...defaultLaneFiles(rule, path));
     else if (
-      dirent.name.endsWith(".test.ts") &&
-      !dirent.name.endsWith(".integration.test.ts")
+      dirent.name.endsWith(rule.suffix) &&
+      !rule.excluded.some((dropped) => dirent.name.endsWith(dropped))
     )
       out.push(path);
   }
@@ -262,18 +377,21 @@ function declaredBudget(
  * Every default-lane case and hook under `dir` that starts a node process,
  * with the budget it declares.
  *
- * `dir` defaults to this repo's suite and is a parameter for one reason: the
- * scan's own test drives it over a fixture whose cases are written to be
- * caught, so a green verdict here is proven to be a detector firing rather
- * than an empty set (`.claude/rules/engineering.md`, *A green verdict is
- * proven non-vacuous*).
+ * `dir` defaults to the root the declared lane names and is a parameter for
+ * one reason: the scan's own test drives it over a fixture whose cases are
+ * written to be caught, so a green verdict here is proven to be a detector
+ * firing rather than an empty set (`.claude/rules/engineering.md`, *A green
+ * verdict is proven non-vacuous*). The lane's suffixes apply either way.
  */
-export function scanDefaultLaneSpawnSites(dir: string = TESTS_DIR): SpawnSite[] {
+export async function scanDefaultLaneSpawnSites(
+  dir?: string,
+): Promise<SpawnSite[]> {
+  const rule = await defaultLaneRule();
   const wrappers = harnessSpawnExports();
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
 
-  for (const path of defaultLaneFiles(dir)) {
+  for (const path of defaultLaneFiles(rule, dir)) {
     const src = parse(path);
     const file = relative(REPO_ROOT, path).split(sep).join("/");
     const imported = harnessImports(src);
